@@ -61,10 +61,13 @@
 | Model | Quantization | Size | Path |
 |-------|--------------|------|------|
 | Qwen2-0.5B | Q2_K | 323MB | `QuantFactory/Qwen2-0.5B-GGUF/Qwen2-0.5B.Q2_K.gguf` |
+| Qwen2.5-Coder-1.5B | Q2_K | 645MB | `QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q2_K.gguf` |
 | Qwen3-0.6B | Q2_K | 283MB | `unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf` |
 | Qwen3-Embedding-0.6B | Q8_0 | — | `Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf` |
 
-**Hypothesis:** Q2_K drafts at ~100+ t/s (vs 85 t/s Q8_0) enable faster speculation rounds.
+**Hypotheses:**
+- Q2_K drafts at ~100+ t/s (vs 85 t/s Q8_0) enable faster speculation rounds
+- Qwen2.5-Coder-1.5B may have higher acceptance than 0.5B (better quality drafts)
 
 ---
 

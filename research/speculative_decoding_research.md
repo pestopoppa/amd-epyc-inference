@@ -566,6 +566,7 @@ numactl --physcpubind=0-47,48-95 --membind=0,1 llama-speculative ...
 
 **Available Q2_K Models:**
 - `/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2-0.5B-GGUF/Qwen2-0.5B.Q2_K.gguf` (323MB)
+- `/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q2_K.gguf` (645MB) — **same family as target**
 - `/mnt/raid0/llm/lmstudio/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf` (283MB)
 
 **Testing Protocol:**
