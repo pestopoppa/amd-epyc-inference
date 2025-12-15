@@ -17,6 +17,30 @@
 
 ---
 
+## Very Large Models (100B+)
+
+### Baseline Performance
+| Model | Size | Active Params | Baseline | Notes |
+|-------|------|---------------|----------|-------|
+| Qwen3-235B-A22B | 133GB | ~22B | **3.6 t/s** | MoE, fits in RAM |
+| Qwen3-Coder-480B-A35B | 271GB | ~35B | **2.05 t/s** | MoE, largest tested |
+| GLM-4.6-355B-A32B | 189GB | ~32B | **1.82 t/s** | MoE |
+| Qwen3-VL-235B-A22B-Thinking | 124GB | ~22B | TBD | VL model |
+
+### Optimization Results
+| Model | Baseline | +Expert Reduction | +Lookup | Best |
+|-------|----------|-------------------|---------|------|
+| **Qwen3-Coder-480B** | 2.05 t/s | 3.0 t/s (+48%) | 3.69 t/s | **+80%** |
+| **Qwen3-235B** | 3.6 t/s | 6.75 t/s (+87%) | 6.35 t/s | **+87%** |
+| **GLM-4.6-355B** | 1.82 t/s | N/A | 3.37 t/s | **+85%** |
+
+### Key Finding: Largest Models Benefit Most
+- 480B model: **+48-80% speedup** from expert reduction + lookup
+- Expert reduction more effective than speculative decoding on MoE
+- All 100B+ models run entirely in RAM (no GPU needed)
+
+---
+
 ## Key Insights
 
 ### 1. Small Drafts Win on CPU
