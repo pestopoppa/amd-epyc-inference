@@ -516,73 +516,70 @@ SSM/Mamba models (Qwen3-Next) use recurrent state that cannot be rolled back lik
 
 ## System-Level Optimizations (Track A)
 
-### Status: 🆕 **Next Priority — P0**
+### Status: ✅ **Tested — No Improvement Possible**
 
-System optimizations with guaranteed ROI, independent of speculative decoding.
+System optimizations tested 2025-12-15. Current configuration is already optimal.
 
 ### Hugepage Configuration
 
-**Expected Gain:** +10-15% baseline
+**Result:** ⚠️ **Requires llama.cpp code changes — Not practical**
 
-```bash
-# Reserve 300 × 1GB hugepages (307GB)
-echo 300 | sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+- THP (Transparent Huge Pages) already enabled: `always`
+- 1GB explicit hugepages allocated (266GB) but llama.cpp uses standard `mmap()` without `MAP_HUGETLB` flag
+- THP defrag settings tested:
+  - `madvise` (default): pp512 18.13 t/s, tg128 2.96 t/s (stable)
+  - `always`: pp512 18.69 t/s (+3%), tg128 2.57 t/s (high variance)
+  - `defer+madvise`: pp512 18.44 t/s, tg128 2.19 t/s (worse)
 
-# Verify
-grep Huge /proc/meminfo
-
-# Make permanent in /etc/default/grub:
-GRUB_CMDLINE_LINUX="hugepagesz=1G hugepages=300 default_hugepagesz=1G"
-sudo update-grub && reboot
-```
-
-**Why:** At model scale (18-45GB), TLB misses become a hidden cost. 1GB hugepages reduce page table overhead significantly.
+**Conclusion:** Keep `defrag=madvise` for stability. 1GB hugepages need llama.cpp modifications.
 
 ### NUMA Pinning Refinement
 
-**Expected Gain:** +5-10% consistency
+**Result:** ✅ **Current config (`--interleave=all -t 96`) is optimal**
 
-Current NUMA topology (2 nodes):
-- Node 0: CPUs 0-47 (physical) + 96-143 (SMT), 580GB RAM
-- Node 1: CPUs 48-95 (physical) + 144-191 (SMT), 580GB RAM
+Benchmark results (Qwen2.5-Coder-32B Q4_K_M):
 
+| Configuration | pp512 (t/s) | tg128 (t/s) | Notes |
+|---------------|-------------|-------------|-------|
+| **interleave=all, -t 96** | **18.60** | **3.77** | ✅ Best overall |
+| physcpubind=0-95, interleave | 17.40 | 3.89 | +3% tg, -6% pp |
+| membind=0, -t 96 | 17.54 | 2.05 | Remote NUMA access hurts |
+| cpunodebind=0+membind=0, -t 48 | 15.14 | 2.10 | Single node worse |
+| interleave=all, -t 192 | 15.80 | 1.62 | SMT hurts significantly |
+
+**Optimal command (unchanged):**
 ```bash
-# Current approach (replace)
-numactl --interleave=all llama-speculative ...
-
-# Refined approach (explicit binding to physical cores)
-numactl --physcpubind=0-47,48-95 --membind=0,1 llama-speculative ...
+OMP_NUM_THREADS=1 numactl --interleave=all llama-speculative -t 96 ...
 ```
 
 ---
 
 ## Draft Model Optimization (Track C)
 
-### Status: 🆕 **P2 Priority — Quick Win**
+### Status: ✅ **Tested — Q8_0 Remains Optimal**
 
-### Q2_K Draft Quantization
+### Q2_K/Q4_K_M Draft Quantization Results (2025-12-15)
 
-**Hypothesis:** Q2_K drafts at ~100+ t/s (vs 85 t/s Q8_0) enable faster speculation rounds.
+**Hypothesis:** More aggressive quantization → faster draft → better speculation
+**Result:** ❌ **Disproven** — Raw speed gains don't translate to speculative decoding
 
-**Available Q2_K Models:**
-- `/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2-0.5B-GGUF/Qwen2-0.5B.Q2_K.gguf` (323MB)
-- `/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q2_K.gguf` (645MB) — **same family as target**
-- `/mnt/raid0/llm/lmstudio/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf` (283MB)
+**Raw Draft Speed (standalone):**
+| Model | Q2_K Speed | vs Q8_0 |
+|-------|------------|---------|
+| Qwen3-0.6B | **221 t/s** | 3.4x faster |
+| Qwen2-0.5B | **208 t/s** | 2.4x faster |
+| Qwen2.5-Coder-1.5B | **98 t/s** | (no Q8_0 baseline) |
 
-**Testing Protocol:**
-```bash
-# Benchmark raw draft speed
-OMP_NUM_THREADS=1 numactl --interleave=all \
-  llama-bench -m Qwen2-0.5B.Q2_K.gguf -t 96 -p 0 -n 128
+**Speculative Decoding Results (with Qwen2.5-Coder-32B target):**
+| Draft Model | Accept | Spec Speed | Verdict |
+|-------------|--------|------------|---------|
+| **Qwen2.5-Coder-0.5B Q8_0** | 58% | **22.5 t/s** | ✅ Best |
+| Qwen2.5-Coder-1.5B Q4_K_M | 58% | 12.5 t/s | Slower (larger model) |
+| Qwen2.5-Coder-1.5B Q2_K | 57% | 13.1 t/s | Slower despite faster raw |
+| Qwen2-0.5B Q2_K | FAIL | — | Wrong vocab family |
+| Qwen3-0.6B Q2_K | N/A | — | Wrong model family |
 
-# Test speculative decoding with Q2_K draft
-llama-speculative \
-  -m Qwen2.5-Coder-32B-Q4_K_M.gguf \
-  -md Qwen2-0.5B.Q2_K.gguf \
-  --draft-max 24 -t 96
-```
-
-**Quality Check:** Verify Q2_K acceptance rate doesn't degrade vs Q8_0.
+**Conclusion:** Smaller model (0.5B) beats larger quantized model (1.5B) for CPU speculative decoding. Q8_0 is optimal quantization for drafts.
 
 ---
 
@@ -592,11 +589,8 @@ llama-speculative \
 
 | Priority | Track | Action | Expected Gain | Effort |
 |----------|-------|--------|---------------|--------|
-| **P0** | A | Hugepages (300 x 1GB) | +10-15% baseline | 1 hour |
-| **P0** | A | NUMA pinning refinement | +5-10% consistency | 1 hour |
 | **P1** | 6 | SuffixDecoding implementation | +100-200% agentic | 1-2 days |
-| **P2** | C | Q2_K draft benchmarking | +20-30% draft speed | 2 hours |
-| **P3** | — | Hybrid (Suffix → Draft fallback) | Combines P1 + P2 | 1 day |
+| **P2** | — | Hybrid (Suffix → Draft fallback) | Combines all methods | 1 day |
 
 ### COMPLETED ✅
 1. ✅ Track 8 (Prompt Lookup) — **12.7x proven**, production ready
@@ -605,11 +599,11 @@ llama-speculative \
 4. ✅ Track 2 expert count optimization — 3 experts safe
 5. ✅ Track 2 + Track 8 combination testing — model-dependent
 6. ✅ Track 7 (CAS-Spec) — **FAILED**, 0.446% acceptance
+7. ✅ Track A (System) — **Current config optimal**, THP enabled, interleave=all best
+8. ✅ Track C (Draft Quant) — **Q8_0 optimal**, Q2_K/Q4_K_M don't help speculation
 
 ### NEXT TO TRY
-1. **Track A (System)** — Hugepages + NUMA refinement (P0)
-2. **Track 6 (SuffixDecoding)** — 1 day effort, high potential for agentic/SQL workloads
-3. **Track C (Q2_K Drafts)** — Test new Q2_K draft models
+1. **Track 6 (SuffixDecoding)** — 1 day effort, high potential for agentic/SQL workloads
 
 ### DO NOT PURSUE
 - Track 3 (EAGLE) — 0% acceptance, 20+ hours wasted

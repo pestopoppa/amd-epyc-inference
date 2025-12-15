@@ -50,7 +50,7 @@
 | 1 | External Draft | **Production** | 5.9-11x |
 | 2 | MoE Expert Reduction | **Production** | +21-48% |
 | 8 | Prompt Lookup | **Production** | 8.6-12.7x |
-| A | System (Hugepages/NUMA) | **P0 - Next** | +10-20% expected |
+| A | System (Hugepages/NUMA) | **Tested - Already Optimal** | interleave=all best |
 | 6 | SuffixDecoding | **P1 - Next** | +100-200% expected |
 | C | Draft Quantization | **Tested - No Benefit** | Q8_0 optimal |
 | 3 | EAGLE-1 | Deprecated | 0% acceptance |
