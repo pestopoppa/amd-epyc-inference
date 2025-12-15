@@ -72,7 +72,7 @@ sudo cpupower frequency-set -g performance
 Check the audit log before retrying:
 ```bash
 # How many times has this command been attempted?
-grep "failing_command" /mnt/raid0/llm/LOGS/agent_audit.log | wc -l
+grep "failing_command" /mnt/raid0/llm/claude/logs/agent_audit.log | wc -l
 ```
 
 **Rule: Max 3 retries, then STOP and report.**
@@ -109,14 +109,14 @@ grep "failing_command" /mnt/raid0/llm/LOGS/agent_audit.log | wc -l
 ### When logging is missing:
 ```
 STOP. Logging is not enabled for this session.
-Run: source /mnt/raid0/llm/claude/agent_log.sh
+Run: source /mnt/raid0/llm/claude/scripts/utils/agent_log.sh
 Then restart the task with proper logging.
 ```
 
 ### When loop detected:
 ```
 STOP. This command has failed 3+ times.
-Previous attempts logged at: /mnt/raid0/llm/LOGS/agent_audit.log
+Previous attempts logged at: /mnt/raid0/llm/claude/logs/agent_audit.log
 Do not retry. Analyze the failure and report findings.
 ```
 
@@ -139,19 +139,19 @@ Before proceeding, log:
 
 ## Audit Log Location
 ```
-/mnt/raid0/llm/LOGS/agent_audit.log
+/mnt/raid0/llm/claude/logs/agent_audit.log
 ```
 
 ## Analysis Tool
 ```bash
 # Check for loops
-bash /mnt/raid0/llm/claude/agent_log_analyze.sh --loops
+bash /mnt/raid0/llm/claude/scripts/utils/agent_log_analyze.sh --loops
 
 # Check for errors
-bash /mnt/raid0/llm/claude/agent_log_analyze.sh --errors
+bash /mnt/raid0/llm/claude/scripts/utils/agent_log_analyze.sh --errors
 
 # Get rollback commands
-bash /mnt/raid0/llm/claude/agent_log_analyze.sh --rollbacks
+bash /mnt/raid0/llm/claude/scripts/utils/agent_log_analyze.sh --rollbacks
 ```
 
 ## Absolute Red Lines

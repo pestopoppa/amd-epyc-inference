@@ -34,3 +34,4 @@ config/
 research/eagle-official/
 research/frspec/
 research/specmquant/
+*.BAK

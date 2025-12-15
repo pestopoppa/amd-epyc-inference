@@ -26,7 +26,7 @@ chmod +x /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh
 ```bash
 # 1. Collect benchmark data
 bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh \
-  --benchmark /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+  --benchmark /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 
 # 2. Copy output, paste into Claude Code:
 @research-writer update 'Benchmark Results' section with:
@@ -176,10 +176,10 @@ Update research_report.md with:
 |------|---------|----------|
 | Agent Definition | Defines role & workflow | `/mnt/raid0/llm/claude/agents/research-writer.md` |
 | Workflow Script | Automates data collection | `/mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh` |
-| Research Report | Main output | `/mnt/raid0/llm/LOGS/research_report.md` |
-| Benchmark Data | Input for updates | `/mnt/raid0/llm/LOGS/zen5_benchmark_*.csv` |
-| Model Tests | Compatibility data | `/mnt/raid0/llm/LOGS/tested_models.json` |
-| Agent Audit | Activity log | `/mnt/raid0/llm/LOGS/agent_audit.log` |
+| Research Report | Main output | `/mnt/raid0/llm/claude/logs/research_report.md` |
+| Benchmark Data | Input for updates | `/mnt/raid0/llm/claude/logs/zen5_benchmark_*.csv` |
+| Model Tests | Compatibility data | `/mnt/raid0/llm/claude/logs/tested_models.json` |
+| Agent Audit | Activity log | `/mnt/raid0/llm/claude/logs/agent_audit.log` |
 
 ---
 
@@ -205,7 +205,7 @@ Update research_report.md with:
 
 | Error | Fix |
 |-------|-----|
-| "Benchmark file not found" | Check path with `find /mnt/raid0/llm/LOGS -name "*.csv"` |
+| "Benchmark file not found" | Check path with `find /mnt/raid0/llm/claude/logs-name "*.csv"` |
 | "Validation FAILED" | Run `--validate` and ask @research-writer to fix issues |
 | "Report section missing" | Manually add section or ask @research-writer to create it |
 | "Stale timestamps" | Workflow script is responsible for this; @research-writer should update |
@@ -264,7 +264,7 @@ bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh --summary
 You: "K-sweep completed. Update report with results."
 
 bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh \
-  --benchmark /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+  --benchmark /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 
 [copy output]
 
@@ -348,11 +348,11 @@ After running a K-sweep benchmark:
 ```bash
 # Terminal 1: Run benchmark
 bash /mnt/raid0/llm/claude/scripts/benchmark/bench_zen5.sh Qwen2.5-Coder-32B
-# Produces: /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+# Produces: /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 
 # Terminal 2: Trigger report update
 bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh \
-  --benchmark /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+  --benchmark /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 
 # Output: Instructions and data summary for @research-writer
 ```
@@ -452,7 +452,7 @@ You: "@research-writer validation output above shows report is missing
 You: "Now collect today's benchmark data"
 
 bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh \
-  --benchmark /mnt/raid0/llm/LOGS/zen5_benchmark_20251215.csv
+  --benchmark /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215.csv
 
 You: "@research-writer update Benchmark Results with output above"
 
@@ -482,7 +482,7 @@ Add to your `session_init.sh`:
 
 ```bash
 # At the end, check if report needs update
-if [[ $(find /mnt/raid0/llm/LOGS -name "zen5_benchmark_*.csv" -newer /mnt/raid0/llm/LOGS/research_report.md 2>/dev/null) ]]; then
+if [[ $(find /mnt/raid0/llm/claude/logs-name "zen5_benchmark_*.csv" -newer /mnt/raid0/llm/claude/logs/research_report.md 2>/dev/null) ]]; then
     echo ""
     echo "⚠️  New benchmark results available since last report update"
     echo "Run: bash report_update_workflow.sh --summary"
@@ -527,7 +527,7 @@ When @research-writer updates a section, ensure they cite source files:
 
 ```
 "Update 'K-Value Optimization' section with:
- - Table from /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+ - Table from /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
  - Summary: K=24 achieves 10.0x speedup (83% acceptance)"
 ```
 
@@ -550,7 +550,7 @@ these must all align.
 
 ```bash
 # Check where benchmarks actually are
-find /mnt/raid0/llm/LOGS -name "*.csv" -type f
+find /mnt/raid0/llm/claude/logs-name "*.csv" -type f
 
 # Run with correct path
 bash report_update_workflow.sh --benchmark /path/to/actual/file.csv
@@ -665,7 +665,7 @@ Create a comprehensive research_report.md with sections for:
 - Future Work (Tier 1-4 tracks)
 - Literature References
 
-Save to /mnt/raid0/llm/LOGS/research_report.md
+Save to /mnt/raid0/llm/claude/logs/research_report.md
 ```
 
 Done! You now have a dedicated research agent coordinating report generation.
@@ -756,7 +756,7 @@ chmod +x /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh
 ```bash
 # Collect data
 bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh \
-  --benchmark /mnt/raid0/llm/LOGS/zen5_benchmark_*.csv
+  --benchmark /mnt/raid0/llm/claude/logs/zen5_benchmark_*.csv
 
 # In Claude Code, paste output:
 @research-writer update Benchmark Results section with [pasted data]
@@ -781,7 +781,7 @@ bash /mnt/raid0/llm/claude/scripts/utils/report_update_workflow.sh \
 ```bash
 # Terminal
 bash report_update_workflow.sh --benchmark \
-  /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+  /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 
 # Output shows:
 # - K values tested: 4, 8, 12, 16, 20, 24
@@ -803,7 +803,7 @@ Key insight: Aggressive K (20-24) optimal for code generation.
 Update "Optimal K by Content Type" to recommend K=24 for structured,
 K=8-12 for general, K=4-8 for prose.
 
-Source: /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+Source: /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 ```
 
 ### Example 2: Track Completion
@@ -996,7 +996,7 @@ Session 4: Validate with workflow script (bash) → Verify consistency
 **A:** Yes, `bash report_update_workflow.sh --validate` runs independently.
 
 ### Q: What if the script doesn't find my benchmark file?
-**A:** Check the exact path: `find /mnt/raid0/llm/LOGS -name "*.csv"` and use the full path.
+**A:** Check the exact path: `find /mnt/raid0/llm/claude/logs-name "*.csv"` and use the full path.
 
 ---
 
@@ -1014,7 +1014,7 @@ Session 4: Validate with workflow script (bash) → Verify consistency
 11:00 - Benchmark completes
        Collect results:
        bash report_update_workflow.sh --benchmark \
-         /mnt/raid0/llm/LOGS/zen5_benchmark_20251215_143022.csv
+         /mnt/raid0/llm/claude/logs/zen5_benchmark_20251215_143022.csv
 
 11:15 - Update report
        @research-writer update benchmark results section with [pasted data]

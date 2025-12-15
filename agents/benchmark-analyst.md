@@ -34,7 +34,7 @@ Reference: `/mnt/raid0/llm/claude/CLAUDE.md`
 
 ### Always log your analysis
 ```bash
-source /mnt/raid0/llm/claude/agent_log.sh
+source /mnt/raid0/llm/claude/scripts/utils/agent_log.sh
 agent_task_start "Analyze benchmark results" "Determine optimal configuration"
 agent_observe "best_config" "Interleaved @ 96 threads: 42.3 t/s"
 agent_decision "Recommend 96 threads" "Diminishing returns beyond physical core count"
@@ -133,9 +133,9 @@ This script:
 | `scripts/benchmark/run_combination_benchmarks.sh` | Combination tests |
 
 ### Results Location
-- Primary: `/mnt/raid0/llm/LOGS/benchmarks/systematic_optimization_*.csv`
-- Legacy: `/mnt/raid0/llm/LOGS/benchmarks/optimization_results_*.csv`
-- Report: `/mnt/raid0/llm/LOGS/research_report.md`
+- Primary: `/mnt/raid0/llm/claude/logs/benchmarks/systematic_optimization_*.csv`
+- Legacy: `/mnt/raid0/llm/claude/logs/benchmarks/optimization_results_*.csv`
+- Report: `/mnt/raid0/llm/claude/logs/research_report.md`
 
 ## Standard Operating Procedure
 

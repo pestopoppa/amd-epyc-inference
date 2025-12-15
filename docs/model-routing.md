@@ -673,9 +673,6 @@ Output: Next optimization strategy
 ### In CLAUDE.md:
 The full routing strategy is documented in the "Model Routing Strategy" section
 
-### Quick Reference:
-Use `MODEL_ROUTING_QUICK_REFERENCE.md` for fast lookups
-
 ### In Practice:
 - Start with the decision tree above
 - Check Quick Reference for keywords

@@ -29,10 +29,10 @@ agent_session_start "LLM optimization session"
 bash /mnt/raid0/llm/claude/scripts/session/session_init.sh
 
 # 4. Check for untested models
-cat /mnt/raid0/llm/LOGS/untested_models.txt
+cat /mnt/raid0/llm/claude/logs/untested_models.txt
 
 # 5. Load research report summary
-head -100 /mnt/raid0/llm/LOGS/research_report.md 2>/dev/null || echo "No report yet"
+head -100 /mnt/raid0/llm/claude/logs/research_report.md 2>/dev/null || echo "No report yet"
 
 Available agents: @sysadmin, @build-engineer, @benchmark-analyst, @safety-reviewer, @model-engineer, @research-engineer
 
@@ -42,7 +42,7 @@ CURRENT RESEARCH PRIORITY (December 2025):
 🆕 THIS WEEK: Track 8 (Prompt Lookup), Track 6 (SuffixDecoding)
 ⛔ DEPRECATED: Track 3 (EAGLE) - blocked, pivot to retrieval methods
 
-Full research plan: /mnt/raid0/llm/claude/experiments/speculative_decoding_research.md
+Full research plan: /mnt/raid0/llm/claude/research/speculative_decoding_research.md
 
 CRITICAL RULES:
 1. ⛔ ALL files on /mnt/raid0/ ONLY

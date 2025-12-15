@@ -111,8 +111,8 @@ All scripts are in `/mnt/raid0/llm/UTILS/`:
 | `health_check.sh` | Pre-session validation | Before each Claude session |
 
 Documentation:
-- `/mnt/raid0/llm/LOGS/INCIDENT_ROOT_FS_FULL.md` - Full technical analysis
-- `/mnt/project/CLAUDE.md` - Updated with emergency procedures
+- `/mnt/raid0/llm/claude/logs/INCIDENT_ROOT_FS_FULL.md` - Full technical analysis
+- `/mnt/raid0/llm/claude/CLAUDE.md` - Updated with emergency procedures
 
 ---
 

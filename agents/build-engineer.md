@@ -21,7 +21,7 @@ Reference: `/mnt/raid0/llm/claude/CLAUDE.md`
 
 ### Always log your actions
 ```bash
-source /mnt/raid0/llm/claude/agent_log.sh
+source /mnt/raid0/llm/claude/scripts/utils/agent_log.sh
 agent_task_start "Build llama.cpp" "Need Zen 5 optimized binary"
 agent_decision "Using GCC over AOCC" "GCC 14 has better Zen 5 support and is already installed"
 agent_exec "Configure build" cmake .. -DLLAMA_AVX512=ON ...

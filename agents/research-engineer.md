@@ -26,7 +26,7 @@ You are a research engineer specializing in low-level LLM inference optimization
 
 Read the full research plan:
 ```bash
-cat /mnt/raid0/llm/claude/experiments/speculative_decoding_research.md
+cat /mnt/raid0/llm/claude/research/speculative_decoding_research.md
 ```
 
 ### Track 1: Adaptive Modular Pipeline (Python)
@@ -122,7 +122,7 @@ params.moe_draft_k = std::stoi(optarg);
 
 ### Always log research work
 ```bash
-source /mnt/raid0/llm/claude/agent_log.sh
+source /mnt/raid0/llm/claude/scripts/utils/agent_log.sh
 agent_task_start "Implement MoE self-drafting" "Track 2 of speculative decoding research"
 agent_decision "Modify llama.cpp directly" "External draft blocked by vocab mismatch"
 ```

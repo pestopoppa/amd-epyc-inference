@@ -30,7 +30,7 @@ Reference: `/mnt/raid0/llm/claude/CLAUDE.md`
 
 ### Always log your actions
 ```bash
-source /mnt/raid0/llm/claude/agent_log.sh
+source /mnt/raid0/llm/claude/scripts/utils/agent_log.sh
 agent_task_start "Convert DeepSeek-R1-32B to GGUF" "Need Q4_K_M for inference testing"
 agent_observe "source_model" "/mnt/raid0/llm/hf/DeepSeek-R1-Distill-Qwen-32B"
 agent_observe "target_path" "/mnt/raid0/llm/models/DeepSeek-R1-32B-Q4_K_M.gguf"
