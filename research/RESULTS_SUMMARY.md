@@ -34,10 +34,39 @@
 | **Qwen3-235B** | 3.6 t/s | 6.75 t/s (+87%) | 6.35 t/s | **+87%** |
 | **GLM-4.6-355B** | 1.82 t/s | N/A | 3.37 t/s | **+85%** |
 
+### MoE + Lookup Combination (Detailed)
+
+**Key Finding: Combination is model-size dependent.**
+
+| Model | Hard Mask Alone | Lookup + Hard Mask | Combination Benefit |
+|-------|-----------------|--------------------|--------------------|
+| **Qwen3-Next-80B-A3B** | 11.77 t/s | **39.79 t/s** | **3.4x ✅** |
+| Qwen3-Coder-30B-A3B | 41.55 t/s | 29.92 t/s | 0.72x ❌ |
+| Qwen3-VL-30B-A3B | 36.84 t/s | 29.88 t/s | 0.81x ❌ |
+| Qwen3-235B-A22B | 6.75 t/s | 6.35 t/s | 0.94x ❌ |
+
+**When to combine vs use standalone:**
+
+| Model Size | Best Approach | Reasoning |
+|------------|---------------|-----------|
+| **80B+ MoE** | Hard Mask + Lookup | Lookup overhead < verification savings |
+| **30B MoE** | Hard Mask only | Already fast; lookup adds overhead |
+| **235B+ MoE** | Hard Mask only | Large active params limit lookup benefit |
+
+**Commands:**
+```bash
+# 80B+ MoE: Combine lookup + expert reduction (3.4x benefit)
+llama-lookup -m Qwen3-Next-80B-A3B.gguf --moe-n-expert 4 -t 96
+
+# 30B MoE: Expert reduction only (fastest)
+llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
+```
+
 ### Key Finding: Largest Models Benefit Most
 - 480B model: **+48-80% speedup** from expert reduction + lookup
 - Expert reduction more effective than speculative decoding on MoE
 - All 100B+ models run entirely in RAM (no GPU needed)
+- **Combination rule:** Use lookup+hard mask for 80B+, hard mask alone for 30B
 
 ---
 
