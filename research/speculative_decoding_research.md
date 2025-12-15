@@ -603,7 +603,22 @@ OMP_NUM_THREADS=1 numactl --interleave=all llama-speculative -t 96 ...
 8. ✅ Track C (Draft Quant) — **Q8_0 optimal**, Q2_K/Q4_K_M don't help speculation
 
 ### NEXT TO TRY
-1. **Track 6 (SuffixDecoding)** — 1 day effort, high potential for agentic/SQL workloads
+1. **Track 6 (SuffixDecoding)** — See note below
+
+### Track 6 Update: SuffixDecoding ≈ Track 8 Prompt Lookup
+
+**Research Finding (2025-12-15):** SuffixDecoding is conceptually identical to llama.cpp's existing `llama-lookup` (Track 8).
+
+| Feature | SuffixDecoding | llama-lookup (Track 8) |
+|---------|---------------|------------------------|
+| Data Structure | Suffix tree | Ngram hash map |
+| Static Cache | Global tree (offline) | `--lookup-cache-static` |
+| Dynamic Cache | Per-request tree | `--lookup-cache-dynamic` |
+| Context Cache | Implicit | Auto-built from prompt |
+| Complexity | O(1) suffix tree lookup | O(1) hash lookup |
+
+**Conclusion:** No additional implementation needed. Track 8 already provides the same functionality.
+**Optimization:** Build static caches from common patterns (SQL, JSON, code) for agentic workloads
 
 ### DO NOT PURSUE
 - Track 3 (EAGLE) — 0% acceptance, 20+ hours wasted
