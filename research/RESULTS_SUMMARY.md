@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** December 2025
+**Last Updated:** 2025-12-16
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -23,50 +23,169 @@
 | Model | Size | Active Params | Baseline | Notes |
 |-------|------|---------------|----------|-------|
 | Qwen3-235B-A22B | 133GB | ~22B | **3.6 t/s** | MoE, fits in RAM |
-| Qwen3-Coder-480B-A35B | 271GB | ~35B | **2.05 t/s** | MoE, largest tested |
-| GLM-4.6-355B-A32B | 189GB | ~32B | **1.82 t/s** | MoE |
-| Qwen3-VL-235B-A22B-Thinking | 124GB | ~22B | TBD | VL model |
+| Qwen3-VL-235B-A22B-Thinking | 124GB | ~22B | **3.23 t/s** | VL+MoE, thinking variant |
+| Qwen3-Coder-480B-A35B | 271GB | ~35B | **2.25 t/s** | MoE, largest tested |
+| GLM-4.6-355B-A32B | 189GB | ~32B | **2.24 t/s** | MoE (glm4moe) |
+| Qwen3-Next-80B-A3B | 45GB | ~3B | **8.43-10.12 t/s** | SSM+MoE hybrid |
 
 ### Optimization Results
 | Model | Baseline | +Expert Reduction | +Lookup | Best |
 |-------|----------|-------------------|---------|------|
-| **Qwen3-Coder-480B** | 2.05 t/s | 3.0 t/s (+48%) | 3.69 t/s | **+80%** |
+| **Qwen3-Coder-480B** | 2.25 t/s | 5.23 t/s (+132%) | Garbage (short prompt) | **+132%** |
 | **Qwen3-235B** | 3.6 t/s | 6.75 t/s (+87%) | 6.35 t/s | **+87%** |
 | **GLM-4.6-355B** | 1.82 t/s | N/A | 3.37 t/s | **+85%** |
 
 ### MoE + Lookup Combination (Detailed)
 
-**Key Finding: Combination is model-size dependent.**
+**Key Finding: SSM models (like Qwen3-Next) are incompatible with speculation-based methods.**
 
 | Model | Hard Mask Alone | Lookup + Hard Mask | Combination Benefit |
 |-------|-----------------|--------------------|--------------------|
-| **Qwen3-Next-80B-A3B** | 11.77 t/s | **39.79 t/s** | **3.4x ✅** |
+| **Qwen3-Next-80B-A3B** | 11.55 t/s | ❌ FAILS | SSM incompatible |
 | Qwen3-Coder-30B-A3B | 41.55 t/s | 29.92 t/s | 0.72x ❌ |
 | Qwen3-VL-30B-A3B | 36.84 t/s | 29.88 t/s | 0.81x ❌ |
 | Qwen3-235B-A22B | 6.75 t/s | 6.35 t/s | 0.94x ❌ |
 
 **When to combine vs use standalone:**
 
-| Model Size | Best Approach | Reasoning |
+| Model Type | Best Approach | Reasoning |
 |------------|---------------|-----------|
-| **80B+ MoE** | Hard Mask + Lookup | Lookup overhead < verification savings |
+| **SSM/Hybrid (Qwen3-Next)** | Expert reduction only | Speculation incompatible |
 | **30B MoE** | Hard Mask only | Already fast; lookup adds overhead |
 | **235B+ MoE** | Hard Mask only | Large active params limit lookup benefit |
 
 **Commands:**
 ```bash
-# 80B+ MoE: Combine lookup + expert reduction (3.4x benefit)
-llama-lookup -m Qwen3-Next-80B-A3B.gguf --moe-n-expert 4 -t 96
+# SSM models (Qwen3-Next): Expert reduction only
+llama-cli -m Qwen3-Next-80B-A3B.gguf --override-kv qwen3next.expert_used_count=int:4 -t 96
 
 # 30B MoE: Expert reduction only (fastest)
 llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 ```
 
+### Qwen3-Next-80B (SSM+MoE Hybrid)
+
+**Architecture:** SSM + MoE hybrid with 512 experts, 10 active by default (~3B active params)
+
+| Configuration | Speed | vs Baseline | Quality |
+|---------------|-------|-------------|---------|
+| Baseline (10 experts) | 10.12 t/s | — | ✅ |
+| 4 experts | 11.49 t/s | +13.5% | ✅ Good |
+| **2 experts** | **11.55 t/s** | **+14%** | ✅ Good |
+| Speculative decoding | ❌ FAILS | — | SSM incompatible |
+| Prompt lookup | ❌ FAILS | — | SSM incompatible |
+
+**Absolute performance limit: ~11.6 t/s** (2 experts)
+
+**Key insight:** Unlike Qwen3-235B (which produces garbage at 2 experts), Qwen3-Next-80B maintains quality even at 2 experts. This is likely because:
+- 512 experts with 2 active still provides reasonable routing options
+- SSM component provides additional sequence modeling capacity
+
 ### Key Finding: Largest Models Benefit Most
 - 480B model: **+48-80% speedup** from expert reduction + lookup
 - Expert reduction more effective than speculative decoding on MoE
 - All 100B+ models run entirely in RAM (no GPU needed)
-- **Combination rule:** Use lookup+hard mask for 80B+, hard mask alone for 30B
+- **SSM models:** Expert reduction only - speculation/lookup incompatible
+
+---
+
+## Dense Models (32B-72B)
+
+### Baselines
+| Model | Size | Baseline | Notes |
+|-------|------|----------|-------|
+| DeepSeek-R1-32B | 18.5GB | **6.01 t/s** | Fastest 32B |
+| Qwen2.5-Coder-32B | 18.5GB | **5.79 t/s** | Code specialist |
+| Gemma-3-27B-QAT | 14.5GB | **4.72 t/s** | QAT quantized |
+| Qwen3-32B | 18.4GB | **3.67 t/s** | Slower than R1 |
+| Meta-Llama-3.1-70B | 40GB | **1.96 t/s** | Dense 70B |
+| Hermes-4-70B | 40GB | **1.73 t/s** | Llama-based |
+| DeepSeek-R1-Llama-70B | 40GB | **1.73 t/s** | R1 distilled |
+| Meta-Llama-3-70B | 40GB | **1.72 t/s** | Original Llama 3 |
+| Qwen2.5-72B-Instruct | 41GB | **1.70 t/s** | Qwen 72B |
+| Qwen2.5-Math-72B | 41GB | **1.41 t/s** | Math specialist |
+| Qwen2.5-72B | 41GB | **0.85 t/s** | Base (slow) |
+
+### Speculative Decoding Results (Dense)
+| Model + Draft | Speed | Speedup | Accept | K |
+|---------------|-------|---------|--------|---|
+| **Qwen2.5-Coder-32B + 0.5B** | **33.0 t/s** | **11x** | 70.8% | K=24 |
+| Qwen2.5-Coder-32B + 0.5B | 27.9 t/s | 9.3x | 75% | K=16 |
+| Qwen2.5-Coder-32B + 0.5B | 25.3 t/s | 8.5x | 100% | K=8 |
+| **Qwen2.5-72B-Instruct + 0.5B** | **8.53 t/s** | **5.8x** | 44.3% | K=16 |
+| Qwen2.5-Math-72B + 0.5B (t=0.5) | **7.55 t/s** | **7.3x** | 60.3% | K=12 |
+| Qwen2.5-Math-72B + 0.5B | 6.83 t/s | 5.9x | 42% | K=16 |
+| Meta-Llama-70B + PARD-1B | 6.42 t/s | 3.7x | 79.2% | K=8 |
+| Qwen3-32B + Qwen3-0.6B | 5.87 t/s | 3.1x | 39.1% | K=8 |
+
+### Prompt Lookup Results (Dense)
+| Model | Summarize | Code | Edit |
+|-------|-----------|------|------|
+| Qwen2.5-Coder-32B | 6.50 t/s | 4.78 t/s | 4.94 t/s |
+| Qwen3-32B | 5.09 t/s | 4.51 t/s | 3.99 t/s |
+| DeepSeek-R1-32B | 4.78 t/s | 4.74 t/s | 4.17 t/s |
+| Gemma-3-27B | 8.03 t/s | 6.52 t/s | 6.42 t/s |
+| Meta-Llama-3.1-70B | 3.15 t/s | 1.67 t/s | 1.76 t/s |
+| Hermes-4-70B | 3.72 t/s | 2.54 t/s | 2.76 t/s |
+| DeepSeek-R1-Llama-70B | 3.02 t/s | 2.38 t/s | 2.23 t/s |
+| Qwen2.5-72B-Instruct | 3.46 t/s | 1.97 t/s | 2.02 t/s |
+| Qwen2.5-Math-72B | 2.04 t/s | 0.88 t/s | 0.85 t/s |
+
+---
+
+## MoE Models (30B-A3B Class)
+
+### Baselines (Fastest MoE)
+| Model | Active Params | Baseline | Notes |
+|-------|---------------|----------|-------|
+| Qwen3-Coder-30B-A3B | ~3B | **27.14 t/s** | Code specialist |
+| Qwen3-VL-30B-A3B | ~3B | **26.88 t/s** | Vision-Language |
+| Qwen3-1.7B (draft) | 1.7B | **51.31 t/s** | Draft model |
+| Qwen3-VL-2B (draft) | 2B | **42.19 t/s** | VL draft |
+
+### Expert Reduction (Hard Mask)
+| Model | Baseline | 4 experts | 3 experts | 6 experts |
+|-------|----------|-----------|-----------|-----------|
+| Qwen3-Coder-30B-A3B | 27.14 t/s | **41.55 t/s** | — | 30.05 t/s |
+| Qwen3-VL-30B-A3B | 26.88 t/s | **36.84 t/s** | 37.66 t/s | 28.41 t/s |
+
+### Prompt Lookup (MoE)
+| Model | Summarize | Code |
+|-------|-----------|------|
+| Qwen3-Coder-30B-A3B | 43.21 t/s | 40.85 t/s |
+| Qwen3-VL-30B-A3B | 46.34 t/s | 43.29 t/s |
+
+---
+
+## Small Models (7B-14B)
+
+### Baselines
+| Model | Size | Baseline | Notes |
+|-------|------|----------|-------|
+| Meta-Llama-3-8B | 4.7GB | **17.52 t/s** | Fastest 8B |
+| Qwen2.5-VL-7B | 4.4GB | **15.28 t/s** | VL model |
+| DeepSeek-R1-Llama-8B | 4.6GB | **13.42 t/s** | R1 distilled |
+| DeepSeek-R1-Qwen-7B | 4.4GB | **13.15 t/s** | R1 distilled |
+| Qwen2.5-Math-7B | 4.4GB | **12.44 t/s** | Math specialist |
+| Gemma-3-12B | 6.8GB | **10.42 t/s** | Medium |
+| DeepSeek-R1-Qwen-14B | 8.4GB | **6.44 t/s** | Larger R1 |
+
+### Speculative Decoding (7B)
+| Model + Draft | Speed | Speedup | Accept | Notes |
+|---------------|-------|---------|--------|-------|
+| **Qwen2.5-VL-7B + 0.5B (t=0.7)** | **57.1 t/s** | **3.7x** | 74.2% | Temp tuned! |
+| **Qwen2.5-Math-7B + 0.5B** | **48.5 t/s** | **3.9x** | 65.6% | K=8 optimal |
+| Qwen2.5-VL-7B + 0.5B (t=0) | 28.3 t/s | 1.9x | — | Baseline temp |
+
+### Prompt Lookup (Small)
+| Model | Summarize | Code |
+|-------|-----------|------|
+| Meta-Llama-3-8B | 37.07 t/s | 36.64 t/s |
+| Qwen2.5-Math-7B | 38.74 t/s | 27.44 t/s |
+| DeepSeek-R1-Qwen-7B | 20.71 t/s | 19.39 t/s |
+| DeepSeek-R1-Llama-8B | 13.50 t/s | 19.10 t/s |
+| DeepSeek-R1-Qwen-14B | 20.19 t/s | 7.65 t/s |
+| Gemma-3-12B | 9.31 t/s | 8.59 t/s |
 
 ---
 
@@ -171,6 +290,18 @@ llama-cli -m MOE.gguf \
 ### MoE + Speculative Decoding
 - Problem: Slower than baseline (0.26-0.84x)
 - Lesson: Don't add speculation overhead to already-fast MoE
+
+### SSM/Hybrid Models + Speculation
+- Problem: "inconsistent sequence positions" error
+- Models affected: Qwen3-Next (SSM+MoE hybrid)
+- Lesson: SSM requires consecutive positions - incompatible with ALL speculation methods (speculative decoding, prompt lookup, EAGLE, etc.)
+
+### Qwen3-Coder-480B + Speculative Decoding
+- Problem: "draft model special tokens must match target model" error
+- BOS token mismatch: Qwen3-Coder-480B has BOS=',' (token 11) vs standard BOS='<|endoftext|>' (token 151643)
+- Tested drafts: Qwen3-0.6B, Qwen2.5-Coder-0.5B - both fail
+- Lesson: Verify tokenizer compatibility before attempting speculation; unusual BOS tokens block all compatible draft models
+- **Workaround:** Use 2-expert reduction instead (5.23 t/s, +132% vs baseline)
 
 ---
 
