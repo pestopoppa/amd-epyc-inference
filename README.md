@@ -2,13 +2,30 @@
 
 LLM inference optimization research on AMD EPYC 9655 "Turin" (96 cores, 1.13TB DDR5).
 
-## Current Results
+## Best Results
 
-| Optimization | Speedup | Status |
-|--------------|---------|--------|
-| External Draft Model (Track 1) | **5.9x** | Production |
-| MoE Expert Reduction (Track 2) | **21-48%** | Production |
-| Prompt Lookup (Track 8) | **12.7x** (summarization) | Testing |
+| Configuration | Speed | Speedup | Use Case |
+|---------------|-------|---------|----------|
+| Prompt Lookup (summarization) | 95.18 t/s | **12.7x** | Document QA |
+| Qwen2.5-Coder-32B + 0.5B (K=24) | 33.0 t/s | **11x** | Code generation |
+| Prompt Lookup (code editing) | 25.82 t/s | **8.6x** | Refactoring |
+| Qwen2.5-72B + 0.5B (K=16) | 8.53 t/s | **5.8x** | General tasks |
+
+## Key Insights
+
+1. **Small drafts win on CPU**: 0.5B at 85 t/s beats 7B at 8 t/s
+2. **MoE models don't need speculation**: Already at "draft speed" (~25 t/s)
+3. **K-tuning matters**: K=8 for 7B, K=16-24 for 32B+
+4. **Temperature helps**: temp=0.5-0.7 can double performance
+
+## Track Status
+
+| Track | Method | Speedup | Status |
+|-------|--------|---------|--------|
+| Track 1 | External Draft Model | 5.9-11x | **Production** |
+| Track 2 | MoE Expert Reduction | +21-48% | **Production** |
+| Track 8 | Prompt Lookup | 8.6-12.7x | **Production** |
+| Track 3 | EAGLE-1 | — | Deprecated (0% acceptance) |
 
 ## Quick Start
 
@@ -75,15 +92,13 @@ Select model based on task complexity:
 - **RAM:** 1.13 TB DDR5-5600 ECC (12 channels, ~460 GB/s)
 - **Storage:** 2x Solidigm P44 Pro 2TB NVMe RAID0
 
-## Research Tracks
+## Documentation
 
-| Track | Method | Status |
-|-------|--------|--------|
-| Track 1 | External Draft Model | **Production** (5.9x) |
-| Track 2 | MoE Soft Mask | **Production** (21-48%) |
-| Track 6 | SuffixDecoding | Planned |
-| Track 8 | Prompt Lookup | Testing |
-| Track 3 | EAGLE-1 | Deprecated (0% acceptance) |
+| File | Purpose |
+|------|---------|
+| [RESULTS_SUMMARY.md](research/RESULTS_SUMMARY.md) | Compact results for quick reference |
+| [research_report_template.md](research/research_report_template.md) | Full report template for blog post |
+| [speculative_decoding_research.md](research/speculative_decoding_research.md) | Methodology and track details |
 
 ## Links
 

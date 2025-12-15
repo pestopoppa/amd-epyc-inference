@@ -1,0 +1,97 @@
+# Research Results Summary
+
+**Last Updated:** December 2025
+**System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
+
+---
+
+## Best Results
+
+| Configuration | Speed | Speedup | Use Case |
+|---------------|-------|---------|----------|
+| Prompt Lookup (summarization) | 95.18 t/s | **12.7x** | Document QA, summarization |
+| Qwen2.5-Coder-32B + 0.5B (K=24) | 33.0 t/s | **11x** | Code generation |
+| Prompt Lookup (code editing) | 25.82 t/s | **8.6x** | Refactoring, code review |
+| Qwen2.5-72B + 0.5B (K=16) | 8.53 t/s | **5.8x** | General tasks |
+| MoE Expert Reduction (4 experts) | +21-48% | — | MoE models |
+
+---
+
+## Key Insights
+
+### 1. Small Drafts Win on CPU
+- 0.5B draft at 85 t/s vs 7B draft at 8 t/s
+- More speculation rounds beat higher acceptance rates
+- **Rule:** Use smallest compatible draft model
+
+### 2. MoE Models Don't Need Speculative Decoding
+- Qwen3-VL-30B-A3B baseline: 24.82 t/s
+- With speculation: 20.99 t/s (0.84x slower)
+- **Why:** 3B active params already "draft speed"
+
+### 3. K-Value Tuning
+| Model Size | Optimal K | Reason |
+|------------|-----------|--------|
+| 7B | K=8 | High baseline, diminishing returns |
+| 32B | K=16-24 | Verification cost amortized |
+| 72B | K=16 | Balance acceptance vs overhead |
+
+### 4. Temperature Tuning
+- Non-zero temperature can improve speculative decoding
+- Qwen2.5-VL-7B: temp=0.7 → 57.1 t/s vs temp=0 → 28.3 t/s
+- **Rule:** Try temp=0.5-0.7 if acceptance rate is low
+
+---
+
+## Track Status
+
+| Track | Method | Status | Result |
+|-------|--------|--------|--------|
+| 1 | External Draft | **Production** | 5.9-11x |
+| 2 | MoE Expert Reduction | **Production** | +21-48% |
+| 8 | Prompt Lookup | **Production** | 8.6-12.7x |
+| 6 | SuffixDecoding | Planned | Expected 5-10x |
+| 3 | EAGLE-1 | Deprecated | 0% acceptance |
+| 7 | CAS-Spec | Blocked | 0.446% acceptance |
+
+---
+
+## Quick Commands
+
+```bash
+# Track 1: External Draft (5.9-11x)
+OMP_NUM_THREADS=1 numactl --interleave=all \
+  llama-speculative -m TARGET.gguf -md DRAFT.gguf \
+  --draft-max 16 -t 96
+
+# Track 2: MoE Expert Reduction (+21-48%)
+llama-cli -m MOE.gguf \
+  --override-kv ARCH.expert_used_count=int:4 -t 96
+
+# Track 8: Prompt Lookup (8.6-12.7x)
+# Use --lookup-ngram-min 3 with prompt containing repeated patterns
+```
+
+---
+
+## Failed Approaches (Lessons)
+
+### EAGLE-1 (0% Acceptance)
+- Problem: Architecture/checkpoint incompatibility
+- Lesson: "Zero-shot" EAGLE requires exact model-checkpoint matching
+
+### CAS-Spec Layer Skip (0.446% Acceptance)
+- Problem: Knowledge not evenly distributed across layers
+- Lesson: Self-drafting without training produces garbage
+
+### MoE + Speculative Decoding
+- Problem: Slower than baseline (0.26-0.84x)
+- Lesson: Don't add speculation overhead to already-fast MoE
+
+---
+
+## Full Data
+
+- Detailed results: `logs/research_report.md`
+- Methodology: `research/speculative_decoding_research.md`
+- Blog template: `research/research_report_template.md`
