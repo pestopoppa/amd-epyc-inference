@@ -73,7 +73,16 @@
 | Qwen2-0.5B | **208 t/s** | 2.4x faster |
 | Qwen2.5-Coder-1.5B | **98 t/s** | (no Q8_0 baseline) |
 
-Q2_K quantization enables **2-3x faster** draft generation.
+**Speculative Decoding Results:**
+
+| Draft Model | Accept | Spec Speed | Verdict |
+|-------------|--------|------------|---------|
+| Qwen2.5-Coder-0.5B Q8_0 | 58% | **22.5 t/s** | Best (smaller = faster) |
+| Qwen2.5-Coder-1.5B Q2_K | 57% | 13.1 t/s | Slower despite faster raw speed |
+| Qwen2-0.5B Q2_K | FAIL | — | Wrong vocab family |
+| Qwen3-0.6B Q2_K | N/A | — | Wrong model family |
+
+**Conclusion:** Q2_K raw speed gains don't translate to speculative decoding — smaller models still win on CPU.
 
 ---
 
