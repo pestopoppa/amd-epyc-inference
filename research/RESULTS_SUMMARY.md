@@ -20,20 +20,21 @@
 ## Very Large Models (100B+)
 
 ### Baseline Performance
-| Model | Size | Active Params | Baseline | Notes |
-|-------|------|---------------|----------|-------|
-| Qwen3-235B-A22B | 133GB | ~22B | **3.6 t/s** | MoE, fits in RAM |
-| Qwen3-VL-235B-A22B-Thinking | 124GB | ~22B | **3.23 t/s** | VL+MoE, thinking variant |
-| Qwen3-Coder-480B-A35B | 271GB | ~35B | **2.25 t/s** | MoE, largest tested |
-| GLM-4.6-355B-A32B | 189GB | ~32B | **2.24 t/s** | MoE (glm4moe) |
-| Qwen3-Next-80B-A3B | 45GB | ~3B | **8.43-10.12 t/s** | SSM+MoE hybrid |
+| Model | Size | Quant | Active Params | Baseline | Notes |
+|-------|------|-------|---------------|----------|-------|
+| Qwen3-235B-A22B | 133GB | Q4_K_M | ~22B | **3.6 t/s** | MoE, fits in RAM |
+| Qwen3-VL-235B-A22B-Thinking | 124GB | Q4_K_S | ~22B | **3.23 t/s** | VL+MoE, thinking variant |
+| Qwen3-Coder-480B-A35B | 271GB | Q4_K_M | ~35B | **2.25 t/s** | MoE, largest tested |
+| GLM-4.6-355B-A32B | 189GB | Q4_K_S | ~32B | **2.24 t/s** | MoE (glm4moe) |
+| Qwen3-Next-80B-A3B | 45GB | Q4_K_M | ~3B | **8.43-10.12 t/s** | SSM+MoE hybrid |
 
 ### Optimization Results
 | Model | Baseline | +Expert Reduction | +Lookup | Best |
 |-------|----------|-------------------|---------|------|
 | **Qwen3-Coder-480B** | 2.25 t/s | 5.23 t/s (+132%) | Garbage (short prompt) | **+132%** |
+| **Qwen3-VL-235B-Thinking** | 3.23 t/s | 7.12 t/s (+120%) | 3.82 t/s | **+120%** |
 | **Qwen3-235B** | 3.6 t/s | 6.75 t/s (+87%) | 6.35 t/s | **+87%** |
-| **GLM-4.6-355B** | 1.82 t/s | N/A | 3.37 t/s | **+85%** |
+| **GLM-4.6-355B** | 2.24 t/s | 3.97 t/s (+77%) | 3.37-3.65 t/s | **+77%** |
 
 ### MoE + Lookup Combination (Detailed)
 
@@ -92,19 +93,19 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 ## Dense Models (32B-72B)
 
 ### Baselines
-| Model | Size | Baseline | Notes |
-|-------|------|----------|-------|
-| DeepSeek-R1-32B | 18.5GB | **6.01 t/s** | Fastest 32B |
-| Qwen2.5-Coder-32B | 18.5GB | **5.79 t/s** | Code specialist |
-| Gemma-3-27B-QAT | 14.5GB | **4.72 t/s** | QAT quantized |
-| Qwen3-32B | 18.4GB | **3.67 t/s** | Slower than R1 |
-| Meta-Llama-3.1-70B | 40GB | **1.96 t/s** | Dense 70B |
-| Hermes-4-70B | 40GB | **1.73 t/s** | Llama-based |
-| DeepSeek-R1-Llama-70B | 40GB | **1.73 t/s** | R1 distilled |
-| Meta-Llama-3-70B | 40GB | **1.72 t/s** | Original Llama 3 |
-| Qwen2.5-72B-Instruct | 41GB | **1.70 t/s** | Qwen 72B |
-| Qwen2.5-Math-72B | 41GB | **1.41 t/s** | Math specialist |
-| Qwen2.5-72B | 41GB | **0.85 t/s** | Base (slow) |
+| Model | Size | Quant | Baseline | Notes |
+|-------|------|-------|----------|-------|
+| DeepSeek-R1-32B | 18.5GB | Q4_K_M | **6.01 t/s** | Fastest 32B |
+| Qwen2.5-Coder-32B | 18.5GB | Q4_K_M | **5.79 t/s** | Code specialist |
+| Gemma-3-27B-QAT | 14.5GB | Q4_0 | **4.72 t/s** | QAT quantized |
+| Qwen3-32B | 18.4GB | Q4_K_M | **3.67 t/s** | Slower than R1 |
+| Meta-Llama-3.1-70B | 40GB | Q4_K_M | **1.96 t/s** | Dense 70B |
+| Hermes-4-70B | 40GB | Q4_K_M | **1.73 t/s** | Llama-based |
+| DeepSeek-R1-Llama-70B | 40GB | Q4_K_M | **1.73 t/s** | R1 distilled |
+| Meta-Llama-3-70B | 40GB | Q4_K_M | **1.72 t/s** | Original Llama 3 |
+| Qwen2.5-72B-Instruct | 41GB | Q4_K_M | **1.70 t/s** | Qwen 72B |
+| Qwen2.5-Math-72B | 41GB | Q4_K_M | **1.41 t/s** | Math specialist |
+| Qwen2.5-72B | 41GB | Q4_K_M | **0.85 t/s** | Base (slow) |
 
 ### Speculative Decoding Results (Dense)
 | Model + Draft | Speed | Speedup | Accept | K |
@@ -136,12 +137,12 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 ## MoE Models (30B-A3B Class)
 
 ### Baselines (Fastest MoE)
-| Model | Active Params | Baseline | Notes |
-|-------|---------------|----------|-------|
-| Qwen3-Coder-30B-A3B | ~3B | **27.14 t/s** | Code specialist |
-| Qwen3-VL-30B-A3B | ~3B | **26.88 t/s** | Vision-Language |
-| Qwen3-1.7B (draft) | 1.7B | **51.31 t/s** | Draft model |
-| Qwen3-VL-2B (draft) | 2B | **42.19 t/s** | VL draft |
+| Model | Quant | Active Params | Baseline | Notes |
+|-------|-------|---------------|----------|-------|
+| Qwen3-Coder-30B-A3B | Q4_K_M | ~3B | **27.14 t/s** | Code specialist |
+| Qwen3-VL-30B-A3B | Q4_K_M | ~3B | **26.88 t/s** | Vision-Language |
+| Qwen3-1.7B (draft) | Q4_K_M | 1.7B | **51.31 t/s** | Draft model |
+| Qwen3-VL-2B (draft) | Q4_K_M | 2B | **42.19 t/s** | VL draft |
 
 ### Expert Reduction (Hard Mask)
 | Model | Baseline | 4 experts | 3 experts | 6 experts |
@@ -160,15 +161,15 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 ## Small Models (7B-14B)
 
 ### Baselines
-| Model | Size | Baseline | Notes |
-|-------|------|----------|-------|
-| Meta-Llama-3-8B | 4.7GB | **17.52 t/s** | Fastest 8B |
-| Qwen2.5-VL-7B | 4.4GB | **15.28 t/s** | VL model |
-| DeepSeek-R1-Llama-8B | 4.6GB | **13.42 t/s** | R1 distilled |
-| DeepSeek-R1-Qwen-7B | 4.4GB | **13.15 t/s** | R1 distilled |
-| Qwen2.5-Math-7B | 4.4GB | **12.44 t/s** | Math specialist |
-| Gemma-3-12B | 6.8GB | **10.42 t/s** | Medium |
-| DeepSeek-R1-Qwen-14B | 8.4GB | **6.44 t/s** | Larger R1 |
+| Model | Size | Quant | Baseline | Notes |
+|-------|------|-------|----------|-------|
+| Meta-Llama-3-8B | 4.7GB | Q4_K_M | **17.52 t/s** | Fastest 8B |
+| Qwen2.5-VL-7B | 4.4GB | Q4_K_M | **15.28 t/s** | VL model |
+| DeepSeek-R1-Llama-8B | 4.6GB | Q4_K_M | **13.42 t/s** | R1 distilled |
+| DeepSeek-R1-Qwen-7B | 4.4GB | Q4_K_M | **13.15 t/s** | R1 distilled |
+| Qwen2.5-Math-7B | 4.4GB | Q4_K_M | **12.44 t/s** | Math specialist |
+| Gemma-3-12B | 6.8GB | Q4_K_M | **10.42 t/s** | Medium |
+| DeepSeek-R1-Qwen-14B | 8.4GB | Q4_K_M | **6.44 t/s** | Larger R1 |
 
 ### Speculative Decoding (7B)
 | Model + Draft | Speed | Speedup | Accept | Notes |
