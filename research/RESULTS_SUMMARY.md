@@ -51,8 +51,8 @@
 | 2 | MoE Expert Reduction | **Production** | +21-48% |
 | 8 | Prompt Lookup | **Production** | 8.6-12.7x |
 | A | System (Hugepages/NUMA) | **P0 - Next** | +10-20% expected |
-| C | Q2_K Draft Optimization | **P2 - Next** | +20-30% expected |
 | 6 | SuffixDecoding | **P1 - Next** | +100-200% expected |
+| C | Draft Quantization | **Tested - No Benefit** | Q8_0 optimal |
 | 3 | EAGLE-1 | Deprecated | 0% acceptance |
 | 7 | CAS-Spec | Blocked | 0.446% acceptance |
 
@@ -78,6 +78,7 @@
 | Draft Model | Accept | Spec Speed | Verdict |
 |-------------|--------|------------|---------|
 | Qwen2.5-Coder-0.5B Q8_0 | 58% | **22.5 t/s** | Best (smaller = faster) |
+| Qwen2.5-Coder-1.5B Q4_K_M | 58% | 12.5 t/s | Works but slower than 0.5B |
 | Qwen2.5-Coder-1.5B Q2_K | 57% | 13.1 t/s | Slower despite faster raw speed |
 | Qwen2-0.5B Q2_K | FAIL | — | Wrong vocab family |
 | Qwen3-0.6B Q2_K | N/A | — | Wrong model family |
