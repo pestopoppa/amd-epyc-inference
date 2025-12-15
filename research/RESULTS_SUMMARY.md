@@ -65,9 +65,15 @@
 | Qwen3-0.6B | Q2_K | 283MB | `unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf` |
 | Qwen3-Embedding-0.6B | Q8_0 | — | `Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf` |
 
-**Hypotheses:**
-- Q2_K drafts at ~100+ t/s (vs 85 t/s Q8_0) enable faster speculation rounds
-- Qwen2.5-Coder-1.5B may have higher acceptance than 0.5B (better quality drafts)
+**Benchmark Results (2025-12-15):**
+
+| Model | Q2_K Speed | vs Q8_0 |
+|-------|------------|---------|
+| Qwen3-0.6B | **221 t/s** | 3.4x faster |
+| Qwen2-0.5B | **208 t/s** | 2.4x faster |
+| Qwen2.5-Coder-1.5B | **98 t/s** | (no Q8_0 baseline) |
+
+Q2_K quantization enables **2-3x faster** draft generation.
 
 ---
 
