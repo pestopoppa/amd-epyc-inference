@@ -50,9 +50,21 @@
 | 1 | External Draft | **Production** | 5.9-11x |
 | 2 | MoE Expert Reduction | **Production** | +21-48% |
 | 8 | Prompt Lookup | **Production** | 8.6-12.7x |
-| 6 | SuffixDecoding | Planned | Expected 5-10x |
+| A | System (Hugepages/NUMA) | **P0 - Next** | +10-20% expected |
+| C | Q2_K Draft Optimization | **P2 - Next** | +20-30% expected |
+| 6 | SuffixDecoding | **P1 - Next** | +100-200% expected |
 | 3 | EAGLE-1 | Deprecated | 0% acceptance |
 | 7 | CAS-Spec | Blocked | 0.446% acceptance |
+
+## New Draft Models Available
+
+| Model | Quantization | Size | Path |
+|-------|--------------|------|------|
+| Qwen2-0.5B | Q2_K | 323MB | `QuantFactory/Qwen2-0.5B-GGUF/Qwen2-0.5B.Q2_K.gguf` |
+| Qwen3-0.6B | Q2_K | 283MB | `unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf` |
+| Qwen3-Embedding-0.6B | Q8_0 | — | `Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf` |
+
+**Hypothesis:** Q2_K drafts at ~100+ t/s (vs 85 t/s Q8_0) enable faster speculation rounds.
 
 ---
 

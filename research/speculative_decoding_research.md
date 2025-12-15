@@ -514,7 +514,88 @@ SSM/Mamba models (Qwen3-Next) use recurrent state that cannot be rolled back lik
 
 ---
 
+## System-Level Optimizations (Track A)
+
+### Status: 🆕 **Next Priority — P0**
+
+System optimizations with guaranteed ROI, independent of speculative decoding.
+
+### Hugepage Configuration
+
+**Expected Gain:** +10-15% baseline
+
+```bash
+# Reserve 300 × 1GB hugepages (307GB)
+echo 300 | sudo tee /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages
+
+# Verify
+grep Huge /proc/meminfo
+
+# Make permanent in /etc/default/grub:
+GRUB_CMDLINE_LINUX="hugepagesz=1G hugepages=300 default_hugepagesz=1G"
+sudo update-grub && reboot
+```
+
+**Why:** At model scale (18-45GB), TLB misses become a hidden cost. 1GB hugepages reduce page table overhead significantly.
+
+### NUMA Pinning Refinement
+
+**Expected Gain:** +5-10% consistency
+
+Current NUMA topology (2 nodes):
+- Node 0: CPUs 0-47 (physical) + 96-143 (SMT), 580GB RAM
+- Node 1: CPUs 48-95 (physical) + 144-191 (SMT), 580GB RAM
+
+```bash
+# Current approach (replace)
+numactl --interleave=all llama-speculative ...
+
+# Refined approach (explicit binding to physical cores)
+numactl --physcpubind=0-47,48-95 --membind=0,1 llama-speculative ...
+```
+
+---
+
+## Draft Model Optimization (Track C)
+
+### Status: 🆕 **P2 Priority — Quick Win**
+
+### Q2_K Draft Quantization
+
+**Hypothesis:** Q2_K drafts at ~100+ t/s (vs 85 t/s Q8_0) enable faster speculation rounds.
+
+**Available Q2_K Models:**
+- `/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2-0.5B-GGUF/Qwen2-0.5B.Q2_K.gguf` (323MB)
+- `/mnt/raid0/llm/lmstudio/models/unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf` (283MB)
+
+**Testing Protocol:**
+```bash
+# Benchmark raw draft speed
+OMP_NUM_THREADS=1 numactl --interleave=all \
+  llama-bench -m Qwen2-0.5B.Q2_K.gguf -t 96 -p 0 -n 128
+
+# Test speculative decoding with Q2_K draft
+llama-speculative \
+  -m Qwen2.5-Coder-32B-Q4_K_M.gguf \
+  -md Qwen2-0.5B.Q2_K.gguf \
+  --draft-max 24 -t 96
+```
+
+**Quality Check:** Verify Q2_K acceptance rate doesn't degrade vs Q8_0.
+
+---
+
 ## Execution Priority (Updated 2025-12-15)
+
+### Priority Stack
+
+| Priority | Track | Action | Expected Gain | Effort |
+|----------|-------|--------|---------------|--------|
+| **P0** | A | Hugepages (300 x 1GB) | +10-15% baseline | 1 hour |
+| **P0** | A | NUMA pinning refinement | +5-10% consistency | 1 hour |
+| **P1** | 6 | SuffixDecoding implementation | +100-200% agentic | 1-2 days |
+| **P2** | C | Q2_K draft benchmarking | +20-30% draft speed | 2 hours |
+| **P3** | — | Hybrid (Suffix → Draft fallback) | Combines P1 + P2 | 1 day |
 
 ### COMPLETED ✅
 1. ✅ Track 8 (Prompt Lookup) — **12.7x proven**, production ready
@@ -525,9 +606,9 @@ SSM/Mamba models (Qwen3-Next) use recurrent state that cannot be rolled back lik
 6. ✅ Track 7 (CAS-Spec) — **FAILED**, 0.446% acceptance
 
 ### NEXT TO TRY
-1. **Track 6 (SuffixDecoding)** — 1 day effort, high potential for agentic/SQL workloads
-2. Better draft models — Find/train Qwen3 compatible drafts
-3. DeepSeek-R1 draft model search — Currently no working drafts
+1. **Track A (System)** — Hugepages + NUMA refinement (P0)
+2. **Track 6 (SuffixDecoding)** — 1 day effort, high potential for agentic/SQL workloads
+3. **Track C (Q2_K Drafts)** — Test new Q2_K draft models
 
 ### DO NOT PURSUE
 - Track 3 (EAGLE) — 0% acceptance, 20+ hours wasted
@@ -633,4 +714,31 @@ llm = LLM(model="...", speculative_model="[ngram]",
 
 ---
 
-*Last updated: December 2025 — Reorganized with NeurIPS 2025 findings*
+---
+
+## Target Metrics (Post-Optimization)
+
+After implementing Tracks A + 6 + C, target metrics:
+
+| Workload | Current Best | Target |
+|----------|-------------|--------|
+| Summarization (MoE) | 95.2 t/s | **110-130 t/s** |
+| Code generation (Dense 32B) | 33.0 t/s | **50-70 t/s** |
+| Agentic/JSON | Not tested | **100-150 t/s** |
+| General inference (72B) | 8.53 t/s | **12-15 t/s** |
+
+---
+
+## Validation Checklist
+
+Before declaring success on each optimization:
+
+- [ ] **Hugepages:** `grep Huge /proc/meminfo` shows HugePages_Total: 300
+- [ ] **NUMA:** `numastat -m` shows balanced memory across nodes
+- [ ] **Q2_K Draft:** Speed increase verified, acceptance rate within 5% of Q8_0
+- [ ] **SuffixDecoding:** Test on JSON/SQL benchmark, measure pattern hit rate
+- [ ] **Hybrid:** Confirm suffix lookup attempts before draft fallback
+
+---
+
+*Last updated: December 2025 — Integrated strategic action plan priorities*
