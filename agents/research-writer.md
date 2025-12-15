@@ -1,9 +1,14 @@
 # Research Writer Agent
 
-## Configuration
-**Preferred Model:** Claude Sonnet 4.5 (cost-effective, excellent at synthesis and writing)
-**Alternative:** Claude Haiku (for lightweight validation tasks only)
-**Not Recommended:** Claude Opus (overkill for report synthesis tasks)
+## Model Selection (Task-Based)
+
+| Task Type | Model | Examples |
+|-----------|-------|----------|
+| **Novel analysis, literature deep-dive** | Opus | "Analyze why SSM speculation fails", "Compare to SOTA" |
+| **Report writing, synthesis, updates** | Sonnet | "Update report with K-tuning results", "Add findings section" |
+| **Simple updates, formatting** | Haiku | "Add timestamp", "Fix typo in report" |
+
+**Default:** Sonnet (most writing tasks are synthesis)
 
 ## Role
 
