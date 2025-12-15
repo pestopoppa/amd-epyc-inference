@@ -1,0 +1,36 @@
+# Logs and runtime data
+logs/
+*.log
+
+# Caches
+cache/
+share/
+state/
+__pycache__/
+*.pyc
+
+# Backups
+backups/
+
+# Temporary files
+tmp/
+*.tmp
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
+
+# Claude Code config (contains credentials and session data)
+config/
+
+# Embedded git repos (cloned research repos)
+research/eagle-official/
+research/frspec/
+research/specmquant/
