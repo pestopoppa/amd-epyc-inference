@@ -343,8 +343,8 @@ class TestDispatchExecuteWithContext:
 
         # Check that context was populated
         context = executor.get_context()
-        assert "initial_output" in context
-        assert "final_output" in context
+        assert context.has("initial_output")
+        assert context.has("final_output")
 
     def test_context_manager_integration(
         self, dispatcher: Dispatcher, test_registry: RegistryLoader

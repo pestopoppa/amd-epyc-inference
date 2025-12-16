@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from src.context_manager import ContextConfig, ContextManager, ContextType
 from src.dispatcher import DispatchResult, StepExecution
 from src.model_server import (
     InferenceRequest,
@@ -139,22 +140,29 @@ class Executor:
 
     The Executor takes a DispatchResult and runs each step in order,
     respecting dependencies and parallel execution groups.
+
+    Uses ContextManager to track outputs between steps with:
+    - Size limits and truncation
+    - Type tracking (text, artifact, structured)
+    - Prompt building for dependent steps
     """
 
     def __init__(
         self,
         model_server: ModelServer | None = None,
         config: ExecutorConfig | None = None,
+        context_config: ContextConfig | None = None,
     ):
         """Initialize the Executor.
 
         Args:
             model_server: Model server for inference. Created if None.
             config: Executor configuration.
+            context_config: Context manager configuration.
         """
         self.server = model_server or ModelServer()
         self.config = config or ExecutorConfig()
-        self._context: dict[str, Any] = {}  # Shared context between steps
+        self.context = ContextManager(context_config)  # Rich context management
 
     def execute(self, dispatch_result: DispatchResult) -> ExecutionResult:
         """Execute a dispatch plan.
@@ -307,7 +315,12 @@ class Executor:
 
                 # Store outputs in context for dependent steps
                 for output in step.outputs:
-                    self._context[output] = step_result.output
+                    self.context.set(
+                        key=output,
+                        value=step_result.output,
+                        step_id=step.step_id,
+                        context_type=ContextType.TEXT,
+                    )
             else:
                 # Build prompt from step context
                 prompt = self._build_prompt(step)
@@ -329,7 +342,16 @@ class Executor:
 
                     # Store outputs in context for dependent steps
                     for output in step.outputs:
-                        self._context[output] = inference_result.output
+                        self.context.set(
+                            key=output,
+                            value=inference_result.output,
+                            step_id=step.step_id,
+                            context_type=ContextType.TEXT,
+                            metadata={
+                                "tokens": inference_result.tokens_generated,
+                                "speed": inference_result.generation_speed,
+                            },
+                        )
                 else:
                     step_result.status = StepStatus.FAILED
                     step_result.error_message = inference_result.error_message
@@ -369,6 +391,9 @@ class Executor:
     def _build_prompt(self, step: StepExecution) -> str:
         """Build a prompt for a step from its action and inputs.
 
+        Uses ContextManager.build_prompt_context() for rich context formatting
+        with size limits and proper handling of different content types.
+
         Args:
             step: Step to build prompt for.
 
@@ -377,20 +402,19 @@ class Executor:
         """
         parts = [f"Task: {step.action}"]
 
-        # Add inputs from context or as references
+        # Add inputs from context using ContextManager
         if step.inputs:
-            parts.append("\nInputs:")
-            for input_ref in step.inputs:
-                if input_ref in self._context:
-                    # Include actual content from previous step
-                    content = self._context[input_ref]
-                    # Truncate if too long
-                    if len(content) > 2000:
-                        content = content[:2000] + "\n... [truncated]"
-                    parts.append(f"\n### {input_ref}\n{content}")
-                else:
-                    # Just reference the input
-                    parts.append(f"- {input_ref}")
+            context_str = self.context.build_prompt_context(
+                input_keys=step.inputs,
+                max_chars=4000,  # Leave room for task and outputs
+            )
+            if context_str:
+                parts.append(f"\nInputs:{context_str}")
+            else:
+                # List unavailable inputs
+                missing = [k for k in step.inputs if not self.context.has(k)]
+                if missing:
+                    parts.append(f"\nInputs (not available): {', '.join(missing)}")
 
         # Add expected outputs
         if step.outputs:
@@ -398,17 +422,25 @@ class Executor:
 
         return "\n".join(parts)
 
-    def get_context(self) -> dict[str, Any]:
-        """Get the current execution context.
+    def get_context(self) -> ContextManager:
+        """Get the context manager.
 
         Returns:
-            Dictionary of step outputs.
+            The ContextManager instance for direct access.
         """
-        return self._context.copy()
+        return self.context
+
+    def get_context_dict(self) -> dict[str, Any]:
+        """Get context as a simple dictionary.
+
+        Returns:
+            Dictionary of key-value pairs.
+        """
+        return dict(self.context.items())
 
     def clear_context(self) -> None:
         """Clear the execution context."""
-        self._context.clear()
+        self.context.clear()
 
 
 def main() -> int:

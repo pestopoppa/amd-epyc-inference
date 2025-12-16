@@ -424,17 +424,17 @@ class TestExecutor:
         context = executor.get_context()
 
         # In dry run mode, context should have the dry run output
-        assert "output1" in context
-        assert "[DRY RUN]" in context["output1"]
+        assert context.has("output1")
+        assert "[DRY RUN]" in context.get("output1")
 
     def test_clear_context(self, mock_model_server: ModelServer):
         """Test clearing the context."""
         executor = Executor(model_server=mock_model_server)
-        executor._context["test_key"] = "test_value"
+        executor.context.set("test_key", "test_value")
 
         executor.clear_context()
 
-        assert executor._context == {}
+        assert executor.context.count() == 0
 
     def test_warnings_errors_propagated(
         self,
@@ -675,7 +675,7 @@ class TestExecutorBuildPrompt:
     def test_build_prompt_with_context(self, mock_model_server: ModelServer):
         """Test building prompt with context from previous step."""
         executor = Executor(model_server=mock_model_server)
-        executor._context["previous_output"] = "Previous step result"
+        executor.context.set("previous_output", "Previous step result", step_id="S1")
 
         role_config = MagicMock(spec=RoleConfig)
         step = StepExecution(
@@ -700,7 +700,7 @@ class TestExecutorBuildPrompt:
     ):
         """Test that long context is truncated."""
         executor = Executor(model_server=mock_model_server)
-        executor._context["long_output"] = "x" * 5000
+        executor.context.set("long_output", "x" * 5000, step_id="S1")
 
         role_config = MagicMock(spec=RoleConfig)
         step = StepExecution(

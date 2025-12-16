@@ -380,6 +380,7 @@ class TestProductionRegistry:
         cmd = loader.generate_command("frontdoor", prompt="test")
         assert "--override-kv" in cmd
 
-        # Prompt lookup
+        # Prompt lookup - now uses llama-lookup binary with --draft-max
         cmd = loader.generate_command("worker_general", prompt="test")
-        assert "--lookup-ngram-min" in cmd
+        assert "llama-lookup" in cmd
+        assert "--draft-max" in cmd
