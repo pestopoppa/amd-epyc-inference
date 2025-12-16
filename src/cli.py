@@ -22,7 +22,7 @@ from typing import Any
 
 from src.dispatcher import Dispatcher
 from src.executor import ExecutionResult, Executor, ExecutorConfig, StepStatus
-from src.model_server import InferenceRequest, ModelServer
+from src.model_server import ModelServer
 from src.registry_loader import RegistryLoader
 
 
@@ -138,7 +138,10 @@ class Orchestrator:
         return results
 
     def _generate_task_ir(self, user_prompt: str) -> dict[str, Any]:
-        """Generate TaskIR from user prompt using Front Door model.
+        """Generate TaskIR from user prompt.
+
+        Uses smart heuristics to detect multi-step tasks and generate
+        appropriate TaskIR without requiring model JSON generation.
 
         Args:
             user_prompt: User's task description.
@@ -147,39 +150,110 @@ class Orchestrator:
             TaskIR dictionary.
         """
         if self.config.skip_frontdoor:
-            # Return a simple TaskIR for the prompt
             return self._simple_task_ir(user_prompt)
 
         if self.config.dry_run:
-            # In dry run, return a mock TaskIR
             return self._mock_task_ir(user_prompt)
 
-        # Load front door prompt template
-        prompt_path = Path(__file__).parent.parent / "orchestration" / "prompts" / "frontdoor.md"
-        if prompt_path.exists():
-            with prompt_path.open() as f:
-                system_prompt = f.read()
-        else:
-            system_prompt = "You are a task planner. Parse the user request into a structured task."
+        # Detect multi-step patterns in the prompt
+        prompt_lower = user_prompt.lower()
 
-        # Build full prompt
-        full_prompt = f"{system_prompt}\n\nUser Request: {user_prompt}\n\nGenerate TaskIR JSON:"
+        # Multi-step indicators
+        multi_step_patterns = [
+            (" then ", 2),
+            (" and then ", 2),
+            (" after that ", 2),
+            (" followed by ", 2),
+            (" also ", 2),
+            (" and also ", 2),
+            (" with tests", 2),
+            (" and test", 2),
+            (" write tests", 2),
+        ]
 
-        # Run inference on front door model
-        request = InferenceRequest(
-            role="frontdoor",
-            prompt=full_prompt,
-            n_tokens=self.config.max_tokens,
-            timeout=self.config.timeout,
+        # Check for multi-step task
+        for pattern, _min_steps in multi_step_patterns:
+            if pattern in prompt_lower:
+                return self._multi_step_task_ir(user_prompt)
+
+        # Check for numbered steps (1. 2. 3. or step 1, step 2)
+        import re
+
+        if re.search(r"\b(step\s*\d|^\d+\.|first.*second|1\).*2\))", prompt_lower):
+            return self._multi_step_task_ir(user_prompt)
+
+        # Default to simple single-step TaskIR
+        return self._simple_task_ir(user_prompt)
+
+    def _multi_step_task_ir(self, user_prompt: str) -> dict[str, Any]:
+        """Create a multi-step TaskIR by splitting the prompt.
+
+        Args:
+            user_prompt: User's task description.
+
+        Returns:
+            Multi-step TaskIR dictionary.
+        """
+        task_id = f"task-{int(time.time())}"
+
+        # Split on common separators
+        import re
+
+        # Try to split on "then", "and then", etc.
+        parts = re.split(
+            r"\s+(?:and\s+)?then\s+|\s+after\s+that\s+|\s+followed\s+by\s+",
+            user_prompt,
+            flags=re.IGNORECASE,
         )
 
-        result = self.server.infer(request)
+        # If no split, try "and also" or just ", and"
+        if len(parts) == 1:
+            parts = re.split(
+                r"\s+and\s+also\s+|\s*,\s+and\s+|\s+also\s+",
+                user_prompt,
+                flags=re.IGNORECASE,
+            )
 
-        if not result.success:
-            raise RuntimeError(f"Front door inference failed: {result.error_message}")
+        # Clean up parts
+        parts = [p.strip() for p in parts if p.strip()]
 
-        # Parse TaskIR from output
-        return self._parse_task_ir(result.output, user_prompt)
+        # If still single part, check for test-related suffix
+        if len(parts) == 1:
+            test_match = re.search(
+                r"(.+?)\s+(?:with\s+tests?|and\s+(?:write\s+)?tests?)",
+                user_prompt,
+                flags=re.IGNORECASE,
+            )
+            if test_match:
+                parts = [test_match.group(1), "Write tests for the above"]
+
+        # Build steps
+        steps = []
+        for i, part in enumerate(parts):
+            step_id = f"S{i + 1}"
+            depends = [f"S{i}"] if i > 0 else []
+            output_name = f"step{i + 1}_result" if i < len(parts) - 1 else "result"
+
+            steps.append(
+                {
+                    "id": step_id,
+                    "actor": "coder",
+                    "action": part,
+                    "inputs": [f"step{i}_result"] if i > 0 else [],
+                    "outputs": [output_name],
+                    "depends_on": depends,
+                }
+            )
+
+        return {
+            "task_id": task_id,
+            "task_type": "code",
+            "priority": "interactive",
+            "objective": user_prompt,
+            "agents": [{"role": "coder"}],
+            "plan": {"steps": steps},
+            "definition_of_done": [f"Complete all {len(steps)} steps"],
+        }
 
     def _parse_task_ir(self, output: str, user_prompt: str) -> dict[str, Any]:
         """Parse TaskIR JSON from model output.
@@ -191,16 +265,47 @@ class Orchestrator:
         Returns:
             Parsed TaskIR dictionary.
         """
-        # Try to find JSON in output
         import re
 
-        # Look for JSON block
-        json_match = re.search(r"\{[\s\S]*\}", output)
+        # Try multiple JSON extraction strategies
+
+        # Strategy 1: Find JSON block with balanced braces
+        brace_count = 0
+        json_start = -1
+        json_end = -1
+
+        for i, char in enumerate(output):
+            if char == "{":
+                if brace_count == 0:
+                    json_start = i
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+                if brace_count == 0 and json_start >= 0:
+                    json_end = i + 1
+                    break
+
+        if json_start >= 0 and json_end > json_start:
+            json_str = output[json_start:json_end]
+            try:
+                task_ir = json.loads(json_str)
+                # Validate required fields
+                if "plan" in task_ir:
+                    # Ensure task_id exists
+                    if "task_id" not in task_ir:
+                        task_ir["task_id"] = f"task-{int(time.time())}"
+                    return task_ir
+            except json.JSONDecodeError:
+                pass
+
+        # Strategy 2: Try regex for JSON object
+        json_match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", output, re.DOTALL)
         if json_match:
             try:
                 task_ir = json.loads(json_match.group())
-                # Validate required fields
-                if "task_id" in task_ir and "plan" in task_ir:
+                if "plan" in task_ir:
+                    if "task_id" not in task_ir:
+                        task_ir["task_id"] = f"task-{int(time.time())}"
                     return task_ir
             except json.JSONDecodeError:
                 pass
