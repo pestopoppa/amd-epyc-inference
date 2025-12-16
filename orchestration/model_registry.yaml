@@ -391,6 +391,39 @@ process_layout:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# ESCALATION CHAINS
+# ═══════════════════════════════════════════════════════════════════════════
+# Define escalation paths for automatic retry with more capable models.
+# Each chain is an ordered list from fastest to most capable.
+
+escalation_chains:
+  coder:
+    description: "Code generation escalation path"
+    chain: [coder_primary, coder_escalation, architect_coding]
+    triggers:
+      - error_categories: [timeout, inference_error, internal_error]
+      - output_too_short: 50  # chars - likely incomplete response
+      - explicit_request: true  # TaskIR can request escalation
+    max_escalations: 2  # Don't go beyond architect_coding
+
+  general:
+    description: "General task escalation path"
+    chain: [worker_general, frontdoor, architect_general]
+    triggers:
+      - error_categories: [timeout, inference_error]
+      - explicit_request: true
+    max_escalations: 2
+
+  # Vision chain - PENDING benchmarking
+  # vision:
+  #   chain: [worker_vision, vision_escalation]
+  #   triggers:
+  #     - error_categories: [inference_error]
+  #     - complex_reasoning: true
+  #   max_escalations: 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # ROUTING HINTS (Deterministic)
 # ═══════════════════════════════════════════════════════════════════════════
 

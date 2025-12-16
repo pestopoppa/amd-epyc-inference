@@ -1,0 +1,213 @@
+version: 1
+domain: math
+description: "Mathematical reasoning benchmark - arithmetic to proofs"
+created: "2025-12-16"
+
+prompts:
+  # ============== TIER 1: Baseline ==============
+  t1_q1_arithmetic:
+    tier: 1
+    name: "Basic Arithmetic"
+    prompt: |
+      Calculate: 847 × 23 + 156 ÷ 4 - 89
+
+      Show your work step by step, then give the final answer.
+    expected: "19431"
+    scoring:
+      - criterion: "Correct final answer"
+        weight: 50
+      - criterion: "Correct intermediate steps"
+        weight: 30
+      - criterion: "Clear presentation"
+        weight: 20
+
+  t1_q2_algebra:
+    tier: 1
+    name: "Simple Algebra"
+    prompt: |
+      Solve for x: 3x + 7 = 22
+
+      Show each step.
+    expected: "x = 5"
+    scoring:
+      - criterion: "Correct answer (x = 5)"
+        weight: 50
+      - criterion: "Valid algebraic steps"
+        weight: 30
+      - criterion: "Clear notation"
+        weight: 20
+
+  t1_q3_conversion:
+    tier: 1
+    name: "Unit Conversion"
+    prompt: |
+      Convert 2.5 kilometers to:
+      1. meters
+      2. centimeters
+      3. miles (use 1 mile = 1.609 km)
+
+      Show the conversion calculation for each.
+    expected: "2500 meters, 250000 centimeters, ~1.554 miles"
+    scoring:
+      - criterion: "All conversions correct"
+        weight: 60
+      - criterion: "Shows conversion factors"
+        weight: 25
+      - criterion: "Appropriate precision"
+        weight: 15
+
+  # ============== TIER 2: Medium-Hard ==============
+  t2_q1_word_problem:
+    tier: 2
+    name: "Multi-Step Word Problem"
+    prompt: |
+      A store offers a 20% discount on all items. After the discount, a 8% sales tax is applied. If an item originally costs $150:
+
+      1. What is the price after discount?
+      2. What is the final price after tax?
+      3. What percentage of the original price is the final price?
+
+      Show your work for each part.
+    expected: "$120, $129.60, 86.4%"
+    scoring:
+      - criterion: "All three answers correct"
+        weight: 50
+      - criterion: "Clear step-by-step work"
+        weight: 30
+      - criterion: "Correct order of operations"
+        weight: 20
+
+  t2_q2_system_equations:
+    tier: 2
+    name: "System of Equations"
+    prompt: |
+      Solve the system of equations:
+      2x + 3y = 13
+      4x - y = 5
+
+      Find the values of x and y. Show all steps.
+    expected: "x = 2, y = 3"
+    scoring:
+      - criterion: "Correct x value"
+        weight: 25
+      - criterion: "Correct y value"
+        weight: 25
+      - criterion: "Valid method"
+        weight: 30
+      - criterion: "Verification"
+        weight: 20
+
+  t2_q3_probability:
+    tier: 2
+    name: "Probability"
+    prompt: |
+      A bag contains 5 red balls, 3 blue balls, and 2 green balls.
+      If you draw 2 balls without replacement:
+
+      1. What is the probability both are red?
+      2. What is the probability of getting one red and one blue (in any order)?
+
+      Show your probability calculations.
+    expected: "2/9 (~0.222), 1/3 (~0.333)"
+    scoring:
+      - criterion: "Correct probability 1"
+        weight: 30
+      - criterion: "Correct probability 2"
+        weight: 30
+      - criterion: "Shows combinatorial reasoning"
+        weight: 25
+      - criterion: "Simplified fractions"
+        weight: 15
+
+  # ============== TIER 3: Hard ==============
+  t3_q1_optimization:
+    tier: 3
+    name: "Optimization"
+    prompt: |
+      A farmer has 200 meters of fencing to enclose a rectangular field that borders a river (no fencing needed on the river side).
+
+      What dimensions maximize the enclosed area? What is the maximum area?
+
+      Set up the optimization problem and solve it.
+    expected: "width=50m, length=100m, area=5000 sq m"
+    scoring:
+      - criterion: "Correct dimensions"
+        weight: 30
+      - criterion: "Correct maximum area"
+        weight: 25
+      - criterion: "Valid calculus/algebra method"
+        weight: 30
+      - criterion: "Clear constraint setup"
+        weight: 15
+
+  t3_q2_proof:
+    tier: 3
+    name: "Proof by Induction"
+    prompt: |
+      Prove that the sum of the first n positive integers is n(n+1)/2.
+
+      Use mathematical induction. Show:
+      1. Base case
+      2. Inductive hypothesis
+      3. Inductive step
+    expected: "Valid induction proof"
+    scoring:
+      - criterion: "Valid base case"
+        weight: 20
+      - criterion: "Clear inductive hypothesis"
+        weight: 20
+      - criterion: "Correct inductive step"
+        weight: 40
+      - criterion: "Proper conclusion"
+        weight: 20
+
+  t3_q3_calculus:
+    tier: 3
+    name: "Definite Integration"
+    prompt: |
+      Evaluate the definite integral:
+      ∫₀² (3x² + 2x - 1) dx
+
+      Show your work:
+      1. Find the antiderivative
+      2. Evaluate at the bounds
+      3. Calculate the final answer
+    expected: "10"
+    scoring:
+      - criterion: "Correct antiderivative"
+        weight: 30
+      - criterion: "Correct evaluation at bounds"
+        weight: 30
+      - criterion: "Correct final answer (10)"
+        weight: 30
+      - criterion: "Clear presentation"
+        weight: 10
+
+  t3_q4_statistics:
+    tier: 3
+    name: "Statistical Analysis"
+    prompt: |
+      Given the dataset: 12, 15, 18, 22, 25, 28, 30, 35
+
+      Calculate:
+      1. Mean
+      2. Median
+      3. Standard deviation (population)
+      4. Is there any outlier using the 1.5×IQR rule?
+
+      Show all calculations.
+    expected: "mean=23.125, median=23.5, std~7.35, no outliers"
+    scoring:
+      - criterion: "Correct mean"
+        weight: 20
+      - criterion: "Correct median"
+        weight: 20
+      - criterion: "Correct std dev (within 0.5)"
+        weight: 30
+      - criterion: "Correct outlier analysis"
+        weight: 30
+
+inference_params:
+  temperature: 0.1
+  max_tokens: 1024
+  timeout: 180

@@ -1,0 +1,173 @@
+version: 1
+domain: instruction_precision
+description: "Tests exact instruction following - format compliance, constraints, negative instructions"
+created: "2025-12-16"
+note: "Most tests can be auto-scored for pass/fail"
+
+prompts:
+  # ============== TIER 1: Basic Format Compliance ==============
+  t1_q1_json_only:
+    tier: 1
+    name: "JSON Only Output"
+    prompt: |
+      Convert this to JSON: Name is Alice, age is 30, city is Boston.
+      Output ONLY the JSON. No explanation, no markdown, no extra text.
+    expected: '{"name": "Alice", "age": 30, "city": "Boston"}'
+    auto_score: "json_only"
+    scoring:
+      - criterion: "Valid JSON"
+        weight: 50
+      - criterion: "No extra text"
+        weight: 50
+
+  t1_q2_exact_count:
+    tier: 1
+    name: "Exact Item Count"
+    prompt: |
+      List exactly 3 benefits of exercise. No more, no less.
+    expected: "Exactly 3 items"
+    auto_score: "count_items:3"
+    scoring:
+      - criterion: "Exactly 3 items"
+        weight: 100
+
+  t1_q3_single_word:
+    tier: 1
+    name: "Single Word Response"
+    prompt: |
+      Is 17 a prime number? Answer with only 'yes' or 'no', nothing else.
+    expected: "yes"
+    auto_score: "exact_match:yes,Yes,YES"
+    scoring:
+      - criterion: "Only yes/no"
+        weight: 100
+
+  # ============== TIER 2: Complex Constraints ==============
+  t2_q1_negative_instruction:
+    tier: 2
+    name: "Negative Instruction (Forbidden Words)"
+    prompt: |
+      Explain photosynthesis in 2 sentences. Do NOT mention sunlight, sun, or solar.
+    expected: "Explanation without forbidden words"
+    auto_score: "forbidden_words:sunlight,sun,solar"
+    scoring:
+      - criterion: "No forbidden words"
+        weight: 60
+      - criterion: "Valid explanation"
+        weight: 40
+
+  t2_q2_word_limit:
+    tier: 2
+    name: "Exact Word Count Range"
+    prompt: |
+      Describe machine learning in exactly 20-25 words. Count carefully.
+    expected: "20-25 words"
+    auto_score: "word_count:20:25"
+    scoring:
+      - criterion: "Word count in range"
+        weight: 100
+
+  t2_q3_structured_format:
+    tier: 2
+    name: "Exact Structured Format"
+    prompt: |
+      List 3 programming languages with their release year.
+      Format EXACTLY as: LANGUAGE (YEAR)
+      One per line, no bullets, no numbers, no extra text.
+    expected: "Python (1991)\nJava (1995)\nJavaScript (1995)"
+    auto_score: "format_pattern:^[A-Za-z]+ \\(\\d{4}\\)$"
+    scoring:
+      - criterion: "Correct format per line"
+        weight: 70
+      - criterion: "No bullets/numbers"
+        weight: 30
+
+  t2_q4_multiple_constraints:
+    tier: 2
+    name: "Multiple Simultaneous Constraints"
+    prompt: |
+      Name 5 countries in Europe.
+      - Exactly 5 countries
+      - Alphabetical order
+      - One per line
+      - No additional text or punctuation
+    expected: "5 European countries, alphabetical, one per line"
+    auto_score: "multi:count_items:5,alphabetical,no_punctuation"
+    scoring:
+      - criterion: "Exactly 5"
+        weight: 30
+      - criterion: "Alphabetical"
+        weight: 30
+      - criterion: "One per line"
+        weight: 20
+      - criterion: "No extra text"
+        weight: 20
+
+  # ============== TIER 3: Adversarial Compliance ==============
+  t3_q1_resist_elaboration:
+    tier: 3
+    name: "Resist Urge to Elaborate"
+    prompt: |
+      What is 2+2? Reply with only the number, nothing else.
+    expected: "4"
+    auto_score: "exact_match:4"
+    scoring:
+      - criterion: "Only the number"
+        weight: 100
+
+  t3_q2_maintain_format:
+    tier: 3
+    name: "Maintain Format Under Complexity"
+    prompt: |
+      Analyze this error and respond in EXACTLY this format:
+      ERROR_TYPE: <type>
+      ROOT_CAUSE: <one sentence>
+      FIX: <one sentence>
+
+      No other text. Error: TypeError: Cannot read property 'map' of undefined
+    expected: "Three labeled lines in exact format"
+    auto_score: "format_lines:ERROR_TYPE:,ROOT_CAUSE:,FIX:"
+    scoring:
+      - criterion: "Exact format"
+        weight: 70
+      - criterion: "No extra text"
+        weight: 30
+
+  t3_q3_empty_handling:
+    tier: 3
+    name: "Handle Empty/None Case"
+    prompt: |
+      Extract all email addresses from this text: 'Hello world, nice day!'
+      If none found, output exactly: NONE
+      Do not explain or apologize.
+    expected: "NONE"
+    auto_score: "exact_match:NONE"
+    scoring:
+      - criterion: "Exactly NONE"
+        weight: 100
+
+  t3_q4_conflicting_constraints:
+    tier: 3
+    name: "Multiple Conflicting Constraints"
+    prompt: |
+      Write one sentence about databases that:
+      - Is under 12 words
+      - Starts with 'A'
+      - Ends with 'data'
+      - Does not use 'store' or 'storage'
+    expected: "Sentence meeting all 4 criteria"
+    auto_score: "multi:word_count:1:12,starts_with:A,ends_with:data,forbidden_words:store,storage"
+    scoring:
+      - criterion: "Under 12 words"
+        weight: 25
+      - criterion: "Starts with A"
+        weight: 25
+      - criterion: "Ends with data"
+        weight: 25
+      - criterion: "No forbidden words"
+        weight: 25
+
+inference_params:
+  temperature: 0.1  # Low temp for precise following
+  max_tokens: 256
+  timeout: 60

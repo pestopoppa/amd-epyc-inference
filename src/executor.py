@@ -30,6 +30,7 @@ from src.model_server import (
     InferenceResult,
     ModelServer,
 )
+from src.registry_loader import RegistryLoader
 
 
 class StepStatus(Enum):
@@ -57,6 +58,9 @@ class StepResult:
     error_message: str | None = None
     retry_count: int = 0
     error_category: str | None = None
+    escalation_count: int = 0
+    escalated_from: str | None = None  # Role that was escalated from
+    executed_role: str | None = None  # Role that actually executed the step
 
     @property
     def elapsed_time(self) -> float:
@@ -79,6 +83,11 @@ class StepResult:
             result["retry_count"] = self.retry_count
         if self.error_category:
             result["error_category"] = self.error_category
+        if self.escalation_count > 0:
+            result["escalation_count"] = self.escalation_count
+            result["escalated_from"] = self.escalated_from
+        if self.executed_role:
+            result["executed_role"] = self.executed_role
         return result
 
 
@@ -111,9 +120,19 @@ class ExecutionResult:
         """Count of failed steps."""
         return sum(1 for s in self.steps.values() if s.status == StepStatus.FAILED)
 
+    @property
+    def total_escalations(self) -> int:
+        """Count of total escalations across all steps."""
+        return sum(s.escalation_count for s in self.steps.values())
+
+    @property
+    def escalated_steps(self) -> int:
+        """Count of steps that were escalated at least once."""
+        return sum(1 for s in self.steps.values() if s.escalation_count > 0)
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "task_id": self.task_id,
             "status": self.status.value,
             "elapsed_time": self.elapsed_time,
@@ -123,6 +142,11 @@ class ExecutionResult:
             "warnings": self.warnings,
             "errors": self.errors,
         }
+        # Only include escalation info if escalations occurred
+        if self.total_escalations > 0:
+            result["total_escalations"] = self.total_escalations
+            result["escalated_steps"] = self.escalated_steps
+        return result
 
 
 class ExecutorError(Exception):
@@ -176,6 +200,9 @@ class ExecutorConfig:
     max_retries: int = 2  # Retry up to 2 times (3 total attempts)
     retry_backoff_base: float = 1.0  # Base backoff in seconds
     dry_run: bool = False  # If True, don't actually run inference
+    # Escalation settings
+    enable_escalation: bool = True  # Escalate to more capable models on failure
+    max_escalations_per_step: int = 2  # Max escalations per step
 
 
 class Executor:
@@ -195,6 +222,7 @@ class Executor:
         model_server: ModelServer | None = None,
         config: ExecutorConfig | None = None,
         context_config: ContextConfig | None = None,
+        registry: RegistryLoader | None = None,
     ):
         """Initialize the Executor.
 
@@ -202,11 +230,15 @@ class Executor:
             model_server: Model server for inference. Created if None.
             config: Executor configuration.
             context_config: Context manager configuration.
+            registry: Registry loader for escalation chains. Created if None.
         """
         self.server = model_server or ModelServer()
         self.config = config or ExecutorConfig()
         self.context = ContextManager(context_config)  # Rich context management
+        # For escalation lookups - don't validate paths by default (tests run without models)
+        self.registry = registry or RegistryLoader(validate_paths=False)
         self._retry_info: dict[str, RetryInfo] = {}  # Track retries per step
+        self._escalation_counts: dict[str, int] = {}  # Track escalations per step
 
     def execute(self, dispatch_result: DispatchResult) -> ExecutionResult:
         """Execute a dispatch plan.
@@ -223,18 +255,21 @@ class Executor:
             started_at=time.time(),
         )
 
-        # Initialize step results and retry info
+        # Initialize step results, retry info, and escalation tracking
         self._retry_info.clear()
+        self._escalation_counts.clear()
         max_attempts = self.config.max_retries + 1 if self.config.retry_failed_steps else 1
         for step in dispatch_result.steps:
             result.steps[step.step_id] = StepResult(
                 step_id=step.step_id,
                 status=StepStatus.PENDING,
+                executed_role=step.role_config.name if step.role_config else None,
             )
             self._retry_info[step.step_id] = RetryInfo(
                 max_attempts=max_attempts,
                 backoff_seconds=self.config.retry_backoff_base,
             )
+            self._escalation_counts[step.step_id] = 0
 
         # Copy warnings/errors from dispatch
         result.warnings.extend(dispatch_result.warnings)
@@ -288,11 +323,15 @@ class Executor:
                         for step in group_steps:
                             self._execute_step_with_retry(step, result)
 
-                    # Mark completed steps (success or exhausted retries)
+                    # Mark completed steps (success, skipped, or exhausted retries)
                     for step in group_steps:
                         step_result = result.steps[step.step_id]
                         retry_info = self._retry_info[step.step_id]
-                        if step_result.status == StepStatus.COMPLETED or (step_result.status == StepStatus.FAILED and not retry_info.can_retry):
+                        is_done = step_result.status in (StepStatus.COMPLETED, StepStatus.SKIPPED)
+                        is_exhausted = (
+                            step_result.status == StepStatus.FAILED and not retry_info.can_retry
+                        )
+                        if is_done or is_exhausted:
                             completed.add(step.step_id)
                         # If failed but can retry, don't mark as completed
 
@@ -375,7 +414,12 @@ class Executor:
     def _execute_step_with_retry(
         self, step: StepExecution, result: ExecutionResult
     ) -> StepResult:
-        """Execute a step with retry logic.
+        """Execute a step with retry and escalation logic.
+
+        Order of operations:
+        1. Retry on failure (up to max_retries)
+        2. Escalate to more capable model (if retries exhausted and enabled)
+        3. Retry with escalated model
 
         Args:
             step: Step to execute.
@@ -386,6 +430,7 @@ class Executor:
         """
         retry_info = self._retry_info.get(step.step_id)
         step_result = result.steps[step.step_id]
+        original_role = step.role_config.name if step.role_config else None
 
         # Apply backoff if this is a retry
         if retry_info and retry_info.attempts > 0:
@@ -404,7 +449,7 @@ class Executor:
         # Execute the step
         self._execute_step(step, result)
 
-        # Update retry tracking
+        # Update retry tracking on failure
         if step_result.status == StepStatus.FAILED and retry_info:
             error_category = self._categorize_error(step_result.error_message)
             retry_info.record_attempt(
@@ -414,7 +459,120 @@ class Executor:
             step_result.retry_count = retry_info.attempts
             step_result.error_category = error_category.value
 
+            # Check if escalation is possible after exhausting retries
+            if not retry_info.can_retry and self._can_escalate(step, step_result):
+                escalated_role = self._escalate_step(step, step_result, result)
+                if escalated_role:
+                    # Track escalation
+                    step_result.escalation_count = self._escalation_counts[step.step_id]
+                    step_result.escalated_from = step_result.escalated_from or original_role
+                    step_result.executed_role = escalated_role
+
+                    # Reset retry info for the escalated model
+                    max_attempts = self.config.max_retries + 1 if self.config.retry_failed_steps else 1
+                    self._retry_info[step.step_id] = RetryInfo(
+                        max_attempts=max_attempts,
+                        backoff_seconds=self.config.retry_backoff_base,
+                    )
+
+                    # Re-execute with escalated model (recursive)
+                    return self._execute_step_with_retry(step, result)
+
         return step_result
+
+    def _can_escalate(self, step: StepExecution, step_result: StepResult) -> bool:
+        """Check if a step can be escalated.
+
+        Args:
+            step: The step to check.
+            step_result: Current result for the step.
+
+        Returns:
+            True if escalation is possible.
+        """
+        if not self.config.enable_escalation:
+            return False
+
+        if not step.role_config:
+            return False
+
+        current_role = step.role_config.name
+        escalation_count = self._escalation_counts.get(step.step_id, 0)
+
+        # Check max escalations per step
+        if escalation_count >= self.config.max_escalations_per_step:
+            return False
+
+        # Check if escalation chain exists and has a next role
+        chain = self.registry.get_chain_for_role(current_role)
+        if not chain:
+            return False
+
+        # Check chain-specific max escalations
+        if escalation_count >= chain.max_escalations:
+            return False
+
+        # Check if there's a next role in the chain
+        next_role = chain.get_next_role(current_role)
+        if not next_role:
+            return False
+
+        # Check if the error category triggers escalation
+        if step_result.error_category:
+            for trigger in chain.triggers:
+                if (
+                    "error_categories" in trigger
+                    and step_result.error_category in trigger["error_categories"]
+                ):
+                    return True
+        elif not chain.triggers:
+            # Default: escalate on any failure if no triggers specified
+            return True
+
+        return False
+
+    def _escalate_step(
+        self, step: StepExecution, step_result: StepResult, result: ExecutionResult
+    ) -> str | None:
+        """Escalate a step to a more capable model.
+
+        Args:
+            step: The step to escalate.
+            step_result: Current result for the step.
+            result: Overall execution result for logging.
+
+        Returns:
+            The new role name if escalation succeeded, None otherwise.
+        """
+        if not step.role_config:
+            return None
+
+        current_role = step.role_config.name
+        next_role = self.registry.get_escalation_target(current_role)
+
+        if not next_role:
+            return None
+
+        # Get the role config for the escalated role
+        next_role_config = self.registry.get_role(next_role)
+        if not next_role_config:
+            result.warnings.append(
+                f"Escalation target '{next_role}' not found in registry"
+            )
+            return None
+
+        # Update the step's role config
+        step.role_config = next_role_config
+
+        # Increment escalation count
+        self._escalation_counts[step.step_id] += 1
+
+        result.warnings.append(
+            f"Escalating step {step.step_id} from '{current_role}' to '{next_role}' "
+            f"(escalation {self._escalation_counts[step.step_id]}/{self.config.max_escalations_per_step})"
+        )
+
+        return next_role
 
     def _categorize_error(self, error_message: str | None) -> ErrorCategory:
         """Categorize an error to determine if it's retryable.

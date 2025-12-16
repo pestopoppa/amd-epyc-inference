@@ -1,0 +1,205 @@
+version: 1
+domain: thinking
+description: "Reasoning and chain-of-thought benchmark"
+created: "2025-12-16"
+
+prompts:
+  # ============== TIER 1: Baseline ==============
+  t1_q1_logic:
+    tier: 1
+    name: "Basic Logic"
+    prompt: |
+      If all roses are flowers, and some flowers fade quickly, can we conclude that some roses fade quickly?
+
+      Think step by step and explain your reasoning.
+    expected: "No - fallacy of the undistributed middle"
+    scoring:
+      - criterion: "Correct conclusion (No)"
+        weight: 40
+      - criterion: "Identifies logical fallacy"
+        weight: 30
+      - criterion: "Clear reasoning"
+        weight: 30
+
+  t1_q2_sequence:
+    tier: 1
+    name: "Pattern Recognition"
+    prompt: |
+      What comes next in this sequence?
+      2, 6, 12, 20, 30, ?
+
+      Show your reasoning.
+    expected: "42 (pattern: n(n+1) or differences increase by 2)"
+    scoring:
+      - criterion: "Correct answer (42)"
+        weight: 50
+      - criterion: "Identifies pattern"
+        weight: 30
+      - criterion: "Shows work"
+        weight: 20
+
+  t1_q3_deduction:
+    tier: 1
+    name: "Simple Deduction"
+    prompt: |
+      Three friends - Alice, Bob, and Carol - each have a different pet: a cat, a dog, and a bird.
+      - Alice is allergic to fur.
+      - Bob's pet can fly.
+
+      Which pet does each person have? Explain your reasoning.
+    expected: "Alice: bird, Bob: bird (contradiction!) or Carol: cat/dog..."
+    scoring:
+      - criterion: "Correct assignments"
+        weight: 50
+      - criterion: "Uses constraints correctly"
+        weight: 30
+      - criterion: "Clear deduction steps"
+        weight: 20
+
+  # ============== TIER 2: Medium-Hard ==============
+  t2_q1_multistep:
+    tier: 2
+    name: "Multi-Step Reasoning"
+    prompt: |
+      A train leaves Station A at 9:00 AM traveling at 60 mph toward Station B.
+      Another train leaves Station B at 10:00 AM traveling at 80 mph toward Station A.
+      The stations are 280 miles apart.
+
+      At what time do the trains meet? Show all your work.
+    expected: "11:30 AM"
+    scoring:
+      - criterion: "Correct answer"
+        weight: 40
+      - criterion: "Correct equation setup"
+        weight: 30
+      - criterion: "Accounts for time delay"
+        weight: 20
+      - criterion: "Clear presentation"
+        weight: 10
+
+  t2_q2_hypothesis:
+    tier: 2
+    name: "Hypothesis Testing"
+    prompt: |
+      A researcher claims: "Students who eat breakfast score higher on tests."
+      She collected data showing breakfast-eaters averaged 85% while non-breakfast-eaters averaged 75%.
+
+      What are three alternative explanations for this correlation that don't involve breakfast directly causing better scores? Be specific.
+    expected: "Confounding variables: SES, sleep, general health habits"
+    scoring:
+      - criterion: "Three valid alternatives"
+        weight: 50
+      - criterion: "Identifies confounding variables"
+        weight: 30
+      - criterion: "Specific and plausible"
+        weight: 20
+
+  t2_q3_planning:
+    tier: 2
+    name: "Planning Under Constraints"
+    prompt: |
+      You need to water 5 plants (A, B, C, D, E) with these constraints:
+      - A must be watered before B
+      - C must be watered immediately after D
+      - E cannot be first or last
+      - B must be watered before D
+
+      List all valid orderings. Show your reasoning process.
+    expected: "Systematic enumeration with constraint checking"
+    scoring:
+      - criterion: "All valid orderings found"
+        weight: 40
+      - criterion: "No invalid orderings"
+        weight: 30
+      - criterion: "Systematic approach"
+        weight: 20
+      - criterion: "Constraint verification"
+        weight: 10
+
+  # ============== TIER 3: Hard ==============
+  t3_q1_paradox:
+    tier: 3
+    name: "Paradox Resolution"
+    prompt: |
+      Consider the Ship of Theseus: If you replace every plank of a ship one by one, is it still the same ship? If you then build a new ship from the old planks, which is the "real" Ship of Theseus?
+
+      Present arguments for at least two different philosophical positions, then state which you find most convincing and why.
+    expected: "Multiple positions (identity through continuity, material identity, etc.)"
+    scoring:
+      - criterion: "Two+ coherent positions"
+        weight: 35
+      - criterion: "Addresses both ships"
+        weight: 25
+      - criterion: "Reasoned personal stance"
+        weight: 25
+      - criterion: "Philosophical depth"
+        weight: 15
+
+  t3_q2_counterfactual:
+    tier: 3
+    name: "Counterfactual Reasoning"
+    prompt: |
+      Consider this scenario: "If the internet had never been invented, how would academic research be different today?"
+
+      Analyze this counterfactual across three dimensions:
+      1. Speed of knowledge dissemination
+      2. Collaboration patterns
+      3. Reproducibility and peer review
+
+      Be specific about mechanisms and second-order effects.
+    expected: "Detailed analysis with specific mechanisms and effects"
+    scoring:
+      - criterion: "Covers all three dimensions"
+        weight: 30
+      - criterion: "Specific mechanisms identified"
+        weight: 30
+      - criterion: "Second-order effects"
+        weight: 25
+      - criterion: "Plausible reasoning"
+        weight: 15
+
+  t3_q3_formal:
+    tier: 3
+    name: "Formal Logic"
+    prompt: |
+      Prove or disprove: "If P → Q and Q → R, then P → R"
+
+      Provide a formal proof using logical rules, then give a concrete example demonstrating the principle.
+    expected: "Valid proof (hypothetical syllogism) with example"
+    scoring:
+      - criterion: "Valid formal proof"
+        weight: 40
+      - criterion: "Correct logical rules cited"
+        weight: 25
+      - criterion: "Concrete example"
+        weight: 25
+      - criterion: "Clear presentation"
+        weight: 10
+
+  t3_q4_metacognition:
+    tier: 3
+    name: "Metacognitive Analysis"
+    prompt: |
+      You're asked to estimate how many piano tuners are in Chicago.
+
+      1. Describe your estimation approach step by step
+      2. Identify the key assumptions you're making
+      3. Estimate upper and lower bounds
+      4. What information would most reduce your uncertainty?
+
+      This is about your reasoning process, not the exact number.
+    expected: "Fermi estimation with explicit assumptions and uncertainty"
+    scoring:
+      - criterion: "Clear estimation approach"
+        weight: 30
+      - criterion: "Explicit assumptions"
+        weight: 25
+      - criterion: "Reasonable bounds"
+        weight: 25
+      - criterion: "Identifies key uncertainties"
+        weight: 20
+
+inference_params:
+  temperature: 0.3
+  max_tokens: 1024
+  timeout: 180

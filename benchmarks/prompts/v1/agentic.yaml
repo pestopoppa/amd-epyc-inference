@@ -1,0 +1,281 @@
+version: 1
+domain: agentic
+description: "Tool-calling and agentic capability benchmark - critical for orchestration"
+created: "2025-12-16"
+
+prompts:
+  # ============== TIER 1: Baseline ==============
+  t1_q1_single_tool:
+    tier: 1
+    name: "Single Tool Call"
+    prompt: |
+      You have access to a tool:
+      {
+        "name": "get_weather",
+        "parameters": {
+          "city": "string (required)",
+          "units": "string (optional, celsius or fahrenheit, default celsius)"
+        }
+      }
+
+      User asks: "What is the weather in Tokyo?"
+      Generate the tool call as JSON. Output only the JSON, nothing else.
+    expected: '{"name": "get_weather", "parameters": {"city": "Tokyo"}}'
+    scoring:
+      - criterion: "Valid JSON"
+        weight: 30
+      - criterion: "Correct tool name"
+        weight: 20
+      - criterion: "Required param present"
+        weight: 30
+      - criterion: "No hallucinated params"
+        weight: 20
+
+  t1_q2_multi_param:
+    tier: 1
+    name: "Tool with Multiple Parameters"
+    prompt: |
+      Tool available:
+      {
+        "name": "search_files",
+        "parameters": {
+          "pattern": "string (required) - glob pattern",
+          "directory": "string (required) - path to search",
+          "max_results": "integer (optional, default 10)"
+        }
+      }
+
+      User asks: "Find all Python files in /src with max 5 results"
+      Generate the tool call as JSON. Output only the JSON.
+    expected: '{"name": "search_files", "parameters": {"pattern": "*.py", "directory": "/src", "max_results": 5}}'
+    scoring:
+      - criterion: "Valid JSON"
+        weight: 25
+      - criterion: "Correct pattern inference (*.py)"
+        weight: 25
+      - criterion: "Both required params"
+        weight: 30
+      - criterion: "Optional param when specified"
+        weight: 20
+
+  t1_q3_choose_tool:
+    tier: 1
+    name: "Choosing Correct Tool"
+    prompt: |
+      Available tools:
+      1. read_file: {"path": "string"} - Read file contents
+      2. write_file: {"path": "string", "content": "string"} - Write to file
+      3. list_directory: {"path": "string"} - List directory contents
+
+      User asks: "Show me what is in the config folder"
+      Which tool and what parameters? Output only the JSON tool call.
+    expected: '{"name": "list_directory", "parameters": {"path": "config"}}'
+    scoring:
+      - criterion: "Correct tool selection"
+        weight: 50
+      - criterion: "Valid parameters"
+        weight: 30
+      - criterion: "Valid JSON"
+        weight: 20
+
+  # ============== TIER 2: Medium-Hard ==============
+  t2_q1_sequential:
+    tier: 2
+    name: "Sequential Tool Calls"
+    prompt: |
+      Tools:
+      - read_file: {"path": "string"}
+      - grep_search: {"pattern": "string", "path": "string"}
+
+      User asks: "Find where ERROR is logged in /var/log/app.log, then show me that file"
+
+      Generate the tool calls in order as a JSON array. Output only the JSON array.
+    expected: '[{"name": "grep_search", ...}, {"name": "read_file", ...}]'
+    scoring:
+      - criterion: "Both tools included"
+        weight: 30
+      - criterion: "Correct order"
+        weight: 25
+      - criterion: "Valid parameters"
+        weight: 25
+      - criterion: "Valid JSON array"
+        weight: 20
+
+  t2_q2_error_handling:
+    tier: 2
+    name: "Handling Tool Errors"
+    prompt: |
+      You called: {"name": "get_user", "parameters": {"id": 123}}
+
+      Tool returned: {"error": "User not found", "code": 404}
+
+      Tools available:
+      - get_user: {"id": "integer"}
+      - search_users: {"query": "string"} - Search by name/email
+      - create_user: {"name": "string", "email": "string"}
+
+      What should you do next? Either output a tool call as JSON, or a message to the user asking for clarification.
+    expected: "Either search_users or ask for clarification - NOT retry or create_user"
+    scoring:
+      - criterion: "Acknowledges error"
+        weight: 25
+      - criterion: "Reasonable next action"
+        weight: 35
+      - criterion: "Doesn't repeat failed call"
+        weight: 25
+      - criterion: "Valid format"
+        weight: 15
+
+  t2_q3_nested_params:
+    tier: 2
+    name: "Nested/Complex Parameters"
+    prompt: |
+      Tool:
+      {
+        "name": "create_task",
+        "parameters": {
+          "title": "string (required)",
+          "assignees": "array of strings (required)",
+          "metadata": {
+            "priority": "string (low/medium/high)",
+            "tags": "array of strings",
+            "due_date": "string (ISO date)"
+          }
+        }
+      }
+
+      User: "Create a high priority task called Fix login bug for Alice and Bob, tagged as bug and urgent, due 2024-03-15"
+
+      Output only the JSON tool call.
+    expected: 'Nested JSON with assignees array, metadata object'
+    scoring:
+      - criterion: "Valid nested JSON"
+        weight: 25
+      - criterion: "Arrays correct"
+        weight: 25
+      - criterion: "All fields populated"
+        weight: 30
+      - criterion: "Correct data types"
+        weight: 20
+
+  # ============== TIER 3: Hard ==============
+  t3_q1_ambiguous:
+    tier: 3
+    name: "Ambiguous Request Resolution"
+    prompt: |
+      Tools:
+      - send_email: {"to": "string", "subject": "string", "body": "string"}
+      - send_slack: {"channel": "string", "message": "string"}
+      - create_ticket: {"title": "string", "description": "string", "assignee": "string"}
+
+      User: "Let the team know about the outage"
+
+      This is ambiguous. Either ask a clarifying question, OR if you must act, choose the most appropriate tool and explain why in one sentence, then output the JSON.
+    expected: "Clarifying question OR send_slack with reasoning"
+    scoring:
+      - criterion: "Recognizes ambiguity"
+        weight: 30
+      - criterion: "Asks clarification OR provides reasoning"
+        weight: 35
+      - criterion: "Reasonable choice if acting"
+        weight: 25
+      - criterion: "Doesn't blindly pick wrong tool"
+        weight: 10
+
+  t3_q2_error_chain:
+    tier: 3
+    name: "Error Recovery Chain"
+    prompt: |
+      Conversation so far:
+
+      You: {"name": "deploy", "parameters": {"env": "prod", "version": "1.2.3"}}
+      Tool: {"error": "Deployment blocked: failing health check on staging"}
+
+      You: {"name": "get_health", "parameters": {"env": "staging"}}
+      Tool: {"status": "unhealthy", "failing_checks": ["database_connection"]}
+
+      You: {"name": "check_database", "parameters": {"env": "staging"}}
+      Tool: {"status": "connection_refused", "host": "db-staging.internal", "port": 5432}
+
+      What is your next action? Available tools:
+      - restart_service: {"service": "string", "env": "string"}
+      - get_logs: {"service": "string", "env": "string", "lines": "integer"}
+      - notify_oncall: {"message": "string", "severity": "string"}
+      - check_dns: {"hostname": "string"}
+
+      Explain your reasoning briefly, then output the JSON tool call.
+    expected: "Logical next step with reasoning (check_dns, get_logs, or restart_service)"
+    scoring:
+      - criterion: "Understands error chain"
+        weight: 30
+      - criterion: "Logical next action"
+        weight: 30
+      - criterion: "Correct parameters"
+        weight: 25
+      - criterion: "Shows reasoning"
+        weight: 15
+
+  t3_q3_schema_edge:
+    tier: 3
+    name: "Schema Edge Cases"
+    prompt: |
+      Tool schema:
+      {
+        "name": "query_api",
+        "parameters": {
+          "endpoint": "string (required) - must start with /",
+          "method": "string (required) - GET/POST/PUT/DELETE",
+          "body": "object (required for POST/PUT, must be null for GET/DELETE)",
+          "headers": "object (optional)"
+        }
+      }
+
+      User: "GET the users endpoint with an auth header Bearer token123"
+
+      Generate the correct tool call. Output only the JSON.
+    expected: '{"name": "query_api", "parameters": {"endpoint": "/users", "method": "GET", "body": null, "headers": {"Authorization": "Bearer token123"}}}'
+    scoring:
+      - criterion: "Endpoint starts with /"
+        weight: 20
+      - criterion: "Method is GET"
+        weight: 20
+      - criterion: "Body is null (not omitted)"
+        weight: 30
+      - criterion: "Headers included"
+        weight: 20
+      - criterion: "Valid JSON"
+        weight: 10
+
+  t3_q4_orchestration:
+    tier: 3
+    name: "Multi-Tool Orchestration Plan"
+    prompt: |
+      You need to deploy a hotfix. Tools available:
+      - git_checkout: {"branch": "string"}
+      - run_tests: {"suite": "string"} - returns pass/fail
+      - build_image: {"tag": "string"}
+      - deploy: {"env": "string", "image": "string"}
+      - notify_slack: {"channel": "string", "message": "string"}
+      - rollback: {"env": "string", "to_version": "string"}
+
+      Current state: main branch, last deploy was v1.2.2, hotfix is on branch hotfix/auth-fix
+
+      Create a deployment plan as ordered tool calls. Include what to do if tests fail or deploy fails.
+      Output as JSON with structure: {"steps": [...], "on_test_fail": [...], "on_deploy_fail": [...]}
+    expected: "Complete plan with checkout->test->build->deploy and error handling"
+    scoring:
+      - criterion: "Correct sequence (checkout→test→build→deploy)"
+        weight: 25
+      - criterion: "Test failure handling"
+        weight: 20
+      - criterion: "Deploy failure handling (rollback)"
+        weight: 20
+      - criterion: "Success notification"
+        weight: 15
+      - criterion: "Valid JSON structure"
+        weight: 20
+
+inference_params:
+  temperature: 0.2
+  max_tokens: 512
+  timeout: 120

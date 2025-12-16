@@ -97,6 +97,48 @@ class RoutingHint:
     use: list[str]
 
 
+@dataclass
+class EscalationChain:
+    """Escalation chain configuration."""
+    name: str
+    description: str
+    chain: list[str]  # Ordered list of role names
+    triggers: list[dict[str, Any]] = field(default_factory=list)
+    max_escalations: int = 2
+
+    def get_next_role(self, current_role: str) -> str | None:
+        """Get the next role in the escalation chain.
+
+        Args:
+            current_role: The role that failed/needs escalation.
+
+        Returns:
+            The next role in the chain, or None if at end.
+        """
+        try:
+            idx = self.chain.index(current_role)
+            if idx < len(self.chain) - 1:
+                return self.chain[idx + 1]
+        except ValueError:
+            pass
+        return None
+
+    def get_chain_for_role(self, role: str) -> list[str] | None:
+        """Get the remaining chain starting from a role.
+
+        Args:
+            role: The starting role.
+
+        Returns:
+            List of roles from this point forward, or None if not in chain.
+        """
+        try:
+            idx = self.chain.index(role)
+            return self.chain[idx:]
+        except ValueError:
+            return None
+
+
 class RegistryError(Exception):
     """Error loading or validating the registry."""
     pass
@@ -121,6 +163,7 @@ class RegistryLoader:
         self._roles: dict[str, RoleConfig] = {}
         self._routing_hints: list[RoutingHint] = []
         self._command_templates: dict[str, str] = {}
+        self._escalation_chains: dict[str, EscalationChain] = {}
         self._model_base_path: Path = Path("/mnt/raid0/llm/lmstudio/models")
         self._runtime_defaults: dict[str, Any] = {}
         self._missing_models: list[str] = []
@@ -171,6 +214,17 @@ class RegistryLoader:
 
         # Load command templates
         self._command_templates = self._raw.get("command_templates", {})
+
+        # Load escalation chains
+        chains_data = self._raw.get("escalation_chains", {})
+        for chain_name, chain_data in chains_data.items():
+            self._escalation_chains[chain_name] = EscalationChain(
+                name=chain_name,
+                description=chain_data.get("description", ""),
+                chain=chain_data.get("chain", []),
+                triggers=chain_data.get("triggers", []),
+                max_escalations=chain_data.get("max_escalations", 2),
+            )
 
     def _parse_role(self, name: str, data: dict[str, Any]) -> RoleConfig:
         """Parse a role configuration from YAML data."""
@@ -293,6 +347,43 @@ class RegistryLoader:
         draft_role = role.acceleration.draft_role
         if draft_role and draft_role in self._roles:
             return self._roles[draft_role]
+        return None
+
+    @property
+    def escalation_chains(self) -> dict[str, EscalationChain]:
+        """Get all escalation chains."""
+        return self._escalation_chains
+
+    def get_escalation_chain(self, name: str) -> EscalationChain | None:
+        """Get an escalation chain by name."""
+        return self._escalation_chains.get(name)
+
+    def get_chain_for_role(self, role_name: str) -> EscalationChain | None:
+        """Find the escalation chain that contains a role.
+
+        Args:
+            role_name: The role to look up.
+
+        Returns:
+            The escalation chain containing this role, or None.
+        """
+        for chain in self._escalation_chains.values():
+            if role_name in chain.chain:
+                return chain
+        return None
+
+    def get_escalation_target(self, role_name: str) -> str | None:
+        """Get the next escalation target for a role.
+
+        Args:
+            role_name: The current role.
+
+        Returns:
+            The next role in the escalation chain, or None if at end or not in chain.
+        """
+        chain = self.get_chain_for_role(role_name)
+        if chain:
+            return chain.get_next_role(role_name)
         return None
 
     def generate_command(

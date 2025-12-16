@@ -1,0 +1,200 @@
+version: 1
+domain: long_context
+description: "Long context handling benchmark - tests information retrieval across large contexts"
+created: "2025-12-16"
+note: "Context content is generated programmatically by the rubric script"
+
+prompts:
+  # ============== TIER 1: Short Context (4K tokens) ==============
+  t1_q1_retrieval:
+    tier: 1
+    name: "Information Retrieval"
+    context_tokens: 4000
+    context_type: "technical_docs"
+    needle: "The maximum concurrent connections allowed is 2847."
+    needle_position: "middle"
+    prompt: |
+      Based on the documentation above, what is the exact maximum number of concurrent connections allowed?
+
+      Answer with just the number.
+    expected: "2847"
+    scoring:
+      - criterion: "Exact number correct"
+        weight: 70
+      - criterion: "No hallucination"
+        weight: 30
+
+  t1_q2_summary:
+    tier: 1
+    name: "Summary with Details"
+    context_tokens: 4000
+    context_type: "meeting_notes"
+    prompt: |
+      Based on the meeting notes above:
+      1. List all decisions made
+      2. List all action items with their assignees
+
+      Be comprehensive - don't miss any items.
+    expected: "All decisions and action items captured"
+    scoring:
+      - criterion: "All decisions captured"
+        weight: 40
+      - criterion: "All action items found"
+        weight: 40
+      - criterion: "Correct assignees"
+        weight: 20
+
+  t1_q3_cross_reference:
+    tier: 1
+    name: "Multi-Section Reference"
+    context_tokens: 4000
+    context_type: "structured_doc"
+    prompt: |
+      Based on the document above:
+      What does Section 3 say about error handling, and how does it relate to Section 5's requirements?
+
+      Be specific about the connection between these sections.
+    expected: "Accurate cross-reference between sections"
+    scoring:
+      - criterion: "Section 3 content correct"
+        weight: 35
+      - criterion: "Section 5 content correct"
+        weight: 35
+      - criterion: "Relationship identified"
+        weight: 30
+
+  # ============== TIER 2: Medium Context (8-16K tokens) ==============
+  t2_q1_needle:
+    tier: 2
+    name: "Needle in Haystack"
+    context_tokens: 12000
+    context_type: "code_files"
+    needle: "# CRITICAL_CONFIG: api_key = 'sk-proj-7x9mK2nP4qR8sT1uV3wY5zA'"
+    needle_position: "deep"  # ~75% through
+    prompt: |
+      Review the codebase above and find any hardcoded API keys, secrets, or credentials.
+
+      List exactly what you find with the exact values.
+    expected: "sk-proj-7x9mK2nP4qR8sT1uV3wY5zA"
+    scoring:
+      - criterion: "Secret found"
+        weight: 50
+      - criterion: "Exact value correct"
+        weight: 30
+      - criterion: "Location context"
+        weight: 20
+
+  t2_q2_multi_file:
+    tier: 2
+    name: "Multi-File Analysis"
+    context_tokens: 10000
+    context_type: "python_project"
+    prompt: |
+      Analyze the Python project above:
+      1. Trace the data flow from config loading in config.py through to main.py
+      2. Identify any bugs or issues in the code
+
+      Be specific about file names and function names.
+    expected: "Correct flow + bug identification"
+    scoring:
+      - criterion: "Correct data flow"
+        weight: 40
+      - criterion: "Bug identified"
+        weight: 40
+      - criterion: "Clear explanation"
+        weight: 20
+
+  t2_q3_extraction:
+    tier: 2
+    name: "Comprehensive Extraction"
+    context_tokens: 15000
+    context_type: "legal_doc"
+    prompt: |
+      From the document above, extract:
+      1. All dates mentioned (in any format)
+      2. All monetary amounts
+      3. All company/party names
+
+      Format as three separate lists. Be exhaustive.
+    expected: "Complete extraction"
+    scoring:
+      - criterion: "All dates found"
+        weight: 30
+      - criterion: "All amounts found"
+        weight: 30
+      - criterion: "All parties found"
+        weight: 30
+      - criterion: "No false positives"
+        weight: 10
+
+  # ============== TIER 3: Long Context (32K+ tokens) ==============
+  t3_q1_deep_needle:
+    tier: 3
+    name: "Deep Needle"
+    context_tokens: 40000
+    context_type: "server_logs"
+    needle: "[2024-03-15 03:47:22] CRITICAL: Server node-7 experienced fatal memory corruption"
+    needle_position: "very_deep"  # ~80% through
+    prompt: |
+      Review the server logs above. Find the CRITICAL error that occurred.
+
+      What server was affected and at what exact time?
+    expected: "node-7, 03:47:22"
+    scoring:
+      - criterion: "Correct server"
+        weight: 40
+      - criterion: "Correct time"
+        weight: 40
+      - criterion: "Found despite depth"
+        weight: 20
+
+  t3_q2_synthesis:
+    tier: 3
+    name: "Multi-Document Synthesis"
+    context_tokens: 35000
+    context_type: "business_docs"
+    prompt: |
+      Based on the four documents above (Q1 Report, Q2 Report, Market Analysis, Competitor Report):
+
+      1. How did performance change from Q1 to Q2?
+      2. What market factors explain this change?
+      3. How does competitor activity relate to the performance?
+
+      Provide an integrated analysis that connects insights across all documents.
+    expected: "Integrated analysis across all 4 docs"
+    scoring:
+      - criterion: "Q1/Q2 comparison accurate"
+        weight: 30
+      - criterion: "Market factors included"
+        weight: 25
+      - criterion: "Competitor factors included"
+        weight: 25
+      - criterion: "Coherent synthesis"
+        weight: 20
+
+  t3_q3_architecture:
+    tier: 3
+    name: "Codebase Understanding"
+    context_tokens: 50000
+    context_type: "full_project"
+    prompt: |
+      Analyze the complete codebase above:
+
+      1. Describe the overall architecture
+      2. What design patterns are used? (Be specific)
+      3. Outline the class/module hierarchy
+
+      This is a comprehensive architecture review.
+    expected: "Accurate architecture description"
+    scoring:
+      - criterion: "Architecture correct"
+        weight: 35
+      - criterion: "Design patterns identified"
+        weight: 35
+      - criterion: "Hierarchy accurate"
+        weight: 30
+
+inference_params:
+  temperature: 0.2
+  max_tokens: 1024
+  timeout: 300  # Longer timeout for long context

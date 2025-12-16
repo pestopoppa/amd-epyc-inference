@@ -340,8 +340,73 @@ llama-cli -m MOE.gguf \
 
 ---
 
+## Benchmark Framework (2025-12-16)
+
+### 8 Quality Benchmark Suites
+
+| Suite | Purpose | Auto-Scoring |
+|-------|---------|--------------|
+| **Thinking** | Chain-of-thought, multi-step reasoning | Manual |
+| **Coder** | Code generation, debugging, refactoring | Manual |
+| **VL** | Vision-language (OCR, image understanding) | Manual |
+| **General** | Instruction following, summarization | Manual |
+| **Agentic** | Tool calling, function extraction | Partial |
+| **Math** | Mathematical reasoning, step verification | Partial |
+| **Long Context** | Information retrieval (4K-50K tokens) | Auto |
+| **Instruction Precision** | Exact format compliance | **Full Auto** |
+
+### Permanent Storage
+
+```
+benchmarks/
+├── prompts/v1/          # Versioned YAML prompt files
+│   ├── thinking.yaml
+│   ├── coder.yaml
+│   ├── vl.yaml
+│   ├── general.yaml
+│   ├── agentic.yaml
+│   ├── math.yaml
+│   ├── long_context.yaml
+│   └── instruction_precision.yaml
+├── results/
+│   ├── runs/            # Raw outputs per run with metadata
+│   └── index.jsonl      # Structured index for querying
+└── baselines/           # Reference checkpoints
+```
+
+### Commands
+
+```bash
+# Run all 8 suites
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite all
+
+# Run specific suite
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite instruction_precision
+
+# Compare runs
+./scripts/benchmark/compare_results.sh --baseline ID --current ID
+
+# List all runs
+./scripts/benchmark/compare_results.sh --list-runs
+```
+
+### Why Instruction Precision Matters for Orchestration
+
+Models that fail instruction precision tests will break orchestration:
+- "Output only JSON" → model adds "Here's the JSON:" → **parsing failure**
+- "Exactly 3 items" → model gives 4 → **schema validation failure**
+- "Do not mention X" → model mentions X → **context pollution**
+
+**Orchestration readiness thresholds:**
+- Workers: T1 100%, T2 75%+
+- Orchestrators: T1 100%, T2 100%, T3 75%+
+
+---
+
 ## Full Data
 
 - Detailed results: `logs/research_report.md`
 - Methodology: `research/speculative_decoding_research.md`
 - Blog template: `research/research_report_template.md`
+- Benchmark prompts: `benchmarks/prompts/v1/`
+- Benchmark results: `benchmarks/results/`

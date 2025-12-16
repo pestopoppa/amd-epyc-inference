@@ -355,6 +355,69 @@ agent_task_end "Description" "success|failure"
 
 ---
 
+## 🔧 New Model Testing Workflow
+
+**CRITICAL: When testing a NEW model, follow this order:**
+
+### Step 1: Establish Reliable Launch (FIRST)
+Before ANY testing:
+1. Run a minimal test: `llama-completion -m MODEL.gguf -p "Hello"`
+2. Identify and document launch quirks:
+   - Does it need specific flags?
+   - Does it auto-enable interactive/conversation mode?
+   - Are there output format quirks (e.g., `<think>` tags)?
+   - Does piping output cause errors?
+3. Add quirks to `orchestration/model_registry.yaml` immediately
+
+### Step 2: Run Quality Rubric (Captures Speed Automatically)
+Once launch is reliable:
+1. Run quality rubric script (e.g., `run_thinking_rubric.sh`)
+2. Script captures BOTH quality scores AND speed per question
+3. Apply known optimizations during testing:
+   - MoE models: `--override-kv ARCH.expert_used_count=int:4`
+   - Dense models: spec decode if compatible
+4. Assign role based on tier scores
+
+**DO NOT do separate speed benchmarks** - the rubric captures speed data.
+
+### Step 3: Run Full Benchmark Suites (MANDATORY for New Models)
+After registry entry and quirks are documented, run the complete benchmark suite:
+
+```bash
+# Run all 8 benchmark suites for comprehensive evaluation
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite all
+
+# Or run specific suites based on model role:
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite thinking      # Reasoning models
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite coder         # Code models
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite instruction_precision  # Orchestration candidates
+./scripts/benchmark/run_overnight_benchmark_suite.sh --suite long_context  # Context window testing
+```
+
+**8 Benchmark Suites:**
+1. **Thinking** - Chain-of-thought, multi-step reasoning
+2. **Coder** - Code generation, debugging, refactoring
+3. **VL** - Vision-language (OCR, image understanding)
+4. **General** - Instruction following, summarization
+5. **Agentic** - Tool calling, function extraction
+6. **Math** - Mathematical reasoning, step verification
+7. **Long Context** - Information retrieval across 4K-50K token contexts
+8. **Instruction Precision** - Exact format compliance (critical for orchestration)
+
+**Why this matters:**
+- Results are stored permanently in `/mnt/raid0/llm/claude/benchmarks/results/`
+- JSONL index enables faithful comparison with future models
+- Models can be deleted after benchmarking - results persist for comparison
+- Instruction Precision suite identifies models that will break orchestration parsing
+
+**Why this order matters:**
+- Debugging launch issues DURING quality tests wastes time
+- Quality rubric captures speed - no separate benchmark needed
+- Registry should always have working launch commands
+- Full benchmark suite provides permanent record for future comparison
+
+---
+
 ## ⚠️ Benchmarking Pitfalls
 
 ### Interactive Mode Hangs
@@ -422,6 +485,9 @@ llama-cli -m MODEL.gguf -f prompt.txt -n 128 \
 | Model Registry | `orchestration/model_registry.yaml` |
 | TaskIR Schema | `orchestration/task_ir.schema.json` |
 | Agent Definitions | `agents/` |
+| Benchmark Prompts | `benchmarks/prompts/v1/` |
+| Benchmark Results | `benchmarks/results/` |
+| Benchmark Index | `benchmarks/results/index.jsonl` |
 
 ### Commands
 | Action | Command |
@@ -430,6 +496,9 @@ llama-cli -m MODEL.gguf -f prompt.txt -n 128 \
 | Validate TaskIR | `python3 orchestration/validate_ir.py task FILE.json` |
 | Analyze logs | `scripts/utils/agent_log_analyze.sh --summary` |
 | Discover models | `scripts/session/session_init.sh` |
+| Run all benchmarks | `scripts/benchmark/run_overnight_benchmark_suite.sh --suite all` |
+| Compare benchmark runs | `scripts/benchmark/compare_results.sh --baseline ID --current ID` |
+| List benchmark runs | `scripts/benchmark/compare_results.sh --list-runs` |
 
 ---
 

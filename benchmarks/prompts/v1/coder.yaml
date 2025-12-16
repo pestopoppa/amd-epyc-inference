@@ -1,0 +1,237 @@
+version: 1
+domain: coder
+description: "Code generation and debugging benchmark"
+created: "2025-12-16"
+
+prompts:
+  # ============== TIER 1: Baseline ==============
+  t1_q1_function:
+    tier: 1
+    name: "Simple Function"
+    prompt: |
+      Write a Python function that checks if a string is a palindrome.
+      The function should be case-insensitive and ignore spaces.
+
+      Example: "A man a plan a canal Panama" -> True
+    expected: "Working palindrome function"
+    scoring:
+      - criterion: "Correct logic"
+        weight: 40
+      - criterion: "Handles case insensitivity"
+        weight: 20
+      - criterion: "Handles spaces"
+        weight: 20
+      - criterion: "Clean code style"
+        weight: 20
+
+  t1_q2_debug:
+    tier: 1
+    name: "Simple Bug Fix"
+    prompt: |
+      Fix the bug in this Python code:
+
+      def factorial(n):
+          if n == 0:
+              return 0
+          return n * factorial(n - 1)
+
+      The function should return 1 for factorial(0), not 0.
+    expected: "Change return 0 to return 1"
+    scoring:
+      - criterion: "Identifies the bug"
+        weight: 40
+      - criterion: "Provides correct fix"
+        weight: 40
+      - criterion: "Explains why"
+        weight: 20
+
+  t1_q3_explain:
+    tier: 1
+    name: "Code Explanation"
+    prompt: |
+      Explain what this Python code does in 2-3 sentences:
+
+      def mystery(lst):
+          return [x for x in lst if lst.count(x) == 1]
+    expected: "Returns elements that appear exactly once"
+    scoring:
+      - criterion: "Correct explanation"
+        weight: 60
+      - criterion: "Mentions uniqueness/count"
+        weight: 25
+      - criterion: "Concise"
+        weight: 15
+
+  # ============== TIER 2: Medium-Hard ==============
+  t2_q1_algorithm:
+    tier: 2
+    name: "Algorithm Implementation"
+    prompt: |
+      Implement binary search in Python. The function should:
+      - Take a sorted list and a target value
+      - Return the index if found, -1 if not found
+      - Use O(log n) time complexity
+
+      Include a brief comment explaining the approach.
+    expected: "Working binary search with O(log n)"
+    scoring:
+      - criterion: "Correct implementation"
+        weight: 40
+      - criterion: "O(log n) complexity"
+        weight: 30
+      - criterion: "Handles edge cases"
+        weight: 20
+      - criterion: "Clear comments"
+        weight: 10
+
+  t2_q2_refactor:
+    tier: 2
+    name: "Code Refactoring"
+    prompt: |
+      Refactor this code to be more Pythonic and efficient:
+
+      result = []
+      for i in range(len(numbers)):
+          if numbers[i] > 0:
+              result.append(numbers[i] * 2)
+
+      Explain your improvements.
+    expected: "List comprehension: [x * 2 for x in numbers if x > 0]"
+    scoring:
+      - criterion: "Uses list comprehension"
+        weight: 40
+      - criterion: "Removes unnecessary indexing"
+        weight: 30
+      - criterion: "Explains improvements"
+        weight: 30
+
+  t2_q3_test:
+    tier: 2
+    name: "Test Case Generation"
+    prompt: |
+      Write pytest test cases for this function:
+
+      def divide(a, b):
+          if b == 0:
+              raise ValueError("Cannot divide by zero")
+          return a / b
+
+      Cover normal cases, edge cases, and error cases.
+    expected: "Tests for normal division, zero divisor, negative numbers"
+    scoring:
+      - criterion: "Tests normal cases"
+        weight: 30
+      - criterion: "Tests zero division error"
+        weight: 30
+      - criterion: "Tests edge cases"
+        weight: 25
+      - criterion: "Proper pytest syntax"
+        weight: 15
+
+  # ============== TIER 3: Hard ==============
+  t3_q1_design:
+    tier: 3
+    name: "Class Design"
+    prompt: |
+      Design a Python class for a simple LRU (Least Recently Used) cache with:
+      - __init__(capacity): Initialize with max capacity
+      - get(key): Return value if exists, -1 otherwise
+      - put(key, value): Insert or update value
+
+      Both get and put should be O(1) time complexity.
+      Explain your data structure choices.
+    expected: "OrderedDict or dict+doubly linked list implementation"
+    scoring:
+      - criterion: "Correct LRU behavior"
+        weight: 35
+      - criterion: "O(1) operations"
+        weight: 30
+      - criterion: "Clean API"
+        weight: 20
+      - criterion: "Explains design choices"
+        weight: 15
+
+  t3_q2_debug_complex:
+    tier: 3
+    name: "Complex Debugging"
+    prompt: |
+      This async Python code has a race condition. Find and fix it:
+
+      import asyncio
+
+      counter = 0
+
+      async def increment():
+          global counter
+          temp = counter
+          await asyncio.sleep(0.001)
+          counter = temp + 1
+
+      async def main():
+          await asyncio.gather(*[increment() for _ in range(100)])
+          print(f"Counter: {counter}")  # Expected: 100, Actual: varies
+
+      asyncio.run(main())
+    expected: "Use asyncio.Lock to protect counter access"
+    scoring:
+      - criterion: "Identifies race condition"
+        weight: 30
+      - criterion: "Proposes Lock solution"
+        weight: 35
+      - criterion: "Correct implementation"
+        weight: 25
+      - criterion: "Explains the issue"
+        weight: 10
+
+  t3_q3_optimize:
+    tier: 3
+    name: "Performance Optimization"
+    prompt: |
+      Optimize this function for large inputs (n > 10^6):
+
+      def count_pairs(nums, target):
+          count = 0
+          for i in range(len(nums)):
+              for j in range(i + 1, len(nums)):
+                  if nums[i] + nums[j] == target:
+                      count += 1
+          return count
+
+      Current: O(n²). Target: O(n) or O(n log n).
+      Provide the optimized code and explain the approach.
+    expected: "Hash map approach for O(n) solution"
+    scoring:
+      - criterion: "Achieves better complexity"
+        weight: 40
+      - criterion: "Correct implementation"
+        weight: 30
+      - criterion: "Handles duplicates correctly"
+        weight: 20
+      - criterion: "Clear explanation"
+        weight: 10
+
+  t3_q4_system:
+    tier: 3
+    name: "System Design Code"
+    prompt: |
+      Implement a simple rate limiter class in Python:
+      - Allow max N requests per time window W seconds
+      - is_allowed() returns True/False
+      - Should work correctly across multiple calls
+
+      Use only standard library. Handle edge cases.
+    expected: "Sliding window or token bucket implementation"
+    scoring:
+      - criterion: "Correct rate limiting logic"
+        weight: 35
+      - criterion: "Handles time windows properly"
+        weight: 30
+      - criterion: "Thread-safe consideration"
+        weight: 20
+      - criterion: "Clean implementation"
+        weight: 15
+
+inference_params:
+  temperature: 0.2
+  max_tokens: 1024
+  timeout: 120
