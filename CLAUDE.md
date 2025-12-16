@@ -407,3 +407,21 @@ llama-cli -m MODEL.gguf -f prompt.txt -n 128 \
 - All files on `/mnt/raid0/`
 - Prefix inference: `OMP_NUM_THREADS=1 numactl --interleave=all`
 - Run `make gates` after producing artifacts
+
+---
+
+## Git Commit Workflow
+
+When committing orchestration-related changes:
+
+1. **Run tests first:** `make test-all`
+2. **Update progress report:** `orchestration/progress/PROGRESS_YYYY-MM-DD.md`
+   - Update implementation status table
+   - Add completed items to "Completed This Period"
+   - Update test counts
+   - Add new files to "Files Created/Modified"
+3. **Update research summary** if benchmarks changed: `research/RESULTS_SUMMARY.md`
+4. **Commit with descriptive message** including:
+   - What was added/changed
+   - Test status (X tests passing)
+   - Performance metrics if applicable
