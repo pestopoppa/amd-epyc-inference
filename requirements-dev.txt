@@ -1,0 +1,27 @@
+# Development dependencies for amd-epyc-inference
+# ================================================
+#
+# Install: pip install -r requirements-dev.txt
+#
+# These are intentionally minimal. Add more as the Python codebase grows.
+
+# Schema validation (required for IR validation)
+jsonschema>=4.20
+
+# YAML parsing (for model_registry.yaml)
+pyyaml>=6.0
+
+# ── Optional (uncomment when needed) ──────────────────────────────────────────
+
+# Linting and formatting (add when you have substantial Python code)
+# ruff>=0.1.0
+
+# Type checking
+# pyright>=1.1.350
+
+# Testing
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+
+# Markdown formatting
+# mdformat>=0.7.0

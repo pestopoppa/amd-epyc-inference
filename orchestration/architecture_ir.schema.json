@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pestopoppa/amd-epyc-inference/schemas/architecture_ir.schema.json",
+  "title": "ArchitectureIR",
+  "description": "Intermediate representation emitted by Tier-B3 Architect for system design, invariants, and acceptance criteria.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version",
+    "goals",
+    "non_goals",
+    "global_invariants",
+    "repo_layout",
+    "modules",
+    "contracts",
+    "cross_cutting",
+    "acceptance"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project or component name"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Architecture version (semver recommended)"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "context": {
+      "type": "object",
+      "description": "Project context and constraints",
+      "properties": {
+        "domain": { "type": "string" },
+        "language_stack": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "constraints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "target_environment": { "type": "string" }
+      }
+    },
+    "goals": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "What this architecture aims to achieve"
+    },
+    "non_goals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Explicitly out of scope"
+    },
+    "global_invariants": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "System-wide invariants that must always hold"
+    },
+    "decisions": {
+      "type": "array",
+      "description": "Architecture Decision Records (ADRs)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "status", "rationale"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^ADR-[0-9]+$",
+            "description": "ADR identifier (ADR-001, ADR-002, ...)"
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "accepted", "deprecated", "superseded"]
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Why this decision was made"
+          },
+          "alternatives_considered": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "superseded_by": {
+            "type": "string",
+            "pattern": "^ADR-[0-9]+$"
+          }
+        }
+      }
+    },
+    "repo_layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["folders"],
+      "properties": {
+        "folders": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "owner_role", "purpose"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "owner_role": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Agent role that owns this folder"
+              },
+              "purpose": { "type": "string", "minLength": 1 },
+              "rules": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Access/modification rules"
+              }
+            }
+          }
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "responsibilities", "public_api", "dependencies", "files"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]+$",
+            "description": "Module identifier (used in dependency references)"
+          },
+          "name": { "type": "string", "minLength": 1 },
+          "responsibilities": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          },
+          "public_api": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["symbol", "signature", "description"],
+              "properties": {
+                "symbol": { "type": "string", "minLength": 1 },
+                "signature": { "type": "string", "minLength": 1 },
+                "description": { "type": "string", "minLength": 1 },
+                "invariants": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          },
+          "dependencies": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["allows", "forbids"],
+            "properties": {
+              "allows": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Module IDs this module may depend on"
+              },
+              "forbids": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Module IDs this module must NOT depend on"
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "purpose"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "purpose": { "type": "string", "minLength": 1 },
+                "owner_role": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "description": "API contracts and schemas",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "path", "scope"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": {
+            "type": "string",
+            "enum": ["openapi", "jsonschema", "proto", "python-types", "ts-types", "asyncapi"]
+          },
+          "path": { "type": "string", "minLength": 1 },
+          "scope": {
+            "type": "string",
+            "enum": ["public", "internal"]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "cross_cutting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logging", "errors", "config", "security"],
+      "properties": {
+        "logging": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Logging conventions and requirements"
+        },
+        "errors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["strategy"],
+          "properties": {
+            "strategy": {
+              "type": "string",
+              "enum": ["exceptions", "result-types", "error-codes", "hybrid"],
+              "description": "Primary error handling strategy"
+            },
+            "error_codes": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "notes": { "type": "string" }
+          }
+        },
+        "config": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Configuration management rules"
+        },
+        "security": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Security requirements and constraints"
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tests", "benchmarks", "definition_of_done"],
+      "properties": {
+        "tests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type", "description"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "type": {
+                "type": "string",
+                "enum": ["unit", "integration", "e2e", "property", "benchmark"]
+              },
+              "description": { "type": "string", "minLength": 1 },
+              "files": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "success_criteria": { "type": "string" }
+            }
+          }
+        },
+        "benchmarks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Performance benchmarks and thresholds"
+        },
+        "definition_of_done": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

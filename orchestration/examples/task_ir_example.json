@@ -1,0 +1,94 @@
+{
+  "task_id": "example-001",
+  "created_at": "2025-12-16T10:30:00Z",
+  "task_type": "code",
+  "priority": "interactive",
+  "objective": "Add error handling to the model registry loader",
+  "context": {
+    "conversation_id": "conv-abc123",
+    "relevant_files": [
+      "orchestration/model_registry.yaml"
+    ]
+  },
+  "inputs": [
+    {
+      "type": "path",
+      "value": "orchestration/model_registry.yaml",
+      "label": "current registry"
+    }
+  ],
+  "constraints": [
+    "Python 3.11+",
+    "Use pyyaml for parsing",
+    "Fail gracefully with clear error messages"
+  ],
+  "assumptions": [
+    "User wants validation errors to include line numbers",
+    "Schema validation should happen before model lookup"
+  ],
+  "agents": [
+    {
+      "tier": "B",
+      "role": "coder",
+      "model_hint": "coder_primary"
+    },
+    {
+      "tier": "C",
+      "role": "worker",
+      "model_hint": "worker_general",
+      "max_concurrency": 2
+    }
+  ],
+  "plan": {
+    "steps": [
+      {
+        "id": "S1",
+        "actor": "coder",
+        "action": "Implement RegistryLoader class with YAML parsing and validation",
+        "inputs": ["orchestration/model_registry.yaml"],
+        "outputs": ["src/registry_loader.py"],
+        "run_gates": false
+      },
+      {
+        "id": "S2",
+        "actor": "worker",
+        "action": "Write unit tests for RegistryLoader",
+        "inputs": ["src/registry_loader.py"],
+        "outputs": ["tests/unit/test_registry_loader.py"],
+        "depends_on": ["S1"],
+        "run_gates": true
+      },
+      {
+        "id": "S3",
+        "actor": "worker",
+        "action": "Add docstrings and type hints",
+        "inputs": ["src/registry_loader.py"],
+        "outputs": ["src/registry_loader.py"],
+        "depends_on": ["S1"],
+        "parallel_group": "polish"
+      }
+    ],
+    "parallelism": {
+      "max_concurrent_workers": 2
+    }
+  },
+  "gates": [
+    "schema",
+    "format",
+    "lint",
+    "typecheck",
+    "unit"
+  ],
+  "definition_of_done": [
+    "RegistryLoader can load model_registry.yaml",
+    "Invalid YAML raises descriptive error with line number",
+    "Missing required fields raise validation error",
+    "All unit tests pass",
+    "Type hints pass pyright"
+  ],
+  "escalation": {
+    "max_level": "B3",
+    "on_second_failure": true,
+    "notes": "Escalate to architect if schema design needs revision"
+  }
+}

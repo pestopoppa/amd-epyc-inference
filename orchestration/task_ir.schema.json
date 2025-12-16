@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pestopoppa/amd-epyc-inference/schemas/task_ir.schema.json",
+  "title": "TaskIR",
+  "description": "Intermediate representation emitted by the Front Door orchestrator to route work to specialists and workers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_id",
+    "task_type",
+    "priority",
+    "objective",
+    "inputs",
+    "constraints",
+    "assumptions",
+    "agents",
+    "plan",
+    "gates",
+    "definition_of_done",
+    "escalation"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Unique identifier for this task (UUID recommended)",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when this TaskIR was created"
+    },
+    "task_type": {
+      "type": "string",
+      "enum": ["chat", "doc", "code", "ingest", "manage"],
+      "description": "Primary task category for routing"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["interactive", "batch"],
+      "description": "interactive = low-latency required; batch = throughput-optimized"
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Clear statement of what success looks like"
+    },
+    "context": {
+      "type": "object",
+      "description": "Optional context from prior interactions",
+      "additionalProperties": false,
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "prior_task_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "relevant_files": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Explicit inputs to the task (files, URLs, text snippets)",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "value"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["path", "url", "text", "image", "audio"]
+          },
+          "value": { "type": "string", "minLength": 1 },
+          "label": { "type": "string" },
+          "content_type": { "type": "string" }
+        }
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "description": "Hard constraints (language, performance, security requirements)",
+      "items": { "type": "string" }
+    },
+    "assumptions": {
+      "type": "array",
+      "description": "Assumptions made when the request was ambiguous (instead of asking follow-ups)",
+      "items": { "type": "string" }
+    },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Agents required for this task",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["tier", "role"],
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": ["A", "B", "C", "D"],
+            "description": "A=FrontDoor, B=Specialist, C=Worker, D=Draft"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "frontdoor",
+              "coder",
+              "ingest",
+              "architect",
+              "worker",
+              "docwriter",
+              "math",
+              "vision",
+              "toolrunner",
+              "draft"
+            ]
+          },
+          "model_hint": {
+            "type": "string",
+            "description": "Suggested model from registry (dispatcher may override)"
+          },
+          "max_concurrency": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Max parallel instances of this agent"
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "actor", "action", "outputs"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^S[0-9]+$",
+                "description": "Step ID (S1, S2, ...)"
+              },
+              "actor": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Agent role responsible for this step"
+              },
+              "action": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What this step does"
+              },
+              "inputs": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Input artifacts or prior step outputs"
+              },
+              "outputs": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string" },
+                "description": "Expected output artifacts"
+              },
+              "run_gates": {
+                "type": "boolean",
+                "default": false,
+                "description": "Run gates after this step (micro-gate)"
+              },
+              "parallel_group": {
+                "type": "string",
+                "description": "Steps with same group can run concurrently"
+              },
+              "depends_on": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^S[0-9]+$" },
+                "description": "Step IDs that must complete before this one"
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "parallelism": {
+          "type": "object",
+          "description": "Explicit parallelism hints",
+          "properties": {
+            "max_concurrent_steps": { "type": "integer", "minimum": 1 },
+            "max_concurrent_workers": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Verification gates to run (in order)",
+      "items": {
+        "type": "string",
+        "enum": [
+          "schema",
+          "format",
+          "lint",
+          "shellcheck",
+          "build",
+          "typecheck",
+          "unit",
+          "integration",
+          "security",
+          "bench"
+        ]
+      }
+    },
+    "definition_of_done": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Human-readable success criteria"
+    },
+    "escalation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_level", "on_second_failure"],
+      "properties": {
+        "max_level": {
+          "type": "string",
+          "enum": ["B1", "B2", "B3"],
+          "description": "Highest tier to escalate to"
+        },
+        "on_second_failure": {
+          "type": "boolean",
+          "description": "Escalate after second gate failure"
+        },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

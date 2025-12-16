@@ -28,28 +28,31 @@ agent_session_start "LLM optimization session"
 # 3. Discover all available models
 bash /mnt/raid0/llm/claude/scripts/session/session_init.sh
 
-# 4. Check for untested models
-cat /mnt/raid0/llm/claude/logs/untested_models.txt
+# 4. Load research results summary
+head -100 /mnt/raid0/llm/claude/logs/research_report.md
 
-# 5. Load research report summary
-head -100 /mnt/raid0/llm/claude/logs/research_report.md 2>/dev/null || echo "No report yet"
+# 5. Check model registry for routing
+cat /mnt/raid0/llm/claude/orchestration/model_registry.yaml | head -80
 
-Available agents: @sysadmin, @build-engineer, @benchmark-analyst, @safety-reviewer, @model-engineer, @research-engineer
+PRODUCTION STATUS (December 2025):
+===================================
+✅ PRODUCTION: Track 1 (11x), Track 2 (+87%), Track 8 (12.7x)
+🏗️ ORCHESTRATION: Hierarchical agent system with TaskIR/ArchitectureIR
+⛔ DEPRECATED: EAGLE, CAS-Spec (0% acceptance)
 
-CURRENT RESEARCH PRIORITY (December 2025):
-============================================
-✅ PRODUCTION: Track 1 (5.9x), Track 2 (21-48%)
-🆕 THIS WEEK: Track 8 (Prompt Lookup), Track 6 (SuffixDecoding)
-⛔ DEPRECATED: Track 3 (EAGLE) - blocked, pivot to retrieval methods
-
-Full research plan: /mnt/raid0/llm/claude/research/speculative_decoding_research.md
+ORCHESTRATION WORKFLOW:
+1. Front Door emits TaskIR → orchestration/last_task_ir.json
+2. Validate: python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
+3. Route to specialist/workers per model_registry.yaml
+4. Run gates: make gates
+5. On failure: return to producer once, then escalate
 
 CRITICAL RULES:
 1. ⛔ ALL files on /mnt/raid0/ ONLY
 2. Log ALL actions via agent_log.sh
-3. Test untested models BEFORE other tasks
-4. Update research report after EVERY test
-5. Max 3 retries on failures, then STOP
+3. Run `make gates` after producing artifacts
+4. Max 3 retries on failures, then STOP
+5. ⛔ NEVER use speculation with SSM models (Qwen3-Next)
 
 Execute session_init.sh and confirm you see the model inventory.
 ```
@@ -69,8 +72,10 @@ source /mnt/raid0/llm/claude/scripts/utils/agent_log.sh && agent_session_start "
 bash /mnt/raid0/llm/claude/scripts/session/session_init.sh
 cat /mnt/raid0/llm/claude/CLAUDE.md | head -150
 
-# Current priority: Implement Track 8 (Prompt Lookup) + Track 6 (SuffixDecoding)
-# These compound ON TOP of existing 5.9x speedup from Track 1
+# Production speedups achieved:
+# - Prompt Lookup: 12.7x on summarization
+# - Speculative Decoding: 11x on code generation  
+# - Expert Reduction: +87% on 235B MoE
 
 ⛔ NEVER write to /, /home/, /tmp/, /var/ — ALL files on /mnt/raid0/ ONLY
 ```
@@ -79,179 +84,223 @@ cat /mnt/raid0/llm/claude/CLAUDE.md | head -150
 
 ## SESSION-SPECIFIC PROMPTS
 
-### 🔥 Track 8: Prompt Lookup Implementation (Priority)
-```
-Today's goal: Implement Prompt Lookup Decoding (Track 8)
-
-This is zero-cost n-gram matching from prompt — compounds with Track 1.
-Expected: +50-100% on summarization, document QA, code editing.
-
-Resources:
-- Original: https://github.com/apoorvumang/prompt-lookup-decoding
-- vLLM: speculative_model="[ngram]"
-- HuggingFace: prompt_lookup_num_tokens parameter
-
-Steps:
-1. Check if llama.cpp has native support: ./llama-speculative --help | grep -i ngram
-2. If not, implement Python wrapper with simple n-gram matching
-3. Test on summarization task, compare with Track 1 alone
-4. Measure combined effect: Prompt Lookup → Track 1 fallback
-```
-
-### 🔥 Track 6: SuffixDecoding Implementation
-```
-Today's goal: Implement SuffixDecoding (Track 6)
-
-This builds suffix trees from session outputs for agentic workloads.
-Expected: 5-10x on SQL generation, multi-agent, repetitive patterns.
-
-Resources:
-- Paper: https://suffix-decoding.github.io/ (NeurIPS 2025 Spotlight)
-- Reported: 10.4x on AgenticSQL
-
-Steps:
-1. Install suffix_trees: pip install suffix_trees --break-system-packages
-2. Create SuffixDraftProvider class
-3. Build tree from session outputs
-4. Integrate as first-priority draft source before Track 1
-```
-
-### Track 1+2 Integration Testing
-```
-Today's goal: Test combined Track 1 + Track 2 on MoE models
-
-Track 1: External draft (5.9x proven)
-Track 2: MoE soft mask (21-48% proven)
-
-Combined command:
-./llama-speculative -m MOE_MODEL.gguf -md DRAFT.gguf \
-  --override-kv ARCH.expert_used_count=int:4 --draft-max 8 -t 96
-
-Test on: Qwen3-VL-30B-A3B with Qwen3_VL_2B draft
-Expected: 7x+ combined speedup
-```
-
-### Track 7: CAS-Spec (If Needed)
-```
-Today's goal: Implement CAS-Spec for models without compatible drafts
-
-Use when: DeepSeek-R1 family (no matching draft model)
-Expected: 2.3x speedup via layer-skip cascade
-
-Resources:
-- Paper: https://arxiv.org/abs/2510.26843 (NeurIPS 2025)
-- Related: CLaSp https://arxiv.org/abs/2505.24196
-
-This requires C++ modifications to llama.cpp.
-```
-
----
-
-## KEY PAPERS (Bookmark These)
-
-### Priority Reading (NeurIPS 2025)
-| Paper | Link | Use Case |
-|-------|------|----------|
-| SuffixDecoding | https://suffix-decoding.github.io/ | Agentic 10x |
-| CAS-Spec | https://arxiv.org/abs/2510.26843 | Self-draft 2.3x |
-
-### Implementation Resources
-| Resource | Link |
-|----------|------|
-| Prompt Lookup | https://github.com/apoorvumang/prompt-lookup-decoding |
-| vLLM Spec Decode | https://blog.vllm.ai/2024/10/17/spec-decode.html |
-| All Spec Decode Papers | https://github.com/hemingkx/SpeculativeDecodingPapers |
-| CLaSp/SWIFT | https://arxiv.org/abs/2505.24196 |
-| LayerSkip | https://arxiv.org/abs/2404.16710 |
-| Kangaroo | https://github.com/Equationliu/Kangaroo |
-| REST Retrieval | https://arxiv.org/abs/2311.08252 |
-| RASD | https://arxiv.org/abs/2503.03434 |
-| CS-Drafting | https://arxiv.org/pdf/2312.11462 |
-
-### Deprecated (Reference Only)
-| Paper | Link | Reason |
-|-------|------|--------|
-| EAGLE | https://github.com/SafeAILab/EAGLE | 0% acceptance, blocked |
-| Medusa | https://github.com/FasterDecoding/Medusa | Training required |
-
----
-
-## COMBINED OPTIMIZATION STACK
+### 🔥 Production Inference Session
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    DRAFT TOKEN SOURCE                            │
-├─────────────────────────────────────────────────────────────────┤
-│  1. Prompt Lookup (Track 8) ← TRY FIRST (zero cost)             │
-│     └── If n-gram match in prompt → use as draft                │
-│                                                                  │
-│  2. SuffixDecoding (Track 6) ← TRY SECOND (agentic)             │
-│     └── If pattern match in session history → use as draft      │
-│                                                                  │
-│  3. External Draft Model (Track 1) ← FALLBACK (5.9x)            │
-│     └── Qwen2.5-0.5B generates drafts                           │
-└─────────────────────────────────────────────────────────────────┘
-                              +
-┌─────────────────────────────────────────────────────────────────┐
-│              TARGET MODEL OPTIMIZATION (Orthogonal)              │
-├─────────────────────────────────────────────────────────────────┤
-│  Track 2: MoE Soft Mask (+21-48% on MoE models)                 │
-│  └── --override-kv ARCH.expert_used_count=int:4                 │
-└─────────────────────────────────────────────────────────────────┘
+Today's goal: Run optimized inference with best configurations
 
-Expected Combined Performance:
-- Summarization: 8-12x (Prompt Lookup dominates)
-- Agentic/SQL: 10-15x (SuffixDecoding dominates)
-- Code generation: 6-7x (Track 1 + Prompt Lookup)
-- MoE models: 7x+ (Track 1 + Track 2)
+Best configurations from benchmarks:
+- Code generation: Qwen2.5-Coder-32B + 0.5B draft, K=24 → 33 t/s (11x)
+- Summarization: Any model + prompt lookup → 95.18 t/s (12.7x)
+- MoE models: Expert reduction to 4 → +48-132%
+- SSM models: Expert reduction ONLY (no speculation!)
+
+Commands:
+# Code generation (11x)
+OMP_NUM_THREADS=1 numactl --interleave=all \
+  llama-speculative -m Qwen2.5-Coder-32B-Q4_K_M.gguf \
+  -md Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf --draft-max 24 -t 96
+
+# Summarization (12.7x)
+llama-cli -m MODEL.gguf --lookup-ngram-min 3 -f doc_with_source.txt -t 96
+
+# MoE expert reduction (+87%)
+llama-cli -m Qwen3-235B-A22B-Q4_K_M.gguf \
+  --override-kv qwen3moe.expert_used_count=int:4 -t 96
+```
+
+### 🔧 Orchestration Development Session
+
+```
+Today's goal: Work on the orchestration layer
+
+Key files:
+- orchestration/task_ir.schema.json     # TaskIR JSON Schema
+- orchestration/architecture_ir.schema.json  # ArchitectureIR Schema
+- orchestration/model_registry.yaml     # Model → Role mapping
+- orchestration/validate_ir.py          # IR validator
+
+Workflow:
+1. Front Door emits TaskIR for each request
+2. Save to orchestration/last_task_ir.json
+3. Validate: python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
+4. Route per model_registry.yaml routing_hints
+5. Workers produce artifacts
+6. Run gates: make gates
+7. On failure: return to producer, escalate on second failure
+
+Gates (in order): schema → shellcheck → format → lint → unit → integration
+```
+
+### 📊 Benchmarking Session
+
+```
+Today's goal: Run benchmarks and record results
+
+CRITICAL FLAGS (prevent hangs):
+--no-display-prompt --simple-io --no-warmup --temp 0
+
+Baseline benchmark:
+OMP_NUM_THREADS=1 numactl --interleave=all \
+  ./llama-bench -m MODEL.gguf -t 96 -p 512 -n 128
+
+Speculative decoding benchmark:
+OMP_NUM_THREADS=1 numactl --interleave=all \
+  llama-speculative -m TARGET.gguf -md DRAFT.gguf \
+  --draft-max K -t 96 -n 512 --no-display-prompt
+
+After benchmarking:
+1. Record in logs/research_report.md
+2. Update RESULTS_SUMMARY.md if significant
+3. Run: make gates
+```
+
+### 🔬 Model Testing Session
+
+```
+Today's goal: Test new/untested models
+
+Check untested models:
+cat /mnt/raid0/llm/claude/logs/untested_models.txt
+
+For each model:
+1. Determine architecture (dense/MoE/SSM)
+2. Run baseline: ./llama-bench -m MODEL.gguf -t 96 -p 512 -n 128
+3. If MoE: Test expert reduction --override-kv ARCH.expert_used_count=int:4
+4. If dense: Test with compatible draft model
+5. ⛔ If SSM (Qwen3-Next): NO speculation, expert reduction only
+6. Record results in logs/research_report.md
+
+Model compatibility rules:
+- Qwen2.5 family: Use Qwen2.5-0.5B or Qwen2.5-Coder-0.5B draft
+- Qwen3 MoE: Use expert reduction, NOT speculation
+- Qwen3-Next (SSM): Expert reduction ONLY
+- Qwen3-Coder-480B: Expert reduction ONLY (BOS mismatch)
 ```
 
 ---
 
-## SCRIPTS DIRECTORY STRUCTURE
+## ORCHESTRATION QUICK REFERENCE
 
+### TaskIR Required Fields
+
+```json
+{
+  "task_id": "string (UUID)",
+  "task_type": "chat|doc|code|ingest|manage",
+  "priority": "interactive|batch",
+  "objective": "string",
+  "inputs": [{"type": "path|url|text", "value": "..."}],
+  "constraints": ["..."],
+  "assumptions": ["..."],
+  "agents": [{"tier": "A|B|C|D", "role": "..."}],
+  "plan": {"steps": [{"id": "S1", "actor": "...", "action": "...", "outputs": ["..."]}]},
+  "gates": ["schema", "format", "lint", "typecheck", "unit"],
+  "definition_of_done": ["..."],
+  "escalation": {"max_level": "B3", "on_second_failure": true}
+}
 ```
-/mnt/raid0/llm/claude/scripts/
-├── benchmark/
-│   ├── bench_zen5.sh
-│   ├── run_inference.sh
-│   └── record_test.sh
-├── session/
-│   ├── session_init.sh
-│   ├── claude_safe_start.sh
-│   ├── health_check.sh
-│   ├── monitor_storage.sh
-│   └── emergency_cleanup.sh
-├── system/
-│   └── system_audit.sh
-└── utils/
-    ├── agent_log.sh
-    └── agent_log_analyze.sh
-```
 
----
+### Model Registry Roles
 
-## CONTEXT WINDOW COMPACTION PROTOCOL
+| Role | Tier | Model | Acceleration |
+|------|------|-------|--------------|
+| frontdoor | A | Qwen3-Coder-30B-A3B | Expert reduction (4) |
+| coder_primary | B | Qwen2.5-Coder-32B | Speculative K=24 |
+| ingest_long_context | B | Qwen3-Next-80B-A3B | Expert reduction (2) ⛔NO SPEC |
+| architect_general | B | Qwen3-235B-A22B | Expert reduction (4) |
+| worker_general | C | Meta-Llama-3-8B | Prompt lookup |
+| worker_math | C | Qwen2.5-Math-7B | Speculative K=8 |
+| draft_qwen25_coder | D | Qwen2.5-Coder-0.5B | — (85 t/s raw) |
 
-**When the agent needs to compact context, it MUST first:**
+### Gate Chain
 
 ```bash
-# 1. Log session state
-agent_task_start "Pre-compaction save" "Preserving state"
-agent_observe "completed_tasks" "List what was done"
-agent_observe "current_task" "What's in progress"
-agent_observe "pending_tasks" "What remains"
+make gates  # Runs: schema → shellcheck → format → lint
+```
 
-# 2. Update research report with any new findings
+Individual gates:
+```bash
+make schema      # Validate IR files
+make shellcheck  # Lint .sh scripts
+make format      # Format shell + markdown
+make lint        # shellcheck + markdownlint
+```
 
-# 3. Create summary for retention
-echo "=== COMPACTION SUMMARY ===" 
-echo "Session: $AGENT_SESSION_ID"
-echo "Progress: [describe]"
-echo "Next steps: [describe]"
-echo "Active models: [list paths]"
+---
 
-agent_task_end "Pre-compaction save" "ready"
+## CRITICAL CONSTRAINTS
+
+### SSM Models (Qwen3-Next family)
+```
+⛔ NEVER use with:
+- --draft / --draft-max (speculative decoding)
+- --lookup-ngram-min (prompt lookup)
+- Any speculation-based method
+
+✅ ONLY use:
+- Expert reduction: --override-kv qwen3next.expert_used_count=int:2
+```
+
+### Qwen3-Coder-480B
+```
+⛔ NEVER use speculative decoding (BOS token mismatch)
+✅ Use expert reduction: --override-kv qwen3moe.expert_used_count=int:2
+```
+
+### All Models
+```
+⛔ NEVER write to /, /home/, /tmp/, /var/
+✅ ALL files on /mnt/raid0/ ONLY
+```
+
+---
+
+## FAILURE HANDLING
+
+### Gate Failures
+1. First failure → return gate report to producing agent
+2. Second failure → escalate one tier (C→B, B→B3)
+3. Third failure → escalate to B3 Architect with IR/contract fix
+
+### Inference Hangs
+1. Check for interactive mode (missing --simple-io)
+2. Verify timeout: `timeout 300 llama-cli ...`
+3. Kill: `pkill -f llama-cli`
+4. Log the failure: `agent_task_end "benchmark" "failure:hang"`
+
+### Loop Detection
+```bash
+/mnt/raid0/llm/claude/scripts/utils/agent_log_analyze.sh --loops
+```
+
+Max 3 retries, then STOP and document blocker.
+
+---
+
+## DIRECTORY STRUCTURE
+
+```
+/mnt/raid0/llm/claude/
+├── CLAUDE.md                 # Main project guide
+├── OPENING_PROMPT.md         # This file
+├── Makefile                  # Gate runner
+├── orchestration/            # Orchestration layer
+│   ├── task_ir.schema.json
+│   ├── architecture_ir.schema.json
+│   ├── model_registry.yaml
+│   ├── validate_ir.py
+│   └── last_task_ir.json     # (gitignored)
+├── logs/
+│   ├── research_report.md    # Results document
+│   └── agent_audit.log       # Action log
+├── agents/                   # Agent definitions
+├── research/                 # Research documents
+└── scripts/
+    ├── benchmark/
+    ├── session/
+    ├── system/
+    └── utils/
 ```
 
 ---
@@ -270,4 +319,29 @@ agent_task_end "Pre-compaction save" "ready"
 
 # Get rollback commands
 /mnt/raid0/llm/claude/scripts/utils/agent_log_analyze.sh --rollbacks
+```
+
+---
+
+## CONTEXT WINDOW COMPACTION PROTOCOL
+
+**When the agent needs to compact context, it MUST first:**
+
+```bash
+# 1. Log session state
+agent_task_start "Pre-compaction save" "Preserving state"
+agent_observe "completed_tasks" "List what was done"
+agent_observe "current_task" "What's in progress"
+agent_observe "pending_tasks" "What remains"
+
+# 2. Update research report with any new findings
+
+# 3. Create summary for retention
+echo "=== COMPACTION SUMMARY ==="
+echo "Session: $AGENT_SESSION_ID"
+echo "Progress: [describe]"
+echo "Next steps: [describe]"
+echo "Active models: [list paths]"
+
+agent_task_end "Pre-compaction save" "ready"
 ```

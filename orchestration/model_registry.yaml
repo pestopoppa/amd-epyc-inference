@@ -1,0 +1,416 @@
+# Model Registry for Hierarchical Local-Agent Orchestration
+# ==========================================================
+#
+# This registry maps agent roles to specific models and acceleration strategies.
+# Based on empirical benchmarks from AMD EPYC 9655 (96 cores, 1.13TB DDR5).
+#
+# See: logs/research_report.md for benchmark data justifying these choices.
+#
+# Usage:
+#   - Dispatcher reads this file to select models by role
+#   - Do NOT improvise model selection at runtime
+#   - Update this file when new benchmarks are available
+#
+# IMPORTANT: All paths are relative to model_base_path
+
+runtime_defaults:
+  quantization: Q4_K_M
+  draft_quantization: Q8_0
+  context_length: 8192
+  temperature: 0.2
+  threads: 96
+  numa_policy: interleave=all
+
+  # Base path for all models (LM Studio directory on RAID0)
+  model_base_path: /mnt/raid0/llm/lmstudio/models
+
+roles:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TIER A — Front Door (Interactive Orchestrator)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  frontdoor:
+    tier: A
+    description: "Primary interactive orchestrator - fast, agentic, always resident"
+    model:
+      name: Qwen3-Coder-30B-A3B-Instruct
+      path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 17.5
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    performance:
+      baseline_tps: 27.14
+      optimized_tps: 41.55
+      speedup: 1.53x
+    memory:
+      residency: hot
+      pinned: true
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TIER B — Specialists
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  coder_primary:
+    tier: B
+    description: "Primary code generation and refactoring - Instruct model with MoE acceleration"
+    model:
+      name: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
+      path: mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L.i1-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 30
+      architecture: moe  # 128 experts, 10 active by default
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    performance:
+      baseline_tps: 18.54
+      optimized_tps: 27.9
+      speedup: 1.5x
+    memory:
+      residency: hot
+      pinned: true
+    # NOTE: Qwen2.5-Coder-32B-Instruct with spec decode (33 t/s) pending download/benchmark
+
+  ingest_long_context:
+    tier: B
+    description: "Large document ingestion and synthesis - SSM+MoE hybrid"
+    model:
+      name: Qwen3-Next-80B-A3B-Instruct
+      path: lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 45
+      architecture: ssm_moe_hybrid  # 512 experts, 10 active by default
+    acceleration:
+      type: moe_expert_reduction
+      experts: 2
+      override_key: qwen3next.expert_used_count
+    constraints:
+      # CRITICAL: SSM models are incompatible with speculation-based methods
+      forbid:
+        - speculative_decoding
+        - prompt_lookup
+        - eagle
+      reason: "SSM requires consecutive positions - incompatible with ALL speculation methods"
+    performance:
+      baseline_tps: 10.12
+      optimized_tps: 11.55
+      speedup: 1.14x
+    memory:
+      residency: warm
+      pinned: false
+
+  architect_general:
+    tier: B
+    description: "System architecture, invariants, acceptance tests - emits IR only"
+    model:
+      name: Qwen3-235B-A22B
+      # Split model - llama.cpp loads all parts from first file
+      path: lmstudio-community/Qwen3-235B-A22B-GGUF/Qwen3-235B-A22B-Q4_K_M-00001-of-00004.gguf
+      quant: Q4_K_M
+      size_gb: 133
+      split_count: 4
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    performance:
+      baseline_tps: 3.6
+      optimized_tps: 6.75
+      speedup: 1.87x
+    memory:
+      residency: warm
+      pinned: false
+
+  architect_coding:
+    tier: B
+    description: "Hardest coding/architecture escalation - IR-first"
+    model:
+      name: Qwen3-Coder-480B-A35B-Instruct
+      # Split model - llama.cpp loads all parts from first file
+      path: lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00008.gguf
+      quant: Q4_K_M
+      size_gb: 271
+      split_count: 8
+    acceleration:
+      type: moe_expert_reduction
+      experts: 2
+    constraints:
+      # CRITICAL: BOS token mismatch breaks ALL speculation
+      # BOS=',' (token 11) vs standard BOS='<|endoftext|>' (token 151643)
+      forbid:
+        - speculative_decoding
+        - prompt_lookup
+      reason: "BOS token mismatch - no compatible draft models exist"
+    performance:
+      baseline_tps: 2.25
+      optimized_tps: 5.23
+      speedup: 2.32x
+    memory:
+      residency: warm
+      pinned: false
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TIER C — Workers (Parallel, Stateless)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  worker_general:
+    tier: C
+    description: "Boilerplate, rewrites, doc polish, small diffs"
+    model:
+      name: Meta-Llama-3-8B-Instruct
+      path: lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.7
+    acceleration:
+      type: prompt_lookup
+      ngram_min: 3
+    performance:
+      baseline_tps: 17.52
+      optimized_tps: 37.07
+      speedup: 2.1x
+    memory:
+      residency: hot
+      pinned: true
+      max_instances: 2
+
+  worker_math:
+    tier: C
+    description: "Edge cases, invariants, property-test generation"
+    model:
+      name: Qwen2.5-Math-7B-Instruct
+      path: lmstudio-community/Qwen2.5-Math-7B-Instruct-GGUF/Qwen2.5-Math-7B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.4
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen25
+      k: 8
+    performance:
+      baseline_tps: 12.44
+      optimized_tps: 48.5
+      speedup: 3.9x
+    memory:
+      residency: hot
+      pinned: true
+
+  worker_vision:
+    tier: C
+    description: "Screenshot/UI extraction - outputs component trees + structured notes"
+    model:
+      name: Qwen2.5-VL-7B-Instruct
+      path: lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
+      mmproj_path: lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf
+      quant: Q4_K_M
+      size_gb: 4.4
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen25
+      k: 8
+      temperature: 0.7  # Higher temp improves VL model performance
+    performance:
+      baseline_tps: 15.28
+      optimized_tps: 57.1
+      speedup: 3.7x
+    memory:
+      residency: warm
+      pinned: false
+
+  worker_summarize:
+    tier: C
+    description: "Document summarization - highest measured speedup with prompt lookup"
+    model:
+      name: Qwen2.5-Coder-32B
+      # Shares model file with coder_primary
+      path: lmstudio-community/Qwen2.5-Coder-32B-GGUF/Qwen2.5-Coder-32B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 18.5
+    acceleration:
+      type: prompt_lookup
+      ngram_min: 3
+    performance:
+      # Summarization with repetitive prompts achieves 95.18 t/s (12.7x)
+      baseline_tps: 5.79
+      optimized_tps: 95.18
+      speedup: 12.7x
+    memory:
+      residency: warm
+      pinned: false
+    notes: "Use for document QA and summarization where prompt contains source material"
+
+  toolrunner:
+    tier: C
+    description: "Summarize tool outputs, triage logs, propose next commands"
+    model:
+      name: Meta-Llama-3-8B-Instruct
+      # Shares model file with worker_general
+      path: lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.7
+    acceleration:
+      type: none  # Tool output summarization doesn't benefit from speculation
+    performance:
+      baseline_tps: 17.52
+    memory:
+      residency: hot
+      pinned: true
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # TIER D — Draft Models (Speculative Decoding)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  draft_qwen25_coder:
+    tier: D
+    description: "Default draft for Qwen2.5-Coder family"
+    model:
+      name: Qwen2.5-Coder-0.5B
+      path: lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 0.5
+    compatible_targets:
+      - Qwen2.5-Coder-32B
+      - Qwen2.5-Coder-14B
+      - Qwen2.5-Coder-7B
+    performance:
+      raw_tps: 85
+    memory:
+      residency: hot
+      pinned: true
+
+  draft_qwen25:
+    tier: D
+    description: "Default draft for Qwen2.5 (non-coder) family"
+    model:
+      name: Qwen2.5-0.5B
+      path: QuantFactory/Qwen2.5-0.5B-GGUF/Qwen2.5-0.5B.Q8_0.gguf
+      quant: Q8_0
+      size_gb: 0.5
+    compatible_targets:
+      - Qwen2.5-72B
+      - Qwen2.5-Math-72B
+      - Qwen2.5-Math-7B
+      - Qwen2.5-VL-7B
+    memory:
+      residency: hot
+      pinned: true
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROCESS LAYOUT (Memory Residency)
+# ═══════════════════════════════════════════════════════════════════════════
+
+process_layout:
+  # Hot = always loaded, pinned in memory
+  # Warm = mmap'd, page cache, loaded on demand
+
+  hot_resident:
+    - frontdoor           # ~17.5 GB
+    - coder_primary       # ~18.5 GB
+    - draft_qwen25_coder  # ~0.5 GB
+    - draft_qwen25        # ~0.5 GB
+    - worker_general      # ~4.7 GB (x2 = 9.4 GB)
+    - worker_math         # ~4.4 GB
+    - toolrunner          # shares with worker_general
+    # Total hot: ~50 GB (leaves 1TB+ for warm models and KV cache)
+
+  warm_mmap:
+    - ingest_long_context  # ~45 GB
+    - architect_general    # ~133 GB
+    - architect_coding     # ~271 GB
+    - worker_vision        # ~4.4 GB
+    - worker_summarize     # shares with coder_primary
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ROUTING HINTS (Deterministic)
+# ═══════════════════════════════════════════════════════════════════════════
+
+routing_hints:
+  # Simple deterministic rules the dispatcher applies.
+  # More specific rules take precedence.
+
+  - if: "task_type == 'chat' and priority == 'interactive'"
+    use: [frontdoor]
+
+  - if: "task_type == 'code'"
+    use: [coder_primary]
+
+  - if: "task_type == 'code' and 'refactor' in objective"
+    use: [coder_primary, worker_general]
+
+  - if: "task_type == 'ingest'"
+    use: [ingest_long_context]
+
+  - if: "task_type == 'doc' and priority == 'interactive'"
+    use: [frontdoor, worker_general]
+
+  - if: "task_type == 'doc' and 'summarize' in objective"
+    use: [worker_summarize]
+
+  - if: "task_type == 'manage'"
+    use: [frontdoor, toolrunner, worker_general]
+
+  - if: "'math' in constraints or 'invariant' in objective"
+    use: [worker_math]
+
+  - if: "'image' in inputs or 'screenshot' in inputs or 'ui' in objective"
+    use: [worker_vision]
+
+  - if: "escalation.max_level == 'B3'"
+    use: [architect_general]
+
+  - if: "escalation.max_level == 'B3' and task_type == 'code'"
+    use: [architect_coding]
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COMMAND TEMPLATES
+# ═══════════════════════════════════════════════════════════════════════════
+
+command_templates:
+  # Templates for generating llama.cpp commands
+  # Variables: {model_path}, {draft_path}, {k}, {threads}, {context_length},
+  #            {override_key}, {experts}, {ngram_min}, {temperature}
+
+  speculative_decoding: |
+    OMP_NUM_THREADS=1 numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
+      -m {model_path} \
+      -md {draft_path} \
+      --draft-max {k} \
+      -t {threads} \
+      -c {context_length}
+
+  moe_expert_reduction: |
+    numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
+      -m {model_path} \
+      --override-kv {override_key}=int:{experts} \
+      -t {threads} \
+      -c {context_length}
+
+  prompt_lookup: |
+    numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
+      -m {model_path} \
+      --lookup-ngram-min {ngram_min} \
+      -t {threads} \
+      -c {context_length}
+
+  baseline: |
+    numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
+      -m {model_path} \
+      -t {threads} \
+      -c {context_length}
+
+  vision: |
+    numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \
+      -m {model_path} \
+      --mmproj {mmproj_path} \
+      -t {threads} \
+      -c {context_length}

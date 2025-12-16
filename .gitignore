@@ -35,3 +35,14 @@ research/eagle-official/
 research/frspec/
 research/specmquant/
 *.BAK
+
+# Orchestration transient files
+orchestration/last_task_ir.json
+orchestration/last_architecture_ir.json
+orchestration/gate_report_*.json
+
+# Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/

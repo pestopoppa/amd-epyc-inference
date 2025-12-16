@@ -141,6 +141,7 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 |-------|-------|---------------|----------|-------|
 | Qwen3-Coder-30B-A3B | Q4_K_M | ~3B | **27.14 t/s** | Code specialist |
 | Qwen3-VL-30B-A3B | Q4_K_M | ~3B | **26.88 t/s** | Vision-Language |
+| **Qwen3-Coder-53B-A3B** | Q4_K_M | ~3B | **18.54 t/s** | TOTAL-RECALL-v2 finetune (30GB) |
 | Qwen3-1.7B (draft) | Q4_K_M | 1.7B | **51.31 t/s** | Draft model |
 | Qwen3-VL-2B (draft) | Q4_K_M | 2B | **42.19 t/s** | VL draft |
 
@@ -149,6 +150,7 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 |-------|----------|-----------|-----------|-----------|
 | Qwen3-Coder-30B-A3B | 27.14 t/s | **41.55 t/s** | — | 30.05 t/s |
 | Qwen3-VL-30B-A3B | 26.88 t/s | **36.84 t/s** | 37.66 t/s | 28.41 t/s |
+| **Qwen3-Coder-53B-A3B** | 18.54 t/s | **27.9 t/s (+50%)** | — | — |
 
 ### Prompt Lookup (MoE)
 | Model | Summarize | Code |
@@ -303,6 +305,12 @@ llama-cli -m MOE.gguf \
 - Tested drafts: Qwen3-0.6B, Qwen2.5-Coder-0.5B - both fail
 - Lesson: Verify tokenizer compatibility before attempting speculation; unusual BOS tokens block all compatible draft models
 - **Workaround:** Use 2-expert reduction instead (5.23 t/s, +132% vs baseline)
+
+### Qwen3-Coder-53B-A3B + Speculative Decoding
+- Problem: Token mismatch with Qwen2.5 drafts, low acceptance (8.96%) with Qwen3-0.6B
+- Tested drafts: Qwen2.5-Coder-0.5B (fails - token mismatch), Qwen3-0.6B (works but 8.96% accept)
+- Lesson: MoE models with different distributions don't benefit from small dense drafts
+- **Workaround:** Use expert reduction instead (+50% with 4 experts)
 
 ---
 
