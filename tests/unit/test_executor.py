@@ -266,8 +266,9 @@ class TestExecutorConfig:
 
         assert config.max_parallel_workers == 2
         assert config.step_timeout == 300
-        assert config.retry_failed_steps is False
-        assert config.max_retries == 1
+        assert config.retry_failed_steps is True  # Enabled by default
+        assert config.max_retries == 2  # 2 retries = 3 total attempts
+        assert config.retry_backoff_base == 1.0
         assert config.dry_run is False
 
     def test_custom_config(self):
@@ -717,3 +718,199 @@ class TestExecutorBuildPrompt:
         prompt = executor._build_prompt(step)
 
         assert "truncated" in prompt
+
+
+class TestRetryInfo:
+    """Tests for RetryInfo dataclass."""
+
+    def test_default_retry_info(self):
+        """Test default retry info values."""
+        from src.executor import RetryInfo
+
+        info = RetryInfo()
+        assert info.attempts == 0
+        assert info.max_attempts == 1
+        assert info.can_retry is True  # 0 < 1
+
+    def test_can_retry_with_attempts(self):
+        """Test can_retry property."""
+        from src.executor import RetryInfo
+
+        info = RetryInfo(max_attempts=3)
+        assert info.can_retry is True
+
+        info.attempts = 2
+        assert info.can_retry is True
+
+        info.attempts = 3
+        assert info.can_retry is False
+
+    def test_record_attempt(self):
+        """Test recording a retry attempt."""
+        from src.executor import ErrorCategory, RetryInfo
+
+        info = RetryInfo(max_attempts=3, backoff_seconds=1.0)
+        info.record_attempt("Test error", ErrorCategory.TIMEOUT)
+
+        assert info.attempts == 1
+        assert info.last_error == "Test error"
+        assert info.error_category == ErrorCategory.TIMEOUT
+        assert info.backoff_seconds == 2.0  # Doubled
+
+    def test_exponential_backoff(self):
+        """Test exponential backoff capping."""
+        from src.executor import ErrorCategory, RetryInfo
+
+        info = RetryInfo(max_attempts=10, backoff_seconds=16.0)
+        info.record_attempt("Error 1", ErrorCategory.RETRYABLE)
+        assert info.backoff_seconds == 30.0  # Capped at 30
+
+
+class TestErrorCategory:
+    """Tests for error categorization."""
+
+    def test_categorize_timeout(self, mock_model_server: ModelServer):
+        """Test categorizing timeout errors."""
+        from src.executor import ErrorCategory
+
+        executor = Executor(model_server=mock_model_server)
+
+        assert executor._categorize_error("Connection timeout") == ErrorCategory.TIMEOUT
+        assert executor._categorize_error("Request timed out") == ErrorCategory.TIMEOUT
+
+    def test_categorize_model_error(self, mock_model_server: ModelServer):
+        """Test categorizing model errors."""
+        from src.executor import ErrorCategory
+
+        executor = Executor(model_server=mock_model_server)
+
+        assert executor._categorize_error("Model not found: test.gguf") == ErrorCategory.MODEL_ERROR
+        assert executor._categorize_error("Load failed for model") == ErrorCategory.MODEL_ERROR
+
+    def test_categorize_retryable(self, mock_model_server: ModelServer):
+        """Test categorizing retryable errors."""
+        from src.executor import ErrorCategory
+
+        executor = Executor(model_server=mock_model_server)
+
+        assert executor._categorize_error("Connection refused") == ErrorCategory.RETRYABLE
+        assert executor._categorize_error("Service temporarily unavailable") == ErrorCategory.RETRYABLE
+
+    def test_categorize_internal(self, mock_model_server: ModelServer):
+        """Test categorizing internal errors."""
+        from src.executor import ErrorCategory
+
+        executor = Executor(model_server=mock_model_server)
+
+        assert executor._categorize_error("Unknown error occurred") == ErrorCategory.INTERNAL_ERROR
+        assert executor._categorize_error(None) == ErrorCategory.INTERNAL_ERROR
+
+
+class TestExecutorRetry:
+    """Tests for executor retry functionality."""
+
+    def test_retry_info_initialized(
+        self, mock_model_server: ModelServer, sample_dispatch_result: DispatchResult
+    ):
+        """Test that retry info is initialized for each step."""
+        config = ExecutorConfig(dry_run=True, retry_failed_steps=True, max_retries=2)
+        executor = Executor(model_server=mock_model_server, config=config)
+
+        executor.execute(sample_dispatch_result)
+
+        # Check retry info was created for each step
+        assert "S1" in executor._retry_info
+        assert "S2" in executor._retry_info
+        assert executor._retry_info["S1"].max_attempts == 3  # 2 retries + 1 initial
+
+    def test_step_result_includes_retry_count(
+        self, mock_model_server: ModelServer
+    ):
+        """Test that step result to_dict includes retry count when > 0."""
+        result = StepResult(
+            step_id="S1",
+            status=StepStatus.FAILED,
+            retry_count=2,
+            error_category="timeout",
+        )
+
+        d = result.to_dict()
+        assert d["retry_count"] == 2
+        assert d["error_category"] == "timeout"
+
+    def test_step_result_excludes_zero_retry(self):
+        """Test that step result to_dict excludes retry count when 0."""
+        result = StepResult(
+            step_id="S1",
+            status=StepStatus.COMPLETED,
+            retry_count=0,
+        )
+
+        d = result.to_dict()
+        assert "retry_count" not in d
+        assert "error_category" not in d
+
+    def test_find_retryable_steps(self, mock_model_server: ModelServer):
+        """Test finding steps that can be retried."""
+        from src.executor import RetryInfo
+
+        config = ExecutorConfig(retry_failed_steps=True, max_retries=2)
+        executor = Executor(model_server=mock_model_server, config=config)
+
+        role_config = MagicMock(spec=RoleConfig)
+        steps = [
+            StepExecution(
+                step_id="S1",
+                actor="coder",
+                action="Test",
+                inputs=[],
+                outputs=[],
+                depends_on=[],
+                role_config=role_config,
+                command="",
+            ),
+        ]
+
+        # Set up retry tracking
+        executor._retry_info["S1"] = RetryInfo(max_attempts=3, attempts=1)
+
+        completed: set[str] = set()
+        results = {
+            "S1": StepResult(step_id="S1", status=StepStatus.FAILED),
+        }
+
+        retryable = executor._find_retryable_steps(steps, completed, results)
+        assert len(retryable) == 1
+        assert retryable[0].step_id == "S1"
+
+    def test_no_retry_when_exhausted(self, mock_model_server: ModelServer):
+        """Test that exhausted retries are not retried."""
+        from src.executor import RetryInfo
+
+        config = ExecutorConfig(retry_failed_steps=True, max_retries=2)
+        executor = Executor(model_server=mock_model_server, config=config)
+
+        role_config = MagicMock(spec=RoleConfig)
+        steps = [
+            StepExecution(
+                step_id="S1",
+                actor="coder",
+                action="Test",
+                inputs=[],
+                outputs=[],
+                depends_on=[],
+                role_config=role_config,
+                command="",
+            ),
+        ]
+
+        # Max attempts reached
+        executor._retry_info["S1"] = RetryInfo(max_attempts=3, attempts=3)
+
+        completed: set[str] = set()
+        results = {
+            "S1": StepResult(step_id="S1", status=StepStatus.FAILED),
+        }
+
+        retryable = executor._find_retryable_steps(steps, completed, results)
+        assert len(retryable) == 0

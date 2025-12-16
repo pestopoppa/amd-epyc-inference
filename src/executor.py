@@ -55,6 +55,8 @@ class StepResult:
     started_at: float | None = None
     completed_at: float | None = None
     error_message: str | None = None
+    retry_count: int = 0
+    error_category: str | None = None
 
     @property
     def elapsed_time(self) -> float:
@@ -65,7 +67,7 @@ class StepResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        return {
+        result = {
             "step_id": self.step_id,
             "status": self.status.value,
             "output": self.output[:500] if self.output else "",  # Truncate for summary
@@ -73,6 +75,11 @@ class StepResult:
             "elapsed_time": self.elapsed_time,
             "error_message": self.error_message,
         }
+        if self.retry_count > 0:
+            result["retry_count"] = self.retry_count
+        if self.error_category:
+            result["error_category"] = self.error_category
+        return result
 
 
 @dataclass
@@ -124,14 +131,50 @@ class ExecutorError(Exception):
     pass
 
 
+class ErrorCategory(Enum):
+    """Categories of execution errors."""
+
+    TIMEOUT = "timeout"
+    MODEL_ERROR = "model_error"
+    INFERENCE_ERROR = "inference_error"
+    DEPENDENCY_ERROR = "dependency_error"
+    INTERNAL_ERROR = "internal_error"
+    RETRYABLE = "retryable"
+
+
+@dataclass
+class RetryInfo:
+    """Information about retry attempts for a step."""
+
+    attempts: int = 0
+    max_attempts: int = 1
+    last_error: str | None = None
+    error_category: ErrorCategory | None = None
+    backoff_seconds: float = 1.0
+
+    @property
+    def can_retry(self) -> bool:
+        """Check if retry is possible."""
+        return self.attempts < self.max_attempts
+
+    def record_attempt(self, error: str, category: ErrorCategory) -> None:
+        """Record a failed attempt."""
+        self.attempts += 1
+        self.last_error = error
+        self.error_category = category
+        # Exponential backoff with jitter
+        self.backoff_seconds = min(30.0, self.backoff_seconds * 2)
+
+
 @dataclass
 class ExecutorConfig:
     """Configuration for the Executor."""
 
     max_parallel_workers: int = 2
     step_timeout: int = 300  # seconds
-    retry_failed_steps: bool = False
-    max_retries: int = 1
+    retry_failed_steps: bool = True  # Enable by default
+    max_retries: int = 2  # Retry up to 2 times (3 total attempts)
+    retry_backoff_base: float = 1.0  # Base backoff in seconds
     dry_run: bool = False  # If True, don't actually run inference
 
 
@@ -163,6 +206,7 @@ class Executor:
         self.server = model_server or ModelServer()
         self.config = config or ExecutorConfig()
         self.context = ContextManager(context_config)  # Rich context management
+        self._retry_info: dict[str, RetryInfo] = {}  # Track retries per step
 
     def execute(self, dispatch_result: DispatchResult) -> ExecutionResult:
         """Execute a dispatch plan.
@@ -179,27 +223,39 @@ class Executor:
             started_at=time.time(),
         )
 
-        # Initialize step results
+        # Initialize step results and retry info
+        self._retry_info.clear()
+        max_attempts = self.config.max_retries + 1 if self.config.retry_failed_steps else 1
         for step in dispatch_result.steps:
             result.steps[step.step_id] = StepResult(
                 step_id=step.step_id,
                 status=StepStatus.PENDING,
+            )
+            self._retry_info[step.step_id] = RetryInfo(
+                max_attempts=max_attempts,
+                backoff_seconds=self.config.retry_backoff_base,
             )
 
         # Copy warnings/errors from dispatch
         result.warnings.extend(dispatch_result.warnings)
         result.errors.extend(dispatch_result.errors)
 
-        # Track completed steps
+        # Track completed steps (success or exhausted retries)
         completed: set[str] = set()
 
         try:
             # Execute steps respecting dependencies
             while len(completed) < len(dispatch_result.steps):
-                # Find steps ready to execute
+                # Find steps ready to execute (including failed steps that can retry)
                 ready_steps = self._find_ready_steps(
                     dispatch_result.steps, completed, result.steps
                 )
+
+                # Also check for retryable failed steps
+                retryable_steps = self._find_retryable_steps(
+                    dispatch_result.steps, completed, result.steps
+                )
+                ready_steps.extend(retryable_steps)
 
                 if not ready_steps:
                     # Check if we're stuck due to failed dependencies
@@ -209,10 +265,14 @@ class Executor:
                     ]
                     if pending:
                         for step in pending:
-                            result.steps[step.step_id].status = StepStatus.SKIPPED
-                            result.steps[step.step_id].error_message = (
-                                "Skipped due to failed dependencies"
-                            )
+                            step_result = result.steps[step.step_id]
+                            # Only mark as skipped if not already failed
+                            if step_result.status != StepStatus.FAILED:
+                                step_result.status = StepStatus.SKIPPED
+                                step_result.error_message = (
+                                    "Skipped due to failed dependencies"
+                                )
+                                step_result.error_category = ErrorCategory.DEPENDENCY_ERROR.value
                             completed.add(step.step_id)
                     break
 
@@ -226,11 +286,15 @@ class Executor:
                     else:
                         # Execute sequentially
                         for step in group_steps:
-                            self._execute_step(step, result)
+                            self._execute_step_with_retry(step, result)
 
-                    # Mark as completed
+                    # Mark completed steps (success or exhausted retries)
                     for step in group_steps:
-                        completed.add(step.step_id)
+                        step_result = result.steps[step.step_id]
+                        retry_info = self._retry_info[step.step_id]
+                        if step_result.status == StepStatus.COMPLETED or (step_result.status == StepStatus.FAILED and not retry_info.can_retry):
+                            completed.add(step.step_id)
+                        # If failed but can retry, don't mark as completed
 
         except Exception as e:
             result.errors.append(f"Execution error: {e}")
@@ -274,6 +338,118 @@ class Executor:
                 ready.append(step)
 
         return ready
+
+    def _find_retryable_steps(
+        self,
+        steps: list[StepExecution],
+        completed: set[str],
+        results: dict[str, StepResult],
+    ) -> list[StepExecution]:
+        """Find failed steps that can be retried."""
+        retryable = []
+        for step in steps:
+            if step.step_id in completed:
+                continue
+
+            step_result = results.get(step.step_id)
+            retry_info = self._retry_info.get(step.step_id)
+
+            # Check if step failed and can retry
+            if (
+                step_result
+                and step_result.status == StepStatus.FAILED
+                and retry_info
+                and retry_info.can_retry
+            ):
+                # Verify dependencies still satisfied
+                deps_ok = all(
+                    results.get(dep_id, StepResult(dep_id, StepStatus.PENDING)).status
+                    == StepStatus.COMPLETED
+                    for dep_id in step.depends_on
+                )
+                if deps_ok:
+                    retryable.append(step)
+
+        return retryable
+
+    def _execute_step_with_retry(
+        self, step: StepExecution, result: ExecutionResult
+    ) -> StepResult:
+        """Execute a step with retry logic.
+
+        Args:
+            step: Step to execute.
+            result: Overall execution result to update.
+
+        Returns:
+            StepResult for this step.
+        """
+        retry_info = self._retry_info.get(step.step_id)
+        step_result = result.steps[step.step_id]
+
+        # Apply backoff if this is a retry
+        if retry_info and retry_info.attempts > 0:
+            backoff = retry_info.backoff_seconds
+            result.warnings.append(
+                f"Retrying step {step.step_id} after {backoff:.1f}s backoff "
+                f"(attempt {retry_info.attempts + 1}/{retry_info.max_attempts})"
+            )
+            time.sleep(backoff)
+
+        # Reset step status for retry
+        if step_result.status == StepStatus.FAILED:
+            step_result.status = StepStatus.PENDING
+            step_result.error_message = None
+
+        # Execute the step
+        self._execute_step(step, result)
+
+        # Update retry tracking
+        if step_result.status == StepStatus.FAILED and retry_info:
+            error_category = self._categorize_error(step_result.error_message)
+            retry_info.record_attempt(
+                step_result.error_message or "Unknown error",
+                error_category,
+            )
+            step_result.retry_count = retry_info.attempts
+            step_result.error_category = error_category.value
+
+        return step_result
+
+    def _categorize_error(self, error_message: str | None) -> ErrorCategory:
+        """Categorize an error to determine if it's retryable.
+
+        Args:
+            error_message: The error message to categorize.
+
+        Returns:
+            ErrorCategory for the error.
+        """
+        if not error_message:
+            return ErrorCategory.INTERNAL_ERROR
+
+        msg_lower = error_message.lower()
+
+        # Timeout errors
+        if any(word in msg_lower for word in ["timeout", "timed out", "deadline"]):
+            return ErrorCategory.TIMEOUT
+
+        # Model errors (usually not retryable)
+        if any(word in msg_lower for word in ["model not found", "invalid model", "load failed"]):
+            return ErrorCategory.MODEL_ERROR
+
+        # Inference errors (may be retryable)
+        if any(word in msg_lower for word in ["inference", "generation", "output"]):
+            return ErrorCategory.INFERENCE_ERROR
+
+        # Generic retryable errors
+        if any(word in msg_lower for word in [
+            "connection", "network", "temporary", "unavailable",
+            "busy", "overload", "retry"
+        ]):
+            return ErrorCategory.RETRYABLE
+
+        return ErrorCategory.INTERNAL_ERROR
 
     def _group_by_parallel(
         self, steps: list[StepExecution]
@@ -375,7 +551,7 @@ class Executor:
         """
         with ThreadPoolExecutor(max_workers=self.config.max_parallel_workers) as pool:
             futures = {
-                pool.submit(self._execute_step, step, result): step
+                pool.submit(self._execute_step_with_retry, step, result): step
                 for step in steps
             }
 
@@ -384,8 +560,10 @@ class Executor:
                 try:
                     future.result()
                 except Exception as e:
-                    result.steps[step.step_id].status = StepStatus.FAILED
-                    result.steps[step.step_id].error_message = str(e)
+                    step_result = result.steps[step.step_id]
+                    step_result.status = StepStatus.FAILED
+                    step_result.error_message = str(e)
+                    step_result.error_category = ErrorCategory.INTERNAL_ERROR.value
                     result.errors.append(f"Parallel step {step.step_id} failed: {e}")
 
     def _build_prompt(self, step: StepExecution) -> str:
