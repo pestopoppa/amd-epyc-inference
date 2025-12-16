@@ -268,7 +268,7 @@ python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
 ### 3. Route to Specialist/Workers
 
 Read `orchestration/model_registry.yaml` for deterministic model selection:
-- `task_type == 'code'` → coder_primary (Qwen2.5-Coder-32B + spec)
+- `task_type == 'code'` → coder_primary (Qwen3-Coder-30B-A3B + MoE)
 - `task_type == 'ingest'` → ingest_long_context (Qwen3-Next-80B)
 - Workers run in parallel for file-level tasks
 
@@ -377,6 +377,39 @@ llama-cli -m MODEL.gguf -f prompt.txt -n 128 \
 1. Check for interactive mode prompts
 2. Verify timeout is set: `timeout 300 llama-cli ...`
 3. Kill stuck processes: `pkill -f llama-cli`
+
+### MANDATORY: Document Model Quirks
+
+**After every new model benchmark**, update `orchestration/model_registry.yaml`:
+
+1. **Add performance data** under the appropriate role entry:
+   ```yaml
+   performance:
+     baseline_tps: <measured>
+     optimized_tps: <measured>
+     speedup: <calculated>
+   benchmark_date: YYYY-MM-DD
+   ```
+
+2. **Document any runtime quirks** in the `runtime_quirks` section:
+   ```yaml
+   runtime_quirks:
+     model_name:
+       description: "Model full name"
+       quirks:
+         - issue: "What breaks or behaves unexpectedly"
+           workaround: "How to fix or avoid it"
+           discovered: YYYY-MM-DD
+   ```
+
+3. **Required quirk documentation includes:**
+   - Speculative decoding acceptance rates (if unusually low)
+   - MoE override key names (`qwen3moe.*` vs `qwen3next.*` etc.)
+   - BOS/EOS token mismatches that break draft compatibility
+   - Timeout/wrapper issues specific to model or binary
+   - Architecture-specific constraints (SSM incompatibility, etc.)
+
+4. **Reference the model registry** before running benchmarks to avoid rediscovering known quirks.
 
 ---
 

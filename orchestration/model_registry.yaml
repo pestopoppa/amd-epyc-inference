@@ -55,7 +55,30 @@ roles:
 
   coder_primary:
     tier: B
-    description: "Primary code generation and refactoring - Instruct model with MoE acceleration"
+    description: "Primary high-throughput code generation - fastest coder with excellent quality"
+    model:
+      name: Qwen3-Coder-30B-A3B-Instruct
+      path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 17.5
+      architecture: moe  # 128 experts, 3 active by default
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    performance:
+      baseline_tps: 34.6
+      optimized_tps: 45.3
+      speedup: 1.31x
+    memory:
+      residency: hot
+      pinned: true
+    benchmark_date: 2025-12-16
+    # BENCHMARK WINNER: 4.7x faster than Qwen2.5-Coder-32B (optimized) with equivalent code quality
+
+  coder_escalation:
+    tier: B
+    description: "Coding escalation target - generalist coder for when primary needs support"
     model:
       name: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
       path: mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L.i1-Q4_K_M.gguf
@@ -67,13 +90,25 @@ roles:
       experts: 4
       override_key: qwen3moe.expert_used_count
     performance:
-      baseline_tps: 18.54
-      optimized_tps: 27.9
-      speedup: 1.5x
+      baseline_tps: 20.4
+      optimized_tps: 30.4
+      speedup: 1.49x
     memory:
-      residency: hot
-      pinned: true
-    # NOTE: Qwen2.5-Coder-32B-Instruct with spec decode (33 t/s) pending download/benchmark
+      residency: warm
+      pinned: false
+    escalation_from: coder_primary
+    use_cases:
+      - "First failure from coder_primary"
+      - "Multi-file refactoring requiring broader context"
+      - "Architecture-level code decisions"
+      - "Complex debugging spanning multiple components"
+    benchmark_date: 2025-12-16
+
+  # DEPRECATED: Qwen2.5-Coder-32B-Instruct
+  # Status: Available but not in active rotation
+  # Reason: 4.7x slower than Qwen3-Coder-30B with equivalent quality
+  # Path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
+  # Performance: 9.7 t/s optimized (spec decode 16% accept)
 
   ingest_long_context:
     tier: B
@@ -337,9 +372,15 @@ routing_hints:
 
   - if: "task_type == 'code'"
     use: [coder_primary]
+    escalate_to: coder_escalation
 
   - if: "task_type == 'code' and 'refactor' in objective"
     use: [coder_primary, worker_general]
+    escalate_to: coder_escalation
+
+  - if: "task_type == 'code' and escalation.triggered"
+    use: [coder_escalation]
+    escalate_to: architect_coding
 
   - if: "task_type == 'ingest'"
     use: [ingest_long_context]
@@ -414,3 +455,69 @@ command_templates:
       --mmproj {mmproj_path} \
       -t {threads} \
       -c {context_length}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# RUNTIME QUIRKS & KNOWN ISSUES
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# This section documents model-specific runtime issues discovered during
+# benchmarking. Update this when new quirks are discovered.
+#
+# FORMAT:
+#   model_name:
+#     quirk_description: "what happens"
+#     workaround: "how to fix it"
+#     discovered: YYYY-MM-DD
+
+runtime_quirks:
+  qwen25_coder_32b_instruct:
+    description: "Qwen2.5-Coder-32B-Instruct"
+    quirks:
+      - issue: "llama-speculative errors with 'invalid argument:' when wrapped in timeout"
+        workaround: "Run without timeout wrapper, or use llama-cli instead"
+        discovered: 2025-12-16
+      - issue: "Low speculative decoding acceptance rate (~16%)"
+        workaround: "Use MoE models instead for high throughput"
+        discovered: 2025-12-16
+      - issue: "Baseline generation very slow (7 t/s) on CPU"
+        workaround: "Not recommended for high-throughput tasks - use Qwen3-Coder-30B-A3B instead"
+        discovered: 2025-12-16
+
+  qwen3_coder_30b_a3b:
+    description: "Qwen3-Coder-30B-A3B-Instruct"
+    quirks:
+      - issue: "Requires MoE expert override key specific to architecture"
+        workaround: "Use --override-kv qwen3moe.expert_used_count=int:4"
+        discovered: 2025-12-16
+
+  qwen3_coder_53b_a3b:
+    description: "Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2"
+    quirks:
+      - issue: "Larger model, slower than 30B variant despite similar quality"
+        workaround: "Use for complex tasks only, prefer 30B for standard coding"
+        discovered: 2025-12-16
+
+  qwen3_coder_480b:
+    description: "Qwen3-Coder-480B-A35B-Instruct"
+    quirks:
+      - issue: "BOS token mismatch - uses ',' (token 11) instead of standard"
+        workaround: "Cannot use speculative decoding - no compatible draft exists"
+        discovered: 2025-12-15
+
+  qwen3_next_80b:
+    description: "Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)"
+    quirks:
+      - issue: "SSM models incompatible with all speculation methods"
+        workaround: "Only MoE expert reduction available, no spec decode"
+        discovered: 2025-12-15
+
+  general_llama_speculative:
+    description: "llama-speculative binary general quirks"
+    quirks:
+      - issue: "May print 'decode: n_tokens == 0' errors"
+        workaround: "Usually non-fatal, generation still completes"
+        discovered: 2025-12-16
+      - issue: "Timeout wrapper can cause 'invalid argument' errors"
+        workaround: "Use direct execution or increase timeout significantly"
+        discovered: 2025-12-16

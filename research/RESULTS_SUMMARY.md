@@ -10,10 +10,36 @@
 | Configuration | Speed | Speedup | Use Case |
 |---------------|-------|---------|----------|
 | Prompt Lookup (summarization) | 95.18 t/s | **12.7x** | Document QA, summarization |
-| Qwen2.5-Coder-32B + 0.5B (K=24) | 33.0 t/s | **11x** | Code generation |
+| **Qwen3-Coder-30B-A3B + MoE 4** | **45.3 t/s** | **+31%** | **Code generation (coder_primary)** |
+| Qwen3-Coder-53B-A3B + MoE 4 | 30.4 t/s | +49% | Code escalation (coder_escalation) |
+| Qwen2.5-Coder-32B + 0.5B (K=24) | 33.0 t/s | **11x** | Code generation (DEPRECATED) |
 | Prompt Lookup (code editing) | 25.82 t/s | **8.6x** | Refactoring, code review |
 | Qwen2.5-72B + 0.5B (K=16) | 8.53 t/s | **5.8x** | General tasks |
 | MoE Expert Reduction (4 experts) | +21-48% | — | MoE models |
+
+---
+
+## 🆕 Coder Model Selection (2025-12-16)
+
+**Quality Evaluation Task:** Binary search with docstring and empty array handling.
+
+| Model | Baseline | Optimized | Method | Quality |
+|-------|----------|-----------|--------|---------|
+| **Qwen3-Coder-30B-A3B-Instruct** | 34.6 t/s | **45.3 t/s** | MoE 4 experts | ⭐⭐⭐⭐⭐ |
+| Qwen3-Coder-53B-A3B-TOTAL-RECALL | 20.4 t/s | 30.4 t/s | MoE 4 experts | ⭐⭐⭐⭐⭐ |
+| Qwen2.5-Coder-32B-Instruct | 7.0 t/s | 9.7 t/s | Spec decode (16% accept) | ⭐⭐⭐⭐⭐ |
+
+**Finding:** All three models produce equivalent quality code (docstrings, edge cases, correct algorithm). Speed is the only differentiator.
+
+**Decision:**
+- `coder_primary` = Qwen3-Coder-30B-A3B-Instruct (45.3 t/s) - 4.7x faster than dense
+- `coder_escalation` = Qwen3-Coder-53B-A3B-TOTAL-RECALL (30.4 t/s) - generalist support
+- Qwen2.5-Coder-32B-Instruct = DEPRECATED (16% spec accept too low)
+
+**Coding Escalation Hierarchy:**
+```
+coder_primary (45 t/s) → coder_escalation (30 t/s) → architect_coding (5 t/s)
+```
 
 ---
 

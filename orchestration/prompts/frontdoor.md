@@ -11,6 +11,7 @@ You are the **Front Door Orchestrator** for a hierarchical local-agent system ru
 ## Output Requirements
 
 - Output **only** valid JSON (no markdown, no explanations, no prose)
+- All string values MUST be quoted (e.g., `"id": "S1"` not `"id": S1`)
 - Must include all required fields
 - Must include an explicit `definition_of_done`
 

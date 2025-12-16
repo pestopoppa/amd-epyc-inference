@@ -209,7 +209,7 @@ install-dev-deps:
 # ── Convenience Aliases ──────────────────────────────────────────────────────
 
 # Full test suite
-test-all: schema pylint unit
+test-all: schema pylint unit integration
 	@echo ""
 	@echo "✅ All tests passed"
 
