@@ -104,6 +104,155 @@ run_suite() {
 }
 
 # =============================================================================
+# DYNAMIC MODEL QUEUE PROCESSING
+# =============================================================================
+QUEUE_FILE="/tmp/claude/benchmark_queue.txt"
+QUEUE_LOCK="/tmp/claude/benchmark_queue.lock"
+QUEUE_DONE="/tmp/claude/benchmark_queue_done.txt"
+QUEUED_MODELS_PROCESSED=0
+
+# Check if there are models in the queue
+has_queued_models() {
+    [[ -f "$QUEUE_FILE" ]] && [[ -s "$QUEUE_FILE" ]]
+}
+
+# Process all models currently in the queue
+process_queue() {
+    if ! has_queued_models; then
+        return 0
+    fi
+
+    log "=========================================="
+    log "PROCESSING DYNAMICALLY QUEUED MODELS"
+    log "=========================================="
+
+    # Read queue atomically
+    local queue_snapshot=$(mktemp)
+    (
+        flock -x 200
+        if [[ -f "$QUEUE_FILE" ]]; then
+            cat "$QUEUE_FILE" > "$queue_snapshot"
+            # Clear the queue (entries will be moved to done file after processing)
+            > "$QUEUE_FILE"
+        fi
+    ) 200>"$QUEUE_LOCK"
+
+    if [[ ! -s "$queue_snapshot" ]]; then
+        rm -f "$queue_snapshot"
+        return 0
+    fi
+
+    local count=$(wc -l < "$queue_snapshot")
+    log "Found $count model(s) in queue"
+
+    while IFS='|' read -r model_path model_name arch moe_key timestamp; do
+        [[ -z "$model_path" ]] && continue
+
+        log ""
+        log "Processing queued model: $model_name"
+        log "  Path: $model_path"
+        log "  Arch: $arch"
+        log "  MoE Key: ${moe_key:-none}"
+        log "  Queued at: $timestamp"
+
+        if [[ ! -f "$model_path" ]]; then
+            log "  ERROR: Model file not found, skipping"
+            continue
+        fi
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log "  [DRY RUN] Would run benchmarks for $model_name"
+            continue
+        fi
+
+        # Run all applicable suites for this model
+        run_suites_for_queued_model "$model_path" "$model_name" "$arch" "$moe_key"
+
+        # Mark as processed
+        echo "${model_path}|${model_name}|${arch}|${moe_key}|${timestamp}|processed_$(date +%Y%m%d_%H%M%S)" >> "$QUEUE_DONE"
+        ((QUEUED_MODELS_PROCESSED++)) || true
+
+    done < "$queue_snapshot"
+
+    rm -f "$queue_snapshot"
+    log "Queue processing complete"
+}
+
+# Run all benchmark suites for a single queued model
+run_suites_for_queued_model() {
+    local model_path="$1"
+    local model_name="$2"
+    local arch="$3"
+    local moe_key="$4"
+
+    local model_dir="$RUN_DIR/queued_models/$model_name"
+    mkdir -p "$model_dir"
+
+    # Build MoE override if needed
+    local moe_override=""
+    if [[ -n "$moe_key" ]]; then
+        moe_override="--override-kv ${moe_key}=int:4"
+    fi
+
+    log "  Running benchmark suites for $model_name..."
+
+    # Thinking rubric (if not VL-only model)
+    if [[ "$SUITE" == "all" || "$SUITE" == "thinking" ]]; then
+        log "    Running thinking rubric..."
+        "$SCRIPT_DIR/run_thinking_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/thinking.log" 2>&1 || log "    Thinking rubric failed"
+    fi
+
+    # Coder rubric
+    if [[ "$SUITE" == "all" || "$SUITE" == "coder" ]]; then
+        log "    Running coder rubric..."
+        "$SCRIPT_DIR/run_coder_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/coder.log" 2>&1 || log "    Coder rubric failed"
+    fi
+
+    # General rubric
+    if [[ "$SUITE" == "all" || "$SUITE" == "general" ]]; then
+        log "    Running general rubric..."
+        "$SCRIPT_DIR/run_general_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/general.log" 2>&1 || log "    General rubric failed"
+    fi
+
+    # Math rubric
+    if [[ "$SUITE" == "all" || "$SUITE" == "math" ]]; then
+        log "    Running math rubric..."
+        "$SCRIPT_DIR/run_math_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/math.log" 2>&1 || log "    Math rubric failed"
+    fi
+
+    # Long context rubric
+    if [[ "$SUITE" == "all" || "$SUITE" == "long_context" ]]; then
+        log "    Running long context rubric..."
+        "$SCRIPT_DIR/run_long_context_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/long_context.log" 2>&1 || log "    Long context rubric failed"
+    fi
+
+    # Instruction precision rubric
+    if [[ "$SUITE" == "all" || "$SUITE" == "instruction_precision" ]]; then
+        log "    Running instruction precision rubric..."
+        "$SCRIPT_DIR/run_instruction_precision_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/instruction_precision.log" 2>&1 || log "    Instruction precision rubric failed"
+    fi
+
+    # Agentic rubric
+    if [[ "$SUITE" == "all" || "$SUITE" == "agentic" ]]; then
+        log "    Running agentic rubric..."
+        "$SCRIPT_DIR/run_agentic_rubric.sh" "$model_path" "$model_name" "$arch" \
+            >> "$model_dir/agentic.log" 2>&1 || log "    Agentic rubric failed"
+    fi
+
+    # Note: VL rubric requires mmproj file, skip for non-VL models
+    # VL models should be added manually to the VL benchmark script
+
+    log "  Completed suites for $model_name"
+    log "  Logs: $model_dir/"
+}
+
+# =============================================================================
 # BANNER
 # =============================================================================
 cat << 'EOF'
@@ -156,6 +305,9 @@ SUITES_RUN=0
 SUITES_PASSED=0
 SUITES_FAILED=0
 
+# Check queue at start (models queued before run began)
+process_queue
+
 # Thinking benchmark
 if [[ "$SUITE" == "all" || "$SUITE" == "thinking" ]]; then
     ((SUITES_RUN++)) || true
@@ -165,6 +317,7 @@ if [[ "$SUITE" == "all" || "$SUITE" == "thinking" ]]; then
         ((SUITES_FAILED++)) || true
     fi
 fi
+process_queue  # Check for newly queued models
 
 # Coder benchmark
 if [[ "$SUITE" == "all" || "$SUITE" == "coder" ]]; then
@@ -185,6 +338,7 @@ if [[ "$SUITE" == "all" || "$SUITE" == "vl" ]]; then
         ((SUITES_FAILED++)) || true
     fi
 fi
+process_queue  # Check for newly queued models
 
 # General benchmark
 if [[ "$SUITE" == "all" || "$SUITE" == "general" ]]; then
@@ -215,6 +369,7 @@ if [[ "$SUITE" == "all" || "$SUITE" == "math" ]]; then
         ((SUITES_FAILED++)) || true
     fi
 fi
+process_queue  # Check for newly queued models
 
 # Long Context benchmark
 if [[ "$SUITE" == "all" || "$SUITE" == "long_context" ]]; then
@@ -235,6 +390,9 @@ if [[ "$SUITE" == "all" || "$SUITE" == "instruction_precision" ]]; then
         ((SUITES_FAILED++)) || true
     fi
 fi
+
+# Final queue check before speculative decoding
+process_queue
 
 # =============================================================================
 # SPECULATIVE DECODING BENCHMARKS
@@ -388,6 +546,9 @@ HOURS=$((TOTAL_DURATION / 3600))
 MINUTES=$(((TOTAL_DURATION % 3600) / 60))
 SECONDS=$((TOTAL_DURATION % 60))
 
+# One final queue check
+process_queue
+
 log ""
 log "=============================================="
 log "OVERNIGHT BENCHMARK COMPLETE"
@@ -396,6 +557,9 @@ log "Total duration: ${HOURS}h ${MINUTES}m ${SECONDS}s"
 log "Suites run: $SUITES_RUN"
 log "Suites passed: $SUITES_PASSED"
 log "Suites failed: $SUITES_FAILED"
+if [[ $QUEUED_MODELS_PROCESSED -gt 0 ]]; then
+    log "Dynamically queued models processed: $QUEUED_MODELS_PROCESSED"
+fi
 log "Results: $RUN_DIR"
 log "=============================================="
 
