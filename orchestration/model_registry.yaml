@@ -254,13 +254,44 @@ roles:
       residency: warm
       pinned: false
 
+  vision_escalation:
+    tier: B
+    description: "Complex vision tasks - math in images, long video, complex diagrams"
+    model:
+      name: Qwen3-VL-30B-A3B-Instruct
+      path: lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf
+      mmproj_path: lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf
+      quant: Q4_K_M
+      size_gb: 18.0
+      architecture: moe  # MoE architecture with 3 active experts
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3vlmoe.expert_used_count
+    performance:
+      # Estimated based on similar Qwen3-30B-A3B models
+      baseline_tps: 25.0
+      optimized_tps: 35.0
+      speedup: 1.4x
+    memory:
+      residency: cold  # Load on demand for complex tasks
+      pinned: false
+    escalation:
+      from: worker_vision
+      triggers:
+        - "math or equations in image"
+        - "complex multi-step diagram"
+        - "video longer than 10 minutes"
+        - "GUI automation failure"
+        - "cross-reference multiple image regions"
+    notes: "Qwen3-VL MoE outperforms Qwen2.5-VL-72B dense on reasoning tasks"
+
   worker_summarize:
     tier: C
     description: "Document summarization - highest measured speedup with prompt lookup"
     model:
-      name: Qwen2.5-Coder-32B
-      # Shares model file with coder_primary
-      path: lmstudio-community/Qwen2.5-Coder-32B-GGUF/Qwen2.5-Coder-32B-Q4_K_M.gguf
+      name: Qwen2.5-Coder-32B-Instruct
+      path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 18.5
     acceleration:
@@ -399,6 +430,13 @@ routing_hints:
 
   - if: "'image' in inputs or 'screenshot' in inputs or 'ui' in objective"
     use: [worker_vision]
+
+  # Vision escalation for complex visual reasoning tasks
+  - if: "'math' in objective and ('image' in inputs or 'diagram' in inputs)"
+    use: [vision_escalation]
+
+  - if: "'video' in inputs and priority != 'interactive'"
+    use: [vision_escalation]
 
   - if: "escalation.max_level == 'B3'"
     use: [architect_general]
@@ -589,6 +627,19 @@ runtime_quirks:
       - issue: "Requires mmproj file for vision"
         workaround: "Use -m MODEL --mmproj mmproj-model-f16.gguf"
         discovered: 2025-12-15
+
+  qwen3_vl_30b:
+    description: "Qwen3-VL-30B-A3B-Instruct (vision_escalation)"
+    quirks:
+      - issue: "MoE vision model - requires override key for expert reduction"
+        workaround: "Use --override-kv qwen3vlmoe.expert_used_count=int:4"
+        discovered: 2025-12-16
+      - issue: "Requires mmproj file for vision"
+        workaround: "Use --mmproj mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf"
+        discovered: 2025-12-16
+      - issue: "Cold load takes ~15-20s for 18GB model"
+        workaround: "Schedule for batch/non-interactive tasks, or pre-warm"
+        discovered: 2025-12-16
 
   qwen25_coder_0_5b:
     description: "Qwen2.5-Coder-0.5B (draft_qwen25_coder)"
