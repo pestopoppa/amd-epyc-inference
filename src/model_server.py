@@ -128,7 +128,24 @@ class ModelBackend(ABC):
 
 
 class LlamaCppBackend(ModelBackend):
-    """Backend using llama.cpp for inference."""
+    """Backend using llama.cpp for inference.
+
+    Uses the correct binary for each acceleration type:
+    - llama-completion: baseline, moe_expert_reduction
+    - llama-speculative: speculative_decoding
+    - llama-lookup: prompt_lookup
+    """
+
+    # Binary selection based on acceleration type
+    BINARY_MAP = {
+        "none": "llama-completion",
+        "baseline": "llama-completion",
+        "moe_expert_reduction": "llama-completion",
+        "speculative_decoding": "llama-speculative",
+        "prompt_lookup": "llama-lookup",
+    }
+
+    LLAMA_CPP_PATH = Path("/mnt/raid0/llm/llama.cpp/build/bin")
 
     def __init__(self, registry: RegistryLoader):
         """Initialize the llama.cpp backend.
@@ -140,35 +157,106 @@ class LlamaCppBackend(ModelBackend):
         self._processes: dict[int, subprocess.Popen] = {}
 
     def load(self, role_config: RoleConfig) -> int:
-        """Load a model (stub - models are loaded per-inference in llama.cpp).
+        """Load a model (models are loaded per-inference in llama.cpp).
 
-        In llama.cpp, models are typically loaded per-inference rather than
-        kept resident. This method is a placeholder for potential future
-        server mode support.
+        In llama.cpp batch mode, models are loaded fresh for each inference.
+        This method verifies the model file exists.
 
         Returns:
-            Placeholder PID (0 for stub).
+            Placeholder PID (0 for per-inference mode).
         """
-        # TODO: Implement llama-server mode for persistent model loading
+        # Verify model exists
+        model_path = Path(role_config.model.full_path)
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
         return 0
 
     def unload(self, pid: int) -> bool:
-        """Unload a model (stub).
+        """Unload a model.
 
         Returns:
-            True (always succeeds for stub).
+            True (always succeeds for per-inference mode).
         """
         if pid in self._processes:
-            self._processes[pid].terminate()
+            try:
+                self._processes[pid].terminate()
+                self._processes[pid].wait(timeout=5)
+            except Exception:
+                self._processes[pid].kill()
             del self._processes[pid]
         return True
+
+    def _build_command(
+        self,
+        role_config: RoleConfig,
+        request: InferenceRequest,
+    ) -> str:
+        """Build the llama.cpp command with correct binary and flags.
+
+        Args:
+            role_config: Configuration for the role/model.
+            request: Inference request parameters.
+
+        Returns:
+            Shell command string ready for execution.
+        """
+        accel_type = role_config.acceleration.type
+        binary_name = self.BINARY_MAP.get(accel_type, "llama-completion")
+        binary_path = self.LLAMA_CPP_PATH / binary_name
+
+        # Start with timeout and NUMA wrapper
+        parts = [
+            f"timeout {request.timeout}",
+            "env OMP_NUM_THREADS=1",
+            "numactl --interleave=all",
+            str(binary_path),
+            f"-m {role_config.model.full_path}",
+        ]
+
+        # Add acceleration-specific flags
+        if accel_type == "speculative_decoding":
+            draft = self.registry.get_draft_for_role(role_config.name)
+            if draft:
+                parts.append(f"-md {draft.model.full_path}")
+            k = role_config.acceleration.k or 16
+            parts.append(f"--draft-max {k}")
+
+        elif accel_type == "moe_expert_reduction":
+            override_key = role_config.acceleration.override_key
+            experts = role_config.acceleration.experts or 4
+            if override_key:
+                parts.append(f"--override-kv {override_key}=int:{experts}")
+
+        elif accel_type == "prompt_lookup":
+            k = role_config.acceleration.k or 16
+            parts.append(f"--draft-max {k}")
+
+        # Add common parameters
+        parts.append(f"-t {self.registry._runtime_defaults.get('threads', 96)}")
+        parts.append(f"-n {request.n_tokens}")
+
+        # Temperature - use role default if set, otherwise request value
+        temp = role_config.acceleration.temperature
+        if temp is None:
+            temp = request.temperature
+        parts.append(f"--temp {temp}")
+
+        # Add prompt
+        if request.prompt_file:
+            parts.append(f"-f {request.prompt_file}")
+        elif request.prompt:
+            # Escape for shell - use double quotes and escape internal quotes
+            safe_prompt = request.prompt.replace('"', '\\"')
+            parts.append(f'-p "{safe_prompt}"')
+
+        return " ".join(parts)
 
     def infer(
         self,
         role_config: RoleConfig,
         request: InferenceRequest,
     ) -> InferenceResult:
-        """Run inference using llama-cli.
+        """Run inference using the appropriate llama.cpp binary.
 
         Args:
             role_config: Configuration for the role/model.
@@ -179,13 +267,7 @@ class LlamaCppBackend(ModelBackend):
         """
         start_time = time.time()
 
-        # Generate command using registry
-        cmd = self.registry.generate_command(
-            role_config.name,
-            prompt=request.prompt,
-            prompt_file=str(request.prompt_file) if request.prompt_file else None,
-            n_tokens=request.n_tokens,
-        )
+        cmd = self._build_command(role_config, request)
 
         try:
             # Run inference
@@ -194,15 +276,23 @@ class LlamaCppBackend(ModelBackend):
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=request.timeout,
+                timeout=request.timeout + 10,  # Extra buffer beyond internal timeout
             )
 
             elapsed = time.time() - start_time
             output = result.stdout
+            stderr = result.stderr
 
-            # Parse generation speed from output if available
-            speed = self._parse_speed(output)
-            tokens = self._estimate_tokens(output)
+            # Parse metrics from output
+            speed = self._parse_speed(output + stderr)
+            tokens = self._parse_tokens(output + stderr, request.n_tokens)
+
+            # Check for common errors
+            error_msg = None
+            success = result.returncode == 0
+
+            if not success:
+                error_msg = self._extract_error(stderr)
 
             return InferenceResult(
                 role=role_config.name,
@@ -210,8 +300,8 @@ class LlamaCppBackend(ModelBackend):
                 tokens_generated=tokens,
                 generation_speed=speed,
                 elapsed_time=elapsed,
-                success=result.returncode == 0,
-                error_message=result.stderr if result.returncode != 0 else None,
+                success=success,
+                error_message=error_msg,
             )
 
         except subprocess.TimeoutExpired:
@@ -243,10 +333,10 @@ class LlamaCppBackend(ModelBackend):
             pid: Process ID to check.
 
         Returns:
-            True if process is running.
+            True if process is running or PID is 0 (per-inference mode).
         """
         if pid == 0:
-            return True  # Stub PID always healthy
+            return True  # Per-inference mode always healthy
 
         if pid in self._processes:
             return self._processes[pid].poll() is None
@@ -254,19 +344,75 @@ class LlamaCppBackend(ModelBackend):
         return False
 
     def _parse_speed(self, output: str) -> float:
-        """Parse generation speed from llama.cpp output."""
-        # Look for pattern like "Generation: 35.1 t/s"
+        """Parse generation speed from llama.cpp output.
+
+        Handles multiple output formats:
+        - llama-completion: "eval time = ... (X.XX tokens per second)"
+        - llama-speculative: "decoded X tokens in Y.YYs, Z.ZZ t/s"
+        - llama-lookup: "decoded X tokens in Y.YYs, Z.ZZ t/s"
+        """
         import re
 
-        match = re.search(r"Generation:\s*([\d.]+)\s*t/s", output)
+        # Pattern 1: llama-completion format
+        match = re.search(r"(\d+\.\d+)\s*tokens per second", output)
         if match:
             return float(match.group(1))
+
+        # Pattern 2: llama-speculative/lookup format
+        match = re.search(r"decoded.*?(\d+\.\d+)\s*t/s", output)
+        if match:
+            return float(match.group(1))
+
+        # Pattern 3: eval time format
+        match = re.search(r"eval time.*?(\d+\.\d+)\s*ms.*?(\d+)\s*tokens", output)
+        if match:
+            ms = float(match.group(1))
+            tokens = int(match.group(2))
+            if ms > 0:
+                return tokens / (ms / 1000.0)
+
         return 0.0
 
-    def _estimate_tokens(self, output: str) -> int:
-        """Estimate token count from output."""
-        # Rough estimate: ~4 chars per token
-        return len(output) // 4
+    def _parse_tokens(self, output: str, requested: int) -> int:
+        """Parse actual token count from output."""
+        import re
+
+        # Pattern: "decoded X tokens"
+        match = re.search(r"decoded\s+(\d+)\s+tokens", output)
+        if match:
+            return int(match.group(1))
+
+        # Pattern: "eval: X tokens"
+        match = re.search(r"eval.*?(\d+)\s+tokens", output)
+        if match:
+            return int(match.group(1))
+
+        # Fallback to requested
+        return requested
+
+    def _extract_error(self, stderr: str) -> str:
+        """Extract meaningful error message from stderr."""
+        if not stderr:
+            return "Unknown error"
+
+        # Look for common error patterns
+        lines = stderr.strip().split("\n")
+
+        # Check for specific errors
+        for line in lines:
+            if "error:" in line.lower():
+                return line.strip()
+            if "failed" in line.lower():
+                return line.strip()
+            if "invalid" in line.lower():
+                return line.strip()
+
+        # Return last non-empty line
+        for line in reversed(lines):
+            if line.strip():
+                return line.strip()
+
+        return "Unknown error"
 
 
 class ModelServerError(Exception):
@@ -427,17 +573,67 @@ class ModelServer:
 
 
 def main() -> int:
-    """CLI entry point for testing."""
+    """CLI entry point for testing.
+
+    Usage:
+        python -m src.model_server                    # List roles and health check
+        python -m src.model_server <role>             # Test inference with role
+        python -m src.model_server <role> "<prompt>"  # Inference with custom prompt
+    """
     import json
+    import sys
 
     server = ModelServer()
 
     print("Model Server initialized")
     print(f"Available roles: {list(server.registry.roles.keys())}")
+    print()
 
-    # Health check
+    # If role specified, run inference test
+    if len(sys.argv) > 1:
+        role = sys.argv[1]
+        prompt = sys.argv[2] if len(sys.argv) > 2 else "Write a hello world function in Python"
+
+        print(f"Testing inference with role: {role}")
+        print(f"Prompt: {prompt[:50]}...")
+        print()
+
+        try:
+            # Load the model (validates path)
+            status = server.load(role)
+            print(f"Model loaded: {status.state.value}")
+
+            # Run inference
+            request = InferenceRequest(
+                role=role,
+                prompt=prompt,
+                n_tokens=64,
+                temperature=0.0,
+                timeout=120,
+            )
+
+            print("Running inference...")
+            result = server.infer(request)
+
+            print(f"\nSuccess: {result.success}")
+            print(f"Tokens: {result.tokens_generated}")
+            print(f"Speed: {result.generation_speed:.2f} t/s")
+            print(f"Time: {result.elapsed_time:.2f}s")
+
+            if result.error_message:
+                print(f"Error: {result.error_message}")
+
+            print(f"\n--- Output ---\n{result.output[:500]}")
+
+            return 0 if result.success else 1
+
+        except ModelServerError as e:
+            print(f"ERROR: {e}")
+            return 1
+
+    # Default: health check
     health = server.health_check()
-    print(f"\nHealth check: {json.dumps(health, indent=2)}")
+    print(f"Health check: {json.dumps(health, indent=2)}")
 
     return 0
 
