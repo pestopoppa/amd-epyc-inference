@@ -512,6 +512,54 @@ runtime_quirks:
         workaround: "Only MoE expert reduction available, no spec decode"
         discovered: 2025-12-15
 
+  qwen3_235b_a22b:
+    description: "Qwen3-235B-A22B (architect_general)"
+    quirks:
+      - issue: "Quality degrades severely at 2 experts"
+        workaround: "Use 4 experts minimum for coherent output"
+        discovered: 2025-12-15
+      - issue: "Split model (4 parts) - loading takes ~30s"
+        workaround: "Keep warm via mmap for faster reload"
+        discovered: 2025-12-15
+
+  meta_llama_3_8b:
+    description: "Meta-Llama-3-8B-Instruct (worker_general, toolrunner)"
+    quirks:
+      - issue: "None known - stable model"
+        workaround: "N/A"
+        discovered: 2025-12-16
+
+  qwen25_math_7b:
+    description: "Qwen2.5-Math-7B-Instruct (worker_math)"
+    quirks:
+      - issue: "Best with temperature 0.5 for spec decode"
+        workaround: "Use --temp 0.5 with speculative decoding for 7.3x speedup"
+        discovered: 2025-12-15
+
+  qwen25_vl_7b:
+    description: "Qwen2.5-VL-7B-Instruct (worker_vision)"
+    quirks:
+      - issue: "Best with temperature 0.7 for spec decode"
+        workaround: "Use --temp 0.7 for 57.1 t/s (3.7x speedup)"
+        discovered: 2025-12-15
+      - issue: "Requires mmproj file for vision"
+        workaround: "Use -m MODEL --mmproj mmproj-model-f16.gguf"
+        discovered: 2025-12-15
+
+  qwen25_coder_0_5b:
+    description: "Qwen2.5-Coder-0.5B (draft_qwen25_coder)"
+    quirks:
+      - issue: "Incompatible with Qwen3 MoE models"
+        workaround: "Only use with Qwen2.5 dense models"
+        discovered: 2025-12-16
+
+  qwen25_0_5b:
+    description: "Qwen2.5-0.5B-Instruct (draft_qwen25)"
+    quirks:
+      - issue: "Best K varies by target model"
+        workaround: "K=24 for 32B, K=16 for 72B, K=8 for 7B"
+        discovered: 2025-12-15
+
   general_llama_speculative:
     description: "llama-speculative binary general quirks"
     quirks:
