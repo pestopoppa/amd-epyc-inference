@@ -415,46 +415,52 @@ command_templates:
   # Templates for generating llama.cpp commands
   # Variables: {model_path}, {draft_path}, {k}, {threads}, {context_length},
   #            {override_key}, {experts}, {ngram_min}, {temperature}
+  #
+  # IMPORTANT: Use correct binary for each optimization type!
+  # See BINARY SELECTION section below for details.
 
   speculative_decoding: |
-    OMP_NUM_THREADS=1 numactl --interleave=all \
+    env OMP_NUM_THREADS=1 numactl --interleave=all \
       /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
       -m {model_path} \
       -md {draft_path} \
       --draft-max {k} \
       -t {threads} \
-      -c {context_length}
+      -n 100 \
+      --temp {temperature}
 
   moe_expert_reduction: |
-    numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
+    env OMP_NUM_THREADS=1 numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \
       -m {model_path} \
       --override-kv {override_key}=int:{experts} \
       -t {threads} \
-      -c {context_length}
+      -n 100 \
+      --temp {temperature}
 
   prompt_lookup: |
-    numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
+    env OMP_NUM_THREADS=1 numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup \
       -m {model_path} \
-      --lookup-ngram-min {ngram_min} \
+      --draft-max {k} \
       -t {threads} \
-      -c {context_length}
+      -n 100 \
+      --temp {temperature}
 
   baseline: |
-    numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
+    env OMP_NUM_THREADS=1 numactl --interleave=all \
+      /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \
       -m {model_path} \
       -t {threads} \
-      -c {context_length}
+      -n 100 \
+      --temp {temperature}
 
   vision: |
-    numactl --interleave=all \
+    env OMP_NUM_THREADS=1 numactl --interleave=all \
       /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \
       -m {model_path} \
       --mmproj {mmproj_path} \
-      -t {threads} \
-      -c {context_length}
+      -t {threads}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -469,6 +475,44 @@ command_templates:
 #     quirk_description: "what happens"
 #     workaround: "how to fix it"
 #     discovered: YYYY-MM-DD
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CRITICAL: BINARY SELECTION (MUST READ FIRST)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Use the CORRECT BINARY for each optimization type:
+#
+#   | Optimization       | Binary             | Notes                           |
+#   |--------------------|--------------------|---------------------------------|
+#   | Baseline/MoE       | llama-completion   | No interactive mode, reliable   |
+#   | Speculative decode | llama-speculative  | Requires -md draft model        |
+#   | Prompt lookup      | llama-lookup       | Uses --draft-max for K value    |
+#   | Interactive chat   | llama-cli          | ONLY for interactive use        |
+#
+# DO NOT use llama-cli for benchmarking - it auto-enables interactive mode
+# for Instruct models and requires --no-conversation flag to disable.
+#
+# STANDARD COMMAND PATTERN (works with timeout):
+#   timeout N env OMP_NUM_THREADS=1 numactl --interleave=all BINARY [args]
+#
+# EXAMPLES:
+#   # MoE expert reduction (correct)
+#   timeout 180 env OMP_NUM_THREADS=1 numactl --interleave=all \
+#     llama-completion -m MODEL.gguf \
+#     --override-kv qwen3moe.expert_used_count=int:4 \
+#     -p "prompt" -t 96 -n 100 --temp 0
+#
+#   # Speculative decoding (correct)
+#   timeout 300 env OMP_NUM_THREADS=1 numactl --interleave=all \
+#     llama-speculative -m TARGET.gguf -md DRAFT.gguf \
+#     --draft-max 16 -p "prompt" -t 96 -n 100 --temp 0
+#
+#   # Prompt lookup (correct)
+#   timeout 180 env OMP_NUM_THREADS=1 numactl --interleave=all \
+#     llama-lookup -m MODEL.gguf \
+#     --draft-max 16 -p "prompt" -t 96 -n 100 --temp 0
+#
+# ═══════════════════════════════════════════════════════════════════════════
 
 runtime_quirks:
   qwen25_coder_32b_instruct:
@@ -567,5 +611,28 @@ runtime_quirks:
         workaround: "Usually non-fatal, generation still completes"
         discovered: 2025-12-16
       - issue: "Timeout wrapper can cause 'invalid argument' errors"
-        workaround: "Use direct execution or increase timeout significantly"
+        workaround: "Use 'env OMP_NUM_THREADS=1' prefix with timeout"
+        discovered: 2025-12-16
+
+  general_llama_cli:
+    description: "llama-cli binary - AVOID FOR BENCHMARKING"
+    quirks:
+      - issue: "Auto-enables interactive/conversation mode for Instruct models with chat templates"
+        workaround: "Use llama-completion instead, or add --no-conversation flag"
+        discovered: 2025-12-16
+      - issue: "Hangs waiting for user input after prompt completion"
+        workaround: "Use llama-completion for non-interactive generation"
+        discovered: 2025-12-16
+      - issue: "Different behavior between versions - flags change frequently"
+        workaround: "Prefer llama-completion for reliable, reproducible benchmarks"
+        discovered: 2025-12-16
+
+  general_timeout_commands:
+    description: "Using timeout with llama.cpp commands"
+    quirks:
+      - issue: "'timeout: failed to run command OMP_NUM_THREADS=1' error"
+        workaround: "Use 'timeout N env OMP_NUM_THREADS=1 ...' (put env after timeout)"
+        discovered: 2025-12-16
+      - issue: "OMP_NUM_THREADS=1 before timeout doesn't work"
+        workaround: "timeout runs in subshell, use 'env' to pass env vars"
         discovered: 2025-12-16
