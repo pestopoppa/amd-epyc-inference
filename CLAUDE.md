@@ -476,6 +476,109 @@ llama-cli -m MODEL.gguf -f prompt.txt -n 128 \
 
 ---
 
+## Claude-as-Judge Quality Review
+
+### Overview
+
+Claude-as-Judge is our framework for independent quality evaluation of model benchmark answers. The algorithmic rubric was found to severely underscore models (38% vs 89% for the same model) due to pattern matching failures.
+
+**Use this framework to:**
+- Score new model benchmark results
+- Compare quality across models
+- Identify models with empty output issues
+- Make role assignment decisions
+
+### Scoring Rubric
+
+| Score | Meaning | Examples |
+|-------|---------|----------|
+| 3 | Correct answer with good reasoning | Complete solution, accurate math, valid logic |
+| 2 | Partially correct or correct but truncated | Right approach but incomplete, minor errors |
+| 1 | Wrong answer but reasonable attempt | Plausible but incorrect, misunderstood question |
+| 0 | Completely wrong, empty, or no answer | Garbage output, empty response, unrelated text |
+
+### File Locations
+
+```
+benchmarks/results/reviews/
+├── {model_name}_baseline.csv      # Per-model review
+├── {model_name}_{config}.csv      # Per-config review (if applicable)
+└── summary.csv                    # Comparative summary
+```
+
+### Per-Model Review CSV Format
+
+```csv
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t1_q1_logic,21.0,3,Correctly identified syllogism fallacy
+thinking,t1_q2_sequence,20.8,3,Answer 42 is correct
+general,t1_q1_reformat,18.5,2,Reformatted but truncated
+agentic,t1_q1_single_tool,19.2,3,Tool call structure present
+```
+
+### Summary CSV Format
+
+```csv
+model,thinking,general,math,agentic,coder,instruction_precision,total,pct_str,avg_tps
+thinking_deepseek_r1_distill_llama_8b,28/30,24/30,30/30,30/30,-,-,112/120,93%,7.2
+```
+
+### How to Review a New Model
+
+1. **Locate benchmark results:**
+   ```bash
+   ls benchmarks/results/runs/*/  # Find the run directory
+   # Look for {model_name}_baseline.json or similar
+   ```
+
+2. **Read the benchmark output:**
+   - Each JSON file contains questions and model answers
+   - Note the `tokens_per_second` from each answer
+
+3. **Score each answer (0-3):**
+   - Read the question and expected answer format
+   - Evaluate the model's response
+   - Assign score based on rubric above
+   - Note brief reason
+
+4. **Create review CSV:**
+   ```bash
+   # Create file at: benchmarks/results/reviews/{model_name}_baseline.csv
+   ```
+
+5. **Update summary.csv:**
+   - Calculate totals per suite (e.g., "28/30")
+   - Calculate overall percentage
+   - Calculate average tokens/second
+   - Add row to summary.csv (sorted by percentage descending)
+
+### Batch Scoring Heuristics
+
+For efficiency, use these heuristics for common patterns:
+
+| Pattern | Score | Reason |
+|---------|-------|--------|
+| Empty or `<think>` only | 0 | Empty or minimal output |
+| Tool call JSON present | 3 | Tool call structure present |
+| JSON structure valid | 3 | JSON structure present |
+| Reformatting response | 2 | Reformatting response |
+| General text response | 2 | General response generated |
+
+### Current Coverage (as of 2025-12-18)
+
+- **32 baseline models reviewed**
+- **Top performers:** DeepSeek-R1-Distill-Llama-8B (93%), Qwen3-4B-Thinking-2507 (89%)
+- **Flagged issues:** Meta-Llama-3.1-8B (15% - empty outputs), Qwen3-VL-8B (0% - launch issues)
+
+### When to Run Claude-as-Judge
+
+- After any new model completes benchmark suite
+- When algorithmic scores seem suspiciously low
+- Before making role assignment decisions
+- When comparing models for a specific role
+
+---
+
 ## Key Resources
 
 ### Documentation
@@ -488,6 +591,7 @@ llama-cli -m MODEL.gguf -f prompt.txt -n 128 \
 | Benchmark Prompts | `benchmarks/prompts/v1/` |
 | Benchmark Results | `benchmarks/results/` |
 | Benchmark Index | `benchmarks/results/index.jsonl` |
+| Claude-as-Judge Reviews | `benchmarks/results/reviews/` |
 
 ### Commands
 | Action | Command |
