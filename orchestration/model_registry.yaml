@@ -1,18 +1,3 @@
-# Model Registry for Hierarchical Local-Agent Orchestration
-# ==========================================================
-#
-# This registry maps agent roles to specific models and acceleration strategies.
-# Based on empirical benchmarks from AMD EPYC 9655 (96 cores, 1.13TB DDR5).
-#
-# See: logs/research_report.md for benchmark data justifying these choices.
-#
-# Usage:
-#   - Dispatcher reads this file to select models by role
-#   - Do NOT improvise model selection at runtime
-#   - Update this file when new benchmarks are available
-#
-# IMPORTANT: All paths are relative to model_base_path
-
 runtime_defaults:
   quantization: Q4_K_M
   draft_quantization: Q8_0
@@ -20,23 +5,33 @@ runtime_defaults:
   temperature: 0.2
   threads: 96
   numa_policy: interleave=all
-
-  # Base path for all models (LM Studio directory on RAID0)
   model_base_path: /mnt/raid0/llm/lmstudio/models
-
+  # Binary paths - SINGLE SOURCE OF TRUTH for all launch commands
+  binaries:
+    base_dir: /mnt/raid0/llm/llama.cpp/build/bin
+    completion: llama-completion      # baseline, MoE reduction
+    speculative: llama-speculative    # spec decode with draft model
+    lookup: llama-lookup              # prompt n-gram lookup
+    cli: llama-cli                    # interactive mode (avoid in benchmarks)
+  # Inference timeouts by role tier
+  timeouts:
+    default: 180
+    tier_a: 120      # Fast frontdoor
+    tier_b: 300      # Specialists may need longer
+    tier_c: 180      # Workers
+    tier_d: 60       # Drafts are fast
+    long_context: 600  # Long prompts need more time
 roles:
-  # ═══════════════════════════════════════════════════════════════════════════
-  # TIER A — Front Door (Interactive Orchestrator)
-  # ═══════════════════════════════════════════════════════════════════════════
-
   frontdoor:
     tier: A
-    description: "Primary interactive orchestrator - fast, agentic, always resident"
+    description: Primary interactive orchestrator - fast, agentic, always resident
     model:
       name: Qwen3-Coder-30B-A3B-Instruct
       path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 17.5
+      architecture: moe
+    candidate_roles: [frontdoor, coder, general, ingest]
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -48,20 +43,16 @@ roles:
     memory:
       residency: hot
       pinned: true
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # TIER B — Specialists
-  # ═══════════════════════════════════════════════════════════════════════════
-
   coder_primary:
     tier: B
-    description: "Primary high-throughput code generation - fastest coder with excellent quality"
+    description: Primary high-throughput code generation - fastest coder with excellent quality
     model:
       name: Qwen3-Coder-30B-A3B-Instruct
       path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 17.5
-      architecture: moe  # 128 experts, 3 active by default
+      architecture: moe
+    candidate_roles: [frontdoor, coder, general, ingest]
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -74,17 +65,16 @@ roles:
       residency: hot
       pinned: true
     benchmark_date: 2025-12-16
-    # BENCHMARK WINNER: 4.7x faster than Qwen2.5-Coder-32B (optimized) with equivalent code quality
-
   coder_escalation:
     tier: B
-    description: "Coding escalation target - generalist coder for when primary needs support"
+    description: Coding escalation target - generalist coder for when primary needs support
     model:
       name: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
       path: mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L.i1-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 30
-      architecture: moe  # 128 experts, 10 active by default
+      architecture: moe
+    candidate_roles: [coder, architect, general]
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -98,38 +88,31 @@ roles:
       pinned: false
     escalation_from: coder_primary
     use_cases:
-      - "First failure from coder_primary"
-      - "Multi-file refactoring requiring broader context"
-      - "Architecture-level code decisions"
-      - "Complex debugging spanning multiple components"
+    - First failure from coder_primary
+    - Multi-file refactoring requiring broader context
+    - Architecture-level code decisions
+    - Complex debugging spanning multiple components
     benchmark_date: 2025-12-16
-
-  # DEPRECATED: Qwen2.5-Coder-32B-Instruct
-  # Status: Available but not in active rotation
-  # Reason: 4.7x slower than Qwen3-Coder-30B with equivalent quality
-  # Path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
-  # Performance: 9.7 t/s optimized (spec decode 16% accept)
-
   ingest_long_context:
     tier: B
-    description: "Large document ingestion and synthesis - SSM+MoE hybrid"
+    description: Large document ingestion and synthesis - SSM+MoE hybrid
     model:
       name: Qwen3-Next-80B-A3B-Instruct
       path: lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 45
-      architecture: ssm_moe_hybrid  # 512 experts, 10 active by default
+      architecture: ssm_moe_hybrid
+    candidate_roles: [ingest, architect]
     acceleration:
       type: moe_expert_reduction
       experts: 2
       override_key: qwen3next.expert_used_count
     constraints:
-      # CRITICAL: SSM models are incompatible with speculation-based methods
       forbid:
-        - speculative_decoding
-        - prompt_lookup
-        - eagle
-      reason: "SSM requires consecutive positions - incompatible with ALL speculation methods"
+      - speculative_decoding
+      - prompt_lookup
+      - eagle
+      reason: SSM requires consecutive positions - incompatible with ALL speculation methods
     performance:
       baseline_tps: 10.12
       optimized_tps: 11.55
@@ -137,17 +120,17 @@ roles:
     memory:
       residency: warm
       pinned: false
-
   architect_general:
     tier: B
-    description: "System architecture, invariants, acceptance tests - emits IR only"
+    description: System architecture, invariants, acceptance tests - emits IR only
     model:
       name: Qwen3-235B-A22B
-      # Split model - llama.cpp loads all parts from first file
       path: lmstudio-community/Qwen3-235B-A22B-GGUF/Qwen3-235B-A22B-Q4_K_M-00001-of-00004.gguf
       quant: Q4_K_M
       size_gb: 133
       split_count: 4
+      architecture: moe
+    candidate_roles: [architect, general]
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -159,27 +142,25 @@ roles:
     memory:
       residency: warm
       pinned: false
-
   architect_coding:
     tier: B
-    description: "Hardest coding/architecture escalation - IR-first"
+    description: Hardest coding/architecture escalation - IR-first
     model:
       name: Qwen3-Coder-480B-A35B-Instruct
-      # Split model - llama.cpp loads all parts from first file
       path: lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00008.gguf
       quant: Q4_K_M
       size_gb: 271
       split_count: 8
+      architecture: moe
+    candidate_roles: [architect, coder]
     acceleration:
       type: moe_expert_reduction
       experts: 2
     constraints:
-      # CRITICAL: BOS token mismatch breaks ALL speculation
-      # BOS=',' (token 11) vs standard BOS='<|endoftext|>' (token 151643)
       forbid:
-        - speculative_decoding
-        - prompt_lookup
-      reason: "BOS token mismatch - no compatible draft models exist"
+      - speculative_decoding
+      - prompt_lookup
+      reason: BOS token mismatch - no compatible draft models exist
     performance:
       baseline_tps: 2.25
       optimized_tps: 5.23
@@ -187,19 +168,48 @@ roles:
     memory:
       residency: warm
       pinned: false
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # TIER C — Workers (Parallel, Stateless)
-  # ═══════════════════════════════════════════════════════════════════════════
-
+  thinking_reasoning:
+    tier: B
+    description: Deep reasoning and chain-of-thought - SSM+MoE hybrid thinking model
+    model:
+      name: Qwen3-Next-80B-A3B-Thinking
+      path: unsloth/Qwen3-Next-80B-A3B-Thinking-GGUF/Qwen3-Next-80B-A3B-Thinking-Q4_K_S.gguf
+      quant: Q4_K_S
+      size_gb: 45
+      architecture: ssm_moe_hybrid
+    candidate_roles: [thinking, ingest, architect]
+    acceleration:
+      type: moe_expert_reduction
+      experts: 2
+      override_key: qwen3moe.expert_used_count
+    constraints:
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
+      - eagle
+      reason: SSM requires consecutive positions - incompatible with ALL speculation methods
+    performance:
+      baseline_tps: null
+      optimized_tps: null
+      speedup: null
+    memory:
+      residency: warm
+      pinned: false
+    benchmark_date: null
+    notes: Thinking variant optimized for chain-of-thought reasoning. Use for complex multi-step problems.
   worker_general:
     tier: C
-    description: "Boilerplate, rewrites, doc polish, small diffs"
+    description: Boilerplate, rewrites, doc polish, small diffs
     model:
       name: Meta-Llama-3-8B-Instruct
       path: lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 4.7
+      architecture: dense
+    candidate_roles: [worker, general]
+    constraints:
+      forbid:
+        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3-8B
     acceleration:
       type: prompt_lookup
       ngram_min: 3
@@ -211,15 +221,16 @@ roles:
       residency: hot
       pinned: true
       max_instances: 2
-
   worker_math:
     tier: C
-    description: "Edge cases, invariants, property-test generation"
+    description: Edge cases, invariants, property-test generation
     model:
       name: Qwen2.5-Math-7B-Instruct
       path: lmstudio-community/Qwen2.5-Math-7B-Instruct-GGUF/Qwen2.5-Math-7B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 4.4
+      architecture: dense
+    candidate_roles: [math, worker, thinking]
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25
@@ -231,21 +242,22 @@ roles:
     memory:
       residency: hot
       pinned: true
-
   worker_vision:
     tier: C
-    description: "Screenshot/UI extraction - outputs component trees + structured notes"
+    description: Screenshot/UI extraction - outputs component trees + structured notes
     model:
       name: Qwen2.5-VL-7B-Instruct
       path: lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
       mmproj_path: lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf
       quant: Q4_K_M
       size_gb: 4.4
+      architecture: dense
+    candidate_roles: [vision]
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25
       k: 8
-      temperature: 0.7  # Higher temp improves VL model performance
+      temperature: 0.7
     performance:
       baseline_tps: 15.28
       optimized_tps: 57.1
@@ -253,470 +265,1185 @@ roles:
     memory:
       residency: warm
       pinned: false
-
   vision_escalation:
     tier: B
-    description: "Complex vision tasks - math in images, long video, complex diagrams"
+    description: Complex vision tasks - math in images, long video, complex diagrams
     model:
       name: Qwen3-VL-30B-A3B-Instruct
       path: lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf
       mmproj_path: lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf
       quant: Q4_K_M
       size_gb: 18.0
-      architecture: moe  # MoE architecture with 3 active experts
+      architecture: moe
+    candidate_roles: [vision]
     acceleration:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3vlmoe.expert_used_count
     performance:
-      # Estimated based on similar Qwen3-30B-A3B models
       baseline_tps: 25.0
       optimized_tps: 35.0
       speedup: 1.4x
     memory:
-      residency: cold  # Load on demand for complex tasks
+      residency: cold
       pinned: false
     escalation:
       from: worker_vision
       triggers:
-        - "math or equations in image"
-        - "complex multi-step diagram"
-        - "video longer than 10 minutes"
-        - "GUI automation failure"
-        - "cross-reference multiple image regions"
-    notes: "Qwen3-VL MoE outperforms Qwen2.5-VL-72B dense on reasoning tasks"
-
+      - math or equations in image
+      - complex multi-step diagram
+      - video longer than 10 minutes
+      - GUI automation failure
+      - cross-reference multiple image regions
+    notes: Qwen3-VL MoE outperforms Qwen2.5-VL-72B dense on reasoning tasks
   worker_summarize:
     tier: C
-    description: "Document summarization - highest measured speedup with prompt lookup"
+    description: Document summarization - highest measured speedup with prompt lookup
     model:
       name: Qwen2.5-Coder-32B-Instruct
       path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 18.5
+      architecture: dense
+    candidate_roles: [coder, frontdoor, ingest, general]
     acceleration:
       type: prompt_lookup
       ngram_min: 3
     performance:
-      # Summarization with repetitive prompts achieves 95.18 t/s (12.7x)
       baseline_tps: 5.79
       optimized_tps: 95.18
       speedup: 12.7x
     memory:
       residency: warm
       pinned: false
-    notes: "Use for document QA and summarization where prompt contains source material"
-
+    notes: Use for document QA and summarization where prompt contains source material
   toolrunner:
     tier: C
-    description: "Summarize tool outputs, triage logs, propose next commands"
+    description: Summarize tool outputs, triage logs, propose next commands
     model:
       name: Meta-Llama-3-8B-Instruct
-      # Shares model file with worker_general
       path: lmstudio-community/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 4.7
+      architecture: dense
+    candidate_roles: [worker, general]
+    constraints:
+      forbid:
+        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3-8B
     acceleration:
-      type: none  # Tool output summarization doesn't benefit from speculation
+      type: none
     performance:
       baseline_tps: 17.52
     memory:
       residency: hot
       pinned: true
-
-  # ═══════════════════════════════════════════════════════════════════════════
-  # TIER D — Draft Models (Speculative Decoding)
-  # ═══════════════════════════════════════════════════════════════════════════
-
   draft_qwen25_coder:
     tier: D
-    description: "Default draft for Qwen2.5-Coder family"
+    description: Default draft for Qwen2.5-Coder family
     model:
       name: Qwen2.5-Coder-0.5B
       path: lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf
       quant: Q8_0
       size_gb: 0.5
+      architecture: dense
+    candidate_roles: [draft]
     compatible_targets:
-      - Qwen2.5-Coder-32B
-      - Qwen2.5-Coder-14B
-      - Qwen2.5-Coder-7B
+    - Qwen2.5-Coder-32B
+    - Qwen2.5-Coder-14B
+    - Qwen2.5-Coder-7B
     performance:
       raw_tps: 85
     memory:
       residency: hot
       pinned: true
-
   draft_qwen25:
     tier: D
-    description: "Default draft for Qwen2.5 (non-coder) family"
+    description: Default draft for Qwen2.5 (non-coder) family
     model:
       name: Qwen2.5-0.5B
       path: QuantFactory/Qwen2.5-0.5B-GGUF/Qwen2.5-0.5B.Q8_0.gguf
       quant: Q8_0
       size_gb: 0.5
+      architecture: dense
+    candidate_roles: [draft]
     compatible_targets:
-      - Qwen2.5-72B
-      - Qwen2.5-Math-72B
-      - Qwen2.5-Math-7B
-      - Qwen2.5-VL-7B
+    - Qwen2.5-72B
+    - Qwen2.5-Math-72B
+    - Qwen2.5-Math-7B
+    - Qwen2.5-VL-7B
     memory:
       residency: hot
       pinned: true
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PROCESS LAYOUT (Memory Residency)
-# ═══════════════════════════════════════════════════════════════════════════
-
+  architect_hermes_4_70b:
+    tier: B
+    description: Architect model - Hermes-4-70B-Q4_K_M
+    model:
+      name: Hermes-4-70B-Q4_K_M
+      path: lmstudio-community/Hermes-4-70B-GGUF/Hermes-4-70B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 39.6
+      architecture: dense
+    candidate_roles: [architect, frontdoor, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  architect_meta_llama_3_1_70b:
+    tier: B
+    description: Architect model - Meta-Llama-3.1-70B-Instruct-Q4_K_M
+    model:
+      name: Meta-Llama-3.1-70B-Instruct-Q4_K_M
+      path: lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 39.6
+      architecture: dense
+    candidate_roles: [architect, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  architect_meta_llama_3_70b:
+    tier: B
+    description: Architect model - Meta-Llama-3-70B-Instruct-Q4_K_M
+    model:
+      name: Meta-Llama-3-70B-Instruct-Q4_K_M
+      path: lmstudio-community/Meta-Llama-3-70B-Instruct-GGUF/Meta-Llama-3-70B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 39.6
+      architecture: dense
+    candidate_roles: [architect, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  architect_qwen2_5_72b:
+    tier: B
+    description: Architect model - Qwen2.5-72B-Instruct-Q4_K_M
+    model:
+      name: Qwen2.5-72B-Instruct-Q4_K_M
+      path: lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 44.2
+      architecture: dense
+    candidate_roles: [architect, frontdoor, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  architect_qwen2_5_72b_q4_k_m:
+    tier: B
+    description: Architect model - Qwen2.5-72B.Q4_K_M
+    model:
+      name: Qwen2.5-72B.Q4_K_M
+      path: mradermacher/Qwen2.5-72B-GGUF/Qwen2.5-72B.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 44.2
+      architecture: dense
+    candidate_roles: [architect, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  coder_qwen3_coder_30b_a3b:
+    tier: B
+    description: Coder model - Qwen3-Coder-30B-A3B-Instruct-Q4_K_M
+    model:
+      name: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M
+      path: unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 17.3
+      architecture: moe
+    candidate_roles: [frontdoor, coder, general, ingest]
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    memory:
+      residency: cold
+      pinned: false
+  math_qwen2_5_math_72b:
+    tier: B
+    description: Math model - Qwen2.5-Math-72B-Instruct-Q6_K-00001-of-00002
+    model:
+      name: Qwen2.5-Math-72B-Instruct-Q6_K-00001-of-00002
+      path: tensorblock/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q6_K-00001-of-00002.gguf
+      quant: Q6_K
+      size_gb: 32.5
+      architecture: dense
+    candidate_roles: [math, architect, thinking]
+    memory:
+      residency: cold
+      pinned: false
+  math_qwen2_5_math_72b_2:
+    tier: B
+    description: Math model - Qwen2.5-Math-72B-Instruct-Q4_K_M
+    model:
+      name: Qwen2.5-Math-72B-Instruct-Q4_K_M
+      path: lmstudio-community/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 44.2
+      architecture: dense
+    candidate_roles: [math, architect, thinking]
+    memory:
+      residency: cold
+      pinned: false
+  thinking_deepseek_r1_distill_llama_70b:
+    tier: B
+    description: Thinking model - DeepSeek-R1-Distill-Llama-70B-Q4_K_M
+    model:
+      name: DeepSeek-R1-Distill-Llama-70B-Q4_K_M
+      path: unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF/DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 39.6
+      architecture: dense
+    candidate_roles: [thinking, architect, general]
+    memory:
+      residency: cold
+      pinned: false
+  thinking_deepseek_r1_distill_llama_8b:
+    tier: B
+    description: Thinking model - DeepSeek-R1-Distill-Llama-8B-Q4_K_M
+    model:
+      name: DeepSeek-R1-Distill-Llama-8B-Q4_K_M
+      path: unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF/DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.6
+      architecture: dense
+    candidate_roles: [thinking, worker]
+    memory:
+      residency: cold
+      pinned: false
+  thinking_deepseek_r1_distill_qwen_14b:
+    tier: B
+    description: Thinking model - DeepSeek-R1-Distill-Qwen-14B-Q4_K_M
+    model:
+      name: DeepSeek-R1-Distill-Qwen-14B-Q4_K_M
+      path: lmstudio-community/DeepSeek-R1-Distill-Qwen-14B-GGUF/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 8.4
+      architecture: dense
+    candidate_roles: [thinking, general, worker]
+    memory:
+      residency: cold
+      pinned: false
+  thinking_deepseek_r1_distill_qwen_32b:
+    tier: B
+    description: Thinking model - DeepSeek-R1-Distill-Qwen-32B-Q6_K
+    model:
+      name: DeepSeek-R1-Distill-Qwen-32B-Q6_K
+      path: bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF/DeepSeek-R1-Distill-Qwen-32B-Q6_K.gguf
+      quant: Q6_K
+      size_gb: 25.0
+      architecture: dense
+    candidate_roles: [thinking, coder, general, architect]
+    memory:
+      residency: cold
+      pinned: false
+  thinking_deepseek_r1_distill_qwen_7b:
+    tier: B
+    description: Thinking model - DeepSeek-R1-Distill-Qwen-7B-Q4_K_M
+    model:
+      name: DeepSeek-R1-Distill-Qwen-7B-Q4_K_M
+      path: lmstudio-community/DeepSeek-R1-Distill-Qwen-7B-GGUF/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.4
+      architecture: dense
+    candidate_roles: [thinking, worker]
+    memory:
+      residency: cold
+      pinned: false
+  thinking_qwen3_30b_a3b_thinking_2507:
+    tier: B
+    description: Thinking model - Qwen3-30B-A3B-Thinking-2507-Q8_0
+    model:
+      name: Qwen3-30B-A3B-Thinking-2507-Q8_0
+      path: unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF/Qwen3-30B-A3B-Thinking-2507-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 30.3
+      architecture: moe
+    candidate_roles: [thinking, coder, ingest]
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    memory:
+      residency: cold
+      pinned: false
+  thinking_qwen3_4b_thinking_2507:
+    tier: B
+    description: Thinking model - Qwen3-4B-Thinking-2507-Q8_0
+    model:
+      name: Qwen3-4B-Thinking-2507-Q8_0
+      path: lmstudio-community/Qwen3-4B-Thinking-2507-GGUF/Qwen3-4B-Thinking-2507-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 4.0
+      architecture: dense
+    candidate_roles: [thinking, worker]
+    memory:
+      residency: cold
+      pinned: false
+  general_deepseek_r1_0528_qwen3_8b:
+    tier: C
+    description: General model - DeepSeek-R1-0528-Qwen3-8B-Q8_0
+    model:
+      name: DeepSeek-R1-0528-Qwen3-8B-Q8_0
+      path: lmstudio-community/DeepSeek-R1-0528-Qwen3-8B-GGUF/DeepSeek-R1-0528-Qwen3-8B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 8.1
+      architecture: dense
+    candidate_roles: [thinking, general, worker]
+    memory:
+      residency: cold
+      pinned: false
+  general_gemma_3_12b_it:
+    tier: C
+    description: General model - gemma-3-12b-it-Q4_K_M
+    model:
+      name: gemma-3-12b-it-Q4_K_M
+      path: lmstudio-community/gemma-3-12b-it-GGUF/gemma-3-12b-it-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 6.8
+      architecture: dense
+    candidate_roles: [general, worker]
+    memory:
+      residency: cold
+      pinned: false
+  general_gemma_3_27b_it_qat:
+    tier: C
+    description: General model - gemma-3-27B-it-QAT-Q4_0
+    model:
+      name: gemma-3-27B-it-QAT-Q4_0
+      path: lmstudio-community/gemma-3-27B-it-qat-GGUF/gemma-3-27B-it-QAT-Q4_0.gguf
+      quant: Q4_0
+      size_gb: 14.5
+      architecture: dense
+    candidate_roles: [general, frontdoor]
+    memory:
+      residency: cold
+      pinned: false
+  general_glm_4_6:
+    tier: C
+    description: General model - GLM-4.6-Q4_K_S-00001-of-00005
+    model:
+      name: GLM-4.6-Q4_K_S-00001-of-00005
+      path: unsloth/GLM-4.6-GGUF/GLM-4.6-Q4_K_S-00001-of-00005.gguf
+      quant: Q4_K_S
+      size_gb: 46.2
+      architecture: dense
+    candidate_roles: [general, architect, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  general_meta_llama_3_1_8b_q4_k_s:
+    tier: C
+    description: General model - Meta-Llama-3.1-8B.Q4_K_S
+    model:
+      name: Meta-Llama-3.1-8B.Q4_K_S
+      path: QuantFactory/Meta-Llama-3.1-8B-GGUF/Meta-Llama-3.1-8B.Q4_K_S.gguf
+      quant: Q4_K_S
+      size_gb: 4.4
+      architecture: dense
+    candidate_roles: [general, worker]
+    constraints:
+      forbid:
+        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3.1-8B
+    memory:
+      residency: cold
+      pinned: false
+  general_meta_llama_3_8b_instruct_fp16:
+    tier: C
+    description: General model - Meta-Llama-3-8B-Instruct-fp16
+    model:
+      name: Meta-Llama-3-8B-Instruct-fp16
+      path: bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp16.gguf
+      quant: fp16
+      size_gb: 15.0
+      architecture: dense
+    candidate_roles: [general, worker]
+    constraints:
+      forbid:
+        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3-8B
+    memory:
+      residency: cold
+      pinned: false
+  general_qwen2_5_7b_q4_k_s:
+    tier: C
+    description: General model - Qwen2.5-7B.Q4_K_S
+    model:
+      name: Qwen2.5-7B.Q4_K_S
+      path: QuantFactory/Qwen2.5-7B-GGUF/Qwen2.5-7B.Q4_K_S.gguf
+      quant: Q4_K_S
+      size_gb: 4.2
+      architecture: dense
+    candidate_roles: [general, worker]
+    memory:
+      residency: cold
+      pinned: false
+  general_qwen3_32b:
+    tier: C
+    description: General model - Qwen3-32B-Q4_K_M
+    model:
+      name: Qwen3-32B-Q4_K_M
+      path: lmstudio-community/Qwen3-32B-GGUF/Qwen3-32B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 18.4
+      architecture: dense
+    candidate_roles: [general, frontdoor, coder, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  math_mathsmith_hard_problem_synthesizer_qwen3_8b_q:
+    tier: C
+    description: Math model - MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0
+    model:
+      name: MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0
+      path: mradermacher/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B-GGUF/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0.gguf
+      quant: Q8_0
+      size_gb: 8.1
+      architecture: dense
+    candidate_roles: [math]
+    constraints:
+      forbid:
+        - speculative_decoding  # MathSmith finetune has different tokens than PARD-Qwen3
+    memory:
+      residency: cold
+      pinned: false
+  vision_qwen3_vl_235b_a22b_thinking:
+    tier: C
+    description: Vision model - Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
+    model:
+      name: Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
+      path: unsloth/Qwen3-VL-235B-A22B-Thinking-GGUF/Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003.gguf
+      quant: Q4_K_S
+      size_gb: 46.2
+      architecture: moe
+    candidate_roles: [vision]
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    constraints:
+      forbid: [speculative_decoding, prompt_lookup]
+      reason: VL model - no compatible text-only drafts
+    memory:
+      residency: cold
+      pinned: false
+  vision_qwen3_vl_2b_q4_k_m:
+    tier: C
+    description: Vision model - Qwen3_VL_2B.Q4_K_M
+    model:
+      name: Qwen3_VL_2B.Q4_K_M
+      path: mradermacher/Qwen3_VL_2B-GGUF/Qwen3_VL_2B.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 1.0
+      architecture: dense
+    candidate_roles: [vision]
+    constraints:
+      forbid: [speculative_decoding, prompt_lookup]
+      reason: VL model - no compatible text-only drafts
+    memory:
+      residency: cold
+      pinned: false
+  vision_qwen3_vl_4b:
+    tier: C
+    description: Vision model - Qwen3-VL-4B-Instruct-Q4_K_M
+    model:
+      name: Qwen3-VL-4B-Instruct-Q4_K_M
+      path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 2.3
+      architecture: dense
+    candidate_roles: [vision]
+    constraints:
+      forbid: [speculative_decoding, prompt_lookup]
+      reason: VL model - no compatible text-only drafts
+    memory:
+      residency: cold
+      pinned: false
+  vision_qwen3_vl_8b:
+    tier: C
+    description: Vision model - Qwen3-VL-8B-Instruct-Q4_K_M
+    model:
+      name: Qwen3-VL-8B-Instruct-Q4_K_M
+      path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.7
+      architecture: dense
+    candidate_roles: [vision]
+    constraints:
+      forbid: [speculative_decoding, prompt_lookup]
+      reason: VL model - no compatible text-only drafts
+    memory:
+      residency: cold
+      pinned: false
+  draft_co_rewarding_ii_qwen3_1_7b_base_math_q8_0:
+    tier: D
+    deprecated: true  # Spec decode fails - fine-tuned model incompatible with base Qwen3
+    description: Draft model - Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0
+    model:
+      name: Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0
+      path: mradermacher/Co-rewarding-II-Qwen3-1.7B-Base-MATH-GGUF/Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0.gguf
+      quant: Q8_0
+      size_gb: 2.0
+      architecture: dense
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+  draft_deepseek_r1_distill_qwen_1_5b:
+    tier: D
+    description: Draft model - DeepSeek-R1-Distill-Qwen-1.5B-Q8_0
+    model:
+      name: DeepSeek-R1-Distill-Qwen-1.5B-Q8_0
+      path: lmstudio-community/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 1.8
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - deepseek-r1-distill  # Only compatible with other DeepSeek-R1-Distill models
+  draft_pard_deepseek_r1_distill_qwen_1_5b_q5_k_s:
+    tier: D
+    description: Draft model - PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q5_K_S
+    model:
+      name: PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q5_K_S
+      path: mradermacher/PARD-DeepSeek-R1-Distill-Qwen-1.5B-GGUF/PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q5_K_S.gguf
+      quant: Q4_K_M
+      size_gb: 1.2
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - deepseek-r1-distill
+  draft_pard_deepseek_r1_distill_qwen_1_5b_q8_0:
+    tier: D
+    description: Draft model - PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q8_0
+    model:
+      name: PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q8_0
+      path: mradermacher/PARD-DeepSeek-R1-Distill-Qwen-1.5B-GGUF/PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q8_0.gguf
+      quant: Q8_0
+      size_gb: 1.8
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - deepseek-r1-distill
+  draft_pard_llama_3_2_1b_q4_0:
+    tier: D
+    description: Draft model - pard-llama-3.2-1b-q4_0
+    model:
+      name: pard-llama-3.2-1b-q4_0
+      path: fernandoruiz/PARD-Llama-3.2-1B-Q4_0-GGUF/pard-llama-3.2-1b-q4_0.gguf
+      quant: Q4_0
+      size_gb: 0.9
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - llama
+    - meta-llama
+  draft_pard_llama_3_2_1b_q8_0:
+    tier: D
+    description: Draft model - PARD-Llama-3.2-1B.Q8_0
+    model:
+      name: PARD-Llama-3.2-1B.Q8_0
+      path: mradermacher/PARD-Llama-3.2-1B-GGUF/PARD-Llama-3.2-1B.Q8_0.gguf
+      quant: Q8_0
+      size_gb: 1.5
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - llama
+    - meta-llama
+  draft_pard_qwen3_0_6b_q4_0:
+    tier: D
+    description: Draft model - pard-qwen3-0.6b-q4_0
+    model:
+      name: pard-qwen3-0.6b-q4_0
+      path: fernandoruiz/PARD-Qwen3-0.6B-Q4_0-GGUF/pard-qwen3-0.6b-q4_0.gguf
+      quant: Q4_0
+      size_gb: 0.4
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+  draft_qwen2_0_5b_q2_k:
+    tier: D
+    description: Draft model - Qwen2-0.5B.Q2_K
+    model:
+      name: Qwen2-0.5B.Q2_K
+      path: QuantFactory/Qwen2-0.5B-GGUF/Qwen2-0.5B.Q2_K.gguf
+      quant: Q2_K
+      size_gb: 0.3
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2
+  draft_qwen2_5_coder_0_5b:
+    tier: D
+    description: Draft model - Qwen2.5-Coder-0.5B-Q4_K_M
+    model:
+      name: Qwen2.5-Coder-0.5B-Q4_K_M
+      path: lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 0.4
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2.5
+    - qwen2-
+  draft_qwen2_5_coder_1_5b_q2_k:
+    tier: D
+    description: Draft model - Qwen2.5-Coder-1.5B.Q2_K
+    model:
+      name: Qwen2.5-Coder-1.5B.Q2_K
+      path: QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q2_K.gguf
+      quant: Q2_K
+      size_gb: 0.6
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2.5
+    - qwen2-
+  draft_qwen2_5_coder_1_5b_q4_k_m:
+    tier: D
+    description: Draft model - Qwen2.5-Coder-1.5B.Q4_K_M
+    model:
+      name: Qwen2.5-Coder-1.5B.Q4_K_M
+      path: QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 0.9
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2.5
+    - qwen2-
+  draft_qwen2_5_math_1_5b:
+    tier: D
+    description: Draft model - Qwen2.5-Math-1.5B-Instruct-Q4_K_M
+    model:
+      name: Qwen2.5-Math-1.5B-Instruct-Q4_K_M
+      path: tensorblock/Qwen2.5-Math-1.5B-Instruct-GGUF/Qwen2.5-Math-1.5B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 0.9
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2.5
+    - qwen2-
+  draft_qwen3_0_6b:
+    tier: D
+    description: Draft model - Qwen3-0.6B-Q2_K
+    model:
+      name: Qwen3-0.6B-Q2_K
+      path: unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf
+      quant: Q2_K
+      size_gb: 0.3
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+  draft_qwen3_1_7b:
+    tier: D
+    description: Draft model - Qwen3-1.7B-Q4_K_M
+    model:
+      name: Qwen3-1.7B-Q4_K_M
+      path: lmstudio-community/Qwen3-1.7B-GGUF/Qwen3-1.7B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 1.2
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+  draft_qwen3_embedding_0_6b:
+    tier: D
+    deprecated: true  # Embedding model - not for text generation
+    description: Draft model - Qwen3-Embedding-0.6B-Q8_0
+    model:
+      name: Qwen3-Embedding-0.6B-Q8_0
+      path: Qwen/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 0.6
+      architecture: dense
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+  draft_qwen3_vl_1b_merged_q8_0:
+    tier: D
+    deprecated: true  # Merged VL model produces corrupted output
+    description: Draft model - qwen3-vl-1b-merged-q8_0
+    model:
+      name: qwen3-vl-1b-merged-q8_0
+      path: Novaciano/Qwen3-VL-1B-Merged-Q8_0-GGUF/qwen3-vl-1b-merged-q8_0.gguf
+      quant: Q8_0
+      size_gb: 0.7
+      architecture: dense
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+  draft_deepseek_r1_distill_qwen_1_5b_q80:
+    tier: D
+    description: Draft model - DeepSeek-R1-Distill-Qwen-1.5B-Q8_0
+    model:
+      name: DeepSeek-R1-Distill-Qwen-1.5B-Q8_0
+      path: unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 1.8
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - deepseek-r1-distill
+  thinking_deepseek_r1_distill_qwen_14b_q6kl:
+    tier: B
+    description: Thinking model - DeepSeek-R1-Distill-Qwen-14B-Q6_K_L
+    model:
+      name: DeepSeek-R1-Distill-Qwen-14B-Q6_K_L
+      path: bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF/DeepSeek-R1-Distill-Qwen-14B-Q6_K_L.gguf
+      quant: Q6_K_L
+      size_gb: 11.6
+      architecture: dense
+    candidate_roles: [thinking, general]
+    memory:
+      residency: cold
+      pinned: false
+  draft_qwen2_5_math_1_5b_q6k:
+    tier: D
+    description: Draft model - Qwen2.5-Math-1.5B-Instruct-Q6_K
+    model:
+      name: Qwen2.5-Math-1.5B-Instruct-Q6_K
+      path: tensorblock/Qwen2.5-Math-1.5B-Instruct-GGUF/Qwen2.5-Math-1.5B-Instruct-Q6_K.gguf
+      quant: Q6_K
+      size_gb: 1.2
+      architecture: dense
+    candidate_roles: [draft]
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2.5
+    - qwen2-
+  thinking_qwen3_30b_a3b_thinking_2507_q4ks:
+    tier: B
+    description: Thinking model - Qwen3-30B-A3B-Thinking-2507-Q4_K_S
+    model:
+      name: Qwen3-30B-A3B-Thinking-2507-Q4_K_S
+      path: unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF/Qwen3-30B-A3B-Thinking-2507-Q4_K_S.gguf
+      quant: Q4_K_S
+      size_gb: 16.3
+      architecture: moe
+    candidate_roles: [thinking, coder, ingest]
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    memory:
+      residency: cold
+      pinned: false
+  vision_qwen3_vl_4b_q80:
+    tier: C
+    description: Vision model - Qwen3-VL-4B-Instruct-Q8_0
+    model:
+      name: Qwen3-VL-4B-Instruct-Q8_0
+      path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 4.0
+      architecture: dense
+    candidate_roles: [vision]
+    constraints:
+      forbid: [speculative_decoding, prompt_lookup]
+      reason: VL model - no compatible text-only drafts
+    memory:
+      residency: cold
+      pinned: false
+  vision_qwen3_vl_8b_q80:
+    tier: C
+    description: Vision model - Qwen3-VL-8B-Instruct-Q8_0
+    model:
+      name: Qwen3-VL-8B-Instruct-Q8_0
+      path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 8.1
+      architecture: dense
+    candidate_roles: [vision]
+    constraints:
+      forbid: [speculative_decoding, prompt_lookup]
+      reason: VL model - no compatible text-only drafts
+    memory:
+      residency: cold
+      pinned: false
+  ingest_qwen3_32b:
+    tier: B
+    description: Ingest candidate - Qwen3-32B-Q4_K_M
+    model:
+      name: Qwen3-32B-Q4_K_M
+      path: lmstudio-community/Qwen3-32B-GGUF/Qwen3-32B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 18.4
+      architecture: dense
+    candidate_roles: [general, frontdoor, coder, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  ingest_qwen2_5_coder_32b:
+    tier: B
+    description: Ingest candidate - Qwen2.5-Coder-32B-Instruct
+    model:
+      name: Qwen2.5-Coder-32B-Instruct
+      path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 18.5
+      architecture: dense
+    candidate_roles: [coder, frontdoor, ingest, general]
+    memory:
+      residency: cold
+      pinned: false
+  ingest_qwen3_coder_30b:
+    tier: B
+    description: Ingest candidate - Qwen3-Coder-30B-A3B-Instruct-Q4_K_M
+    model:
+      name: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M
+      path: unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 17.3
+      architecture: moe
+    candidate_roles: [frontdoor, coder, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+  ingest_llama_3_1_70b:
+    tier: B
+    description: Ingest candidate - Meta-Llama-3.1-70B-Instruct-Q4_K_M
+    model:
+      name: Meta-Llama-3.1-70B-Instruct-Q4_K_M
+      path: lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 39.6
+      architecture: dense
+    candidate_roles: [architect, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  ingest_qwen2_5_72b:
+    tier: B
+    description: Ingest candidate - Qwen2.5-72B.Q4_K_M
+    model:
+      name: Qwen2.5-72B.Q4_K_M
+      path: mradermacher/Qwen2.5-72B-GGUF/Qwen2.5-72B.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 44.2
+      architecture: dense
+    candidate_roles: [architect, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  ingest_hermes_4_70b:
+    tier: B
+    description: Ingest candidate - Hermes-4-70B-Q4_K_M
+    model:
+      name: Hermes-4-70B-Q4_K_M
+      path: lmstudio-community/Hermes-4-70B-GGUF/Hermes-4-70B-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 39.6
+      architecture: dense
+    candidate_roles: [architect, frontdoor, general, ingest]
+    memory:
+      residency: cold
+      pinned: false
+  ingest_qwen3_30b_thinking:
+    tier: B
+    description: Ingest candidate - Qwen3-30B-A3B-Thinking-2507-Q8_0
+    model:
+      name: Qwen3-30B-A3B-Thinking-2507-Q8_0
+      path: unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF/Qwen3-30B-A3B-Thinking-2507-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 30.3
+      architecture: moe
+    candidate_roles: [thinking, coder, ingest]
+    memory:
+      residency: cold
+      pinned: false
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+  ingest_glm_4_6:
+    tier: B
+    description: Ingest candidate - GLM-4.6-Q4_K_S-00001-of-00005
+    model:
+      name: GLM-4.6-Q4_K_S-00001-of-00005
+      path: unsloth/GLM-4.6-GGUF/GLM-4.6-Q4_K_S-00001-of-00005.gguf
+      quant: Q4_K_S
+      size_gb: 46.2
+      architecture: dense
+    candidate_roles: [general, architect, ingest]
+    memory:
+      residency: cold
+      pinned: false
 process_layout:
-  # Hot = always loaded, pinned in memory
-  # Warm = mmap'd, page cache, loaded on demand
-
   hot_resident:
-    - frontdoor           # ~17.5 GB
-    - coder_primary       # ~18.5 GB
-    - draft_qwen25_coder  # ~0.5 GB
-    - draft_qwen25        # ~0.5 GB
-    - worker_general      # ~4.7 GB (x2 = 9.4 GB)
-    - worker_math         # ~4.4 GB
-    - toolrunner          # shares with worker_general
-    # Total hot: ~50 GB (leaves 1TB+ for warm models and KV cache)
-
+  - frontdoor
+  - coder_primary
+  - draft_qwen25_coder
+  - draft_qwen25
+  - worker_general
+  - worker_math
+  - toolrunner
   warm_mmap:
-    - ingest_long_context  # ~45 GB
-    - architect_general    # ~133 GB
-    - architect_coding     # ~271 GB
-    - worker_vision        # ~4.4 GB
-    - worker_summarize     # shares with coder_primary
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# ESCALATION CHAINS
-# ═══════════════════════════════════════════════════════════════════════════
-# Define escalation paths for automatic retry with more capable models.
-# Each chain is an ordered list from fastest to most capable.
-
+  - ingest_long_context
+  - architect_general
+  - architect_coding
+  - worker_vision
+  - worker_summarize
 escalation_chains:
   coder:
-    description: "Code generation escalation path"
-    chain: [coder_primary, coder_escalation, architect_coding]
+    description: Code generation escalation path
+    chain:
+    - coder_primary
+    - coder_escalation
+    - architect_coding
     triggers:
-      - error_categories: [timeout, inference_error, internal_error]
-      - output_too_short: 50  # chars - likely incomplete response
-      - explicit_request: true  # TaskIR can request escalation
-    max_escalations: 2  # Don't go beyond architect_coding
-
-  general:
-    description: "General task escalation path"
-    chain: [worker_general, frontdoor, architect_general]
-    triggers:
-      - error_categories: [timeout, inference_error]
-      - explicit_request: true
+    - error_categories:
+      - timeout
+      - inference_error
+      - internal_error
+    - output_too_short: 50
+    - explicit_request: true
     max_escalations: 2
-
-  # Vision chain - PENDING benchmarking
-  # vision:
-  #   chain: [worker_vision, vision_escalation]
-  #   triggers:
-  #     - error_categories: [inference_error]
-  #     - complex_reasoning: true
-  #   max_escalations: 1
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# ROUTING HINTS (Deterministic)
-# ═══════════════════════════════════════════════════════════════════════════
-
+  general:
+    description: General task escalation path
+    chain:
+    - worker_general
+    - frontdoor
+    - architect_general
+    triggers:
+    - error_categories:
+      - timeout
+      - inference_error
+    - explicit_request: true
+    max_escalations: 2
 routing_hints:
-  # Simple deterministic rules the dispatcher applies.
-  # More specific rules take precedence.
-
-  - if: "task_type == 'chat' and priority == 'interactive'"
-    use: [frontdoor]
-
-  - if: "task_type == 'code'"
-    use: [coder_primary]
-    escalate_to: coder_escalation
-
-  - if: "task_type == 'code' and 'refactor' in objective"
-    use: [coder_primary, worker_general]
-    escalate_to: coder_escalation
-
-  - if: "task_type == 'code' and escalation.triggered"
-    use: [coder_escalation]
-    escalate_to: architect_coding
-
-  - if: "task_type == 'ingest'"
-    use: [ingest_long_context]
-
-  - if: "task_type == 'doc' and priority == 'interactive'"
-    use: [frontdoor, worker_general]
-
-  - if: "task_type == 'doc' and 'summarize' in objective"
-    use: [worker_summarize]
-
-  - if: "task_type == 'manage'"
-    use: [frontdoor, toolrunner, worker_general]
-
-  - if: "'math' in constraints or 'invariant' in objective"
-    use: [worker_math]
-
-  - if: "'image' in inputs or 'screenshot' in inputs or 'ui' in objective"
-    use: [worker_vision]
-
-  # Vision escalation for complex visual reasoning tasks
-  - if: "'math' in objective and ('image' in inputs or 'diagram' in inputs)"
-    use: [vision_escalation]
-
-  - if: "'video' in inputs and priority != 'interactive'"
-    use: [vision_escalation]
-
-  - if: "escalation.max_level == 'B3'"
-    use: [architect_general]
-
-  - if: "escalation.max_level == 'B3' and task_type == 'code'"
-    use: [architect_coding]
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# COMMAND TEMPLATES
-# ═══════════════════════════════════════════════════════════════════════════
-
+- if: task_type == 'chat' and priority == 'interactive'
+  use:
+  - frontdoor
+- if: task_type == 'code'
+  use:
+  - coder_primary
+  escalate_to: coder_escalation
+- if: task_type == 'code' and 'refactor' in objective
+  use:
+  - coder_primary
+  - worker_general
+  escalate_to: coder_escalation
+- if: task_type == 'code' and escalation.triggered
+  use:
+  - coder_escalation
+  escalate_to: architect_coding
+- if: task_type == 'ingest'
+  use:
+  - ingest_long_context
+- if: task_type == 'doc' and priority == 'interactive'
+  use:
+  - frontdoor
+  - worker_general
+- if: task_type == 'doc' and 'summarize' in objective
+  use:
+  - worker_summarize
+- if: task_type == 'manage'
+  use:
+  - frontdoor
+  - toolrunner
+  - worker_general
+- if: '''math'' in constraints or ''invariant'' in objective'
+  use:
+  - worker_math
+- if: '''image'' in inputs or ''screenshot'' in inputs or ''ui'' in objective'
+  use:
+  - worker_vision
+- if: '''math'' in objective and (''image'' in inputs or ''diagram'' in inputs)'
+  use:
+  - vision_escalation
+- if: '''video'' in inputs and priority != ''interactive'''
+  use:
+  - vision_escalation
+- if: escalation.max_level == 'B3'
+  use:
+  - architect_general
+- if: escalation.max_level == 'B3' and task_type == 'code'
+  use:
+  - architect_coding
 command_templates:
-  # Templates for generating llama.cpp commands
-  # Variables: {model_path}, {draft_path}, {k}, {threads}, {context_length},
-  #            {override_key}, {experts}, {ngram_min}, {temperature}
-  #
-  # IMPORTANT: Use correct binary for each optimization type!
-  # See BINARY SELECTION section below for details.
-
-  speculative_decoding: |
-    env OMP_NUM_THREADS=1 numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
-      -m {model_path} \
-      -md {draft_path} \
-      --draft-max {k} \
-      -t {threads} \
-      -n 100 \
-      --temp {temperature}
-
-  moe_expert_reduction: |
-    env OMP_NUM_THREADS=1 numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \
-      -m {model_path} \
-      --override-kv {override_key}=int:{experts} \
-      -t {threads} \
-      -n 100 \
-      --temp {temperature}
-
-  prompt_lookup: |
-    env OMP_NUM_THREADS=1 numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup \
-      -m {model_path} \
-      --draft-max {k} \
-      -t {threads} \
-      -n 100 \
-      --temp {temperature}
-
-  baseline: |
-    env OMP_NUM_THREADS=1 numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \
-      -m {model_path} \
-      -t {threads} \
-      -n 100 \
-      --temp {temperature}
-
-  vision: |
-    env OMP_NUM_THREADS=1 numactl --interleave=all \
-      /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \
-      -m {model_path} \
-      --mmproj {mmproj_path} \
-      -t {threads}
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# RUNTIME QUIRKS & KNOWN ISSUES
-# ═══════════════════════════════════════════════════════════════════════════
-#
-# This section documents model-specific runtime issues discovered during
-# benchmarking. Update this when new quirks are discovered.
-#
-# FORMAT:
-#   model_name:
-#     quirk_description: "what happens"
-#     workaround: "how to fix it"
-#     discovered: YYYY-MM-DD
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CRITICAL: BINARY SELECTION (MUST READ FIRST)
-# ═══════════════════════════════════════════════════════════════════════════
-#
-# Use the CORRECT BINARY for each optimization type:
-#
-#   | Optimization       | Binary             | Notes                           |
-#   |--------------------|--------------------|---------------------------------|
-#   | Baseline/MoE       | llama-completion   | No interactive mode, reliable   |
-#   | Speculative decode | llama-speculative  | Requires -md draft model        |
-#   | Prompt lookup      | llama-lookup       | Uses --draft-max for K value    |
-#   | Interactive chat   | llama-cli          | ONLY for interactive use        |
-#
-# DO NOT use llama-cli for benchmarking - it auto-enables interactive mode
-# for Instruct models and requires --no-conversation flag to disable.
-#
-# STANDARD COMMAND PATTERN (works with timeout):
-#   timeout N env OMP_NUM_THREADS=1 numactl --interleave=all BINARY [args]
-#
-# EXAMPLES:
-#   # MoE expert reduction (correct)
-#   timeout 180 env OMP_NUM_THREADS=1 numactl --interleave=all \
-#     llama-completion -m MODEL.gguf \
-#     --override-kv qwen3moe.expert_used_count=int:4 \
-#     -p "prompt" -t 96 -n 100 --temp 0
-#
-#   # Speculative decoding (correct)
-#   timeout 300 env OMP_NUM_THREADS=1 numactl --interleave=all \
-#     llama-speculative -m TARGET.gguf -md DRAFT.gguf \
-#     --draft-max 16 -p "prompt" -t 96 -n 100 --temp 0
-#
-#   # Prompt lookup (correct)
-#   timeout 180 env OMP_NUM_THREADS=1 numactl --interleave=all \
-#     llama-lookup -m MODEL.gguf \
-#     --draft-max 16 -p "prompt" -t 96 -n 100 --temp 0
-#
-# ═══════════════════════════════════════════════════════════════════════════
-
+  speculative_decoding: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative\
+    \ \\\n  -m {model_path} \\\n  -md {draft_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
+  moe_expert_reduction: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion\
+    \ \\\n  -m {model_path} \\\n  --override-kv {override_key}=int:{experts} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp\
+    \ {temperature}\n"
+  prompt_lookup: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup \\\n\
+    \  -m {model_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
+  baseline: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \\\n\
+    \  -m {model_path} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
+  vision: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \\\n  -m\
+    \ {model_path} \\\n  --mmproj {mmproj_path} \\\n  -t {threads}\n"
 runtime_quirks:
   qwen25_coder_32b_instruct:
-    description: "Qwen2.5-Coder-32B-Instruct"
+    description: Qwen2.5-Coder-32B-Instruct
     quirks:
-      - issue: "llama-speculative errors with 'invalid argument:' when wrapped in timeout"
-        workaround: "Run without timeout wrapper, or use llama-cli instead"
-        discovered: 2025-12-16
-      - issue: "Low speculative decoding acceptance rate (~16%)"
-        workaround: "Use MoE models instead for high throughput"
-        discovered: 2025-12-16
-      - issue: "Baseline generation very slow (7 t/s) on CPU"
-        workaround: "Not recommended for high-throughput tasks - use Qwen3-Coder-30B-A3B instead"
-        discovered: 2025-12-16
-
+    - issue: llama-speculative errors with 'invalid argument:' when wrapped in timeout
+      workaround: Run without timeout wrapper, or use llama-cli instead
+      discovered: 2025-12-16
+    - issue: Low speculative decoding acceptance rate (~16%)
+      workaround: Use MoE models instead for high throughput
+      discovered: 2025-12-16
+    - issue: Baseline generation very slow (7 t/s) on CPU
+      workaround: Not recommended for high-throughput tasks - use Qwen3-Coder-30B-A3B instead
+      discovered: 2025-12-16
   qwen3_coder_30b_a3b:
-    description: "Qwen3-Coder-30B-A3B-Instruct"
+    description: Qwen3-Coder-30B-A3B-Instruct
     quirks:
-      - issue: "Requires MoE expert override key specific to architecture"
-        workaround: "Use --override-kv qwen3moe.expert_used_count=int:4"
-        discovered: 2025-12-16
-
+    - issue: Requires MoE expert override key specific to architecture
+      workaround: Use --override-kv qwen3moe.expert_used_count=int:4
+      discovered: 2025-12-16
   qwen3_coder_53b_a3b:
-    description: "Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2"
+    description: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
     quirks:
-      - issue: "Larger model, slower than 30B variant despite similar quality"
-        workaround: "Use for complex tasks only, prefer 30B for standard coding"
-        discovered: 2025-12-16
-
+    - issue: Larger model, slower than 30B variant despite similar quality
+      workaround: Use for complex tasks only, prefer 30B for standard coding
+      discovered: 2025-12-16
   qwen3_coder_480b:
-    description: "Qwen3-Coder-480B-A35B-Instruct"
+    description: Qwen3-Coder-480B-A35B-Instruct
     quirks:
-      - issue: "BOS token mismatch - uses ',' (token 11) instead of standard"
-        workaround: "Cannot use speculative decoding - no compatible draft exists"
-        discovered: 2025-12-15
-
+    - issue: BOS token mismatch - uses ',' (token 11) instead of standard
+      workaround: Cannot use speculative decoding - no compatible draft exists
+      discovered: 2025-12-15
   qwen3_next_80b:
-    description: "Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)"
+    description: Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)
     quirks:
-      - issue: "SSM models incompatible with all speculation methods"
-        workaround: "Only MoE expert reduction available, no spec decode"
-        discovered: 2025-12-15
-
+    - issue: SSM models incompatible with all speculation methods
+      workaround: Only MoE expert reduction available, no spec decode
+      discovered: 2025-12-15
   qwen3_235b_a22b:
-    description: "Qwen3-235B-A22B (architect_general)"
+    description: Qwen3-235B-A22B (architect_general)
     quirks:
-      - issue: "Quality degrades severely at 2 experts"
-        workaround: "Use 4 experts minimum for coherent output"
-        discovered: 2025-12-15
-      - issue: "Split model (4 parts) - loading takes ~30s"
-        workaround: "Keep warm via mmap for faster reload"
-        discovered: 2025-12-15
-
+    - issue: Quality degrades severely at 2 experts
+      workaround: Use 4 experts minimum for coherent output
+      discovered: 2025-12-15
+    - issue: Split model (4 parts) - loading takes ~30s
+      workaround: Keep warm via mmap for faster reload
+      discovered: 2025-12-15
   meta_llama_3_8b:
-    description: "Meta-Llama-3-8B-Instruct (worker_general, toolrunner)"
+    description: Meta-Llama-3-8B-Instruct (worker_general, toolrunner)
     quirks:
-      - issue: "None known - stable model"
-        workaround: "N/A"
-        discovered: 2025-12-16
-
+    - issue: None known - stable model
+      workaround: N/A
+      discovered: 2025-12-16
   qwen25_math_7b:
-    description: "Qwen2.5-Math-7B-Instruct (worker_math)"
+    description: Qwen2.5-Math-7B-Instruct (worker_math)
     quirks:
-      - issue: "Best with temperature 0.5 for spec decode"
-        workaround: "Use --temp 0.5 with speculative decoding for 7.3x speedup"
-        discovered: 2025-12-15
-
+    - issue: Best with temperature 0.5 for spec decode
+      workaround: Use --temp 0.5 with speculative decoding for 7.3x speedup
+      discovered: 2025-12-15
   qwen25_vl_7b:
-    description: "Qwen2.5-VL-7B-Instruct (worker_vision)"
+    description: Qwen2.5-VL-7B-Instruct (worker_vision)
     quirks:
-      - issue: "Best with temperature 0.7 for spec decode"
-        workaround: "Use --temp 0.7 for 57.1 t/s (3.7x speedup)"
-        discovered: 2025-12-15
-      - issue: "Requires mmproj file for vision"
-        workaround: "Use -m MODEL --mmproj mmproj-model-f16.gguf"
-        discovered: 2025-12-15
-
+    - issue: Best with temperature 0.7 for spec decode
+      workaround: Use --temp 0.7 for 57.1 t/s (3.7x speedup)
+      discovered: 2025-12-15
+    - issue: Requires mmproj file for vision
+      workaround: Use -m MODEL --mmproj mmproj-model-f16.gguf
+      discovered: 2025-12-15
   qwen3_vl_30b:
-    description: "Qwen3-VL-30B-A3B-Instruct (vision_escalation)"
+    description: Qwen3-VL-30B-A3B-Instruct (vision_escalation)
     quirks:
-      - issue: "MoE vision model - requires override key for expert reduction"
-        workaround: "Use --override-kv qwen3vlmoe.expert_used_count=int:4"
-        discovered: 2025-12-16
-      - issue: "Requires mmproj file for vision"
-        workaround: "Use --mmproj mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf"
-        discovered: 2025-12-16
-      - issue: "Cold load takes ~15-20s for 18GB model"
-        workaround: "Schedule for batch/non-interactive tasks, or pre-warm"
-        discovered: 2025-12-16
-
+    - issue: MoE vision model - requires override key for expert reduction
+      workaround: Use --override-kv qwen3vlmoe.expert_used_count=int:4
+      discovered: 2025-12-16
+    - issue: Requires mmproj file for vision
+      workaround: Use --mmproj mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf
+      discovered: 2025-12-16
+    - issue: Cold load takes ~15-20s for 18GB model
+      workaround: Schedule for batch/non-interactive tasks, or pre-warm
+      discovered: 2025-12-16
   qwen25_coder_0_5b:
-    description: "Qwen2.5-Coder-0.5B (draft_qwen25_coder)"
+    description: Qwen2.5-Coder-0.5B (draft_qwen25_coder)
     quirks:
-      - issue: "Incompatible with Qwen3 MoE models"
-        workaround: "Only use with Qwen2.5 dense models"
-        discovered: 2025-12-16
-
+    - issue: Incompatible with Qwen3 MoE models
+      workaround: Only use with Qwen2.5 dense models
+      discovered: 2025-12-16
   qwen25_0_5b:
-    description: "Qwen2.5-0.5B-Instruct (draft_qwen25)"
+    description: Qwen2.5-0.5B-Instruct (draft_qwen25)
     quirks:
-      - issue: "Best K varies by target model"
-        workaround: "K=24 for 32B, K=16 for 72B, K=8 for 7B"
-        discovered: 2025-12-15
-
+    - issue: Best K varies by target model
+      workaround: K=24 for 32B, K=16 for 72B, K=8 for 7B
+      discovered: 2025-12-15
   general_llama_speculative:
-    description: "llama-speculative binary general quirks"
+    description: llama-speculative binary general quirks
     quirks:
-      - issue: "May print 'decode: n_tokens == 0' errors"
-        workaround: "Usually non-fatal, generation still completes"
-        discovered: 2025-12-16
-      - issue: "Timeout wrapper can cause 'invalid argument' errors"
-        workaround: "Use 'env OMP_NUM_THREADS=1' prefix with timeout"
-        discovered: 2025-12-16
-
+    - issue: 'May print ''decode: n_tokens == 0'' errors'
+      workaround: Usually non-fatal, generation still completes
+      discovered: 2025-12-16
+    - issue: Timeout wrapper can cause 'invalid argument' errors
+      workaround: Use 'env OMP_NUM_THREADS=1' prefix with timeout
+      discovered: 2025-12-16
   general_llama_cli:
-    description: "llama-cli binary - AVOID FOR BENCHMARKING"
+    description: llama-cli binary - AVOID FOR BENCHMARKING
     quirks:
-      - issue: "Auto-enables interactive/conversation mode for Instruct models with chat templates"
-        workaround: "Use llama-completion instead, or add --no-conversation flag"
-        discovered: 2025-12-16
-      - issue: "Hangs waiting for user input after prompt completion"
-        workaround: "Use llama-completion for non-interactive generation"
-        discovered: 2025-12-16
-      - issue: "Different behavior between versions - flags change frequently"
-        workaround: "Prefer llama-completion for reliable, reproducible benchmarks"
-        discovered: 2025-12-16
-
+    - issue: Auto-enables interactive/conversation mode for Instruct models with chat templates
+      workaround: Use llama-completion instead, or add --no-conversation flag
+      discovered: 2025-12-16
+    - issue: Hangs waiting for user input after prompt completion
+      workaround: Use llama-completion for non-interactive generation
+      discovered: 2025-12-16
+    - issue: Different behavior between versions - flags change frequently
+      workaround: Prefer llama-completion for reliable, reproducible benchmarks
+      discovered: 2025-12-16
   general_timeout_commands:
-    description: "Using timeout with llama.cpp commands"
+    description: Using timeout with llama.cpp commands
     quirks:
-      - issue: "'timeout: failed to run command OMP_NUM_THREADS=1' error"
-        workaround: "Use 'timeout N env OMP_NUM_THREADS=1 ...' (put env after timeout)"
-        discovered: 2025-12-16
-      - issue: "OMP_NUM_THREADS=1 before timeout doesn't work"
-        workaround: "timeout runs in subshell, use 'env' to pass env vars"
-        discovered: 2025-12-16
+    - issue: '''timeout: failed to run command OMP_NUM_THREADS=1'' error'
+      workaround: Use 'timeout N env OMP_NUM_THREADS=1 ...' (put env after timeout)
+      discovered: 2025-12-16
+    - issue: OMP_NUM_THREADS=1 before timeout doesn't work
+      workaround: timeout runs in subshell, use 'env' to pass env vars
+      discovered: 2025-12-16

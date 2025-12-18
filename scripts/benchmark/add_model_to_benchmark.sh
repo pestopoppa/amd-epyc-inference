@@ -20,8 +20,8 @@
 # =============================================================================
 set -euo pipefail
 
-QUEUE_FILE="/tmp/claude/benchmark_queue.txt"
-QUEUE_LOCK="/tmp/claude/benchmark_queue.lock"
+QUEUE_FILE="/mnt/raid0/llm/tmp/benchmark_queue.txt"
+QUEUE_LOCK="/mnt/raid0/llm/tmp/benchmark_queue.lock"
 LLAMA_COMPLETION="/mnt/raid0/llm/llama.cpp/build/bin/llama-completion"
 HEALTH_CHECK_TIMEOUT=15
 HEALTH_CHECK_PROMPT="Hello, please respond with a single word."

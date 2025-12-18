@@ -20,7 +20,7 @@ INDEX_FILE="$RESULTS_DIR/index.jsonl"
 PROMPTS_DIR="$BENCHMARK_BASE/prompts"
 
 # Defaults
-SOURCE_BASE="/tmp/claude"
+SOURCE_BASE="/mnt/raid0/llm/tmp"
 RUN_ID=$(date +%Y%m%d_%H%M%S)
 PROMPT_VERSION="1"
 

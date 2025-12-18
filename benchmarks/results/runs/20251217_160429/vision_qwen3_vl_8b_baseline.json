@@ -1,0 +1,29 @@
+{
+  "model_role": "vision_qwen3_vl_8b",
+  "model_path": "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-Q4_K_M.gguf",
+  "config_name": "baseline",
+  "run_id": "20251217_160429",
+  "timestamp": "2025-12-17T22:57:34.088468",
+  "results": {
+    "vl": {
+      "t1_q1_ocr": {
+        "question_id": "t1_q1_ocr",
+        "prompt": "What text is shown in this image?",
+        "response": "What text is shown in this image? [end of text]\n\n\nload: printing all EOG tokens:\nload:   - 151643 ('<|endoftext|>')\nload:   - 151645 ('<|im_end|>')\nload:   - 151662 ('<|fim_pad|>')\nload:   - 151663 ('<|repo_name|>')\nload:   - 151664 ('<|file_sep|>')\nload: special tokens cache size = 26\nload: token to piece cache size = 0.9311 MB\n.....................................................................................\n\n\n\trepeat_last_n = 64, repeat_penalty = 1.000, frequency_penalty = 0.000, presence_penalty = 0.000\n\tdry_multiplier = 0.000, dry_base = 1.750, dry_allowed_length = 2, dry_penalty_last_n = -1\n\ttop_k = 40, top_p = 0.950, min_p = 0.050, xtc_probability = 0.000, xtc_threshold = 0.100, typical_p = 1.000, top_n_sigma = -1.000, temp = 0.200\n\tmirostat = 0, mirostat_lr = 0.100, mirostat_ent = 5.000",
+        "tokens_per_second": 78.69,
+        "prompt_tokens": 8,
+        "completion_tokens": 1,
+        "total_time_ms": null,
+        "algorithmic_score": 1,
+        "score_reason": "No scoring patterns defined for this question",
+        "acceptance_rate": null
+      }
+    }
+  },
+  "summary": {
+    "avg_tokens_per_second": 78.69,
+    "avg_algorithmic_score": 1.0,
+    "questions_tested": 1,
+    "questions_passed": 0
+  }
+}
