@@ -473,66 +473,70 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 
-| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Optimized t/s (config) |
-|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|------------------------|
-| Qwen2.5-72B | architect | - | - | - | - | - | - | - | 0.85 | - |
-| Qwen2.5-72B-Instruct | architect | - | - | - | - | - | - | - | 1.70 | 8.53 (spec K=16) |
-| DeepSeek-R1-Distill-Llama-70B | thinking | - | - | - | - | - | - | - | 1.36 | - |
-| Qwen2.5-Math-72B (Q4_K_M) | math | - | - | - | - | - | - | - | 1.41 | 7.55 (spec K=12) |
-| Qwen2.5-Math-72B (Q6_K) | math | - | - | - | - | - | - | - | - | - |
-| Meta-Llama-3-70B | architect | - | - | - | - | - | - | - | 1.72 | - |
-| Hermes-4-70B | architect | - | - | - | - | - | - | - | 1.73 | - |
-| Meta-Llama-3.1-70B | architect | - | - | - | - | - | - | - | 1.96 | - |
-| GLM-4.6 (dense) | general | - | - | - | - | - | - | - | - | - |
+| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
+|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
+| Qwen2.5-72B | architect | - | - | - | - | - | - | - | 0.85 | - | - | - | - |
+| Qwen2.5-72B-Instruct | architect | - | - | - | - | - | - | - | 1.70 | 8.53 | Qwen2.5-0.5B | 16 | - |
+| DeepSeek-R1-Distill-Llama-70B | thinking | - | - | - | - | - | - | - | 1.36 | - | - | - | - |
+| Qwen2.5-Math-72B (Q4_K_M) | math | - | - | - | - | - | - | - | 1.41 | 7.55 | Qwen2.5-0.5B | 12 | 0.5 |
+| Qwen2.5-Math-72B (Q6_K) | math | - | - | - | - | - | - | - | - | - | - | - | - |
+| Meta-Llama-3-70B | architect | - | - | - | - | - | - | - | 1.72 | 6.42 | PARD-Llama-3.2-1B | 8 | - |
+| Hermes-4-70B | architect | - | - | - | - | - | - | - | 1.73 | - | - | - | - |
+| Meta-Llama-3.1-70B | architect | - | - | - | - | - | - | - | 1.96 | - | - | - | - |
+| GLM-4.6 (dense) | general | - | - | - | - | - | - | - | - | - | - | - | - |
 
 #### Tier A-B: Production & Specialist Models (Dense 27B-32B)
 
-| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Optimized t/s (config) |
-|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|------------------------|
-| DeepSeek-R1-Distill-Qwen-32B (Q6_K) | thinking | - | - | - | - | - | - | - | 3.73 | - |
-| Qwen3-32B | general | - | - | - | - | - | - | - | 3.67 | 5.87 (spec K=8) |
-| Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.72 | - |
-| Qwen2.5-Coder-32B | coder/summarize | - | - | - | - | - | - | - | 5.79 | 33.0 (spec K=24) |
+| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
+|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
+| DeepSeek-R1-Distill-Qwen-32B (Q6_K) | thinking | - | - | - | - | - | - | - | 3.73 | - | - | - | - |
+| Qwen3-32B | general | - | - | - | - | - | - | - | 3.67 | 5.87 | Qwen3-0.6B | 8 | - |
+| Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.72 | - | - | - | - |
+| Qwen2.5-Coder-32B | coder/summarize | - | - | - | - | - | - | - | 5.79 | 33.0 | Qwen2.5-Coder-0.5B | 24 | - |
 
 #### Tier B: Thinking & Reasoning Models (7B-14B)
 
-| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Optimized t/s (config) |
-|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|------------------------|
-| DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | - | - | - | - | - | - | - | 6.44 | - |
-| DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | - | - | - | - | - | - | - | - | - |
-| DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - |
-| DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - |
-| DeepSeek-R1-0528-Qwen3-8B | general | - | - | - | - | - | - | - | - | - |
-| Qwen3-4B-Thinking-2507 | thinking | 28/30 | 22/30 | 30/30 | 27/30 | - | - | **89%*** | 16.5 | 103.7 (spec K=24) |
+| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
+|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
+| DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | - | - | - | - | - | - | - | 6.44 | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | - | - | - | - | - | - | - | - | - | - | - | - |
+| DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
+| DeepSeek-R1-0528-Qwen3-8B | general | - | - | - | - | - | - | - | - | - | - | - | - |
+| Qwen3-4B-Thinking-2507 | thinking | 28/30 | 22/30 | 30/30 | 27/30 | - | - | **89%*** | 16.5 | 103.7 | PARD-Qwen3-0.6B | 24 | - |
 
 #### Tier C: Workers & General Models
 
-| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Optimized t/s (config) |
-|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|------------------------|
-| **Qwen2.5-7B** | general | 26/30 | 25/30 | 30/30 | 30/30 | 29/30 | 23/33 | **89%*** | 12.9 | 214.5 (spec K=24) |
-| Meta-Llama-3-8B | worker_general | 20/30 | 20/30 | - | 19/30 | - | - | 66%* | 17.52 | 37.07 (+lookup) |
-| Meta-Llama-3-8B (fp16) | worker | - | - | - | - | - | - | - | - | - |
-| Meta-Llama-3-8B (toolrunner) | toolrunner | - | 21/30 | - | - | - | - | 70%* | 17.52 | - |
-| Meta-Llama-3.1-8B (Q4_K_S) | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%*** | 63.5 | - |
-| Qwen2.5-Math-7B | worker_math | 40/60 | 38/60 | 20/30 | 40/60 | - | - | **71%** | 11.2 | 186.0 (spec K=24) |
-| Qwen2.5-VL-7B | worker_vision | 21/30 | 20/30 | - | 20/30 | - | - | 68%* | 15.28 | 57.1 (spec t=0.7) |
-| Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 (+lookup) |
-| Gemma-3-12B | general | - | - | - | - | - | - | - | 10.42 | - |
-| Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - |
-| MathSmith-Qwen3-8B | math | - | - | - | - | - | - | - | - | - |
+| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
+|-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
+| **Qwen2.5-7B** | general | 26/30 | 25/30 | 30/30 | 30/30 | 29/30 | 23/33 | **89%*** | 12.9 | 214.5 | Qwen2.5-Coder-0.5B | 24 | - |
+| Meta-Llama-3-8B | worker_general | 20/30 | 20/30 | - | 19/30 | - | - | 66%* | 17.52 | 37.07 | (lookup) | - | - |
+| Meta-Llama-3-8B (fp16) | worker | - | - | - | - | - | - | - | - | - | - | - | - |
+| Meta-Llama-3-8B (toolrunner) | toolrunner | - | 21/30 | - | - | - | - | 70%* | 17.52 | - | - | - | - |
+| Meta-Llama-3.1-8B (Q4_K_S) | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%*** | 63.5 | - | - | - | - |
+| Qwen2.5-Math-7B | worker_math | 40/60 | 38/60 | 20/30 | 40/60 | - | - | **71%** | 11.2 | 186.0 | Qwen2.5-Coder-0.5B | 24 | - |
+| Qwen2.5-VL-7B | worker_vision | 21/30 | 20/30 | - | 20/30 | - | - | 68%* | 15.28 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
+| Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
+| Gemma-3-12B | general | - | - | - | - | - | - | - | 10.42 | - | - | - | - |
+| Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - | - | - | - |
+| MathSmith-Qwen3-8B | math | - | - | - | - | - | - | - | - | - | - | - | - |
 
 #### Vision Models
 
-| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | VL | Pct | Baseline t/s | Optimized t/s (config) |
-|-------|------|----------|---------|------|---------|-------|-----------|-----|-----|--------------|------------------------|
-| **Qwen3-VL-235B-A22B-Thinking** | vision | - | - | - | - | - | - | - | - | 3.23 | 7.12 (MoE 4) |
-| **Qwen3-VL-30B-A3B** | vision_escalation | - | - | - | - | - | - | - | - | 26.88 | 36.84 (MoE 4) |
-| Qwen2.5-VL-7B | worker_vision | - | - | - | - | - | - | - | 68%* | 15.28 | 57.1 (spec t=0.7) |
-| **Qwen3-VL-2B** | vision | - | 21/30 | - | 30/30 | - | - | 20/30 | **79%*** | 48.9 | - |
-| Qwen3-VL-4B (Q4_K_M) | vision | - | 20/30 | - | 30/30 | - | - | 12/30 | 69%* | 78.6 | - |
-| Qwen3-VL-4B (Q8_0) | vision | - | 20/30 | - | 30/30 | - | - | 12/30 | 69%* | 35.0 | - |
-| Qwen3-VL-8B (Q4_K_M) | vision | - | - | - | - | - | - | 0/3 | **0%*** | 78.7 | - |
-| Qwen3-VL-8B (Q8_0) | vision | - | - | - | - | - | - | - | - | - | - |
+| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | VL | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
+|-------|------|----------|---------|------|---------|-------|-----------|-----|-----|--------------|---------|-------|---|------|
+| **Qwen3-VL-235B-A22B-Thinking** | vision | - | - | - | - | - | - | - | - | 3.23 | - | - | - | - |
+| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | - | - | - | - | - | - | - | 7.12 | 3.82 ❌ | (lookup) | - | - |
+| **Qwen3-VL-30B-A3B** | vision_escalation | - | - | - | - | - | - | - | - | 26.88 | - | - | - | - |
+| Qwen3-VL-30B-A3B (MoE 3) | vision_escalation | - | - | - | - | - | - | - | - | 37.66 | - | - | - | - |
+| Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | - | - | - | - | - | - | - | 36.84 | 29.88 ❌ | (lookup) | - | - |
+| Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | - | - | - | - | - | - | - | 28.41 | - | - | - | - |
+| Qwen2.5-VL-7B | worker_vision | - | - | - | - | - | - | - | 68%* | 15.28 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
+| **Qwen3-VL-2B** | vision | - | 21/30 | - | 30/30 | - | - | 20/30 | **79%*** | 48.9 | - | - | - | - |
+| Qwen3-VL-4B (Q4_K_M) | vision | - | 20/30 | - | 30/30 | - | - | 12/30 | 69%* | 78.6 | - | - | - | - |
+| Qwen3-VL-4B (Q8_0) | vision | - | 20/30 | - | 30/30 | - | - | 12/30 | 69%* | 35.0 | - | - | - | - |
+| Qwen3-VL-8B (Q4_K_M) | vision | - | - | - | - | - | - | 0/3 | **0%*** | 78.7 | - | - | - | - |
+| Qwen3-VL-8B (Q8_0) | vision | - | - | - | - | - | - | - | - | - | - | - | - | - |
 
 #### Tier D: Draft Models (Qwen2.5 Family)
 
@@ -573,22 +577,6 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
 | PARD-Llama-3.2-1B (Q4_0) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 83.5 | Llama-3.2/3.3 |
 | PARD-Llama-3.2-1B (Q8_0) | draft | 20/30 | 21/30 | - | - | - | - | 68%* | 44.7 | Llama-3.2/3.3 |
-
-#### Speculative Decoding Configurations (Tested)
-
-| Target Model | Draft Model | K | Accept % | Speed | Speedup |
-|--------------|-------------|---|----------|-------|---------|
-| Qwen2.5-Coder-32B | Qwen2.5-Coder-0.5B Q8_0 | 24 | 70.8% | 33.0 t/s | **11x** |
-| Qwen2.5-Coder-32B | Qwen2.5-Coder-0.5B Q8_0 | 16 | 75% | 27.9 t/s | 9.3x |
-| Qwen2.5-72B-Instruct | Qwen2.5-0.5B Q8_0 | 16 | 44.3% | 8.53 t/s | **5.8x** |
-| Qwen2.5-Math-72B | Qwen2.5-0.5B Q8_0 (t=0.5) | 12 | 60.3% | 7.55 t/s | **7.3x** |
-| Qwen2.5-VL-7B | Qwen2.5-0.5B Q8_0 (t=0.7) | 8 | 74.2% | 57.1 t/s | **3.7x** |
-| Qwen2.5-Math-7B | Qwen2.5-0.5B Q8_0 | 8 | 65.6% | 48.5 t/s | **3.9x** |
-| Qwen2.5-7B | Qwen2.5-Coder-0.5B Q8_0 | 24 | - | 214.5 t/s | - |
-| Qwen2.5-Math-7B | Qwen2.5-Coder-0.5B Q8_0 | 24 | - | 186.0 t/s | - |
-| Qwen3-4B-Thinking-2507 | PARD-Qwen3-0.6B Q4_0 | 24 | - | 103.7 t/s | - |
-| Qwen3-32B | Qwen3-0.6B Q2_K | 8 | 39.1% | 5.87 t/s | 3.1x |
-| Meta-Llama-70B | PARD-Llama-3.2-1B Q4_0 | 8 | 79.2% | 6.42 t/s | 3.7x |
 
 ### Review Files
 
