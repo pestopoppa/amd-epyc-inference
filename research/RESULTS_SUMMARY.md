@@ -415,16 +415,21 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 
 | Role | Model | Score | Baseline t/s |
 |------|-------|-------|--------------|
-| **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93% | 7.2 |
-| **Thinking Fast** | Qwen3-4B-Thinking-2507 | 89% | 16.5 |
-| **General Worker** | Qwen2.5-7B | 89% | 12.9 |
-| **Vision Primary** | Qwen3-VL-2B | 79% | 48.9 |
-| **Draft (Dense)** | Qwen2.5-Coder-0.5B | 65% | 173.6 |
-| **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | 72% | 51.3 |
+| **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93%* | 7.2 |
+| **Thinking Fast** | Qwen3-4B-Thinking-2507 | 89%* | 16.5 |
+| **General Worker** | Qwen2.5-7B | 89%* | 12.9 |
+| **Math Worker** | Qwen2.5-Math-7B | **71%** | 11.2 |
+| **Vision Primary** | Qwen3-VL-2B | 79%* | 48.9 |
+| **Draft (Dense)** | Qwen2.5-Coder-0.5B | 65%* | 173.6 |
+| **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | 72%* | 51.3 |
+
+`*` = scored on old (easier) questions before hardening
 
 ### Complete Model Database with Claude Scores
 
 All models from registry. Empty cells = not yet benchmarked. `Baseline t/s` = raw benchmark speed.
+
+**Note:** Scores marked with `*` were evaluated on the OLD (easier) benchmark questions before hardening. Scores without `*` are on the new post-doctoral level T3 questions.
 
 #### Tier A-B: Production & Specialist Models
 
@@ -436,9 +441,9 @@ All models from registry. Empty cells = not yet benchmarked. `Baseline t/s` = ra
 | **Qwen3-235B-A22B** | architect | - | - | - | - | - | - | - | 6.75 (opt) |
 | **Qwen3-Coder-480B-A35B** | architect_coding | - | - | - | - | - | - | - | 5.23 (opt) |
 | Qwen3-Next-80B-Thinking | thinking | - | - | - | - | - | - | - | - |
-| DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%** | 7.2 |
-| Qwen3-4B-Thinking-2507 | thinking | 28/30 | 22/30 | 30/30 | 27/30 | - | - | **89%** | 16.5 |
-| DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85% | 7.7 |
+| DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 |
+| Qwen3-4B-Thinking-2507 | thinking | 28/30 | 22/30 | 30/30 | 27/30 | - | - | **89%*** | 16.5 |
+| DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 |
 | DeepSeek-R1-Distill-Qwen-14B | thinking | - | - | - | - | - | - | - | 6.44 |
 | DeepSeek-R1-Distill-Qwen-32B | thinking | - | - | - | - | - | - | - | 3.73 |
 | DeepSeek-R1-Distill-Llama-70B | thinking | - | - | - | - | - | - | - | 1.36 |
@@ -456,13 +461,13 @@ All models from registry. Empty cells = not yet benchmarked. `Baseline t/s` = ra
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|
-| **Qwen2.5-7B** | general | 26/30 | 25/30 | 30/30 | 30/30 | 29/30 | 23/33 | **89%** | 12.9 |
-| Meta-Llama-3-8B (worker_general) | worker | 20/30 | 20/30 | - | 19/30 | - | - | 66% | 8.0 |
-| Qwen2.5-Math-7B (worker_math) | worker | 21/30 | 20/30 | - | 20/30 | - | - | 68% | 7.8 |
-| Qwen2.5-VL-7B (worker_vision) | worker | 21/30 | 20/30 | - | 20/30 | - | - | 68% | 8.0 |
-| Meta-Llama-3-8B (toolrunner) | worker | - | 21/30 | - | - | - | - | 70% | 8.0 |
+| **Qwen2.5-7B** | general | 26/30 | 25/30 | 30/30 | 30/30 | 29/30 | 23/33 | **89%*** | 12.9 |
+| Meta-Llama-3-8B (worker_general) | worker | 20/30 | 20/30 | - | 19/30 | - | - | 66%* | 8.0 |
+| Qwen2.5-Math-7B (worker_math) | worker | 40/60 | 38/60 | 20/30 | 40/60 | - | - | **71%** | 11.2 |
+| Qwen2.5-VL-7B (worker_vision) | worker | 21/30 | 20/30 | - | 20/30 | - | - | 68%* | 8.0 |
+| Meta-Llama-3-8B (toolrunner) | worker | - | 21/30 | - | - | - | - | 70%* | 8.0 |
 | Qwen2.5-Coder-32B | summarize | - | - | - | - | - | - | - | 5.79 |
-| Meta-Llama-3.1-8B | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%** | 63.5 |
+| Meta-Llama-3.1-8B | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%*** | 63.5 |
 | Gemma-3-12B | general | - | - | - | - | - | - | - | 10.42 |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 |
 | Qwen3-32B | general | - | - | - | - | - | - | - | 1.90 |
@@ -472,34 +477,34 @@ All models from registry. Empty cells = not yet benchmarked. `Baseline t/s` = ra
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|
-| **Qwen3-VL-2B** | vision | - | 21/30 | - | 30/30 | - | - | **79%** | 48.9 |
-| Qwen3-VL-4B | vision | - | 20/30 | - | 30/30 | - | - | 69% | 78.6 |
-| Qwen3-VL-4B (Q8_0) | vision | - | 20/30 | - | 30/30 | - | - | 69% | 35.0 |
-| Qwen3-VL-8B | vision | - | - | - | - | - | - | **0%** | 78.7 |
+| **Qwen3-VL-2B** | vision | - | 21/30 | - | 30/30 | - | - | **79%*** | 48.9 |
+| Qwen3-VL-4B | vision | - | 20/30 | - | 30/30 | - | - | 69%* | 78.6 |
+| Qwen3-VL-4B (Q8_0) | vision | - | 20/30 | - | 30/30 | - | - | 69%* | 35.0 |
+| Qwen3-VL-8B | vision | - | - | - | - | - | - | **0%*** | 78.7 |
 | Qwen3-VL-30B-A3B | vision_escalation | - | - | - | - | - | - | - | 36.84 (opt) |
 
 #### Tier D: Draft Models
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|
-| DeepSeek-R1-Distill-Qwen-1.5B (Q8_0) | draft | 22/30 | 21/30 | - | - | - | - | 72% | 51.3 |
-| PARD-DeepSeek-R1-1.5B (Q5_K_S) | draft | 22/30 | 21/30 | - | - | - | - | 72% | 60.7 |
-| PARD-DeepSeek-R1-1.5B (Q8_0) | draft | 22/30 | 21/30 | - | - | - | - | 72% | 45.0 |
-| Qwen2.5-Coder-1.5B (Q4_K_M) | draft | 22/30 | 21/30 | - | - | - | - | 72% | 82.2 |
-| Co-Rewarding-II-Qwen3-1.7B-Math | draft | 21/30 | 21/30 | - | - | - | - | 70% | 22.0 |
-| DeepSeek-R1-Distill-Qwen-1.5B | draft | 22/30 | 20/30 | - | - | - | - | 70% | 31.9 |
-| PARD-Llama-3.2-1B (Q4_0) | draft | 21/30 | 21/30 | - | - | - | - | 70% | 83.5 |
-| **Qwen2.5-0.5B** | draft | 21/30 | 21/30 | - | - | - | - | 70% | 177.3 |
-| Qwen2-0.5B (Q2_K) | draft | 21/30 | 21/30 | - | - | - | - | 70% | 200.2 |
-| Qwen2.5-Math-1.5B | draft | 21/30 | 21/30 | - | - | - | - | 70% | 56.1 |
-| Qwen2.5-Math-1.5B (Q6_K) | draft | 21/30 | 21/30 | - | - | - | - | 70% | 59.4 |
-| Qwen3-1.7B | draft | 21/30 | 21/30 | - | - | - | - | 70% | 44.0 |
-| PARD-Llama-3.2-1B (Q8_0) | draft | 20/30 | 21/30 | - | - | - | - | 68% | 44.7 |
-| Qwen3-VL-1B-Merged (Q8_0) | draft | 4/6 | - | - | - | - | - | 67% | 67.7 |
-| PARD-Qwen3-0.6B (Q4_0) | draft | 18/30 | 21/30 | - | - | - | - | 65% | 101.6 |
-| **Qwen2.5-Coder-0.5B** | draft | 18/30 | 21/30 | - | - | - | - | 65% | 173.6 |
-| Qwen2.5-Coder-1.5B (Q2_K) | draft | 18/30 | 20/30 | - | - | - | - | 63% | 77.2 |
-| Qwen3-0.6B | draft | 18/30 | 20/30 | - | - | - | - | 63% | 127.8 |
+| DeepSeek-R1-Distill-Qwen-1.5B (Q8_0) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 51.3 |
+| PARD-DeepSeek-R1-1.5B (Q5_K_S) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 60.7 |
+| PARD-DeepSeek-R1-1.5B (Q8_0) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 45.0 |
+| Qwen2.5-Coder-1.5B (Q4_K_M) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 82.2 |
+| Co-Rewarding-II-Qwen3-1.7B-Math | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 22.0 |
+| DeepSeek-R1-Distill-Qwen-1.5B | draft | 22/30 | 20/30 | - | - | - | - | 70%* | 31.9 |
+| PARD-Llama-3.2-1B (Q4_0) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 83.5 |
+| **Qwen2.5-0.5B** | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 177.3 |
+| Qwen2-0.5B (Q2_K) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 200.2 |
+| Qwen2.5-Math-1.5B | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 56.1 |
+| Qwen2.5-Math-1.5B (Q6_K) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 59.4 |
+| Qwen3-1.7B | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 44.0 |
+| PARD-Llama-3.2-1B (Q8_0) | draft | 20/30 | 21/30 | - | - | - | - | 68%* | 44.7 |
+| Qwen3-VL-1B-Merged (Q8_0) | draft | 4/6 | - | - | - | - | - | 67%* | 67.7 |
+| PARD-Qwen3-0.6B (Q4_0) | draft | 18/30 | 21/30 | - | - | - | - | 65%* | 101.6 |
+| **Qwen2.5-Coder-0.5B** | draft | 18/30 | 21/30 | - | - | - | - | 65%* | 173.6 |
+| Qwen2.5-Coder-1.5B (Q2_K) | draft | 18/30 | 20/30 | - | - | - | - | 63%* | 77.2 |
+| Qwen3-0.6B | draft | 18/30 | 20/30 | - | - | - | - | 63%* | 127.8 |
 
 ### Review Files
 

@@ -1,31 +1,70 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,9.7,2,Response generated
-general,t1_q2_summarize,8.8,2,Response generated
-general,t1_q3_extract,8.8,2,Response generated
-general,t2_q1_json,7.4,2,Response generated
-general,t2_q2_multistep,7.2,2,Response generated
-general,t2_q3_compare,7.2,2,Response generated
-general,t3_q1_synthesis,7.3,2,Response generated
-general,t3_q2_transform,7.2,2,Response generated
-general,t3_q3_schedule,7.3,2,Response generated
-general,t3_q4_inconsistency,7.2,2,Response generated
-thinking,t1_q1_logic,7.3,2,Response generated
-thinking,t1_q2_sequence,7.3,3,Correct sequence answer
-thinking,t1_q3_deduction,7.2,2,Response generated
-thinking,t2_q1_multistep,7.3,2,Response generated
-thinking,t2_q2_hypothesis,7.3,2,Response generated
-thinking,t2_q3_planning,7.1,2,Response generated
-thinking,t3_q1_paradox,7.2,2,Response generated
-thinking,t3_q2_counterfactual,7.2,2,Response generated
-thinking,t3_q3_formal,7.3,2,Response generated
-thinking,t3_q4_metacognition,6.9,2,Response generated
-agentic,t1_q1_single_tool,7.3,2,Response generated
-agentic,t1_q2_multi_param,8.0,2,Response generated
-agentic,t1_q3_choose_tool,8.1,2,Response generated
-agentic,t2_q1_sequential,8.4,2,Response generated
-agentic,t2_q2_error_handling,9.0,2,Response generated
-agentic,t2_q3_nested_params,8.3,2,Response generated
-agentic,t3_q1_ambiguous,8.7,2,Response generated
-agentic,t3_q2_error_chain,9.2,2,Response generated
-agentic,t3_q3_schema_edge,7.8,2,Response generated
-agentic,t3_q4_orchestration,7.5,2,Response generated
+general,t1_q1_reformat,9.7,2,Standard response
+general,t1_q2_summarize,8.8,2,Standard response
+general,t1_q3_extract,8.8,2,Standard response
+general,t2_q1_json,7.4,2,Standard response
+general,t2_q2_multistep,7.2,2,Standard response
+general,t2_q3_compare,7.2,2,Standard response
+general,t3_q1_synthesis,7.3,2,Standard response
+general,t3_q2_transform,7.2,2,Standard response
+general,t3_q3_schedule,7.3,2,Standard response
+general,t3_q4_inconsistency,7.2,2,Standard response
+general,t1_q1_json,14.0,2,Standard response
+general,t1_q2_multistep,14.1,2,Standard response
+general,t1_q3_compare,14.1,2,Standard response
+general,t2_q1_synthesis,14.2,2,Standard response
+general,t2_q2_transform,14.2,2,Standard response
+general,t2_q3_schedule,13.7,2,Standard response
+general,t2_q4_inconsistency,14.3,2,Standard response
+general,t3_q1_policy_analysis,13.4,3,Comprehensive policy analysis
+general,t3_q2_system_failure,13.4,2,General response
+general,t3_q3_strategic_communication,12.2,2,Communication drafted
+thinking,t1_q1_logic,7.3,2,Standard response
+thinking,t1_q2_sequence,7.3,2,Standard response
+thinking,t1_q3_deduction,7.2,2,Standard response
+thinking,t2_q1_multistep,7.3,2,Standard response
+thinking,t2_q2_hypothesis,7.3,2,Standard response
+thinking,t2_q3_planning,7.1,2,Standard response
+thinking,t3_q1_paradox,7.2,2,Standard response
+thinking,t3_q2_counterfactual,7.2,2,Standard response
+thinking,t3_q3_formal,7.3,2,Standard response
+thinking,t3_q4_metacognition,6.9,2,Standard response
+thinking,t1_q1_multistep,13.7,2,Standard response
+thinking,t1_q2_hypothesis,14.4,2,Standard response
+thinking,t1_q3_planning,14.0,2,Standard response
+thinking,t2_q1_paradox,14.2,2,Standard response
+thinking,t2_q2_counterfactual,14.0,2,Standard response
+thinking,t2_q3_formal,14.4,2,Standard response
+thinking,t2_q4_metacognition,13.9,2,Standard response
+thinking,t3_q1_methodological_critique,14.0,2,Identified 2 issues
+thinking,t3_q2_causal_inference,13.9,3,Complete DAG analysis
+thinking,t3_q3_reasoning_trap,13.7,3,Identified flaw with scenario
+agentic,t1_q1_single_tool,7.3,2,Standard response
+agentic,t1_q2_multi_param,8.0,2,Standard response
+agentic,t1_q3_choose_tool,8.1,2,Standard response
+agentic,t2_q1_sequential,8.4,2,Standard response
+agentic,t2_q2_error_handling,9.0,2,Standard response
+agentic,t2_q3_nested_params,8.3,2,Standard response
+agentic,t3_q1_ambiguous,8.7,2,Standard response
+agentic,t3_q2_error_chain,9.2,2,Standard response
+agentic,t3_q3_schema_edge,7.8,2,Standard response
+agentic,t3_q4_orchestration,7.5,2,Standard response
+agentic,t1_q1_sequential,14.3,2,Standard response
+agentic,t1_q2_error_handling,14.2,2,Standard response
+agentic,t1_q3_nested_params,13.9,2,Standard response
+agentic,t2_q1_ambiguous,14.1,2,Standard response
+agentic,t2_q2_error_chain,14.2,2,Standard response
+agentic,t2_q3_schema_edge,14.2,2,Standard response
+agentic,t2_q4_orchestration,13.9,2,Standard response
+agentic,t3_q1_competing_constraints,13.6,3,Handled competing constraints
+agentic,t3_q2_multi_agent_coordination,13.5,3,Multi-agent coordination shown
+math,t1_q1_word_problem,14.0,2,Standard response
+math,t1_q2_system_equations,14.1,2,Standard response
+math,t1_q3_probability,14.1,2,Standard response
+math,t2_q1_optimization,14.0,2,Standard response
+math,t2_q2_proof,13.9,2,Standard response
+math,t2_q3_calculus,14.3,2,Standard response
+math,t2_q4_statistics,13.1,2,Standard response
+math,t3_q1_analysis,13.5,3,Complete analysis
+math,t3_q2_combinatorics,13.7,3,Bijective proof approach
+math,t3_q3_probability_theory,13.3,3,Correct with elegant proof
