@@ -1,0 +1,31 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+vl,t1_q1_ocr,50.7,2,Response generated
+vl,t1_q2_shapes,52.7,2,Response generated
+vl,t1_q3_icon,48.2,2,Response generated
+vl,t2_q1_chart,49.0,2,Response generated
+vl,t2_q2_invoice,47.9,2,Response generated
+vl,t2_q3_code,51.2,2,Response generated
+vl,t3_q1_math,49.5,2,Response generated
+vl,t3_q2_flowchart,50.5,2,Response generated
+vl,t3_q3_diff,48.5,2,Response generated
+vl,t3_q4_puzzle,47.5,2,Response generated
+general,t1_q1_reformat,46.7,2,Reformatting response
+general,t1_q2_summarize,48.0,2,Reformatting response
+general,t1_q3_extract,49.3,2,General response generated
+general,t2_q1_json,51.5,3,JSON structure present
+general,t2_q2_multistep,49.4,2,General response generated
+general,t2_q3_compare,46.7,2,General response generated
+general,t3_q1_synthesis,45.0,2,General response generated
+general,t3_q2_transform,47.2,2,General response generated
+general,t3_q3_schedule,47.2,2,General response generated
+general,t3_q4_inconsistency,48.7,2,General response generated
+agentic,t1_q1_single_tool,49.9,3,Tool call structure present
+agentic,t1_q2_multi_param,48.9,3,Tool call structure present
+agentic,t1_q3_choose_tool,48.7,3,Tool call structure present
+agentic,t2_q1_sequential,49.6,3,Tool call structure present
+agentic,t2_q2_error_handling,48.8,3,Tool call structure present
+agentic,t2_q3_nested_params,50.5,3,Tool call structure present
+agentic,t3_q1_ambiguous,46.4,3,Tool call structure present
+agentic,t3_q2_error_chain,49.2,3,Tool call structure present
+agentic,t3_q3_schema_edge,49.5,3,Tool call structure present
+agentic,t3_q4_orchestration,50.6,3,Tool call structure present

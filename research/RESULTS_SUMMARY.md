@@ -403,6 +403,45 @@ Models that fail instruction precision tests will break orchestration:
 
 ---
 
+## Claude-as-Judge Quality Review (2025-12-18)
+
+### Overview
+
+Independent quality evaluation of 32 models using Claude as judge. Algorithmic rubric found severely underscoring due to pattern matching failures.
+
+**Key Finding:** Algorithmic rubric scored ~38% average; Claude-as-Judge scored ~70% for same models.
+
+### Top Models by Claude Score
+
+| Model | Total | Pct | Avg t/s | Notes |
+|-------|-------|-----|---------|-------|
+| **DeepSeek-R1-Distill-Llama-8B** | 112/120 | **93%** | 7.2 | Top thinking |
+| **Qwen3-4B-Thinking-2507** | 107/120 | **89%** | 16.5 | Best speed/quality |
+| **Qwen2.5-7B** (general) | 163/183 | **89%** | 12.9 | Full coverage |
+| DeepSeek-R1-Distill-Qwen-7B | 102/120 | 85% | 7.7 | |
+| **Qwen3-VL-2B** (vision) | 71/90 | **79%** | 48.9 | Best vision |
+| Draft models (0.5B-1.7B) | 38-43/60 | 63-72% | 44-200 | Adequate for spec decode |
+| Meta-Llama-3.1-8B | 27/183 | **15%** | 63.5 | Empty outputs, avoid |
+
+### Role Recommendations
+
+| Role | Model | Score | Speed |
+|------|-------|-------|-------|
+| **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93% | 7.2 t/s |
+| **Thinking Fast** | Qwen3-4B-Thinking-2507 | 89% | 16.5 t/s |
+| **General Worker** | Qwen2.5-7B | 89% | 12.9 t/s |
+| **Vision Primary** | Qwen3-VL-2B | 79% | 48.9 t/s |
+| **Draft (Dense)** | Qwen2.5-Coder-0.5B | 65% | 173.6 t/s |
+| **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | 72% | 51.3 t/s |
+
+### Review Files
+
+- Location: `benchmarks/results/reviews/`
+- Per-model: `{model}_baseline.csv`
+- Summary: `summary.csv`
+
+---
+
 ## Full Data
 
 - Detailed results: `logs/research_report.md`
@@ -410,3 +449,4 @@ Models that fail instruction precision tests will break orchestration:
 - Blog template: `research/research_report_template.md`
 - Benchmark prompts: `benchmarks/prompts/v1/`
 - Benchmark results: `benchmarks/results/`
+- Claude-as-Judge reviews: `benchmarks/results/reviews/`

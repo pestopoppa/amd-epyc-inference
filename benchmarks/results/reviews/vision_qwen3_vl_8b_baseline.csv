@@ -1,0 +1,2 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+vl,t1_q1_ocr,78.7,0,Empty or minimal output

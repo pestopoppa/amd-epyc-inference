@@ -1,0 +1,21 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+general,t1_q1_reformat,77.3,2,Reformatting response
+general,t1_q2_summarize,184.0,2,Reformatting response
+general,t1_q3_extract,160.6,2,General response generated
+general,t2_q1_json,182.4,3,JSON structure present
+general,t2_q2_multistep,175.7,2,General response generated
+general,t2_q3_compare,179.5,2,General response generated
+general,t3_q1_synthesis,186.5,2,General response generated
+general,t3_q2_transform,190.9,2,General response generated
+general,t3_q3_schedule,182.7,2,General response generated
+general,t3_q4_inconsistency,186.7,2,General response generated
+thinking,t1_q1_logic,185.0,2,Thinking response generated
+thinking,t1_q2_sequence,181.5,3,Correct answer 42
+thinking,t1_q3_deduction,175.8,2,Deduction puzzle - varied answers
+thinking,t2_q1_multistep,186.5,2,Multi-step problem - partial credit
+thinking,t2_q2_hypothesis,193.9,2,Thinking response generated
+thinking,t2_q3_planning,182.6,2,Multi-step problem - partial credit
+thinking,t3_q1_paradox,192.8,2,Thinking response generated
+thinking,t3_q2_counterfactual,177.1,2,Thinking response generated
+thinking,t3_q3_formal,184.7,2,Thinking response generated
+thinking,t3_q4_metacognition,179.3,2,Thinking response generated

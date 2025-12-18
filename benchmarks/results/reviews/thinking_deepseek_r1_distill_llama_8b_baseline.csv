@@ -1,0 +1,41 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t1_q1_logic,6.8,3,Good syllogism reasoning with logical breakdown
+thinking,t1_q2_sequence,6.9,3,Correct differences pattern (4 6 8 10) leading to 42
+thinking,t1_q3_deduction,7.0,2,Good reasoning but puzzle has inherent contradiction
+thinking,t2_q1_multistep,6.9,3,Good problem setup for train meeting calculation
+thinking,t2_q2_hypothesis,7.2,3,Good alternative explanations with third variables
+thinking,t2_q3_planning,6.8,2,Good constraint breakdown but truncated
+thinking,t3_q1_paradox,7.0,3,Good philosophical analysis of identity
+thinking,t3_q2_counterfactual,7.0,3,Good analysis of pre-internet research
+thinking,t3_q3_formal,7.1,3,Good approach to proving transitivity
+thinking,t3_q4_metacognition,6.9,3,Good Fermi estimation with clear steps
+general,t1_q1_reformat,7.5,2,Good approach but truncated
+general,t1_q2_summarize,7.5,3,Good one-sentence summary approach
+general,t1_q3_extract,7.3,2,Found emails but hallucinated extra ones
+general,t2_q1_json,7.5,3,Correct JSON parsing approach
+general,t2_q2_multistep,7.4,3,Good deduplication and sorting approach
+general,t2_q3_compare,7.3,3,Good microservices vs monolith comparison
+general,t3_q1_synthesis,7.2,2,Good stakeholder analysis but truncated
+general,t3_q2_transform,7.3,1,Wrong structure with hallucinated extra employees
+general,t3_q3_schedule,7.2,2,Good constraint analysis but truncated
+general,t3_q4_inconsistency,7.3,3,Good identification of rate limit inconsistencies
+math,t1_q1_arithmetic,7.1,3,Correct PEMDAS calculation approach
+math,t1_q2_algebra,7.1,3,Correct x=5 with clear steps
+math,t1_q3_conversion,7.1,3,Correct km to m cm miles conversions
+math,t2_q1_word_problem,7.0,3,Correct discount and tax calculation
+math,t2_q2_system_equations,7.1,3,Correct elimination method for solving
+math,t2_q3_probability,7.0,3,Correct probability calculations
+math,t3_q1_optimization,7.0,3,Correct fencing optimization setup
+math,t3_q2_proof,7.0,3,Good mathematical induction proof
+math,t3_q3_calculus,7.1,3,Correct antiderivative approach
+math,t3_q4_statistics,7.0,3,Correct mean median calculation
+agentic,t1_q1_single_tool,7.3,3,Correct get_weather tool call
+agentic,t1_q2_multi_param,7.5,3,Correct search_files JSON
+agentic,t1_q3_choose_tool,7.7,3,Correct list_directory choice
+agentic,t2_q1_sequential,7.6,3,Correct sequential tool calls for grep
+agentic,t2_q2_error_handling,7.5,3,Good approach to handle 404 error
+agentic,t2_q3_nested_params,7.5,3,Correct nested JSON for create_task
+agentic,t3_q1_ambiguous,7.5,3,Good reasoning for tool selection
+agentic,t3_q2_error_chain,7.4,3,Good db connection troubleshooting
+agentic,t3_q3_schema_edge,7.7,3,Correct API query structure
+agentic,t3_q4_orchestration,7.2,3,Good hotfix deployment reasoning

@@ -1,0 +1,31 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+general,t1_q1_reformat,9.7,2,Response generated
+general,t1_q2_summarize,8.8,2,Response generated
+general,t1_q3_extract,8.8,2,Response generated
+general,t2_q1_json,7.4,2,Response generated
+general,t2_q2_multistep,7.2,2,Response generated
+general,t2_q3_compare,7.2,2,Response generated
+general,t3_q1_synthesis,7.3,2,Response generated
+general,t3_q2_transform,7.2,2,Response generated
+general,t3_q3_schedule,7.3,2,Response generated
+general,t3_q4_inconsistency,7.2,2,Response generated
+thinking,t1_q1_logic,7.3,2,Response generated
+thinking,t1_q2_sequence,7.3,3,Correct sequence answer
+thinking,t1_q3_deduction,7.2,2,Response generated
+thinking,t2_q1_multistep,7.3,2,Response generated
+thinking,t2_q2_hypothesis,7.3,2,Response generated
+thinking,t2_q3_planning,7.1,2,Response generated
+thinking,t3_q1_paradox,7.2,2,Response generated
+thinking,t3_q2_counterfactual,7.2,2,Response generated
+thinking,t3_q3_formal,7.3,2,Response generated
+thinking,t3_q4_metacognition,6.9,2,Response generated
+agentic,t1_q1_single_tool,7.3,2,Response generated
+agentic,t1_q2_multi_param,8.0,2,Response generated
+agentic,t1_q3_choose_tool,8.1,2,Response generated
+agentic,t2_q1_sequential,8.4,2,Response generated
+agentic,t2_q2_error_handling,9.0,2,Response generated
+agentic,t2_q3_nested_params,8.3,2,Response generated
+agentic,t3_q1_ambiguous,8.7,2,Response generated
+agentic,t3_q2_error_chain,9.2,2,Response generated
+agentic,t3_q3_schema_edge,7.8,2,Response generated
+agentic,t3_q4_orchestration,7.5,2,Response generated
