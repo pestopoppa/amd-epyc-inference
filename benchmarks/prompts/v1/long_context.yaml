@@ -1,71 +1,14 @@
 version: 1
 domain: long_context
-description: "Long context handling benchmark - tests information retrieval across large contexts"
+description: "Long context handling benchmark - hardened for multi-hop reasoning and synthesis"
 created: "2025-12-16"
+updated: "2025-12-18"
 note: "Context content is generated programmatically by the rubric script"
 
 prompts:
-  # ============== TIER 1: Short Context (4K tokens) ==============
-  t1_q1_retrieval:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_needle:
     tier: 1
-    name: "Information Retrieval"
-    context_tokens: 4000
-    context_type: "technical_docs"
-    needle: "The maximum concurrent connections allowed is 2847."
-    needle_position: "middle"
-    prompt: |
-      Based on the documentation above, what is the exact maximum number of concurrent connections allowed?
-
-      Answer with just the number.
-    expected: "2847"
-    scoring:
-      - criterion: "Exact number correct"
-        weight: 70
-      - criterion: "No hallucination"
-        weight: 30
-
-  t1_q2_summary:
-    tier: 1
-    name: "Summary with Details"
-    context_tokens: 4000
-    context_type: "meeting_notes"
-    prompt: |
-      Based on the meeting notes above:
-      1. List all decisions made
-      2. List all action items with their assignees
-
-      Be comprehensive - don't miss any items.
-    expected: "All decisions and action items captured"
-    scoring:
-      - criterion: "All decisions captured"
-        weight: 40
-      - criterion: "All action items found"
-        weight: 40
-      - criterion: "Correct assignees"
-        weight: 20
-
-  t1_q3_cross_reference:
-    tier: 1
-    name: "Multi-Section Reference"
-    context_tokens: 4000
-    context_type: "structured_doc"
-    prompt: |
-      Based on the document above:
-      What does Section 3 say about error handling, and how does it relate to Section 5's requirements?
-
-      Be specific about the connection between these sections.
-    expected: "Accurate cross-reference between sections"
-    scoring:
-      - criterion: "Section 3 content correct"
-        weight: 35
-      - criterion: "Section 5 content correct"
-        weight: 35
-      - criterion: "Relationship identified"
-        weight: 30
-
-  # ============== TIER 2: Medium Context (8-16K tokens) ==============
-  t2_q1_needle:
-    tier: 2
     name: "Needle in Haystack"
     context_tokens: 12000
     context_type: "code_files"
@@ -84,8 +27,8 @@ prompts:
       - criterion: "Location context"
         weight: 20
 
-  t2_q2_multi_file:
-    tier: 2
+  t1_q2_multi_file:
+    tier: 1
     name: "Multi-File Analysis"
     context_tokens: 10000
     context_type: "python_project"
@@ -104,8 +47,8 @@ prompts:
       - criterion: "Clear explanation"
         weight: 20
 
-  t2_q3_extraction:
-    tier: 2
+  t1_q3_extraction:
+    tier: 1
     name: "Comprehensive Extraction"
     context_tokens: 15000
     context_type: "legal_doc"
@@ -127,9 +70,9 @@ prompts:
       - criterion: "No false positives"
         weight: 10
 
-  # ============== TIER 3: Long Context (32K+ tokens) ==============
-  t3_q1_deep_needle:
-    tier: 3
+  # ============== TIER 2: Hard (was T3) ==============
+  t2_q1_deep_needle:
+    tier: 2
     name: "Deep Needle"
     context_tokens: 40000
     context_type: "server_logs"
@@ -148,8 +91,8 @@ prompts:
       - criterion: "Found despite depth"
         weight: 20
 
-  t3_q2_synthesis:
-    tier: 3
+  t2_q2_synthesis:
+    tier: 2
     name: "Multi-Document Synthesis"
     context_tokens: 35000
     context_type: "business_docs"
@@ -172,8 +115,8 @@ prompts:
       - criterion: "Coherent synthesis"
         weight: 20
 
-  t3_q3_architecture:
-    tier: 3
+  t2_q3_architecture:
+    tier: 2
     name: "Codebase Understanding"
     context_tokens: 50000
     context_type: "full_project"
@@ -194,7 +137,89 @@ prompts:
       - criterion: "Hierarchy accurate"
         weight: 30
 
+  # ============== TIER 3: Expert Long-Context Reasoning (NEW) ==============
+  t3_q1_multi_hop_reasoning:
+    tier: 3
+    name: "Multi-Hop Temporal Reasoning"
+    context_tokens: 60000
+    context_type: "investigation_docs"
+    prompt: |
+      The documents above contain a financial investigation timeline. You need to trace a series of transactions:
+
+      1. Company A made a payment to Company B on Date X. Find Date X.
+      2. Two weeks after Date X, Company B transferred funds to Account C. What was the amount?
+      3. Account C is linked to Person D (mentioned in a different document). What is Person D's role?
+      4. Person D had a meeting with Person E (mentioned in yet another document) before the initial payment.
+         What was discussed, and does it suggest foreknowledge of the transaction chain?
+
+      This requires connecting information across at least 4 different documents.
+      Show your reasoning chain explicitly.
+    expected: "Correct multi-hop chain with document references and evidence for each step"
+    scoring:
+      - criterion: "Date X correctly identified"
+        weight: 20
+      - criterion: "Amount to Account C correct"
+        weight: 20
+      - criterion: "Person D's role correct"
+        weight: 20
+      - criterion: "Meeting details and inference correct"
+        weight: 25
+      - criterion: "Explicit reasoning chain shown"
+        weight: 15
+
+  t3_q2_contradiction_detection:
+    tier: 3
+    name: "Cross-Document Contradiction Detection"
+    context_tokens: 45000
+    context_type: "witness_statements"
+    prompt: |
+      The documents above contain 8 witness statements about the same incident.
+      Several witnesses contradict each other on key details.
+
+      1. Identify ALL factual contradictions between witnesses (at least 5 exist)
+      2. For each contradiction, cite the specific witnesses and their conflicting claims
+      3. Based on the pattern of contradictions, which 2 witnesses are most likely unreliable? Why?
+      4. Construct a "most likely true" timeline by weighing the consistent vs. contradictory elements
+
+      Be systematic - missing contradictions is a failure.
+    expected: "All 5+ contradictions identified with citations, reliability analysis, synthesized timeline"
+    scoring:
+      - criterion: "All contradictions found"
+        weight: 30
+      - criterion: "Correct citations for each"
+        weight: 20
+      - criterion: "Reliability analysis sound"
+        weight: 25
+      - criterion: "Synthesized timeline coherent"
+        weight: 25
+
+  t3_q3_evolving_requirements:
+    tier: 3
+    name: "Requirements Evolution Tracking"
+    context_tokens: 55000
+    context_type: "email_thread"
+    prompt: |
+      The email thread above spans 6 months of a software project. Requirements changed multiple times.
+
+      1. What was the ORIGINAL requirement for the "notification system" feature?
+      2. List every change to this requirement chronologically, with dates and who requested each change
+      3. The final implementation (described in the last technical doc) differs from ALL stated requirements.
+         What was actually built, and which stakeholder's unstated preference does it reflect?
+      4. Identify the email where the scope creep became irreversible and explain why
+
+      This tests your ability to track evolving information and identify unstated patterns.
+    expected: "Original req, all changes with dates/requesters, gap analysis, scope creep identification"
+    scoring:
+      - criterion: "Original requirement correct"
+        weight: 20
+      - criterion: "All changes tracked with attribution"
+        weight: 30
+      - criterion: "Final vs. required gap identified"
+        weight: 25
+      - criterion: "Scope creep inflection point found"
+        weight: 25
+
 inference_params:
   temperature: 0.2
-  max_tokens: 1024
-  timeout: 300  # Longer timeout for long context
+  max_tokens: 2048
+  timeout: 420  # Longer timeout for expert-level long context

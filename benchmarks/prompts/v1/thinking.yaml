@@ -1,64 +1,13 @@
 version: 1
 domain: thinking
-description: "Reasoning and chain-of-thought benchmark"
+description: "Reasoning and chain-of-thought benchmark - hardened for post-doctoral level differentiation"
 created: "2025-12-16"
+updated: "2025-12-18"
 
 prompts:
-  # ============== TIER 1: Baseline ==============
-  t1_q1_logic:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_multistep:
     tier: 1
-    name: "Basic Logic"
-    prompt: |
-      If all roses are flowers, and some flowers fade quickly, can we conclude that some roses fade quickly?
-
-      Think step by step and explain your reasoning.
-    expected: "No - fallacy of the undistributed middle"
-    scoring:
-      - criterion: "Correct conclusion (No)"
-        weight: 40
-      - criterion: "Identifies logical fallacy"
-        weight: 30
-      - criterion: "Clear reasoning"
-        weight: 30
-
-  t1_q2_sequence:
-    tier: 1
-    name: "Pattern Recognition"
-    prompt: |
-      What comes next in this sequence?
-      2, 6, 12, 20, 30, ?
-
-      Show your reasoning.
-    expected: "42 (pattern: n(n+1) or differences increase by 2)"
-    scoring:
-      - criterion: "Correct answer (42)"
-        weight: 50
-      - criterion: "Identifies pattern"
-        weight: 30
-      - criterion: "Shows work"
-        weight: 20
-
-  t1_q3_deduction:
-    tier: 1
-    name: "Simple Deduction"
-    prompt: |
-      Three friends - Alice, Bob, and Carol - each have a different pet: a cat, a dog, and a bird.
-      - Alice is allergic to fur.
-      - Bob's pet can fly.
-
-      Which pet does each person have? Explain your reasoning.
-    expected: "Alice: bird, Bob: bird (contradiction!) or Carol: cat/dog..."
-    scoring:
-      - criterion: "Correct assignments"
-        weight: 50
-      - criterion: "Uses constraints correctly"
-        weight: 30
-      - criterion: "Clear deduction steps"
-        weight: 20
-
-  # ============== TIER 2: Medium-Hard ==============
-  t2_q1_multistep:
-    tier: 2
     name: "Multi-Step Reasoning"
     prompt: |
       A train leaves Station A at 9:00 AM traveling at 60 mph toward Station B.
@@ -77,8 +26,8 @@ prompts:
       - criterion: "Clear presentation"
         weight: 10
 
-  t2_q2_hypothesis:
-    tier: 2
+  t1_q2_hypothesis:
+    tier: 1
     name: "Hypothesis Testing"
     prompt: |
       A researcher claims: "Students who eat breakfast score higher on tests."
@@ -94,8 +43,8 @@ prompts:
       - criterion: "Specific and plausible"
         weight: 20
 
-  t2_q3_planning:
-    tier: 2
+  t1_q3_planning:
+    tier: 1
     name: "Planning Under Constraints"
     prompt: |
       You need to water 5 plants (A, B, C, D, E) with these constraints:
@@ -116,9 +65,9 @@ prompts:
       - criterion: "Constraint verification"
         weight: 10
 
-  # ============== TIER 3: Hard ==============
-  t3_q1_paradox:
-    tier: 3
+  # ============== TIER 2: Hard Undergrad (was T3) ==============
+  t2_q1_paradox:
+    tier: 2
     name: "Paradox Resolution"
     prompt: |
       Consider the Ship of Theseus: If you replace every plank of a ship one by one, is it still the same ship? If you then build a new ship from the old planks, which is the "real" Ship of Theseus?
@@ -135,8 +84,8 @@ prompts:
       - criterion: "Philosophical depth"
         weight: 15
 
-  t3_q2_counterfactual:
-    tier: 3
+  t2_q2_counterfactual:
+    tier: 2
     name: "Counterfactual Reasoning"
     prompt: |
       Consider this scenario: "If the internet had never been invented, how would academic research be different today?"
@@ -158,11 +107,11 @@ prompts:
       - criterion: "Plausible reasoning"
         weight: 15
 
-  t3_q3_formal:
-    tier: 3
+  t2_q3_formal:
+    tier: 2
     name: "Formal Logic"
     prompt: |
-      Prove or disprove: "If P → Q and Q → R, then P → R"
+      Prove or disprove: "If P -> Q and Q -> R, then P -> R"
 
       Provide a formal proof using logical rules, then give a concrete example demonstrating the principle.
     expected: "Valid proof (hypothetical syllogism) with example"
@@ -176,8 +125,8 @@ prompts:
       - criterion: "Clear presentation"
         weight: 10
 
-  t3_q4_metacognition:
-    tier: 3
+  t2_q4_metacognition:
+    tier: 2
     name: "Metacognitive Analysis"
     prompt: |
       You're asked to estimate how many piano tuners are in Chicago.
@@ -199,7 +148,77 @@ prompts:
       - criterion: "Identifies key uncertainties"
         weight: 20
 
+  # ============== TIER 3: Post-Doctoral Level (NEW) ==============
+  t3_q1_methodological_critique:
+    tier: 3
+    name: "Methodological Critique"
+    prompt: |
+      A psychology paper claims: "We found that bilingual children score 15 points higher on
+      executive function tests (p<0.01, n=200). This proves bilingualism enhances cognitive control."
+
+      Identify at least 4 methodological issues that could explain these results without
+      bilingualism actually causing cognitive enhancement. For each issue, explain how it
+      could produce the observed effect.
+    expected: "Selection bias, SES confounds, reverse causation, measurement validity, publication bias, etc."
+    scoring:
+      - criterion: "Four valid methodological issues"
+        weight: 40
+      - criterion: "Clear causal mechanisms for each"
+        weight: 30
+      - criterion: "Distinguishes correlation from causation"
+        weight: 20
+      - criterion: "Research design sophistication"
+        weight: 10
+
+  t3_q2_causal_inference:
+    tier: 3
+    name: "Causal Inference DAG"
+    prompt: |
+      Consider a DAG with variables: Smoking -> Cancer, Smoking -> Yellow Fingers,
+      Gene -> Smoking, Gene -> Cancer.
+
+      You want to estimate the causal effect of Smoking on Cancer from observational data.
+      1. What is the minimal sufficient adjustment set?
+      2. Would conditioning on Yellow Fingers introduce bias? Explain.
+      3. If Gene is unmeasured, can you still get an unbiased estimate? How?
+    expected: "Condition on Gene only. Yellow Fingers is a collider - conditioning opens a path. Instrumental variables if Gene unmeasured."
+    scoring:
+      - criterion: "Correct adjustment set (Gene)"
+        weight: 30
+      - criterion: "Identifies collider bias"
+        weight: 30
+      - criterion: "Instrumental variable approach"
+        weight: 25
+      - criterion: "Clear d-separation reasoning"
+        weight: 15
+
+  t3_q3_reasoning_trap:
+    tier: 3
+    name: "Reasoning Under Misdirection"
+    prompt: |
+      A researcher presents this argument:
+
+      "We trained Model A on dataset D1 (1M examples) and Model B on dataset D2 (1M examples).
+      Model A achieved 92% accuracy on test set T. Model B achieved 78% accuracy on test set T.
+      Therefore, dataset D1 produces better models than dataset D2."
+
+      This conclusion seems reasonable but is WRONG. Identify the flaw, then construct
+      a concrete scenario where D2 is actually the superior dataset despite the accuracy gap.
+
+      Your scenario must be specific (not just "maybe the test set is biased") and must
+      explain the mechanism by which the inferior-seeming dataset is actually better.
+    expected: "Test set T may be drawn from D1's distribution. Scenario: D1 is narrow domain, D2 is diverse. T matches D1's domain, but D2 generalizes better to real-world distribution."
+    scoring:
+      - criterion: "Identifies distribution mismatch flaw"
+        weight: 30
+      - criterion: "Concrete scenario constructed"
+        weight: 30
+      - criterion: "Mechanism clearly explained"
+        weight: 25
+      - criterion: "Scenario is non-obvious"
+        weight: 15
+
 inference_params:
   temperature: 0.3
-  max_tokens: 1024
-  timeout: 180
+  max_tokens: 2048
+  timeout: 300

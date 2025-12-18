@@ -1,70 +1,13 @@
 version: 1
 domain: coder
-description: "Code generation and debugging benchmark"
+description: "Code generation and debugging benchmark - hardened for systems/research level"
 created: "2025-12-16"
+updated: "2025-12-18"
 
 prompts:
-  # ============== TIER 1: Baseline ==============
-  t1_q1_function:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_algorithm:
     tier: 1
-    name: "Simple Function"
-    prompt: |
-      Write a Python function that checks if a string is a palindrome.
-      The function should be case-insensitive and ignore spaces.
-
-      Example: "A man a plan a canal Panama" -> True
-    expected: "Working palindrome function"
-    scoring:
-      - criterion: "Correct logic"
-        weight: 40
-      - criterion: "Handles case insensitivity"
-        weight: 20
-      - criterion: "Handles spaces"
-        weight: 20
-      - criterion: "Clean code style"
-        weight: 20
-
-  t1_q2_debug:
-    tier: 1
-    name: "Simple Bug Fix"
-    prompt: |
-      Fix the bug in this Python code:
-
-      def factorial(n):
-          if n == 0:
-              return 0
-          return n * factorial(n - 1)
-
-      The function should return 1 for factorial(0), not 0.
-    expected: "Change return 0 to return 1"
-    scoring:
-      - criterion: "Identifies the bug"
-        weight: 40
-      - criterion: "Provides correct fix"
-        weight: 40
-      - criterion: "Explains why"
-        weight: 20
-
-  t1_q3_explain:
-    tier: 1
-    name: "Code Explanation"
-    prompt: |
-      Explain what this Python code does in 2-3 sentences:
-
-      def mystery(lst):
-          return [x for x in lst if lst.count(x) == 1]
-    expected: "Returns elements that appear exactly once"
-    scoring:
-      - criterion: "Correct explanation"
-        weight: 60
-      - criterion: "Mentions uniqueness/count"
-        weight: 25
-      - criterion: "Concise"
-        weight: 15
-
-  # ============== TIER 2: Medium-Hard ==============
-  t2_q1_algorithm:
-    tier: 2
     name: "Algorithm Implementation"
     prompt: |
       Implement binary search in Python. The function should:
@@ -84,8 +27,8 @@ prompts:
       - criterion: "Clear comments"
         weight: 10
 
-  t2_q2_refactor:
-    tier: 2
+  t1_q2_refactor:
+    tier: 1
     name: "Code Refactoring"
     prompt: |
       Refactor this code to be more Pythonic and efficient:
@@ -105,8 +48,8 @@ prompts:
       - criterion: "Explains improvements"
         weight: 30
 
-  t2_q3_test:
-    tier: 2
+  t1_q3_test:
+    tier: 1
     name: "Test Case Generation"
     prompt: |
       Write pytest test cases for this function:
@@ -128,9 +71,9 @@ prompts:
       - criterion: "Proper pytest syntax"
         weight: 15
 
-  # ============== TIER 3: Hard ==============
-  t3_q1_design:
-    tier: 3
+  # ============== TIER 2: Hard (was T3) ==============
+  t2_q1_design:
+    tier: 2
     name: "Class Design"
     prompt: |
       Design a Python class for a simple LRU (Least Recently Used) cache with:
@@ -151,8 +94,8 @@ prompts:
       - criterion: "Explains design choices"
         weight: 15
 
-  t3_q2_debug_complex:
-    tier: 3
+  t2_q2_debug_complex:
+    tier: 2
     name: "Complex Debugging"
     prompt: |
       This async Python code has a race condition. Find and fix it:
@@ -183,8 +126,8 @@ prompts:
       - criterion: "Explains the issue"
         weight: 10
 
-  t3_q3_optimize:
-    tier: 3
+  t2_q3_optimize:
+    tier: 2
     name: "Performance Optimization"
     prompt: |
       Optimize this function for large inputs (n > 10^6):
@@ -197,7 +140,7 @@ prompts:
                       count += 1
           return count
 
-      Current: O(n²). Target: O(n) or O(n log n).
+      Current: O(n^2). Target: O(n) or O(n log n).
       Provide the optimized code and explain the approach.
     expected: "Hash map approach for O(n) solution"
     scoring:
@@ -210,8 +153,8 @@ prompts:
       - criterion: "Clear explanation"
         weight: 10
 
-  t3_q4_system:
-    tier: 3
+  t2_q4_system:
+    tier: 2
     name: "System Design Code"
     prompt: |
       Implement a simple rate limiter class in Python:
@@ -231,7 +174,95 @@ prompts:
       - criterion: "Clean implementation"
         weight: 15
 
+  # ============== TIER 3: Systems/Research Level (NEW) ==============
+  t3_q1_concurrent_correctness:
+    tier: 3
+    name: "Lock-Free Data Structure"
+    prompt: |
+      Below is a lock-free stack implementation. Identify the ABA problem scenario,
+      explain why it causes incorrect behavior, and fix it without using locks.
+
+      ```c
+      struct Node { int val; Node* next; };
+      atomic<Node*> top;
+
+      void push(int v) {
+        Node* n = new Node{v, top.load()};
+        while (!top.compare_exchange_weak(n->next, n));
+      }
+
+      int pop() {
+        Node* t = top.load();
+        while (t && !top.compare_exchange_weak(t, t->next));
+        return t ? t->val : -1;
+      }
+      ```
+
+      Provide:
+      1. A concrete sequence of operations that demonstrates the ABA problem
+      2. What incorrect behavior results
+      3. A fix using either tagged pointers or hazard pointers (show code)
+    expected: "Detailed ABA scenario, fix with version counters or hazard pointers"
+    scoring:
+      - criterion: "Correct ABA scenario"
+        weight: 30
+      - criterion: "Explains incorrect behavior"
+        weight: 20
+      - criterion: "Working fix implementation"
+        weight: 35
+      - criterion: "Code quality"
+        weight: 15
+
+  t3_q2_distributed_consistency:
+    tier: 3
+    name: "Distributed Systems"
+    prompt: |
+      You're designing a distributed key-value store that must handle network partitions.
+      During a partition:
+      - Client A writes key K with value V1 to node A
+      - Client B writes key K with value V2 to node B
+
+      When the partition heals:
+      1. What are your options for conflict resolution? List at least 4 strategies.
+      2. For EACH strategy, give a specific scenario where it produces wrong/surprising behavior.
+      3. Recommend which strategy for a shopping cart application, with justification.
+      4. What if the application was a banking ledger instead?
+    expected: "LWW, vector clocks, CRDTs, app-level merge. OR-Set for cart, stronger consistency for banking."
+    scoring:
+      - criterion: "Four valid strategies"
+        weight: 25
+      - criterion: "Failure scenarios for each"
+        weight: 25
+      - criterion: "Shopping cart recommendation"
+        weight: 25
+      - criterion: "Banking contrast"
+        weight: 25
+
+  t3_q3_algorithmic_hardness:
+    tier: 3
+    name: "Algorithm Analysis"
+    prompt: |
+      You need to find the k-th smallest element in an unsorted array of n elements.
+
+      1. Prove that any comparison-based algorithm requires Omega(n) comparisons in the worst case.
+         (Hint: use an adversary argument)
+      2. The median-of-medians algorithm achieves O(n). Derive the recurrence relation
+         T(n) and explain why the choice of group size 5 is significant.
+         What happens with group size 3? Group size 7?
+      3. Randomized select has O(n) expected time. Derive the expected number of comparisons
+         precisely (not just big-O).
+    expected: "Adversary argument, T(n) <= T(n/5) + T(7n/10) + O(n), analysis of group sizes"
+    scoring:
+      - criterion: "Valid adversary argument"
+        weight: 25
+      - criterion: "Correct recurrence derivation"
+        weight: 30
+      - criterion: "Group size analysis"
+        weight: 25
+      - criterion: "Randomized analysis"
+        weight: 20
+
 inference_params:
   temperature: 0.2
-  max_tokens: 1024
-  timeout: 120
+  max_tokens: 2048
+  timeout: 300

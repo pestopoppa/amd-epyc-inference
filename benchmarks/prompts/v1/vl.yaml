@@ -1,57 +1,14 @@
 version: 1
 domain: vl
-description: "Vision-language understanding benchmark"
+description: "Vision-language understanding benchmark - hardened for expert-level visual reasoning"
 created: "2025-12-16"
+updated: "2025-12-18"
 note: "VL prompts include image_path references - tests require corresponding images"
 
 prompts:
-  # ============== TIER 1: Baseline ==============
-  t1_q1_ocr:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_chart:
     tier: 1
-    name: "Basic OCR"
-    image_description: "Simple text image saying 'Hello World'"
-    image_path: "/tmp/claude/test_images/hello_world.png"
-    prompt: "What text is shown in this image?"
-    expected: "Hello World"
-    scoring:
-      - criterion: "Exact text extracted"
-        weight: 70
-      - criterion: "No hallucination"
-        weight: 30
-
-  t1_q2_shapes:
-    tier: 1
-    name: "Shape Counting"
-    image_description: "Image with 5 distinct shapes"
-    image_path: "/tmp/claude/test_images/shapes.png"
-    prompt: "How many shapes are in this image? List each shape and its color."
-    expected: "5 shapes with correct colors"
-    scoring:
-      - criterion: "Correct count"
-        weight: 50
-      - criterion: "Correct shape identification"
-        weight: 30
-      - criterion: "Correct colors"
-        weight: 20
-
-  t1_q3_icon:
-    tier: 1
-    name: "Icon Recognition"
-    image_description: "Common UI icons"
-    image_path: "/tmp/claude/test_images/icons.png"
-    prompt: "What do these icons represent? List each one."
-    expected: "Correct identification of standard icons"
-    scoring:
-      - criterion: "Correct identification"
-        weight: 60
-      - criterion: "Standard naming"
-        weight: 25
-      - criterion: "No hallucination"
-        weight: 15
-
-  # ============== TIER 2: Medium-Hard ==============
-  t2_q1_chart:
-    tier: 2
     name: "Chart Reading"
     image_description: "Bar chart with data"
     image_path: "/tmp/claude/test_images/chart.png"
@@ -65,8 +22,8 @@ prompts:
       - criterion: "No misread data"
         weight: 20
 
-  t2_q2_invoice:
-    tier: 2
+  t1_q2_invoice:
+    tier: 1
     name: "Document Understanding"
     image_description: "Simple invoice with line items"
     image_path: "/tmp/claude/test_images/invoice.png"
@@ -80,8 +37,8 @@ prompts:
       - criterion: "Correct amounts"
         weight: 20
 
-  t2_q3_code:
-    tier: 2
+  t1_q3_code:
+    tier: 1
     name: "Code Screenshot"
     image_description: "Screenshot of Python code"
     image_path: "/tmp/claude/test_images/code.png"
@@ -95,9 +52,9 @@ prompts:
       - criterion: "Accurate code reading"
         weight: 20
 
-  # ============== TIER 3: Hard ==============
-  t3_q1_math:
-    tier: 3
+  # ============== TIER 2: Hard (was T3) ==============
+  t2_q1_math:
+    tier: 2
     name: "Handwritten Math"
     image_description: "Handwritten mathematical equation"
     image_path: "/tmp/claude/test_images/math_handwritten.png"
@@ -111,8 +68,8 @@ prompts:
       - criterion: "Clear work shown"
         weight: 20
 
-  t3_q2_flowchart:
-    tier: 3
+  t2_q2_flowchart:
+    tier: 2
     name: "Flowchart Analysis"
     image_description: "Technical flowchart"
     image_path: "/tmp/claude/test_images/flowchart.png"
@@ -126,8 +83,8 @@ prompts:
       - criterion: "Outcomes described"
         weight: 30
 
-  t3_q3_diff:
-    tier: 3
+  t2_q3_diff:
+    tier: 2
     name: "Visual Difference"
     image_description: "Two similar images side by side"
     image_path: "/tmp/claude/test_images/diff_images.png"
@@ -141,8 +98,8 @@ prompts:
       - criterion: "Specific descriptions"
         weight: 20
 
-  t3_q4_puzzle:
-    tier: 3
+  t2_q4_puzzle:
+    tier: 2
     name: "Visual Reasoning"
     image_description: "Pattern completion puzzle"
     image_path: "/tmp/claude/test_images/puzzle.png"
@@ -156,7 +113,80 @@ prompts:
       - criterion: "Pattern identification"
         weight: 20
 
+  # ============== TIER 3: Expert Visual Understanding (NEW) ==============
+  t3_q1_scientific_diagram:
+    tier: 3
+    name: "Scientific Diagram Interpretation"
+    image_description: "Complex scientific figure with multiple panels, error bars, and annotations"
+    image_path: "/tmp/claude/test_images/scientific_figure.png"
+    prompt: |
+      Analyze this scientific figure from a research paper:
+      1. What type of experiment/analysis does each panel represent?
+      2. What are the key findings indicated by the data?
+      3. Are there any statistical concerns you notice (missing error bars, cherry-picked scales, etc.)?
+      4. What controls would you expect to see that might be missing?
+
+      Be specific about what the data shows versus what the authors might be claiming.
+    expected: "Panel-by-panel analysis with statistical critique and identification of methodological concerns"
+    scoring:
+      - criterion: "Correct panel interpretation"
+        weight: 25
+      - criterion: "Key findings identified"
+        weight: 25
+      - criterion: "Statistical concerns noted"
+        weight: 25
+      - criterion: "Missing controls identified"
+        weight: 25
+
+  t3_q2_architectural_blueprint:
+    tier: 3
+    name: "Technical Blueprint Analysis"
+    image_description: "Architectural floor plan with electrical/plumbing overlays"
+    image_path: "/tmp/claude/test_images/blueprint.png"
+    prompt: |
+      Analyze this architectural blueprint:
+      1. Identify any building code violations you can spot (egress, electrical, plumbing)
+      2. What is the approximate square footage of the livable space?
+      3. Identify potential issues with the HVAC layout based on room positions
+      4. If a fire started in the kitchen, what would be the evacuation challenges?
+
+      Reference specific locations using room labels or coordinates.
+    expected: "Code violation identification, spatial reasoning, safety analysis with specific references"
+    scoring:
+      - criterion: "Code violations identified"
+        weight: 30
+      - criterion: "Accurate spatial calculation"
+        weight: 20
+      - criterion: "HVAC analysis quality"
+        weight: 25
+      - criterion: "Evacuation analysis"
+        weight: 25
+
+  t3_q3_multi_image_temporal:
+    tier: 3
+    name: "Temporal Sequence Analysis"
+    image_description: "Series of 6 satellite images of same location over time"
+    image_path: "/tmp/claude/test_images/satellite_sequence.png"
+    prompt: |
+      These 6 satellite images show the same geographic location over a 10-year period:
+      1. Describe what changed between each consecutive pair of images
+      2. What natural or human-driven process explains these changes?
+      3. Predict what the area will look like in 5 more years if the trend continues
+      4. What environmental concerns does this progression raise?
+
+      Be specific about which changes occurred when and their causal relationships.
+    expected: "Accurate temporal tracking, causal reasoning, trend extrapolation, environmental analysis"
+    scoring:
+      - criterion: "Changes correctly identified per period"
+        weight: 30
+      - criterion: "Causal explanation valid"
+        weight: 25
+      - criterion: "Prediction logically follows"
+        weight: 20
+      - criterion: "Environmental concerns substantive"
+        weight: 25
+
 inference_params:
   temperature: 0.2
-  max_tokens: 512
-  timeout: 120
+  max_tokens: 1024
+  timeout: 180

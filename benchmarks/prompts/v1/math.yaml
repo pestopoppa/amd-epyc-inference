@@ -1,64 +1,13 @@
 version: 1
 domain: math
-description: "Mathematical reasoning benchmark - arithmetic to proofs"
+description: "Mathematical reasoning benchmark - hardened for graduate/research level"
 created: "2025-12-16"
+updated: "2025-12-18"
 
 prompts:
-  # ============== TIER 1: Baseline ==============
-  t1_q1_arithmetic:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_word_problem:
     tier: 1
-    name: "Basic Arithmetic"
-    prompt: |
-      Calculate: 847 × 23 + 156 ÷ 4 - 89
-
-      Show your work step by step, then give the final answer.
-    expected: "19431"
-    scoring:
-      - criterion: "Correct final answer"
-        weight: 50
-      - criterion: "Correct intermediate steps"
-        weight: 30
-      - criterion: "Clear presentation"
-        weight: 20
-
-  t1_q2_algebra:
-    tier: 1
-    name: "Simple Algebra"
-    prompt: |
-      Solve for x: 3x + 7 = 22
-
-      Show each step.
-    expected: "x = 5"
-    scoring:
-      - criterion: "Correct answer (x = 5)"
-        weight: 50
-      - criterion: "Valid algebraic steps"
-        weight: 30
-      - criterion: "Clear notation"
-        weight: 20
-
-  t1_q3_conversion:
-    tier: 1
-    name: "Unit Conversion"
-    prompt: |
-      Convert 2.5 kilometers to:
-      1. meters
-      2. centimeters
-      3. miles (use 1 mile = 1.609 km)
-
-      Show the conversion calculation for each.
-    expected: "2500 meters, 250000 centimeters, ~1.554 miles"
-    scoring:
-      - criterion: "All conversions correct"
-        weight: 60
-      - criterion: "Shows conversion factors"
-        weight: 25
-      - criterion: "Appropriate precision"
-        weight: 15
-
-  # ============== TIER 2: Medium-Hard ==============
-  t2_q1_word_problem:
-    tier: 2
     name: "Multi-Step Word Problem"
     prompt: |
       A store offers a 20% discount on all items. After the discount, a 8% sales tax is applied. If an item originally costs $150:
@@ -77,8 +26,8 @@ prompts:
       - criterion: "Correct order of operations"
         weight: 20
 
-  t2_q2_system_equations:
-    tier: 2
+  t1_q2_system_equations:
+    tier: 1
     name: "System of Equations"
     prompt: |
       Solve the system of equations:
@@ -97,8 +46,8 @@ prompts:
       - criterion: "Verification"
         weight: 20
 
-  t2_q3_probability:
-    tier: 2
+  t1_q3_probability:
+    tier: 1
     name: "Probability"
     prompt: |
       A bag contains 5 red balls, 3 blue balls, and 2 green balls.
@@ -119,9 +68,9 @@ prompts:
       - criterion: "Simplified fractions"
         weight: 15
 
-  # ============== TIER 3: Hard ==============
-  t3_q1_optimization:
-    tier: 3
+  # ============== TIER 2: Hard Undergrad (was T3) ==============
+  t2_q1_optimization:
+    tier: 2
     name: "Optimization"
     prompt: |
       A farmer has 200 meters of fencing to enclose a rectangular field that borders a river (no fencing needed on the river side).
@@ -140,8 +89,8 @@ prompts:
       - criterion: "Clear constraint setup"
         weight: 15
 
-  t3_q2_proof:
-    tier: 3
+  t2_q2_proof:
+    tier: 2
     name: "Proof by Induction"
     prompt: |
       Prove that the sum of the first n positive integers is n(n+1)/2.
@@ -161,12 +110,12 @@ prompts:
       - criterion: "Proper conclusion"
         weight: 20
 
-  t3_q3_calculus:
-    tier: 3
+  t2_q3_calculus:
+    tier: 2
     name: "Definite Integration"
     prompt: |
       Evaluate the definite integral:
-      ∫₀² (3x² + 2x - 1) dx
+      integral from 0 to 2 of (3x^2 + 2x - 1) dx
 
       Show your work:
       1. Find the antiderivative
@@ -183,8 +132,8 @@ prompts:
       - criterion: "Clear presentation"
         weight: 10
 
-  t3_q4_statistics:
-    tier: 3
+  t2_q4_statistics:
+    tier: 2
     name: "Statistical Analysis"
     prompt: |
       Given the dataset: 12, 15, 18, 22, 25, 28, 30, 35
@@ -193,7 +142,7 @@ prompts:
       1. Mean
       2. Median
       3. Standard deviation (population)
-      4. Is there any outlier using the 1.5×IQR rule?
+      4. Is there any outlier using the 1.5xIQR rule?
 
       Show all calculations.
     expected: "mean=23.125, median=23.5, std~7.35, no outliers"
@@ -207,7 +156,82 @@ prompts:
       - criterion: "Correct outlier analysis"
         weight: 30
 
+  # ============== TIER 3: Graduate/Research Level (NEW) ==============
+  t3_q1_analysis:
+    tier: 3
+    name: "Real Analysis"
+    prompt: |
+      Consider the function f(x) = sum_{n=1}^{infinity} (x^n / n!) * sin(n).
+
+      1. Prove or disprove: f is differentiable everywhere on R.
+      2. Can you express f in closed form using complex exponentials? Hint: consider Im(e^{xe^{i}}).
+      3. What is lim_{x->infinity} f(x)/e^x ? Justify your answer.
+    expected: |
+      1. Yes - uniform convergence on compacts implies differentiability
+      2. f(x) = Im(e^{x*e^i}) = e^{x*cos(1)} * sin(x*sin(1))
+      3. Limit is 0 because |f(x)| <= e^{x*cos(1)} and cos(1) < 1
+    scoring:
+      - criterion: "Correct differentiability argument"
+        weight: 30
+      - criterion: "Correct closed form"
+        weight: 35
+      - criterion: "Correct limit with justification"
+        weight: 25
+      - criterion: "Mathematical rigor"
+        weight: 10
+
+  t3_q2_combinatorics:
+    tier: 3
+    name: "Combinatorial Identity"
+    prompt: |
+      Prove the following identity:
+
+      sum_{k=0}^{n} (-1)^k * C(n,k) * C(2n-k, n) = C(n, floor(n/2))
+
+      where C(a,b) denotes "a choose b".
+
+      Your proof should:
+      1. Demonstrate why this identity "makes sense" combinatorially
+      2. Not just verify it algebraically for specific values
+      3. Use a bijective or sign-reversing involution argument if possible
+    expected: "Lattice path interpretation with sign-reversing involution on bad paths"
+    scoring:
+      - criterion: "Valid combinatorial interpretation"
+        weight: 35
+      - criterion: "Correct sign-reversing argument"
+        weight: 30
+      - criterion: "Handles floor(n/2) correctly"
+        weight: 20
+      - criterion: "Clear presentation"
+        weight: 15
+
+  t3_q3_probability_theory:
+    tier: 3
+    name: "Probability Theory"
+    prompt: |
+      Let X_1, X_2, X_3, ... be iid uniform random variables on [0,1].
+      Define S_n = X_1 + X_2 + ... + X_n.
+      Let N = min{n >= 1 : S_n > 1}.
+
+      Find E[N] (the expected value of N).
+
+      Provide TWO different proofs:
+      (a) A direct calculation approach
+      (b) An elegant argument that avoids heavy computation
+
+      Hint for (b): Consider the n-simplex and its relation to order statistics.
+    expected: "E[N] = e (Euler's number). Direct: sum P(N>n) = sum 1/n!. Elegant: uniform points partition [0,1]^n by permutations."
+    scoring:
+      - criterion: "Correct answer (e)"
+        weight: 20
+      - criterion: "Valid direct calculation"
+        weight: 30
+      - criterion: "Elegant proof insight"
+        weight: 35
+      - criterion: "Mathematical rigor"
+        weight: 15
+
 inference_params:
   temperature: 0.1
-  max_tokens: 1024
-  timeout: 180
+  max_tokens: 2048
+  timeout: 300

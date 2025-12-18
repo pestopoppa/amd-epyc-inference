@@ -1,50 +1,14 @@
 version: 1
 domain: instruction_precision
-description: "Tests exact instruction following - format compliance, constraints, negative instructions"
+description: "Tests exact instruction following - hardened for complex constraint satisfaction"
 created: "2025-12-16"
+updated: "2025-12-18"
 note: "Most tests can be auto-scored for pass/fail"
 
 prompts:
-  # ============== TIER 1: Basic Format Compliance ==============
-  t1_q1_json_only:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_negative_instruction:
     tier: 1
-    name: "JSON Only Output"
-    prompt: |
-      Convert this to JSON: Name is Alice, age is 30, city is Boston.
-      Output ONLY the JSON. No explanation, no markdown, no extra text.
-    expected: '{"name": "Alice", "age": 30, "city": "Boston"}'
-    auto_score: "json_only"
-    scoring:
-      - criterion: "Valid JSON"
-        weight: 50
-      - criterion: "No extra text"
-        weight: 50
-
-  t1_q2_exact_count:
-    tier: 1
-    name: "Exact Item Count"
-    prompt: |
-      List exactly 3 benefits of exercise. No more, no less.
-    expected: "Exactly 3 items"
-    auto_score: "count_items:3"
-    scoring:
-      - criterion: "Exactly 3 items"
-        weight: 100
-
-  t1_q3_single_word:
-    tier: 1
-    name: "Single Word Response"
-    prompt: |
-      Is 17 a prime number? Answer with only 'yes' or 'no', nothing else.
-    expected: "yes"
-    auto_score: "exact_match:yes,Yes,YES"
-    scoring:
-      - criterion: "Only yes/no"
-        weight: 100
-
-  # ============== TIER 2: Complex Constraints ==============
-  t2_q1_negative_instruction:
-    tier: 2
     name: "Negative Instruction (Forbidden Words)"
     prompt: |
       Explain photosynthesis in 2 sentences. Do NOT mention sunlight, sun, or solar.
@@ -56,8 +20,8 @@ prompts:
       - criterion: "Valid explanation"
         weight: 40
 
-  t2_q2_word_limit:
-    tier: 2
+  t1_q2_word_limit:
+    tier: 1
     name: "Exact Word Count Range"
     prompt: |
       Describe machine learning in exactly 20-25 words. Count carefully.
@@ -67,8 +31,8 @@ prompts:
       - criterion: "Word count in range"
         weight: 100
 
-  t2_q3_structured_format:
-    tier: 2
+  t1_q3_structured_format:
+    tier: 1
     name: "Exact Structured Format"
     prompt: |
       List 3 programming languages with their release year.
@@ -82,8 +46,8 @@ prompts:
       - criterion: "No bullets/numbers"
         weight: 30
 
-  t2_q4_multiple_constraints:
-    tier: 2
+  t1_q4_multiple_constraints:
+    tier: 1
     name: "Multiple Simultaneous Constraints"
     prompt: |
       Name 5 countries in Europe.
@@ -103,9 +67,9 @@ prompts:
       - criterion: "No extra text"
         weight: 20
 
-  # ============== TIER 3: Adversarial Compliance ==============
-  t3_q1_resist_elaboration:
-    tier: 3
+  # ============== TIER 2: Hard (was T3) ==============
+  t2_q1_resist_elaboration:
+    tier: 2
     name: "Resist Urge to Elaborate"
     prompt: |
       What is 2+2? Reply with only the number, nothing else.
@@ -115,8 +79,8 @@ prompts:
       - criterion: "Only the number"
         weight: 100
 
-  t3_q2_maintain_format:
-    tier: 3
+  t2_q2_maintain_format:
+    tier: 2
     name: "Maintain Format Under Complexity"
     prompt: |
       Analyze this error and respond in EXACTLY this format:
@@ -133,8 +97,8 @@ prompts:
       - criterion: "No extra text"
         weight: 30
 
-  t3_q3_empty_handling:
-    tier: 3
+  t2_q3_empty_handling:
+    tier: 2
     name: "Handle Empty/None Case"
     prompt: |
       Extract all email addresses from this text: 'Hello world, nice day!'
@@ -146,8 +110,8 @@ prompts:
       - criterion: "Exactly NONE"
         weight: 100
 
-  t3_q4_conflicting_constraints:
-    tier: 3
+  t2_q4_conflicting_constraints:
+    tier: 2
     name: "Multiple Conflicting Constraints"
     prompt: |
       Write one sentence about databases that:
@@ -167,7 +131,86 @@ prompts:
       - criterion: "No forbidden words"
         weight: 25
 
+  # ============== TIER 3: Expert Constraint Satisfaction (NEW) ==============
+  t3_q1_self_referential:
+    tier: 3
+    name: "Self-Referential Constraints"
+    prompt: |
+      Write a sentence that:
+      1. Contains exactly the number of words that it claims to contain
+      2. States how many letters are in the sentence (must be accurate)
+      3. Uses exactly 3 commas
+      4. Does not use the words 'this', 'sentence', or 'contains'
+
+      Example format: "A total of X words appear here, along with Y letters, making it, Z something."
+    expected: "Self-consistent sentence with accurate self-references and all format constraints"
+    auto_score: "manual"  # Requires checking internal consistency
+    scoring:
+      - criterion: "Word count claim matches actual"
+        weight: 30
+      - criterion: "Letter count claim matches actual"
+        weight: 30
+      - criterion: "Exactly 3 commas"
+        weight: 20
+      - criterion: "No forbidden words"
+        weight: 20
+
+  t3_q2_cascading_constraints:
+    tier: 3
+    name: "Cascading Constraint Dependencies"
+    prompt: |
+      Create a list of 5 items where:
+      1. Each item is a single word
+      2. Each word must start with the LAST letter of the previous word
+      3. No word can be longer than the previous word
+      4. The first word must be exactly 8 letters
+      5. The last word must be exactly 4 letters
+      6. No proper nouns
+      7. All words must be common English words
+
+      Output only the 5 words, one per line.
+    expected: "Chain of 5 words meeting all cascading constraints (e.g., absolute -> elephant -> talent -> tulip -> palm)"
+    auto_score: "manual"  # Complex constraint checking
+    scoring:
+      - criterion: "Chain rule satisfied"
+        weight: 30
+      - criterion: "Length decreasing"
+        weight: 20
+      - criterion: "First word 8 letters"
+        weight: 15
+      - criterion: "Last word 4 letters"
+        weight: 15
+      - criterion: "All common English words"
+        weight: 20
+
+  t3_q3_meta_instruction:
+    tier: 3
+    name: "Meta-Instruction Interpretation"
+    prompt: |
+      I will give you instructions in a special format. Follow ONLY the instructions that are:
+      - In square brackets
+      - AND contain a number
+
+      Here are the instructions:
+      [Print hello]
+      [Print 42]
+      Print goodbye
+      {Print 99}
+      [Do nothing]
+      [Say 7 times: hi]
+
+      Output exactly what the valid instructions tell you to do, nothing else.
+    expected: "42\nhi hi hi hi hi hi hi"
+    auto_score: "manual"  # Meta-instruction parsing
+    scoring:
+      - criterion: "Correctly identifies valid instructions"
+        weight: 40
+      - criterion: "Ignores invalid instructions"
+        weight: 30
+      - criterion: "Correct interpretation of valid ones"
+        weight: 30
+
 inference_params:
   temperature: 0.1  # Low temp for precise following
-  max_tokens: 256
-  timeout: 60
+  max_tokens: 512
+  timeout: 90

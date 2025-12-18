@@ -579,6 +579,104 @@ For efficiency, use these heuristics for common patterns:
 
 ---
 
+## Benchmark Hardening (2025-12-18)
+
+### Overview
+
+Benchmark questions were hardened to address ceiling effects. Top models were scoring 89-93%, indicating questions were too easy for expert-level differentiation.
+
+**Changes made:**
+- Removed 3 trivial T1 questions from each of 8 suites
+- Shifted T2 → T1, T3 → T2 (relabeling)
+- Added 3 post-doctoral level T3 questions to each suite
+
+### Reference Model for Score Conversion
+
+Models benchmarked before 2025-12-18 were tested on easier questions. To compare old vs new scores:
+
+| Reference Model | Old Score | New Score | Conversion Factor |
+|-----------------|-----------|-----------|-------------------|
+| DeepSeek-R1-Distill-Llama-8B | 112/120 (93%) | TBD | TBD |
+
+**After testing reference model on new questions:**
+```
+conversion_factor = new_score / old_score
+converted_score = old_claude_score × conversion_factor
+```
+
+### New T3 Question Difficulty
+
+New T3 questions require expert-level reasoning:
+
+| Suite | Example Question | Why It's Hard |
+|-------|------------------|---------------|
+| thinking | Causal inference DAG (collider bias) | Requires formal causal reasoning |
+| thinking | Gödel/Penrose philosophy | Cross-domain philosophy of mind |
+| math | f(x) = Σ(x^n/n!)sin(n) analysis | Closed-form via complex exponentials |
+| math | E[N] where S_n > 1 (uniform sum) | Answer is e, requires two proof methods |
+| coder | Lock-free stack ABA problem | Concurrent programming edge case |
+| coder | Distributed consistency strategies | CAP theorem trade-offs |
+| agentic | Multi-agent coordination | Time-budgeted agent orchestration |
+| agentic | Adversarial input handling | Security-aware tool use |
+| vl | Scientific figure analysis | Statistical critique of graphs |
+| long_context | Multi-hop temporal reasoning | 4+ document chain reasoning |
+| instruction_precision | Self-referential constraints | Meta-accurate self-description |
+
+### Expected Score Distribution (Post-Hardening)
+
+| Model Class | Expected Score |
+|-------------|----------------|
+| 0.5B-1.5B draft models | 30-50% |
+| 4B-8B general models | 50-70% |
+| 8B+ specialized thinking models | 60-80% |
+| 14B+ large models | 70-85% |
+
+Top models should no longer hit 90%+ ceiling.
+
+---
+
+## Research Summary Maintenance
+
+### When Adding New Benchmark Results
+
+1. **Add to summary.csv** with Claude-as-Judge scores
+2. **Add to research_report.md** in the Complete Claude Score Table (line ~440)
+3. **If optimization tested:** Add notes about baseline vs optimized speeds
+4. **Update other relevant tables** (MoE, spec decode, etc.) if applicable
+
+### Speed Reporting Rules
+
+| Column | Meaning |
+|--------|---------|
+| `Baseline t/s` | Raw speed during benchmark (no optimization) |
+| `Optimized t/s` | Speed with best optimization for that model |
+
+### Optimization Configuration Tracking
+
+When MoE reduction or other quality-affecting optimizations are tested:
+- Document baseline AND optimized configurations separately
+- Note quality impact (e.g., "2 experts = garbage" vs "4 experts = quality preserved")
+- If optimization degrades quality, mark it explicitly
+
+Example entry in research_report.md optimization tables:
+```
+| Model | Baseline | 4 Experts | 2 Experts | Quality Notes |
+| Qwen3-235B | 3.6 t/s | 6.75 t/s | 3.80 t/s | 4 experts OK, 2 experts garbage |
+```
+
+### Keeping Tables in Sync
+
+The research_report.md has multiple tables that may need updates:
+- **Complete Claude Score Table** - ALL models with scores
+- **Top Performers** - Summary of role recommendations
+- **MoE Optimization Results** - Expert reduction benchmarks
+- **Speculative Decoding Results** - Draft model combinations
+- **Per-model Performance** - Baseline speeds
+
+When benchmarking a new model, check if it belongs in any of these tables.
+
+---
+
 ## Key Resources
 
 ### Documentation

@@ -1,62 +1,13 @@
 version: 1
 domain: general
-description: "General instruction-following benchmark"
+description: "General instruction-following benchmark - hardened for expert-level differentiation"
 created: "2025-12-16"
+updated: "2025-12-18"
 
 prompts:
-  # ============== TIER 1: Baseline ==============
-  t1_q1_reformat:
+  # ============== TIER 1: Medium (was T2) ==============
+  t1_q1_json:
     tier: 1
-    name: "Simple Reformatting"
-    prompt: |
-      Convert this to a bullet list:
-      The meeting covered three topics. First, we discussed the Q3 budget which is $50K over.
-      Second, we reviewed hiring plans for two engineers. Third, we set the launch date for March 15.
-    expected: "3 bullet points with key info"
-    scoring:
-      - criterion: "All 3 items captured"
-        weight: 50
-      - criterion: "Bullet format correct"
-        weight: 30
-      - criterion: "Concise (not verbose)"
-        weight: 20
-
-  t1_q2_summarize:
-    tier: 1
-    name: "Basic Summarization"
-    prompt: |
-      Summarize in one sentence:
-      The new caching layer reduced API latency from 200ms to 45ms, improving user experience
-      significantly. However, it increased memory usage by 2GB per server, requiring us to
-      upgrade our instance types from m5.large to m5.xlarge, adding $500/month to our AWS bill.
-    expected: "One sentence with latency improvement, memory cost, AWS cost"
-    scoring:
-      - criterion: "Captures key trade-off"
-        weight: 50
-      - criterion: "Single sentence"
-        weight: 30
-      - criterion: "No hallucinated details"
-        weight: 20
-
-  t1_q3_extract:
-    tier: 1
-    name: "Email Extraction"
-    prompt: |
-      Extract all email addresses from this text:
-      Contact John at john.doe@company.com for sales inquiries. For support, reach out to
-      support@company.com or help-desk@company.com. Press inquiries: press@external.org
-    expected: "john.doe@company.com, support@company.com, help-desk@company.com, press@external.org"
-    scoring:
-      - criterion: "All 4 emails found"
-        weight: 60
-      - criterion: "No false positives"
-        weight: 30
-      - criterion: "Clean format"
-        weight: 10
-
-  # ============== TIER 2: Medium-Hard ==============
-  t2_q1_json:
-    tier: 2
     name: "Structured JSON Output"
     prompt: |
       Parse this into JSON with fields: name, role, department, start_date
@@ -73,8 +24,8 @@ prompts:
       - criterion: "No extra fields"
         weight: 10
 
-  t2_q2_multistep:
-    tier: 2
+  t1_q2_multistep:
+    tier: 1
     name: "Multi-Step Instructions"
     prompt: |
       Process this list:
@@ -95,8 +46,8 @@ prompts:
       - criterion: "Count included"
         weight: 20
 
-  t2_q3_compare:
-    tier: 2
+  t1_q3_compare:
+    tier: 1
     name: "Comparative Summary"
     prompt: |
       Compare these two approaches in 2-3 sentences:
@@ -116,9 +67,9 @@ prompts:
       - criterion: "Concise (2-3 sentences)"
         weight: 10
 
-  # ============== TIER 3: Hard ==============
-  t3_q1_synthesis:
-    tier: 3
+  # ============== TIER 2: Hard (was T3) ==============
+  t2_q1_synthesis:
+    tier: 2
     name: "Complex Synthesis"
     prompt: |
       Synthesize these three perspectives into a unified recommendation:
@@ -139,8 +90,8 @@ prompts:
       - criterion: "Appropriate length"
         weight: 15
 
-  t3_q2_transform:
-    tier: 3
+  t2_q2_transform:
+    tier: 2
     name: "Schema Transformation"
     prompt: |
       Transform this flat data into nested YAML grouped by department:
@@ -161,8 +112,8 @@ prompts:
       - criterion: "Clean structure"
         weight: 15
 
-  t3_q3_schedule:
-    tier: 3
+  t2_q3_schedule:
+    tier: 2
     name: "Constraint Satisfaction"
     prompt: |
       Schedule these meetings given constraints:
@@ -187,8 +138,8 @@ prompts:
       - criterion: "Correct reasoning if impossible"
         weight: 15
 
-  t3_q4_inconsistency:
-    tier: 3
+  t2_q4_inconsistency:
+    tier: 2
     name: "Multi-Document Consistency"
     prompt: |
       These 3 documents describe the same system. Find inconsistencies:
@@ -209,7 +160,86 @@ prompts:
       - criterion: "No false positives"
         weight: 10
 
+  # ============== TIER 3: Expert/Research Level (NEW) ==============
+  t3_q1_policy_analysis:
+    tier: 3
+    name: "Policy Impact Analysis"
+    prompt: |
+      A company proposes this AI governance policy:
+      "All ML models deployed in production must achieve 95% accuracy on a held-out test set,
+      have explainability scores above 0.8 (SHAP-based), and undergo quarterly bias audits."
+
+      Analyze this policy:
+      1. Identify at least 3 ways this policy could fail to achieve its intended goals
+      2. For each failure mode, explain the mechanism
+      3. Propose specific amendments that address each failure mode
+      4. Discuss trade-offs of your amendments
+    expected: "Goodhart's law risks, test set gaming, explainability-accuracy tradeoffs, distributional shift"
+    scoring:
+      - criterion: "Identifies non-obvious failure modes"
+        weight: 35
+      - criterion: "Clear mechanistic explanations"
+        weight: 25
+      - criterion: "Practical amendments proposed"
+        weight: 25
+      - criterion: "Trade-off analysis depth"
+        weight: 15
+
+  t3_q2_system_failure:
+    tier: 3
+    name: "Complex System Failure Analysis"
+    prompt: |
+      A distributed payment system failed, causing double-charges. Post-mortem data:
+      - Exactly-once delivery was implemented using idempotency keys
+      - Database uses read replicas with eventual consistency (100ms typical lag)
+      - The idempotency check reads from a replica, write goes to primary
+      - Failure occurred during a replica lag spike to 500ms
+
+      Questions:
+      1. Explain precisely how double-charges occurred despite idempotency keys
+      2. Why didn't the team catch this in testing?
+      3. Propose two different architectural fixes with their trade-offs
+      4. What monitoring would have detected this before it affected customers?
+    expected: "Read-your-writes violation, replica lag timing window, linearizable reads or synchronous replication"
+    scoring:
+      - criterion: "Correct root cause analysis"
+        weight: 30
+      - criterion: "Testing blind spot identification"
+        weight: 20
+      - criterion: "Valid architectural fixes"
+        weight: 30
+      - criterion: "Appropriate monitoring proposal"
+        weight: 20
+
+  t3_q3_strategic_communication:
+    tier: 3
+    name: "Strategic Communication"
+    prompt: |
+      You're CPO of a startup. Your board meeting is in 2 hours. Context:
+      - Last quarter: missed revenue target by 40%, burned 25% more cash than planned
+      - But: your new enterprise product has 3 signed LOIs from Fortune 500 companies
+      - Team morale is low after layoffs
+      - One board member has been pushing to replace you
+
+      Write a 5-minute opening statement for the board meeting that:
+      1. Acknowledges problems without being defensive
+      2. Presents the LOIs as a strategic pivot, not a rescue
+      3. Proposes specific 90-day milestones
+      4. Addresses the elephant in the room (your position) indirectly
+
+      The tone should be confident but not dismissive of legitimate concerns.
+    expected: "Sophisticated framing, specific milestones, implicit confidence through action orientation"
+    scoring:
+      - criterion: "Appropriate acknowledgment of issues"
+        weight: 25
+      - criterion: "Strategic framing of LOIs"
+        weight: 25
+      - criterion: "Specific actionable milestones"
+        weight: 25
+      - criterion: "Subtlety in addressing position"
+        weight: 25
+
 inference_params:
   temperature: 0.3
-  max_tokens: 512
-  timeout: 120
+  max_tokens: 2048
+  timeout: 180
