@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-19 (Claude-as-Judge: DeepSeek-R1-0528-Qwen3-8B 100% thinking but 24% inst.prec)
+**Last Updated:** 2025-12-19 (MathSmith-8B 5x slower than expected - use Qwen2.5-Math-7B instead)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -428,6 +428,8 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 
 ⚠️ **DeepSeek-R1-0528-Qwen3-8B Warning:** 100% thinking accuracy but only 24% instruction precision. Model echoes prompts and outputs verbose reasoning instead of clean structured output. Unsuitable for orchestration tasks requiring exact format compliance.
 
+⚠️ **MathSmith-Hard-Problem-Synthesizer-Qwen3-8B Warning:** Runs at 3.5 t/s instead of expected 15+ t/s for an 8B model (5x slower). Uses only 6% of memory bandwidth - severely compute-bound. Likely mradermacher GGUF conversion issue or hidden architecture differences. Use Qwen2.5-Math-7B-Instruct (11.3 t/s) instead.
+
 `*` = scored on old (easier) questions before hardening
 Scores without `*` = tested on complete 60-120 question suites (2025-12-19)
 
@@ -524,7 +526,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
 | **Gemma-3-12B-IT** | general | 29/30 | 27/27 | 27/30 | 28/30 | 26/30 | 28/33 | **91.7%** | 9.2 | - | - | - | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - | - | - | - |
-| MathSmith-Qwen3-8B | math | - | - | - | - | - | - | - | - | - | - | - | - |
+| MathSmith-Qwen3-8B ⚠️ | math | - | - | - | - | - | - | - | **3.5** ⚠️ | - | - | - | - |
 
 #### Vision Models
 
