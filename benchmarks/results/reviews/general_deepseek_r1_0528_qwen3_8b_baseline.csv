@@ -1,0 +1,30 @@
+question_id,score,reason
+thinking/t1_q1_multistep,3,Excellent: correct train problem reasoning with algebra
+thinking/t1_q2_hypothesis,3,Excellent: identifies confounding variable and reverse causation
+thinking/t1_q3_planning,3,Excellent: correct constraint reasoning for plant ordering
+thinking/t2_q1_paradox,3,Excellent: detailed Ship of Theseus analysis
+thinking/t2_q2_counterfactual,3,Excellent: thoughtful counterfactual with table and essay
+thinking/t3_q1_methodological_critique,3,Excellent: identifies confounding and validity threats
+thinking/t3_q2_causal_inference,3,Excellent: correct DAG analysis and adjustment set
+thinking/t3_q3_reasoning_trap,3,Excellent: identifies test set distribution flaw
+agentic/t1_q1_sequential,1,Wrong: echoes prompt and reasons but no JSON array output
+agentic/t1_q2_error_handling,1,Wrong: discusses approach but no tool call JSON
+agentic/t1_q3_nested_params,1,Wrong: reasoning only no final JSON output
+agentic/t2_q1_ambiguous,3,Excellent: asks clarifying questions appropriately
+agentic/t2_q2_error_chain,2,Good: correct debugging chain reasoning but verbose
+agentic/t2_q3_schema_edge,2,Good: correct GET request analysis but format unclear
+agentic/t2_q4_orchestration,2,Good: deployment plan reasoning but JSON format unclear
+agentic/t3_q1_competing_constraints,3,Excellent: robust plan for unknown schema
+agentic/t3_q2_multi_agent_coordination,3,Excellent: good orchestration design
+agentic/t3_q3_adversarial_robustness,3,Excellent: identifies command injection security issue
+instruction_precision/t1_q1_negative_instruction,0,Failed: immediately mentions sunlight violating constraint
+instruction_precision/t1_q2_word_limit,1,Wrong: extensive reasoning no clean 20-25 word output
+instruction_precision/t1_q3_structured_format,1,Wrong: lists languages but adds excessive explanation
+instruction_precision/t1_q4_multiple_constraints,0,Failed: lists 30+ countries not exactly 5
+instruction_precision/t2_q1_resist_elaboration,0,Failed: should output only 4 but gives reasoning
+instruction_precision/t2_q2_maintain_format,0,Failed: explains error instead of using exact format
+instruction_precision/t2_q3_empty_handling,1,Wrong: says NONE but then explains
+instruction_precision/t2_q4_conflicting_constraints,1,Wrong: shows reasoning but no final sentence
+instruction_precision/t3_q1_self_referential,1,Wrong: reasoning only no self-referential sentence
+instruction_precision/t3_q2_cascading_constraints,1,Wrong: gets confused by first word constraint
+instruction_precision/t3_q3_meta_instruction,2,Good: correctly identifies valid instruction format

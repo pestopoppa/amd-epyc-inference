@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-19 (Claude-as-Judge: Gemma-3-12B-IT 91.7%, Qwen3-VL models 0% agentic flagged)
+**Last Updated:** 2025-12-19 (Claude-as-Judge: DeepSeek-R1-0528-Qwen3-8B 100% thinking but 24% inst.prec)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -426,6 +426,8 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 
 ⚠️ **Qwen3-VL Warning:** All Qwen3-VL models (2B/4B/8B) score 0% on agentic tasks - all tool-call prompts return empty. Use Qwen2.5-VL for vision tasks requiring tool coordination.
 
+⚠️ **DeepSeek-R1-0528-Qwen3-8B Warning:** 100% thinking accuracy but only 24% instruction precision. Model echoes prompts and outputs verbose reasoning instead of clean structured output. Unsuitable for orchestration tasks requiring exact format compliance.
+
 `*` = scored on old (easier) questions before hardening
 Scores without `*` = tested on complete 60-120 question suites (2025-12-19)
 
@@ -506,7 +508,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | - | - | - | - | - | - | - | - | - | - | - | - |
 | DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
-| DeepSeek-R1-0528-Qwen3-8B | general | - | - | - | - | - | - | - | - | - | - | - | - |
+| DeepSeek-R1-0528-Qwen3-8B | thinking | 24/24 | - | - | 21/30 | - | 8/33 | **60.9%** ⚠️ | 8.7 | - | - | - | - |
 | Qwen3-4B-Thinking-2507-Q8_0 | thinking | 22/30 | 19/30 | 8/9 | 5/9 | - | - | **69%** | 18.0 | - | - | - | - |
 
 #### Tier C: Workers & General Models
