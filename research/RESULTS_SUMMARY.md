@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-19
+**Last Updated:** 2025-12-19 (Claude-as-Judge complete scoring with 60-120 question suites)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -417,14 +417,14 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 |------|-------|-------|--------------|
 | **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93%* | 7.2 |
 | **Thinking Fast** | Qwen3-4B-Thinking-2507-Q8_0 | **69%** | 18.0 |
-| **General Worker** | Qwen2.5-7B | 89%* | 12.9 |
-| **Math Worker** | Qwen2.5-Math-7B | **65%** | 14.0 |
-| **Vision Primary** | Qwen3-VL-2B | 79%* | 48.9 |
+| **General Worker** | Qwen2.5-7B-Q4_K_S | **69.4%** | 16.0 |
+| **Math Worker** | Qwen2.5-Math-7B-Instruct | **60.0%** | 11.3 |
+| **Vision Primary** | Qwen2.5-VL-7B-Instruct | **69.4%** | 11.8 |
 | **Draft (Dense)** | Qwen2.5-Coder-0.5B | **63%** | 182.8 |
 | **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | **65%** | 29.5 |
 
 `*` = scored on old (easier) questions before hardening
-Scores without `*` = tested on hardened post-doctoral T3 prompts
+Scores without `*` = tested on complete 60-120 question suites (2025-12-19)
 
 ### Complete Model Database with Claude Scores
 
@@ -510,15 +510,14 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
-| **Qwen2.5-7B** | general | 26/30 | 25/30 | 30/30 | 30/30 | 29/30 | 23/33 | **89%*** | 12.9 | 214.5 | Qwen2.5-Coder-0.5B | 24 | - |
-| Meta-Llama-3-8B | worker_general | 20/30 | 20/30 | - | 19/30 | - | - | 66%* | 17.52 | 37.07 | (lookup) | - | - |
-| Meta-Llama-3-8B (fp16) | worker | - | - | - | - | - | - | - | - | - | - | - | - |
-| Meta-Llama-3-8B (toolrunner) | toolrunner | - | 21/30 | - | - | - | - | 70%* | 17.52 | - | - | - | - |
-| Meta-Llama-3.1-8B (Q4_K_S) | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%*** | 63.5 | - | - | - | - |
-| Qwen2.5-Math-7B | worker_math | 20/30 | 19/30 | 5/6 | 3/6 | - | - | **65%** | 14.0 | - | - | - | - |
-| Qwen2.5-VL-7B | worker_vision | 21/30 | 20/30 | - | 20/30 | - | - | 68%* | 15.28 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
+| **Qwen2.5-7B-Q4_K_S** | general | 40/60 | 42/60 | 42/60 | 40/60 | 46/60 | 44/66 | **69.4%** | 16.0 | - | - | - | - |
+| Meta-Llama-3-8B-Instruct | worker_general | 37/60 | 36/60 | 19/30 | 40/60 | 22/30 | 22/33 | **64.5%** | 12.6 | - | - | - | - |
+| Meta-Llama-3-8B-Instruct | toolrunner | 19/30 | 37/60 | 20/30 | 20/30 | 22/30 | 22/33 | **65.7%** | 13.8 | - | - | - | - |
+| Meta-Llama-3.1-8B (Q4_K_S) | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%** | 63.5 | - | - | - | - |
+| **Qwen2.5-Math-7B-Instruct** | worker_math | 43/60 | 30/60 | 27/30 | 26/60 | - | - | **60.0%** | 11.3 | - | - | - | - |
+| **Qwen2.5-VL-7B-Instruct** | worker_vision | 22/30 | 43/60 | - | 40/60 | - | - | **69.4%** | 11.8 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
-| Gemma-3-12B | general | - | - | - | - | - | - | - | 10.42 | - | - | - | - |
+| Gemma-3-12B-IT | general | - | - | - | - | - | - | - | 9.2 | - | - | - | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - | - | - | - |
 | MathSmith-Qwen3-8B | math | - | - | - | - | - | - | - | - | - | - | - | - |
 

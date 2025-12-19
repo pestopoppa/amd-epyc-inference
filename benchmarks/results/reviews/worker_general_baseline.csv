@@ -1,31 +1,92 @@
-suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,7.9,2,Response generated
-general,t1_q2_summarize,7.8,2,Response generated
-general,t1_q3_extract,7.5,2,Response generated
-general,t2_q1_json,7.6,2,Response generated
-general,t2_q2_multistep,7.8,2,Response generated
-general,t2_q3_compare,7.6,2,Response generated
-general,t3_q1_synthesis,7.7,2,Response generated
-general,t3_q2_transform,7.5,2,Response generated
-general,t3_q3_schedule,7.4,2,Response generated
-general,t3_q4_inconsistency,7.5,2,Response generated
-thinking,t1_q1_logic,7.8,2,Response generated
-thinking,t1_q2_sequence,7.2,2,Response generated
-thinking,t1_q3_deduction,7.2,2,Response generated
-thinking,t2_q1_multistep,7.1,2,Response generated
-thinking,t2_q2_hypothesis,7.7,2,Response generated
-thinking,t2_q3_planning,7.6,2,Response generated
-thinking,t3_q1_paradox,7.6,2,Response generated
-thinking,t3_q2_counterfactual,7.8,2,Response generated
-thinking,t3_q3_formal,7.6,2,Response generated
-thinking,t3_q4_metacognition,7.5,2,Response generated
-agentic,t1_q1_single_tool,7.5,1,Repetition detected
-agentic,t1_q2_multi_param,7.5,2,Response generated
-agentic,t1_q3_choose_tool,7.5,2,Response generated
-agentic,t2_q1_sequential,7.7,2,Response generated
-agentic,t2_q2_error_handling,11.1,2,Response generated
-agentic,t2_q3_nested_params,10.0,2,Response generated
-agentic,t3_q1_ambiguous,12.5,2,Response generated
-agentic,t3_q2_error_chain,10.5,2,Response generated
-agentic,t3_q3_schema_edge,8.3,2,Response generated
-agentic,t3_q4_orchestration,7.4,2,Response generated
+question_id,score,reason
+thinking/t1_q1_logic,1,Wrong: invalid syllogism but concludes YES
+thinking/t1_q1_multistep,1,Wrong time (12:30 PM instead of correct 11:34 AM)
+thinking/t1_q2_hypothesis,2,Attempts confounding factors
+thinking/t1_q2_sequence,2,Correct sequence pattern
+thinking/t1_q3_deduction,2,Correct pet deduction
+thinking/t1_q3_planning,2,Attempts constraint reasoning
+thinking/t2_q1_multistep,1,Wrong time (same as t1)
+thinking/t2_q1_paradox,2,Good philosophical analysis
+thinking/t2_q2_counterfactual,2,Addresses dimensions
+thinking/t2_q2_hypothesis,2,Attempts confounding factors
+thinking/t2_q3_formal,2,Attempts transitivity proof
+thinking/t2_q3_planning,2,Attempts constraint reasoning
+thinking/t2_q4_metacognition,2,Fermi estimation approach
+thinking/t3_q1_methodological_critique,2,Identifies methodological issues
+thinking/t3_q1_paradox,2,Good philosophical analysis
+thinking/t3_q2_causal_inference,2,DAG analysis attempt
+thinking/t3_q2_counterfactual,2,Addresses dimensions
+thinking/t3_q3_formal,2,Attempts transitivity proof
+thinking/t3_q3_reasoning_trap,2,Identifies reasoning trap
+thinking/t3_q4_metacognition,2,Fermi estimation approach
+general/t1_q1_json,2,Correct JSON but includes extra content
+general/t1_q1_reformat,2,Correct bullet list format
+general/t1_q2_multistep,1,Shows code approach instead of output
+general/t1_q2_summarize,2,Good summary
+general/t1_q3_compare,2,Good comparison
+general/t1_q3_extract,2,Shows extraction approach
+general/t2_q1_json,2,Correct JSON output
+general/t2_q1_synthesis,2,Good synthesis
+general/t2_q2_multistep,1,Shows code approach instead of output
+general/t2_q2_transform,2,YAML transformation attempt
+general/t2_q3_compare,2,Good comparison
+general/t2_q3_schedule,1,Schedule attempt with issues
+general/t2_q4_inconsistency,2,Identifies inconsistencies
+general/t3_q1_policy_analysis,2,Good policy analysis
+general/t3_q1_synthesis,2,Good synthesis
+general/t3_q2_system_failure,2,Good replica lag analysis
+general/t3_q2_transform,2,YAML transformation
+general/t3_q3_schedule,1,Schedule attempt with issues
+general/t3_q3_strategic_communication,2,Good communication plan
+general/t3_q4_inconsistency,2,Identifies inconsistencies
+agentic/t1_q1_sequential,2,Correct JSON array format
+agentic/t1_q1_single_tool,2,Correct JSON output
+agentic/t1_q2_error_handling,2,Good error handling
+agentic/t1_q2_multi_param,2,Correct JSON with parameters
+agentic/t1_q3_choose_tool,2,Correct tool choice
+agentic/t1_q3_nested_params,2,Good nested JSON
+agentic/t2_q1_ambiguous,2,Handles ambiguity
+agentic/t2_q1_sequential,2,Correct JSON array
+agentic/t2_q2_error_chain,2,Good error chain handling
+agentic/t2_q2_error_handling,2,Good error handling
+agentic/t2_q3_nested_params,2,Good nested parameter handling
+agentic/t2_q3_schema_edge,2,Good schema edge handling
+agentic/t2_q4_orchestration,2,Good orchestration plan
+agentic/t3_q1_ambiguous,2,Good ambiguity handling
+agentic/t3_q1_competing_constraints,2,Good constraint reasoning
+agentic/t3_q2_error_chain,2,Good error chain
+agentic/t3_q2_multi_agent_coordination,2,Good coordination
+agentic/t3_q3_adversarial_robustness,2,Good security analysis
+agentic/t3_q3_schema_edge,2,Good schema handling
+agentic/t3_q4_orchestration,2,Good orchestration
+instruction_precision/t1_q1_negative_instruction,1,Uses required words but violates sunlight constraint
+instruction_precision/t1_q2_word_limit,2,Good word count attempt
+instruction_precision/t1_q3_structured_format,2,Good format but extra text added
+instruction_precision/t1_q4_multiple_constraints,2,Lists countries correctly
+instruction_precision/t2_q1_resist_elaboration,3,Excellent: outputs just the number 4
+instruction_precision/t2_q2_maintain_format,2,Format attempt
+instruction_precision/t2_q3_empty_handling,2,Empty handling
+instruction_precision/t2_q4_conflicting_constraints,2,Conflicting constraints handling
+instruction_precision/t3_q1_self_referential,2,Self-referential attempt
+instruction_precision/t3_q2_cascading_constraints,2,Cascading constraints
+instruction_precision/t3_q3_meta_instruction,2,Meta instruction handling
+coder/t1_q1_algorithm,3,Excellent: correct binary search with comments
+coder/t1_q2_refactor,3,Excellent: proper list comprehension refactor
+coder/t1_q3_test,2,Good test cases
+coder/t2_q1_design,2,LRU cache design
+coder/t2_q2_debug_complex,2,Race condition analysis
+coder/t2_q3_optimize,2,Optimization attempt
+coder/t2_q4_system,2,Rate limiter implementation
+coder/t3_q1_concurrent_correctness,2,ABA problem identification
+coder/t3_q2_distributed_consistency,2,Distributed consistency analysis
+coder/t3_q3_algorithmic_hardness,2,K-th smallest element analysis
+math/t1_q1_word_problem,2,Attempts word problem
+math/t1_q2_system_equations,2,Attempts system of equations
+math/t1_q3_probability,1,Wrong probability (0.02 instead of 2/9)
+math/t2_q1_optimization,2,Optimization problem attempt
+math/t2_q2_proof,2,Induction proof attempt
+math/t2_q3_calculus,2,Calculus problem
+math/t2_q4_statistics,2,Statistics calculations
+math/t3_q1_analysis,2,Analysis attempt
+math/t3_q2_combinatorics,2,Combinatorics attempt
+math/t3_q3_probability_theory,2,Probability theory attempt

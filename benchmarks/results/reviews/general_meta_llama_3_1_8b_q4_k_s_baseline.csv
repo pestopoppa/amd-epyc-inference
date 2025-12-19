@@ -1,62 +1,26 @@
-suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,108.0,0,Empty output
-general,t1_q2_summarize,128.9,0,Empty output
-general,t1_q3_extract,6.3,1,Gives regex pattern but not actual emails
-general,t2_q1_json,6.6,2,Has JSON but with explanatory prefix
-general,t2_q2_multistep,6.5,2,Started code approach
-general,t2_q3_compare,131.7,0,Empty output
-general,t3_q1_synthesis,6.4,0,Empty output
-general,t3_q2_transform,6.3,1,Just repeated input without transformation
-general,t3_q3_schedule,6.3,0,Only listed constraints without schedule
-general,t3_q4_inconsistency,135.9,0,Empty output
-agentic,t1_q1_single_tool,6.3,2,Correct JSON but with extra text
-agentic,t1_q2_multi_param,6.4,2,Correct JSON but with extra text
-agentic,t1_q3_choose_tool,6.4,1,Listed all tools instead of choosing one
-agentic,t2_q1_sequential,125.4,0,Empty output
-agentic,t2_q2_error_handling,136.5,0,Empty output
-agentic,t2_q3_nested_params,6.3,1,Just echoed schema without filling
-agentic,t3_q1_ambiguous,6.5,1,Listed tools instead of taking action
-agentic,t3_q2_error_chain,161.7,0,Empty output
-agentic,t3_q3_schema_edge,6.3,0,Wrong - generated unrelated Notion API code
-agentic,t3_q4_orchestration,6.4,0,Empty output
-instruction_precision,t1_q1_json_only,6.5,0,Empty output
-instruction_precision,t1_q2_exact_count,6.5,0,Repetition loop instead of benefits
-instruction_precision,t1_q3_single_word,104.1,0,Empty output
-instruction_precision,t2_q1_negative_instruction,6.9,0,Just repeated DO NOT instructions
-instruction_precision,t2_q2_word_limit,6.5,0,Repetition loop
-instruction_precision,t2_q3_structured_format,6.4,2,Correct format but repeated
-instruction_precision,t2_q4_multiple_constraints,6.5,0,Repetition loop
-instruction_precision,t3_q1_resist_elaboration,6.5,0,Repetition loop
-instruction_precision,t3_q2_maintain_format,6.5,1,Partial format
-instruction_precision,t3_q3_empty_handling,6.5,1,Code instead of NONE
-instruction_precision,t3_q4_conflicting_constraints,6.4,0,Repetition loop
-thinking,t1_q1_logic,6.1,0,WRONG - concludes yes when should be no
-thinking,t1_q2_sequence,126.6,0,Empty output
-thinking,t1_q3_deduction,107.3,0,Empty output
-thinking,t2_q1_multistep,115.4,0,Empty output
-thinking,t2_q2_hypothesis,7.2,2,Some alternative explanations
-thinking,t2_q3_planning,160.8,0,Empty output
-thinking,t3_q1_paradox,159.1,0,Empty output
-thinking,t3_q2_counterfactual,6.8,2,Partial analysis
-thinking,t3_q3_formal,91.2,0,Empty output
-thinking,t3_q4_metacognition,6.2,0,Off topic about Law of Large Numbers
-coder,t1_q1_function,6.5,2,Function works but returns False for example
-coder,t1_q2_debug,103.5,0,Empty output
-coder,t2_q1_algorithm,110.6,0,Empty output
-coder,t2_q2_refactor,96.4,0,Empty output
-coder,t2_q3_test,6.5,1,Started tests but incomplete
-coder,t3_q1_design,132.0,0,Empty output
-coder,t3_q2_debug_complex,172.1,0,Empty output
-coder,t3_q3_optimize,167.5,0,Empty output
-coder,t3_q4_system,11.3,0,Empty output
-coder,t1_q3_explain,11.6,1,Partially explains but confusing
-math,t1_q1_arithmetic,224.0,0,Empty output
-math,t1_q2_algebra,157.9,0,Empty output
-math,t1_q3_conversion,125.9,0,Empty output
-math,t2_q1_word_problem,167.3,0,Empty output
-math,t2_q2_system_equations,120.3,0,Empty output
-math,t2_q3_probability,150.4,0,Empty output
-math,t3_q1_optimization,8.3,2,Wrong setup (2x+2y+2y instead of x+2y)
-math,t3_q2_proof,6.1,0,Admits doesnt know how to do it
-math,t3_q3_calculus,6.2,0,Admits has no idea how to do this
-math,t3_q4_statistics,122.3,0,Empty output
+question_id,score,reason
+thinking/t1_q1_multistep,0,BROKEN: repetition loop - prompt repeated many times
+thinking/t1_q2_hypothesis,0,No answer - just shows prompt and [end of text]
+thinking/t1_q3_planning,0,Base model - no instruction following
+thinking/t2_q1_paradox,0,Base model - no instruction following
+thinking/t2_q2_counterfactual,0,Base model - no instruction following
+thinking/t2_q3_formal,0,Base model - no instruction following
+thinking/t2_q4_metacognition,0,Base model - no instruction following
+thinking/t3_q1_methodological_critique,0,Base model - no instruction following
+thinking/t3_q2_causal_inference,0,Base model - no instruction following
+thinking/t3_q3_reasoning_trap,0,Base model - no instruction following
+general/t1_q1_json,0,No JSON output - shows prompt + random URL
+general/t1_q2_multistep,0,BROKEN: repetition loop - "cherry" repeated hundreds of times
+general/t1_q3_compare,0,Base model - no instruction following
+general/t2_q1_synthesis,0,Base model - no instruction following
+general/t2_q2_transform,0,Base model - no instruction following
+general/t2_q3_schedule,0,Base model - no instruction following
+general/t2_q4_inconsistency,0,Base model - no instruction following
+general/t3_q1_policy_analysis,0,Base model - no instruction following
+general/t3_q2_system_failure,0,Base model - no instruction following
+general/t3_q3_strategic_communication,0,Base model - no instruction following
+math/t1_q1_word_problem,0,No answer - just shows prompt
+math/t3_q3_probability_theory,0,Base model - no instruction following
+agentic/t1_q1_sequential,0,No JSON - just shows prompt
+agentic/t3_q2_multi_agent_coordination,0,Base model - no instruction following
+agentic/t3_q3_adversarial_robustness,0,Base model - no instruction following
