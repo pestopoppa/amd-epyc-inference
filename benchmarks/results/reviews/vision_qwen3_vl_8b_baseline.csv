@@ -1,14 +1,32 @@
 question_id,score,reason
-general/t1_q1_json,0,No answer - just echoes prompt
-general/t1_q2_multistep,0,BROKEN: repetition loop - "cantaloupe" repeated
-general/t1_q3_compare,0,No answer - just echoes prompt
-general/t2_q1_synthesis,2,Good phased recommendation
-general/t2_q2_transform,2,Reasonable YAML transformation
-general/t2_q3_schedule,1,Partial schedule analysis
-general/t2_q4_inconsistency,0,No answer - just echoes prompt
-general/t3_q1_policy_analysis,2,Good policy analysis
-general/t3_q2_system_failure,0,No answer - just echoes prompt
-general/t3_q3_strategic_communication,2,Good strategic advice
-agentic/t1_q1_sequential,0,No answer - just echoes prompt
-agentic/t3_q2_multi_agent_coordination,0,No answer - just echoes prompt
-agentic/t3_q3_adversarial_robustness,0,No answer - just echoes prompt
+vl/t1_q1_ocr,0,Empty response
+vl/t1_q1_chart,2,Good: identifies Sales highest at 120, Marketing lowest
+vl/t1_q2_invoice,3,Excellent: extracts $1250 total with itemized breakdown
+vl/t1_q3_code,0,Empty response
+vl/t2_q1_math,3,Excellent: correct algebra 2x+5=17 -> x=6
+vl/t2_q2_flowchart,2,Good: scholarship decision flowchart analysis
+vl/t2_q3_diff,2,Attempts image differences but vague
+vl/t2_q4_puzzle,0,Repetition loop: questions about relationships
+vl/t3_q1_scientific_diagram,1,Needs image but offers analysis framework
+vl/t3_q2_architectural_blueprint,3,Excellent: identifies 28in door width code violation
+vl/t3_q3_multi_image_temporal,2,Good: forest-to-urban transition framework
+general/t1_q1_json,0,Empty response
+general/t1_q2_multistep,0,Broken: fruit list instead of processing
+general/t1_q3_compare,0,Empty response
+general/t2_q1_synthesis,3,Excellent: phased pilot + refactor recommendation
+general/t2_q2_transform,2,Good: YAML grouping with explanation
+general/t2_q3_schedule,2,Good: step-by-step constraint analysis
+general/t2_q4_inconsistency,0,Empty response
+general/t3_q1_policy_analysis,3,Excellent: detailed failure modes with mechanisms
+general/t3_q2_system_failure,0,Empty response
+general/t3_q3_strategic_communication,3,Excellent: collaborative board communication
+agentic/t1_q1_sequential,0,Empty response
+agentic/t1_q2_error_handling,0,Empty response
+agentic/t1_q3_nested_params,0,Empty response
+agentic/t2_q1_ambiguous,0,Empty response
+agentic/t2_q2_error_chain,0,Empty response
+agentic/t2_q3_schema_edge,0,Empty response
+agentic/t2_q4_orchestration,0,Empty response
+agentic/t3_q1_competing_constraints,0,Empty response
+agentic/t3_q2_multi_agent_coordination,0,Empty response
+agentic/t3_q3_adversarial_robustness,0,Empty response

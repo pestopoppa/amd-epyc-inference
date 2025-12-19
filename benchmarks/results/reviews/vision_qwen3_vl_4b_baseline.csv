@@ -1,14 +1,61 @@
 question_id,score,reason
-general/t1_q1_json,2,Correct JSON output
-general/t1_q2_multistep,0,BROKEN: repetition loop
-general/t1_q3_compare,2,Good comparison
-general/t2_q1_synthesis,2,Good synthesis
-general/t2_q2_transform,2,YAML transformation
-general/t2_q3_schedule,1,Partial schedule
-general/t2_q4_inconsistency,2,Identifies inconsistencies
-general/t3_q1_policy_analysis,2,Policy analysis
-general/t3_q2_system_failure,2,Good debugging
-general/t3_q3_strategic_communication,2,Good strategic advice
-agentic/t1_q1_sequential,2,Correct JSON format
-agentic/t3_q2_multi_agent_coordination,2,Good coordination plan
-agentic/t3_q3_adversarial_robustness,2,Security analysis
+vl/t1_q1_ocr,0,Empty response
+vl/t1_q1_chart,0,Repetition loop: asks questions instead of answering
+vl/t1_q2_shapes,1,Admits cannot see image but offers framework
+vl/t1_q2_invoice,0,Empty response
+vl/t1_q3_icon,0,Repetition loop: emoji repetition
+vl/t1_q3_code,0,Empty response
+vl/t2_q1_chart,0,Repetition loop: questions instead of analysis
+vl/t2_q1_math,3,Excellent: correct algebra solution 3x+5=2x+10 -> x=5
+vl/t2_q2_flowchart,0,Repetition loop: questions about flowchart
+vl/t2_q2_invoice,0,Empty response
+vl/t2_q3_code,0,Empty response
+vl/t2_q3_diff,0,Empty response
+vl/t2_q4_puzzle,0,Repetition loop: questions about sequence
+vl/t3_q1_math,3,Excellent: correct algebra solution 2x+3=7 -> x=2
+vl/t3_q1_scientific_diagram,2,Good framework for scientific figure analysis
+vl/t3_q2_flowchart,0,Repetition loop: questions
+vl/t3_q2_architectural_blueprint,2,Good assumptions and analysis framework
+vl/t3_q3_diff,0,Empty response
+vl/t3_q3_multi_image_temporal,3,Excellent: detailed temporal analysis of deforestation
+vl/t3_q4_puzzle,0,Repetition loop: questions about figures
+general/t1_q1_json,0,Empty response
+general/t1_q1_reformat,3,Excellent: perfect bullet list conversion
+general/t1_q2_multistep,0,Broken: Date repetition loop
+general/t1_q2_summarize,2,Good summary with trade-off mention
+general/t1_q3_compare,3,Excellent: nuanced microservices vs monolith comparison
+general/t1_q3_extract,1,Generates emails but hallucinated list
+general/t2_q1_json,0,Empty response
+general/t2_q1_synthesis,0,Broken: dash repetition only
+general/t2_q2_multistep,0,Broken: Date repetition loop
+general/t2_q2_transform,2,Attempts YAML with good structure explanation
+general/t2_q3_compare,2,Good comparison with trade-offs
+general/t2_q3_schedule,0,Empty response
+general/t2_q4_inconsistency,0,Empty response
+general/t3_q1_policy_analysis,3,Excellent: detailed failure modes with mechanisms
+general/t3_q1_synthesis,0,Broken: dash repetition only
+general/t3_q2_system_failure,0,Empty response
+general/t3_q2_transform,2,Good YAML grouping attempt
+general/t3_q3_schedule,0,Empty response
+general/t3_q3_strategic_communication,3,Excellent: honest board communication strategy
+general/t3_q4_inconsistency,0,Empty response
+agentic/t1_q1_sequential,0,Empty response
+agentic/t1_q1_single_tool,0,Empty response
+agentic/t1_q2_error_handling,0,Empty response
+agentic/t1_q2_multi_param,0,Empty response
+agentic/t1_q3_choose_tool,0,Empty response
+agentic/t1_q3_nested_params,0,Empty response
+agentic/t2_q1_ambiguous,0,Empty response
+agentic/t2_q1_sequential,0,Empty response
+agentic/t2_q2_error_chain,0,Empty response
+agentic/t2_q2_error_handling,0,Empty response
+agentic/t2_q3_nested_params,0,Empty response
+agentic/t2_q3_schema_edge,0,Empty response
+agentic/t2_q4_orchestration,0,Empty response
+agentic/t3_q1_ambiguous,0,Empty response
+agentic/t3_q1_competing_constraints,0,Empty response
+agentic/t3_q2_error_chain,0,Empty response
+agentic/t3_q2_multi_agent_coordination,0,Empty response
+agentic/t3_q3_adversarial_robustness,0,Empty response
+agentic/t3_q3_schema_edge,0,Empty response
+agentic/t3_q4_orchestration,0,Empty response

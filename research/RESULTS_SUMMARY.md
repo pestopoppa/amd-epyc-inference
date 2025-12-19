@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-19 (Claude-as-Judge complete scoring with 60-120 question suites)
+**Last Updated:** 2025-12-19 (Claude-as-Judge: Gemma-3-12B-IT 91.7%, Qwen3-VL models 0% agentic flagged)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -415,6 +415,7 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 
 | Role | Model | Score | Baseline t/s |
 |------|-------|-------|--------------|
+| **General Best** | Gemma-3-12B-IT | **91.7%** | 9.2 |
 | **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93%* | 7.2 |
 | **Thinking Fast** | Qwen3-4B-Thinking-2507-Q8_0 | **69%** | 18.0 |
 | **General Worker** | Qwen2.5-7B-Q4_K_S | **69.4%** | 16.0 |
@@ -422,6 +423,8 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 | **Vision Primary** | Qwen2.5-VL-7B-Instruct | **69.4%** | 11.8 |
 | **Draft (Dense)** | Qwen2.5-Coder-0.5B | **63%** | 182.8 |
 | **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | **65%** | 29.5 |
+
+⚠️ **Qwen3-VL Warning:** All Qwen3-VL models (2B/4B/8B) score 0% on agentic tasks - all tool-call prompts return empty. Use Qwen2.5-VL for vision tasks requiring tool coordination.
 
 `*` = scored on old (easier) questions before hardening
 Scores without `*` = tested on complete 60-120 question suites (2025-12-19)
@@ -517,7 +520,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen2.5-Math-7B-Instruct** | worker_math | 43/60 | 30/60 | 27/30 | 26/60 | - | - | **60.0%** | 11.3 | - | - | - | - |
 | **Qwen2.5-VL-7B-Instruct** | worker_vision | 22/30 | 43/60 | - | 40/60 | - | - | **69.4%** | 11.8 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
-| Gemma-3-12B-IT | general | - | - | - | - | - | - | - | 9.2 | - | - | - | - |
+| **Gemma-3-12B-IT** | general | 29/30 | 27/27 | 27/30 | 28/30 | 26/30 | 28/33 | **91.7%** | 9.2 | - | - | - | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - | - | - | - |
 | MathSmith-Qwen3-8B | math | - | - | - | - | - | - | - | - | - | - | - | - |
 
@@ -532,11 +535,10 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | - | - | - | - | - | - | - | 36.84 | 29.88 ❌ | (lookup) | - | - |
 | Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | - | - | - | - | - | - | - | 28.41 | - | - | - | - |
 | Qwen2.5-VL-7B | worker_vision | - | - | - | - | - | - | - | 68%* | 15.28 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
-| **Qwen3-VL-2B** | vision | - | 21/30 | - | 30/30 | - | - | 20/30 | **79%*** | 48.9 | - | - | - | - |
-| Qwen3-VL-4B (Q4_K_M) | vision | - | 20/30 | - | 30/30 | - | - | 12/30 | 69%* | 78.6 | - | - | - | - |
-| Qwen3-VL-4B (Q8_0) | vision | - | 20/30 | - | 30/30 | - | - | 12/30 | 69%* | 35.0 | - | - | - | - |
-| Qwen3-VL-8B (Q4_K_M) | vision | - | - | - | - | - | - | 0/3 | **0%*** | 78.7 | - | - | - | - |
-| Qwen3-VL-8B (Q8_0) | vision | - | - | - | - | - | - | - | - | - | - | - | - | - |
+| **Qwen3-VL-2B-Q4_K_M** | vision | - | 12/60 | - | 25/60 | - | - | 1/60 | **21.1%** | 48.0 | - | - | - | - |
+| Qwen3-VL-4B (Q4_K_M) | vision | - | 21/60 | - | 0/60 | - | - | 14/60 | **19.4%** | 78.9 | - | - | - | - |
+| Qwen3-VL-4B (Q8_0) | vision | - | 15/60 | - | 0/60 | - | - | 23/60 | **21.1%** | 32.5 | - | - | - | - |
+| Qwen3-VL-8B (Q4_K_M) | vision | - | 13/30 | - | 0/30 | - | - | 18/33 | **33.3%** | 38.8 | - | - | - | - |
 
 #### Tier D: Draft Models (Qwen2.5 Family)
 

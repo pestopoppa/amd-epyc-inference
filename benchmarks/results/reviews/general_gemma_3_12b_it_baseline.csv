@@ -1,0 +1,61 @@
+question_id,score,reason
+thinking/t1_q1_multistep,3,Excellent: correct train problem setup with algebra
+thinking/t1_q2_hypothesis,3,Excellent: identifies socioeconomic confounding factor
+thinking/t1_q3_planning,3,Excellent: correct constraint reasoning A->B->D->C
+thinking/t2_q1_paradox,3,Excellent: detailed Ship of Theseus analysis
+thinking/t2_q2_counterfactual,3,Excellent: thoughtful knowledge dissemination analysis
+thinking/t2_q3_formal,3,Excellent: correct hypothetical syllogism proof
+thinking/t2_q4_metacognition,3,Excellent: good Fermi estimation approach
+thinking/t3_q1_methodological_critique,3,Excellent: identifies selection bias and other issues
+thinking/t3_q2_causal_inference,2,Good DAG analysis but adds unasked questions
+thinking/t3_q3_reasoning_trap,3,Excellent: identifies confounding variable issue
+general/t1_q1_json,3,Excellent: perfect JSON extraction
+general/t1_q2_multistep,3,Excellent: correct list processing with count=5
+general/t1_q3_compare,3,Excellent: concise microservices vs monolith comparison
+general/t2_q1_synthesis,3,Excellent: phased temporary fix + refactor recommendation
+general/t2_q2_transform,3,Excellent: properly nested YAML by department
+general/t2_q3_schedule,3,Excellent: correct schedule respecting constraints
+general/t2_q4_inconsistency,3,Excellent: identifies body encoding and rate limit inconsistencies
+general/t3_q1_policy_analysis,3,Excellent: detailed failure modes with mechanisms
+general/t3_q3_strategic_communication,3,Excellent: strategic board communication plan
+agentic/t1_q1_sequential,3,Excellent: correct JSON array tool calls
+agentic/t1_q2_error_handling,2,Good: message but not next action tool call
+agentic/t1_q3_nested_params,3,Excellent: correct nested JSON structure
+agentic/t2_q1_ambiguous,2,Good: asks clarifying question appropriately
+agentic/t2_q2_error_chain,3,Excellent: get_logs for database debugging
+agentic/t2_q3_schema_edge,3,Excellent: correct JSON with null body and headers
+agentic/t2_q4_orchestration,3,Excellent: full deployment workflow with steps
+agentic/t3_q1_competing_constraints,3,Excellent: multi-step plan with read_file first
+agentic/t3_q2_multi_agent_coordination,3,Excellent: phased agent coordination plan
+agentic/t3_q3_adversarial_robustness,3,Excellent: identifies command injection security issue
+instruction_precision/t1_q1_negative_instruction,3,Excellent: explains photosynthesis without sunlight
+instruction_precision/t1_q2_word_limit,3,Excellent: exactly 20 words
+instruction_precision/t1_q3_structured_format,3,Excellent: correct Language (Year) format
+instruction_precision/t1_q4_multiple_constraints,3,Excellent: 5 EU countries no repeated starting letters
+instruction_precision/t2_q1_resist_elaboration,3,Excellent: just outputs 4
+instruction_precision/t2_q2_maintain_format,3,Excellent: ERROR_TYPE/ROOT_CAUSE/FIX format
+instruction_precision/t2_q3_empty_handling,3,Excellent: outputs NONE
+instruction_precision/t2_q4_conflicting_constraints,2,Good: attempts conflicting constraints
+instruction_precision/t3_q1_self_referential,1,Wrong: word/letter count is incorrect
+instruction_precision/t3_q2_cascading_constraints,2,Good: attempts cascading constraints
+instruction_precision/t3_q3_meta_instruction,2,Good: attempts meta-instruction execution
+coder/t1_q1_algorithm,3,Excellent: correct binary search implementation
+coder/t1_q2_refactor,2,Good: uses loop not list comprehension as requested
+coder/t1_q3_test,3,Excellent: comprehensive pytest test cases
+coder/t2_q1_design,2,Good: LRU cache design but incomplete
+coder/t2_q2_debug_complex,3,Excellent: identifies race condition in async code
+coder/t2_q3_optimize,3,Excellent: O(n) hash-based solution
+coder/t2_q4_system,3,Excellent: rate limiter with sliding window
+coder/t3_q1_concurrent_correctness,3,Excellent: ABA problem explanation
+coder/t3_q2_distributed_consistency,1,Wrong: restates question without answering
+coder/t3_q3_algorithmic_hardness,3,Excellent: Omega(n) lower bound proof
+math/t1_q1_word_problem,3,Excellent: correct $129.60 final price
+math/t1_q2_system_equations,3,Excellent: correct x=2 y=3
+math/t1_q3_probability,3,Excellent: correct 2/9 probability
+math/t2_q1_optimization,3,Excellent: correct maximum area calculation
+math/t2_q2_proof,3,Excellent: proper mathematical induction
+math/t2_q3_calculus,3,Excellent: correct definite integral
+math/t2_q4_statistics,3,Excellent: correct mean and median
+math/t3_q1_analysis,2,Good: differentiation analysis
+math/t3_q2_combinatorics,2,Good: combinatorial interpretation attempt
+math/t3_q3_probability_theory,2,Good: E[N] calculation approach
