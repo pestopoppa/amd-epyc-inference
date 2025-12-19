@@ -50,6 +50,9 @@ from results import ResultsManager, QuestionResult, result_exists
 LOCK_FILE = "/mnt/raid0/llm/tmp/benchmark.lock"
 QUEUE_FILE = "/mnt/raid0/llm/tmp/benchmark_queue.txt"
 
+# Speed test prompt for configs that only need speed measurement (quality inherited from baseline)
+SPEED_TEST_PROMPT = """Write a Python function that calculates the Fibonacci sequence up to n terms. Include a docstring explaining the function and type hints for all parameters and return value. Then write a brief example showing how to use the function."""
+
 
 def acquire_lock() -> Optional[int]:
     """Acquire exclusive lock for single-instance execution.
@@ -231,6 +234,67 @@ def run_benchmark(
         print(f"    [{role}] {inner_total} tests ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
 
         for config in configs:
+            # SPEED-TEST OPTIMIZATION: For configs that only need speed measurement
+            # (e.g., spec decode variants), run a single speed test instead of all questions.
+            # Quality is inherited from baseline since target model is the same.
+            if config.speed_test_only:
+                stats["total"] += 1
+
+                if dry_run:
+                    print(f"      [SPEED] {config.name} (inherits quality from {config.inherits_quality_from})", flush=True)
+                    continue
+
+                # Skip if already done
+                if not force and result_exists(run_id, role, config.name):
+                    stats["skipped"] += 1
+                    continue
+
+                try:
+                    result = executor.run_inference(
+                        model_path=model_path,
+                        config=config,
+                        prompt=SPEED_TEST_PROMPT,
+                        max_tokens=256,
+                        temperature=0.6,
+                        timeout=120,
+                    )
+
+                    if result.timed_out:
+                        stats["errors"] += 1
+                        print(f"    [TIMEOUT] {role}/{config.name} (speed test)")
+                        continue
+
+                    if not result.success:
+                        stats["errors"] += 1
+                        print(f"    [ERROR] {role}/{config.name} (speed test)")
+                        continue
+
+                    parsed = parse_output(result.raw_output)
+
+                    # Store speed-only result
+                    results_manager.add_speed_result(
+                        run_id=run_id,
+                        model_role=role,
+                        config_name=config.name,
+                        model_path=model_path,
+                        tokens_per_second=parsed.tokens_per_second or 0,
+                        inherits_quality_from=config.inherits_quality_from or "baseline",
+                        acceptance_rate=parsed.acceptance_rate,
+                    )
+
+                    tps = parsed.tokens_per_second
+                    tps_str = f"{tps:.1f}t/s" if tps else "---"
+                    acc_str = f"acc={parsed.acceptance_rate:.1%}" if parsed.acceptance_rate else ""
+                    print(f"      ⚡ {config.name}: {tps_str} {acc_str} (speed only, quality from {config.inherits_quality_from})", flush=True)
+                    stats["passed"] += 1
+
+                except Exception as e:
+                    stats["errors"] += 1
+                    print(f"    [ERROR] {role}/{config.name}: {e}")
+
+                continue  # Skip to next config
+
+            # FULL QUALITY BENCHMARK for baseline and non-spec configs
             for suite_name, sdata in suites_data.items():
                 # Skip lookup configs for short-prompt suites
                 # Only long_context has prompts long enough for lookup to be effective

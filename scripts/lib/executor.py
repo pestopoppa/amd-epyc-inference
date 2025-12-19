@@ -135,6 +135,10 @@ class Config:
     # Prompt lookup
     lookup_ngram: Optional[int] = None
 
+    # Speed-test optimization: if True, only measure speed (quality inherited from baseline)
+    speed_test_only: bool = False
+    inherits_quality_from: Optional[str] = None  # Config name to copy scores from
+
     @classmethod
     def baseline(cls) -> "Config":
         return cls(name="baseline", config_type="baseline")
@@ -233,13 +237,18 @@ class Executor:
 
         else:
             # Dense models - try speculative decoding with ALL compatible drafts
+            # NOTE: Spec decode configs are speed_test_only because quality is identical
+            # to baseline (same target model). Only speed differs.
             if "speculative_decoding" not in forbidden:
                 drafts = reg.get_drafts_for_model(role)
                 for draft_role in drafts:
                     draft_path = reg.get_model_path(draft_role)
                     if draft_path and os.path.exists(draft_path):
                         for k in [4, 8, 16, 24]:
-                            configs.append(Config.spec(k, draft_path, draft_role))
+                            cfg = Config.spec(k, draft_path, draft_role)
+                            cfg.speed_test_only = True
+                            cfg.inherits_quality_from = "baseline"
+                            configs.append(cfg)
                         # Test ALL compatible drafts, not just the first one
 
             # Skip lookup for draft models (Tier D) - they're already fast

@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-16
+**Last Updated:** 2025-12-19
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -416,14 +416,15 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 | Role | Model | Score | Baseline t/s |
 |------|-------|-------|--------------|
 | **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93%* | 7.2 |
-| **Thinking Fast** | Qwen3-4B-Thinking-2507 | 89%* | 16.5 |
+| **Thinking Fast** | Qwen3-4B-Thinking-2507 | **63%** | 17.2 |
 | **General Worker** | Qwen2.5-7B | 89%* | 12.9 |
-| **Math Worker** | Qwen2.5-Math-7B | **71%** | 11.2 |
+| **Math Worker** | Qwen2.5-Math-7B | **65%** | 14.0 |
 | **Vision Primary** | Qwen3-VL-2B | 79%* | 48.9 |
-| **Draft (Dense)** | Qwen2.5-Coder-0.5B | 65%* | 173.6 |
-| **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | 72%* | 51.3 |
+| **Draft (Dense)** | Qwen2.5-Coder-0.5B | **63%** | 182.8 |
+| **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | **65%** | 29.5 |
 
 `*` = scored on old (easier) questions before hardening
+Scores without `*` = tested on hardened post-doctoral T3 prompts
 
 ### Complete Model Database with Claude Scores
 
@@ -503,7 +504,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
 | DeepSeek-R1-0528-Qwen3-8B | general | - | - | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-4B-Thinking-2507 | thinking | 28/30 | 22/30 | 30/30 | 27/30 | - | - | **89%*** | 16.5 | 103.7 | PARD-Qwen3-0.6B | 24 | - |
+| Qwen3-4B-Thinking-2507 | thinking | 20/30 | 16/24 | 6/9 | 6/9 | - | - | **63%** | 17.2 | - | - | - | - |
 
 #### Tier C: Workers & General Models
 
@@ -514,7 +515,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Meta-Llama-3-8B (fp16) | worker | - | - | - | - | - | - | - | - | - | - | - | - |
 | Meta-Llama-3-8B (toolrunner) | toolrunner | - | 21/30 | - | - | - | - | 70%* | 17.52 | - | - | - | - |
 | Meta-Llama-3.1-8B (Q4_K_S) | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%*** | 63.5 | - | - | - | - |
-| Qwen2.5-Math-7B | worker_math | 40/60 | 38/60 | 20/30 | 40/60 | - | - | **71%** | 11.2 | 186.0 | Qwen2.5-Coder-0.5B | 24 | - |
+| Qwen2.5-Math-7B | worker_math | 20/30 | 19/30 | 5/6 | 3/6 | - | - | **65%** | 14.0 | - | - | - | - |
 | Qwen2.5-VL-7B | worker_vision | 21/30 | 20/30 | - | 20/30 | - | - | 68%* | 15.28 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
 | Gemma-3-12B | general | - | - | - | - | - | - | - | 10.42 | - | - | - | - |
@@ -542,22 +543,22 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Compatible Targets |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
-| **Qwen2.5-Coder-0.5B** (Q8_0) | draft_primary | 18/30 | 21/30 | - | - | - | - | 65%* | 173.6 | Qwen2.5-Coder-* |
+| **Qwen2.5-Coder-0.5B** (Q8_0) | draft_primary | 19/30 | 19/30 | - | - | - | - | **63%** | 182.8 | Qwen2.5-Coder-* |
 | Qwen2.5-Coder-0.5B (Q4_K_M) | draft | - | - | - | - | - | - | - | - | Qwen2.5-Coder-* |
-| **Qwen2.5-0.5B** (Q8_0) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 177.3 | Qwen2.5-* |
-| Qwen2-0.5B (Q2_K) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 200.2 | Qwen2-* |
-| Qwen2.5-Coder-1.5B (Q4_K_M) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 82.2 | Qwen2.5-* |
-| Qwen2.5-Coder-1.5B (Q2_K) | draft | 18/30 | 20/30 | - | - | - | - | 63%* | 77.2 | Qwen2.5-* |
-| Qwen2.5-Math-1.5B (Q4_K_M) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 56.1 | Qwen2.5-Math-* |
-| Qwen2.5-Math-1.5B (Q6_K) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 59.4 | Qwen2.5-Math-* |
+| **Qwen2.5-0.5B** (Q8_0) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 198.0 | Qwen2.5-* |
+| Qwen2-0.5B (Q2_K) | draft | 19/30 | 19/30 | - | - | - | - | **63%** | 185.4 | Qwen2-* |
+| Qwen2.5-Coder-1.5B (Q4_K_M) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 87.9 | Qwen2.5-* |
+| Qwen2.5-Coder-1.5B (Q2_K) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 78.7 | Qwen2.5-* |
+| Qwen2.5-Math-1.5B (Q4_K_M) | draft | 22/30 | 18/30 | - | - | - | - | **67%** | 52.5 | Qwen2.5-Math-* |
+| Qwen2.5-Math-1.5B (Q6_K) | draft | 22/30 | 18/30 | - | - | - | - | **67%** | 65.6 | Qwen2.5-Math-* |
 
 #### Tier D: Draft Models (Qwen3 Family)
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Compatible Targets |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
-| Qwen3-0.6B (Q2_K) | draft | 18/30 | 20/30 | - | - | - | - | 63%* | 127.8 | Qwen3-* |
-| PARD-Qwen3-0.6B (Q4_0) | draft | 18/30 | 21/30 | - | - | - | - | 65%* | 101.6 | Qwen3-* |
-| Qwen3-1.7B (Q4_K_M) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 44.0 | Qwen3-* |
+| Qwen3-0.6B (Q8_0) | draft | 17/30 | 18/30 | - | - | - | - | **58%** ⚠️ | 89.2 | Qwen3-* (UNRELIABLE: repetition loops) |
+| PARD-Qwen3-0.6B (Q4_0) | draft | 17/30 | 18/30 | - | - | - | - | **58%** ⚠️ | 78.4 | Qwen3-* (UNRELIABLE: repetition loops) |
+| Qwen3-1.7B (Q4_K_M) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 39.8 | Qwen3-* |
 | Co-Rewarding-II-Qwen3-1.7B-Math | draft (⚠️) | 21/30 | 21/30 | - | - | - | - | 70%* | 22.0 | incompatible |
 | Qwen3-Embedding-0.6B | draft (⚠️) | - | - | - | - | - | - | - | - | embedding only |
 | Qwen3-VL-1B-Merged (Q8_0) | draft (⚠️) | 4/6 | - | - | - | - | - | 67%* | 67.7 | corrupted output |
@@ -566,17 +567,17 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Compatible Targets |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
-| **DeepSeek-R1-Distill-Qwen-1.5B** (Q8_0) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 51.3 | DeepSeek-R1-Distill-* |
-| DeepSeek-R1-Distill-Qwen-1.5B (lmstudio) | draft | 22/30 | 20/30 | - | - | - | - | 70%* | 31.9 | DeepSeek-R1-Distill-* |
-| PARD-DeepSeek-R1-1.5B (Q5_K_S) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 60.7 | DeepSeek-R1-Distill-* |
-| PARD-DeepSeek-R1-1.5B (Q8_0) | draft | 22/30 | 21/30 | - | - | - | - | 72%* | 45.0 | DeepSeek-R1-Distill-* |
+| **DeepSeek-R1-Distill-Qwen-1.5B** (Q8_0) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 29.5 | DeepSeek-R1-Distill-* |
+| DeepSeek-R1-Distill-Qwen-1.5B (lmstudio Q8_0) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 48.0 | DeepSeek-R1-Distill-* |
+| PARD-DeepSeek-R1-1.5B (Q5_K_S) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 58.0 | DeepSeek-R1-Distill-* |
+| PARD-DeepSeek-R1-1.5B (Q8_0) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 40.9 | DeepSeek-R1-Distill-* |
 
 #### Tier D: Draft Models (Llama Family)
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Compatible Targets |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
-| PARD-Llama-3.2-1B (Q4_0) | draft | 21/30 | 21/30 | - | - | - | - | 70%* | 83.5 | Llama-3.2/3.3 |
-| PARD-Llama-3.2-1B (Q8_0) | draft | 20/30 | 21/30 | - | - | - | - | 68%* | 44.7 | Llama-3.2/3.3 |
+| PARD-Llama-3.2-1B (Q4_0) | draft | 19/30 | 19/30 | - | - | - | - | **63%** | 82.3 | Llama-3.2/3.3 |
+| PARD-Llama-3.2-1B (Q8_0) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 71.4 | Llama-3.2/3.3 |
 
 ### Review Files
 

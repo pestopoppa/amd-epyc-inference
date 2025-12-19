@@ -287,6 +287,56 @@ class ResultsManager:
         with open(self.index_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
 
+    def add_speed_result(
+        self,
+        run_id: str,
+        model_role: str,
+        config_name: str,
+        model_path: str,
+        tokens_per_second: float,
+        inherits_quality_from: str,
+        acceptance_rate: Optional[float] = None,
+    ) -> ModelConfigResult:
+        """Add a speed-test-only result (inherits quality from baseline).
+
+        For speculative decoding configs where quality is identical to baseline,
+        we only measure speed and reference the baseline for quality scores.
+
+        Returns:
+            ModelConfigResult with speed data and inheritance reference.
+        """
+        result = ModelConfigResult(
+            model_role=model_role,
+            model_path=model_path,
+            config_name=config_name,
+            run_id=run_id,
+            timestamp=datetime.now().isoformat(),
+        )
+
+        # Store speed test in a special "speed_test" suite
+        result.results["speed_test"] = {
+            "speed_measurement": QuestionResult(
+                question_id="speed_measurement",
+                prompt="[speed test prompt]",
+                response="[speed test only - quality inherited]",
+                tokens_per_second=tokens_per_second,
+                acceptance_rate=acceptance_rate,
+            )
+        }
+
+        # Mark as inheriting quality from baseline
+        result.summary = {
+            "avg_tokens_per_second": tokens_per_second,
+            "acceptance_rate": acceptance_rate,
+            "speed_test_only": True,
+            "inherits_quality_from": inherits_quality_from,
+        }
+
+        # Save
+        self.save_result(result)
+
+        return result
+
     def get_all_runs(self) -> list[str]:
         """Get all run IDs (excludes test_ runs)."""
         if not self.runs_dir.exists():

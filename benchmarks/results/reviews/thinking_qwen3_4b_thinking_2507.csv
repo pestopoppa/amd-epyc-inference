@@ -1,0 +1,9 @@
+question_id,score,reason
+agentic/t1_q1_sequential,1,Failed: gave explanation when JSON-only requested
+agentic/t3_q2_multi_agent_coordination,2,Substantive response
+agentic/t3_q3_adversarial_robustness,2,Substantive response
+math/t1_q1_word_problem,3,Excellent: all calculations correct
+math/t1_q2_algebra,2,Substantive response
+math/t3_q3_probability_theory,2,Substantive response
+thinking/t1_q1_multistep,2,Substantive response
+thinking/t1_q2_hypothesis,2,Substantive response
