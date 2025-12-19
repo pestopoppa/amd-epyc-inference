@@ -416,7 +416,7 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 | Role | Model | Score | Baseline t/s |
 |------|-------|-------|--------------|
 | **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93%* | 7.2 |
-| **Thinking Fast** | Qwen3-4B-Thinking-2507 | **63%** | 17.2 |
+| **Thinking Fast** | Qwen3-4B-Thinking-2507-Q8_0 | **69%** | 18.0 |
 | **General Worker** | Qwen2.5-7B | 89%* | 12.9 |
 | **Math Worker** | Qwen2.5-Math-7B | **65%** | 14.0 |
 | **Vision Primary** | Qwen3-VL-2B | 79%* | 48.9 |
@@ -504,7 +504,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
 | DeepSeek-R1-0528-Qwen3-8B | general | - | - | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-4B-Thinking-2507 | thinking | 20/30 | 16/24 | 6/9 | 6/9 | - | - | **63%** | 17.2 | - | - | - | - |
+| Qwen3-4B-Thinking-2507-Q8_0 | thinking | 22/30 | 19/30 | 8/9 | 5/9 | - | - | **69%** | 18.0 | - | - | - | - |
 
 #### Tier C: Workers & General Models
 
