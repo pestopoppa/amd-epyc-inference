@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-20 (Added 3 new Claude-as-Judge scores: MathSmith 95.6%, DeepSeek-R1-Distill-Qwen-14B 86.8%, Qwen3-VL-8B 52.2%)
+**Last Updated:** 2025-12-20 (Added Gemma-3-27B-IT-QAT 92.8%, MathSmith 95.6%, DeepSeek-R1-Distill-Qwen-14B 86.8%, Qwen3-VL-8B-Q8_0 52.2%, Q6_K_L partial)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
