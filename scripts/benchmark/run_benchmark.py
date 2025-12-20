@@ -38,7 +38,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.registry import ModelRegistry, load_registry
-from lib.executor import Executor, Config
+from lib.executor import Executor, Config, ServerManager
 from lib.output_parser import parse_output
 from lib.scorer import score_response
 
@@ -52,6 +52,13 @@ QUEUE_FILE = "/mnt/raid0/llm/tmp/benchmark_queue.txt"
 
 # Speed test prompt for configs that only need speed measurement (quality inherited from baseline)
 SPEED_TEST_PROMPT = """Write a Python function that calculates the Fibonacci sequence up to n terms. Include a docstring explaining the function and type hints for all parameters and return value. Then write a brief example showing how to use the function."""
+
+# Reference TPS for timeout multiplier calculation (20 t/s = 1.0x multiplier)
+REFERENCE_TPS = 20.0
+# Minimum timeout multiplier (even fast models don't get shorter timeouts)
+MIN_TIMEOUT_MULTIPLIER = 1.0
+# Default multiplier when speed test fails
+DEFAULT_TIMEOUT_MULTIPLIER = 2.0
 
 
 def acquire_lock() -> Optional[int]:
@@ -154,6 +161,7 @@ def run_benchmark(
     suite_filter: Optional[str] = None,
     force: bool = False,
     dry_run: bool = False,
+    server_mode: bool = False,
 ) -> dict:
     """Run the benchmark with nested progress bars.
 
@@ -185,12 +193,12 @@ def run_benchmark(
                 size_gb = os.path.getsize(model_path) / (1024**3)
             role_sizes[role] = size_gb
 
-    # Build list of (model_path, size, roles) sorted by size
+    # Build list of (model_path, size, roles) sorted by size (largest first)
     models_sorted = []
     for model_path, role_list in model_to_roles.items():
         size_gb = role_sizes[role_list[0]]  # All roles for same model have same size
         models_sorted.append((model_path, size_gb, role_list))
-    models_sorted.sort(key=lambda x: x[1])
+    models_sorted.sort(key=lambda x: x[1], reverse=True)
 
     # Flatten back to role list but preserve model grouping order
     valid_roles = []
@@ -198,15 +206,19 @@ def run_benchmark(
         for role in role_list:
             valid_roles.append((role, size_gb))
 
-    print(f"\nBenchmark: {run_id} | {len(models_sorted)} models, {len(valid_roles)} roles (smallest first)")
+    print(f"\nBenchmark: {run_id} | {len(models_sorted)} models, {len(valid_roles)} roles (largest first)")
 
-    # Track which models we've already printed
+    # Track which models we've already printed and speed-tested
     printed_models: set[str] = set()
+    model_tps: dict[str, float] = {}  # model_path -> measured TPS
+    active_server: Optional[ServerManager] = None  # Server for current model
+    current_server_model: Optional[str] = None  # Model path loaded in server
 
     # Outer progress bar: roles
     role_iter = tqdm(valid_roles, desc="Roles") if TQDM_AVAILABLE else valid_roles
 
-    for role, size_gb in role_iter:
+    try:
+      for role, size_gb in role_iter:
         model_path = registry.get_model_path(role)
         arch = registry.get_architecture(role)
         configs = executor.get_configs_for_architecture(arch, role, registry)
@@ -215,12 +227,50 @@ def run_benchmark(
         if suite_filter:
             suite_names = [s for s in suite_names if s == suite_filter]
 
-        # Preload suites and count questions
+        # Run baseline speed test for each model (once per model, not per role)
+        if model_path not in model_tps:
+            if dry_run:
+                # In dry run, use registry baseline_tps or default
+                reg_tps = registry.get_baseline_tps(role)
+                model_tps[model_path] = reg_tps if reg_tps else REFERENCE_TPS
+            else:
+                # Find the baseline config to measure actual speed
+                baseline_config = next((c for c in configs if c.name == "baseline"), None)
+                if baseline_config:
+                    try:
+                        speed_result = executor.run_inference(
+                            model_path=model_path,
+                            config=baseline_config,
+                            prompt=SPEED_TEST_PROMPT,
+                            max_tokens=256,
+                            temperature=0.6,
+                            timeout=180,  # Conservative timeout for speed test
+                        )
+                        if speed_result.success and not speed_result.timed_out:
+                            parsed = parse_output(speed_result.raw_output)
+                            if parsed.tokens_per_second and parsed.tokens_per_second > 0:
+                                model_tps[model_path] = parsed.tokens_per_second
+                            else:
+                                model_tps[model_path] = REFERENCE_TPS
+                        else:
+                            model_tps[model_path] = REFERENCE_TPS
+                    except Exception:
+                        model_tps[model_path] = REFERENCE_TPS
+                else:
+                    # No baseline config, use registry or default
+                    reg_tps = registry.get_baseline_tps(role)
+                    model_tps[model_path] = reg_tps if reg_tps else REFERENCE_TPS
+
+        # Calculate timeout multiplier based on measured speed
+        measured_tps = model_tps.get(model_path, REFERENCE_TPS)
+        timeout_multiplier = max(MIN_TIMEOUT_MULTIPLIER, REFERENCE_TPS / measured_tps)
+
+        # Preload suites and count questions (with timeout multiplier applied)
         suites_data = {}
         for sname in suite_names:
             suite = load_suite(sname)
             if suite:
-                suites_data[sname] = {"suite": suite, "params": get_inference_params(suite)}
+                suites_data[sname] = {"suite": suite, "params": get_inference_params(suite, timeout_multiplier)}
 
         total_questions = sum(len(suites_data[s]["suite"].questions) for s in suites_data)
         inner_total = len(configs) * total_questions
@@ -230,7 +280,37 @@ def run_benchmark(
         if model_path not in printed_models:
             printed_models.add(model_path)
             roles_for_model = model_to_roles[model_path]
-            print(f"\n  {model_name} ({size_gb:.1f}GB) - roles: {', '.join(roles_for_model)}", flush=True)
+            tps_str = f"{measured_tps:.1f} t/s"
+            mult_str = f"{timeout_multiplier:.1f}x" if timeout_multiplier > 1.0 else "1x"
+            print(f"\n  {model_name} ({size_gb:.1f}GB) @ {tps_str} → timeout {mult_str}", flush=True)
+            print(f"    roles: {', '.join(roles_for_model)}", flush=True)
+
+            # SERVER MODE: Start server for this model (keeps it in RAM)
+            if server_mode and not dry_run:
+                # Stop previous server if different model
+                if active_server and current_server_model != model_path:
+                    print(f"    [SERVER] Stopping server for previous model", flush=True)
+                    active_server.stop()
+                    active_server = None
+
+                if active_server is None:
+                    # Get MoE override if applicable
+                    moe_override = None
+                    if arch in ("moe", "qwen3moe", "qwen3vlmoe", "mixtral", "deepseek2", "ssm_moe_hybrid", "qwen3next"):
+                        moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
+                        moe_override = f"{moe_key}=int:4"  # Default to 4 experts for server
+
+                    print(f"    [SERVER] Starting llama-server (model will stay in RAM)...", flush=True)
+                    active_server = ServerManager(port=8080)
+                    active_server.start(model_path, moe_override=moe_override, registry=registry)
+
+                    if not active_server.wait_ready(timeout=600):
+                        print(f"    [SERVER] Failed to start, falling back to subprocess mode", flush=True)
+                        active_server = None
+                    else:
+                        current_server_model = model_path
+                        print(f"    [SERVER] Ready, model loaded in RAM", flush=True)
+
         print(f"    [{role}] {inner_total} tests ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
 
         for config in configs:
@@ -250,6 +330,7 @@ def run_benchmark(
                     continue
 
                 try:
+                    # Speed tests use subprocess (spec decode configs need external draft)
                     result = executor.run_inference(
                         model_path=model_path,
                         config=config,
@@ -317,14 +398,30 @@ def run_benchmark(
                         continue
 
                     try:
-                        result = executor.run_inference(
-                            model_path=model_path,
-                            config=config,
-                            prompt=question.prompt,
-                            max_tokens=params["max_tokens"],
-                            temperature=params["temperature"],
-                            timeout=params["timeout"],
+                        # Use server for baseline/MoE configs (model stays in RAM)
+                        # Use subprocess for spec decode (needs external draft model)
+                        use_server = (
+                            active_server is not None
+                            and active_server.is_running()
+                            and config.config_type in ("baseline", "moe")
                         )
+
+                        if use_server:
+                            result = active_server.run_inference(
+                                prompt=question.prompt,
+                                max_tokens=params["max_tokens"],
+                                temperature=params["temperature"],
+                                timeout=params["timeout"],
+                            )
+                        else:
+                            result = executor.run_inference(
+                                model_path=model_path,
+                                config=config,
+                                prompt=question.prompt,
+                                max_tokens=params["max_tokens"],
+                                temperature=params["temperature"],
+                                timeout=params["timeout"],
+                            )
 
                         if result.timed_out:
                             stats["errors"] += 1
@@ -375,6 +472,12 @@ def run_benchmark(
                     except Exception as e:
                         stats["errors"] += 1
                         print(f"    [ERROR] {role}/{config.name}/{question.id}: {e}")
+
+    finally:
+        # Clean up server if running
+        if active_server is not None:
+            print(f"\n  [SERVER] Stopping server...", flush=True)
+            active_server.stop()
 
     print(f"\nDone: {stats['passed']} passed, {stats['failed']} failed, {stats['skipped']} skipped, {stats['errors']} errors")
     return stats
@@ -433,6 +536,7 @@ Examples:
     parser.add_argument("--dry-run", "-n", action="store_true", help="Show what would run without executing")
     parser.add_argument("--process-queue", action="store_true", help="Process queued models")
     parser.add_argument("--resume", "-r", action="store_true", help="Resume the latest run (skip completed, retry errors)")
+    parser.add_argument("--server-mode", action="store_true", help="Keep model in RAM via llama-server (faster for large models)")
     parser.add_argument("--list-models", action="store_true", help="List available models")
     parser.add_argument("--list-suites", action="store_true", help="List available suites")
 
@@ -503,6 +607,7 @@ Examples:
             suite_filter=args.suite,
             force=args.force,
             dry_run=args.dry_run,
+            server_mode=args.server_mode,
         )
     finally:
         if lock_fd is not None:

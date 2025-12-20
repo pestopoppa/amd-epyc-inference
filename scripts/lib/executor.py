@@ -14,9 +14,12 @@ This module is shared with the orchestrator project.
 import os
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+import requests
 
 try:
     from .registry import ModelRegistry, load_registry
@@ -42,6 +45,7 @@ def get_binary_paths(registry: Optional["ModelRegistry"] = None) -> dict[str, st
         "speculative": "llama-speculative",
         "lookup": "llama-lookup",
         "cli": "llama-cli",
+        "server": "llama-server",
     }
 
     if registry is None:
@@ -103,6 +107,178 @@ def validate_binaries(registry: Optional["ModelRegistry"] = None) -> dict[str, s
     return paths
 
 
+class ServerManager:
+    """Manages llama-server lifecycle for persistent model loading.
+
+    Instead of spawning a new process per inference (which reloads the model each time),
+    this keeps a server running with the model in RAM and sends HTTP requests.
+    """
+
+    def __init__(self, port: int = 8080, threads: int = DEFAULT_THREADS):
+        self.port = port
+        self.threads = threads
+        self.process: Optional[subprocess.Popen] = None
+        self.model_path: Optional[str] = None
+
+    def start(
+        self,
+        model_path: str,
+        moe_override: Optional[str] = None,
+        registry: Optional["ModelRegistry"] = None,
+    ) -> None:
+        """Start llama-server with model loaded.
+
+        Args:
+            model_path: Path to the GGUF model file.
+            moe_override: Optional MoE expert override (e.g., "qwen3moe.expert_used_count=int:4").
+            registry: Optional registry for binary path lookup.
+        """
+        if self.process is not None:
+            self.stop()
+
+        self.model_path = model_path
+        binary = get_binary("server", registry)
+
+        cmd = [
+            "env", "OMP_NUM_THREADS=1",
+            "numactl", "--interleave=all",
+            binary,
+            "-m", model_path,
+            "-t", str(self.threads),
+            "--host", "127.0.0.1",
+            "--port", str(self.port),
+            "-c", "8192",  # Context size
+        ]
+        if moe_override:
+            cmd.extend(["--override-kv", moe_override])
+
+        # Start server in background
+        # Note: We redirect stdout/stderr to devnull to prevent pipe buffer blocking
+        # (large models produce lots of output that would fill the 64KB pipe buffer)
+        self.process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def wait_ready(self, timeout: int = 600) -> bool:
+        """Wait for server to be ready by polling /health endpoint.
+
+        Args:
+            timeout: Maximum seconds to wait.
+
+        Returns:
+            True if server is ready, False if timeout or error.
+        """
+        url = f"http://127.0.0.1:{self.port}/health"
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            try:
+                response = requests.get(url, timeout=2)
+                if response.status_code == 200:
+                    return True
+            except requests.exceptions.RequestException:
+                pass
+
+            # Check if process died
+            if self.process and self.process.poll() is not None:
+                return False
+
+            time.sleep(1)
+
+        return False
+
+    def is_running(self) -> bool:
+        """Check if server process is still running."""
+        return self.process is not None and self.process.poll() is None
+
+    def stop(self) -> None:
+        """Stop the server process."""
+        if self.process:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+            self.process = None
+            self.model_path = None
+
+    def run_inference(
+        self,
+        prompt: str,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = DEFAULT_TEMPERATURE,
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> "InferenceResult":
+        """Run inference via HTTP API.
+
+        Args:
+            prompt: The prompt text.
+            max_tokens: Maximum tokens to generate.
+            temperature: Sampling temperature.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            InferenceResult with response content and timing.
+        """
+        url = f"http://127.0.0.1:{self.port}/completion"
+
+        try:
+            response = requests.post(
+                url,
+                json={
+                    "prompt": prompt,
+                    "n_predict": max_tokens,
+                    "temperature": temperature,
+                },
+                timeout=timeout,
+            )
+
+            if response.status_code != 200:
+                return InferenceResult(
+                    raw_output=f"HTTP {response.status_code}: {response.text}",
+                    exit_code=1,
+                    command=f"POST {url}",
+                )
+
+            data = response.json()
+            content = data.get("content", "")
+
+            # Extract timing from response
+            timings = data.get("timings", {})
+            tokens_per_second = timings.get("predicted_per_second", 0)
+            prompt_tokens = timings.get("prompt_n", 0)
+            completion_tokens = timings.get("predicted_n", 0)
+
+            # Build output in format compatible with output_parser
+            raw_output = f"{content}\n\n"
+            raw_output += f"llama_perf_context: prompt eval: {prompt_tokens} tokens\n"
+            raw_output += f"llama_perf_context: eval time = {timings.get('predicted_ms', 0):.2f}ms / {completion_tokens} tokens ({tokens_per_second:.2f} tokens per second)\n"
+
+            return InferenceResult(
+                raw_output=raw_output,
+                exit_code=0,
+                command=f"POST {url}",
+                tokens_per_second=tokens_per_second,
+            )
+
+        except requests.exceptions.Timeout:
+            return InferenceResult(
+                raw_output="",
+                exit_code=-1,
+                command=f"POST {url}",
+                timed_out=True,
+            )
+        except requests.exceptions.RequestException as e:
+            return InferenceResult(
+                raw_output=str(e),
+                exit_code=1,
+                command=f"POST {url}",
+            )
+
+
 @dataclass
 class InferenceResult:
     """Result of an inference run."""
@@ -111,6 +287,7 @@ class InferenceResult:
     exit_code: int
     command: str
     timed_out: bool = False
+    tokens_per_second: Optional[float] = None  # Direct from server response
 
     @property
     def success(self) -> bool:

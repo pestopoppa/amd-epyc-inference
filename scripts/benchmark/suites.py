@@ -119,8 +119,8 @@ def load_suite(name: str, prompts_dir: str = PROMPTS_DIR) -> Optional[Suite]:
             )
         )
 
-    # Sort by tier then by ID
-    questions.sort(key=lambda q: (q.tier, q.id))
+    # Sort by tier (hardest first: T3→T2→T1) then by ID
+    questions.sort(key=lambda q: (-q.tier, q.id))
 
     return Suite(
         name=name,
@@ -175,18 +175,29 @@ def get_questions_by_tier(suite: Suite, tier: int) -> list[Question]:
     return [q for q in suite.questions if q.tier == tier]
 
 
-def get_inference_params(suite: Suite) -> dict[str, Any]:
-    """Get inference parameters for a suite.
+def get_inference_params(suite: Suite, timeout_multiplier: float = 1.0) -> dict[str, Any]:
+    """Get inference parameters for a suite, with optional timeout scaling.
+
+    Args:
+        suite: The benchmark suite.
+        timeout_multiplier: Multiplier for timeout (based on model speed).
+            1.0 = no change, 2.0 = double timeout, etc.
 
     Returns dict with:
         - temperature: float (default 0.6)
         - max_tokens: int (default 512)
-        - timeout: int (default 180)
+        - timeout: int (default 180, scaled by multiplier)
     """
     params = suite.inference_params.copy()
     params.setdefault("temperature", 0.6)
     params.setdefault("max_tokens", 512)
     params.setdefault("timeout", 180)
+
+    # Apply timeout multiplier for slow models
+    if timeout_multiplier > 1.0:
+        base_timeout = params["timeout"]
+        params["timeout"] = int(base_timeout * timeout_multiplier)
+
     return params
 
 
