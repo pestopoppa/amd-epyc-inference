@@ -1,0 +1,31 @@
+question_id,score,reason
+vl/t1_q1_chart,2,Good: attempts bar chart analysis with values
+vl/t1_q2_invoice,0,Failed: generates SQL queries instead of extracting invoice data
+vl/t1_q3_code,3,Excellent: correct code analysis and bug identification
+vl/t2_q1_math,3,Excellent: correct 3x+5=20 solution x=5
+vl/t2_q2_flowchart,1,Wrong: provides template without actual flowchart analysis
+vl/t2_q3_diff,0,Empty: no comparison just echoes prompt
+vl/t2_q4_puzzle,1,Wrong: extensive reasoning but no actual image analysis
+vl/t3_q1_scientific_diagram,1,Wrong: general framework without actual figure analysis
+vl/t3_q2_architectural_blueprint,1,Wrong: hypothetical analysis without actual blueprint
+vl/t3_q3_multi_image_temporal,2,Good: provides temporal analysis framework
+general/t1_q1_json,0,Empty: echoes prompt no JSON output
+general/t1_q2_multistep,3,Excellent: correct list processing with all steps
+general/t1_q3_compare,3,Excellent: clear microservices vs monolith comparison
+general/t2_q1_synthesis,3,Excellent: balanced phased approach recommendation
+general/t2_q2_transform,3,Excellent: correct YAML grouping by department
+general/t2_q3_schedule,3,Excellent: thorough constraint analysis and scheduling
+general/t2_q4_inconsistency,3,Excellent: identifies body format and rate limit inconsistencies
+general/t3_q1_policy_analysis,3,Excellent: comprehensive policy failure mode analysis
+general/t3_q2_system_failure,1,Wrong: truncated incomplete response
+general/t3_q3_strategic_communication,3,Excellent: strategic board communication with data
+agentic/t1_q1_sequential,0,Empty: echoes prompt no JSON array
+agentic/t1_q2_error_handling,0,Empty: echoes prompt no tool call
+agentic/t1_q3_nested_params,0,Empty: echoes prompt no JSON
+agentic/t2_q1_ambiguous,0,Empty: echoes prompt no clarification
+agentic/t2_q2_error_chain,2,Good: analyzes debugging chain with suggestions
+agentic/t2_q3_schema_edge,0,Empty: echoes prompt no JSON
+agentic/t2_q4_orchestration,0,Empty: echoes prompt no deployment plan
+agentic/t3_q1_competing_constraints,2,Good: discusses constraint handling approach
+agentic/t3_q2_multi_agent_coordination,2,Good: provides agent orchestration plan
+agentic/t3_q3_adversarial_robustness,2,Good: identifies security concerns

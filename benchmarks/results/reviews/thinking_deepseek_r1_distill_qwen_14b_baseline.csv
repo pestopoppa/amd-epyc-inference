@@ -1,0 +1,59 @@
+question_id,score,reason
+thinking/t1_q1_multistep,3,Excellent: correct train problem 11:30 AM with detailed algebra
+thinking/t1_q2_hypothesis,3,Excellent: good alternative explanations for breakfast-score correlation
+thinking/t1_q3_planning,3,Excellent: systematic constraint enumeration
+thinking/t2_q1_paradox,3,Excellent: thorough Ship of Theseus philosophical analysis
+thinking/t2_q2_counterfactual,3,Excellent: comprehensive counterfactual across all dimensions
+thinking/t2_q3_formal,3,Excellent: correct hypothetical syllogism proof with example
+thinking/t2_q4_metacognition,3,Excellent: detailed Fermi estimation with bounds
+thinking/t3_q1_methodological_critique,3,Excellent: identifies selection bias and confounding
+thinking/t3_q2_causal_inference,3,Excellent: extensive correct DAG analysis with adjustment sets
+thinking/t3_q3_reasoning_trap,3,Excellent: identifies test distribution flaw with scenario
+general/t1_q1_json,2,Good: correct JSON but shows think tags and debug output
+general/t1_q2_multistep,3,Excellent: correct list processing with clear steps
+general/t1_q3_compare,3,Excellent: clear microservices vs monolith comparison
+general/t2_q1_synthesis,3,Excellent: balanced phased recommendation
+general/t2_q2_transform,3,Excellent: correct YAML grouping by department
+general/t2_q3_schedule,3,Excellent: thorough constraint analysis and scheduling
+general/t2_q4_inconsistency,3,Excellent: identifies body format and rate limit inconsistencies
+general/t3_q1_policy_analysis,3,Excellent: comprehensive policy failure mode analysis
+general/t3_q2_system_failure,3,Excellent: correct replica lag double-charge explanation
+general/t3_q3_strategic_communication,3,Excellent: strategic board communication with data
+math/t1_q1_word_problem,3,Excellent: correct $120 discount $129.60 final
+math/t1_q2_system_equations,3,Excellent: correct x=2 y=3 with clear steps
+math/t1_q3_probability,3,Excellent: correct probability calculations
+math/t2_q1_optimization,3,Excellent: correct optimization with derivatives
+math/t2_q2_proof,3,Excellent: complete mathematical induction
+math/t2_q3_calculus,3,Excellent: correct integration and evaluation
+math/t2_q4_statistics,3,Excellent: correct mean median std dev IQR
+agentic/t1_q1_sequential,1,Wrong: shows reasoning instead of JSON array output
+agentic/t1_q2_error_handling,2,Good: reasoning with eventual JSON suggestion
+agentic/t1_q3_nested_params,2,Good: shows reasoning but has correct JSON
+agentic/t2_q1_ambiguous,3,Excellent: asks appropriate clarifying questions
+agentic/t2_q2_error_chain,3,Excellent: correct debugging chain reasoning
+agentic/t2_q3_schema_edge,2,Good: shows reasoning attempts JSON
+agentic/t2_q4_orchestration,2,Good: deployment plan with rollback reasoning
+agentic/t3_q1_competing_constraints,3,Excellent: good constraint handling strategy
+agentic/t3_q2_multi_agent_coordination,3,Excellent: well-designed orchestration plan
+agentic/t3_q3_adversarial_robustness,3,Excellent: identifies command injection security issue
+instruction_precision/t1_q1_negative_instruction,1,Wrong: shows reasoning instead of clean 2-sentence output
+instruction_precision/t1_q2_word_limit,2,Good: 20 words but with think tags and extra text
+instruction_precision/t1_q3_structured_format,3,Excellent: correct LANGUAGE (YEAR) format
+instruction_precision/t1_q4_multiple_constraints,2,Good: shows reasoning gets 5 countries eventually
+instruction_precision/t2_q1_resist_elaboration,0,Failed: extensive reasoning instead of just 4
+instruction_precision/t2_q2_maintain_format,1,Wrong: shows reasoning not clean format
+instruction_precision/t2_q3_empty_handling,3,Excellent: outputs NONE correctly
+instruction_precision/t2_q4_conflicting_constraints,2,Good: shows reasoning attempts sentence
+instruction_precision/t3_q1_self_referential,1,Wrong: extensive reasoning no valid sentence
+instruction_precision/t3_q2_cascading_constraints,1,Wrong: shows reasoning no valid list
+instruction_precision/t3_q3_meta_instruction,1,Wrong: shows reasoning instead of following instructions
+coder/t1_q1_algorithm,3,Excellent: correct binary search implementation
+coder/t1_q2_refactor,3,Excellent: good Pythonic list comprehension
+coder/t1_q3_test,3,Excellent: comprehensive pytest test coverage
+coder/t2_q1_design,3,Excellent: correct LRU cache with OrderedDict
+coder/t2_q2_debug_complex,3,Excellent: identifies race condition uses asyncio.Lock
+coder/t2_q3_optimize,3,Excellent: O(n) hash-based solution
+coder/t2_q4_system,3,Excellent: sliding window rate limiter
+coder/t3_q1_concurrent_correctness,3,Excellent: ABA problem explanation with fix
+coder/t3_q2_distributed_consistency,3,Excellent: comprehensive conflict resolution strategies
+coder/t3_q3_algorithmic_hardness,3,Excellent: adversary argument and recurrence analysis

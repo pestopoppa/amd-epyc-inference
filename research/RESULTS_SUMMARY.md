@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-19 (MathSmith-8B 5x slower than expected - use Qwen2.5-Math-7B instead)
+**Last Updated:** 2025-12-20 (Added 3 new Claude-as-Judge scores: MathSmith 95.6%, DeepSeek-R1-Distill-Qwen-14B 86.8%, Qwen3-VL-8B 52.2%)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -506,7 +506,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
-| DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | - | - | - | - | - | - | - | 6.44 | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | 30/30 | 29/30 | 21/21 | 24/30 | 30/30 | 17/33 | **86.8%** | 6.44 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | - | - | - | - | - | - | - | - | - | - | - | - |
 | DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
@@ -526,7 +526,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
 | **Gemma-3-12B-IT** | general | 29/30 | 27/27 | 27/30 | 28/30 | 26/30 | 28/33 | **91.7%** | 9.2 | - | - | - | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - | - | - | - |
-| MathSmith-Qwen3-8B ⚠️ | math | - | - | - | - | - | - | - | **3.5** ⚠️ | - | - | - | - |
+| MathSmith-Qwen3-8B ⚠️ | math | 30/30 | 28/30 | 28/30 | - | - | - | **95.6%** | **3.4** ⚠️ | - | - | - | - |
 
 #### Vision Models
 
@@ -543,6 +543,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-VL-4B (Q4_K_M) | vision | - | 21/60 | - | 0/60 | - | - | 14/60 | **19.4%** | 78.9 | - | - | - | - |
 | Qwen3-VL-4B (Q8_0) | vision | - | 15/60 | - | 0/60 | - | - | 23/60 | **21.1%** | 32.5 | - | - | - | - |
 | Qwen3-VL-8B (Q4_K_M) | vision | - | 13/30 | - | 0/30 | - | - | 18/33 | **33.3%** | 38.8 | - | - | - | - |
+| Qwen3-VL-8B (Q8_0) | vision | - | 25/30 | - | 8/30 | - | - | 14/30 | **52.2%** | 18.7 | - | - | - | - |
 
 #### Tier D: Draft Models (Qwen2.5 Family)
 
