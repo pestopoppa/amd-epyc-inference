@@ -28,23 +28,23 @@ prompts:
 
   t1_q2_system_equations:
     tier: 1
-    name: "System of Equations"
+    name: "Nonlinear System of Equations"
     prompt: |
       Solve the system of equations:
-      2x + 3y = 13
-      4x - y = 5
+      x² + y² = 25
+      xy = 12
 
-      Find the values of x and y. Show all steps.
-    expected: "x = 2, y = 3"
+      Find ALL real solutions (x, y). Show your method.
+    expected: "(3, 4), (4, 3), (-3, -4), (-4, -3)"
     scoring:
-      - criterion: "Correct x value"
-        weight: 25
-      - criterion: "Correct y value"
-        weight: 25
-      - criterion: "Valid method"
+      - criterion: "Finds all 4 solutions"
+        weight: 40
+      - criterion: "Valid algebraic method"
         weight: 30
-      - criterion: "Verification"
+      - criterion: "Correct substitution/factoring"
         weight: 20
+      - criterion: "Verification"
+        weight: 10
 
   t1_q3_probability:
     tier: 1
