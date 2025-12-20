@@ -431,7 +431,8 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 ⚠️ **MathSmith-Hard-Problem-Synthesizer-Qwen3-8B Warning:** Runs at 3.5 t/s instead of expected 15+ t/s for an 8B model (5x slower). Uses only 6% of memory bandwidth - severely compute-bound. Likely mradermacher GGUF conversion issue or hidden architecture differences. Use Qwen2.5-Math-7B-Instruct (11.3 t/s) instead.
 
 `*` = scored on old (easier) questions before hardening
-Scores without `*` = tested on complete 60-120 question suites (2025-12-19)
+`†` = incomplete benchmark (partial test run)
+Scores without markers = tested on complete 60-120 question suites (2025-12-19)
 
 ### Complete Model Database with Claude Scores
 
@@ -507,7 +508,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
 | DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | 30/30 | 29/30 | 21/21 | 24/30 | 30/30 | 17/33 | **86.8%** | 6.44 | - | - | - | - |
-| DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | - | - | - | - | - | - | - | - | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | 6/6† | - | - | - | - | - | **100%†** | 4.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
 | DeepSeek-R1-0528-Qwen3-8B | thinking | 24/24 | - | - | 21/30 | - | 8/33 | **60.9%** ⚠️ | 8.7 | - | - | - | - |

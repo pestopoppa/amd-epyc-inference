@@ -1,0 +1,4 @@
+question_id,score,reason
+thinking/t1_q1_multistep,3,Excellent: correct 11:34 AM with detailed step-by-step algebra
+thinking/t1_q2_hypothesis,3,Excellent: identifies sleep patterns SES and study habits as confounders
+NOTE: INCOMPLETE BENCHMARK - only 2/60+ questions tested
