@@ -8,45 +8,67 @@ prompts:
   # ============== TIER 1: Medium (was T2) ==============
   t1_q1_algorithm:
     tier: 1
-    name: "Algorithm Implementation"
+    name: "Bug Detection in Algorithm"
     prompt: |
-      Implement binary search in Python. The function should:
-      - Take a sorted list and a target value
-      - Return the index if found, -1 if not found
-      - Use O(log n) time complexity
+      This binary search implementation has TWO subtle bugs that cause incorrect
+      results on specific inputs. Find both bugs and fix them.
 
-      Include a brief comment explaining the approach.
-    expected: "Working binary search with O(log n)"
+      def binary_search(arr, target):
+          left, right = 0, len(arr)
+          while left < right:
+              mid = (left + right) // 2
+              if arr[mid] == target:
+                  return mid
+              elif arr[mid] < target:
+                  left = mid
+              else:
+                  right = mid
+          return -1
+
+      For each bug:
+      1. Provide a specific input that triggers the bug
+      2. Explain what goes wrong
+      3. Show the fix
+    expected: "Bug 1: left=mid causes infinite loop (fix: left=mid+1). Bug 2: right=mid may skip target (fix: right=mid is correct but need left<=right or right=len-1)"
     scoring:
-      - criterion: "Correct implementation"
-        weight: 40
-      - criterion: "O(log n) complexity"
+      - criterion: "Identifies infinite loop bug"
         weight: 30
-      - criterion: "Handles edge cases"
+      - criterion: "Provides triggering input"
         weight: 20
-      - criterion: "Clear comments"
-        weight: 10
+      - criterion: "Identifies boundary bug"
+        weight: 30
+      - criterion: "Correct fixes"
+        weight: 20
 
   t1_q2_refactor:
     tier: 1
-    name: "Code Refactoring"
+    name: "Refactoring with Tradeoffs"
     prompt: |
-      Refactor this code to be more Pythonic and efficient:
+      This function finds duplicate items in a list. It's correct but slow.
 
-      result = []
-      for i in range(len(numbers)):
-          if numbers[i] > 0:
-              result.append(numbers[i] * 2)
+      def find_duplicates(items):
+          duplicates = []
+          for i in range(len(items)):
+              for j in range(i + 1, len(items)):
+                  if items[i] == items[j] and items[i] not in duplicates:
+                      duplicates.append(items[i])
+          return duplicates
 
-      Explain your improvements.
-    expected: "List comprehension: [x * 2 for x in numbers if x > 0]"
+      Provide TWO different refactored versions:
+      1. Optimize for speed (what's the new time complexity?)
+      2. Optimize for memory when items are very large objects
+
+      For each version, explain the tradeoff you're making.
+    expected: "V1: set/Counter O(n) but O(n) memory. V2: sort first O(n log n) but O(1) extra space"
     scoring:
-      - criterion: "Uses list comprehension"
-        weight: 40
-      - criterion: "Removes unnecessary indexing"
+      - criterion: "Speed-optimized version correct"
         weight: 30
-      - criterion: "Explains improvements"
+      - criterion: "Memory-optimized version correct"
         weight: 30
+      - criterion: "Correct complexity analysis"
+        weight: 25
+      - criterion: "Tradeoff explanation"
+        weight: 15
 
   t1_q3_test:
     tier: 1

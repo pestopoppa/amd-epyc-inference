@@ -91,24 +91,36 @@ prompts:
 
   t2_q2_proof:
     tier: 2
-    name: "Proof by Induction"
+    name: "False Proof Detection"
     prompt: |
-      Prove that the sum of the first n positive integers is n(n+1)/2.
+      Find the error in this "proof" that all horses are the same color:
 
-      Use mathematical induction. Show:
-      1. Base case
-      2. Inductive hypothesis
-      3. Inductive step
-    expected: "Valid induction proof"
+      Claim: In any set of n horses, all horses are the same color.
+
+      Proof by induction:
+      Base case (n=1): A set with one horse trivially has all horses the same color. ✓
+
+      Inductive step: Assume true for n horses. Consider a set of n+1 horses.
+      Remove horse #1 → remaining n horses are same color (by hypothesis).
+      Remove horse #(n+1) → remaining n horses are same color (by hypothesis).
+      The two groups overlap, so ALL n+1 horses must be the same color. ✓
+
+      By induction, all horses in any set are the same color.
+
+      Questions:
+      1. Identify the EXACT logical error
+      2. For which specific value of n does the inductive step fail?
+      3. Why does the overlap argument break down at that value?
+    expected: "Error at n=1→2: two groups of 1 horse each don't overlap. The overlap assumption requires n≥2."
     scoring:
-      - criterion: "Valid base case"
-        weight: 20
-      - criterion: "Clear inductive hypothesis"
-        weight: 20
-      - criterion: "Correct inductive step"
-        weight: 40
-      - criterion: "Proper conclusion"
-        weight: 20
+      - criterion: "Identifies overlap failure"
+        weight: 35
+      - criterion: "Correctly identifies n=1 to n=2"
+        weight: 30
+      - criterion: "Explains why overlap requires n>=2"
+        weight: 25
+      - criterion: "Clear reasoning"
+        weight: 10
 
   t2_q3_calculus:
     tier: 2
