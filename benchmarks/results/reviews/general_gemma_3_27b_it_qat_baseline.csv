@@ -1,0 +1,52 @@
+question_id,score,reason
+thinking/t1_q1_multistep,3,Excellent: correct 11:34 AM with detailed algebra
+thinking/t1_q2_hypothesis,3,Excellent: SES prior habits and study environment as confounders
+thinking/t1_q3_planning,3,Excellent: systematic constraint reasoning with valid orderings
+thinking/t2_q1_paradox,3,Excellent: philosophical analysis with multiple positions
+thinking/t2_q2_counterfactual,3,Excellent: multi-dimensional analysis of internet counterfactual
+thinking/t2_q3_formal,3,Excellent: correct hypothetical syllogism proof with concrete example
+thinking/t2_q4_metacognition,3,Excellent: full Fermi estimation with bounds 108-2160 tuners
+thinking/t3_q1_methodological_critique,3,Excellent: identifies selection bias and confounding
+thinking/t3_q2_causal_inference,3,Excellent: correct minimal adjustment set {Gene} and collider bias
+thinking/t3_q3_reasoning_trap,3,Excellent: identifies test set alignment flaw
+coder/t1_q1_algorithm,3,Excellent: correct binary search implementation
+coder/t1_q2_refactor,3,Excellent: Pythonic list comprehension refactor
+coder/t1_q3_test,3,Excellent: comprehensive pytest coverage
+coder/t2_q1_design,3,Excellent: LRU cache with clear explanation
+coder/t2_q2_debug_complex,3,Excellent: identifies race condition uses asyncio.Lock
+coder/t2_q3_optimize,3,Excellent: O(n) hash-based solution
+coder/t2_q4_system,3,Excellent: rate limiter with error handling
+coder/t3_q1_concurrent_correctness,3,Excellent: ABA problem identified with version tag fix
+coder/t3_q2_distributed_consistency,3,Excellent: multiple conflict resolution strategies
+coder/t3_q3_algorithmic_hardness,3,Excellent: recurrence relation derivation
+general/t1_q1_json,3,Excellent: correct JSON output
+general/t1_q2_multistep,3,Excellent: correct list processing
+general/t1_q3_compare,3,Excellent: clear microservices vs monolith comparison
+general/t2_q1_synthesis,3,Excellent: unified phased recommendation
+general/t2_q2_transform,3,Excellent: correct YAML grouping by department
+general/t2_q3_schedule,3,Excellent: valid schedule meeting all constraints
+general/t2_q4_inconsistency,3,Excellent: identifies body format and rate limit inconsistencies
+general/t3_q1_policy_analysis,3,Excellent: failure modes with specific amendments
+general/t3_q2_system_failure,3,Excellent: correct replica lag double-charge explanation
+general/t3_q3_strategic_communication,3,Excellent: strategic board statement with acknowledgment and pivot
+instruction_precision/t1_q1_negative_instruction,2,Good: uses light instead of sunlight but related concept
+instruction_precision/t1_q2_word_limit,2,Good: 19 words instead of required 20-25
+instruction_precision/t1_q3_structured_format,3,Excellent: correct LANGUAGE (YEAR) format
+instruction_precision/t1_q4_multiple_constraints,3,Excellent: 5 countries alphabetical one per line
+instruction_precision/t2_q1_resist_elaboration,3,Excellent: just outputs 4
+instruction_precision/t2_q2_maintain_format,2,Good: correct format but echoes prompt
+instruction_precision/t2_q3_empty_handling,3,Excellent: outputs NONE correctly
+instruction_precision/t2_q4_conflicting_constraints,3,Excellent: valid 8-word sentence A...data
+instruction_precision/t3_q1_self_referential,1,Wrong: fails to create valid self-referential sentence
+instruction_precision/t3_q2_cascading_constraints,0,Failed: amazing is 7 letters not 8 and chain breaks
+instruction_precision/t3_q3_meta_instruction,0,Failed: prints 42 and hi*7 but only Print goodbye is valid
+agentic/t1_q1_sequential,3,Excellent: correct JSON array of tool calls
+agentic/t1_q2_error_handling,3,Excellent: correct tool call with search query
+agentic/t1_q3_nested_params,3,Excellent: correct nested JSON structure
+agentic/t2_q1_ambiguous,3,Excellent: picks tool with reasoning
+agentic/t2_q2_error_chain,3,Excellent: debugging chain with restart suggestion
+agentic/t2_q3_schema_edge,3,Excellent: correct null body handling
+agentic/t2_q4_orchestration,3,Excellent: complete deployment plan with rollback
+agentic/t3_q1_competing_constraints,3,Excellent: constraint handling with code execution
+agentic/t3_q2_multi_agent_coordination,3,Excellent: multi-phase agent orchestration plan
+agentic/t3_q3_adversarial_robustness,3,Excellent: security concern identification

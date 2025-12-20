@@ -526,7 +526,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen2.5-VL-7B-Instruct** | worker_vision | 22/30 | 43/60 | - | 40/60 | - | - | **69.4%** | 11.8 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
 | **Gemma-3-12B-IT** | general | 29/30 | 27/27 | 27/30 | 28/30 | 26/30 | 28/33 | **91.7%** | 9.2 | - | - | - | - |
-| Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.48 | - | - | - | - |
+| Gemma-3-27B-IT-QAT | general | 30/30 | 30/30 | - | 30/30 | 30/30 | 22/33 | **92.8%** | 2.1 | - | - | - | - |
 | MathSmith-Qwen3-8B ⚠️ | math | 30/30 | 28/30 | 28/30 | - | - | - | **95.6%** | **3.4** ⚠️ | - | - | - | - |
 
 #### Vision Models
