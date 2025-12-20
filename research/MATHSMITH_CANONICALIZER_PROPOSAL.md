@@ -109,6 +109,27 @@ Because the *Hard* variant deprioritizes consistency:
 
 ## Future Work
 
+### Priority: Investigate Slow Speed
+
+MathSmith runs at 3.4 t/s — an 8B Q8_0 model should run at 12-15+ t/s.
+
+**Investigation tasks:**
+- [ ] Profile with `perf` to identify bottleneck (compute vs memory vs conversion)
+- [ ] Compare GGUF metadata with standard Qwen3-8B
+- [ ] Check if mradermacher conversion introduced architecture quirks
+- [ ] Test with different thread counts (current: 96 threads may be overkill for 8B)
+
+**Speculative decoding opportunity:**
+- [ ] Test Qwen3-0.6B as draft (should be tokenizer-compatible with Qwen3 base)
+- [ ] Test Qwen3-1.7B as draft (higher quality, still fast)
+- [ ] Current registry forbids spec decode due to "PARD-Qwen3 token mismatch" — but vanilla Qwen3 drafts may work
+
+If spec decode works with Qwen3-0.6B (89 t/s draft):
+- Expected: 3-4x speedup → ~10-14 t/s
+- Would make canonicalization pipeline much more practical
+
+### Other Items
+
 - [ ] Design formal-spec DSL for structured output
 - [ ] Benchmark canonicalization → solve vs. direct solve on hard problems
 - [ ] Integrate into orchestration as `math_canonicalizer` role
