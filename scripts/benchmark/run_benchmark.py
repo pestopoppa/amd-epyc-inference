@@ -465,7 +465,8 @@ def run_benchmark(
 
                         if not result.success:
                             stats["errors"] += 1
-                            print(f"    [ERROR] {role}/{config.name}/{question.id}")
+                            err_hint = result.raw_output.split('\n')[0][:80] if result.raw_output else f"exit={result.exit_code}"
+                            print(f"    [ERROR] {role}/{config.name}/{question.id}: {err_hint}")
                             continue
 
                         parsed = parse_output(result.raw_output)
@@ -493,11 +494,10 @@ def run_benchmark(
                             question_result=qresult,
                         )
 
-                        # Show progress for every test
+                        # Show progress for every test (speed only - Claude-as-judge scores later)
                         tps = parsed.tokens_per_second
                         tps_str = f"{tps:.1f}t/s" if tps else "---"
-                        score_icon = "✓" if score_result.score >= 2 else "✗"
-                        print(f"      {score_icon} {config.name}/{suite_name}/{question.id}: {tps_str} score={score_result.score}/3", flush=True)
+                        print(f"      {config.name}/{suite_name}/{question.id}: {tps_str}", flush=True)
 
                         if score_result.score >= 2:
                             stats["passed"] += 1

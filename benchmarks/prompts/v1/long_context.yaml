@@ -222,4 +222,4 @@ prompts:
 inference_params:
   temperature: 0.2
   max_tokens: 2048
-  timeout: 420  # Longer timeout for expert-level long context
+  timeout: 1200  # 20 minutes base - scales with model speed multiplier

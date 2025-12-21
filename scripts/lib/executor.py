@@ -114,7 +114,7 @@ def get_server_defaults(registry: Optional["ModelRegistry"] = None) -> dict:
     """
     defaults = {
         "port": 8080,
-        "context_length": 65536,
+        "context_length": 131072,  # 131K - Qwen3 native limit
         "startup_timeout": 600,
         "request_timeout": 300,
         "parallel_slots": 4,
@@ -192,6 +192,7 @@ class ServerManager:
             "--host", "127.0.0.1",
             "--port", str(self.port),
             "-c", str(ctx_len),
+            "--parallel", "1",  # Single slot for full context (benchmarking)
         ]
         if moe_override:
             cmd.extend(["--override-kv", moe_override])
@@ -293,6 +294,7 @@ class ServerManager:
                     "prompt": prompt,
                     "n_predict": max_tokens,
                     "temperature": temperature,
+                    "cache_prompt": False,  # Fresh context for each question
                 },
                 timeout=timeout,
             )
