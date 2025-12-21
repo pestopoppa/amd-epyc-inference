@@ -9,11 +9,27 @@ runtime_defaults:
   # Binary paths - SINGLE SOURCE OF TRUTH for all launch commands
   binaries:
     base_dir: /mnt/raid0/llm/llama.cpp/build/bin
-    completion: llama-completion      # baseline, MoE reduction
+    # Core inference binaries
+    completion: llama-completion      # baseline, MoE reduction (preferred for benchmarks)
     speculative: llama-speculative    # spec decode with draft model
     lookup: llama-lookup              # prompt n-gram lookup
-    cli: llama-cli                    # interactive mode (avoid in benchmarks)
+    cli: llama-cli                    # interactive mode (AVOID for benchmarks - hangs)
     server: llama-server              # persistent model server for benchmarks
+    # Vision/multimodal binaries
+    mtmd: llama-mtmd-cli              # multimodal (vision) inference
+    qwen2vl: llama-qwen2vl-cli        # Qwen2-VL specific (deprecated, use mtmd)
+    # Utility binaries
+    bench: llama-bench                # quick speed benchmarks (no quality)
+    embedding: llama-embedding        # embedding generation
+    perplexity: llama-perplexity      # quality/perplexity testing
+    quantize: llama-quantize          # model quantization
+  # Server mode settings
+  server_defaults:
+    port: 8080
+    context_length: 65536             # 64K context for long_context tests
+    startup_timeout: 600              # 10 minutes for large models (480B loads in ~35s)
+    request_timeout: 300              # 5 minutes per request
+    parallel_slots: 4                 # concurrent request slots
   # Inference timeouts by role tier
   timeouts:
     default: 180
@@ -1322,17 +1338,25 @@ routing_hints:
   use:
   - architect_coding
 command_templates:
-  speculative_decoding: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative\
+  # NOTE: Do NOT use OMP_NUM_THREADS=1 - it disables parallel tensor repacking
+  # and hurts prompt processing speed (49 vs 119 t/s). See PR #18239.
+  speculative_decoding: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative\
     \ \\\n  -m {model_path} \\\n  -md {draft_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
-  moe_expert_reduction: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion\
+  moe_expert_reduction: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion\
     \ \\\n  -m {model_path} \\\n  --override-kv {override_key}=int:{experts} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp\
     \ {temperature}\n"
-  prompt_lookup: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup \\\n\
+  prompt_lookup: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup \\\n\
     \  -m {model_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
-  baseline: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \\\n\
+  baseline: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \\\n\
     \  -m {model_path} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
-  vision: "env OMP_NUM_THREADS=1 numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \\\n  -m\
+  vision: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \\\n  -m\
     \ {model_path} \\\n  --mmproj {mmproj_path} \\\n  -t {threads}\n"
+  # Server mode templates - keeps model resident in RAM
+  server_start: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-server \\\n\
+    \  -m {model_path} \\\n  -t {threads} \\\n  --host 127.0.0.1 \\\n  --port {port} \\\n  -c {context_length}\n"
+  server_start_moe: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-server \\\n\
+    \  -m {model_path} \\\n  -t {threads} \\\n  --host 127.0.0.1 \\\n  --port {port} \\\n  -c {context_length} \\\n\
+    \  --override-kv {override_key}=int:{experts}\n"
 runtime_quirks:
   qwen25_coder_32b_instruct:
     description: Qwen2.5-Coder-32B-Instruct

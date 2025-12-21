@@ -107,6 +107,33 @@ def validate_binaries(registry: Optional["ModelRegistry"] = None) -> dict[str, s
     return paths
 
 
+def get_server_defaults(registry: Optional["ModelRegistry"] = None) -> dict:
+    """Get server defaults from registry.
+
+    Returns dict with: port, context_length, startup_timeout, request_timeout, parallel_slots
+    """
+    defaults = {
+        "port": 8080,
+        "context_length": 65536,
+        "startup_timeout": 600,
+        "request_timeout": 300,
+        "parallel_slots": 4,
+    }
+
+    if registry is None:
+        try:
+            registry = load_registry()
+        except Exception:
+            pass
+
+    if registry and hasattr(registry, "data"):
+        server_cfg = registry.data.get("runtime_defaults", {}).get("server_defaults", {})
+        if server_cfg:
+            defaults.update(server_cfg)
+
+    return defaults
+
+
 class ServerManager:
     """Manages llama-server lifecycle for persistent model loading.
 
@@ -114,9 +141,13 @@ class ServerManager:
     this keeps a server running with the model in RAM and sends HTTP requests.
     """
 
-    def __init__(self, port: int = 8080, threads: int = DEFAULT_THREADS):
-        self.port = port
+    def __init__(self, port: int = None, threads: int = DEFAULT_THREADS, registry: Optional["ModelRegistry"] = None):
+        server_defaults = get_server_defaults(registry)
+        self.port = port if port is not None else server_defaults["port"]
         self.threads = threads
+        self.context_length = server_defaults["context_length"]
+        self.startup_timeout = server_defaults["startup_timeout"]
+        self.request_timeout = server_defaults["request_timeout"]
         self.process: Optional[subprocess.Popen] = None
         self.model_path: Optional[str] = None
 
@@ -126,6 +157,7 @@ class ServerManager:
         moe_override: Optional[str] = None,
         registry: Optional["ModelRegistry"] = None,
         no_mmap: bool = False,
+        context_length: Optional[int] = None,
     ) -> None:
         """Start llama-server with model loaded.
 
@@ -134,12 +166,14 @@ class ServerManager:
             moe_override: Optional MoE expert override (e.g., "qwen3moe.expert_used_count=int:4").
             registry: Optional registry for binary path lookup.
             no_mmap: If True, use bulk read instead of mmap (may be faster for cold loads).
+            context_length: Override context length (default from registry: 64K).
         """
         if self.process is not None:
             self.stop()
 
         self.model_path = model_path
         binary = get_binary("server", registry)
+        ctx_len = context_length if context_length is not None else self.context_length
 
         cmd = [
             "numactl", "--interleave=all",
@@ -148,7 +182,7 @@ class ServerManager:
             "-t", str(self.threads),
             "--host", "127.0.0.1",
             "--port", str(self.port),
-            "-c", "65536",  # 64K context for long_context tests
+            "-c", str(ctx_len),
         ]
         if moe_override:
             cmd.extend(["--override-kv", moe_override])
@@ -165,15 +199,17 @@ class ServerManager:
             stderr=self._stderr_file,
         )
 
-    def wait_ready(self, timeout: int = 600) -> bool:
+    def wait_ready(self, timeout: int = None) -> bool:
         """Wait for server to be ready by polling /health endpoint.
 
         Args:
-            timeout: Maximum seconds to wait.
+            timeout: Maximum seconds to wait. Defaults to startup_timeout from registry.
 
         Returns:
             True if server is ready, False if timeout or error.
         """
+        if timeout is None:
+            timeout = self.startup_timeout
         url = f"http://127.0.0.1:{self.port}/health"
         start_time = time.time()
 
