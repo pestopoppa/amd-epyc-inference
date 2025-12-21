@@ -162,6 +162,7 @@ def run_benchmark(
     force: bool = False,
     dry_run: bool = False,
     server_mode: bool = False,
+    no_mmap: bool = False,
 ) -> dict:
     """Run the benchmark with nested progress bars.
 
@@ -213,6 +214,7 @@ def run_benchmark(
     model_tps: dict[str, float] = {}  # model_path -> measured TPS
     active_server: Optional[ServerManager] = None  # Server for current model
     current_server_model: Optional[str] = None  # Model path loaded in server
+    current_server_experts: Optional[int] = None  # Expert count loaded in server (None = default)
 
     # Outer progress bar: roles
     role_iter = tqdm(valid_roles, desc="Roles") if TQDM_AVAILABLE else valid_roles
@@ -294,26 +296,59 @@ def run_benchmark(
                     active_server = None
 
                 if active_server is None:
-                    # Get MoE override if applicable
-                    moe_override = None
-                    if arch in ("moe", "qwen3moe", "qwen3vlmoe", "mixtral", "deepseek2", "ssm_moe_hybrid", "qwen3next"):
-                        moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
-                        moe_override = f"{moe_key}=int:4"  # Default to 4 experts for server
-
+                    # Start with no MoE override (use model defaults for baseline)
+                    # Server will be restarted with specific expert counts when needed
                     print(f"    [SERVER] Starting llama-server (model will stay in RAM)...", flush=True)
                     active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=moe_override, registry=registry)
+                    active_server.start(model_path, moe_override=None, registry=registry, no_mmap=no_mmap)
 
-                    if not active_server.wait_ready(timeout=600):
+                    # Dynamic timeout: 3s per GB + 2 min buffer, minimum 600s
+                    server_timeout = max(600, int(size_gb * 3) + 120)
+                    if not active_server.wait_ready(timeout=server_timeout):
                         print(f"    [SERVER] Failed to start, falling back to subprocess mode", flush=True)
                         active_server = None
                     else:
                         current_server_model = model_path
-                        print(f"    [SERVER] Ready, model loaded in RAM", flush=True)
+                        current_server_experts = None  # Default expert count
+                        print(f"    [SERVER] Ready, model loaded in RAM (default experts)", flush=True)
 
         print(f"    [{role}] {inner_total} tests ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
 
         for config in configs:
+            # SERVER RESTART for different MoE expert counts
+            # Each MoE config needs the server restarted with its specific expert count
+            if server_mode and active_server is not None and active_server.is_running():
+                # Determine required expert count for this config
+                if config.config_type == "moe":
+                    required_experts = config.moe_experts
+                elif config.config_type == "baseline":
+                    required_experts = None  # Use model default
+                else:
+                    required_experts = current_server_experts  # Keep current (for non-server configs)
+
+                # Restart if expert count differs
+                if required_experts != current_server_experts:
+                    if required_experts is None:
+                        print(f"      [SERVER] Restarting for baseline (default experts)...", flush=True)
+                        moe_override = None
+                    else:
+                        moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
+                        moe_override = f"{moe_key}=int:{required_experts}"
+                        print(f"      [SERVER] Restarting for {config.name} ({required_experts} experts)...", flush=True)
+
+                    active_server.stop()
+                    active_server = ServerManager(port=8080)
+                    active_server.start(model_path, moe_override=moe_override, registry=registry, no_mmap=no_mmap)
+
+                    server_timeout = max(600, int(size_gb * 3) + 120)
+                    if not active_server.wait_ready(timeout=server_timeout):
+                        print(f"      [SERVER] Failed to restart, falling back to subprocess", flush=True)
+                        active_server = None
+                        current_server_experts = None
+                    else:
+                        current_server_experts = required_experts
+                        print(f"      [SERVER] Ready", flush=True)
+
             # SPEED-TEST OPTIMIZATION: For configs that only need speed measurement
             # (e.g., spec decode variants), run a single speed test instead of all questions.
             # Quality is inherited from baseline since target model is the same.
@@ -537,6 +572,7 @@ Examples:
     parser.add_argument("--process-queue", action="store_true", help="Process queued models")
     parser.add_argument("--resume", "-r", action="store_true", help="Resume the latest run (skip completed, retry errors)")
     parser.add_argument("--server-mode", action="store_true", help="Keep model in RAM via llama-server (faster for large models)")
+    parser.add_argument("--no-mmap", action="store_true", help="Use bulk read instead of mmap (may be faster for cold loads)")
     parser.add_argument("--list-models", action="store_true", help="List available models")
     parser.add_argument("--list-suites", action="store_true", help="List available suites")
 
@@ -608,6 +644,7 @@ Examples:
             force=args.force,
             dry_run=args.dry_run,
             server_mode=args.server_mode,
+            no_mmap=args.no_mmap,
         )
     finally:
         if lock_fd is not None:

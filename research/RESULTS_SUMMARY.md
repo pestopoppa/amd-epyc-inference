@@ -73,17 +73,26 @@ coder_primary (45 t/s) → coder_escalation (30 t/s) → architect_coding (5 t/s
 |-------|------|-------|---------------|----------|-------|
 | Qwen3-235B-A22B | 133GB | Q4_K_M | ~22B | **3.6 t/s** | MoE, fits in RAM |
 | Qwen3-VL-235B-A22B-Thinking | 124GB | Q4_K_S | ~22B | **3.23 t/s** | VL+MoE, thinking variant |
-| Qwen3-Coder-480B-A35B | 271GB | Q4_K_M | ~35B | **2.25 t/s** | MoE, largest tested |
+| Qwen3-Coder-480B-A35B | 271GB | Q4_K_M | ~35B | **6.53 t/s** | MoE, largest tested (updated 2025-12-21) |
 | GLM-4.6-355B-A32B | 189GB | Q4_K_S | ~32B | **2.24 t/s** | MoE (glm4moe) |
 | Qwen3-Next-80B-A3B | 45GB | Q4_K_M | ~3B | **8.43-10.12 t/s** | SSM+MoE hybrid |
 
 ### Optimization Results
 | Model | Baseline | +Expert Reduction | +Lookup | Best |
 |-------|----------|-------------------|---------|------|
-| **Qwen3-Coder-480B** | 2.25 t/s | 5.23 t/s (+132%) | Garbage (short prompt) | **+132%** |
+| **Qwen3-Coder-480B** | 6.53 t/s | 10.30 t/s (+58% MOE3) | Garbage | **+58%** |
 | **Qwen3-VL-235B-Thinking** | 3.23 t/s | 7.12 t/s (+120%) | 3.82 t/s | **+120%** |
 | **Qwen3-235B** | 3.6 t/s | 6.75 t/s (+87%) | 6.35 t/s | **+87%** |
 | **GLM-4.6-355B** | 2.24 t/s | 3.97 t/s (+77%) | 3.37-3.65 t/s | **+77%** |
+
+**Note (2025-12-21):** Qwen3-Coder-480B results updated after parallel repack fix:
+- Architecture: 160 total experts, **8 experts used by default** (35B active params)
+- Old baseline (with OMP_NUM_THREADS=1): 2.25 t/s
+- New baseline (with parallel repack): 6.53 t/s (+190%)
+- **MOE3 (3 experts): 10.30 t/s (+58%) - OPTIMAL** ✓
+- MOE4 (4 experts): 9.25 t/s (+42%) - good fallback
+- MOE5 (5 experts): 8.50 t/s (+30%)
+- MOE2 (2 experts): 11.51 t/s - **GARBAGE output, unusable** ✗
 
 ### MoE + Lookup Combination (Detailed)
 
@@ -353,7 +362,8 @@ llama-cli -m MOE.gguf \
 - BOS token mismatch: Qwen3-Coder-480B has BOS=',' (token 11) vs standard BOS='<|endoftext|>' (token 151643)
 - Tested drafts: Qwen3-0.6B, Qwen2.5-Coder-0.5B - both fail
 - Lesson: Verify tokenizer compatibility before attempting speculation; unusual BOS tokens block all compatible draft models
-- **Workaround:** Use 2-expert reduction instead (5.23 t/s, +132% vs baseline)
+- **Workaround:** Use 4-expert reduction (9.25 t/s, +42% vs baseline)
+- **Warning:** 2-expert reduction produces GARBAGE output despite higher speed (11.51 t/s)
 
 ### Qwen3-Coder-53B-A3B + Speculative Decoding
 - Problem: Token mismatch with Qwen2.5 drafts, low acceptance (8.96%) with Qwen3-0.6B
@@ -467,9 +477,11 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | VL | Pct | Baseline t/s | Optimized t/s (config) |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|-----|--------------|------------------------|
-| **Qwen3-Coder-480B-A35B** | architect_coding | - | - | - | - | - | - | - | - | 2.25 | - |
-| Qwen3-Coder-480B-A35B (MoE 2) | architect_coding | - | - | - | - | - | - | - | - | 5.23 | garbage (+lookup) |
-| Qwen3-Coder-480B-A35B (MoE 4) | architect_coding | - | - | - | - | - | - | - | - | - | - |
+| **Qwen3-Coder-480B-A35B** | architect_coding | - | - | - | - | - | - | - | - | 6.53 | (8 experts default) |
+| Qwen3-Coder-480B-A35B (MoE 2) | architect_coding | - | - | - | - | - | - | - | - | 11.51 | GARBAGE output ❌ |
+| **Qwen3-Coder-480B-A35B (MoE 3)** | architect_coding | - | - | - | - | - | - | - | - | 10.30 | **+58% OPTIMAL ✓** |
+| Qwen3-Coder-480B-A35B (MoE 4) | architect_coding | - | - | - | - | - | - | - | - | 9.25 | +42% |
+| Qwen3-Coder-480B-A35B (MoE 5) | architect_coding | - | - | - | - | - | - | - | - | 8.50 | +30% |
 | **GLM-4.6-355B-A32B** | general | - | - | - | - | - | - | - | - | 2.24 | - |
 | GLM-4.6-355B-A32B (MoE 2) | general | - | - | - | - | - | - | - | - | - | - |
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |

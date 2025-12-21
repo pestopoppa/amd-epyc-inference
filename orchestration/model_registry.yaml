@@ -186,19 +186,25 @@ roles:
     candidate_roles: [architect, coder]
     acceleration:
       type: moe_expert_reduction
-      experts: 2
+      experts: 3                # MOE3 is optimal: +58% speedup with good quality
+      override_key: qwen3moe.expert_used_count
     constraints:
       forbid:
       - speculative_decoding
       - prompt_lookup
       reason: BOS token mismatch - no compatible draft models exist
     performance:
-      baseline_tps: 2.25
-      optimized_tps: 5.23
-      speedup: 2.32x
+      baseline_tps: 6.53       # Tested 2025-12-21 (with parallel repack)
+      optimized_tps: 10.30     # MOE3 (3 experts)
+      speedup: 1.58x           # +58% speedup
+      moe2_tps: 11.51          # MOE2 is faster but produces garbage output
+      moe4_tps: 9.25           # MOE4 works but slower than MOE3
+      moe5_tps: 8.50           # MOE5 works but slower
+      legacy_baseline_tps: 2.25   # Old measurement with OMP_NUM_THREADS=1
     memory:
       residency: warm
       pinned: false
+    benchmark_date: 2025-12-21
   thinking_reasoning:
     tier: B
     description: Deep reasoning and chain-of-thought - SSM+MoE hybrid thinking model
@@ -1402,6 +1408,17 @@ runtime_quirks:
     - issue: BOS token mismatch - uses ',' (token 11) instead of standard
       workaround: Cannot use speculative decoding - no compatible draft exists
       discovered: 2025-12-15
+    - issue: MOE2 (2 experts) produces garbage output despite being faster
+      workaround: Use MOE3 (3 experts) - 10.30 t/s with good quality (+58% speedup)
+      discovered: 2025-12-21
+      explanation: |
+        With parallel repack enabled (no OMP_NUM_THREADS=1):
+        - Baseline: 6.53 t/s (good output)
+        - MOE3: 10.30 t/s (+58% speedup, good output) ✓ OPTIMAL
+        - MOE4: 9.25 t/s (+42% speedup, good output) ✓ Safe fallback
+        - MOE5: 8.50 t/s (+30% speedup, good output)
+        - MOE2: 11.51 t/s (+76% speedup, GARBAGE output) ✗ UNUSABLE
+        The 480B model needs at least 3 experts for coherent output.
   qwen3_next_80b:
     description: Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)
     quirks:
