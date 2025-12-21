@@ -389,6 +389,60 @@ class ModelRegistry:
         # 4. Hardcoded fallback
         return context_limits.get("default", 8192)
 
+    def get_flash_attention(self, role: str) -> bool:
+        """Check if flash attention should be enabled for a model.
+
+        Priority:
+        1. constraints.flash_attention in role definition
+        2. server_defaults.flash_attention
+        3. Default to True (most models support it)
+
+        Args:
+            role: The role name.
+
+        Returns:
+            True if flash attention should be enabled.
+        """
+        config = self.get_role_config(role)
+        defaults = self.runtime_defaults
+
+        # 1. Check for explicit flash_attention in constraints
+        if config:
+            constraints = config.get("constraints", {})
+            if "flash_attention" in constraints:
+                return constraints["flash_attention"]
+
+        # 2. Fall back to server_defaults
+        server_defaults = defaults.get("server_defaults", {})
+        return server_defaults.get("flash_attention", True)
+
+    def get_ubatch_size(self, role: str) -> int:
+        """Get ubatch size for prompt processing.
+
+        Priority:
+        1. constraints.ubatch_size in role definition
+        2. server_defaults.ubatch_size
+        3. Default to 512 (llama.cpp default)
+
+        Args:
+            role: The role name.
+
+        Returns:
+            Ubatch size for prompt processing.
+        """
+        config = self.get_role_config(role)
+        defaults = self.runtime_defaults
+
+        # 1. Check for explicit ubatch_size in constraints
+        if config:
+            constraints = config.get("constraints", {})
+            if "ubatch_size" in constraints:
+                return constraints["ubatch_size"]
+
+        # 2. Fall back to server_defaults
+        server_defaults = defaults.get("server_defaults", {})
+        return server_defaults.get("ubatch_size", 512)
+
     def get_baseline_tps(self, role: str) -> Optional[float]:
         """Get baseline tokens-per-second for a role.
 

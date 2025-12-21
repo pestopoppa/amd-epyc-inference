@@ -222,4 +222,4 @@ prompts:
 inference_params:
   temperature: 0.2
   max_tokens: 2048
-  timeout: 1200  # 20 minutes base - scales with model speed multiplier
+  timeout: 3600  # 60 minutes base - long context generation is slow at large KV cache sizes

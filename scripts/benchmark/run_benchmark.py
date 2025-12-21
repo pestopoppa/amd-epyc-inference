@@ -300,7 +300,7 @@ def run_benchmark(
                     # Server will be restarted with specific expert counts when needed
                     print(f"    [SERVER] Starting llama-server (model will stay in RAM)...", flush=True)
                     active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=None, registry=registry, no_mmap=no_mmap)
+                    active_server.start(model_path, moe_override=None, registry=registry, no_mmap=no_mmap, role=role)
 
                     # Dynamic timeout: 3s per GB + 2 min buffer, minimum 600s
                     server_timeout = max(600, int(size_gb * 3) + 120)
@@ -338,7 +338,7 @@ def run_benchmark(
 
                     active_server.stop()
                     active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=moe_override, registry=registry, no_mmap=no_mmap)
+                    active_server.start(model_path, moe_override=moe_override, registry=registry, no_mmap=no_mmap, role=role)
 
                     server_timeout = max(600, int(size_gb * 3) + 120)
                     if not active_server.wait_ready(timeout=server_timeout):
@@ -460,17 +460,27 @@ def run_benchmark(
 
                         if result.timed_out:
                             stats["errors"] += 1
-                            print(f"    [TIMEOUT] {role}/{config.name}/{question.id}")
-                            continue
+                            # Still parse and save partial output for quality assessment
+                            parsed = parse_output(result.raw_output)
+                            if parsed.response and len(parsed.response.strip()) > 50:
+                                # Meaningful partial output - save it
+                                char_count = len(parsed.response)
+                                print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: partial output saved ({char_count} chars)")
+                                score_result = score_response(suite_name, question.id, parsed.response)
+                                # Fall through to save the result
+                            else:
+                                print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: no usable output")
+                                continue
 
-                        if not result.success:
+                        elif not result.success:
                             stats["errors"] += 1
                             err_hint = result.raw_output.split('\n')[0][:80] if result.raw_output else f"exit={result.exit_code}"
                             print(f"    [ERROR] {role}/{config.name}/{question.id}: {err_hint}")
                             continue
 
-                        parsed = parse_output(result.raw_output)
-                        score_result = score_response(suite_name, question.id, parsed.response)
+                        else:
+                            parsed = parse_output(result.raw_output)
+                            score_result = score_response(suite_name, question.id, parsed.response)
 
                         qresult = QuestionResult(
                             question_id=question.id,

@@ -11,6 +11,7 @@ Builds and executes llama.cpp commands for:
 This module is shared with the orchestrator project.
 """
 
+import json
 import os
 import subprocess
 import tempfile
@@ -184,6 +185,10 @@ class ServerManager:
         else:
             ctx_len = self.context_length
 
+        # Get optimization settings from registry (with fallbacks)
+        use_flash_attn = registry.get_flash_attention(role) if role and registry else True
+        ubatch_size = registry.get_ubatch_size(role) if role and registry else 8192
+
         cmd = [
             "numactl", "--interleave=all",
             binary,
@@ -193,7 +198,10 @@ class ServerManager:
             "--port", str(self.port),
             "-c", str(ctx_len),
             "--parallel", "1",  # Single slot for full context (benchmarking)
+            "-ub", str(ubatch_size),  # Larger batch size for faster prompt processing
         ]
+        if use_flash_attn:
+            cmd.extend(["-fa", "on"])  # Flash attention for faster long-context processing
         if moe_override:
             cmd.extend(["--override-kv", moe_override])
         if no_mmap:
@@ -274,7 +282,7 @@ class ServerManager:
         temperature: float = DEFAULT_TEMPERATURE,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> "InferenceResult":
-        """Run inference via HTTP API.
+        """Run inference via HTTP API with streaming to capture partial output.
 
         Args:
             prompt: The prompt text.
@@ -284,10 +292,15 @@ class ServerManager:
 
         Returns:
             InferenceResult with response content and timing.
+            On timeout, returns partial output collected so far.
         """
         url = f"http://127.0.0.1:{self.port}/completion"
+        collected_content = ""
+        timed_out = False
+        timings = {}
 
         try:
+            # Use streaming to collect tokens incrementally
             response = requests.post(
                 url,
                 json={
@@ -295,8 +308,10 @@ class ServerManager:
                     "n_predict": max_tokens,
                     "temperature": temperature,
                     "cache_prompt": False,  # Fresh context for each question
+                    "stream": True,  # Enable streaming for incremental collection
                 },
-                timeout=timeout,
+                timeout=(30, timeout),  # (connect timeout, read timeout)
+                stream=True,
             )
 
             if response.status_code != 200:
@@ -306,40 +321,52 @@ class ServerManager:
                     command=f"POST {url}",
                 )
 
-            data = response.json()
-            content = data.get("content", "")
-
-            # Extract timing from response
-            timings = data.get("timings", {})
-            tokens_per_second = timings.get("predicted_per_second", 0)
-            prompt_tokens = timings.get("prompt_n", 0)
-            completion_tokens = timings.get("predicted_n", 0)
-
-            # Build output in format compatible with output_parser
-            raw_output = f"{content}\n\n"
-            raw_output += f"llama_perf_context: prompt eval: {prompt_tokens} tokens\n"
-            raw_output += f"llama_perf_context: eval time = {timings.get('predicted_ms', 0):.2f}ms / {completion_tokens} tokens ({tokens_per_second:.2f} tokens per second)\n"
-
-            return InferenceResult(
-                raw_output=raw_output,
-                exit_code=0,
-                command=f"POST {url}",
-                tokens_per_second=tokens_per_second,
-            )
+            # Parse SSE stream
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                if line.startswith("data: "):
+                    try:
+                        data = json.loads(line[6:])  # Skip "data: " prefix
+                        if "content" in data:
+                            collected_content += data["content"]
+                        # Final message contains timings
+                        if data.get("stop", False):
+                            timings = data.get("timings", {})
+                    except json.JSONDecodeError:
+                        continue
 
         except requests.exceptions.Timeout:
-            return InferenceResult(
-                raw_output="",
-                exit_code=-1,
-                command=f"POST {url}",
-                timed_out=True,
-            )
+            timed_out = True
         except requests.exceptions.RequestException as e:
-            return InferenceResult(
-                raw_output=str(e),
-                exit_code=1,
-                command=f"POST {url}",
-            )
+            if not collected_content:
+                return InferenceResult(
+                    raw_output=str(e),
+                    exit_code=1,
+                    command=f"POST {url}",
+                )
+            # If we have partial content, return it despite the error
+            timed_out = True
+
+        # Build output in format compatible with output_parser
+        tokens_per_second = timings.get("predicted_per_second", 0)
+        prompt_tokens = timings.get("prompt_n", 0)
+        completion_tokens = timings.get("predicted_n", len(collected_content.split()))
+
+        raw_output = f"{collected_content}\n\n"
+        if timings:
+            raw_output += f"llama_perf_context: prompt eval: {prompt_tokens} tokens\n"
+            raw_output += f"llama_perf_context: eval time = {timings.get('predicted_ms', 0):.2f}ms / {completion_tokens} tokens ({tokens_per_second:.2f} tokens per second)\n"
+        elif timed_out:
+            raw_output += f"[PARTIAL OUTPUT - timed out after collecting {len(collected_content)} chars]\n"
+
+        return InferenceResult(
+            raw_output=raw_output,
+            exit_code=0 if not timed_out else -1,
+            command=f"POST {url}",
+            tokens_per_second=tokens_per_second if tokens_per_second else None,
+            timed_out=timed_out,
+        )
 
 
 @dataclass
