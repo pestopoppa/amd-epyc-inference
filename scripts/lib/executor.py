@@ -141,6 +141,18 @@ class ServerManager:
         self.model_path = model_path
         binary = get_binary("server", registry)
 
+        # Dynamic context size based on model size
+        # Very large models need smaller context to fit KV cache in RAM
+        model_size_gb = os.path.getsize(model_path) / (1024**3)
+        if model_size_gb > 200:
+            context_size = 8192   # 8K for 200GB+ models (e.g., 480B)
+        elif model_size_gb > 100:
+            context_size = 16384  # 16K for 100-200GB models
+        elif model_size_gb > 50:
+            context_size = 32768  # 32K for 50-100GB models
+        else:
+            context_size = 65536  # 64K for smaller models
+
         cmd = [
             "numactl", "--interleave=all",
             binary,
@@ -148,7 +160,7 @@ class ServerManager:
             "-t", str(self.threads),
             "--host", "127.0.0.1",
             "--port", str(self.port),
-            "-c", "65536",  # Context size (64K for long_context T3 questions)
+            "-c", str(context_size),
         ]
         if moe_override:
             cmd.extend(["--override-kv", moe_override])
