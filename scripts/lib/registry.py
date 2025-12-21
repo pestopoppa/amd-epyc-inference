@@ -334,6 +334,102 @@ class ModelRegistry:
         accel = self.get_acceleration(role)
         return accel.get("override_key")
 
+    def get_max_context(self, role: str) -> int:
+        """Get maximum context length for a model.
+
+        Priority:
+        1. model.max_context in role definition
+        2. context_limits based on model family
+        3. server_defaults.context_length
+        4. Hardcoded 8192 fallback
+
+        Args:
+            role: The role name.
+
+        Returns:
+            Maximum context length in tokens.
+        """
+        config = self.get_role_config(role)
+        defaults = self.runtime_defaults
+
+        # 1. Check for explicit max_context in model definition
+        if config:
+            model = config.get("model", {})
+            if "max_context" in model:
+                return model["max_context"]
+
+            # 2. Check context_limits based on model family
+            model_name = model.get("name", "").lower()
+            context_limits = defaults.get("context_limits", {})
+
+            # Match model family patterns
+            if "llama-3.1" in model_name or "llama-3-1" in model_name:
+                return context_limits.get("llama3_instruct", 131072)
+            elif "llama-3" in model_name and "instruct" in model_name:
+                # Llama 3 Instruct: 8K (not extended like 3.1)
+                return context_limits.get("llama3", 8192)
+            elif "llama-3" in model_name:
+                return context_limits.get("llama3", 8192)
+            elif "llama-2" in model_name or "llama2" in model_name:
+                return context_limits.get("llama2", 4096)
+            elif "qwen3" in model_name:
+                return context_limits.get("qwen3", 131072)
+            elif "qwen2" in model_name:
+                return context_limits.get("qwen2", 131072)
+            elif "deepseek-r1" in model_name:
+                return context_limits.get("deepseek_r1", 65536)
+            elif "gemma-3" in model_name or "gemma3" in model_name:
+                return context_limits.get("gemma3", 131072)
+
+        # 3. Fall back to server_defaults.context_length
+        server_defaults = defaults.get("server_defaults", {})
+        if "context_length" in server_defaults:
+            return server_defaults["context_length"]
+
+        # 4. Hardcoded fallback
+        return context_limits.get("default", 8192)
+
+    def get_baseline_tps(self, role: str) -> Optional[float]:
+        """Get baseline tokens-per-second for a role.
+
+        Args:
+            role: The role name.
+
+        Returns:
+            Baseline TPS float, or None if not available.
+        """
+        config = self.get_role_config(role)
+        if not config:
+            return None
+
+        performance = config.get("performance", {})
+        return performance.get("baseline_tps")
+
+    def get_timeout_multiplier(self, role: str, reference_tps: float = 20.0) -> float:
+        """Calculate timeout multiplier based on model speed.
+
+        Slower models need proportionally longer timeouts.
+        A model at 2 t/s needs 10x the timeout of a 20 t/s model.
+
+        Args:
+            role: The role name.
+            reference_tps: Reference speed for multiplier=1.0 (default: 20 t/s)
+
+        Returns:
+            Timeout multiplier (minimum 1.0, no maximum).
+        """
+        baseline_tps = self.get_baseline_tps(role)
+
+        # If no TPS data, use a conservative multiplier of 2.0
+        if baseline_tps is None or baseline_tps <= 0:
+            return 2.0
+
+        # Calculate multiplier: slower = higher multiplier
+        multiplier = reference_tps / baseline_tps
+
+        # Minimum 1.0 (fast models don't get shorter timeouts)
+        return max(1.0, multiplier)
+
     def add_model_entry(self, role: str, entry: dict[str, Any]) -> None:
         """Add a new model entry to the registry and save to disk.
 

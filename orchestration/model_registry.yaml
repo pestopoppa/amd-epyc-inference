@@ -26,10 +26,24 @@ runtime_defaults:
   # Server mode settings
   server_defaults:
     port: 8080
-    context_length: 65536             # 64K context for long_context tests
+    # NOTE: context_length is the MAXIMUM for benchmarks, but actual context
+    # is min(this, model.max_context). Models with smaller limits should set
+    # max_context in their model definition. Default assumes 64K support.
+    context_length: 65536             # 64K max for long_context tests
     startup_timeout: 600              # 10 minutes for large models (480B loads in ~35s)
     request_timeout: 300              # 5 minutes per request
     parallel_slots: 4                 # concurrent request slots
+  # Model context length defaults by architecture/family
+  # Models can override with max_context in their definition
+  context_limits:
+    default: 65536                    # Most modern models support 64K+
+    llama2: 4096                      # Llama 2 base: 4K
+    llama3: 8192                      # Llama 3 base: 8K (instruct versions support 128K)
+    llama3_instruct: 131072           # Llama 3 Instruct: 128K
+    qwen2: 131072                     # Qwen2/2.5: 128K
+    qwen3: 131072                     # Qwen3: 128K+
+    deepseek_r1: 65536                # DeepSeek R1 distills: 64K
+    gemma3: 131072                    # Gemma 3: 128K
   # Inference timeouts by role tier
   timeouts:
     default: 180

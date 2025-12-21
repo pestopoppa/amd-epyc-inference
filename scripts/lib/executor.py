@@ -158,6 +158,7 @@ class ServerManager:
         registry: Optional["ModelRegistry"] = None,
         no_mmap: bool = False,
         context_length: Optional[int] = None,
+        role: Optional[str] = None,
     ) -> None:
         """Start llama-server with model loaded.
 
@@ -166,14 +167,22 @@ class ServerManager:
             moe_override: Optional MoE expert override (e.g., "qwen3moe.expert_used_count=int:4").
             registry: Optional registry for binary path lookup.
             no_mmap: If True, use bulk read instead of mmap (may be faster for cold loads).
-            context_length: Override context length (default from registry: 64K).
+            context_length: Override context length. If None, uses model's max_context from registry.
+            role: Optional role name to look up model-specific max_context.
         """
         if self.process is not None:
             self.stop()
 
         self.model_path = model_path
         binary = get_binary("server", registry)
-        ctx_len = context_length if context_length is not None else self.context_length
+
+        # Determine context length: explicit > role-based > default
+        if context_length is not None:
+            ctx_len = context_length
+        elif role is not None and registry is not None:
+            ctx_len = registry.get_max_context(role)
+        else:
+            ctx_len = self.context_length
 
         cmd = [
             "numactl", "--interleave=all",
