@@ -141,18 +141,6 @@ class ServerManager:
         self.model_path = model_path
         binary = get_binary("server", registry)
 
-        # Dynamic context size based on model size
-        # Very large models need smaller context to fit KV cache in RAM
-        model_size_gb = os.path.getsize(model_path) / (1024**3)
-        if model_size_gb > 200:
-            context_size = 8192   # 8K for 200GB+ models (e.g., 480B)
-        elif model_size_gb > 100:
-            context_size = 16384  # 16K for 100-200GB models
-        elif model_size_gb > 50:
-            context_size = 32768  # 32K for 50-100GB models
-        else:
-            context_size = 65536  # 64K for smaller models
-
         cmd = [
             "numactl", "--interleave=all",
             binary,
@@ -160,7 +148,7 @@ class ServerManager:
             "-t", str(self.threads),
             "--host", "127.0.0.1",
             "--port", str(self.port),
-            "-c", str(context_size),
+            "-c", "65536",  # 64K context for long_context tests
         ]
         if moe_override:
             cmd.extend(["--override-kv", moe_override])
@@ -168,12 +156,13 @@ class ServerManager:
             cmd.append("--no-mmap")
 
         # Start server in background
-        # Note: We redirect stdout/stderr to devnull to prevent pipe buffer blocking
-        # (large models produce lots of output that would fill the 64KB pipe buffer)
+        # Capture stderr to temp file for debugging if server fails
+        import tempfile
+        self._stderr_file = tempfile.NamedTemporaryFile(mode='w', prefix='llama_server_', suffix='.log', delete=False)
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=self._stderr_file,
         )
 
     def wait_ready(self, timeout: int = 600) -> bool:
@@ -198,6 +187,18 @@ class ServerManager:
 
             # Check if process died
             if self.process and self.process.poll() is not None:
+                # Print last 20 lines of stderr for debugging
+                if hasattr(self, '_stderr_file') and self._stderr_file:
+                    self._stderr_file.flush()
+                    try:
+                        with open(self._stderr_file.name, 'r') as f:
+                            lines = f.readlines()
+                            if lines:
+                                print(f"    [SERVER] Process died. Last 20 lines of stderr:", flush=True)
+                                for line in lines[-20:]:
+                                    print(f"      {line.rstrip()}", flush=True)
+                    except Exception:
+                        pass
                 return False
 
             time.sleep(1)

@@ -13,6 +13,7 @@ runtime_defaults:
     speculative: llama-speculative    # spec decode with draft model
     lookup: llama-lookup              # prompt n-gram lookup
     cli: llama-cli                    # interactive mode (avoid in benchmarks)
+    server: llama-server              # persistent model server for benchmarks
   # Inference timeouts by role tier
   timeouts:
     default: 180
@@ -492,6 +493,9 @@ roles:
       size_gb: 39.6
       architecture: dense
     candidate_roles: [thinking, architect, general]
+    constraints:
+      forbid:
+        - speculative_decoding  # No compatible draft - DeepSeek's Llama tokenizer differs from PARD-Llama-3.2
     memory:
       residency: cold
       pinned: false
@@ -505,6 +509,9 @@ roles:
       size_gb: 4.6
       architecture: dense
     candidate_roles: [thinking, worker]
+    constraints:
+      forbid:
+        - speculative_decoding  # No compatible draft - DeepSeek's Llama tokenizer differs from PARD-Llama-3.2
     memory:
       residency: cold
       pinned: false
@@ -800,7 +807,7 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - deepseek-r1-distill  # Only compatible with other DeepSeek-R1-Distill models
+    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
   draft_pard_deepseek_r1_distill_qwen_1_5b_q5_k_s:
     tier: D
     description: Draft model - PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q5_K_S
@@ -815,7 +822,7 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - deepseek-r1-distill
+    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
   draft_pard_deepseek_r1_distill_qwen_1_5b_q8_0:
     tier: D
     description: Draft model - PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q8_0
@@ -830,7 +837,7 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - deepseek-r1-distill
+    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
   draft_pard_llama_3_2_1b_q4_0:
     tier: D
     description: Draft model - pard-llama-3.2-1b-q4_0
@@ -1031,7 +1038,7 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - deepseek-r1-distill
+    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
   thinking_deepseek_r1_distill_qwen_14b_q6kl:
     tier: B
     description: Thinking model - DeepSeek-R1-Distill-Qwen-14B-Q6_K_L
