@@ -134,9 +134,14 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 
 ## Directory Structure
 
+**llama.cpp Fork:** https://github.com/pestopoppa/llama.cpp
+- Contains local optimizations (parallel tensor repack, etc.)
+- Patches in `claude/patches/` for upstream submission
+- PR: https://github.com/ggml-org/llama.cpp/pull/18239
+
 ```
 /mnt/raid0/llm/
-├── llama.cpp/                    # Main inference engine
+├── llama.cpp/                    # Main inference engine (modded)
 │   └── build/                    # CMake build directory
 ├── hf/                           # HuggingFace format models
 ├── models/                       # GGUF converted models
@@ -157,6 +162,7 @@ This project uses a **hierarchical local-agent workflow** for production inferen
     │   ├── validate_ir.py        # IR validator
     │   └── last_task_ir.json     # Current task (gitignored)
     ├── agents/                   # Specialized agent definitions
+    ├── patches/                  # llama.cpp patches for upstream
     ├── research/                 # Research documents
     └── scripts/                  # All scripts organized here
         ├── benchmark/            # bench_zen5.sh, run_inference.sh

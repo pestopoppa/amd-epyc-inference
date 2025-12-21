@@ -125,6 +125,7 @@ class ServerManager:
         model_path: str,
         moe_override: Optional[str] = None,
         registry: Optional["ModelRegistry"] = None,
+        no_mmap: bool = False,
     ) -> None:
         """Start llama-server with model loaded.
 
@@ -132,6 +133,7 @@ class ServerManager:
             model_path: Path to the GGUF model file.
             moe_override: Optional MoE expert override (e.g., "qwen3moe.expert_used_count=int:4").
             registry: Optional registry for binary path lookup.
+            no_mmap: If True, use bulk read instead of mmap (may be faster for cold loads).
         """
         if self.process is not None:
             self.stop()
@@ -140,17 +142,18 @@ class ServerManager:
         binary = get_binary("server", registry)
 
         cmd = [
-            "env", "OMP_NUM_THREADS=1",
             "numactl", "--interleave=all",
             binary,
             "-m", model_path,
             "-t", str(self.threads),
             "--host", "127.0.0.1",
             "--port", str(self.port),
-            "-c", "8192",  # Context size
+            "-c", "65536",  # Context size (64K for long_context T3 questions)
         ]
         if moe_override:
             cmd.extend(["--override-kv", moe_override])
+        if no_mmap:
+            cmd.append("--no-mmap")
 
         # Start server in background
         # Note: We redirect stdout/stderr to devnull to prevent pipe buffer blocking
@@ -473,7 +476,6 @@ class Executor:
 
         # Base command with env wrapper
         cmd = [
-            "env", "OMP_NUM_THREADS=1",
             "numactl", "--interleave=all",
             binary,
             "-m", model_path,

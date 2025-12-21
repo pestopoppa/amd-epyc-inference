@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-20 (Added Gemma-3-27B-IT-QAT 92.8%, MathSmith 95.6%, DeepSeek-R1-Distill-Qwen-14B 86.8%, Qwen3-VL-8B-Q8_0 52.2%, Q6_K_L partial)
+**Last Updated:** 2025-12-21 (Added parallel tensor repack patch - 2.2x faster loading)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -16,6 +16,29 @@
 | Prompt Lookup (code editing) | 25.82 t/s | **8.6x** | Refactoring, code review |
 | Qwen2.5-72B + 0.5B (K=16) | 8.53 t/s | **5.8x** | General tasks |
 | MoE Expert Reduction (4 experts) | +21-48% | — | MoE models |
+
+---
+
+## 🆕 Parallel Tensor Repacking (2025-12-21)
+
+**Problem:** Model loading on 96-core EPYC was bottlenecked by single-threaded tensor repacking for AVX-512 optimization.
+
+**Solution:** OpenMP parallelization of repack functions in llama.cpp.
+
+| Model Size | Before | After | Speedup |
+|------------|--------|-------|---------|
+| 6.8GB Q4_K | 5.0s | 3.3s | **1.5x** |
+| 19GB Q4_K | 11.9s | 5.3s | **2.2x** |
+| 271GB Q4_K | ~150s | ~60s | **~2.5x** |
+
+**Additional finding:** Removing `OMP_NUM_THREADS=1` also improved prompt processing 2.4x (49 → 119 t/s).
+
+**Status:**
+- PR submitted: https://github.com/ggml-org/llama.cpp/pull/18239
+- Patch applied locally: `patches/llama-cpp-parallel-repack.patch`
+- Benchmark scripts updated to use parallel repack
+
+**Affected quant types:** Q4_0, Q4_K, Q2_K, IQ4_NL (Q6_K and Q8_0 don't use repacking)
 
 ---
 

@@ -31,17 +31,20 @@ LLM inference optimization research on AMD EPYC 9655 "Turin" (96 cores, 1.13TB D
 
 ```bash
 # Track 1: External Draft Model (5.9x speedup)
-OMP_NUM_THREADS=1 numactl --interleave=all \
+numactl --interleave=all \
   llama-speculative \
   -m Qwen2.5-Coder-32B-Q4_K_M.gguf \
   -md Qwen2.5-0.5B-Instruct-Q8_0.gguf \
   --draft-max 16 -t 96 -p "prompt"
 
 # Track 2: MoE Expert Reduction (+21-48%)
-llama-cli -m Qwen3-30B-A3B-Q4_K_M.gguf \
+numactl --interleave=all \
+  llama-cli -m Qwen3-30B-A3B-Q4_K_M.gguf \
   --override-kv qwen3moe.expert_used_count=int:4 \
   -t 96 -p "prompt"
 ```
+
+> **Note:** Do NOT use `OMP_NUM_THREADS=1` - it disables parallel tensor repacking and hurts prompt processing (49 vs 119 t/s).
 
 ## Project Structure
 
@@ -100,9 +103,32 @@ Select model based on task complexity:
 | [research_report_template.md](research/research_report_template.md) | Full report template for blog post |
 | [speculative_decoding_research.md](research/speculative_decoding_research.md) | Methodology and track details |
 
+## Dependencies
+
+### llama.cpp (Modded Fork)
+
+This project uses a modified llama.cpp with performance optimizations for many-core CPUs:
+
+**Fork:** https://github.com/pestopoppa/llama.cpp
+
+| Optimization | Speedup | PR |
+|--------------|---------|-----|
+| Parallel tensor repacking | 2.2x loading | [#18239](https://github.com/ggml-org/llama.cpp/pull/18239) |
+
+Local patches are in `patches/` for upstream submission.
+
+```bash
+# Clone the modded fork
+git clone https://github.com/pestopoppa/llama.cpp.git
+cd llama.cpp
+git checkout parallel-repack  # or apply patches manually
+cmake -B build && cmake --build build -j
+```
+
 ## Links
 
-- [llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [llama.cpp (upstream)](https://github.com/ggml-org/llama.cpp)
+- [llama.cpp (modded fork)](https://github.com/pestopoppa/llama.cpp)
 - [Speculative Decoding Papers](https://github.com/hemingkx/SpeculativeDecodingPapers)
 - [SuffixDecoding](https://suffix-decoding.github.io/)
 
