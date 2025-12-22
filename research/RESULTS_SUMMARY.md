@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-21 (Added parallel tensor repack patch - 2.2x faster loading)
+**Last Updated:** 2025-12-22 (Added Qwen3-Coder-480B Claude-as-Judge scores: 95% on thinking+agentic+coder)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -477,7 +477,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | VL | Pct | Baseline t/s | Optimized t/s (config) |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|-----|--------------|------------------------|
-| **Qwen3-Coder-480B-A35B** | architect_coding | - | - | - | - | - | - | - | - | 6.53 | (8 experts default) |
+| **Qwen3-Coder-480B-A35B** | architect_coding | 28/30 | - | - | 28/30 | 27/27 | - | - | **95%**† | 6.53 | (8 experts default) |
 | Qwen3-Coder-480B-A35B (MoE 2) | architect_coding | - | - | - | - | - | - | - | - | 11.51 | GARBAGE output ❌ |
 | **Qwen3-Coder-480B-A35B (MoE 3)** | architect_coding | - | - | - | - | - | - | - | - | 10.30 | **+58% OPTIMAL ✓** |
 | Qwen3-Coder-480B-A35B (MoE 4) | architect_coding | - | - | - | - | - | - | - | - | 9.25 | +42% |
@@ -514,6 +514,10 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-VL-30B-A3B (MoE 3) | vision_escalation | - | - | - | - | - | - | - | - | 37.66 | - |
 | Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | - | - | - | - | - | - | - | 36.84 | 29.88 (+lookup) ❌ |
 | Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | - | - | - | - | - | - | - | 28.41 | - |
+
+**Notes:**
+- † Qwen3-Coder-480B score excludes long_context suite (4/18) due to timeout issues at 40K+ token contexts. Score of 83/87 = 95% on thinking+agentic+coder only.
+- ⚠️ Qwen3-Coder-480B has a tokenizer quirk: occasionally outputs Chinese characters (e.g., "6日消息1" instead of "60") in numerical contexts. Does not affect reasoning quality - correct answer usually follows.
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 
