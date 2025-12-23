@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-22 (Added Qwen3-Coder-480B Claude-as-Judge scores: 95% on thinking+agentic+coder)
+**Last Updated:** 2025-12-23 (MOE2 Claude-as-Judge: 14% quality - confirmed garbage output)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -478,7 +478,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | VL | Pct | Baseline t/s | Optimized t/s (config) |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|-----|--------------|------------------------|
 | **Qwen3-Coder-480B-A35B** | architect_coding | 28/30 | - | - | 28/30 | 27/27 | - | - | **95%**† | 6.53 | (8 experts default) |
-| Qwen3-Coder-480B-A35B (MoE 2) | architect_coding | - | - | - | - | - | - | - | - | 11.51 | GARBAGE output ❌ |
+| Qwen3-Coder-480B-A35B (MoE 2) | architect_coding | 3/30 | - | - | 1/30 | 10/30 | - | - | **14%** | 7.6 | GARBAGE output ❌ |
 | **Qwen3-Coder-480B-A35B (MoE 3)** | architect_coding | - | - | - | - | - | - | - | - | 10.30 | **+58% OPTIMAL ✓** |
 | Qwen3-Coder-480B-A35B (MoE 4) | architect_coding | - | - | - | - | - | - | - | - | 9.25 | +42% |
 | Qwen3-Coder-480B-A35B (MoE 5) | architect_coding | - | - | - | - | - | - | - | - | 8.50 | +30% |

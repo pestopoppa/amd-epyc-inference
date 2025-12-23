@@ -211,6 +211,12 @@ class ServerManager:
         # Capture stderr to temp file for debugging if server fails
         import tempfile
         self._stderr_file = tempfile.NamedTemporaryFile(mode='w', prefix='llama_server_', suffix='.log', delete=False)
+
+        # Debug: print server command (check for MoE override)
+        if moe_override:
+            print(f"      [DEBUG] Server cmd includes: --override-kv {moe_override}", flush=True)
+        print(f"      [DEBUG] Server log: {self._stderr_file.name}", flush=True)
+
         self.process = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
@@ -235,6 +241,17 @@ class ServerManager:
             try:
                 response = requests.get(url, timeout=2)
                 if response.status_code == 200:
+                    # Verify expert count from server log
+                    if hasattr(self, '_stderr_file') and self._stderr_file:
+                        self._stderr_file.flush()
+                        try:
+                            with open(self._stderr_file.name, 'r') as f:
+                                for line in f:
+                                    if 'n_expert_used' in line:
+                                        print(f"      [DEBUG] {line.strip()}", flush=True)
+                                        break
+                        except Exception:
+                            pass
                     return True
             except requests.exceptions.RequestException:
                 pass
