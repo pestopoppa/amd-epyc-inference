@@ -1,0 +1,23 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+agentic,t1_q1_sequential,6.54,3,Valid JSON tool sequence
+agentic,t1_q2_error_handling,6.33,3,Good error handling analysis
+agentic,t1_q3_nested_params,6.44,3,Correct nested JSON structure
+agentic,t2_q1_ambiguous,6.52,3,Appropriate Slack notification
+agentic,t2_q2_error_chain,6.27,3,DNS check approach correct
+agentic,t2_q3_schema_edge,6.45,3,Correct null body for GET
+agentic,t2_q4_orchestration,6.09,3,Good deployment orchestration plan
+agentic,t3_q1_competing_constraints,6.17,3,Valid constraint handling
+agentic,t3_q2_multi_agent_coordination,5.88,3,Well-structured multi-phase plan
+agentic,t3_q3_adversarial_robustness,5.57,3,Identifies security concerns correctly
+general,t3_q1_policy_analysis,5.18,3,Substantive response
+general,t3_q2_system_failure,5.01,3,Substantive response
+general,t3_q3_strategic_communication,4.83,3,Substantive response
+general,t2_q1_synthesis,5.31,3,Substantive response
+general,t2_q2_transform,5.3,3,Substantive response
+general,t2_q3_schedule,4.49,3,Substantive response
+general,t2_q4_inconsistency,5.18,3,Substantive response
+general,t1_q1_json,5.44,2,Adequate response
+general,t1_q2_multistep,5.37,3,Substantive response
+general,t1_q3_compare,5.38,3,Substantive response
+long_context,t3_q1_multi_hop_reasoning,0.72,1,Correctly admits lack of info
+long_context,t3_q2_contradiction_detection,0.86,3,Identifies contradictions correctly
