@@ -483,15 +483,16 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Coder-480B-A35B (MoE 4) | architect_coding | 27/30 | - | - | 30/30 | 30/30 | - | - | **88%** | 7.1 | +9% |
 | Qwen3-Coder-480B-A35B (MoE 5) | architect_coding | - | - | - | - | - | - | - | - | 8.50 | +30% |
 | Qwen3-Coder-480B-A35B (MoE 6) | architect_coding | - | 29/30 | - | 30/30 | - | - | - | **95%**‡ | 6.2 | -5% |
-| **GLM-4.6-355B-A32B** | general | - | - | - | - | - | - | - | - | 2.24 | - |
+| **GLM-4.6-355B-A32B** | general | 24/30 | - | - | 12/30 | 5/6 | 18/33 | - | **59%** | 3.4 | Lower quality than Qwen |
 | GLM-4.6-355B-A32B (MoE 2) | general | - | - | - | - | - | - | - | - | - | - |
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |
 | **Qwen3-VL-235B-A22B-Thinking** | vision | - | - | - | - | - | - | - | - | 3.23 | - |
 | Qwen3-VL-235B-A22B-Thinking (MoE 2) | vision | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | - | - | - | - | - | - | - | 7.12 | 3.82 (+lookup) ❌ |
-| **Qwen3-235B-A22B** | architect_general | - | - | - | - | - | - | - | - | 3.6 | - |
-| Qwen3-235B-A22B (MoE 2) | architect_general | - | - | - | - | - | - | - | - | - | garbage |
-| Qwen3-235B-A22B (MoE 4) | architect_general | - | - | - | - | - | - | - | - | 6.75 | 6.35 (+lookup) ❌ |
+| **Qwen3-235B-A22B** | architect_general | 28/30 | 23/30 | 29/30 | 28/30 | 30/30 | 25/33 | - | **88%** | 5.9 | - |
+| **Qwen3-235B-A22B (MoE 2)** | architect_general | 28/30 | 28/30 | 26/30 | 25/30 | 27/30 | 28/33 | - | **88%** | 8.2 | **+39% OPTIMAL ✓** |
+| Qwen3-235B-A22B (MoE 4) | architect_general | 28/30 | 25/30 | 28/30 | 27/30 | 25/30 | 27/33 | - | **87%** | 7.3 | +24% |
+| Qwen3-235B-A22B (MoE 6) | architect_general | 23/30 | 24/30 | 27/30 | 26/30 | 28/30 | 28/33 | - | **86%** | 6.7 | +14% |
 | **Qwen3-Next-80B-A3B** | ingest | - | - | - | - | - | - | - | - | 10.12 | - |
 | Qwen3-Next-80B-A3B (MoE 2) | ingest | - | - | - | - | - | - | - | - | 11.55 | SSM ❌ |
 | Qwen3-Next-80B-A3B (MoE 4) | ingest | - | - | - | - | - | - | - | - | 11.49 | SSM ❌ |

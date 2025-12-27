@@ -1,0 +1,43 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t3_q1_methodological_critique,3.57,2,Explains limitation with substantive content
+thinking,t3_q2_causal_inference,3.54,2,Explains limitation with substantive content
+thinking,t3_q3_reasoning_trap,3.49,2,Explains limitation with substantive content
+thinking,t2_q1_paradox,3.51,3,Well-structured detailed response
+thinking,t2_q2_counterfactual,3.45,1,Potential issues detected
+thinking,t2_q3_formal,3.47,3,Well-structured detailed response
+thinking,t2_q4_metacognition,3.47,3,Well-structured detailed response
+thinking,t1_q1_multistep,3.45,3,Well-structured detailed response
+thinking,t1_q2_hypothesis,3.55,3,Well-structured detailed response
+thinking,t1_q3_planning,3.51,2,Explains limitation with substantive content
+instruction_precision,t3_q1_self_referential,4.12,2,Explains limitation with substantive content
+instruction_precision,t3_q2_cascading_constraints,4.03,3,Well-structured detailed response
+instruction_precision,t3_q3_meta_instruction,4.05,2,Substantive but less structured
+instruction_precision,t2_q1_resist_elaboration,4.23,3,Well-structured detailed response
+instruction_precision,t2_q2_maintain_format,4.45,1,Potential issues detected
+instruction_precision,t2_q3_empty_handling,5.19,0,Empty or minimal output
+instruction_precision,t2_q4_conflicting_constraints,4.09,3,Well-structured detailed response
+instruction_precision,t1_q1_negative_instruction,4.17,2,Substantive but less structured
+instruction_precision,t1_q2_word_limit,4.19,2,Substantive but less structured
+instruction_precision,t1_q3_structured_format,1000000.0,0,Empty or minimal output
+instruction_precision,t1_q4_multiple_constraints,4.77,0,Empty or minimal output
+agentic,t3_q1_competing_constraints,3.45,2,Valid JSON structure
+agentic,t3_q2_multi_agent_coordination,4.0,3,Valid JSON structure
+agentic,t3_q3_adversarial_robustness,4.06,2,Substantive but less structured
+agentic,t2_q1_ambiguous,4.37,2,Adequate response
+agentic,t2_q2_error_chain,1000000.0,0,Empty or minimal output
+agentic,t2_q3_schema_edge,1000000.0,0,Empty or minimal output
+agentic,t2_q4_orchestration,3.94,3,Valid JSON structure
+agentic,t1_q1_sequential,1000000.0,0,Empty or minimal output
+agentic,t1_q2_error_handling,1000000.0,0,Empty or minimal output
+agentic,t1_q3_nested_params,1000000.0,0,Empty or minimal output
+long_context,t3_q1_multi_hop_reasoning,0.59,2,Explains limitation with substantive content
+long_context,t3_q2_contradiction_detection,0.79,3,Well-structured detailed response
+long_context,t3_q3_evolving_requirements,1000000.0,0,Empty or minimal output
+long_context,t2_q1_deep_needle,,1,Short response
+long_context,t2_q2_synthesis,1000000.0,0,Empty or minimal output
+long_context,t2_q3_architecture,0.48,3,Well-structured detailed response
+long_context,t1_q1_needle,1000000.0,0,Empty or minimal output
+long_context,t1_q2_multi_file,1.56,3,Valid error handling discussion
+long_context,t1_q3_extraction,1.28,3,Well-structured detailed response
+coder,t3_q1_concurrent_correctness,3.29,3,Well-structured detailed response
+coder,t3_q2_distributed_consistency,3.29,2,Explains limitation with substantive content

@@ -190,6 +190,7 @@ roles:
     acceleration:
       type: moe_expert_reduction
       experts: 3                # MOE3 is optimal: +58% speedup with good quality
+      baseline_experts: 8       # Model default (qwen3moe.expert_used_count in GGUF)
       override_key: qwen3moe.expert_used_count
     constraints:
       forbid:

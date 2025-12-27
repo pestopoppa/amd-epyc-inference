@@ -504,9 +504,13 @@ class Executor:
         forbidden = reg.get_forbidden_configs(role)
 
         # Architecture-specific configs
+        # Test expert counts from 2 up to (baseline - 2), stepping by 2
+        # E.g., baseline=8 → test [2, 4, 6], baseline=6 → test [2, 4]
         if architecture in ("moe", "qwen3moe", "qwen3vlmoe", "mixtral", "deepseek2"):
             override_key = reg.get_moe_override_key(role) or "qwen3moe.expert_used_count"
-            for experts in [2, 4, 6, 8]:
+            baseline_experts = reg.get_baseline_experts(role)
+            max_test_experts = baseline_experts - 2  # Don't test baseline or baseline-1
+            for experts in range(2, max_test_experts + 1, 2):  # [2, 4, 6, ...] up to max
                 configs.append(Config.moe(experts, override_key))
 
             # MoE + lookup compound config (no spec decode - no MoE-compatible drafts exist)
@@ -514,9 +518,11 @@ class Executor:
                 configs.append(Config.compound_moe_lookup(4, override_key, 4))
 
         elif architecture in ("ssm_moe_hybrid", "qwen3next"):
-            # SSM models - MoE reduction ONLY, no speculation
+            # SSM models - MoE reduction ONLY, no speculation (SSM incompatible with all spec methods)
             override_key = reg.get_moe_override_key(role) or "qwen3moe.expert_used_count"
-            for experts in [2, 4, 6, 8]:
+            baseline_experts = reg.get_baseline_experts(role)
+            max_test_experts = baseline_experts - 2
+            for experts in range(2, max_test_experts + 1, 2):
                 configs.append(Config.moe(experts, override_key))
 
         else:

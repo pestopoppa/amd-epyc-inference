@@ -1,0 +1,66 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t3_q1_methodological_critique,5.68,3,Well-structured detailed response
+thinking,t3_q2_causal_inference,6.53,2,Explains limitation with substantive content
+thinking,t3_q3_reasoning_trap,5.7,3,Well-structured detailed response
+thinking,t2_q1_paradox,5.8,3,Well-structured detailed response
+thinking,t2_q2_counterfactual,5.74,3,Well-structured detailed response
+thinking,t2_q3_formal,6.86,3,Well-structured detailed response
+thinking,t2_q4_metacognition,5.72,3,Well-structured detailed response
+thinking,t1_q1_multistep,6.71,3,Well-structured detailed response
+thinking,t1_q2_hypothesis,5.78,3,Well-structured detailed response
+thinking,t1_q3_planning,5.83,2,Explains limitation with substantive content
+instruction_precision,t3_q1_self_referential,6.66,3,Well-structured detailed response
+instruction_precision,t3_q2_cascading_constraints,6.63,3,Well-structured detailed response
+instruction_precision,t3_q3_meta_instruction,6.67,2,Substantive but less structured
+instruction_precision,t2_q1_resist_elaboration,6.77,2,Adequate response
+instruction_precision,t2_q2_maintain_format,7.26,1,Potential issues detected
+instruction_precision,t2_q3_empty_handling,6.81,3,Well-structured detailed response
+instruction_precision,t2_q4_conflicting_constraints,6.77,3,Well-structured detailed response
+instruction_precision,t1_q1_negative_instruction,6.79,2,Substantive but less structured
+instruction_precision,t1_q2_word_limit,6.82,2,Substantive but less structured
+instruction_precision,t1_q3_structured_format,7.35,1,Short response
+instruction_precision,t1_q4_multiple_constraints,6.82,3,Well-structured detailed response
+agentic,t3_q1_competing_constraints,6.6,3,Valid JSON structure
+agentic,t3_q2_multi_agent_coordination,6.6,3,Valid JSON structure
+agentic,t3_q3_adversarial_robustness,5.66,3,Valid JSON structure
+agentic,t2_q1_ambiguous,5.76,3,Valid JSON structure
+agentic,t2_q2_error_chain,5.65,3,Valid JSON structure
+agentic,t2_q3_schema_edge,6.45,3,Valid JSON structure
+agentic,t2_q4_orchestration,5.6,3,Valid JSON structure
+agentic,t1_q1_sequential,6.84,2,Valid JSON structure
+agentic,t1_q2_error_handling,5.78,2,Valid JSON structure
+agentic,t1_q3_nested_params,6.75,3,Valid JSON structure
+long_context,t3_q2_contradiction_detection,1.26,3,Well-structured detailed response
+long_context,t1_q1_needle,2.18,2,Adequate response
+long_context,t1_q2_multi_file,2.23,1,Potential issues detected
+long_context,t1_q3_extraction,1.87,3,Well-structured detailed response
+coder,t3_q1_concurrent_correctness,5.29,3,Contains code blocks
+coder,t3_q2_distributed_consistency,5.66,3,Well-structured detailed response
+coder,t3_q3_algorithmic_hardness,5.37,3,Contains code blocks
+coder,t2_q1_design,6.39,3,Contains code blocks
+coder,t2_q2_debug_complex,5.7,3,Contains code blocks
+coder,t2_q3_optimize,5.73,3,Well-structured detailed response
+coder,t2_q4_system,6.7,3,Contains code blocks
+coder,t1_q1_algorithm,5.81,3,Contains code blocks
+coder,t1_q2_refactor,5.79,3,Contains code blocks
+coder,t1_q3_test,5.85,3,Contains code blocks
+general,t3_q1_policy_analysis,5.85,1,Potential issues detected
+general,t3_q2_system_failure,6.41,3,Well-structured detailed response
+general,t3_q3_strategic_communication,5.63,3,Well-structured detailed response
+general,t2_q1_synthesis,5.65,3,Well-structured detailed response
+general,t2_q2_transform,6.97,2,Adequate response
+general,t2_q3_schedule,5.77,2,Explains limitation with substantive content
+general,t2_q4_inconsistency,5.75,3,Well-structured detailed response
+general,t1_q1_json,5.71,2,Substantive but less structured
+general,t1_q2_multistep,5.76,3,Well-structured detailed response
+general,t1_q3_compare,5.76,1,Potential issues detected
+math,t3_q1_analysis,5.73,3,Well-structured detailed response
+math,t3_q2_combinatorics,5.72,3,Well-structured detailed response
+math,t3_q3_probability_theory,5.77,3,Well-structured detailed response
+math,t2_q1_optimization,6.52,3,Well-structured detailed response
+math,t2_q2_proof,6.37,2,Explains limitation with substantive content
+math,t2_q3_calculus,5.75,3,Well-structured detailed response
+math,t2_q4_statistics,5.7,3,Well-structured detailed response
+math,t1_q1_word_problem,5.9,3,Well-structured detailed response
+math,t1_q2_system_equations,5.82,3,Well-structured detailed response
+math,t1_q3_probability,5.77,3,Well-structured detailed response
