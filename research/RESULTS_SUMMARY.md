@@ -486,6 +486,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **GLM-4.6-355B-A32B** | general | 24/30 | - | - | 12/30 | 5/6 | 18/33 | - | **59%** | 3.4 | Lower quality than Qwen |
 | GLM-4.6-355B-A32B (MoE 2) | general | - | - | - | - | - | - | - | - | - | - |
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |
+| GLM-4.6-355B-A32B | ingest | 29/30 | - | - | 13/30 | - | 19/33 | - | **60%** | 3.7 | ~60% across roles |
 | **Qwen3-VL-235B-A22B-Thinking** | vision | - | - | - | - | - | - | - | - | 3.23 | - |
 | Qwen3-VL-235B-A22B-Thinking (MoE 2) | vision | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | - | - | - | - | - | - | - | 7.12 | 3.82 (+lookup) ❌ |
