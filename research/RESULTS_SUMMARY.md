@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-23 (MOE2 Claude-as-Judge: 14% quality - confirmed garbage output)
+**Last Updated:** 2025-12-29 (Qwen3-Next-80B-A3B ingest: 74%, Qwen3-VL-235B-Thinking MoE tests)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -487,14 +487,15 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | GLM-4.6-355B-A32B (MoE 2) | general | - | - | - | - | - | - | - | - | - | - |
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |
 | GLM-4.6-355B-A32B | ingest | 29/30 | - | - | 13/30 | - | 19/33 | - | **60%** | 3.7 | ~60% across roles |
-| **Qwen3-VL-235B-A22B-Thinking** | vision | - | - | - | - | - | - | - | - | 3.23 | - |
-| Qwen3-VL-235B-A22B-Thinking (MoE 2) | vision | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | - | - | - | - | - | - | - | 7.12 | 3.82 (+lookup) ❌ |
+| **Qwen3-VL-235B-A22B-Thinking** | vision | - | 21/30 | - | 9/30 | - | - | 27/30 | **63%** | 5.8 | - |
+| **Qwen3-VL-235B-A22B-Thinking (MoE 2)** | vision | - | 24/30 | - | 9/30 | - | - | 27/30 | **67%** | 5.8 | Quality maintained ✓ |
+| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | 21/30 | - | 6/30 | - | - | 26/30 | **59%** | 5.8 | -6% |
+| Qwen3-VL-235B-A22B-Thinking (MoE 6) | vision | - | 19/30 | - | 9/30 | - | - | 28/30 | **62%** | 5.9 | - |
 | **Qwen3-235B-A22B** | architect_general | 28/30 | 23/30 | 29/30 | 28/30 | 30/30 | 25/33 | - | **88%** | 5.9 | - |
 | **Qwen3-235B-A22B (MoE 2)** | architect_general | 28/30 | 28/30 | 26/30 | 25/30 | 27/30 | 28/33 | - | **88%** | 8.2 | **+39% OPTIMAL ✓** |
 | Qwen3-235B-A22B (MoE 4) | architect_general | 28/30 | 25/30 | 28/30 | 27/30 | 25/30 | 27/33 | - | **87%** | 7.3 | +24% |
 | Qwen3-235B-A22B (MoE 6) | architect_general | 23/30 | 24/30 | 27/30 | 26/30 | 28/30 | 28/33 | - | **86%** | 6.7 | +14% |
-| **Qwen3-Next-80B-A3B** | ingest | - | - | - | - | - | - | - | - | 10.12 | - |
+| **Qwen3-Next-80B-A3B** | ingest | 29/30 | - | - | 25/30 | - | 12/33 | - | **74%** | 9.7 | SSM (no spec) |
 | Qwen3-Next-80B-A3B (MoE 2) | ingest | - | - | - | - | - | - | - | - | 11.55 | SSM ❌ |
 | Qwen3-Next-80B-A3B (MoE 4) | ingest | - | - | - | - | - | - | - | - | 11.49 | SSM ❌ |
 | **Qwen3-Next-80B-A3B-Thinking** | thinking | - | - | - | - | - | - | - | - | - | - |
