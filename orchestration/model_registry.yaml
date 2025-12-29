@@ -222,7 +222,7 @@ roles:
     acceleration:
       type: moe_expert_reduction
       experts: 2
-      override_key: qwen3moe.expert_used_count
+      override_key: qwen3next.expert_used_count
     constraints:
       forbid:
       - speculative_decoding
@@ -315,7 +315,7 @@ roles:
       mmproj_path: lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf
       quant: Q4_K_M
       size_gb: 18.0
-      architecture: moe
+      architecture: qwen3vlmoe
     candidate_roles: [vision]
     acceleration:
       type: moe_expert_reduction
@@ -758,12 +758,12 @@ roles:
       path: unsloth/Qwen3-VL-235B-A22B-Thinking-GGUF/Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003.gguf
       quant: Q4_K_S
       size_gb: 46.2
-      architecture: moe
+      architecture: qwen3vlmoe
     candidate_roles: [vision]
     acceleration:
       type: moe_expert_reduction
       experts: 4
-      override_key: qwen3moe.expert_used_count
+      override_key: qwen3vlmoe.expert_used_count
     constraints:
       forbid: [speculative_decoding, prompt_lookup]
       reason: VL model - no compatible text-only drafts
