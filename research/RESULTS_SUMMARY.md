@@ -496,8 +496,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-235B-A22B (MoE 4) | architect_general | 28/30 | 25/30 | 28/30 | 27/30 | 25/30 | 27/33 | - | **87%** | 7.3 | +24% |
 | Qwen3-235B-A22B (MoE 6) | architect_general | 23/30 | 24/30 | 27/30 | 26/30 | 28/30 | 28/33 | - | **86%** | 6.7 | +14% |
 | **Qwen3-Next-80B-A3B** | ingest | 29/30 | - | - | 25/30 | - | 12/33 | - | **74%** | 9.7 | SSM (no spec) |
-| Qwen3-Next-80B-A3B (MoE 2) | ingest | - | - | - | - | - | - | - | - | 11.55 | SSM ❌ |
-| Qwen3-Next-80B-A3B (MoE 4) | ingest | - | - | - | - | - | - | - | - | 11.49 | SSM ❌ |
+| Qwen3-Next-80B-A3B (MoE 2) | ingest | 28/30 | 21/30 | 30/30 | 22/30 | 23/30 | 24/33 | - | **80%** | 9.8 | +1% (SSM) |
+| Qwen3-Next-80B-A3B (MoE 4) | ingest | 30/30 | 29/30 | 30/30 | 30/30 | 27/30 | 15/33 | - | **89%** | 9.9 | +2% (SSM) |
 | **Qwen3-Next-80B-A3B-Thinking** | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-Next-80B-A3B-Thinking (MoE 2) | thinking | - | - | - | - | - | - | - | - | - | SSM ❌ |
 | Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | - | - | - | - | - | - | - | - | - | SSM ❌ |
@@ -524,6 +524,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 - ‡ MOE6 partial run (22 questions: agentic+general+2 long_context). Full benchmark pending.
 - ⚠️ Qwen3-Coder-480B has a tokenizer quirk: occasionally outputs Chinese characters (e.g., "6日消息1" instead of "60") in numerical contexts. Does not affect reasoning quality - correct answer usually follows.
 - **MOE Quality Summary (2025-12-24):** MOE2=14% (garbage), MOE4=88% (good), MOE6=95% (partial). MOE3 untested but expected similar to MOE4/6.
+- **MOE8 is redundant (2025-12-29):** Qwen3-Coder-480B uses 8 experts by default. MOE8 test confirmed: 96% at 4.4 t/s = baseline.
+- **SSM Model Finding (2025-12-29):** Qwen3-Next-80B-A3B maintains quality with expert reduction (MOE2=80%, MOE4=89%) but NO speed gain (+1-2%) because SSM architecture doesn't benefit from expert reduction like standard MoE.
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 
