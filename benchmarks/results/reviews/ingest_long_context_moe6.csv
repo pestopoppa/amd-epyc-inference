@@ -1,0 +1,36 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t3_q1_methodological_critique,9.58,3,Well-structured detailed response
+thinking,t3_q2_causal_inference,9.66,3,Valid JSON structure
+thinking,t3_q3_reasoning_trap,9.36,3,Well-structured detailed response
+thinking,t2_q1_paradox,9.62,3,Well-structured detailed response
+thinking,t2_q2_counterfactual,9.3,3,Well-structured detailed response
+thinking,t2_q3_formal,9.56,3,Valid JSON structure
+thinking,t2_q4_metacognition,9.82,3,Well-structured detailed response
+thinking,t1_q1_multistep,9.88,3,Valid JSON structure
+thinking,t1_q2_hypothesis,10.0,3,Well-structured detailed response
+thinking,t1_q3_planning,9.64,3,Valid JSON structure
+instruction_precision,t3_q1_self_referential,10.03,3,Well-structured detailed response
+instruction_precision,t3_q2_cascading_constraints,9.98,3,Well-structured detailed response
+instruction_precision,t3_q3_meta_instruction,10.21,1,Short response
+instruction_precision,t2_q1_resist_elaboration,15.25,0,Empty or minimal output
+instruction_precision,t2_q2_maintain_format,10.31,2,Adequate response
+instruction_precision,t2_q3_empty_handling,20.36,0,Empty or minimal output
+instruction_precision,t2_q4_conflicting_constraints,10.03,3,Well-structured detailed response
+instruction_precision,t1_q1_negative_instruction,10.34,2,Adequate response
+instruction_precision,t1_q2_word_limit,10.43,2,Adequate response
+instruction_precision,t1_q3_structured_format,10.11,0,Empty or minimal output
+instruction_precision,t1_q4_multiple_constraints,10.81,0,Empty or minimal output
+agentic,t3_q1_competing_constraints,9.66,3,Valid JSON structure
+agentic,t3_q2_multi_agent_coordination,9.1,3,Valid JSON structure
+agentic,t3_q3_adversarial_robustness,9.36,3,Valid JSON structure
+agentic,t2_q1_ambiguous,9.9,3,Valid JSON structure
+agentic,t2_q2_error_chain,9.9,3,Valid JSON structure
+agentic,t2_q3_schema_edge,10.0,3,Valid JSON structure
+agentic,t2_q4_orchestration,9.87,3,Valid JSON structure
+agentic,t1_q1_sequential,9.99,3,Valid JSON structure
+agentic,t1_q2_error_handling,9.92,3,Valid JSON structure
+agentic,t1_q3_nested_params,9.91,3,Valid JSON structure
+long_context,t3_q1_multi_hop_reasoning,5.44,3,Well-structured detailed response
+long_context,t3_q2_contradiction_detection,5.73,3,Well-structured detailed response
+long_context,t3_q3_evolving_requirements,5.2,3,Well-structured detailed response
+long_context,t2_q1_deep_needle,3.58,3,Well-structured detailed response

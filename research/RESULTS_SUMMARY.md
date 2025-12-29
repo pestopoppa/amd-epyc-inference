@@ -498,6 +498,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen3-Next-80B-A3B** | ingest | 29/30 | - | - | 25/30 | - | 12/33 | - | **74%** | 9.7 | SSM (no spec) |
 | Qwen3-Next-80B-A3B (MoE 2) | ingest | 28/30 | 21/30 | 30/30 | 22/30 | 23/30 | 24/33 | - | **80%** | 9.8 | +1% (SSM) |
 | Qwen3-Next-80B-A3B (MoE 4) | ingest | 30/30 | 29/30 | 30/30 | 30/30 | 27/30 | 15/33 | - | **89%** | 9.9 | +2% (SSM) |
+| Qwen3-Next-80B-A3B (MoE 6) | ingest | 30/30 | - | - | 30/30 | - | 16/33 | - | **84%**‡ | 9.8 | +1% (SSM) |
 | **Qwen3-Next-80B-A3B-Thinking** | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-Next-80B-A3B-Thinking (MoE 2) | thinking | - | - | - | - | - | - | - | - | - | SSM ❌ |
 | Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | - | - | - | - | - | - | - | - | - | SSM ❌ |
