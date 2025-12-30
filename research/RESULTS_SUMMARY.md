@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-29 (Qwen3-Next-80B-A3B ingest: 74%, Qwen3-VL-235B-Thinking MoE tests)
+**Last Updated:** 2025-12-30 (Override key fix: VL +31%, SSM-Thinking +17%)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -488,9 +488,9 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |
 | GLM-4.6-355B-A32B | ingest | 29/30 | - | - | 13/30 | - | 19/33 | - | **60%** | 3.7 | ~60% across roles |
 | **Qwen3-VL-235B-A22B-Thinking** | vision | - | 21/30 | - | 9/30 | - | - | 27/30 | **63%** | 5.8 | - |
-| **Qwen3-VL-235B-A22B-Thinking (MoE 2)** | vision | - | 24/30 | - | 9/30 | - | - | 27/30 | **67%** | 5.8 | Quality maintained ✓ |
-| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | 21/30 | - | 6/30 | - | - | 26/30 | **59%** | 5.8 | -6% |
-| Qwen3-VL-235B-A22B-Thinking (MoE 6) | vision | - | 19/30 | - | 9/30 | - | - | 28/30 | **62%** | 5.9 | - |
+| **Qwen3-VL-235B-A22B-Thinking (MoE 2)** | vision | - | 27/30 | - | 17/30 | - | - | - | **73%**† | 7.6 | **+31% ✓** |
+| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | 30/30 | - | 15/30 | - | - | - | **75%**† | 6.8 | +17% |
+| Qwen3-VL-235B-A22B-Thinking (MoE 6) | vision | - | 23/30 | - | 12/30 | - | - | - | **58%**† | 6.4 | +10% |
 | **Qwen3-235B-A22B** | architect_general | 28/30 | 23/30 | 29/30 | 28/30 | 30/30 | 25/33 | - | **88%** | 5.9 | - |
 | **Qwen3-235B-A22B (MoE 2)** | architect_general | 28/30 | 28/30 | 26/30 | 25/30 | 27/30 | 28/33 | - | **88%** | 8.2 | **+39% OPTIMAL ✓** |
 | Qwen3-235B-A22B (MoE 4) | architect_general | 28/30 | 25/30 | 28/30 | 27/30 | 25/30 | 27/33 | - | **87%** | 7.3 | +24% |
@@ -499,9 +499,9 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Next-80B-A3B (MoE 2) | ingest | 28/30 | 21/30 | 30/30 | 22/30 | 23/30 | 24/33 | - | **80%** | 9.8 | +1% (SSM) |
 | Qwen3-Next-80B-A3B (MoE 4) | ingest | 30/30 | 29/30 | 30/30 | 30/30 | 27/30 | 15/33 | - | **89%** | 9.9 | +2% (SSM) |
 | Qwen3-Next-80B-A3B (MoE 6) | ingest | 30/30 | - | - | 30/30 | - | 16/33 | - | **84%**‡ | 9.8 | +1% (SSM) |
-| **Qwen3-Next-80B-A3B-Thinking** | thinking | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-Next-80B-A3B-Thinking (MoE 2) | thinking | - | - | - | - | - | - | - | - | - | SSM ❌ |
-| Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | - | - | - | - | - | - | - | - | - | SSM ❌ |
+| **Qwen3-Next-80B-A3B-Thinking** | thinking | 30/30 | 30/30 | 30/30 | 27/30 | 21/30 | 28/33 | - | **92%** | 9.2 | SSM (no spec) |
+| **Qwen3-Next-80B-A3B-Thinking (MoE 2)** | thinking | 30/30 | - | 30/30 | - | 27/30 | 33/33 | - | **98%**† | 10.8 | **+17% ✓** |
+| Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | - | - | - | - | - | - | - | - | - | SSM (untested) |
 | **Qwen3-Coder-53B-A3B** | coder_escalation | - | - | - | - | - | - | - | - | 18.54 | - |
 | Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-Coder-53B-A3B (MoE 4) | coder_escalation | - | - | - | - | - | - | - | - | 27.9 | - |
@@ -526,7 +526,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 - ⚠️ Qwen3-Coder-480B has a tokenizer quirk: occasionally outputs Chinese characters (e.g., "6日消息1" instead of "60") in numerical contexts. Does not affect reasoning quality - correct answer usually follows.
 - **MOE Quality Summary (2025-12-24):** MOE2=14% (garbage), MOE4=88% (good), MOE6=95% (partial). MOE3 untested but expected similar to MOE4/6.
 - **MOE8 is redundant (2025-12-29):** Qwen3-Coder-480B uses 8 experts by default. MOE8 test confirmed: 96% at 4.4 t/s = baseline.
-- **SSM Model Finding (2025-12-29):** Qwen3-Next-80B-A3B maintains quality with expert reduction (MOE2=80%, MOE4=89%) but NO speed gain (+1-2%) because SSM architecture doesn't benefit from expert reduction like standard MoE.
+- **SSM Model Finding (2025-12-29):** Qwen3-Next-80B-A3B-Instruct maintains quality with expert reduction (MOE2=80%, MOE4=89%) but NO speed gain (+1-2%) because SSM architecture is bottleneck. However, **Qwen3-Next-80B-A3B-Thinking shows +17% speedup** (9.2→10.8 t/s) with MoE2 - possibly due to longer thinking chains shifting workload to MoE layers.
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 
