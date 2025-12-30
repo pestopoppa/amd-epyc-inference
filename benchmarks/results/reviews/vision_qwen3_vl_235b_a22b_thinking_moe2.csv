@@ -1,0 +1,31 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+vl,t3_q1_scientific_diagram,7.87,3,Well-structured detailed response
+vl,t3_q2_architectural_blueprint,7.92,3,Well-structured detailed response
+vl,t3_q3_multi_image_temporal,8.48,3,Well-structured detailed response
+vl,t2_q1_math,8.65,3,Well-structured detailed response
+vl,t2_q2_flowchart,8.05,3,Well-structured detailed response
+vl,t2_q3_diff,8.05,3,Well-structured detailed response
+vl,t2_q4_puzzle,8.61,3,Well-structured detailed response
+vl,t1_q1_chart,8.65,3,Well-structured detailed response
+vl,t1_q2_invoice,8.09,3,Well-structured detailed response
+vl,t1_q3_code,8.07,3,Well-structured detailed response
+general,t3_q1_policy_analysis,7.24,3,Well-structured detailed response
+general,t3_q2_system_failure,7.14,3,Well-structured detailed response
+general,t3_q3_strategic_communication,6.66,3,Well-structured detailed response
+general,t2_q1_synthesis,6.75,3,Well-structured detailed response
+general,t2_q2_transform,7.17,3,Well-structured detailed response
+general,t2_q3_schedule,6.98,3,Well-structured detailed response
+general,t2_q4_inconsistency,6.83,3,Well-structured detailed response
+general,t1_q1_json,1000000.0,0,Empty or minimal output
+general,t1_q2_multistep,6.93,3,Well-structured detailed response
+general,t1_q3_compare,7.17,3,Well-structured detailed response
+agentic,t3_q1_competing_constraints,1000000.0,0,Empty or minimal output
+agentic,t3_q2_multi_agent_coordination,6.18,3,Well-structured detailed response
+agentic,t3_q3_adversarial_robustness,6.69,3,Well-structured detailed response
+agentic,t2_q1_ambiguous,1000000.0,0,Empty or minimal output
+agentic,t2_q2_error_chain,1000000.0,0,Empty or minimal output
+agentic,t2_q3_schema_edge,6.89,3,Well-structured detailed response
+agentic,t2_q4_orchestration,9.74,1,Short response
+agentic,t1_q1_sequential,7.03,3,Well-structured detailed response
+agentic,t1_q2_error_handling,9.77,1,Short response
+agentic,t1_q3_nested_params,6.73,3,Well-structured detailed response
