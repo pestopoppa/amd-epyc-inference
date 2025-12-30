@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-30 (Override key fix: VL +31%, SSM-Thinking +17%)
+**Last Updated:** 2025-12-30 (Override key fix: VL +31%, SSM-Thinking +12%, SSM ceiling documented)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -500,7 +500,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Next-80B-A3B (MoE 4) | ingest | 30/30 | 29/30 | 30/30 | 30/30 | 27/30 | 15/33 | - | **89%** | 9.9 | +2% (SSM) |
 | Qwen3-Next-80B-A3B (MoE 6) | ingest | 30/30 | - | - | 30/30 | - | 16/33 | - | **84%**‡ | 9.8 | +1% (SSM) |
 | **Qwen3-Next-80B-A3B-Thinking** | thinking | 30/30 | 30/30 | 30/30 | 27/30 | 21/30 | 28/33 | - | **92%** | 9.2 | SSM (no spec) |
-| **Qwen3-Next-80B-A3B-Thinking (MoE 2)** | thinking | 30/30 | - | 30/30 | - | 27/30 | 33/33 | - | **98%**† | 10.8 | **+17% ✓** |
+| **Qwen3-Next-80B-A3B-Thinking (MoE 2)** | thinking | 30/30 | - | 30/30 | - | 27/30 | 33/33 | - | **98%**† | 10.3 | **+12% ✓** |
 | Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | - | - | - | - | - | - | - | - | - | SSM (untested) |
 | **Qwen3-Coder-53B-A3B** | coder_escalation | - | - | - | - | - | - | - | - | 18.54 | - |
 | Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | - | - | - | - | - | - | - | - | - | - |
@@ -526,7 +526,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 - ⚠️ Qwen3-Coder-480B has a tokenizer quirk: occasionally outputs Chinese characters (e.g., "6日消息1" instead of "60") in numerical contexts. Does not affect reasoning quality - correct answer usually follows.
 - **MOE Quality Summary (2025-12-24):** MOE2=14% (garbage), MOE4=88% (good), MOE6=95% (partial). MOE3 untested but expected similar to MOE4/6.
 - **MOE8 is redundant (2025-12-29):** Qwen3-Coder-480B uses 8 experts by default. MOE8 test confirmed: 96% at 4.4 t/s = baseline.
-- **SSM Model Finding (2025-12-29):** Qwen3-Next-80B-A3B-Instruct maintains quality with expert reduction (MOE2=80%, MOE4=89%) but NO speed gain (+1-2%) because SSM architecture is bottleneck. However, **Qwen3-Next-80B-A3B-Thinking shows +17% speedup** (9.2→10.8 t/s) with MoE2 - possibly due to longer thinking chains shifting workload to MoE layers.
+- **SSM Model Finding (2025-12-30):** SSM+MoE hybrids hit a **ceiling effect** where moe2/moe4 produce identical speeds (~10.2 t/s). The ~12% speedup from baseline→moeX is real, but further expert reduction doesn't help. Instruct variant: +1-2% (SSM bottleneck from start). Thinking variant: +12% (baseline slower at 9.2 t/s, moeX hits same 10.2 t/s ceiling).
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 
