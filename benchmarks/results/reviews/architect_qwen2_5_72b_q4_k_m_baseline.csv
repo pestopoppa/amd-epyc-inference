@@ -1,0 +1,24 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+coder,t3_q1_concurrent_correctness,1.81,3,Well-structured detailed response
+coder,t3_q2_distributed_consistency,1.51,3,Well-structured detailed response
+coder,t3_q3_algorithmic_hardness,1000000.0,0,Empty or minimal output
+coder,t2_q1_design,1.51,3,Well-structured detailed response
+coder,t2_q2_debug_complex,1.52,3,Well-structured detailed response
+coder,t2_q3_optimize,1.51,3,Well-structured detailed response
+coder,t2_q4_system,1.53,3,Well-structured detailed response
+coder,t1_q1_algorithm,1.53,3,Well-structured detailed response
+coder,t1_q2_refactor,1000000.0,0,Empty or minimal output
+coder,t1_q3_test,1.53,3,Well-structured detailed response
+thinking,t3_q1_methodological_critique,1.51,3,Well-structured detailed response
+thinking,t3_q2_causal_inference,1.54,3,Well-structured detailed response
+thinking,t3_q3_reasoning_trap,1.52,3,Well-structured detailed response
+thinking,t2_q1_paradox,1.51,3,Well-structured detailed response
+thinking,t2_q2_counterfactual,1.49,3,Well-structured detailed response
+thinking,t2_q3_formal,1.54,3,Well-structured detailed response
+thinking,t2_q4_metacognition,1.51,3,Well-structured detailed response
+thinking,t1_q1_multistep,1.51,3,Well-structured detailed response
+thinking,t1_q2_hypothesis,1.53,3,Well-structured detailed response
+thinking,t1_q3_planning,1.51,3,Well-structured detailed response
+math,t3_q1_analysis,1.52,3,Well-structured detailed response
+math,t3_q2_combinatorics,1.49,3,Well-structured detailed response
+math,t3_q3_probability_theory,1.45,3,Well-structured detailed response
