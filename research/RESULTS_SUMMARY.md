@@ -501,7 +501,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Next-80B-A3B (MoE 6) | ingest | 30/30 | - | - | 30/30 | - | 16/33 | - | **84%**‡ | 9.8 | +1% (SSM) |
 | **Qwen3-Next-80B-A3B-Thinking** | thinking | 30/30 | 30/30 | 30/30 | 27/30 | 21/30 | 28/33 | - | **92%** | 9.2 | SSM (no spec) |
 | **Qwen3-Next-80B-A3B-Thinking (MoE 2)** | thinking | 30/30 | - | 30/30 | - | 27/30 | 33/33 | - | **98%**† | 10.3 | **+12% ✓** |
-| Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | - | - | - | - | - | - | - | - | - | SSM (untested) |
+| Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | 30/30 | 29/30 | 30/30 | 29/30 | 30/30 | 31/33 | - | **98%** | 9.8 | +7% (SSM) |
+| Qwen3-Next-80B-A3B-Thinking (MoE 6) | thinking | 30/30 | 30/30 | 30/30 | 29/30 | 24/30 | 30/33 | - | **95%** | 9.7 | +5% (SSM) |
 | **Qwen3-Coder-53B-A3B** | coder_escalation | - | - | - | - | - | - | - | - | 18.54 | - |
 | Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-Coder-53B-A3B (MoE 4) | coder_escalation | - | - | - | - | - | - | - | - | 27.9 | - |
