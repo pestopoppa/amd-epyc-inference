@@ -4,7 +4,7 @@
 
 **Status**: READY TO EXECUTE (all dependencies installed, scripts created)
 
-**Last Updated**: 2026-01-02
+**Last Updated**: 2026-01-04
 
 ---
 
@@ -354,4 +354,23 @@ ls -la /mnt/raid0/llm/hf/PARD-Qwen2.5-0.5B/
 | Results directory | `/mnt/raid0/llm/claude/benchmarks/results/runs/` |
 | HuggingFace models | `/mnt/raid0/llm/hf/` |
 | AMD PACE repo | `/mnt/raid0/llm/AMD-PACE/` |
-| This handoff doc | `/home/daniele/.claude/plans/twinkly-sniffing-crescent.md` |
+| This handoff doc | `/mnt/raid0/llm/claude/research/amd_pace_testing.md` |
+| Orchestrator handoff | `/mnt/raid0/llm/claude/research/orchestrator_handoff.md` |
+
+---
+
+## Related: Orchestrator Implementation (2026-01-04)
+
+While AMD PACE testing is pending, orchestrator components were built:
+
+| Component | Status | Tests |
+|-----------|--------|-------|
+| REPL Environment | Complete | 49 |
+| LLM Primitives | Complete (mock mode) | 31 |
+| Gate Runner | Complete | 22 |
+| Failure Router | Complete | 51 |
+| FastAPI API | Complete | 26 |
+
+See `/mnt/raid0/llm/claude/research/orchestrator_handoff.md` for details.
+
+These components work in mock mode without loading models, enabling parallel development.
