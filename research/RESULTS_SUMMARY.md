@@ -373,6 +373,59 @@ llama-cli -m MOE.gguf \
 
 ---
 
+## Evaluated But Not Applicable (2026-01-04)
+
+Techniques researched but determined incompatible with our CPU-only llama.cpp stack.
+
+### SpecDiff-2: Discrete Diffusion Drafters
+- **Paper**: [arXiv:2511.00606](https://arxiv.org/abs/2511.00606) (November 2025)
+- **Claim**: 55% improvement over EAGLE-2, 5.5x speedup using diffusion models as drafters
+- **How it works**: Uses DiffuLLaMA/DiffuCoder (discrete diffusion LLMs) as non-autoregressive drafters that generate entire sequences in parallel
+- **Why not applicable**:
+  - Requires GPU (CUDA, Flash Attention 2)
+  - Diffusion LLMs are PyTorch-only, no GGUF/ggml support
+  - Drafter models are 7B+ parameters — on CPU, running a 7B diffusion model would be slower than running the target directly
+  - Fundamentally different architecture with no conversion path
+- **Verdict**: GPU-only technique, cannot be ported to CPU/llama.cpp
+
+### Jacobi Decoding / Lookahead Decoding
+- **Source**: [Hao AI Lab](https://hao-ai-lab.github.io/blogs/jacobi-forcing/)
+- **Claim**: Parallel token generation without draft model, 1.5-2.3x speedup
+- **How it works**: Treat AR decoding as solving nonlinear equations; initialize future positions with guesses, refine in parallel until convergence
+- **Why not applicable**:
+  - Each Jacobi step processes N tokens simultaneously → requires GPU parallelism
+  - On CPU, processing N tokens = N× sequential compute (no speedup)
+  - Related techniques (Consistency LLMs, Jacobi Forcing) require model retraining
+  - All implementations are GPU-only (vLLM, custom CUDA)
+- **Verdict**: Parallel verification only benefits GPU; no CPU implementation exists
+
+### Consistency LLMs (CLLMs)
+- **Paper**: [CLLMs](https://arxiv.org/html/2403.00835v1)
+- **Claim**: 2.4-3.4x speedup via parallel n-token decoding
+- **Why not applicable**:
+  - Requires training/finetuning the model (we use pretrained GGUFs)
+  - Relies on GPU parallel compute for the parallel decoding benefit
+- **Verdict**: Training-dependent + GPU-only
+
+### Summary: CPU Speculation Limits
+
+All high-performing modern speculation techniques rely on GPU parallelism:
+
+| Technique | Parallelism Required | CPU Viable |
+|-----------|---------------------|------------|
+| External Draft (our Track 1) | None — sequential | ✅ **YES** |
+| Prompt Lookup (our Track 8) | None — n-gram matching | ✅ **YES** |
+| MoE Reduction (our Track 2) | None — fewer experts | ✅ **YES** |
+| SpecDiff-2 (diffusion drafter) | GPU matrix ops | ❌ No |
+| Jacobi/Lookahead | GPU parallel forward | ❌ No |
+| EAGLE-2 | GPU + training | ❌ No |
+| Medusa | GPU + training | ❌ No |
+| CLLMs | GPU + training | ❌ No |
+
+**Conclusion**: For CPU inference, our current production tracks (external draft, prompt lookup, MoE reduction) represent the practical ceiling. Novel GPU-parallel techniques cannot be ported without fundamental architectural changes.
+
+---
+
 ## Benchmark Framework (2025-12-16)
 
 ### 8 Quality Benchmark Suites
