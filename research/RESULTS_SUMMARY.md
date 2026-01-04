@@ -504,8 +504,9 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | 30/30 | 29/30 | 30/30 | 29/30 | 30/30 | 31/33 | - | **98%** | 9.8 | +7% (SSM) |
 | Qwen3-Next-80B-A3B-Thinking (MoE 6) | thinking | 30/30 | 30/30 | 30/30 | 29/30 | 24/30 | 30/33 | - | **95%** | 9.7 | +5% (SSM) |
 | **Qwen3-Coder-53B-A3B** | coder_escalation | - | - | - | - | - | - | - | - | 18.54 | - |
-| Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-Coder-53B-A3B (MoE 4) | coder_escalation | - | - | - | - | - | - | - | - | 27.9 | - |
+| Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | 0/30 | 0/30 | 0/27 | 0/30 | 0/30 | 0/33 | - | **0%** ⚠️ | 14.8 | DEAD |
+| Qwen3-Coder-53B-A3B (MoE 4) | coder_escalation | 8/30 | 22/30 | 26/30 | 24/30 | 16/30 | 15/33 | - | **61%** | 14.0 | 21% looping |
+| Qwen3-Coder-53B-A3B (MoE 6) | coder_escalation | 28/30 | 25/30 | 28/30 | 22/30 | 29/30 | 24/33 | - | **85%** | 12.7 | ✓ |
 | **Qwen3-Coder-30B-A3B** | frontdoor/coder | - | - | - | - | - | - | - | - | 27.14 | - |
 | Qwen3-Coder-30B-A3B (MoE 2) | frontdoor/coder | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-Coder-30B-A3B (MoE 4) | frontdoor/coder | - | - | - | - | - | - | - | - | 41.55 | 29.92 (+lookup) ❌ |
@@ -513,6 +514,10 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen3-30B-A3B-Thinking-2507 (Q8_0)** | thinking | 24/30 | 22/30 | 20/30 | 20/30 | 21/30 | 11/33 | - | **64%** | 17.4 | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 2) | thinking | 0/30 | 0/27 | 0/18 | 0/30 | 1/24 | 0/33 | - | **1%** ⚠️ | 24.2 | GARBAGE |
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 4) | thinking | 21/30 | 16/27 | - | 11/24 | 12/30 | - | - | **54%** | 19.6 | - |
+| Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 6) | thinking | 26/30 | 29/30 | 29/30 | 30/30 | 30/30 | 21/33 | - | **90%** | 19.0 | ✓ |
+| Qwen3-30B-A3B-Thinking-2507 (ingest, MoE 2) | ingest | - | - | - | - | - | - | - | **11%** ⚠️ | 24.3 | DEAD |
+| Qwen3-30B-A3B-Thinking-2507 (ingest, MoE 4) | ingest | 27/30 | 30/30 | 30/30 | 30/30 | 28/30 | 21/33 | - | **91%** | 21.4 | ✓ |
+| Qwen3-30B-A3B-Thinking-2507 (ingest, MoE 6) | ingest | 29/30 | 29/30 | 30/30 | 23/30 | 29/30 | 22/33 | - | **89%** | 19.5 | ✓ |
 | **Qwen3-30B-A3B-Thinking-2507 (Q4_K_S)** | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 2) | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 4) | thinking | - | - | - | - | - | - | - | - | - | - |

@@ -18,3 +18,4 @@ draft_pard_deepseek_r1_distill_qwen_1_5b_q8_0,65,40.9,20,Q8.0 quant
 draft_pard_llama_3_2_1b_q4_0,63,82.3,20,Llama 3.2 1B
 draft_pard_llama_3_2_1b_q8_0,65,71.4,20,Llama 3.2 1B Q8
 draft_pard_qwen3_0_6b_q4_0,58,78.4,20,Qwen3-0.6B Q4 - repetition issues
+ingest_qwen3_30b_thinking_moe2,11,24.3,48,SEVERE FAILURE: Model breakdown on MoE=2 expert reduction
