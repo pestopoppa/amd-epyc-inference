@@ -101,6 +101,44 @@ def print_progress(
     print(f"[{status:8}] {role:25} {config:15} {suite:20} {question:15} {tps_str:>10} {score_str:>5}")
 
 
+def count_pending_tests(
+    run_id: str,
+    role: str,
+    configs: list,
+    suite_names: list[str],
+    force: bool = False,
+) -> tuple[int, int]:
+    """Count tests that need to run vs total tests.
+
+    This is a "preflight check" to avoid loading models when all tests are complete.
+
+    Returns:
+        (pending_count, total_count)
+    """
+    pending = 0
+    total = 0
+
+    for config in configs:
+        if config.speed_test_only:
+            total += 1
+            if force or not result_exists(run_id, role, config.name):
+                pending += 1
+        else:
+            for suite_name in suite_names:
+                suite = load_suite(suite_name)
+                if not suite:
+                    continue
+                # Skip lookup configs for non-long_context suites
+                if config.config_type in ("lookup", "moe_lookup") and suite_name != "long_context":
+                    continue
+                for question in suite.questions:
+                    total += 1
+                    if force or not result_exists(run_id, role, config.name, suite_name, question.id):
+                        pending += 1
+
+    return pending, total
+
+
 def build_work_items(
     registry: ModelRegistry,
     executor: Executor,
@@ -229,6 +267,13 @@ def run_benchmark(
         if suite_filter:
             suite_names = [s for s in suite_names if s == suite_filter]
 
+        # PREFLIGHT CHECK: Skip model entirely if all tests are complete
+        pending_tests, total_tests = count_pending_tests(run_id, role, configs, suite_names, force)
+        if pending_tests == 0 and not dry_run:
+            print(f"  [{role}] All {total_tests} tests complete - skipping", flush=True)
+            stats["skipped"] += total_tests
+            continue  # Skip to next role WITHOUT loading model
+
         # Run baseline speed test for each model (once per model, not per role)
         if model_path not in model_tps:
             if dry_run:
@@ -312,7 +357,7 @@ def run_benchmark(
                         current_server_experts = None  # Default expert count
                         print(f"    [SERVER] Ready, model loaded in RAM (default experts)", flush=True)
 
-        print(f"    [{role}] {inner_total} tests ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
+        print(f"    [{role}] {pending_tests}/{inner_total} tests pending ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
 
         for config in configs:
             # SERVER RESTART for different MoE expert counts
@@ -382,7 +427,19 @@ def run_benchmark(
 
                     if not result.success:
                         stats["errors"] += 1
-                        print(f"    [ERROR] {role}/{config.name} (speed test)")
+                        err_hint = f"exit={result.exit_code}"
+                        if result.stderr:
+                            for line in reversed(result.stderr.split('\n')):
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                if any(line.startswith(p) for p in ['build:', 'main:', 'llama_model_loader:', 'print_info:', 'load_']):
+                                    continue
+                                line_lower = line.lower()
+                                if any(x in line_lower for x in ['error:', 'error ', 'failed', 'fatal', 'abort']):
+                                    err_hint = line[:60]
+                                    break
+                        print(f"    [ERROR] {role}/{config.name} (speed test): {err_hint}")
                         continue
 
                     parsed = parse_output(result.raw_output)
@@ -428,7 +485,8 @@ def run_benchmark(
                         continue
 
                     # Skip check
-                    if not force and result_exists(run_id, role, config.name, suite_name, question.id):
+                    exists = result_exists(run_id, role, config.name, suite_name, question.id)
+                    if not force and exists:
                         stats["skipped"] += 1
                         continue
 
@@ -474,7 +532,26 @@ def run_benchmark(
 
                         elif not result.success:
                             stats["errors"] += 1
-                            err_hint = result.raw_output.split('\n')[0][:80] if result.raw_output else f"exit={result.exit_code}"
+                            # Extract meaningful error from stderr, filtering out log noise
+                            err_hint = f"exit={result.exit_code}"
+                            if result.stderr:
+                                # Look for actual error messages in stderr (last lines often have the error)
+                                for line in reversed(result.stderr.split('\n')):
+                                    line = line.strip()
+                                    if not line:
+                                        continue
+                                    # Skip common log prefixes
+                                    if any(line.startswith(p) for p in ['build:', 'main:', 'llama_model_loader:', 'print_info:', 'load_']):
+                                        continue
+                                    # Look for real error indicators
+                                    line_lower = line.lower()
+                                    if any(x in line_lower for x in ['error:', 'error ', 'failed', 'fatal', 'abort', 'segfault', 'exception']):
+                                        err_hint = line[:80]
+                                        break
+                            elif result.raw_output:
+                                first_line = result.raw_output.split('\n')[0][:80]
+                                if not first_line.startswith('build:'):
+                                    err_hint = first_line
                             print(f"    [ERROR] {role}/{config.name}/{question.id}: {err_hint}")
                             continue
 

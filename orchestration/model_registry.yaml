@@ -1423,6 +1423,23 @@ runtime_quirks:
         - MOE5: 8.50 t/s (+30% speedup, good output)
         - MOE2: 11.51 t/s (+76% speedup, GARBAGE output) ✗ UNUSABLE
         The 480B model needs at least 3 experts for coherent output.
+  qwen2_5_72b:
+    description: Qwen2.5-72B-Instruct and Qwen2.5-Math-72B
+    quirks:
+    - issue: Speculative decoding shows ~2% acceptance with ALL tested draft models
+      workaround: Do not use speculative decoding - use baseline or prompt lookup only
+      discovered: 2025-12-31
+      explanation: |
+        Tested draft models (all showed ~2% acceptance):
+        - Qwen2.5-Coder-0.5B (2.4%)
+        - Qwen2.5-Coder-1.5B Q4_K_M (2.4%)
+        - Qwen2.5-Coder-1.5B Q2_K (2.2%)
+        - Qwen2.5-0.5B base (2.3%)
+        - Qwen2.5-Math-1.5B (2.3%)
+        - Qwen2.5-Math-1.5B Q6K (2.3%)
+        All Qwen2.5 variants share the same tokenizer, so this is not a vocab mismatch.
+        Root cause unclear - possibly generation pattern differences in 72B models.
+        For comparison: Qwen2.5-Coder-32B achieves 11x speedup with the same drafts.
   qwen3_next_80b:
     description: Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)
     quirks:

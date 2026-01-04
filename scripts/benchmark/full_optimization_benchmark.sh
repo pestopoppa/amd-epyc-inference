@@ -292,8 +292,10 @@ MODELS=(
     "Meta-Llama-3-70B|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Meta-Llama-3-70B-Instruct-GGUF/Meta-Llama-3-70B-Instruct-Q4_K_M.gguf|dense|PARD-Llama-1B"
     "Hermes-4-70B|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Hermes-4-70B-GGUF/Hermes-4-70B-Q4_K_M.gguf|dense|PARD-Llama-1B"
     "DeepSeek-R1-Llama-70B|/mnt/raid0/llm/lmstudio/models/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF/DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf|dense|PARD-Llama-1B"
-    "Qwen2.5-72B-Instruct|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf|dense|Qwen2.5-Coder-0.5B"
-    "Qwen2.5-Math-72B|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q4_K_M.gguf|dense|Qwen2.5-Coder-0.5B"
+    # NOTE: Qwen2.5-72B shows ~2% spec decode acceptance with ALL draft models tested
+    # (Coder-0.5B, Coder-1.5B, Math-1.5B, base-0.5B). Spec decode disabled - use baseline/lookup only.
+    "Qwen2.5-72B-Instruct|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf|dense|"
+    "Qwen2.5-Math-72B|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q4_K_M.gguf|dense|"
     # MoE 30B models
     "Qwen3-VL-30B-A3B|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf|moe|Qwen3-VL-2B|qwen3vlmoe.expert_used_count=int:4"
     "Qwen3-Coder-30B-A3B|/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf|moe||qwen3moe.expert_used_count=int:4"

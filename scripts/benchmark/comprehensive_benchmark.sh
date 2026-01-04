@@ -331,7 +331,9 @@ echo "PHASE 3: External Draft Benchmarks"
 echo "=========================================="
 
 # Qwen2.5 family with 0.5B draft
-for name in "Qwen2.5-Coder-32B" "Qwen2.5-72B" "Qwen2.5-72B-Instruct" "Qwen2.5-Math-72B"; do
+# NOTE: 72B models excluded - they show ~2% spec decode acceptance with ALL draft models
+# See model_registry.yaml runtime_quirks for details
+for name in "Qwen2.5-Coder-32B"; do
     if [[ -n "${MODELS[$name]:-}" ]]; then
         run_external_draft "$name" "${MODELS[$name]}" "$DRAFT_QWEN_05B" "Qwen2.5-0.5B" "summarize" "$PROMPT_SUMMARIZE"
         run_external_draft "$name" "${MODELS[$name]}" "$DRAFT_QWEN_05B" "Qwen2.5-0.5B" "code" "$PROMPT_CODE"

@@ -252,19 +252,11 @@ done
 echo ""
 echo "=== PHASE 3: EXTERNAL DRAFT TESTS ==="
 
-# Qwen2.5-72B + Qwen2.5-0.5B
-DRAFT_QWEN25_05B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-0.5B-Instruct-GGUF/Qwen2.5-0.5B-Instruct-Q8_0.gguf"
-for prompt_type in summarize code edit; do
-    case $prompt_type in
-        summarize) prompt="$PROMPT_SUMMARIZE" ;;
-        code) prompt="$PROMPT_CODE" ;;
-        edit) prompt="$PROMPT_EDIT" ;;
-    esac
-
-    run_external_draft "Qwen2.5-72B" "/mnt/raid0/llm/lmstudio/models/mradermacher/Qwen2.5-72B-GGUF/Qwen2.5-72B.Q4_K_M.gguf" "Qwen2.5-0.5B" "$DRAFT_QWEN25_05B" "$prompt_type" "$prompt"
-    run_external_draft "Qwen2.5-72B-Instruct" "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf" "Qwen2.5-0.5B" "$DRAFT_QWEN25_05B" "$prompt_type" "$prompt"
-    run_external_draft "Qwen2.5-Math-72B" "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q4_K_M.gguf" "Qwen2.5-0.5B" "$DRAFT_QWEN25_05B" "$prompt_type" "$prompt"
-done
+# NOTE: Qwen2.5-72B spec decode tests DISABLED
+# All 72B models show ~2% acceptance with ALL tested draft models
+# See model_registry.yaml runtime_quirks for full details
+# Tested drafts: Qwen2.5-Coder-0.5B, Qwen2.5-0.5B, Qwen2.5-Math-1.5B - all ~2%
+# Use baseline or prompt lookup instead for 72B models
 
 # Qwen3-32B + Qwen3-0.6B
 DRAFT_QWEN3_06B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"

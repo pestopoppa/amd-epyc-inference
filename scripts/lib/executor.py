@@ -390,11 +390,12 @@ class ServerManager:
 class InferenceResult:
     """Result of an inference run."""
 
-    raw_output: str
+    raw_output: str  # stdout only - actual model output
     exit_code: int
     command: str
     timed_out: bool = False
     tokens_per_second: Optional[float] = None  # Direct from server response
+    stderr: str = ""  # stderr only - for debugging errors
 
     @property
     def success(self) -> bool:
@@ -671,17 +672,32 @@ class Executor:
                     text=True,
                     timeout=timeout,
                 )
+                # Separate stdout (model output) from stderr (llama.cpp logs/errors)
+                # Timing info is in stderr, so append it to raw_output for parsing
+                timing_lines = [
+                    line for line in result.stderr.split('\n')
+                    if any(x in line for x in ['eval time', 'tokens per second', 'acceptance'])
+                ]
+                raw_output = result.stdout
+                if timing_lines:
+                    raw_output += '\n' + '\n'.join(timing_lines)
                 return InferenceResult(
-                    raw_output=result.stdout + result.stderr,
+                    raw_output=raw_output,
                     exit_code=result.returncode,
                     command=cmd_str,
+                    stderr=result.stderr,
                 )
-            except subprocess.TimeoutExpired:
+            except subprocess.TimeoutExpired as e:
+                # Capture partial output if available
+                # Note: TimeoutExpired.stdout/stderr are bytes even with text=True
+                partial_stdout = e.stdout.decode('utf-8', errors='replace') if e.stdout else ""
+                partial_stderr = e.stderr.decode('utf-8', errors='replace') if e.stderr else ""
                 return InferenceResult(
-                    raw_output="",
+                    raw_output=partial_stdout,
                     exit_code=-1,
                     command=cmd_str,
                     timed_out=True,
+                    stderr=partial_stderr,
                 )
 
         finally:
