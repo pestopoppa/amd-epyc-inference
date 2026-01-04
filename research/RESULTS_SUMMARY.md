@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2025-12-30 (Override key fix: VL +31%, SSM-Thinking +12%, SSM ceiling documented)
+**Last Updated:** 2026-01-04 (Research consolidation: RESEARCH_PROGRESS.md created, all literature refs preserved)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
