@@ -1,0 +1,38 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t3_q1_methodological_critique,19.73,2,Identifies 4 methodological issues correctly (selection bias SES confounding testing environment measurement bias) with explanations but response is truncated - answer present but incomplete
+thinking,t3_q2_causal_inference,19.97,1,Extensive thinking about DAG and backdoor paths but truncated mid-explanation - shows understanding but no complete answer provided
+thinking,t3_q3_reasoning_trap,19.68,1,Long reasoning about the flaw in the argument but truncated before providing concrete scenario - thinking present but no final answer
+thinking,t2_q1_paradox,20.03,2,Presents two philosophical positions (continuity of form vs material continuity) and states preference but response loops and truncates - core answer present
+thinking,t2_q2_counterfactual,21.25,3,Complete analysis across all 3 dimensions with specific examples mechanisms and conclusions - comprehensive answer with sources
+thinking,t2_q3_formal,19.94,3,Provides formal proof using natural deduction concrete example and counterexample discussion - mathematically correct and complete
+thinking,t2_q4_metacognition,20.04,2,Good Fermi estimation approach with assumptions but truncated before providing final bounds - methodology shown but incomplete
+thinking,t1_q1_multistep,19.68,3,Correct answer 11:34:17 AM with detailed work shown - solves the two-train problem accurately
+thinking,t1_q2_hypothesis,19.52,3,Provides 3 alternative explanations (SES time management health consciousness) with specific mechanisms - complete and correct
+thinking,t1_q3_planning,20.18,1,Extensive case analysis of constraints but truncated before listing valid orderings - no final answer
+coder,t3_q1_concurrent_correctness,18.96,1,Long discussion of ABA problem and compare_exchange semantics but truncated before providing fix - understanding shown but incomplete
+coder,t3_q2_distributed_consistency,19.06,2,Lists 4 conflict resolution strategies with failure scenarios but truncated during shopping cart recommendation - partial answer
+coder,t3_q3_algorithmic_hardness,19.6,1,Discusses adversary argument for lower bound but truncated mid-proof - no complete proof provided
+coder,t2_q1_design,20.13,2,Describes LRU cache design with hash map and doubly linked list but code truncated - correct approach but incomplete implementation
+coder,t2_q2_debug_complex,20.1,2,Identifies race condition and discusses lock-based fix but truncated during critical section analysis - diagnosis correct but fix incomplete
+coder,t2_q3_optimize,19.9,2,Proposes O(n) hash map solution with correct logic but truncated during two-pointer alternative - correct approach partially shown
+coder,t2_q4_refactor,19.89,1,Extensive analysis of code smells but truncated before providing refactored code - no complete answer
+coder,t1_q1_fizzbuzz,19.42,0,Only shows thinking about the problem - no code provided (truncated)
+coder,t1_q2_reverse_string,19.23,0,Only shows thinking process - no code provided (truncated)
+coder,t1_q3_debug_simple,19.66,1,Identifies the bug (range should be len(arr)-1) but truncated before showing complete fix
+agentic,t3_q1_multi_agent,19.19,1,Discusses agent coordination strategy but truncated before complete solution - planning shown but incomplete
+agentic,t3_q2_adversarial,18.98,1,Analyzes adversarial input handling but truncated mid-response - no complete strategy
+agentic,t2_q1_function_calling,19.44,2,Provides JSON tool call structure but extensive thinking causes truncation - format correct but verbose
+agentic,t2_q2_error_recovery,19.25,1,Discusses error handling strategy but truncated before final decision - thinking shown but no action
+agentic,t2_q3_context_tracking,19.37,1,Analyzes context requirements but truncated - no complete solution
+agentic,t1_q1_single_tool,19.54,2,Provides JSON tool call after extensive thinking - correct format despite verbosity
+agentic,t1_q2_error_handling,19.17,1,Discusses user clarification message but truncated before final output - no complete response
+agentic,t1_q3_nested_params,19.53,2,Provides correct JSON structure for create_task but truncated during validation - answer present but incomplete
+general,t3_q1_policy_analysis,18.38,3,Complete analysis of AI governance policy with 3 failure modes mechanisms amendments and trade-offs - thorough and correct
+general,t3_q2_system_failure,19.78,3,Explains double-charge mechanism testing failure 2 architectural fixes and monitoring - complete and accurate analysis
+general,t3_q3_ethical_reasoning,19.41,2,Discusses ethical framework but response truncated - analysis present but incomplete
+general,t2_q1_summarization,19.63,2,Summarization shown but truncated before complete summary - approach correct but incomplete
+general,t2_q2_comparison,19.52,1,Comparison analysis started but truncated early - minimal useful output
+general,t2_q3_instruction_following,19.48,2,Follows format requirements but truncated - partial compliance shown
+general,t1_q1_reformat,19.71,1,Reformatting discussed but truncated before showing output - no final answer
+general,t1_q2_extract,19.58,1,Extraction logic discussed but truncated - no extracted data provided
+general,t1_q3_classify,19.65,1,Classification reasoning shown but truncated before final classification

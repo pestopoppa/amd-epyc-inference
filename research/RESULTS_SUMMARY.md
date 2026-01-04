@@ -510,9 +510,9 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Coder-30B-A3B (MoE 2) | frontdoor/coder | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-Coder-30B-A3B (MoE 4) | frontdoor/coder | - | - | - | - | - | - | - | - | 41.55 | 29.92 (+lookup) ❌ |
 | Qwen3-Coder-30B-A3B (MoE 6) | frontdoor/coder | - | - | - | - | - | - | - | - | 30.05 | - |
-| **Qwen3-30B-A3B-Thinking-2507 (Q8_0)** | thinking | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 2) | thinking | - | - | - | - | - | - | - | - | - | - |
-| Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 4) | thinking | - | - | - | - | - | - | - | - | - | - |
+| **Qwen3-30B-A3B-Thinking-2507 (Q8_0)** | thinking | 24/30 | 22/30 | 20/30 | 20/30 | 21/30 | 11/33 | - | **64%** | 17.4 | - |
+| Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 2) | thinking | 0/30 | 0/27 | 0/18 | 0/30 | 1/24 | 0/33 | - | **1%** ⚠️ | 24.2 | GARBAGE |
+| Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 4) | thinking | 21/30 | 16/27 | - | 11/24 | 12/30 | - | - | **54%** | 19.6 | - |
 | **Qwen3-30B-A3B-Thinking-2507 (Q4_K_S)** | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 2) | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 4) | thinking | - | - | - | - | - | - | - | - | - | - |
@@ -533,14 +533,18 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
-| Qwen2.5-72B | architect | - | - | - | - | - | - | - | 0.85 | - | - | - | - |
+| **Meta-Llama-3.1-70B** | architect | 29/30 | 29/30 | 25/30 | 30/30 | 27/30 | 25/33 | **90%** | 2.1 | 84.31 | PARD-Llama-3.2-1B Q4_0 | 24 | - |
+| **Hermes-4-70B** | architect | 29/30 | 29/30 | 22/30 | 28/30 | 30/30 | 15/33 | **84%** | 2.7 | - | - | - | - |
+| Hermes-4-70B | ingest | 30/30 | 29/30 | 30/30 | 24/30 | 25/30 | 15/33 | **84%** | 2.9 | - | - | - | - |
+| Meta-Llama-3.1-70B | ingest | 28/30 | 28/30 | 23/30 | 26/30 | 23/30 | 21/33 | **81%** | 2.0 | 85.75 | PARD-Llama-3.2-1B Q4_0 | 24 | - |
+| Qwen2.5-Math-72B (2nd run) | math | 22/30 | 30/30 | 26/30 | 20/30 | 21/30 | 22/33 | **77%** | 2.0 | 158.85 | Qwen2.5-0.5B | 24 | - |
+| Qwen2.5-72B | ingest | 28/30 | 26/30 | 27/30 | 20/30 | 19/30 | 18/33 | **75%** | 2.2 | - | - | - | - |
+| DeepSeek-R1-Distill-Llama-70B | thinking | 20/30 | 20/30 | 20/30 | 21/30 | 20/30 | 13/33 | **62%** | 1.0 | - | - | - | - |
+| Qwen2.5-Math-72B (Q4_K_M) | math | 21/30 | 18/30 | 21/30 | 19/30 | 21/30 | 11/33 | **61%** | ~2.0 | 7.55 | Qwen2.5-0.5B | 12 | 0.5 |
+| Meta-Llama-3-70B | architect | 0/30 | 13/30 | 5/30 | 12/30 | 15/30 | 16/33 | **33%** ⚠️ | 14.9 | 6.42 | PARD-Llama-3.2-1B | 8 | - |
+| Qwen2.5-72B (base) | architect | - | - | - | - | - | - | - | 0.85 | - | - | - | - |
 | Qwen2.5-72B-Instruct | architect | - | - | - | - | - | - | - | 1.70 | 8.53 | Qwen2.5-0.5B | 16 | - |
-| DeepSeek-R1-Distill-Llama-70B | thinking | - | - | - | - | - | - | - | 1.36 | - | - | - | - |
-| Qwen2.5-Math-72B (Q4_K_M) | math | - | - | - | - | - | - | - | 1.41 | 7.55 | Qwen2.5-0.5B | 12 | 0.5 |
 | Qwen2.5-Math-72B (Q6_K) | math | - | - | - | - | - | - | - | - | - | - | - | - |
-| Meta-Llama-3-70B | architect | - | - | - | - | - | - | - | 1.72 | 6.42 | PARD-Llama-3.2-1B | 8 | - |
-| Hermes-4-70B | architect | - | - | - | - | - | - | - | 1.73 | - | - | - | - |
-| Meta-Llama-3.1-70B | architect | - | - | - | - | - | - | - | 1.96 | - | - | - | - |
 | GLM-4.6 (dense) | general | - | - | - | - | - | - | - | - | - | - | - | - |
 
 #### Tier A-B: Production & Specialist Models (Dense 27B-32B)
