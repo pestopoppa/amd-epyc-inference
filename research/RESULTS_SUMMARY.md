@@ -556,7 +556,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen3-Next-80B-A3B-Thinking (MoE 2)** | thinking | 30/30 | - | 30/30 | - | 27/30 | 33/33 | - | **98%**† | 10.3 | **+12% ✓** |
 | Qwen3-Next-80B-A3B-Thinking (MoE 4) | thinking | 30/30 | 29/30 | 30/30 | 29/30 | 30/30 | 31/33 | - | **98%** | 9.8 | +7% (SSM) |
 | Qwen3-Next-80B-A3B-Thinking (MoE 6) | thinking | 30/30 | 30/30 | 30/30 | 29/30 | 24/30 | 30/33 | - | **95%** | 9.7 | +5% (SSM) |
-| **Qwen3-Coder-53B-A3B** | coder_escalation | - | - | - | - | - | - | - | - | 18.54 | - |
+| **Qwen3-Coder-53B-A3B** | coder_escalation | 19/30 | 11/27 | 12/30 | 11/30 | 9/30 | 7/33 | - | **38%** ⚠️ | 9.2 | Repetition loops |
 | Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | 0/30 | 0/30 | 0/27 | 0/30 | 0/30 | 0/33 | - | **0%** ⚠️ | 14.8 | DEAD |
 | Qwen3-Coder-53B-A3B (MoE 4) | coder_escalation | 8/30 | 22/30 | 26/30 | 24/30 | 16/30 | 15/33 | - | **61%** | 14.0 | 21% looping |
 | Qwen3-Coder-53B-A3B (MoE 6) | coder_escalation | 28/30 | 25/30 | 28/30 | 22/30 | 29/30 | 24/33 | - | **85%** | 12.7 | ✓ |
@@ -568,6 +568,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 2) | thinking | 0/30 | 0/27 | 0/18 | 0/30 | 1/24 | 0/33 | - | **1%** ⚠️ | 24.2 | GARBAGE |
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 4) | thinking | 21/30 | 16/27 | - | 11/24 | 12/30 | - | - | **54%** | 19.6 | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 6) | thinking | 26/30 | 29/30 | 29/30 | 30/30 | 30/30 | 21/33 | - | **90%** | 19.0 | ✓ |
+| **Qwen3-30B-A3B-Thinking-2507 (ingest)** | ingest | 26/30 | 25/30 | 25/30 | 24/30 | 21/30 | 22/33 | - | **78%** | 17.6 | - |
 | Qwen3-30B-A3B-Thinking-2507 (ingest, MoE 2) | ingest | - | - | - | - | - | - | - | **11%** ⚠️ | 24.3 | DEAD |
 | Qwen3-30B-A3B-Thinking-2507 (ingest, MoE 4) | ingest | 27/30 | 30/30 | 30/30 | 30/30 | 28/30 | 21/33 | - | **91%** | 21.4 | ✓ |
 | Qwen3-30B-A3B-Thinking-2507 (ingest, MoE 6) | ingest | 29/30 | 29/30 | 30/30 | 23/30 | 29/30 | 22/33 | - | **89%** | 19.5 | ✓ |
@@ -609,10 +610,10 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
-| DeepSeek-R1-Distill-Qwen-32B (Q6_K) | thinking | - | - | - | - | - | - | - | 3.73 | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-32B (Q6_K) | thinking | 26/30 | - | - | - | 13/18 | - | **81%**‡ | 1.78 | - | - | - | - |
 | Qwen3-32B | general | - | - | - | - | - | - | - | 3.67 | 5.87 | Qwen3-0.6B | 8 | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.72 | - | - | - | - |
-| Qwen2.5-Coder-32B | coder/summarize | - | - | - | - | - | - | - | 5.79 | 33.0 | Qwen2.5-Coder-0.5B | 24 | - |
+| Qwen2.5-Coder-32B | coder/summarize | 28/30 | - | - | 8/9 | 30/30 | - | **96%**‡ | 2.99 | 33.0 | Qwen2.5-Coder-0.5B | 24 | - |
 
 #### Tier B: Thinking & Reasoning Models (7B-14B)
 
