@@ -165,6 +165,10 @@ Priority targets:
 
 **MANDATORY**: Log all progress to:
 ```
+# In devcontainer:
+/workspace/research/kernel_dev_progress.log
+
+# On host:
 /mnt/raid0/llm/claude/research/kernel_dev_progress.log
 ```
 
@@ -209,17 +213,32 @@ Log every:
 
 ## 10. Workspace Setup
 
+**In devcontainer:**
 ```bash
 # Create isolated workspace
-mkdir -p /mnt/raid0/llm/kernel-dev
-cd /mnt/raid0/llm/kernel-dev
+mkdir -p /workspace/kernel-dev
+cd /workspace/kernel-dev
+
+# Clone llama.cpp for experimentation (host version not mounted)
+git clone --depth 1 https://github.com/ggml-org/llama.cpp llama-cpp-dev
+
+# Create log file
+LOG=/workspace/research/kernel_dev_progress.log
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] SESSION: Kernel development started" >> $LOG
+```
+
+**On host:**
+```bash
+# Create isolated workspace
+mkdir -p /mnt/raid0/llm/claude/kernel-dev
+cd /mnt/raid0/llm/claude/kernel-dev
 
 # Copy ggml source for experimentation (don't modify main llama.cpp)
 cp -r /mnt/raid0/llm/llama.cpp/ggml ./ggml-experimental
 
 # Create log file
-touch /mnt/raid0/llm/claude/research/kernel_dev_progress.log
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] SESSION: Kernel development started" >> /mnt/raid0/llm/claude/research/kernel_dev_progress.log
+LOG=/mnt/raid0/llm/claude/research/kernel_dev_progress.log
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] SESSION: Kernel development started" >> $LOG
 ```
 
 ---
@@ -236,9 +255,24 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] SESSION: Kernel development started" >> /mn
 
 ## 12. Quick Start
 
+**In devcontainer:**
 ```bash
 # 1. Set up workspace
-mkdir -p /mnt/raid0/llm/kernel-dev && cd /mnt/raid0/llm/kernel-dev
+mkdir -p /workspace/kernel-dev && cd /workspace/kernel-dev
+git clone --depth 1 https://github.com/ggml-org/llama.cpp llama-cpp-dev
+
+# 2. Start logging
+LOG=/workspace/research/kernel_dev_progress.log
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] SESSION: Started" >> $LOG
+
+# 3. Begin analysis
+cat llama-cpp-dev/ggml/src/ggml-cpu/ggml-cpu.c | head -500
+```
+
+**On host:**
+```bash
+# 1. Set up workspace
+mkdir -p /mnt/raid0/llm/claude/kernel-dev && cd /mnt/raid0/llm/claude/kernel-dev
 
 # 2. Start logging
 LOG=/mnt/raid0/llm/claude/research/kernel_dev_progress.log
