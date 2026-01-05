@@ -5,6 +5,9 @@ This module provides llm_call() and llm_batch() functions for spawning
 sub-LM calls from the Root LM. Supports both mock mode (for testing)
 and real inference via the ModelServer.
 
+Includes optional GenerationMonitor integration for early failure detection.
+See research/early_failure_prediction.md for literature references.
+
 Usage:
     from src.llm_primitives import LLMPrimitives
 
@@ -17,6 +20,14 @@ Usage:
     server = ModelServer()
     primitives = LLMPrimitives(model_server=server, mock_mode=False)
     result = primitives.llm_call("Summarize this:", "Some text", role="worker")
+
+    # With generation monitoring for early abort
+    from src.generation_monitor import GenerationMonitor, MonitorConfig
+    monitor = GenerationMonitor(config=MonitorConfig.for_tier("worker"))
+    result = primitives.llm_call_monitored("Solve this:", "", role="worker", monitor=monitor)
+    if result.aborted:
+        # Handle early abort - escalate to higher tier
+        pass
 """
 
 from __future__ import annotations
@@ -40,6 +51,31 @@ class CallLogEntry:
     result: str | list[str] | None = None
     elapsed_seconds: float = 0.0
     error: str | None = None
+
+
+@dataclass
+class LLMResult:
+    """Result of an LLM call with optional abort information.
+
+    Used by llm_call_monitored when generation monitoring is enabled.
+
+    Attributes:
+        text: The generated text (may be partial if aborted).
+        aborted: Whether generation was aborted early.
+        abort_reason: Reason for abort (if aborted).
+        tokens_generated: Number of tokens generated.
+        tokens_saved: Estimated tokens saved by early abort.
+        failure_probability: Estimated failure probability at abort.
+        elapsed_seconds: Time taken for generation.
+    """
+
+    text: str
+    aborted: bool = False
+    abort_reason: str = ""
+    tokens_generated: int = 0
+    tokens_saved: int = 0
+    failure_probability: float = 0.0
+    elapsed_seconds: float = 0.0
 
 
 @dataclass
@@ -192,6 +228,203 @@ class LLMPrimitives:
             log_entry.elapsed_seconds = time.perf_counter() - start_time
             self.call_log.append(log_entry)
             return [f"[ERROR: {e}]" for _ in prompts]
+
+    def llm_call_monitored(
+        self,
+        prompt: str,
+        context_slice: str = "",
+        role: str = "worker",
+        monitor: Any = None,
+        expected_length: int | None = None,
+    ) -> LLMResult:
+        """Call a sub-LM with generation monitoring for early abort.
+
+        This method integrates with GenerationMonitor to detect likely
+        failures during generation and abort early to save compute.
+
+        Args:
+            prompt: The instruction/prompt for the sub-LM.
+            context_slice: Optional context to include.
+            role: Role determining which model to use.
+            monitor: GenerationMonitor instance (required).
+            expected_length: Expected output length (for runaway detection).
+
+        Returns:
+            LLMResult with text and abort information.
+
+        Raises:
+            ValueError: If monitor is None.
+        """
+        if monitor is None:
+            raise ValueError("monitor required for llm_call_monitored")
+
+        start_time = time.perf_counter()
+        self.total_calls += 1
+
+        # Build full prompt
+        if context_slice:
+            full_prompt = f"{prompt}\n\nContext:\n{context_slice}"
+        else:
+            full_prompt = prompt
+
+        # Set expected length if provided
+        if expected_length:
+            monitor.expected_length = expected_length
+
+        # Create log entry
+        log_entry = CallLogEntry(
+            timestamp=time.time(),
+            call_type="call_monitored",
+            prompt=prompt,
+            context_slice=context_slice[:500] if context_slice else None,
+            role=role,
+        )
+
+        try:
+            if self.mock_mode:
+                result = self._mock_call_monitored(full_prompt, role, monitor)
+            else:
+                result = self._real_call_monitored(full_prompt, role, monitor)
+
+            log_entry.result = result.text[:500] if result.text else None
+            log_entry.elapsed_seconds = time.perf_counter() - start_time
+            self.call_log.append(log_entry)
+
+            result.elapsed_seconds = log_entry.elapsed_seconds
+            return result
+
+        except Exception as e:
+            log_entry.error = str(e)
+            log_entry.elapsed_seconds = time.perf_counter() - start_time
+            self.call_log.append(log_entry)
+            return LLMResult(
+                text=f"[ERROR: {e}]",
+                aborted=False,
+                elapsed_seconds=log_entry.elapsed_seconds,
+            )
+
+    def _mock_call_monitored(
+        self,
+        prompt: str,
+        role: str,
+        monitor: Any,
+    ) -> LLMResult:
+        """Generate mock response with monitoring simulation.
+
+        Args:
+            prompt: The full prompt.
+            role: The role being called.
+            monitor: GenerationMonitor instance.
+
+        Returns:
+            LLMResult with mock text and abort status.
+        """
+        # Reset monitor for this generation
+        monitor.reset()
+
+        # Simulate token-by-token generation
+        tokens = []
+        max_tokens = 200  # Mock generation limit
+
+        for i in range(max_tokens):
+            # Simulate a token
+            token_id = hash(prompt + str(i)) % 50000
+            tokens.append(token_id)
+
+            # Update monitor (in mock mode, it generates synthetic metrics)
+            monitor.update(token_id, logits=None)
+
+            # Check if we should abort
+            should_abort, abort_reason = monitor.should_abort()
+            if should_abort:
+                health = monitor.get_health()
+                return LLMResult(
+                    text=f"{self.config.mock_response_prefix} Partial response (aborted at token {i})",
+                    aborted=True,
+                    abort_reason=abort_reason.value,
+                    tokens_generated=i + 1,
+                    tokens_saved=max_tokens - i - 1,
+                    failure_probability=health.estimated_failure_prob,
+                )
+
+        # Completed without abort
+        health = monitor.get_health()
+        prompt_preview = prompt[:50].replace("\n", " ")
+        return LLMResult(
+            text=f"{self.config.mock_response_prefix} Response for role='{role}': {prompt_preview}...",
+            aborted=False,
+            tokens_generated=max_tokens,
+            failure_probability=health.estimated_failure_prob,
+        )
+
+    def _real_call_monitored(
+        self,
+        prompt: str,
+        role: str,
+        monitor: Any,
+    ) -> LLMResult:
+        """Make real inference call with monitoring.
+
+        Args:
+            prompt: The full prompt.
+            role: The role determining which model to use.
+            monitor: GenerationMonitor instance.
+
+        Returns:
+            LLMResult with text and abort status.
+
+        Raises:
+            RuntimeError: If model server not configured.
+        """
+        if self.model_server is None:
+            raise RuntimeError("ModelServer not configured for real inference")
+
+        # Reset monitor for this generation
+        monitor.reset()
+
+        # Use the model server's streaming infer method
+        from src.model_server import InferenceRequest
+
+        request = InferenceRequest(
+            role=role,
+            prompt=prompt,
+            timeout=self.config.call_timeout,
+            stream=True,  # Enable streaming for per-token monitoring
+        )
+
+        output_tokens = []
+        for token_id, logits in self.model_server.infer_stream(role, request):
+            output_tokens.append(token_id)
+
+            # Update monitor with real logits
+            monitor.update(token_id, logits)
+
+            # Check if we should abort
+            should_abort, abort_reason = monitor.should_abort()
+            if should_abort:
+                health = monitor.get_health()
+                # Decode partial output
+                partial_text = self.model_server.decode_tokens(output_tokens)
+                return LLMResult(
+                    text=partial_text,
+                    aborted=True,
+                    abort_reason=abort_reason.value,
+                    tokens_generated=len(output_tokens),
+                    tokens_saved=0,  # Unknown for real inference
+                    failure_probability=health.estimated_failure_prob,
+                )
+
+        # Completed without abort
+        health = monitor.get_health()
+        full_text = self.model_server.decode_tokens(output_tokens)
+        self.total_tokens_generated += len(output_tokens)
+
+        return LLMResult(
+            text=full_text,
+            aborted=False,
+            tokens_generated=len(output_tokens),
+            failure_probability=health.estimated_failure_prob,
+        )
 
     def _mock_call(self, prompt: str, role: str) -> str:
         """Generate a mock response for testing.

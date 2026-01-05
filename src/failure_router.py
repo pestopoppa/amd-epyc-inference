@@ -35,6 +35,7 @@ class ErrorCategory(str, Enum):
     TIMEOUT = "timeout"  # Gate or execution timeout
     SCHEMA = "schema"  # IR/JSON schema violations
     FORMAT = "format"  # Style/format issues
+    EARLY_ABORT = "early_abort"  # Generation aborted due to predicted failure
     UNKNOWN = "unknown"  # Unclassified errors
 
 
@@ -192,6 +193,31 @@ class FailureRouter:
                     reason=f"Skipping optional gate '{context.gate_name}' due to timeout",
                     should_include_context=False,
                 )
+
+        # Early abort: escalate immediately (don't retry - model showed failure signs)
+        if context.error_category == ErrorCategory.EARLY_ABORT:
+            if chain.escalates_to is None:
+                # At top of chain (architect)
+                return RoutingDecision(
+                    action="fail",
+                    next_role=None,
+                    reason=f"Early abort at {context.role} with no escalation available",
+                    should_include_context=True,
+                )
+            if context.escalation_count >= chain.max_escalations:
+                return RoutingDecision(
+                    action="fail",
+                    next_role=None,
+                    reason=f"Early abort: max escalations ({chain.max_escalations}) reached",
+                    should_include_context=True,
+                )
+            # Immediate escalation - retrying same role wastes compute
+            return RoutingDecision(
+                action="escalate",
+                next_role=chain.escalates_to,
+                reason=f"Early abort detected at {context.role}: {context.error_message}",
+                should_include_context=True,
+            )
 
         # Format/schema errors: always retry, never escalate
         if context.error_category in self.NO_ESCALATE_CATEGORIES:

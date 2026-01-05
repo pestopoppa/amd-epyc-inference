@@ -1,0 +1,91 @@
+# Generation Monitor Configuration
+# Early failure detection thresholds for orchestrator
+#
+# Literature References:
+# - Gnosis (arXiv:2512.20578): Predicts failure at 40% generation
+# - ZIP-RC (arXiv:2512.01457): Per-token reward prediction
+# - KnowLoop (arXiv:2406.00430): Entropy-based uncertainty estimation
+
+# Default thresholds (general tasks)
+default:
+  min_tokens_before_abort: 50
+  entropy_threshold: 4.0
+  entropy_spike_threshold: 2.0
+  repetition_threshold: 0.3
+  perplexity_window: 20
+  max_length_multiplier: 2.0
+  entropy_sustained_count: 10
+  ngram_size: 3
+  combined_threshold: 0.7
+
+# Task-specific overrides
+task_overrides:
+  code_generation:
+    min_tokens_before_abort: 100  # Code needs more context before abort
+    repetition_threshold: 0.2     # Stricter - repetition in code is bad
+    ngram_size: 4                 # Larger n-grams for code patterns
+
+  reasoning:
+    entropy_threshold: 4.5        # Reasoning has natural uncertainty
+    min_tokens_before_abort: 30   # Can detect failure earlier
+    perplexity_window: 15         # Shorter window for thinking
+
+  summarization:
+    repetition_threshold: 0.25    # Summaries should avoid repetition
+    max_length_multiplier: 1.5    # Stricter length control
+
+  chat:
+    entropy_threshold: 3.5        # Conversational should be confident
+    min_tokens_before_abort: 20   # Quick abort for simple chats
+
+# Progressive relaxation by escalation tier
+# Higher tiers handle harder tasks with natural uncertainty
+tier_overrides:
+  worker:
+    entropy_threshold: 4.5
+    entropy_spike_threshold: 2.5
+    min_tokens_before_abort: 50
+
+  coder:
+    entropy_threshold: 5.0
+    entropy_spike_threshold: 3.0
+    min_tokens_before_abort: 100
+    repetition_threshold: 0.2     # Strict for code
+
+  architect:
+    entropy_threshold: 6.0
+    entropy_spike_threshold: 4.0
+    min_tokens_before_abort: 200
+    repetition_threshold: 0.4     # Most tolerant (top tier)
+
+  ingest:
+    entropy_threshold: 5.5
+    entropy_spike_threshold: 3.5
+    min_tokens_before_abort: 100
+
+# Model-specific quirks (if needed)
+model_overrides:
+  # Thinking models naturally have higher entropy during <think> phase
+  thinking_models:
+    entropy_threshold: 5.5
+    entropy_sustained_count: 20   # More patience for thinking
+
+  # MoE models may have different entropy profiles
+  moe_models:
+    entropy_threshold: 4.5
+
+# Signal weights for combined failure probability
+# Derived from empirical studies (KnowLoop, Gnosis)
+signal_weights:
+  entropy: 0.35           # Most predictive signal
+  entropy_spike: 0.25     # Sudden uncertainty jumps
+  repetition: 0.25        # Degeneration indicator
+  perplexity_trend: 0.15  # Trend over window
+
+# Future: Gnosis integration (when open source available)
+# gnosis:
+#   enabled: false
+#   checkpoint_path: null
+#   hidden_circuit_dim: 2.6M
+#   attention_circuit_dim: 1.4M
+#   detection_point: 0.4  # 40% of generation
