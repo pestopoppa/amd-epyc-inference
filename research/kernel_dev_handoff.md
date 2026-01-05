@@ -6,6 +6,36 @@
 
 ---
 
+## 0. YOLO Mode Launch (CRITICAL)
+
+**To run Claude Code without permission prompts, launch with:**
+```bash
+claude --dangerously-skip-permissions
+```
+
+This flag is safe inside the devcontainer due to isolation. Without this flag, the agent will prompt for every tool use.
+
+**References:**
+- [banteg/agents](https://github.com/banteg/agents) - YOLO devcontainer setup
+- [Claude Code devcontainer docs](https://code.claude.com/docs/en/devcontainer)
+
+---
+
+## 0.1 Path Mapping (IMPORTANT)
+
+This handoff references paths for both host and devcontainer environments:
+
+| Host Path | Container Path |
+|-----------|----------------|
+| `/mnt/raid0/llm/claude/` | `/workspace/` |
+| `/mnt/raid0/llm/llama.cpp/` | NOT MOUNTED (clone fresh) |
+| `/mnt/raid0/llm/kernel-dev/` | `/workspace/kernel-dev/` |
+
+**If running in devcontainer**: Use `/workspace/` paths.
+**If running on host**: Use `/mnt/raid0/llm/claude/` paths.
+
+---
+
 ## 1. Objective
 
 Optimize ggml AVX-512 kernels for AMD EPYC 9655 (Zen 5) to improve inference throughput.
@@ -37,10 +67,21 @@ L3 Cache:         384 MB (32 MB per CCD)
 
 ## 3. Codebase Location
 
+**In devcontainer** (clone fresh - host llama.cpp not mounted):
+```bash
+cd /workspace
+git clone https://github.com/ggml-org/llama.cpp llama-cpp-dev
+```
+
+**On host**:
 ```
 /mnt/raid0/llm/llama.cpp/          # Main llama.cpp fork
-/mnt/raid0/llm/llama.cpp/ggml/     # ggml tensor library (target for optimization)
-/mnt/raid0/llm/llama.cpp/ggml/src/ggml-cpu/  # CPU-specific implementations
+```
+
+**Key paths after clone**:
+```
+llama-cpp-dev/ggml/                # ggml tensor library (target)
+llama-cpp-dev/ggml/src/ggml-cpu/   # CPU-specific implementations
 ```
 
 **Key files to study**:
