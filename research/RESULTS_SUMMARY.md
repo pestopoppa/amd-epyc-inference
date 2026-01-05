@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-04 (Research consolidation: RESEARCH_PROGRESS.md created, all literature refs preserved)
+**Last Updated:** 2026-01-05 (CPU optimization R&D tracks identified)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -436,6 +436,44 @@ All high-performing modern speculation techniques rely on GPU parallelism:
 | MoR (recursive transformer) | Training-time arch | ❌ No |
 
 **Conclusion**: For CPU inference, our current production tracks (external draft, prompt lookup, MoE reduction) represent the practical ceiling. Novel GPU-parallel techniques cannot be ported without fundamental architectural changes.
+
+---
+
+## 🆕 CPU Optimization R&D (2026-01-05)
+
+Following the question "could we develop the architectural changes ourselves?", we've identified and evaluated potential CPU-specific optimizations.
+
+### Research Tracks
+
+| Track | Priority | Status | Expected Gain | Notes |
+|-------|----------|--------|---------------|-------|
+| **B: Tree Speculation** | HIGH | Ready to test | 10-30% | Already in llama.cpp, K-sweep in progress |
+| **A: T-MAC** | MEDIUM | Cloned | 2-4× (uncertain) | x86 gains uncertain per README |
+| **D: AVX-512 Kernels** | LOW | Devc handoff ready | 20-50% | Autonomous agent development |
+| **C: Multi-Draft Parallel** | BLOCKED | Needs BIOS | 30-50% | Requires NPS4 (only 2 NUMA nodes) |
+
+### Key Findings
+
+1. **T-MAC (Lookup Table Inference)**
+   - Location: `/mnt/raid0/llm/T-MAC/`
+   - Problem: Requires model reconversion (existing Q4_K_M GGUFs not compatible)
+   - Warning: "Cannot guarantee significant speedup on x86 platforms" (README)
+   - Best gains at 1-2 bit (quality tradeoff)
+
+2. **NUMA Topology**
+   - Actual: 2 nodes (NPS1), not 8 as assumed
+   - Each node: 48 cores + ~567GB RAM
+   - Multi-draft parallel blocked without BIOS change to NPS4
+
+3. **Tree Speculation**
+   - Already in llama.cpp via `--draft-max` with tree sampling
+   - Current benchmark already sweeping K=4,8,16,24,32
+
+### Documents
+
+- Full R&D Plan: `/home/daniele/.claude/plans/twinkly-sniffing-crescent.md`
+- Findings: `/mnt/raid0/llm/claude/research/cpu_optimization_findings.md`
+- Kernel Dev Handoff: `/mnt/raid0/llm/claude/research/kernel_dev_handoff.md`
 
 ---
 
