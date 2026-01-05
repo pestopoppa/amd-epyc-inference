@@ -373,7 +373,7 @@ llama-cli -m MOE.gguf \
 
 ---
 
-## Evaluated But Not Applicable (2026-01-04)
+## Evaluated But Not Applicable (2026-01-05)
 
 Techniques researched but determined incompatible with our CPU-only llama.cpp stack.
 
@@ -407,6 +407,18 @@ Techniques researched but determined incompatible with our CPU-only llama.cpp st
   - Relies on GPU parallel compute for the parallel decoding benefit
 - **Verdict**: Training-dependent + GPU-only
 
+### Mixture-of-Recursions (MoR)
+- **Paper**: [arXiv:2507.10524](https://arxiv.org/abs/2507.10524) (NeurIPS 2025)
+- **Claim**: 2× inference throughput via recursive transformers with per-token adaptive depth
+- **How it works**: Single weight-tied block reused across recursion steps; lightweight routers assign different recursion depths per token
+- **Why not applicable**:
+  - Requires models trained from scratch with MoR architecture (cannot convert existing models)
+  - No GGUF support — official implementation is PyTorch + Flash Attention 2 only
+  - Only 360M parameter research models available (no production-scale models)
+  - GPU-only (training: 4× H100/A100, inference assumes CUDA)
+  - Our existing methods already provide 5.5-12.7× speedups vs MoR's 2×
+- **Verdict**: Training-time architecture, no conversion path, inferior gains
+
 ### Summary: CPU Speculation Limits
 
 All high-performing modern speculation techniques rely on GPU parallelism:
@@ -421,6 +433,7 @@ All high-performing modern speculation techniques rely on GPU parallelism:
 | EAGLE-2 | GPU + training | ❌ No |
 | Medusa | GPU + training | ❌ No |
 | CLLMs | GPU + training | ❌ No |
+| MoR (recursive transformer) | Training-time arch | ❌ No |
 
 **Conclusion**: For CPU inference, our current production tracks (external draft, prompt lookup, MoE reduction) represent the practical ceiling. Novel GPU-parallel techniques cannot be ported without fundamental architectural changes.
 
