@@ -624,9 +624,10 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
 | DeepSeek-R1-Distill-Qwen-32B (Q6_K) | thinking | 26/30 | - | - | - | 13/18 | - | **81%**‡ | 1.78 | - | - | - | - |
-| Qwen3-32B | general | - | - | - | - | - | - | - | 3.67 | 5.87 | Qwen3-0.6B | 8 | - |
+| Qwen3-32B | general | 28/30 | - | - | - | 30/30 | - | **97%**‡ | 1.64 | 5.87 | Qwen3-0.6B | 8 | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.72 | - | - | - | - |
 | Qwen2.5-Coder-32B | coder/summarize | 28/30 | - | - | 8/9 | 30/30 | - | **96%**‡ | 2.99 | 33.0 | Qwen2.5-Coder-0.5B | 24 | - |
+| Qwen2.5-Coder-32B | ingest | 22/30 | 20/30 | 20/30 | 22/30 | 29/30 | 19/33 | **72%** | 3.43 | - | - | - | - |
 
 #### Tier B: Thinking & Reasoning Models (7B-14B)
 
