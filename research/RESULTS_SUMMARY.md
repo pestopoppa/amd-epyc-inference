@@ -601,18 +601,48 @@ Independent quality evaluation using Claude as judge. Models scored using refere
 | coder_escalation (Qwen3-53B) | 19/30 | 11/27 | 12/30 | 11/30 | 9/30 | 7/33 | 69/180 | **38%** ⚠️ | 9.2 |
 | architect_meta_llama_3_70b | 0/30 | 13/30 | 5/30 | 12/30 | 15/30 | 16/33 | 61/183 | **33%** ⚠️ | 14.9 |
 
-### Role Recommendations (Top Performers)
+### Role Recommendations by Orchestration Tier
 
-| Role | Model | Score | Baseline t/s |
-|------|-------|-------|--------------|
-| **General Best** | Gemma-3-12B-IT | **91.7%** | 9.2 |
-| **Thinking Primary** | DeepSeek-R1-Distill-Llama-8B | 93%* | 7.2 |
-| **Thinking Fast** | Qwen3-4B-Thinking-2507-Q8_0 | **69%** | 18.0 |
-| **General Worker** | Qwen2.5-7B-Q4_K_S | **69.4%** | 16.0 |
-| **Math Worker** | Qwen2.5-Math-7B-Instruct | **60.0%** | 11.3 |
-| **Vision Primary** | Qwen2.5-VL-7B-Instruct | **INVALID**⚠️ | 11.8 |
-| **Draft (Dense)** | Qwen2.5-Coder-0.5B | **63%** | 182.8 |
-| **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | **65%** | 29.5 |
+#### Tier A: Architect (Complex Design, Quality > Speed)
+
+| Role | # | Model | Quality | Speed | Tradeoff |
+|------|---|-------|---------|-------|----------|
+| **architect_coding** | 1 | Qwen3-Coder-480B MoE6 | 95% | 5.2 t/s | Best quality |
+| | 2 | Qwen3-Coder-480B MoE4 | 88% | 6.2 t/s | Good balance |
+| | 3 | Qwen3-Coder-480B baseline | 83% | 5.7 t/s | Default |
+| **architect_general** | 1 | Qwen3-235B MoE2 | 88% | 8.2 t/s | **Best (speed+quality)** |
+| | 2 | Qwen3-235B baseline | 88% | 5.9 t/s | Same quality, slower |
+| | 3 | Meta-Llama-3.1-70B | 90% | 2.1 t/s | Highest quality, slowest |
+
+#### Tier B: Specialists (Task-Specific, Balance Speed/Quality)
+
+| Role | # | Model | Quality | Speed | Tradeoff |
+|------|---|-------|---------|-------|----------|
+| **frontdoor** | 1 | Qwen3-Coder-30B-A3B | 80% | 17.1 t/s | **Production choice** |
+| | 2 | Qwen3-Coder-30B MoE4 | - | 41.5 t/s | 2.4x faster (untested quality) |
+| **coder_primary** | 1 | worker_summarize (30B) | 96% | 3.0 t/s | Highest coder quality |
+| | 2 | Qwen3-Coder-30B-A3B | 80% | 17.1 t/s | 5.7x faster |
+| **coder_escalation** | 1 | Qwen3-Coder-53B MoE6 | 85% | 12.7 t/s | **Best balance** |
+| | 2 | Qwen3-Coder-53B MoE4 | 61% | 14.0 t/s | Faster but 21% looping |
+| | 3 | Qwen3-Coder-53B baseline | 38% | 9.2 t/s | ⚠️ Repetition issues |
+| **thinking** | 1 | Qwen3-Next-80B MoE4 | 98% | 9.8 t/s | **Best overall** |
+| | 2 | DeepSeek-R1-Distill-Llama-8B | 93% | 7.2 t/s | Dense, proven |
+| | 3 | Qwen3-4B-Thinking-2507 | 89% | 16.5 t/s | Fast + good |
+| | 4 | Qwen3-30B-Thinking MoE6 | 90% | 19.0 t/s | Fastest 90%+ |
+| **ingest** | 1 | Qwen3-30B-Thinking MoE4 | 91% | 21.4 t/s | **Best balance** |
+| | 2 | ingest_qwen3_32b | 87% | 1.6 t/s | Dense fallback |
+| | 3 | Qwen3-Next-80B (SSM) | 74% | 9.7 t/s | Long context specialist |
+
+#### Tier D: Draft Models (Speculative Decoding, Speed > Quality)
+
+| Role | # | Model | Quality | Speed | Tradeoff |
+|------|---|-------|---------|-------|----------|
+| **draft (best quality)** | 1 | DeepSeek-R1-Distill-Qwen-1.5B Q8_0 | 72% | 51 t/s | Best draft quality |
+| | 2 | PARD-DeepSeek-R1-1.5B Q5_K_S | 72% | 61 t/s | Slightly faster |
+| | 3 | PARD-Llama-3.2-1B Q4_0 | 70% | 84 t/s | Good for Llama targets |
+| **draft (fastest)** | 1 | Qwen2.5-0.5B Q2_K | 70% | 200 t/s | **Fastest usable** |
+| | 2 | draft_qwen25 | 45% | 188 t/s | Fast but lower quality |
+| | 3 | draft_qwen2_5_coder_0_5b | 44% | 178 t/s | Code-specific |
 
 ⚠️ **VL BENCHMARK INVALIDATION (2025-01-06):** ALL vision-language benchmark scores in this file are INVALID. The benchmark system was not passing images to VL models - they were run as text-only models. VL scores in the tables below measure hallucination confidence, not actual vision capability. Results deleted, fix implemented. Re-benchmarking required.
 
