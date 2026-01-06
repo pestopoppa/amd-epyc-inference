@@ -1,21 +1,41 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,55.5,2,Reformatting response
-general,t1_q2_summarize,55.9,2,Reformatting response
-general,t1_q3_extract,56.2,2,General response generated
-general,t2_q1_json,57.9,3,JSON structure present
-general,t2_q2_multistep,56.1,2,General response generated
-general,t2_q3_compare,55.3,2,General response generated
-general,t3_q1_synthesis,56.4,2,General response generated
-general,t3_q2_transform,56.4,2,General response generated
-general,t3_q3_schedule,55.8,2,General response generated
-general,t3_q4_inconsistency,55.6,2,General response generated
-thinking,t1_q1_logic,59.8,2,Thinking response generated
-thinking,t1_q2_sequence,56.2,3,Correct answer 42
-thinking,t1_q3_deduction,57.8,2,Deduction puzzle - varied answers
-thinking,t2_q1_multistep,55.9,2,Multi-step problem - partial credit
-thinking,t2_q2_hypothesis,52.8,2,Thinking response generated
-thinking,t2_q3_planning,58.5,2,Multi-step problem - partial credit
-thinking,t3_q1_paradox,58.2,2,Thinking response generated
-thinking,t3_q2_counterfactual,52.3,2,Thinking response generated
-thinking,t3_q3_formal,56.2,2,Thinking response generated
-thinking,t3_q4_metacognition,52.4,2,Thinking response generated
+general,t1_q1_reformat,55.46,1,Attempted but incorrect format
+general,t1_q2_summarize,55.91,1,Response too long - not a summary
+general,t1_q3_extract,56.22,3,All 4 emails extracted correctly
+general,t2_q1_json,57.9,1,Attempted but incorrect
+general,t2_q2_multistep,56.06,2,Partial deduplication
+general,t2_q3_compare,55.34,1,Response too verbose - not 2-3 sentences
+general,t3_q1_synthesis,56.43,2,Substantial attempt at T3 question
+general,t3_q2_transform,56.41,2,Substantial attempt at T3 question
+general,t3_q3_schedule,55.76,2,Substantial attempt at T3 question
+general,t3_q4_inconsistency,55.65,2,Substantial attempt at T3 question
+general,t1_q1_json,48.33,1,Attempted but incorrect format
+general,t1_q2_multistep,48.15,1,General response generated
+general,t1_q3_compare,56.22,1,General response generated
+general,t2_q1_synthesis,58.7,1,General response generated
+general,t2_q2_transform,58.24,1,General response generated
+general,t2_q3_schedule,51.35,1,General response generated
+general,t2_q4_inconsistency,49.5,1,General response generated
+general,t3_q1_policy_analysis,48.84,2,Substantial attempt at T3 question
+general,t3_q2_system_failure,49.11,2,Substantial attempt at T3 question
+general,t3_q3_strategic_communication,52.1,2,Substantial attempt at T3 question
+thinking,t1_q1_logic,59.77,1,General thinking response
+thinking,t1_q2_sequence,56.24,1,General thinking response
+thinking,t1_q3_deduction,57.78,1,General thinking response
+thinking,t2_q1_multistep,55.86,1,Attempted harder reasoning question
+thinking,t2_q2_hypothesis,52.76,1,Attempted harder reasoning question
+thinking,t2_q3_planning,58.45,1,Attempted harder reasoning question
+thinking,t3_q1_paradox,58.23,1,Attempted harder reasoning question
+thinking,t3_q2_counterfactual,52.29,1,Attempted harder reasoning question
+thinking,t3_q3_formal,56.23,1,Attempted harder reasoning question
+thinking,t3_q4_metacognition,52.42,1,Attempted harder reasoning question
+thinking,t1_q1_multistep,58.28,3,Correct answer 11:34 AM
+thinking,t1_q2_hypothesis,50.04,1,Attempted but missing key concepts
+thinking,t1_q3_planning,55.28,1,Attempted ordering
+thinking,t2_q1_paradox,57.42,1,Attempted harder reasoning question
+thinking,t2_q2_counterfactual,49.43,1,Attempted harder reasoning question
+thinking,t2_q3_formal,49.92,1,Attempted harder reasoning question
+thinking,t2_q4_metacognition,56.02,1,Attempted harder reasoning question
+thinking,t3_q1_methodological_critique,47.0,1,Attempted harder reasoning question
+thinking,t3_q2_causal_inference,57.67,1,Attempted harder reasoning question
+thinking,t3_q3_reasoning_trap,48.33,1,Attempted harder reasoning question

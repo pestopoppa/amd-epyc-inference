@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-05 (CPU optimization R&D tracks identified)
+**Last Updated:** 2026-01-06 (Full Claude-as-Judge rescore of 65 baseline models)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -540,13 +540,38 @@ Models that fail instruction precision tests will break orchestration:
 
 ---
 
-## Claude-as-Judge Quality Review (2025-12-18)
+## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-06)
 
 ### Overview
 
-Independent quality evaluation of 33 models using Claude as judge. Algorithmic rubric found severely underscoring due to pattern matching failures.
+Independent quality evaluation using Claude as judge. Algorithmic rubric found severely underscoring due to pattern matching failures.
 
 **Key Finding:** Algorithmic rubric scored ~38% average; Claude-as-Judge scored ~70% for same models.
+
+**2026-01-06 Update:** Full rescore of 65 baseline models using reference_answer fields added to all 8 benchmark suites. 59 models now have complete Claude-as-Judge scores.
+
+### Master Score Summary (All Baseline Models)
+
+| Rank | Model | Score | Pct | Avg t/s |
+|------|-------|-------|-----|---------|
+| 1 | worker_summarize | 66/69 | 95.7% | 3.0 |
+| 2 | thinking_deepseek_r1_distill_llama_8b | 112/120 | 93.3% | 7.2 |
+| 3 | thinking_reasoning | 193/210 | 91.9% | - |
+| 4 | architect_qwen2_5_72b_q4_k_m | 63/69 | 91.3% | - |
+| 5 | architect_meta_llama_3_1_70b | 165/183 | 90.2% | 2.1 |
+| 6 | thinking_qwen3_4b_thinking_2507 | 107/120 | 89.2% | 16.5 |
+| 7 | architect_general (Qwen3-235B) | 172/195 | 88.2% | 5.9 |
+| 8 | architect_qwen2_5_72b | 173/198 | 87.4% | 1.9 |
+| 9 | ingest_qwen3_32b | 159/183 | 86.9% | 1.6 |
+| 10 | thinking_deepseek_r1_distill_qwen_7b | 102/120 | 85.0% | 7.7 |
+| 11 | architect_hermes_4_70b | 153/183 | 83.6% | 2.7 |
+| 12 | architect_coding (Qwen3-480B) | 87/105 | 82.9% | 5.7 |
+| 13 | ingest_llama_3_1_70b | 149/183 | 81.4% | 2.0 |
+| 14 | frontdoor (Qwen3-Coder-30B) | 146/183 | 79.8% | 17.1 |
+| 15 | math_qwen2_5_math_72b | 141/183 | 77.0% | 2.0 |
+| 16 | ingest_qwen2_5_72b | 138/183 | 75.4% | 2.2 |
+| 17-20 | Draft models (DeepSeek-R1-1.5B variants) | 42-43/60 | 70-72% | 45-60 |
+| 21-30 | Draft models (Qwen variants) | 50-54/120 | 42-45% | 40-200 |
 
 ### Role Recommendations (Top Performers)
 
@@ -557,9 +582,11 @@ Independent quality evaluation of 33 models using Claude as judge. Algorithmic r
 | **Thinking Fast** | Qwen3-4B-Thinking-2507-Q8_0 | **69%** | 18.0 |
 | **General Worker** | Qwen2.5-7B-Q4_K_S | **69.4%** | 16.0 |
 | **Math Worker** | Qwen2.5-Math-7B-Instruct | **60.0%** | 11.3 |
-| **Vision Primary** | Qwen2.5-VL-7B-Instruct | **69.4%** | 11.8 |
+| **Vision Primary** | Qwen2.5-VL-7B-Instruct | **INVALID**⚠️ | 11.8 |
 | **Draft (Dense)** | Qwen2.5-Coder-0.5B | **63%** | 182.8 |
 | **Draft (Thinking)** | DeepSeek-R1-Distill-Qwen-1.5B | **65%** | 29.5 |
+
+⚠️ **VL BENCHMARK INVALIDATION (2025-01-06):** ALL vision-language benchmark scores in this file are INVALID. The benchmark system was not passing images to VL models - they were run as text-only models. VL scores in the tables below measure hallucination confidence, not actual vision capability. Results deleted, fix implemented. Re-benchmarking required.
 
 ⚠️ **Qwen3-VL Warning:** All Qwen3-VL models (2B/4B/8B) score 0% on agentic tasks - all tool-call prompts return empty. Use Qwen2.5-VL for vision tasks requiring tool coordination.
 
@@ -591,10 +618,10 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | GLM-4.6-355B-A32B (MoE 2) | general | - | - | - | - | - | - | - | - | - | - |
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |
 | GLM-4.6-355B-A32B | ingest | 29/30 | - | - | 13/30 | - | 19/33 | - | **60%** | 3.7 | ~60% across roles |
-| **Qwen3-VL-235B-A22B-Thinking** | vision | - | 21/30 | - | 9/30 | - | - | 27/30 | **63%** | 5.8 | - |
-| **Qwen3-VL-235B-A22B-Thinking (MoE 2)** | vision | - | 27/30 | - | 17/30 | - | - | - | **73%**† | 7.6 | **+31% ✓** |
-| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | 30/30 | - | 15/30 | - | - | - | **75%**† | 6.8 | +17% |
-| Qwen3-VL-235B-A22B-Thinking (MoE 6) | vision | - | 23/30 | - | 12/30 | - | - | - | **58%**† | 6.4 | +10% |
+| ~~Qwen3-VL-235B-A22B-Thinking~~ | vision | - | ❌ | - | ❌ | - | - | ❌ | **INVALID**⚠️ | 5.8 | Scores invalid - no images passed |
+| ~~Qwen3-VL-235B-A22B-Thinking (MoE 2)~~ | vision | - | ❌ | - | ❌ | - | - | - | **INVALID**⚠️ | 7.6 | Scores invalid - no images passed |
+| ~~Qwen3-VL-235B-A22B-Thinking (MoE 4)~~ | vision | - | ❌ | - | ❌ | - | - | - | **INVALID**⚠️ | 6.8 | Scores invalid - no images passed |
+| ~~Qwen3-VL-235B-A22B-Thinking (MoE 6)~~ | vision | - | ❌ | - | ❌ | - | - | - | **INVALID**⚠️ | 6.4 | Scores invalid - no images passed |
 | **Qwen3-235B-A22B** | architect_general | 28/30 | 23/30 | 29/30 | 28/30 | 30/30 | 25/33 | - | **88%** | 5.9 | - |
 | **Qwen3-235B-A22B (MoE 2)** | architect_general | 28/30 | 28/30 | 26/30 | 25/30 | 27/30 | 28/33 | - | **88%** | 8.2 | **+39% OPTIMAL ✓** |
 | Qwen3-235B-A22B (MoE 4) | architect_general | 28/30 | 25/30 | 28/30 | 27/30 | 25/30 | 27/33 | - | **87%** | 7.3 | +24% |
@@ -626,11 +653,11 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen3-30B-A3B-Thinking-2507 (Q4_K_S)** | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 2) | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 4) | thinking | - | - | - | - | - | - | - | - | - | - |
-| **Qwen3-VL-30B-A3B** | vision_escalation | - | 22/30 | - | 3/30 | - | - | 13/30 | **42%** | 77.4 | Prompt echo |
-| Qwen3-VL-30B-A3B (MoE 2) | vision_escalation | - | 2/27 | - | 2/30 | - | - | 4/30 | **9%** ⚠️ | 53.2 | DEAD |
-| Qwen3-VL-30B-A3B (MoE 3) | vision_escalation | - | - | - | - | - | - | - | - | 37.66 | - |
-| Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | 25/30 | - | 13/30 | - | - | 15/30 | **59%** | 69.2 | 20% empty |
-| Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | 16/30 | - | 6/30 | - | - | 5/30 | **30%** | 67.0 | Truncation |
+| ~~Qwen3-VL-30B-A3B~~ | vision_escalation | - | ❌ | - | ❌ | - | - | ❌ | **INVALID**⚠️ | 77.4 | Scores invalid - no images passed |
+| ~~Qwen3-VL-30B-A3B (MoE 2)~~ | vision_escalation | - | ❌ | - | ❌ | - | - | ❌ | **INVALID**⚠️ | 53.2 | Scores invalid - no images passed |
+| ~~Qwen3-VL-30B-A3B (MoE 3)~~ | vision_escalation | - | - | - | - | - | - | - | - | 37.66 | - |
+| ~~Qwen3-VL-30B-A3B (MoE 4)~~ | vision_escalation | - | ❌ | - | ❌ | - | - | ❌ | **INVALID**⚠️ | 69.2 | Scores invalid - no images passed |
+| ~~Qwen3-VL-30B-A3B (MoE 6)~~ | vision_escalation | - | ❌ | - | ❌ | - | - | ❌ | **INVALID**⚠️ | 67.0 | Scores invalid - no images passed |
 
 **Notes:**
 - † Qwen3-Coder-480B score excludes long_context suite (4/18) due to timeout issues at 40K+ token contexts. Score of 83/87 = 95% on thinking+agentic+coder only.
@@ -689,28 +716,31 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Meta-Llama-3-8B-Instruct | toolrunner | 19/30 | 37/60 | 20/30 | 20/30 | 22/30 | 22/33 | **65.7%** | 13.8 | - | - | - | - |
 | Meta-Llama-3.1-8B (Q4_K_S) | general | 4/30 | 6/30 | 2/30 | 7/30 | 4/30 | 4/33 | **15%** | 63.5 | - | - | - | - |
 | **Qwen2.5-Math-7B-Instruct** | worker_math | 43/60 | 30/60 | 27/30 | 26/60 | - | - | **60.0%** | 11.3 | - | - | - | - |
-| **Qwen2.5-VL-7B-Instruct** | worker_vision | 22/30 | 43/60 | - | 40/60 | - | - | **69.4%** | 11.8 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
+| ~~Qwen2.5-VL-7B-Instruct~~ | worker_vision | ❌ | ❌ | - | ❌ | - | - | **INVALID**⚠️ | 11.8 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
 | **Gemma-3-12B-IT** | general | 29/30 | 27/27 | 27/30 | 28/30 | 26/30 | 28/33 | **91.7%** | 9.2 | - | - | - | - |
 | Gemma-3-27B-IT-QAT | general | 30/30 | 30/30 | - | 30/30 | 30/30 | 22/33 | **92.8%** | 2.1 | - | - | - | - |
 | MathSmith-Qwen3-8B ⚠️ | math | 30/30 | 28/30 | 28/30 | - | - | - | **95.6%** | **3.4** ⚠️ | - | - | - | - |
 
-#### Vision Models
+#### Vision Models ⚠️ ALL SCORES INVALID
 
-| Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | VL | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
-|-------|------|----------|---------|------|---------|-------|-----------|-----|-----|--------------|---------|-------|---|------|
-| **Qwen3-VL-235B-A22B-Thinking** | vision | - | - | - | - | - | - | - | - | 3.23 | - | - | - | - |
-| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | - | - | - | - | - | - | - | - | 7.12 | 3.82 ❌ | (lookup) | - | - |
-| **Qwen3-VL-30B-A3B** | vision_escalation | - | - | - | - | - | - | - | - | 26.88 | - | - | - | - |
-| Qwen3-VL-30B-A3B (MoE 3) | vision_escalation | - | - | - | - | - | - | - | - | 37.66 | - | - | - | - |
-| Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | - | - | - | - | - | - | - | 36.84 | 29.88 ❌ | (lookup) | - | - |
-| Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | - | - | - | - | - | - | - | 28.41 | - | - | - | - |
-| Qwen2.5-VL-7B | worker_vision | - | - | - | - | - | - | - | 68%* | 15.28 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
-| **Qwen3-VL-2B-Q4_K_M** | vision | - | 12/60 | - | 25/60 | - | - | 1/60 | **21.1%** | 48.0 | - | - | - | - |
-| Qwen3-VL-4B (Q4_K_M) | vision | - | 21/60 | - | 0/60 | - | - | 14/60 | **19.4%** | 78.9 | - | - | - | - |
-| Qwen3-VL-4B (Q8_0) | vision | - | 15/60 | - | 0/60 | - | - | 23/60 | **21.1%** | 32.5 | - | - | - | - |
-| Qwen3-VL-8B (Q4_K_M) | vision | - | 13/30 | - | 0/30 | - | - | 18/33 | **33.3%** | 38.8 | - | - | - | - |
-| Qwen3-VL-8B (Q8_0) | vision | - | 25/30 | - | 8/30 | - | - | 14/30 | **52.2%** | 18.7 | - | - | - | - |
+> **⚠️ ALL VL BENCHMARK SCORES ARE INVALID (2025-01-06)**
+> The benchmark system was not passing images to VL models. All scores below measure text-only hallucination, not actual vision capability. Re-benchmarking required after fix.
+
+| Model | Role | Pct | Baseline t/s | Opt t/s | Notes |
+|-------|------|-----|--------------|---------|-------|
+| Qwen3-VL-235B-A22B-Thinking | vision | **INVALID** | 3.23 | - | Scores deleted |
+| Qwen3-VL-235B-A22B-Thinking (MoE 4) | vision | **INVALID** | 7.12 | 3.82 ❌ | Scores deleted |
+| Qwen3-VL-30B-A3B | vision_escalation | **INVALID** | 26.88 | - | Scores deleted |
+| Qwen3-VL-30B-A3B (MoE 3) | vision_escalation | - | 37.66 | - | Speed only |
+| Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | **INVALID** | 36.84 | 29.88 ❌ | Scores deleted |
+| Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | **INVALID** | 28.41 | - | Scores deleted |
+| Qwen2.5-VL-7B | worker_vision | **INVALID** | 15.28 | 57.1 | Scores deleted |
+| Qwen3-VL-2B-Q4_K_M | vision | **INVALID** | 48.0 | - | Scores deleted |
+| Qwen3-VL-4B (Q4_K_M) | vision | **INVALID** | 78.9 | - | Scores deleted |
+| Qwen3-VL-4B (Q8_0) | vision | **INVALID** | 32.5 | - | Scores deleted |
+| Qwen3-VL-8B (Q4_K_M) | vision | **INVALID** | 38.8 | - | Scores deleted |
+| Qwen3-VL-8B (Q8_0) | vision | **INVALID** | 18.7 | - | Scores deleted |
 
 #### Tier D: Draft Models (Qwen2.5 Family)
 

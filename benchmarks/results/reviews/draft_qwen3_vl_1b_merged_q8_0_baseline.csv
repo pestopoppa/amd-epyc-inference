@@ -1,3 +1,3 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-thinking,t2_q2_hypothesis,68.6,2,Thinking response generated
-thinking,t3_q4_metacognition,66.8,2,Thinking response generated
+thinking,t2_q2_hypothesis,68.63,1,Attempted harder reasoning question
+thinking,t3_q4_metacognition,66.83,1,Attempted harder reasoning question

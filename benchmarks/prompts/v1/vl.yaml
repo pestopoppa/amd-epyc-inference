@@ -11,9 +11,30 @@ prompts:
     tier: 1
     name: "Chart Reading"
     image_description: "Bar chart with data"
-    image_path: "/tmp/claude/test_images/chart.png"
+    image_path: "/tmp/claude/test_images/chart_bar.png"
     prompt: "Look at this bar chart. Which category has the highest value? What is the approximate value?"
     expected: "Correct category and approximate value"
+    reference_answer: |
+      **Image contents:**
+      Bar chart titled "Quarterly Sales 2024" with 4 bars:
+      - Q1: ~45 units
+      - Q2: ~72 units
+      - Q3: ~58 units
+      - Q4: ~89 units (highest)
+
+      **Correct answer:**
+      - Highest category: Q4 (fourth quarter)
+      - Approximate value: 89 (acceptable range: 85-92)
+
+      **Key observations for scoring:**
+      - Must identify Q4/fourth quarter as highest
+      - Value estimate should be within ~5% of 89
+      - Should not confuse bar heights or misread axis labels
+
+      **Common failures:**
+      - Misreading Q3 as highest (second tallest)
+      - Giving a value wildly off (e.g., "about 50")
+      - Failing to read the chart at all
     scoring:
       - criterion: "Correct category"
         weight: 40
@@ -26,9 +47,40 @@ prompts:
     tier: 1
     name: "Document Understanding"
     image_description: "Simple invoice with line items"
-    image_path: "/tmp/claude/test_images/invoice.png"
+    image_path: "/tmp/claude/test_images/doc_invoice.png"
     prompt: "Extract the total amount and list all line items from this invoice."
     expected: "Correct total and line items"
+    reference_answer: |
+      **Image contents:**
+      Invoice #INV-2024-001 from "Acme Services LLC"
+      Dated: March 15, 2024
+
+      Line items:
+      1. Consulting Services (8 hours @ $150/hr) = $1,200.00
+      2. Software License (Annual) = $499.00
+      3. Technical Support (Monthly) = $75.00
+      4. Equipment Rental = $250.00
+
+      Subtotal: $2,024.00
+      Tax (8%): $161.92
+      **Total: $2,185.92**
+
+      **Correct answer:**
+      - Total amount: $2,185.92
+      - Line items:
+        * Consulting Services: $1,200.00
+        * Software License: $499.00
+        * Technical Support: $75.00
+        * Equipment Rental: $250.00
+
+      **Acceptable variations:**
+      - Currency symbol placement variations ($2185.92 vs 2,185.92 USD)
+      - Listing with or without subtotal/tax breakdown
+
+      **Common failures:**
+      - Giving subtotal instead of total
+      - Missing one or more line items
+      - Misreading amounts (e.g., $499 as $449)
     scoring:
       - criterion: "Correct total"
         weight: 40
@@ -41,9 +93,49 @@ prompts:
     tier: 1
     name: "Code Screenshot"
     image_description: "Screenshot of Python code"
-    image_path: "/tmp/claude/test_images/code.png"
+    image_path: "/tmp/claude/test_images/code_python.png"
     prompt: "What does this code do? Identify any bugs."
     expected: "Correct explanation and bug identification"
+    reference_answer: |
+      **Image contents:**
+      Python code screenshot showing:
+      ```python
+      def calculate_average(numbers):
+          total = 0
+          for num in numbers:
+              total += num
+          return total / len(numbers)  # Bug: no check for empty list
+
+      def find_max(numbers):
+          max_val = numbers[0]  # Bug: IndexError if empty
+          for num in numbers:
+              if num > max_val:
+                  max_val = num
+          return max_val
+
+      # Main
+      data = [23, 45, 12, 67, 34]
+      print(f"Average: {calculate_average(data)}")
+      print(f"Maximum: {find_max(data)}")
+      ```
+
+      **What the code does:**
+      - Defines a function to calculate the average of a list of numbers
+      - Defines a function to find the maximum value in a list
+      - Tests both functions with sample data [23, 45, 12, 67, 34]
+
+      **Bugs identified:**
+      1. `calculate_average`: Division by zero if `numbers` is empty
+      2. `find_max`: IndexError accessing `numbers[0]` if list is empty
+
+      **Expected output with sample data:**
+      - Average: 36.2
+      - Maximum: 67
+
+      **Common failures:**
+      - Failing to identify the empty list bugs
+      - Misreading the code syntax
+      - Incorrect description of functionality
     scoring:
       - criterion: "Correct functionality description"
         weight: 40
@@ -57,9 +149,42 @@ prompts:
     tier: 2
     name: "Handwritten Math"
     image_description: "Handwritten mathematical equation"
-    image_path: "/tmp/claude/test_images/math_handwritten.png"
+    image_path: "/tmp/claude/test_images/math_equation.png"
     prompt: "Read this handwritten equation and solve it. Show your work."
     expected: "Correct transcription and solution"
+    reference_answer: |
+      **Image contents:**
+      Handwritten equation showing:
+      3x² + 12x - 15 = 0
+
+      **Transcription:**
+      3x² + 12x - 15 = 0
+
+      **Solution:**
+      Step 1: Factor out common factor
+      3(x² + 4x - 5) = 0
+
+      Step 2: Factor the quadratic
+      3(x + 5)(x - 1) = 0
+
+      Step 3: Apply zero product property
+      x + 5 = 0  →  x = -5
+      x - 1 = 0  →  x = 1
+
+      **Solutions: x = -5 or x = 1**
+
+      **Verification:**
+      - For x = -5: 3(25) + 12(-5) - 15 = 75 - 60 - 15 = 0 ✓
+      - For x = 1: 3(1) + 12(1) - 15 = 3 + 12 - 15 = 0 ✓
+
+      **Alternative method (Quadratic formula):**
+      x = (-12 ± √(144 + 180)) / 6 = (-12 ± √324) / 6 = (-12 ± 18) / 6
+      x = 6/6 = 1 or x = -30/6 = -5
+
+      **Common failures:**
+      - Misreading coefficients (e.g., 12 as 2)
+      - Sign errors in transcription
+      - Arithmetic errors in solution
     scoring:
       - criterion: "Correct transcription"
         weight: 40
@@ -72,9 +197,47 @@ prompts:
     tier: 2
     name: "Flowchart Analysis"
     image_description: "Technical flowchart"
-    image_path: "/tmp/claude/test_images/flowchart.png"
+    image_path: "/tmp/claude/test_images/diagram_flowchart.png"
     prompt: "Describe the process shown in this flowchart. What are the decision points and outcomes?"
     expected: "Accurate process description with decision points"
+    reference_answer: |
+      **Image contents:**
+      Flowchart depicting a user authentication process:
+
+      Start → Enter Credentials → [Valid Format?]
+                                      ↓ No → Show Error → Enter Credentials
+                                      ↓ Yes
+                                  [User Exists?]
+                                      ↓ No → [Create Account?]
+                                                  ↓ No → End
+                                                  ↓ Yes → Create User → Login Success
+                                      ↓ Yes
+                                  [Password Match?]
+                                      ↓ No → [Attempts < 3?]
+                                                  ↓ Yes → Enter Credentials
+                                                  ↓ No → Lock Account → End
+                                      ↓ Yes → Login Success → End
+
+      **Process description:**
+      This flowchart shows a user login/authentication flow with credential
+      validation, account creation option, and security lockout after failed attempts.
+
+      **Decision points:**
+      1. Valid Format? - Checks if credentials meet format requirements
+      2. User Exists? - Checks if username is in the database
+      3. Create Account? - Offers new user registration
+      4. Password Match? - Validates password against stored hash
+      5. Attempts < 3? - Security check for brute force prevention
+
+      **Outcomes:**
+      1. Login Success - User authenticated and granted access
+      2. Account Locked - After 3 failed password attempts
+      3. End (without login) - User declined to create account
+
+      **Common failures:**
+      - Missing one or more decision points
+      - Incorrect flow direction
+      - Not identifying the security lockout mechanism
     scoring:
       - criterion: "Correct flow understanding"
         weight: 40
@@ -90,6 +253,41 @@ prompts:
     image_path: "/tmp/claude/test_images/diff_images.png"
     prompt: "Compare these two images. List all differences you can find."
     expected: "Comprehensive list of differences"
+    reference_answer: |
+      **Image contents:**
+      Two side-by-side images of a simple room scene with deliberate differences.
+
+      **Left image (original):**
+      - Clock showing 3:00
+      - Blue vase on table
+      - 3 books on shelf
+      - Window with curtains open
+      - Cat sitting on floor
+
+      **Right image (modified):**
+      - Clock showing 6:00
+      - Red vase on table
+      - 4 books on shelf
+      - Window with curtains closed
+      - Cat missing
+
+      **List of differences (5 total):**
+      1. Clock time changed from 3:00 to 6:00
+      2. Vase color changed from blue to red
+      3. Number of books increased from 3 to 4
+      4. Curtains changed from open to closed
+      5. Cat removed from the scene
+
+      **Scoring guidance:**
+      - Finding all 5 differences: Full credit
+      - Finding 4 differences: 80% credit
+      - Finding 3 differences: 60% credit
+      - False positives (claiming non-existent differences): Deduction
+
+      **Common failures:**
+      - Missing subtle differences (book count, clock time)
+      - Claiming differences that don't exist
+      - Vague descriptions ("something changed")
     scoring:
       - criterion: "Differences found"
         weight: 50
@@ -102,9 +300,44 @@ prompts:
     tier: 2
     name: "Visual Reasoning"
     image_description: "Pattern completion puzzle"
-    image_path: "/tmp/claude/test_images/puzzle.png"
+    image_path: "/tmp/claude/test_images/puzzle_grid.png"
     prompt: "What shape/pattern should go in the empty box? Explain your reasoning."
     expected: "Correct pattern with reasoning"
+    reference_answer: |
+      **Image contents:**
+      3x3 grid pattern puzzle:
+
+      Row 1: Circle (red) | Square (blue) | Triangle (green)
+      Row 2: Square (blue) | Triangle (green) | Circle (red)
+      Row 3: Triangle (green) | Circle (red) | ? (empty)
+
+      **Correct answer: Square (blue)**
+
+      **Reasoning:**
+      This is a Latin square puzzle where each shape and color appears
+      exactly once in each row and column.
+
+      Column 3 analysis:
+      - Row 1: Triangle (green)
+      - Row 2: Circle (red)
+      - Row 3: Missing = Square (blue) ← only remaining option
+
+      Row 3 analysis:
+      - Column 1: Triangle (green)
+      - Column 2: Circle (red)
+      - Column 3: Missing = Square (blue) ← confirms the answer
+
+      Both row and column constraints lead to the same answer: **Blue Square**
+
+      **Pattern identification:**
+      - Latin square constraint (no repeats in rows or columns)
+      - Shape progression: Circle → Square → Triangle cycles
+      - Color follows shape consistently
+
+      **Common failures:**
+      - Identifying shape correctly but wrong color
+      - Ignoring the column constraint
+      - Not explaining the reasoning
     scoring:
       - criterion: "Correct answer"
         weight: 40
@@ -128,6 +361,70 @@ prompts:
 
       Be specific about what the data shows versus what the authors might be claiming.
     expected: "Panel-by-panel analysis with statistical critique and identification of methodological concerns"
+    reference_answer: |
+      **Image contents:**
+      Multi-panel scientific figure (2x2 layout):
+
+      **Panel A: Bar graph with error bars**
+      - Title: "Gene Expression Levels"
+      - 4 conditions: Control, Treatment A, Treatment B, Combined
+      - Y-axis: Relative expression (0-10)
+      - Control: ~2.0 ± 0.5
+      - Treatment A: ~4.5 ± 0.8
+      - Treatment B: ~3.8 ± 0.6
+      - Combined: ~8.5 ± 1.2 (marked with ** for p<0.01)
+
+      **Panel B: Line graph (time series)**
+      - Title: "Cell Viability Over Time"
+      - X-axis: Time (0-72 hours)
+      - Y-axis: % Viability (0-100%)
+      - 3 lines: Control (stable ~90%), Treatment (declining to ~40%)
+      - Error bars only at select time points (0, 24, 72h)
+
+      **Panel C: Western blot**
+      - 4 lanes matching Panel A conditions
+      - Protein bands showing increasing intensity
+      - β-actin loading control at bottom
+      - Note: Band intensities qualitatively match bar graph
+
+      **Panel D: Scatter plot**
+      - X-axis: Treatment concentration
+      - Y-axis: Response measure
+      - Shows dose-response relationship
+      - R² = 0.89 indicated
+      - Note: Y-axis starts at 50, not 0 (truncated)
+
+      **Question 1 - Panel interpretations:**
+      - Panel A: qPCR or RT-PCR gene expression quantification
+      - Panel B: MTT or similar cell viability assay over time
+      - Panel C: Western blot for protein expression validation
+      - Panel D: Dose-response curve for EC50/IC50 determination
+
+      **Question 2 - Key findings:**
+      - Combined treatment shows synergistic effect (~8.5 vs expected additive ~6.3)
+      - Treatment reduces cell viability over time
+      - Protein expression correlates with mRNA levels
+      - Clear dose-dependent relationship (R²=0.89)
+
+      **Question 3 - Statistical concerns:**
+      1. Panel B: Error bars missing at 12, 36, 48, 60 hour timepoints
+      2. Panel D: Y-axis truncated (starts at 50) - exaggerates effect size
+      3. Sample sizes (n) not indicated anywhere
+      4. Only one significance marker shown - other comparisons may be cherry-picked
+      5. Western blot quantification not shown numerically
+
+      **Question 4 - Missing controls:**
+      1. Vehicle control (DMSO or equivalent) not shown separately
+      2. Negative control for Western blot not visible
+      3. No scrambled/non-targeting control for gene expression
+      4. Dose-response lacks vehicle-only data points at each concentration
+      5. Time course missing untreated time-matched controls at each point
+
+      **Common failures:**
+      - Not identifying truncated axis in Panel D
+      - Missing the selective error bar placement
+      - Not questioning the synergy claim quantitatively
+      - Failing to note missing sample size information
     scoring:
       - criterion: "Correct panel interpretation"
         weight: 25
@@ -152,6 +449,73 @@ prompts:
 
       Reference specific locations using room labels or coordinates.
     expected: "Code violation identification, spatial reasoning, safety analysis with specific references"
+    reference_answer: |
+      **Image contents:**
+      Residential floor plan (~1,800 sq ft) with overlay layers:
+
+      **Room Layout:**
+      - Living Room (18' x 14') - northwest corner
+      - Kitchen (12' x 10') - center-north, open to dining
+      - Dining Area (10' x 10') - adjacent to kitchen
+      - Master Bedroom (14' x 12') - southeast corner
+      - Bedroom 2 (11' x 10') - northeast corner
+      - Bedroom 3 (10' x 10') - east side
+      - Master Bath (8' x 6') - attached to master
+      - Full Bath (6' x 8') - hall access
+      - Laundry (6' x 5') - near kitchen
+      - Front Entry with small foyer
+
+      **Overlays:**
+      - Electrical (red): outlets, switches, panel location
+      - Plumbing (blue): water supply, drain lines, fixtures
+      - HVAC (green): duct runs, vents, return air
+
+      **Question 1 - Code violations identified:**
+      1. **Egress:** Bedroom 3 window appears undersized for egress (needs 5.7 sq ft min)
+      2. **Electrical:** Kitchen lacks GFCI outlets near sink (within 6' of water)
+      3. **Electrical:** Only 2 outlets visible in Living Room (needs more for wall spacing)
+      4. **Plumbing:** Laundry drain appears to lack proper vent stack
+      5. **Egress:** No secondary exit visible from master bedroom wing
+
+      **Question 2 - Square footage calculation:**
+      - Living Room: 18 × 14 = 252 sq ft
+      - Kitchen: 12 × 10 = 120 sq ft
+      - Dining: 10 × 10 = 100 sq ft
+      - Master BR: 14 × 12 = 168 sq ft
+      - Bedroom 2: 11 × 10 = 110 sq ft
+      - Bedroom 3: 10 × 10 = 100 sq ft
+      - Master Bath: 8 × 6 = 48 sq ft
+      - Full Bath: 6 × 8 = 48 sq ft
+      - Laundry: 6 × 5 = 30 sq ft
+      - Hallways/foyer: ~100 sq ft (estimated)
+
+      **Total livable space: ~1,076 sq ft** (excluding garage if present)
+
+      **Question 3 - HVAC issues:**
+      1. Single return air vent in hallway - bedrooms will have poor air circulation
+      2. No duct run visible to Bedroom 3 - may be undersized or missing
+      3. Kitchen vent near stove but no makeup air provision shown
+      4. Master bedroom on opposite end from air handler - longest duct run
+      5. No zoning shown - temperature differential issues likely
+
+      **Question 4 - Fire evacuation from kitchen:**
+      1. Kitchen fire blocks access to front door (primary exit)
+      2. Bedrooms 2 and 3 must egress through windows (verify sizing)
+      3. Master bedroom has longest path to any exit
+      4. Smoke would quickly spread to open dining/living area
+      5. No fire separation between kitchen and bedroom hallway
+      6. Single hallway creates chokepoint for evacuation
+
+      **Recommendations:**
+      - Add smoke detectors interconnected
+      - Ensure bedroom windows meet egress codes
+      - Consider adding sliding door to living room for secondary exit
+
+      **Common failures:**
+      - Not calculating square footage at all
+      - Missing electrical code issues
+      - Not analyzing the single-point-of-failure hallway design
+      - Ignoring HVAC distribution problems
     scoring:
       - criterion: "Code violations identified"
         weight: 30
@@ -176,6 +540,98 @@ prompts:
 
       Be specific about which changes occurred when and their causal relationships.
     expected: "Accurate temporal tracking, causal reasoning, trend extrapolation, environmental analysis"
+    reference_answer: |
+      **Image contents:**
+      6 satellite images in 2x3 grid showing urban expansion over 10 years:
+
+      **Image 1 (Year 0):**
+      - Mostly agricultural land (light green/tan)
+      - Small town center (gray cluster, ~500 buildings)
+      - River running north-south on east side
+      - Forest patch in northwest corner
+      - Main road running east-west through center
+
+      **Image 2 (Year 2):**
+      - New housing subdivision appears south of town
+      - Road extended to connect new development
+      - ~100 new structures visible
+      - Agricultural land reduced by ~5%
+
+      **Image 3 (Year 4):**
+      - Second subdivision on east side near river
+      - Commercial strip developing along main road
+      - Parking lots visible (gray rectangles)
+      - Forest edge shows thinning
+      - Total structures ~800
+
+      **Image 4 (Year 6):**
+      - Large warehouse/industrial area appears northwest
+      - Town center densifying (infill development)
+      - River area shows developed recreation area
+      - Agricultural land reduced by ~25% total
+      - New road connecting industrial to highway
+
+      **Image 5 (Year 8):**
+      - Subdivisions expanding to meet each other
+      - Strip mall expansion visible
+      - Forest significantly reduced (~50% of original)
+      - Impervious surface area dramatically increased
+      - Population estimated ~3x original
+
+      **Image 6 (Year 10):**
+      - Nearly continuous development
+      - Agricultural land ~30% of original
+      - Forest reduced to small isolated patches
+      - New school/large building visible
+      - Infrastructure (roads, utilities) densely connected
+
+      **Question 1 - Changes between consecutive pairs:**
+      - 1→2: Initial suburban expansion (residential)
+      - 2→3: Commercial development follows residential
+      - 3→4: Industrial/warehouse development begins
+      - 4→5: Rapid infill connecting developments
+      - 5→6: Maturation and densification
+
+      **Question 2 - Process explanation:**
+      Human-driven suburban sprawl following classic pattern:
+      1. Residential development seeking affordable land
+      2. Commercial follows to serve new residents
+      3. Industrial attracted by labor pool and land costs
+      4. Infrastructure connects disparate developments
+      5. Agricultural land converted due to higher development value
+
+      Contributing factors:
+      - Proximity to urban center (likely within commuting distance)
+      - Available water (river access)
+      - Relatively flat terrain suitable for development
+      - Road access enabling commuter growth
+
+      **Question 3 - 5-year prediction:**
+      If trend continues:
+      - Remaining agricultural land (~30%) will be largely developed
+      - Forest patches will be reduced to <10% of original
+      - Development will reach carrying capacity of infrastructure
+      - Traffic congestion will require road expansion
+      - Multi-story buildings may begin appearing (densification)
+      - River corridor may see high-density development
+      - Possible annexation into adjacent municipality
+
+      **Question 4 - Environmental concerns:**
+      1. **Habitat fragmentation:** Forest reduction isolates wildlife populations
+      2. **Water quality:** Increased impervious surface causes runoff, pollution into river
+      3. **Heat island effect:** Loss of vegetation increases local temperatures
+      4. **Flood risk:** Reduced absorption capacity, channelized water flow
+      5. **Loss of agricultural land:** Reduces local food production capacity
+      6. **Air quality:** Increased traffic and development emissions
+      7. **Biodiversity loss:** Conversion of natural areas eliminates species
+      8. **Watershed impact:** Development affects river ecosystem downstream
+
+      **Common failures:**
+      - Not tracking changes chronologically (lumping all changes together)
+      - Missing the suburban sprawl pattern recognition
+      - Not identifying specific environmental impacts
+      - Prediction not based on observed trends
+      - Failing to note the river as a significant feature
     scoring:
       - criterion: "Changes correctly identified per period"
         weight: 30

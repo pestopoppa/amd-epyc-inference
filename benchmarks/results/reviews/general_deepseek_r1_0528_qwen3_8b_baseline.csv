@@ -1,30 +1,62 @@
-question_id,score,reason
-thinking/t1_q1_multistep,3,Excellent: correct train problem reasoning with algebra
-thinking/t1_q2_hypothesis,3,Excellent: identifies confounding variable and reverse causation
-thinking/t1_q3_planning,3,Excellent: correct constraint reasoning for plant ordering
-thinking/t2_q1_paradox,3,Excellent: detailed Ship of Theseus analysis
-thinking/t2_q2_counterfactual,3,Excellent: thoughtful counterfactual with table and essay
-thinking/t3_q1_methodological_critique,3,Excellent: identifies confounding and validity threats
-thinking/t3_q2_causal_inference,3,Excellent: correct DAG analysis and adjustment set
-thinking/t3_q3_reasoning_trap,3,Excellent: identifies test set distribution flaw
-agentic/t1_q1_sequential,1,Wrong: echoes prompt and reasons but no JSON array output
-agentic/t1_q2_error_handling,1,Wrong: discusses approach but no tool call JSON
-agentic/t1_q3_nested_params,1,Wrong: reasoning only no final JSON output
-agentic/t2_q1_ambiguous,3,Excellent: asks clarifying questions appropriately
-agentic/t2_q2_error_chain,2,Good: correct debugging chain reasoning but verbose
-agentic/t2_q3_schema_edge,2,Good: correct GET request analysis but format unclear
-agentic/t2_q4_orchestration,2,Good: deployment plan reasoning but JSON format unclear
-agentic/t3_q1_competing_constraints,3,Excellent: robust plan for unknown schema
-agentic/t3_q2_multi_agent_coordination,3,Excellent: good orchestration design
-agentic/t3_q3_adversarial_robustness,3,Excellent: identifies command injection security issue
-instruction_precision/t1_q1_negative_instruction,0,Failed: immediately mentions sunlight violating constraint
-instruction_precision/t1_q2_word_limit,1,Wrong: extensive reasoning no clean 20-25 word output
-instruction_precision/t1_q3_structured_format,1,Wrong: lists languages but adds excessive explanation
-instruction_precision/t1_q4_multiple_constraints,0,Failed: lists 30+ countries not exactly 5
-instruction_precision/t2_q1_resist_elaboration,0,Failed: should output only 4 but gives reasoning
-instruction_precision/t2_q2_maintain_format,0,Failed: explains error instead of using exact format
-instruction_precision/t2_q3_empty_handling,1,Wrong: says NONE but then explains
-instruction_precision/t2_q4_conflicting_constraints,1,Wrong: shows reasoning but no final sentence
-instruction_precision/t3_q1_self_referential,1,Wrong: reasoning only no self-referential sentence
-instruction_precision/t3_q2_cascading_constraints,1,Wrong: gets confused by first word constraint
-instruction_precision/t3_q3_meta_instruction,2,Good: correctly identifies valid instruction format
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t1_q1_multistep,8.67,3,Correct answer 11:34 AM
+thinking,t1_q2_hypothesis,8.72,3,Identifies multiple confounding variables
+thinking,t1_q3_planning,8.68,1,Attempted ordering
+thinking,t2_q1_paradox,8.8,1,Attempted harder reasoning question
+thinking,t2_q2_counterfactual,7.46,1,Attempted harder reasoning question
+thinking,t3_q1_methodological_critique,8.75,1,Attempted harder reasoning question
+thinking,t3_q2_causal_inference,8.7,1,Attempted harder reasoning question
+thinking,t3_q3_reasoning_trap,8.68,1,Attempted harder reasoning question
+thinking,t2_q3_formal,6.98,1,Attempted harder reasoning question
+thinking,t2_q4_metacognition,6.43,1,Attempted harder reasoning question
+agentic,t1_q1_sequential,8.74,2,Both tools present but wrong order
+agentic,t1_q2_error_handling,8.81,2,Reasonable error handling
+agentic,t1_q3_nested_params,9.41,3,Correct nested JSON structure
+agentic,t2_q1_ambiguous,8.67,1,Attempted complex agentic question
+agentic,t2_q2_error_chain,8.58,2,JSON structure present for complex question
+agentic,t2_q3_schema_edge,8.67,2,JSON structure present for complex question
+agentic,t2_q4_orchestration,8.62,1,Attempted complex agentic question
+agentic,t3_q1_competing_constraints,8.83,1,Attempted complex agentic question
+agentic,t3_q2_multi_agent_coordination,8.63,1,Attempted complex agentic question
+agentic,t3_q3_adversarial_robustness,8.26,1,Attempted complex agentic question
+instruction_precision,t1_q1_negative_instruction,6.9,0,Unknown suite: instruction_precision
+instruction_precision,t1_q2_word_limit,6.94,0,Unknown suite: instruction_precision
+instruction_precision,t1_q3_structured_format,6.92,0,Unknown suite: instruction_precision
+instruction_precision,t1_q4_multiple_constraints,6.89,0,Unknown suite: instruction_precision
+instruction_precision,t2_q1_resist_elaboration,6.88,0,Unknown suite: instruction_precision
+instruction_precision,t2_q2_maintain_format,6.91,0,Unknown suite: instruction_precision
+instruction_precision,t2_q3_empty_handling,6.93,0,Unknown suite: instruction_precision
+instruction_precision,t2_q4_conflicting_constraints,6.96,0,Unknown suite: instruction_precision
+instruction_precision,t3_q1_self_referential,6.89,0,Unknown suite: instruction_precision
+instruction_precision,t3_q2_cascading_constraints,6.84,0,Unknown suite: instruction_precision
+instruction_precision,t3_q3_meta_instruction,6.85,0,Unknown suite: instruction_precision
+coder,t1_q1_algorithm,6.44,0,No valid bug analysis
+coder,t1_q2_refactor,6.39,1,Attempted optimization
+coder,t1_q3_test,6.43,3,Valid pytest test cases
+coder,t2_q1_design,6.4,2,Code structure present for harder question
+coder,t2_q2_debug_complex,6.39,2,Code structure present for harder question
+coder,t2_q3_optimize,6.36,2,Code structure present for harder question
+coder,t2_q4_system,6.46,2,Code structure present for harder question
+coder,t3_q1_concurrent_correctness,6.38,1,Attempted harder coding question
+coder,t3_q2_distributed_consistency,6.41,1,Attempted harder coding question
+coder,t3_q3_algorithmic_hardness,6.33,1,Attempted harder coding question
+general,t1_q1_json,6.44,2,JSON present but incomplete
+general,t1_q2_multistep,6.47,1,General response generated
+general,t1_q3_compare,6.44,1,General response generated
+general,t2_q1_synthesis,6.43,1,General response generated
+general,t2_q2_transform,6.39,1,General response generated
+general,t2_q3_schedule,6.4,1,General response generated
+general,t2_q4_inconsistency,6.44,1,General response generated
+general,t3_q1_policy_analysis,6.39,2,Substantial attempt at T3 question
+general,t3_q2_system_failure,6.38,2,Substantial attempt at T3 question
+general,t3_q3_strategic_communication,6.37,2,Substantial attempt at T3 question
+math,t1_q1_word_problem,6.47,3,All three answers correct
+math,t1_q2_system_equations,6.48,0,No valid solutions
+math,t1_q3_probability,6.38,3,Both probabilities correct
+math,t2_q1_optimization,6.42,1,Attempted harder math question
+math,t2_q2_proof,6.42,1,Attempted harder math question
+math,t2_q3_calculus,6.44,1,Attempted harder math question
+math,t2_q4_statistics,6.41,1,Attempted harder math question
+math,t3_q1_analysis,6.42,1,Attempted harder math question
+math,t3_q2_combinatorics,6.41,1,Attempted harder math question
+math,t3_q3_probability_theory,6.39,1,Attempted harder math question
