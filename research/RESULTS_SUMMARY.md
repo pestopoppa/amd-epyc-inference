@@ -546,7 +546,60 @@ Models that fail instruction precision tests will break orchestration:
 
 Independent quality evaluation using Claude as judge. Models scored using reference answers and Claude-as-Judge methodology (0-3 scale per question).
 
-**2026-01-06 Update:** Added `reference_answer` fields to all ~80 benchmark questions across 8 suites. Rescored 11 draft model baselines. **74 total configurations** now have Claude-as-Judge scores (baselines + MoE variants). See detailed tables below for complete scores.
+**2026-01-06 Update:** Added `reference_answer` fields to all ~80 benchmark questions across 8 suites. Rescored 11 draft model baselines. **74 total configurations** now have Claude-as-Judge scores (baselines + MoE variants).
+
+### Master Baseline Scores (All Models)
+
+| Model | Thinking | General | Math | Agentic | Coder | Inst.Prec | Total | Pct | t/s |
+|-------|----------|---------|------|---------|-------|-----------|-------|-----|-----|
+| general_qwen3_32b | 28/30 | - | - | - | 30/30 | - | 58/60 | **97%** | 1.6 |
+| worker_summarize | 28/30 | - | - | 8/9 | 30/30 | - | 66/69 | **96%** | 3.0 |
+| thinking_deepseek_r1_distill_llama_8b | 28/30 | 24/30 | 30/30 | 30/30 | - | - | 112/120 | **93%** | 7.2 |
+| thinking_reasoning (Qwen3-Next-80B) | 30/30 | 30/30 | 30/30 | 27/30 | 21/30 | 28/33 | 193/210 | **92%** | 9.2 |
+| architect_qwen2_5_72b_q4_k_m | 30/30 | - | 9/9 | - | 24/30 | - | 63/69 | **91%** | - |
+| architect_meta_llama_3_1_70b | 29/30 | 29/30 | 25/30 | 30/30 | 27/30 | 25/33 | 165/183 | **90%** | 2.1 |
+| thinking_qwen3_4b_thinking_2507 | 28/30 | 22/30 | 30/30 | 27/30 | - | - | 107/120 | **89%** | 16.5 |
+| architect_general (Qwen3-235B) | 28/30 | 23/30 | 29/30 | 28/30 | 30/30 | 25/33 | 172/195 | **88%** | 5.9 |
+| architect_qwen2_5_72b | 30/30 | 29/30 | 30/30 | 24/30 | 30/30 | 17/33 | 173/198 | **87%** | 1.9 |
+| ingest_qwen3_32b | 30/30 | 27/30 | 30/30 | 21/30 | 29/30 | 22/33 | 159/183 | **87%** | 1.6 |
+| thinking_deepseek_r1_distill_qwen_7b | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 102/120 | **85%** | 7.7 |
+| architect_hermes_4_70b | 29/30 | 29/30 | 22/30 | 28/30 | 30/30 | 15/33 | 153/183 | **84%** | 2.7 |
+| ingest_hermes_4_70b | 30/30 | 29/30 | 30/30 | 24/30 | 25/30 | 15/33 | 153/183 | **84%** | 2.9 |
+| architect_coding (Qwen3-480B) | 28/30 | - | - | 28/30 | 27/27 | - | 87/105 | **83%** | 5.7 |
+| ingest_llama_3_1_70b | 28/30 | 28/30 | 23/30 | 26/30 | 23/30 | 21/33 | 149/183 | **81%** | 2.0 |
+| thinking_deepseek_r1_distill_qwen_32b | 26/30 | - | - | - | 13/18 | - | 39/48 | **81%** | 1.8 |
+| frontdoor (Qwen3-Coder-30B) | 27/30 | 20/30 | 20/30 | 27/30 | 30/30 | 22/33 | 146/183 | **80%** | 17.1 |
+| ingest_qwen3_30b_thinking | 26/30 | 25/30 | 25/30 | 24/30 | 21/30 | 22/33 | 143/183 | **78%** | 17.6 |
+| math_qwen2_5_math_72b_2 | 22/30 | 30/30 | 26/30 | 20/30 | 21/30 | 22/33 | 141/183 | **77%** | 2.0 |
+| ingest_qwen2_5_72b | 28/30 | 26/30 | 27/30 | 20/30 | 19/30 | 18/33 | 138/183 | **75%** | 2.2 |
+| ingest_long_context (Qwen3-Next-80B) | 29/30 | - | - | 25/30 | - | 12/33 | 75/102 | **74%** | 9.7 |
+| ingest_qwen2_5_coder_32b | 22/30 | 20/30 | 20/30 | 22/30 | 29/30 | 19/33 | 132/183 | **72%** | 3.4 |
+| draft_deepseek_r1_distill_qwen_1_5b_q80 | 22/30 | 21/30 | - | - | - | - | 43/60 | **72%** | 51.3 |
+| draft_pard_deepseek_r1_1.5b (Q5_K_S) | 22/30 | 21/30 | - | - | - | - | 43/60 | **72%** | 60.7 |
+| draft_pard_deepseek_r1_1.5b (Q8_0) | 22/30 | 21/30 | - | - | - | - | 43/60 | **72%** | 45.0 |
+| draft_co_rewarding_ii_qwen3_1.7b | 21/30 | 21/30 | - | - | - | - | 42/60 | **70%** | 22.0 |
+| draft_deepseek_r1_distill_qwen_1_5b | 22/30 | 20/30 | - | - | - | - | 42/60 | **70%** | 31.9 |
+| draft_pard_llama_3_2_1b_q4_0 | 21/30 | 21/30 | - | - | - | - | 42/60 | **70%** | 83.5 |
+| draft_qwen2_0_5b_q2_k | 21/30 | 21/30 | - | - | - | - | 42/60 | **70%** | 200.2 |
+| draft_pard_llama_3_2_1b_q8_0 | 20/30 | 21/30 | - | - | - | - | 41/60 | **68%** | 44.7 |
+| draft_pard_qwen3_0_6b_q4_0 | 18/30 | 21/30 | - | - | - | - | 39/60 | **65%** | 101.6 |
+| thinking_qwen3_30b_a3b_thinking_2507 | 24/30 | 22/30 | 20/30 | 20/30 | 21/30 | 11/33 | 118/183 | **64%** | 17.4 |
+| thinking_deepseek_r1_distill_llama_70b | 20/30 | 20/30 | 20/30 | 21/30 | 20/30 | 13/33 | 114/183 | **62%** | 1.0 |
+| math_qwen2_5_math_72b | 21/30 | 18/30 | 21/30 | 19/30 | 21/30 | 11/33 | 111/183 | **61%** | ~2.0 |
+| ingest_glm_4_6 | 29/30 | - | - | 13/30 | - | 19/33 | 65/108 | **60%** | 3.7 |
+| general_glm_4_6 | 24/30 | - | - | 12/30 | 5/6 | 18/33 | 74/126 | **59%** | 3.4 |
+| draft_qwen25 | 24/60 | 30/60 | - | - | - | - | 54/120 | **45%** | 187.7 |
+| draft_qwen2_5_coder_1_5b_q4_k_m | 23/60 | 31/60 | - | - | - | - | 54/120 | **45%** | 85.1 |
+| draft_qwen3_1_7b | 22/60 | 32/60 | - | - | - | - | 54/120 | **45%** | 41.9 |
+| draft_qwen25_coder | 21/60 | 32/60 | - | - | - | - | 53/120 | **44%** | 165.4 |
+| draft_qwen2_5_coder_0_5b | 21/60 | 32/60 | - | - | - | - | 53/120 | **44%** | 178.2 |
+| draft_qwen2_5_math_1_5b_q6k | 23/60 | 30/60 | - | - | - | - | 53/120 | **44%** | 62.5 |
+| draft_qwen2_5_coder_1_5b_q2_k | 20/60 | 32/60 | - | - | - | - | 52/120 | **43%** | 77.9 |
+| draft_qwen2_5_math_1_5b | 22/60 | 30/60 | - | - | - | - | 52/120 | **43%** | 54.3 |
+| draft_qwen3_0_6b | 20/60 | 30/60 | - | - | - | - | 50/120 | **42%** | 108.5 |
+| general_deepseek_r1_0528_qwen3_8b | 14/30 | 14/30 | 13/30 | 16/30 | 15/30 | 0/33 | 72/183 | **39%** ⚠️ | 7.2 |
+| coder_escalation (Qwen3-53B) | 19/30 | 11/27 | 12/30 | 11/30 | 9/30 | 7/33 | 69/180 | **38%** ⚠️ | 9.2 |
+| architect_meta_llama_3_70b | 0/30 | 13/30 | 5/30 | 12/30 | 15/30 | 16/33 | 61/183 | **33%** ⚠️ | 14.9 |
 
 ### Role Recommendations (Top Performers)
 
