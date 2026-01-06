@@ -544,9 +544,7 @@ Models that fail instruction precision tests will break orchestration:
 
 ### Overview
 
-Independent quality evaluation using Claude as judge. Algorithmic rubric found severely underscoring due to pattern matching failures.
-
-**Key Finding:** Algorithmic rubric scored ~38% average; Claude-as-Judge scored ~70% for same models.
+Independent quality evaluation using Claude as judge. Models scored using reference answers and Claude-as-Judge methodology (0-3 scale per question).
 
 **2026-01-06 Update:** Full rescore of 65 baseline models using reference_answer fields added to all 8 benchmark suites. 59 models now have complete Claude-as-Judge scores.
 
