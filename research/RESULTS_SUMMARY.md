@@ -546,30 +546,7 @@ Models that fail instruction precision tests will break orchestration:
 
 Independent quality evaluation using Claude as judge. Models scored using reference answers and Claude-as-Judge methodology (0-3 scale per question).
 
-**2026-01-06 Update:** Full rescore of 65 baseline models using reference_answer fields added to all 8 benchmark suites. 59 models now have complete Claude-as-Judge scores.
-
-### Master Score Summary (All Baseline Models)
-
-| Rank | Model | Score | Pct | Avg t/s |
-|------|-------|-------|-----|---------|
-| 1 | worker_summarize | 66/69 | 95.7% | 3.0 |
-| 2 | thinking_deepseek_r1_distill_llama_8b | 112/120 | 93.3% | 7.2 |
-| 3 | thinking_reasoning | 193/210 | 91.9% | - |
-| 4 | architect_qwen2_5_72b_q4_k_m | 63/69 | 91.3% | - |
-| 5 | architect_meta_llama_3_1_70b | 165/183 | 90.2% | 2.1 |
-| 6 | thinking_qwen3_4b_thinking_2507 | 107/120 | 89.2% | 16.5 |
-| 7 | architect_general (Qwen3-235B) | 172/195 | 88.2% | 5.9 |
-| 8 | architect_qwen2_5_72b | 173/198 | 87.4% | 1.9 |
-| 9 | ingest_qwen3_32b | 159/183 | 86.9% | 1.6 |
-| 10 | thinking_deepseek_r1_distill_qwen_7b | 102/120 | 85.0% | 7.7 |
-| 11 | architect_hermes_4_70b | 153/183 | 83.6% | 2.7 |
-| 12 | architect_coding (Qwen3-480B) | 87/105 | 82.9% | 5.7 |
-| 13 | ingest_llama_3_1_70b | 149/183 | 81.4% | 2.0 |
-| 14 | frontdoor (Qwen3-Coder-30B) | 146/183 | 79.8% | 17.1 |
-| 15 | math_qwen2_5_math_72b | 141/183 | 77.0% | 2.0 |
-| 16 | ingest_qwen2_5_72b | 138/183 | 75.4% | 2.2 |
-| 17-20 | Draft models (DeepSeek-R1-1.5B variants) | 42-43/60 | 70-72% | 45-60 |
-| 21-30 | Draft models (Qwen variants) | 50-54/120 | 42-45% | 40-200 |
+**2026-01-06 Update:** Added `reference_answer` fields to all ~80 benchmark questions across 8 suites. Rescored 11 draft model baselines. **74 total configurations** now have Claude-as-Judge scores (baselines + MoE variants). See detailed tables below for complete scores.
 
 ### Role Recommendations (Top Performers)
 
