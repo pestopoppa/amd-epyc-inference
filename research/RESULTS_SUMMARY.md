@@ -617,48 +617,129 @@ Independent quality evaluation using Claude as judge. Models scored using refere
 | coder_escalation (Qwen3-53B) | 19/30 | 11/27 | 12/30 | 11/30 | 9/30 | 7/33 | 69/180 | **38%** ⚠️ | 9.2 |
 | architect_meta_llama_3_70b | 0/30 | 13/30 | 5/30 | 12/30 | 15/30 | 16/33 | 61/183 | **33%** ⚠️ | 14.9 |
 
-### Role Recommendations by Orchestration Tier
+### Global Role Recommendations (Updated 2026-01-06)
 
-#### Tier A: Architect (Complex Design, Quality > Speed)
+**Memory Budget:** 1.13 TB available | Hot Pool: ~35 GB | Warm Pool: ~460 GB | Headroom: 634 GB
 
-| Role | # | Model | Quality | Speed | Tradeoff |
-|------|---|-------|---------|-------|----------|
-| **architect_coding** | 1 | Qwen3-Coder-480B MoE6 | 95% | 5.2 t/s | Best quality |
-| | 2 | Qwen3-Coder-480B MoE4 | 88% | 6.2 t/s | Good balance |
-| | 3 | Qwen3-Coder-480B baseline | 83% | 5.7 t/s | Default |
-| **architect_general** | 1 | Qwen3-235B MoE2 | 88% | 8.2 t/s | **Best (speed+quality)** |
-| | 2 | Qwen3-235B baseline | 88% | 5.9 t/s | Same quality, slower |
-| | 3 | Meta-Llama-3.1-70B | 90% | 2.1 t/s | Highest quality, slowest |
+---
 
-#### Tier B: Specialists (Task-Specific, Balance Speed/Quality)
+#### Memory Pool Configuration
 
-| Role | # | Model | Quality | Speed | Tradeoff |
-|------|---|-------|---------|-------|----------|
-| **frontdoor** | 1 | Qwen3-Coder-30B-A3B | 80% | 17.1 t/s | **Production choice** |
-| | 2 | Qwen3-Coder-30B MoE4 | - | 41.5 t/s | 2.4x faster (untested quality) |
-| **coder_primary** | 1 | worker_summarize (30B) | 96% | 3.0 t/s | Highest coder quality |
-| | 2 | Qwen3-Coder-30B-A3B | 80% | 17.1 t/s | 5.7x faster |
-| **coder_escalation** | 1 | Qwen3-Coder-53B MoE6 | 85% | 12.7 t/s | **Best balance** |
-| | 2 | Qwen3-Coder-53B MoE4 | 61% | 14.0 t/s | Faster but 21% looping |
-| | 3 | Qwen3-Coder-53B baseline | 38% | 9.2 t/s | ⚠️ Repetition issues |
-| **thinking** | 1 | Qwen3-Next-80B MoE4 | 98% | 9.8 t/s | **Best overall** |
-| | 2 | DeepSeek-R1-Distill-Llama-8B | 93% | 7.2 t/s | Dense, proven |
-| | 3 | Qwen3-4B-Thinking-2507 | 89% | 16.5 t/s | Fast + good |
-| | 4 | Qwen3-30B-Thinking MoE6 | 90% | 19.0 t/s | Fastest 90%+ |
-| **ingest** | 1 | Qwen3-30B-Thinking MoE4 | 91% | 21.4 t/s | **Best balance** |
-| | 2 | ingest_qwen3_32b | 87% | 1.6 t/s | Dense fallback |
-| | 3 | Qwen3-Next-80B (SSM) | 74% | 9.7 t/s | Long context specialist |
+**HOT POOL (~35 GB) - Always Resident:**
+| Model | Size | Speed | Purpose |
+|-------|------|-------|---------|
+| frontdoor (Qwen3-Coder-30B + MoE4) | 17.5 GB | 41.5 t/s | Orchestrator (always on) |
+| draft_qwen25_coder (0.5B Q8_0) | 0.5 GB | 178 t/s | Draft for Qwen2.5-Coder family |
+| draft_qwen25 (0.5B Q8_0) | 0.5 GB | 188 t/s | Draft for Qwen2.5 family |
+| draft_pard_llama (1B Q4_0) | 0.9 GB | 84 t/s | Draft for Llama family |
+| draft_r1_distill (1.5B Q8_0) | 1.8 GB | 51 t/s | Draft for DeepSeek R1 family |
+| worker_general (Llama-3-8B) | 4.7 GB | 37 t/s | Boilerplate, rewrites |
+| worker_math (Qwen2.5-Math-7B) | 4.4 GB | 48 t/s | Edge cases, invariants |
+| toolrunner (Llama-3-8B) | 4.7 GB | 17 t/s | Log triage, tool output |
 
-#### Tier D: Draft Models (Speculative Decoding, Speed > Quality)
+**WARM POOL (~460 GB) - Load 2-3 Based on Task:**
+| Model | Size | Quality | Speed | Acceleration | Best For |
+|-------|------|---------|-------|--------------|----------|
+| **architect_qwen2_5_72b** | 44 GB | **87%** | 147.8 t/s | spec K=16 | General architecture |
+| **architect_meta_llama_3_1_70b** | 40 GB | **90%** | 84.3 t/s | spec K=24 | Highest quality design |
+| **math_qwen2_5_math_72b** | 44 GB | 77% | 158.8 t/s | spec K=24 | Math reasoning |
+| **worker_summarize** | 18 GB | **96%** | 172.4 t/s | spec K=8 | Document summarization |
+| **ingest_qwen2_5_coder_32b** | 18 GB | 72% | 174.6 t/s | spec K=16 | Fast ingest/code |
+| **thinking_deepseek_r1_32b** | 25 GB | 81% | 72.2 t/s | spec K=16 | Chain-of-thought |
+| **thinking_reasoning** (Next-80B) | 45 GB | **92%** | 9.2 t/s | MoE2 (SSM) | Deep reasoning |
+| **ingest_long_context** (Next-80B) | 45 GB | 74% | 11.6 t/s | MoE2 (SSM) | Very long docs |
+| **architect_general** (235B) | 133 GB | 88% | 6.75 t/s | MoE4 | System design |
+| vision_escalation (30B-A3B) | 18 GB | - | 35.0 t/s | MoE4 | Complex vision |
+| architect_coding (480B) | 271 GB | 83% | 10.3 t/s | MoE3 | Ultimate escalation |
 
-| Role | # | Model | Quality | Speed | Tradeoff |
-|------|---|-------|---------|-------|----------|
-| **draft (best quality)** | 1 | DeepSeek-R1-Distill-Qwen-1.5B Q8_0 | 72% | 51 t/s | Best draft quality |
-| | 2 | PARD-DeepSeek-R1-1.5B Q5_K_S | 72% | 61 t/s | Slightly faster |
-| | 3 | PARD-Llama-3.2-1B Q4_0 | 70% | 84 t/s | Good for Llama targets |
-| **draft (fastest)** | 1 | Qwen2.5-0.5B Q2_K | 70% | 200 t/s | **Fastest usable** |
-| | 2 | draft_qwen25 | 45% | 188 t/s | Fast but lower quality |
-| | 3 | draft_qwen2_5_coder_0_5b | 44% | 178 t/s | Code-specific |
+---
+
+#### Production Role Assignments
+
+**Tier A: Frontdoor (Interactive, Low Latency)**
+
+| Priority | Model | Quality | Speed | When to Use |
+|----------|-------|---------|-------|-------------|
+| **PRIMARY** | Qwen3-Coder-30B-A3B + MoE4 | 80% | 41.5 t/s | Default for all routing |
+
+**Tier B: Architects (Quality > Speed)**
+
+| Role | Priority | Model | Quality | Speed | When to Use |
+|------|----------|-------|---------|-------|-------------|
+| **architect_coding** | 1 | Qwen3-Coder-480B + MoE3 | 83% | 10.3 t/s | Final escalation for complex code |
+| | 2 | Qwen3-235B + MoE4 | 88% | 6.75 t/s | General architecture fallback |
+| **architect_general** | 1 | **Qwen2.5-72B + spec K=16** | **87%** | **147.8 t/s** | **Fast high-quality design** ⭐ |
+| | 2 | Meta-Llama-3.1-70B + spec K=24 | **90%** | 84.3 t/s | Highest quality (slower) |
+| | 3 | Qwen3-235B + MoE2 | 88% | 8.2 t/s | SSM hybrid (no spec) |
+
+**Tier B: Thinking/Reasoning**
+
+| Priority | Model | Quality | Speed | When to Use |
+|----------|-------|---------|-------|-------------|
+| 1 | **Qwen3-Next-80B-Thinking + MoE2** | **92%** | 9.2 t/s | **Deep multi-step reasoning** |
+| 2 | DeepSeek-R1-Distill-Qwen-32B + spec K=16 | 81% | 72.2 t/s | Fast reasoning with spec decode |
+| 3 | DeepSeek-R1-Distill-Llama-8B | 93% | 7.2 t/s | Small fast reasoner (no spec) |
+| 4 | Qwen3-4B-Thinking-2507 | 89% | 16.5 t/s | Tiny fast reasoner |
+
+**Tier B: Math Specialist**
+
+| Priority | Model | Quality | Speed | When to Use |
+|----------|-------|---------|-------|-------------|
+| 1 | **Qwen2.5-Math-72B + spec K=24** | 77% | **158.8 t/s** | **Production math** ⭐ |
+| 2 | worker_math (Qwen2.5-Math-7B) | - | 48.5 t/s | Fast edge cases |
+
+**Tier B: Ingest/Long Context**
+
+| Priority | Model | Quality | Speed | When to Use |
+|----------|-------|---------|-------|-------------|
+| 1 | **Qwen2.5-Coder-32B + spec K=16** | 72% | **174.6 t/s** | **Fast bulk ingest** ⭐ |
+| 2 | Meta-Llama-3.1-70B + spec K=24 | 81% | 85.8 t/s | Higher quality ingest |
+| 3 | Qwen3-Next-80B + MoE2 (SSM) | 74% | 11.6 t/s | Very long context (128K+) |
+
+**Tier C: Workers (Speed > Quality)**
+
+| Role | Model | Quality | Speed | Acceleration |
+|------|-------|---------|-------|--------------|
+| **worker_summarize** | Qwen2.5-Coder-32B | **96%** | **172.4 t/s** | spec K=8 ⭐ |
+| worker_general | Llama-3-8B | - | 37 t/s | prompt lookup |
+| worker_math | Qwen2.5-Math-7B | - | 48.5 t/s | spec K=8 |
+
+**Tier D: Draft Models (Spec Decode Targets)**
+
+| Family | Draft Model | Quality | Speed | Compatible With |
+|--------|-------------|---------|-------|-----------------|
+| **Qwen2.5** | qwen2.5-coder-0.5B Q8_0 | 44% | 178 t/s | Qwen2.5-Coder-32B, worker_summarize |
+| **Qwen2.5** | qwen2.5-0.5B Q8_0 | 45% | 188 t/s | Qwen2.5-72B, Qwen2.5-Math-72B |
+| **Llama** | PARD-Llama-3.2-1B Q4_0 | 70% | 84 t/s | Meta-Llama-3.1-70B, Llama-3-8B |
+| **DeepSeek** | R1-Distill-Qwen-1.5B Q8_0 | 72% | 51 t/s | DeepSeek-R1-Distill-Qwen-32B |
+
+---
+
+#### Quick Reference: Best Config Per Task
+
+| Task Type | Model + Config | Quality | Speed |
+|-----------|----------------|---------|-------|
+| **Code generation** | Qwen2.5-Coder-32B + spec K=16 | 72% | 174.6 t/s |
+| **Document summary** | worker_summarize + spec K=8 | **96%** | 172.4 t/s |
+| **Math reasoning** | Qwen2.5-Math-72B + spec K=24 | 77% | 158.8 t/s |
+| **Architecture design** | Qwen2.5-72B + spec K=16 | 87% | 147.8 t/s |
+| **High-quality design** | Llama-3.1-70B + spec K=24 | **90%** | 84.3 t/s |
+| **Deep reasoning** | DeepSeek-R1-32B + spec K=16 | 81% | 72.2 t/s |
+| **Complex reasoning** | Qwen3-Next-80B + MoE2 | **92%** | 9.2 t/s |
+| **Long context** | Qwen3-Next-80B + MoE2 | 74% | 11.6 t/s |
+| **Ultimate escalation** | Qwen3-Coder-480B + MoE3 | 83% | 10.3 t/s |
+
+---
+
+#### Deprecated/Avoid
+
+| Model | Reason |
+|-------|--------|
+| coder_escalation (Qwen3-53B baseline) | 38% quality, repetition loops |
+| architect_meta_llama_3_70b | 33% quality (use 3.1 instead) |
+| GLM-4.6-355B | 59% quality, slow |
+| Qwen3-VL-* (all sizes) | 0% agentic - empty tool calls |
+| MathSmith-Hard-Problem-Synthesizer | 5x slower than expected |
 
 ⚠️ **VL BENCHMARK INVALIDATION (2025-01-06):** ALL vision-language benchmark scores in this file are INVALID. The benchmark system was not passing images to VL models - they were run as text-only models. VL scores in the tables below measure hallucination confidence, not actual vision capability. Results deleted, fix implemented. Re-benchmarking required.
 
