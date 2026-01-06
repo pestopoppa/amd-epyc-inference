@@ -1,0 +1,9 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+thinking,t3_q1_methodological_critique,16.24,0,Completely incoherent output - repeats zeros and random unrelated text
+thinking,t3_q2_causal_inference,10.58,0,Gibberish repetitive text about case/same/different - no attempt at DAG reasoning
+thinking,t3_q3_reasoning_trap,11.44,0,Incoherent output with repeated zeros and unrelated fragments
+thinking,t2_q1_paradox,11.21,0,Repetitive gibberish about ship/universe - no philosophical analysis
+thinking,t2_q2_counterfactual,13.51,0,Repetitive academic/academic/academic text - no meaningful content
+thinking,t2_q4_metacognition,11.69,0,Incoherent rambling about human body/being - no estimation approach
+thinking,t1_q1_multistep,11.03,0,Nonsense about trains and repeated numbers - no calculation
+thinking,t1_q3_planning,11.04,0,Random numbers and incoherent mathematical symbols - no ordering logic

@@ -611,8 +611,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Coder-53B-A3B (MoE 2) | coder_escalation | 0/30 | 0/30 | 0/27 | 0/30 | 0/30 | 0/33 | - | **0%** ⚠️ | 14.8 | DEAD |
 | Qwen3-Coder-53B-A3B (MoE 4) | coder_escalation | 8/30 | 22/30 | 26/30 | 24/30 | 16/30 | 15/33 | - | **61%** | 14.0 | 21% looping |
 | Qwen3-Coder-53B-A3B (MoE 6) | coder_escalation | 28/30 | 25/30 | 28/30 | 22/30 | 29/30 | 24/33 | - | **85%** | 12.7 | ✓ |
-| **Qwen3-Coder-30B-A3B** | frontdoor/coder | - | - | - | - | - | - | - | - | 27.14 | - |
-| Qwen3-Coder-30B-A3B (MoE 2) | frontdoor/coder | - | - | - | - | - | - | - | - | - | - |
+| **Qwen3-Coder-30B-A3B** | frontdoor/coder | 27/30 | 20/30 | 20/30 | 27/30 | 30/30 | 22/33 | - | **80%** | 17.1 | - |
+| Qwen3-Coder-30B-A3B (MoE 2) | frontdoor/coder | 0/24 | - | - | - | - | - | - | **0%** ⚠️ | 12.1 | DEAD |
 | Qwen3-Coder-30B-A3B (MoE 4) | frontdoor/coder | - | - | - | - | - | - | - | - | 41.55 | 29.92 (+lookup) ❌ |
 | Qwen3-Coder-30B-A3B (MoE 6) | frontdoor/coder | - | - | - | - | - | - | - | - | 30.05 | - |
 | **Qwen3-30B-A3B-Thinking-2507 (Q8_0)** | thinking | 24/30 | 22/30 | 20/30 | 20/30 | 21/30 | 11/33 | - | **64%** | 17.4 | - |
@@ -626,10 +626,11 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | **Qwen3-30B-A3B-Thinking-2507 (Q4_K_S)** | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 2) | thinking | - | - | - | - | - | - | - | - | - | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q4_K_S, MoE 4) | thinking | - | - | - | - | - | - | - | - | - | - |
-| **Qwen3-VL-30B-A3B** | vision_escalation | - | - | - | - | - | - | - | - | 26.88 | - |
+| **Qwen3-VL-30B-A3B** | vision_escalation | - | 22/30 | - | 3/30 | - | - | 13/30 | **42%** | 77.4 | Prompt echo |
+| Qwen3-VL-30B-A3B (MoE 2) | vision_escalation | - | 2/27 | - | 2/30 | - | - | 4/30 | **9%** ⚠️ | 53.2 | DEAD |
 | Qwen3-VL-30B-A3B (MoE 3) | vision_escalation | - | - | - | - | - | - | - | - | 37.66 | - |
-| Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | - | - | - | - | - | - | - | 36.84 | 29.88 (+lookup) ❌ |
-| Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | - | - | - | - | - | - | - | 28.41 | - |
+| Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | - | 25/30 | - | 13/30 | - | - | 15/30 | **59%** | 69.2 | 20% empty |
+| Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | - | 16/30 | - | 6/30 | - | - | 5/30 | **30%** | 67.0 | Truncation |
 
 **Notes:**
 - † Qwen3-Coder-480B score excludes long_context suite (4/18) due to timeout issues at 40K+ token contexts. Score of 83/87 = 95% on thinking+agentic+coder only.
@@ -663,6 +664,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
 | DeepSeek-R1-Distill-Qwen-32B (Q6_K) | thinking | 26/30 | - | - | - | 13/18 | - | **81%**‡ | 1.78 | - | - | - | - |
 | Qwen3-32B | general | 28/30 | - | - | - | 30/30 | - | **97%**‡ | 1.64 | 5.87 | Qwen3-0.6B | 8 | - |
+| Qwen3-32B | ingest | 30/30 | 27/30 | 30/30 | 21/30 | 29/30 | 22/33 | **87%** | 1.65 | - | - | - | - |
 | Gemma-3-27B-QAT | general | - | - | - | - | - | - | - | 4.72 | - | - | - | - |
 | Qwen2.5-Coder-32B | coder/summarize | 28/30 | - | - | 8/9 | 30/30 | - | **96%**‡ | 2.99 | 33.0 | Qwen2.5-Coder-0.5B | 24 | - |
 | Qwen2.5-Coder-32B | ingest | 22/30 | 20/30 | 20/30 | 22/30 | 29/30 | 19/33 | **72%** | 3.43 | - | - | - | - |

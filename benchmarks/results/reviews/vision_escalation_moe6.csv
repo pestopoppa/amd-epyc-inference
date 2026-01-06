@@ -1,0 +1,31 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+agentic,t1_q1_sequential,129.19,0,Empty - only echoes prompt without generating tool call array
+agentic,t1_q2_error_handling,130.42,0,Empty - only echoes prompt without error handling response
+agentic,t1_q3_nested_params,23.2,3,Correct JSON tool call with properly nested parameters structure
+agentic,t2_q1_ambiguous,152.27,0,Empty - only echoes prompt without choosing tool or asking clarifying question
+agentic,t2_q2_error_chain,267.8,0,Truncated - echoes prompt and cuts off mid-response
+agentic,t2_q3_schema_edge,23.45,3,Correct JSON with proper null body for GET and auth header
+agentic,t2_q4_orchestration,193.12,0,Truncated - echoes prompt and cuts off before providing deployment plan
+agentic,t3_q1_competing_constraints,292.44,0,Truncated - echoes prompt and cuts off before addressing constraints
+agentic,t3_q2_multi_agent_coordination,22.55,0,Truncated - echoes prompt and cuts off before providing orchestration plan
+agentic,t3_q3_adversarial_robustness,197.28,0,Truncated - echoes prompt and cuts off before answering security questions
+general,t1_q1_json,23.9,3,Correct JSON with all required fields extracted properly
+general,t1_q2_multistep,21.16,2,Partial - starts correct approach but truncates mid-solution
+general,t1_q3_compare,140.66,0,Empty - only echoes prompt without providing comparison
+general,t2_q1_synthesis,23.98,3,Correct synthesis with phased approach balancing all three perspectives
+general,t2_q2_transform,23.83,1,Wrong - starts reasonable approach but truncates before producing YAML
+general,t2_q3_schedule,21.01,2,Partial - begins systematic constraint analysis but truncates mid-solution
+general,t2_q4_inconsistency,22.72,2,Partial - correctly identifies inconsistencies but truncates before completing list
+general,t3_q1_policy_analysis,21.29,1,Wrong - begins setup but truncates before identifying failure modes
+general,t3_q2_system_failure,20.57,1,Wrong - begins explanation but truncates before completing answer
+general,t3_q3_strategic_communication,22.82,1,Wrong - begins statement but truncates immediately after opening
+vl,t1_q1_chart,24.78,0,Wrong - hallucinates specific data (Electronics $120k) without seeing actual image
+vl,t1_q2_invoice,24.61,0,Wrong - hallucinates invoice data (Products A/B/C) without seeing actual image
+vl,t1_q3_code,24.81,2,Partial - correctly identifies bug pattern (ZeroDivisionError) but truncates fix
+vl,t2_q1_math,24.78,0,Wrong - solves wrong equation (12+34=46) instead of reading handwritten image
+vl,t2_q2_flowchart,23.98,1,Wrong - provides generic flowchart explanation without seeing actual image
+vl,t2_q3_diff,23.87,1,Wrong - hallucinates specific differences (chalkboard/lightbulb) without seeing images
+vl,t2_q4_puzzle,23.29,0,Wrong - provides generic pattern explanation without analyzing actual puzzle
+vl,t3_q1_scientific_diagram,22.32,0,Empty - acknowledges cannot see figure and requests it
+vl,t3_q2_architectural_blueprint,21.96,1,Wrong - begins analysis but likely hallucinates without seeing actual blueprint
+vl,t3_q3_multi_image_temporal,21.8,0,Empty - acknowledges cannot see images and requests description

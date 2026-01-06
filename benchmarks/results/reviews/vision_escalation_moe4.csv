@@ -1,0 +1,31 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+agentic,t3_q1_competing_constraints,252.63,0,Empty response - only echoed prompt
+agentic,t3_q2_multi_agent_coordination,25.97,3,JSON tool call structure present
+agentic,t3_q3_adversarial_robustness,226.08,0,Empty response - only echoed prompt
+agentic,t2_q1_ambiguous,171.37,0,Empty response - only echoed prompt
+agentic,t2_q2_error_chain,275.95,0,Empty response - only echoed prompt
+agentic,t2_q3_schema_edge,27.06,3,JSON tool call structure present
+agentic,t2_q4_orchestration,270.23,0,Empty response - only echoed prompt
+agentic,t1_q1_sequential,28.6,3,JSON tool call structure present
+agentic,t1_q2_error_handling,28.18,2,Tool call attempted but incomplete
+agentic,t1_q3_nested_params,27.66,2,Tool call attempted but incomplete
+general,t3_q1_policy_analysis,24.14,3,Substantive analytical response
+general,t3_q2_system_failure,238.11,0,Empty response - only echoed prompt
+general,t3_q3_strategic_communication,26.91,3,Substantive analytical response
+general,t2_q1_synthesis,28.53,3,Substantive analytical response
+general,t2_q2_transform,24.09,3,Substantive analytical response
+general,t2_q3_schedule,23.22,3,Substantive analytical response
+general,t2_q4_inconsistency,26.03,3,Substantive analytical response
+general,t1_q1_json,29.12,1,Brief response
+general,t1_q2_multistep,22.28,3,Substantive analytical response
+general,t1_q3_compare,28.9,3,Substantive analytical response
+vl,t3_q1_scientific_diagram,25.51,2,"Acknowledged missing image, provided template/approach"
+vl,t3_q2_architectural_blueprint,26.51,2,"Acknowledged missing image, provided template/approach"
+vl,t3_q3_multi_image_temporal,25.73,2,"Acknowledged missing image, provided template/approach"
+vl,t2_q1_math,26.34,1,Generic response without image analysis
+vl,t2_q2_flowchart,28.49,1,Acknowledged missing image only
+vl,t2_q3_diff,25.88,2,Attempted image analysis (may not have vision capability)
+vl,t2_q4_puzzle,29.06,1,Acknowledged missing image only
+vl,t1_q1_chart,27.81,2,Attempted image analysis (may not have vision capability)
+vl,t1_q2_invoice,27.26,1,Generic response without image analysis
+vl,t1_q3_code,29.0,1,Generic response without image analysis
