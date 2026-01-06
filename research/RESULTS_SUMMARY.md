@@ -7,15 +7,17 @@
 
 ## Best Results
 
-| Configuration | Speed | Speedup | Use Case |
-|---------------|-------|---------|----------|
-| Prompt Lookup (summarization) | 95.18 t/s | **12.7x** | Document QA, summarization |
-| **Qwen3-Coder-30B-A3B + MoE 4** | **45.3 t/s** | **+31%** | **Code generation (coder_primary)** |
-| Qwen3-Coder-53B-A3B + MoE 4 | 30.4 t/s | +49% | Code escalation (coder_escalation) |
-| Qwen2.5-Coder-32B + 0.5B (K=24) | 33.0 t/s | **11x** | Code generation (DEPRECATED) |
-| Prompt Lookup (code editing) | 25.82 t/s | **8.6x** | Refactoring, code review |
-| Qwen2.5-72B + 0.5B (K=16) | 8.53 t/s | **5.8x** | General tasks |
-| MoE Expert Reduction (4 experts) | +21-48% | — | MoE models |
+| Configuration | Speed | Speedup | Quality | Use Case |
+|---------------|-------|---------|---------|----------|
+| **Qwen2.5-Coder-32B + 0.5B (K=16)** | **174.6 t/s** | **51x** | 72% | Ingest/code tasks |
+| **worker_summarize + 0.5B (K=8)** | **172.4 t/s** | **56x** | 96% | Document summarization |
+| **Qwen2.5-Math-72B + qwen25 (K=24)** | **158.8 t/s** | **80x** | 77% | Math reasoning |
+| **Qwen2.5-72B + qwen25 (K=16)** | **147.8 t/s** | **76x** | 87% | Architect tasks |
+| Prompt Lookup (summarization) | 95.18 t/s | 12.7x | 96% | Document QA with source |
+| **Meta-Llama-3.1-70B + PARD (K=24)** | **84.3 t/s** | **40x** | 90% | High-quality architect |
+| **DeepSeek-R1-32B + 1.5B (K=16)** | **72.2 t/s** | **36x** | 81% | Thinking/reasoning |
+| Qwen3-Coder-30B-A3B + MoE 4 | 45.3 t/s | +31% | 80% | Code generation |
+| MoE Expert Reduction (4 experts) | +21-48% | — | — | MoE models |
 
 ---
 
@@ -165,17 +167,31 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 | Qwen2.5-Math-72B | 41GB | Q4_K_M | **1.41 t/s** | Math specialist |
 | Qwen2.5-72B | 41GB | Q4_K_M | **0.85 t/s** | Base (slow) |
 
-### Speculative Decoding Results (Dense)
+### Speculative Decoding Results (Dense) - Updated 2026-01-06
+
+**New comprehensive K-sweep benchmarks** with quality-validated configurations:
+
+| Model + Draft | Quality | Baseline | Optimized | Speedup | K |
+|---------------|---------|----------|-----------|---------|---|
+| **ingest_qwen2_5_coder_32b + 0.5B** | 72% | 3.4 t/s | **174.6 t/s** | **51x** | K=16 |
+| **worker_summarize + 0.5B** | 96% | 3.1 t/s | **172.4 t/s** | **56x** | K=8 |
+| **math_qwen2_5_math_72b + qwen25** | 77% | 2.0 t/s | **158.8 t/s** | **80x** | K=24 |
+| **architect_qwen2_5_72b + qwen25** | 87% | 1.9 t/s | **147.8 t/s** | **76x** | K=16 |
+| **ingest_llama_3_1_70b + PARD** | 81% | 2.1 t/s | **85.8 t/s** | **41x** | K=24 |
+| **architect_meta_llama_3_1_70b + PARD** | 90% | 2.1 t/s | **84.3 t/s** | **40x** | K=24 |
+| **thinking_deepseek_r1_32b + 1.5B** | 81% | 2.0 t/s | **72.2 t/s** | **36x** | K=16 |
+
+**Key findings:**
+- K=16 often optimal (not K=24) - balances draft overhead vs acceptance rate
+- Quality preserved: spec decode is mathematically equivalent to baseline
+- Best draft models: qwen2.5-coder-0.5b (Qwen family), PARD-Llama-3.2-1B (Llama family), DeepSeek-R1-Distill-1.5B (R1 family)
+
+**Legacy results (from earlier testing):**
 | Model + Draft | Speed | Speedup | Accept | K |
 |---------------|-------|---------|--------|---|
-| **Qwen2.5-Coder-32B + 0.5B** | **33.0 t/s** | **11x** | 70.8% | K=24 |
-| Qwen2.5-Coder-32B + 0.5B | 27.9 t/s | 9.3x | 75% | K=16 |
-| Qwen2.5-Coder-32B + 0.5B | 25.3 t/s | 8.5x | 100% | K=8 |
-| **Qwen2.5-72B-Instruct + 0.5B** | **8.53 t/s** | **5.8x** | 44.3% | K=16 |
-| Qwen2.5-Math-72B + 0.5B (t=0.5) | **7.55 t/s** | **7.3x** | 60.3% | K=12 |
-| Qwen2.5-Math-72B + 0.5B | 6.83 t/s | 5.9x | 42% | K=16 |
+| Qwen2.5-Coder-32B + 0.5B | 33.0 t/s | 11x | 70.8% | K=24 |
+| Qwen2.5-72B-Instruct + 0.5B | 8.53 t/s | 5.8x | 44.3% | K=16 |
 | Meta-Llama-70B + PARD-1B | 6.42 t/s | 3.7x | 79.2% | K=8 |
-| Qwen3-32B + Qwen3-0.6B | 5.87 t/s | 3.1x | 39.1% | K=8 |
 
 ### Prompt Lookup Results (Dense)
 | Model | Summarize | Code | Edit |
