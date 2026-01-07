@@ -556,13 +556,25 @@ Models that fail instruction precision tests will break orchestration:
 
 ---
 
-## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-06)
+## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-07)
 
 ### Overview
 
-Independent quality evaluation using Claude as judge. Models scored using reference answers and Claude-as-Judge methodology (0-3 scale per question).
+Independent quality evaluation using Claude as judge. Models scored using reference answers and Claude-as-Judge methodology.
 
-**2026-01-06 Update:** Added `reference_answer` fields to all ~80 benchmark questions across 8 suites. Rescored 11 draft model baselines. **74 total configurations** now have Claude-as-Judge scores (baselines + MoE variants).
+**Scoring Scale (0-3):**
+| Score | Meaning |
+|-------|---------|
+| 3 | Correct answer with good reasoning |
+| 2 | Partially correct or correct but truncated |
+| 1 | Wrong answer but reasonable attempt |
+| 0 | Completely wrong, empty, or no answer |
+
+**Score inheritance:** Speculative decoding configs inherit quality scores from their baseline (same model, different speed).
+
+See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuristics and methodology.
+
+**2026-01-07 Update:** 61 baseline models reviewed, 381 total configs scored (baselines + MoE + spec decode variants).
 
 ### Master Baseline Scores (All Models)
 
@@ -619,6 +631,8 @@ Independent quality evaluation using Claude as judge. Models scored using refere
 
 ### Global Role Recommendations (Updated 2026-01-06)
 
+> **See also:** [ESCALATION_FLOW.md](ESCALATION_FLOW.md) for comprehensive escalation diagrams, trigger mechanisms, and deprecation list.
+
 **Memory Budget:** 1.13 TB available | Hot Pool: ~35 GB | Warm Pool: ~460 GB | Headroom: 634 GB
 
 ---
@@ -660,7 +674,10 @@ Independent quality evaluation using Claude as judge. Models scored using refere
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| **PRIMARY** | Qwen3-Coder-30B-A3B + MoE4 | 80% | 41.5 t/s | Default for all routing |
+| **PRIMARY** | **Qwen3-Coder-30B-A3B + MoE6** | **90%** | 18.3 t/s | Default for all routing ⭐ |
+| FAST | Qwen3-Coder-30B-A3B + MoE4 | 81% | 23.6 t/s | When speed > quality |
+
+**Note (2026-01-06):** MoE6 is now recommended over MoE4. Quality increases from 81% → 90% with modest speed reduction (23.6 → 18.3 t/s). MoE2 is BROKEN (0%).
 
 **Tier B: Architects (Quality > Speed)**
 
@@ -795,8 +812,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-Coder-53B-A3B (MoE 6) | coder_escalation | 28/30 | 25/30 | 28/30 | 22/30 | 29/30 | 24/33 | - | **85%** | 12.7 | ✓ |
 | **Qwen3-Coder-30B-A3B** | frontdoor/coder | 27/30 | 20/30 | 20/30 | 27/30 | 30/30 | 22/33 | - | **80%** | 17.1 | - |
 | Qwen3-Coder-30B-A3B (MoE 2) | frontdoor/coder | 0/24 | - | - | - | - | - | - | **0%** ⚠️ | 12.1 | DEAD |
-| Qwen3-Coder-30B-A3B (MoE 4) | frontdoor/coder | - | - | - | - | - | - | - | - | 41.55 | 29.92 (+lookup) ❌ |
-| Qwen3-Coder-30B-A3B (MoE 6) | frontdoor/coder | - | - | - | - | - | - | - | - | 30.05 | - |
+| Qwen3-Coder-30B-A3B (MoE 4) | frontdoor/coder | 24/30 | 29/30 | 30/30 | 18/30 | 22/30 | 26/33 | - | **81%** | 23.6 | 29.92 (+lookup) ❌ |
+| **Qwen3-Coder-30B-A3B (MoE 6)** | frontdoor/coder | 27/30 | 29/30 | 30/30 | 30/30 | 26/30 | 23/33 | - | **90%** ⭐ | 18.3 | **+48% quality vs MoE4** |
 | **Qwen3-30B-A3B-Thinking-2507 (Q8_0)** | thinking | 24/30 | 22/30 | 20/30 | 20/30 | 21/30 | 11/33 | - | **64%** | 17.4 | - |
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 2) | thinking | 0/30 | 0/27 | 0/18 | 0/30 | 1/24 | 0/33 | - | **1%** ⚠️ | 24.2 | GARBAGE |
 | Qwen3-30B-A3B-Thinking-2507 (Q8_0, MoE 4) | thinking | 21/30 | 16/27 | - | 11/24 | 12/30 | - | - | **54%** | 19.6 | - |
@@ -821,6 +838,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 - **MOE Quality Summary (2025-12-24):** MOE2=14% (garbage), MOE4=88% (good), MOE6=95% (partial). MOE3 untested but expected similar to MOE4/6.
 - **MOE8 is redundant (2025-12-29):** Qwen3-Coder-480B uses 8 experts by default. MOE8 test confirmed: 96% at 4.4 t/s = baseline.
 - **SSM Model Finding (2025-12-30):** SSM+MoE hybrids hit a **ceiling effect** where moe2/moe4 produce identical speeds (~10.2 t/s). The ~12% speedup from baseline→moeX is real, but further expert reduction doesn't help. Instruct variant: +1-2% (SSM bottleneck from start). Thinking variant: +12% (baseline slower at 9.2 t/s, moeX hits same 10.2 t/s ceiling).
+- **Benchmark Variance (2026-01-07):** Same model tested under different roles (frontdoor_moe6 vs coder_primary_moe6) showed 90% vs 76% scores. Variance likely due to model non-determinism. Use role-specific scores for role-specific decisions.
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 
@@ -891,8 +909,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-VL-30B-A3B (MoE 4) | vision_escalation | **INVALID** | 36.84 | 29.88 ❌ | Scores deleted |
 | Qwen3-VL-30B-A3B (MoE 6) | vision_escalation | **INVALID** | 28.41 | - | Scores deleted |
 | Qwen2.5-VL-7B | worker_vision | **INVALID** | 15.28 | 57.1 | Scores deleted |
-| Qwen3-VL-2B-Q4_K_M | vision | **INVALID** | 48.0 | - | Scores deleted |
-| Qwen3-VL-4B (Q4_K_M) | vision | **INVALID** | 78.9 | - | Scores deleted |
+| Qwen3-VL-2B-Q4_K_M | vision | **67%** (VL=0%) | 45.5 | - | General/Agentic 100%, VL hallucinates plant disease |
+| Qwen3-VL-4B (Q4_K_M) | vision | **18%** ⚠️ | 78.9 | - | Catastrophic failure: prompt echoing, 0% agentic |
 | Qwen3-VL-4B (Q8_0) | vision | **INVALID** | 32.5 | - | Scores deleted |
 | Qwen3-VL-8B (Q4_K_M) | vision | **INVALID** | 38.8 | - | Scores deleted |
 | Qwen3-VL-8B (Q8_0) | vision | **INVALID** | 18.7 | - | Scores deleted |

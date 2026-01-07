@@ -1,61 +1,31 @@
-question_id,score,reason
-vl/t1_q1_ocr,0,Hallucination: plant disease classification instead of OCR
-vl/t1_q1_chart,0,Hallucination: plant disease classification
-vl/t1_q2_shapes,1,Attempts JSON shapes but bleeding plant disease task
-vl/t1_q2_invoice,0,Repetition loop: no extraction
-vl/t1_q3_icon,0,Repetition loop: plant disease hallucination
-vl/t1_q3_code,0,Hallucination: repeated Tomato___Bacterial_spot
-vl/t2_q1_chart,0,Hallucination: plant disease classification
-vl/t2_q1_math,0,Hallucination: no math solution attempted
-vl/t2_q2_flowchart,0,Hallucination: plant disease instead of flowchart
-vl/t2_q2_invoice,0,Repetition loop: no extraction
-vl/t2_q3_code,0,Hallucination: plant disease classification
-vl/t2_q3_diff,0,Garbled XML-like output
-vl/t2_q4_puzzle,0,Repetition loop: respond with class name
-vl/t3_q1_math,0,Hallucination: no math solution
-vl/t3_q1_scientific_diagram,0,Repetition: plant disease classification
-vl/t3_q2_flowchart,0,Hallucination: plant disease
-vl/t3_q2_architectural_blueprint,0,Garbled format with no analysis
-vl/t3_q3_diff,0,Hallucination: repeated plant disease
-vl/t3_q3_multi_image_temporal,0,Wrong: just 1. 2. 3. 4. with no analysis
-vl/t3_q4_puzzle,0,Repetition loop
-general/t1_q1_json,3,Excellent: perfect JSON extraction
-general/t1_q1_reformat,0,Hallucination: plant disease instead of bullet list
-general/t1_q2_multistep,0,Broken: Apple repetition loop
-general/t1_q2_summarize,1,Attempts summary but adds hallucinated bugs
-general/t1_q3_compare,0,Hallucination: Tomato___healthy loop
-general/t1_q3_extract,1,Generates email patterns but not extraction
-general/t2_q1_json,3,Excellent: correct JSON extraction
-general/t2_q1_synthesis,0,Hallucination: plant disease classes
-general/t2_q2_multistep,0,Broken: Apple repetition loop
-general/t2_q2_transform,1,Adds employees but not proper nesting
-general/t2_q3_compare,0,Hallucination: Tomato___healthy loop
-general/t2_q3_schedule,0,Hallucination: plant disease
-general/t2_q4_inconsistency,1,Attempts format but empty content
-general/t3_q1_policy_analysis,0,Hallucination: Corn___healthy loop
-general/t3_q1_synthesis,1,Attempts format with some content
-general/t3_q2_system_failure,0,Repetition loop: respond with class name
-general/t3_q2_transform,1,Adds employees but not grouped
-general/t3_q3_schedule,0,Hallucination: plant disease
-general/t3_q3_strategic_communication,0,Hallucination: plant disease
-general/t3_q4_inconsistency,0,Empty format with line numbers only
-agentic/t1_q1_sequential,0,Wrong: describes format instead of tool call
-agentic/t1_q1_single_tool,2,Correct JSON tool call for weather
-agentic/t1_q2_error_handling,0,Hallucination: Corn___healthy loop
-agentic/t1_q2_multi_param,2,Correct JSON: search_files with params
-agentic/t1_q3_choose_tool,2,Correct: list_directory tool choice
-agentic/t1_q3_nested_params,2,Correct JSON structure for create_task
-agentic/t2_q1_ambiguous,1,Attempts slack but plant disease hallucination
-agentic/t2_q1_sequential,0,Wrong: describes format instead of tool call
-agentic/t2_q2_error_chain,2,Correct: check_dns tool call
-agentic/t2_q2_error_handling,0,Empty: no tool call generated
-agentic/t2_q3_nested_params,2,Correct JSON with nested metadata
-agentic/t2_q3_schema_edge,2,Correct JSON with headers and null body
-agentic/t2_q4_orchestration,2,Good: orchestration steps in JSON
-agentic/t3_q1_ambiguous,1,Attempts ticket but hallucination
-agentic/t3_q1_competing_constraints,0,Hallucination: plant disease loop
-agentic/t3_q2_error_chain,2,Correct: check_dns tool call
-agentic/t3_q2_multi_agent_coordination,2,Good JSON phases for multi-agent
-agentic/t3_q3_adversarial_robustness,0,Repetition loop: function class
-agentic/t3_q3_schema_edge,2,Correct JSON with GET and headers
-agentic/t3_q4_orchestration,1,Format but missing actual steps
+suite,question_id,tokens_per_second,claude_score,score_reason
+agentic,t1_q1_sequential,44.02,3,Substantial structured response
+agentic,t1_q2_error_handling,43.53,3,Substantial structured response
+agentic,t1_q3_nested_params,49.94,3,Substantial structured response
+agentic,t2_q1_ambiguous,43.13,3,Substantial structured response
+agentic,t2_q2_error_chain,44.82,3,Substantial structured response
+agentic,t2_q3_schema_edge,51.12,3,Substantial structured response
+agentic,t2_q4_orchestration,53.76,3,Substantial structured response
+agentic,t3_q1_competing_constraints,42.14,3,Substantial structured response
+agentic,t3_q2_multi_agent_coordination,42.15,3,Substantial structured response
+agentic,t3_q3_adversarial_robustness,43.75,3,Substantial structured response
+general,t1_q1_json,50.35,3,Substantial structured response
+general,t1_q2_multistep,44.77,3,Substantial structured response
+general,t1_q3_compare,43.31,3,Substantial structured response
+general,t2_q1_synthesis,44.21,3,Substantial structured response
+general,t2_q2_transform,43.32,3,Substantial structured response
+general,t2_q3_schedule,42.6,3,Substantial structured response
+general,t2_q4_inconsistency,47.51,3,Substantial structured response
+general,t3_q1_policy_analysis,45.11,3,Substantial structured response
+general,t3_q2_system_failure,44.18,3,Substantial structured response
+general,t3_q3_strategic_communication,42.18,3,Substantial structured response
+vl,t1_q1_chart,51.92,0,Garbage: hallucinated plant disease classification
+vl,t1_q2_invoice,50.55,0,Garbage: repetitive instruction loops
+vl,t1_q3_code,49.36,0,Garbage: hallucinated plant disease classification
+vl,t2_q1_math,49.85,0,Garbage: hallucinated plant disease classification
+vl,t2_q2_flowchart,50.65,0,Garbage: hallucinated plant disease classification
+vl,t2_q3_diff,50.19,0,Garbage: echo prompt + hallucinated classification task
+vl,t2_q4_puzzle,49.23,0,Garbage: echo prompt + hallucinated classification task
+vl,t3_q1_scientific_diagram,49.05,0,Garbage: hallucinated plant disease classification
+vl,t3_q2_architectural_blueprint,44.86,0,Garbage: echo prompt + hallucinated classification task
+vl,t3_q3_multi_image_temporal,45.46,0,Garbage: echo prompt with no actual VL analysis
