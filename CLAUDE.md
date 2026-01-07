@@ -570,11 +570,11 @@ For efficiency, use these heuristics for common patterns:
 | Reformatting response | 2 | Reformatting response |
 | General text response | 2 | General response generated |
 
-### Current Coverage (as of 2025-12-18)
+### Current Coverage (as of 2026-01-07)
 
-- **32 baseline models reviewed**
-- **Top performers:** DeepSeek-R1-Distill-Llama-8B (93%), Qwen3-4B-Thinking-2507 (89%)
-- **Flagged issues:** Meta-Llama-3.1-8B (15% - empty outputs), Qwen3-VL-8B (0% - launch issues)
+- **61 baseline models reviewed** (381 total configs including MoE/spec decode variants)
+- **Top performers:** See RESULTS_SUMMARY.md for current rankings
+- **Score inheritance:** Speculative decoding configs inherit quality scores from their baseline (same model, different speed)
 
 ### When to Run Claude-as-Judge
 
@@ -696,6 +696,8 @@ When benchmarking a new model, check if it belongs in any of these tables.
 | Benchmark Results | `benchmarks/results/` |
 | Benchmark Index | `benchmarks/results/index.jsonl` |
 | Claude-as-Judge Reviews | `benchmarks/results/reviews/` |
+| Blocked Tasks Checklist | `orchestration/BLOCKED_TASKS.md` |
+| Research Handoffs | `research/*_handoff.md` |
 
 ### Commands
 | Action | Command |
@@ -735,3 +737,17 @@ When committing orchestration-related changes:
    - What was added/changed
    - Test status (X tests passing)
    - Performance metrics if applicable
+
+### When Creating/Updating Handoff Documents
+
+Handoff documents (`research/*_handoff.md`) track work for future sessions or agents.
+
+**ALWAYS update `orchestration/BLOCKED_TASKS.md`** when:
+- Creating a new handoff document
+- Completing a task from the blocked list
+- Changing the blocking dependency
+
+The blocked tasks file should reflect:
+- Current status (blocked/ready/complete)
+- Resume commands (copy-paste ready)
+- Completion checklist items
