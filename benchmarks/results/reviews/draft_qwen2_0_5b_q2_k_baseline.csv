@@ -1,21 +1,21 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,250.4,2,Reformatting response
-general,t1_q2_summarize,313.1,2,Reformatting response
-general,t1_q3_extract,171.7,2,General response generated
-general,t2_q1_json,180.4,3,JSON structure present
-general,t2_q2_multistep,176.2,2,General response generated
-general,t2_q3_compare,361.4,2,General response generated
-general,t3_q1_synthesis,170.4,2,General response generated
-general,t3_q2_transform,168.8,2,General response generated
-general,t3_q3_schedule,171.2,2,General response generated
-general,t3_q4_inconsistency,349.0,2,General response generated
-thinking,t1_q1_logic,179.6,2,Thinking response generated
-thinking,t1_q2_sequence,179.3,3,Correct answer 42
-thinking,t1_q3_deduction,163.1,2,Deduction puzzle - varied answers
-thinking,t2_q1_multistep,160.8,2,Multi-step problem - partial credit
-thinking,t2_q2_hypothesis,182.8,2,Thinking response generated
-thinking,t2_q3_planning,177.7,2,Multi-step problem - partial credit
-thinking,t3_q1_paradox,159.7,2,Thinking response generated
-thinking,t3_q2_counterfactual,162.8,2,Thinking response generated
-thinking,t3_q3_formal,163.3,2,Thinking response generated
-thinking,t3_q4_metacognition,161.7,2,Thinking response generated
+general,t3_q1_policy_analysis,125.5,1,Lists generic failure modes but incomplete
+general,t3_q2_system_failure,355.4,0,Empty response
+general,t3_q3_strategic_communication,116.5,0,Doesn't provide actual board statement
+general,t2_q1_synthesis,112.1,1,Attempts synthesis but misses the point
+general,t2_q2_transform,146.7,1,Attempts Python approach but incorrect
+general,t2_q3_schedule,119.2,0,Wrong schedule - invents constraints
+general,t2_q4_inconsistency,119.2,0,Doesn't identify any inconsistencies
+general,t1_q1_json,126.0,3,Correct JSON with all required fields
+general,t1_q2_multistep,105.8,0,Repetitive garbage output
+general,t1_q3_compare,297.9,0,Empty response
+thinking,t3_q1_methodological_critique,117.4,0,Confused response with irrelevant code hint
+thinking,t3_q2_causal_inference,145.8,1,Partially addresses adjustment set concept
+thinking,t3_q3_reasoning_trap,381.3,0,Empty response
+thinking,t2_q1_paradox,108.7,0,Repetitive garbage output
+thinking,t2_q2_counterfactual,127.4,1,Starts reasoning but confused
+thinking,t2_q3_formal,124.6,1,Starts proof but confused with subset reasoning
+thinking,t2_q4_metacognition,115.8,0,Doesn't actually do estimation
+thinking,t1_q1_multistep,116.7,1,Starts correct approach but incomplete
+thinking,t1_q2_hypothesis,126.8,0,Repetitive garbage output
+thinking,t1_q3_planning,130.2,1,Starts constraint analysis but no orderings

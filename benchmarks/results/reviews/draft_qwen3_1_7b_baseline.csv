@@ -1,41 +1,21 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,42.71,1,Attempted but incorrect format
-general,t1_q2_summarize,45.82,1,Response too long - not a summary
-general,t1_q3_extract,47.76,3,All 4 emails extracted correctly
-general,t2_q1_json,47.67,1,Attempted but incorrect
-general,t2_q2_multistep,45.24,2,Partial deduplication
-general,t2_q3_compare,44.03,1,Response too verbose - not 2-3 sentences
-general,t3_q1_synthesis,46.07,2,Substantial attempt at T3 question
-general,t3_q2_transform,47.93,2,Substantial attempt at T3 question
-general,t3_q3_schedule,45.41,2,Substantial attempt at T3 question
-general,t3_q4_inconsistency,44.99,2,Substantial attempt at T3 question
-general,t1_q1_json,40.01,3,Correct JSON with all fields
-general,t1_q2_multistep,39.4,1,General response generated
-general,t1_q3_compare,39.67,1,General response generated
-general,t2_q1_synthesis,39.13,1,General response generated
-general,t2_q2_transform,39.75,1,General response generated
-general,t2_q3_schedule,40.21,1,General response generated
-general,t2_q4_inconsistency,39.0,1,General response generated
-general,t3_q1_policy_analysis,39.91,2,Substantial attempt at T3 question
-general,t3_q2_system_failure,39.53,2,Substantial attempt at T3 question
-general,t3_q3_strategic_communication,37.71,2,Substantial attempt at T3 question
-thinking,t1_q1_logic,42.27,1,General thinking response
-thinking,t1_q2_sequence,40.24,1,General thinking response
-thinking,t1_q3_deduction,41.51,1,General thinking response
-thinking,t2_q1_multistep,42.33,1,Attempted harder reasoning question
-thinking,t2_q2_hypothesis,43.25,1,Attempted harder reasoning question
-thinking,t2_q3_planning,42.05,1,Attempted harder reasoning question
-thinking,t3_q1_paradox,41.43,1,Attempted harder reasoning question
-thinking,t3_q2_counterfactual,44.73,1,Attempted harder reasoning question
-thinking,t3_q3_formal,42.26,1,Attempted harder reasoning question
-thinking,t3_q4_metacognition,41.52,1,Attempted harder reasoning question
-thinking,t1_q1_multistep,41.53,3,Correct answer 11:34 AM
-thinking,t1_q2_hypothesis,40.62,1,Attempted but missing key concepts
-thinking,t1_q3_planning,40.03,1,Attempted ordering
-thinking,t2_q1_paradox,39.26,1,Attempted harder reasoning question
-thinking,t2_q2_counterfactual,39.44,1,Attempted harder reasoning question
-thinking,t2_q3_formal,41.8,1,Attempted harder reasoning question
-thinking,t2_q4_metacognition,40.88,1,Attempted harder reasoning question
-thinking,t3_q1_methodological_critique,39.6,1,Attempted harder reasoning question
-thinking,t3_q2_causal_inference,39.16,1,Attempted harder reasoning question
-thinking,t3_q3_reasoning_trap,39.22,1,Attempted harder reasoning question
+general,t3_q1_policy_analysis,43.7,2,Good - identifies fairness and generalization issues
+general,t3_q2_system_failure,43.8,2,Good reasoning about idempotency and lag
+general,t3_q3_strategic_communication,41.9,1,Gives constraints but no actual speech content
+general,t2_q1_synthesis,43.1,0,Repetitive instructions - no actual synthesis
+general,t2_q2_transform,45.0,1,Good YAML structure but adds extra employees
+general,t2_q3_schedule,42.7,1,Gives JSON format but repetitive output
+general,t2_q4_inconsistency,44.0,0,Repetitive format instructions - no inconsistencies listed
+general,t1_q1_json,43.3,3,Correct JSON with all required fields
+general,t1_q2_multistep,42.2,2,Good step-by-step reasoning approach
+general,t1_q3_compare,42.3,3,Good comparison and recommendation
+thinking,t3_q1_methodological_critique,44.3,3,Good - identifies sample bias and measurement error
+thinking,t3_q2_causal_inference,42.7,2,Good discussion of MSAS and confounders
+thinking,t3_q3_reasoning_trap,42.6,2,Good - identifies flaw in accuracy assumption
+thinking,t2_q1_paradox,42.9,2,Good philosophical positions presented
+thinking,t2_q2_counterfactual,44.2,2,Good counterfactual thinking approach
+thinking,t2_q3_formal,43.7,2,Good logical reasoning approach
+thinking,t2_q4_metacognition,43.1,2,Good estimation approach with clear thinking
+thinking,t1_q1_multistep,42.5,2,Good step-by-step train problem analysis
+thinking,t1_q2_hypothesis,45.7,2,Good alternative explanations discussed
+thinking,t1_q3_planning,42.9,2,Good constraint analysis approach

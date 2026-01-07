@@ -45,8 +45,13 @@ class ChatRequest(BaseModel):
     prompt: str = Field(..., description="The user prompt to process")
     context: str = Field(default="", description="Optional context to include")
     mock_mode: bool = Field(default=True, description="Use mock responses instead of real inference")
+    real_mode: bool = Field(default=False, description="Enable real inference with RadixAttention caching")
     max_turns: int = Field(default=10, ge=1, le=50, description="Maximum orchestration turns")
     role: str = Field(default="frontdoor", description="Initial role to use")
+    server_urls: dict[str, str] | None = Field(
+        default=None,
+        description="Server URLs for real mode (e.g., {'frontdoor': 'http://localhost:8080'})"
+    )
 
 
 class ChatResponse(BaseModel):
@@ -57,6 +62,11 @@ class ChatResponse(BaseModel):
     tokens_used: int = Field(default=0, description="Approximate tokens used")
     elapsed_seconds: float = Field(..., description="Total processing time")
     mock_mode: bool = Field(..., description="Whether mock mode was used")
+    real_mode: bool = Field(default=False, description="Whether real inference was used")
+    cache_stats: dict[str, Any] | None = Field(
+        default=None,
+        description="Cache performance statistics (real_mode only)"
+    )
 
 
 class HealthResponse(BaseModel):
@@ -196,6 +206,141 @@ app.add_middleware(
 
 
 # ============================================================================
+# Root LM Helper Functions
+# ============================================================================
+
+
+def _build_root_lm_prompt(
+    state: str,
+    original_prompt: str,
+    last_output: str,
+    last_error: str,
+    turn: int,
+) -> str:
+    """Build the prompt for the Root LM (frontdoor).
+
+    The Root LM generates Python code that executes in a sandboxed REPL.
+    It has access to the context and can call sub-LMs for complex tasks.
+
+    Args:
+        state: Current REPL state from repl.get_state()
+        original_prompt: The user's original prompt
+        last_output: Output from the last code execution
+        last_error: Error from the last code execution (if any)
+        turn: Current turn number (0-indexed)
+
+    Returns:
+        Prompt string for the Root LM
+    """
+    prompt_parts = [
+        "You are an orchestrator that generates Python code to solve tasks.",
+        "",
+        "## Available Tools",
+        "- `context`: str - The full input context (large, do not send to LLM)",
+        "- `artifacts`: dict - Store intermediate results",
+        "- `peek(n)`: Return first n characters of context",
+        "- `grep(pattern)`: Search context with regex, return matching lines",
+        "- `llm_call(prompt, role='worker')`: Call a sub-LM for a task",
+        "- `llm_batch(prompts, role='worker')`: Call sub-LM with multiple prompts in parallel",
+        "- `FINAL(answer)`: Signal completion with the final answer",
+        "",
+        "## Rules",
+        "1. NEVER send the full context to llm_call - use peek() or grep() to extract relevant parts",
+        "2. Break complex tasks into smaller sub-tasks using llm_call/llm_batch",
+        "3. Store intermediate results in artifacts dict",
+        "4. Call FINAL(answer) when you have the complete answer",
+        "5. Output only valid Python code - no explanations or markdown",
+        "",
+        f"## Current State (Turn {turn + 1})",
+        state,
+    ]
+
+    if last_error:
+        prompt_parts.extend([
+            "",
+            "## Last Error",
+            f"```",
+            last_error,
+            "```",
+            "Fix the error and try again.",
+        ])
+    elif last_output:
+        prompt_parts.extend([
+            "",
+            "## Last Output",
+            f"```",
+            last_output[:500] + ("..." if len(last_output) > 500 else ""),
+            "```",
+        ])
+
+    prompt_parts.extend([
+        "",
+        "## Task",
+        original_prompt,
+        "",
+        "## Your Code",
+        "Write Python code to complete the task. Output only the code:",
+    ])
+
+    return "\n".join(prompt_parts)
+
+
+def _extract_code_from_response(response: str) -> str:
+    """Extract Python code from an LLM response.
+
+    Handles responses that may be wrapped in markdown code blocks
+    or contain explanatory text.
+
+    Args:
+        response: Raw LLM response
+
+    Returns:
+        Extracted Python code
+    """
+    import re
+
+    # Try to extract from markdown code block
+    # Match ```python ... ``` or ``` ... ```
+    code_block_pattern = r"```(?:python)?\s*\n(.*?)```"
+    matches = re.findall(code_block_pattern, response, re.DOTALL)
+
+    if matches:
+        # Return the first code block
+        return matches[0].strip()
+
+    # If no code block, try to find code-like content
+    # Look for lines that start with common Python patterns
+    lines = response.split("\n")
+    code_lines = []
+    in_code = False
+
+    for line in lines:
+        # Skip explanation-like lines
+        if line.strip().startswith("#") and not in_code:
+            # Could be a comment, include it
+            pass
+        elif any(line.strip().startswith(kw) for kw in [
+            "import ", "from ", "def ", "class ", "if ", "for ", "while ",
+            "try:", "except", "with ", "return ", "print(", "FINAL(",
+            "artifacts[", "result =", "answer =", "output =",
+        ]):
+            in_code = True
+        elif in_code and line.strip() == "":
+            pass  # Keep empty lines in code
+        elif not in_code and not any(c.isalnum() or c in "()[]{}=+-*/:,._'\"" for c in line):
+            continue  # Skip non-code lines
+
+        if in_code or line.strip().startswith("#") or "=" in line or "()" in line:
+            code_lines.append(line)
+
+    if code_lines:
+        return "\n".join(code_lines)
+
+    # Fallback: return the whole response (let REPL handle errors)
+    return response.strip()
+
+
+# ============================================================================
 # Endpoints
 # ============================================================================
 
@@ -215,12 +360,22 @@ async def health() -> HealthResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     """Process a chat request through the orchestrator.
 
-    In mock mode, returns a simulated response.
-    In real mode (when implemented), runs the full orchestration loop.
+    Modes:
+    - mock_mode=True (default): Returns simulated response, no real inference
+    - real_mode=True: Uses RadixAttention caching with live llama-server instances
+    - Neither: Uses legacy model server (if configured)
+
+    The real_mode flag enables:
+    - CachingBackend with prefix routing
+    - Cache statistics in response
+    - Full orchestration loop with Root LM (Phase 8)
     """
     start_time = time.perf_counter()
 
-    if request.mock_mode:
+    # Determine mode (real_mode takes precedence over mock_mode)
+    use_mock = request.mock_mode and not request.real_mode
+
+    if use_mock:
         # Mock mode: simulate orchestration
         turns = 1
         answer = f"[MOCK] Processed prompt: {request.prompt[:100]}..."
@@ -237,17 +392,42 @@ async def chat(request: ChatRequest) -> ChatResponse:
             tokens_used=0,
             elapsed_seconds=elapsed,
             mock_mode=True,
+            real_mode=False,
+            cache_stats=None,
         )
 
-    # Real mode: run orchestration loop
-    # This would use the full REPL environment and LLM primitives
-    primitives = LLMPrimitives(mock_mode=False)
+    # Real mode: use RadixAttention with CachingBackend
+    if request.real_mode:
+        # Get server URLs from request or use defaults
+        server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
 
-    if primitives.model_server is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Real inference not available: no model server configured",
-        )
+        try:
+            primitives = LLMPrimitives(
+                mock_mode=False,
+                server_urls=server_urls,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Failed to initialize real mode backends: {e}",
+            )
+
+        # Verify at least one backend is available
+        if not primitives._backends:
+            raise HTTPException(
+                status_code=503,
+                detail="No backends available. Ensure llama-server is running on configured ports.",
+            )
+
+    else:
+        # Legacy mode: use ModelServer (if configured)
+        primitives = LLMPrimitives(mock_mode=False)
+
+        if primitives.model_server is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Real inference not available: no model server configured",
+            )
 
     # Create REPL environment
     combined_context = request.prompt
@@ -259,19 +439,71 @@ async def chat(request: ChatRequest) -> ChatResponse:
         llm_primitives=primitives,
     )
 
-    # Run orchestration loop
+    # Run Root LM orchestration loop
     turns = 0
     answer = ""
+    last_output = ""
+    last_error = ""
 
     for turn in range(request.max_turns):
         turns += 1
-        # In real mode, we'd get code from the Root LM and execute it
-        # For now, this is a placeholder
-        answer = "[REAL MODE NOT IMPLEMENTED]"
-        break
+
+        # 1. Get current REPL state
+        state = repl.get_state()
+
+        # 2. Build prompt for Root LM (frontdoor)
+        root_prompt = _build_root_lm_prompt(
+            state=state,
+            original_prompt=request.prompt,
+            last_output=last_output,
+            last_error=last_error,
+            turn=turn,
+        )
+
+        # 3. Call Root LM to generate Python code
+        try:
+            code = primitives.llm_call(
+                root_prompt,
+                role="frontdoor",
+                n_tokens=1024,
+            )
+        except Exception as e:
+            # If frontdoor call fails, return error
+            answer = f"[ERROR: Root LM call failed: {e}]"
+            break
+
+        # Extract code from response (handle markdown code blocks)
+        code = _extract_code_from_response(code)
+
+        # 4. Execute code in REPL
+        result = repl.execute(code)
+
+        # 5. Check for FINAL() completion
+        if result.is_final:
+            answer = result.final_answer or ""
+            break
+
+        # 6. Handle errors - feed back to Root LM for recovery
+        if result.error:
+            last_error = result.error
+            last_output = result.output
+        else:
+            last_error = ""
+            last_output = result.output
+
+    # If max turns reached without FINAL()
+    if not answer:
+        answer = f"[Max turns ({request.max_turns}) reached without FINAL()]"
+        if last_output:
+            answer += f"\n\nLast output:\n{last_output}"
 
     elapsed = time.perf_counter() - start_time
     _state.increment_request(mock_mode=False, turns=turns)
+
+    # Get cache stats if using real_mode with RadixAttention
+    cache_stats = None
+    if request.real_mode and primitives._backends:
+        cache_stats = primitives.get_cache_stats()
 
     return ChatResponse(
         answer=answer,
@@ -279,6 +511,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
         tokens_used=primitives.total_tokens_generated,
         elapsed_seconds=elapsed,
         mock_mode=False,
+        real_mode=request.real_mode,
+        cache_stats=cache_stats,
     )
 
 

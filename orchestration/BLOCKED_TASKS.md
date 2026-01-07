@@ -12,6 +12,8 @@
 | Formalizer eval | Benchmark completion | HIGH | `research/formalizer_handoff.md` | Blocked |
 | Tree speculation | Benchmark completion | HIGH | `research/kernel_dev_handoff.md` | Blocked |
 | RadixAttention | — | — | `research/radix_attention_handoff.md` | ✅ COMPLETE |
+| Orchestrator integration | Model servers | HIGH | `research/orchestration_integration_handoff.md` | ✅ CODE COMPLETE |
+| MathSmith re-conversion | — | LOW | `research/mathsmith_reconversion_handoff.md` | Ready |
 | Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` | Blocked |
 
 ---
@@ -50,9 +52,15 @@ export PATH="/mnt/raid0/llm/npm-global/bin:/mnt/raid0/llm/tools/devc/bin:$PATH"
 # Launch devcontainer
 devc /mnt/raid0/llm/claude
 
-# Inside container:
+# Inside container - Orchestrator Integration (CODE COMPLETE - TEST ONLY):
 claude --dangerously-skip-permissions -p \
-  "Read research/radix_attention_handoff.md and implement Phases A-E"
+  "Read research/orchestration_integration_handoff.md. All code is written. \
+   Your job is to: 1) Start llama-server instances, 2) Run tests, \
+   3) Fix any failures, 4) Run benchmarks until >50% cache hit rate."
+
+# Inside container - MathSmith Re-conversion (LOW PRIORITY):
+claude --dangerously-skip-permissions -p \
+  "Read research/mathsmith_reconversion_handoff.md and re-convert the model."
 ```
 
 ### When Model Servers Running
@@ -93,6 +101,27 @@ claude --dangerously-skip-permissions -p \
 - [x] Phase E: Slot persistence (`src/prefix_cache.py` - save/restore_hot_prefixes)
 - [x] Unit tests: 46/46 passing (`tests/unit/test_prefix_cache.py`)
 - [ ] Integration benchmark (requires running llama-server)
+
+### Orchestrator Integration (CODE COMPLETE) — 9 Phases
+- [x] Phase 1: Server infrastructure (manual startup commands in handoff)
+- [x] Phase 2: LLM Primitives integration (`src/llm_primitives.py`)
+- [x] Phase 3: Model server factory (`src/model_server.py`)
+- [x] Phase 4: Registry update (`orchestration/model_registry.yaml`)
+- [x] Phase 5: Integration tests (`tests/integration/test_cache_integration.py`)
+- [x] Phase 6: Benchmark script (`scripts/benchmark/bench_cache_performance.py`)
+- [x] Phase 7: API integration (`src/api.py` - real_mode param)
+- [x] **Phase 8: Root LM Loop** (`src/api.py` - recursive pattern implemented)
+- [x] Phase 9: E2E validation (`scripts/test_recursive_orchestration.py`)
+- [ ] Cache hit rate >50% on RLM workloads (YOLO agent to verify)
+- [ ] Root LM completes multi-turn tasks (YOLO agent to verify)
+
+### MathSmith Re-conversion (Ready)
+- [ ] Download HF model
+- [ ] Convert to GGUF F16
+- [ ] Quantize to Q4_K_M
+- [ ] Verify speed (~40-60 t/s expected)
+- [ ] Run formalizer benchmark
+- [ ] Update model registry
 
 ### Orchestrator Real Mode
 - [ ] Model servers started (ports 8080-8088)

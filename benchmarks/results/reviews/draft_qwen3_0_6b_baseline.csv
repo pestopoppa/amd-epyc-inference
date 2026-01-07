@@ -1,41 +1,21 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,144.18,1,Attempted but incorrect format
-general,t1_q2_summarize,134.63,1,Response too long - not a summary
-general,t1_q3_extract,146.84,3,All 4 emails extracted correctly
-general,t2_q1_json,143.38,1,Attempted but incorrect
-general,t2_q2_multistep,144.32,2,Partial deduplication
-general,t2_q3_compare,138.91,1,Response too verbose - not 2-3 sentences
-general,t3_q1_synthesis,133.97,2,Substantial attempt at T3 question
-general,t3_q2_transform,131.37,2,Substantial attempt at T3 question
-general,t3_q3_schedule,131.35,2,Substantial attempt at T3 question
-general,t3_q4_inconsistency,129.78,2,Substantial attempt at T3 question
-general,t1_q1_json,90.47,1,Attempted but incorrect format
-general,t1_q2_multistep,94.23,1,General response generated
-general,t1_q3_compare,86.27,1,General response generated
-general,t2_q1_synthesis,85.76,1,General response generated
-general,t2_q2_transform,95.72,1,General response generated
-general,t2_q3_schedule,92.54,1,General response generated
-general,t2_q4_inconsistency,82.21,1,General response generated
-general,t3_q1_policy_analysis,84.68,2,Substantial attempt at T3 question
-general,t3_q2_system_failure,81.82,2,Substantial attempt at T3 question
-general,t3_q3_strategic_communication,94.03,2,Substantial attempt at T3 question
-thinking,t1_q1_logic,120.71,1,General thinking response
-thinking,t1_q2_sequence,121.74,1,General thinking response
-thinking,t1_q3_deduction,126.69,1,General thinking response
-thinking,t2_q1_multistep,110.92,1,Attempted harder reasoning question
-thinking,t2_q2_hypothesis,118.18,1,Attempted harder reasoning question
-thinking,t2_q3_planning,113.96,1,Attempted harder reasoning question
-thinking,t3_q1_paradox,113.99,1,Attempted harder reasoning question
-thinking,t3_q2_counterfactual,114.86,1,Attempted harder reasoning question
-thinking,t3_q3_formal,119.99,1,Attempted harder reasoning question
-thinking,t3_q4_metacognition,116.89,1,Attempted harder reasoning question
-thinking,t1_q1_multistep,91.72,1,Shows calculation attempt
-thinking,t1_q2_hypothesis,94.56,1,Attempted but missing key concepts
-thinking,t1_q3_planning,85.25,1,Attempted ordering
-thinking,t2_q1_paradox,91.45,1,Attempted harder reasoning question
-thinking,t2_q2_counterfactual,85.8,1,Attempted harder reasoning question
-thinking,t2_q3_formal,91.51,1,Attempted harder reasoning question
-thinking,t2_q4_metacognition,90.1,1,Attempted harder reasoning question
-thinking,t3_q1_methodological_critique,88.93,1,Attempted harder reasoning question
-thinking,t3_q2_causal_inference,88.32,1,Attempted harder reasoning question
-thinking,t3_q3_reasoning_trap,88.01,1,Attempted harder reasoning question
+general,t3_q1_policy_analysis,90.1,0,Repetitive garbage output
+general,t3_q2_system_failure,95.0,0,Repetitive garbage output
+general,t3_q3_strategic_communication,92.1,0,Repetitive garbage output
+general,t2_q1_synthesis,98.8,0,Repetitive garbage output
+general,t2_q2_transform,98.1,0,Repetitive with incorrect data
+general,t2_q3_schedule,88.1,0,Confused output - no valid schedule
+general,t2_q4_inconsistency,90.7,0,Repetitive garbage output
+general,t1_q1_json,90.0,0,Repetitive garbage - no actual JSON
+general,t1_q2_multistep,93.9,0,Repetitive garbage output
+general,t1_q3_compare,96.0,2,Provides reasonable comparison of approaches
+thinking,t3_q1_methodological_critique,97.8,0,Repetitive garbage output
+thinking,t3_q2_causal_inference,93.8,0,Repetitive garbage output
+thinking,t3_q3_reasoning_trap,97.8,0,Repetitive boxed answer but confused
+thinking,t2_q1_paradox,91.7,0,Repetitive garbage output
+thinking,t2_q2_counterfactual,91.4,0,Repetitive garbage output
+thinking,t2_q3_formal,103.4,0,Repetitive garbage output
+thinking,t2_q4_metacognition,98.9,0,Repetitive garbage output
+thinking,t1_q1_multistep,104.3,0,Repetitive letter pattern garbage
+thinking,t1_q2_hypothesis,98.8,0,Repetitive garbage output
+thinking,t1_q3_planning,96.1,0,Repetitive dash pattern garbage

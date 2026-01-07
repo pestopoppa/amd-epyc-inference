@@ -4,13 +4,23 @@
 This module manages model processes, handles inference requests, and tracks
 model health and memory residency.
 
+Supports two backend modes:
+1. LlamaCppBackend: Per-inference subprocess (traditional batch mode)
+2. LlamaServerBackend: Persistent HTTP server with prefix caching (RadixAttention)
+
 Usage:
     from src.model_server import ModelServer
 
+    # Traditional batch mode
     server = ModelServer()
     server.load("coder_primary")
     result = server.infer("coder_primary", prompt="Write a function")
     server.unload("coder_primary")
+
+    # Server mode with prefix caching
+    from src.model_server import ModelServer, create_caching_server
+    server = create_caching_server(base_url="http://localhost:8080")
+    result = server.infer(InferenceRequest(role="coder", prompt="..."))
 """
 
 from __future__ import annotations
@@ -572,6 +582,133 @@ class ModelServer:
         }
 
 
+def create_caching_server(
+    base_url: str = "http://localhost:8080",
+    num_slots: int = 4,
+    cache_dir: str | None = None,
+    registry_path: str | None = None,
+) -> "CachingModelServer":
+    """Create a ModelServer with prefix caching enabled.
+
+    This factory function creates a server that uses the LlamaServerBackend
+    with RadixAttention-style prefix caching for improved performance.
+
+    Args:
+        base_url: URL of the running llama-server instance.
+        num_slots: Number of parallel slots on the server.
+        cache_dir: Directory for persisting hot prefix caches.
+        registry_path: Path to model registry YAML file.
+
+    Returns:
+        CachingModelServer instance ready for inference.
+
+    Example:
+        server = create_caching_server()
+        result = server.infer(InferenceRequest(role="coder", prompt="..."))
+        print(f"Cache hit rate: {server.get_cache_stats()['hit_rate']:.1%}")
+    """
+    from src.backends.llama_server import LlamaServerBackend, ServerConfig
+    from src.prefix_cache import CachingBackend, PrefixRouter
+
+    config = ServerConfig(base_url=base_url, num_slots=num_slots)
+    backend = LlamaServerBackend(config)
+    router = PrefixRouter(num_slots=num_slots)
+    caching = CachingBackend(backend, router, cache_dir=cache_dir)
+
+    registry = RegistryLoader(registry_path) if registry_path else RegistryLoader()
+
+    return CachingModelServer(
+        registry=registry,
+        backend=caching,
+        base_backend=backend,
+    )
+
+
+@dataclass
+class CachingModelServer:
+    """ModelServer variant with prefix caching support.
+
+    Wraps a CachingBackend to provide prefix-aware inference with:
+    - Automatic prompt routing to optimal slots
+    - Cache hit/miss tracking
+    - Hot prefix persistence
+
+    Attributes:
+        registry: Model registry loader.
+        backend: CachingBackend wrapper.
+        base_backend: Underlying LlamaServerBackend.
+    """
+
+    registry: RegistryLoader
+    backend: "CachingBackend"  # noqa: F821
+    base_backend: "LlamaServerBackend"  # noqa: F821
+
+    def infer(self, request: InferenceRequest) -> InferenceResult:
+        """Run inference with automatic prefix caching.
+
+        Args:
+            request: Inference request.
+
+        Returns:
+            Inference result.
+
+        Raises:
+            ModelServerError: If role not found.
+        """
+        try:
+            role_config = self.registry.get_role(request.role)
+        except KeyError as e:
+            raise ModelServerError(f"Role not found: {request.role}") from e
+
+        return self.backend.infer(role_config, request)
+
+    def health_check(self) -> dict[str, Any]:
+        """Check server health.
+
+        Returns:
+            Health status dictionary.
+        """
+        healthy = self.base_backend.health_check(0)
+        cache_stats = self.get_cache_stats()
+
+        return {
+            "status": "healthy" if healthy else "unhealthy",
+            "cache_hit_rate": cache_stats.get("router_hit_rate", 0),
+            "timestamp": time.time(),
+        }
+
+    def get_cache_stats(self) -> dict[str, float | int]:
+        """Get cache performance statistics.
+
+        Returns:
+            Dictionary with hit rate, token savings, etc.
+        """
+        return self.backend.get_stats()
+
+    def save_hot_prefixes(self, cache_dir: str | None = None, top_n: int = 10) -> int:
+        """Save hot prefixes to disk.
+
+        Args:
+            cache_dir: Directory to save cache files.
+            top_n: Number of hot prefixes to save.
+
+        Returns:
+            Number of prefixes saved.
+        """
+        return self.backend.save_hot_prefixes(cache_dir, top_n)
+
+    def restore_hot_prefixes(self, cache_dir: str | None = None) -> int:
+        """Restore hot prefixes from disk.
+
+        Args:
+            cache_dir: Directory containing saved cache files.
+
+        Returns:
+            Number of prefixes restored.
+        """
+        return self.backend.restore_hot_prefixes(cache_dir)
+
+
 def main() -> int:
     """CLI entry point for testing.
 
@@ -579,9 +716,24 @@ def main() -> int:
         python -m src.model_server                    # List roles and health check
         python -m src.model_server <role>             # Test inference with role
         python -m src.model_server <role> "<prompt>"  # Inference with custom prompt
+        python -m src.model_server --server           # Test with llama-server backend
     """
     import json
     import sys
+
+    # Check for server mode
+    if "--server" in sys.argv:
+        print("Testing with llama-server backend...")
+        try:
+            server = create_caching_server()
+            health = server.health_check()
+            print(f"Server health: {json.dumps(health, indent=2)}")
+            print(f"Cache stats: {json.dumps(server.get_cache_stats(), indent=2)}")
+            return 0
+        except Exception as e:
+            print(f"ERROR: {e}")
+            print("Make sure llama-server is running: scripts/server/start_servers.sh")
+            return 1
 
     server = ModelServer()
 

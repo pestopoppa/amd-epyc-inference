@@ -3,7 +3,8 @@
 
 This module provides llm_call() and llm_batch() functions for spawning
 sub-LM calls from the Root LM. Supports both mock mode (for testing)
-and real inference via the ModelServer.
+and real inference via persistent llama-server backends with RadixAttention
+prefix caching.
 
 Includes optional GenerationMonitor integration for early failure detection.
 See research/early_failure_prediction.md for literature references.
@@ -15,7 +16,18 @@ Usage:
     primitives = LLMPrimitives(mock_mode=True)
     result = primitives.llm_call("Summarize this:", "Some text")
 
-    # Real mode (with model server)
+    # Real mode (with server URLs - RadixAttention enabled)
+    primitives = LLMPrimitives(
+        mock_mode=False,
+        server_urls={
+            "frontdoor": "http://localhost:8080",
+            "coder": "http://localhost:8081",
+            "worker": "http://localhost:8082",
+        }
+    )
+    result = primitives.llm_call("Summarize this:", "Some text", role="worker")
+
+    # Legacy mode (with model server - per-inference subprocess)
     from src.model_server import ModelServer
     server = ModelServer()
     primitives = LLMPrimitives(model_server=server, mock_mode=False)
@@ -92,8 +104,16 @@ class LLMPrimitives:
     """LLM primitives for sub-LM spawning.
 
     Provides llm_call() for single calls and llm_batch() for parallel calls.
-    Can operate in mock mode for testing or with a real ModelServer.
+    Can operate in mock mode for testing, with CachingBackend (RadixAttention),
+    or with a legacy ModelServer.
     """
+
+    # Default server URLs for orchestrator roles
+    DEFAULT_SERVER_URLS = {
+        "frontdoor": "http://localhost:8080",
+        "coder": "http://localhost:8081",
+        "worker": "http://localhost:8082",
+    }
 
     def __init__(
         self,
@@ -101,19 +121,33 @@ class LLMPrimitives:
         mock_mode: bool = True,
         config: LLMPrimitivesConfig | None = None,
         mock_responses: dict[str, str] | None = None,
+        server_urls: dict[str, str] | None = None,
+        num_slots: int = 4,
     ):
         """Initialize LLM primitives.
 
         Args:
-            model_server: Optional ModelServer instance for real inference.
+            model_server: Optional ModelServer instance for legacy inference.
             mock_mode: If True, return mock responses instead of real inference.
             config: Optional configuration for output caps, parallelism, etc.
             mock_responses: Optional dict mapping prompts to mock responses.
+            server_urls: Dict mapping role names to llama-server URLs.
+                        If provided and not mock_mode, uses CachingBackend.
+            num_slots: Number of slots per server for prefix caching.
         """
         self.model_server = model_server
         self.mock_mode = mock_mode
         self.config = config if config is not None else LLMPrimitivesConfig()
         self.mock_responses = mock_responses if mock_responses is not None else {}
+        self.server_urls = server_urls
+        self.num_slots = num_slots
+
+        # CachingBackend instances per role (RadixAttention)
+        self._backends: dict[str, Any] = {}
+
+        # Initialize backends if server URLs provided and not mock mode
+        if not mock_mode and server_urls:
+            self._init_caching_backends(server_urls, num_slots)
 
         # Call log for debugging and testing
         self.call_log: list[CallLogEntry] = []
@@ -122,6 +156,51 @@ class LLMPrimitives:
         self.total_calls = 0
         self.total_batch_calls = 0
         self.total_tokens_generated = 0
+
+    def _init_caching_backends(self, server_urls: dict[str, str], num_slots: int) -> None:
+        """Initialize CachingBackend instances for each role.
+
+        Args:
+            server_urls: Dict mapping role names to llama-server URLs.
+            num_slots: Number of slots per server.
+        """
+        try:
+            from src.backends.llama_server import LlamaServerBackend, ServerConfig
+            from src.prefix_cache import CachingBackend, PrefixRouter
+
+            for role, url in server_urls.items():
+                config = ServerConfig(base_url=url, num_slots=num_slots)
+                backend = LlamaServerBackend(config)
+                router = PrefixRouter(num_slots=num_slots)
+                self._backends[role] = CachingBackend(backend, router)
+
+        except ImportError as e:
+            # If RadixAttention modules not available, log and continue
+            import logging
+            logging.warning(f"CachingBackend not available: {e}. Using legacy mode.")
+
+    def get_backend(self, role: str) -> Any | None:
+        """Get the CachingBackend for a role.
+
+        Args:
+            role: Role name (e.g., "worker", "coder", "frontdoor").
+
+        Returns:
+            CachingBackend instance or None if not configured.
+        """
+        return self._backends.get(role)
+
+    def get_cache_stats(self) -> dict[str, dict[str, Any]]:
+        """Get cache statistics for all backends.
+
+        Returns:
+            Dict mapping role to cache stats dict.
+        """
+        stats = {}
+        for role, backend in self._backends.items():
+            if hasattr(backend, "get_stats"):
+                stats[role] = backend.get_stats()
+        return stats
 
     def llm_call(
         self,
@@ -461,7 +540,7 @@ class LLMPrimitives:
         ]
 
     def _real_call(self, prompt: str, role: str) -> str:
-        """Make a real inference call via the model server.
+        """Make a real inference call via CachingBackend or legacy ModelServer.
 
         Args:
             prompt: The full prompt.
@@ -471,12 +550,20 @@ class LLMPrimitives:
             Model response.
 
         Raises:
-            RuntimeError: If model server not configured.
+            RuntimeError: If no backend configured for this role.
         """
-        if self.model_server is None:
-            raise RuntimeError("ModelServer not configured for real inference")
+        # Try CachingBackend first (RadixAttention)
+        backend = self._backends.get(role)
+        if backend is not None:
+            return self._call_caching_backend(backend, prompt, role)
 
-        # Use the model server's infer method
+        # Fall back to legacy ModelServer
+        if self.model_server is None:
+            raise RuntimeError(
+                f"No backend configured for role '{role}'. "
+                "Provide server_urls or model_server."
+            )
+
         from src.model_server import InferenceRequest
 
         request = InferenceRequest(
@@ -485,6 +572,41 @@ class LLMPrimitives:
             timeout=self.config.call_timeout,
         )
         result = self.model_server.infer(role, request)
+
+        self.total_tokens_generated += result.tokens_generated
+        return result.output
+
+    def _call_caching_backend(self, backend: Any, prompt: str, role: str) -> str:
+        """Call a CachingBackend with RadixAttention prefix caching.
+
+        Args:
+            backend: CachingBackend instance.
+            prompt: The full prompt.
+            role: The role name.
+
+        Returns:
+            Model response.
+        """
+        from src.model_server import InferenceRequest
+        from src.registry_loader import RoleConfig, AccelerationConfig
+
+        # Create minimal RoleConfig for backend
+        role_config = RoleConfig(
+            name=role,
+            model_path="",  # Backend already knows the model
+            acceleration=AccelerationConfig(type="baseline"),
+        )
+
+        request = InferenceRequest(
+            role=role,
+            prompt=prompt,
+            timeout=self.config.call_timeout,
+        )
+
+        result = backend.infer(role_config, request)
+
+        if not result.success:
+            raise RuntimeError(f"Inference failed: {result.error_message}")
 
         self.total_tokens_generated += result.tokens_generated
         return result.output
@@ -499,10 +621,15 @@ class LLMPrimitives:
         Returns:
             List of model responses in order.
         """
-        if self.model_server is None:
-            raise RuntimeError("ModelServer not configured for real inference")
+        # Check if we have a backend for this role
+        backend = self._backends.get(role)
+        if backend is None and self.model_server is None:
+            raise RuntimeError(
+                f"No backend configured for role '{role}'. "
+                "Provide server_urls or model_server."
+            )
 
-        results = [None] * len(prompts)
+        results: list[str | None] = [None] * len(prompts)
 
         with ThreadPoolExecutor(max_workers=self.config.batch_parallelism) as executor:
             # Submit all calls
@@ -519,21 +646,37 @@ class LLMPrimitives:
                 except Exception as e:
                     results[idx] = f"[ERROR: {e}]"
 
-        return results
+        return [r if r is not None else "" for r in results]
 
     def get_stats(self) -> dict[str, Any]:
         """Get statistics about LLM calls.
 
         Returns:
-            Dict with call counts, token counts, etc.
+            Dict with call counts, token counts, cache stats, etc.
         """
-        return {
+        stats = {
             "total_calls": self.total_calls,
             "total_batch_calls": self.total_batch_calls,
             "total_tokens_generated": self.total_tokens_generated,
             "call_log_size": len(self.call_log),
             "mock_mode": self.mock_mode,
         }
+
+        # Add cache stats if using CachingBackend
+        if self._backends:
+            cache_stats = self.get_cache_stats()
+            stats["cache_stats"] = cache_stats
+
+            # Calculate aggregate hit rate
+            total_routes = 0
+            total_hits = 0
+            for role_stats in cache_stats.values():
+                total_routes += role_stats.get("router_total_routes", 0)
+                total_hits += role_stats.get("router_hit_rate", 0) * role_stats.get("router_total_routes", 0)
+            if total_routes > 0:
+                stats["aggregate_cache_hit_rate"] = total_hits / total_routes
+
+        return stats
 
     def get_recent_calls(self, n: int = 10) -> list[CallLogEntry]:
         """Get the most recent call log entries.

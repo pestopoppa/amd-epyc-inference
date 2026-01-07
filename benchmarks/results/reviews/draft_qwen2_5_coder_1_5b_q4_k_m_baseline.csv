@@ -1,41 +1,21 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,50.12,1,Attempted but incorrect format
-general,t1_q2_summarize,201.75,2,Captures key points but may not be concise
-general,t1_q3_extract,54.72,3,All 4 emails extracted correctly
-general,t2_q1_json,54.7,1,Attempted but incorrect
-general,t2_q2_multistep,55.07,2,Partial deduplication
-general,t2_q3_compare,54.47,1,Response too verbose - not 2-3 sentences
-general,t3_q1_synthesis,55.14,2,Substantial attempt at T3 question
-general,t3_q2_transform,54.74,2,Substantial attempt at T3 question
-general,t3_q3_schedule,62.09,2,Substantial attempt at T3 question
-general,t3_q4_inconsistency,61.39,2,Substantial attempt at T3 question
-general,t1_q1_json,61.59,1,Attempted but incorrect format
-general,t1_q2_multistep,54.1,1,General response generated
-general,t1_q3_compare,64.12,1,General response generated
-general,t2_q1_synthesis,62.38,1,General response generated
-general,t2_q2_transform,63.27,1,General response generated
-general,t2_q3_schedule,59.62,1,General response generated
-general,t2_q4_inconsistency,58.59,1,General response generated
-general,t3_q1_policy_analysis,61.85,2,Substantial attempt at T3 question
-general,t3_q2_system_failure,63.14,2,Substantial attempt at T3 question
-general,t3_q3_strategic_communication,62.51,2,Substantial attempt at T3 question
-thinking,t1_q1_logic,62.93,1,General thinking response
-thinking,t1_q2_sequence,60.92,1,General thinking response
-thinking,t1_q3_deduction,59.21,1,General thinking response
-thinking,t2_q1_multistep,60.36,1,Attempted harder reasoning question
-thinking,t2_q2_hypothesis,61.56,1,Attempted harder reasoning question
-thinking,t2_q3_planning,59.03,1,Attempted harder reasoning question
-thinking,t3_q1_paradox,237.52,1,Attempted harder reasoning question
-thinking,t3_q2_counterfactual,57.52,1,Attempted harder reasoning question
-thinking,t3_q3_formal,60.23,1,Attempted harder reasoning question
-thinking,t3_q4_metacognition,220.72,1,Attempted harder reasoning question
-thinking,t1_q1_multistep,62.55,3,Correct answer 11:34 AM
-thinking,t1_q2_hypothesis,61.1,2,Identifies some confounders
-thinking,t1_q3_planning,59.74,1,Attempted ordering
-thinking,t2_q1_paradox,196.49,1,Attempted harder reasoning question
-thinking,t2_q2_counterfactual,63.4,1,Attempted harder reasoning question
-thinking,t2_q3_formal,63.14,1,Attempted harder reasoning question
-thinking,t2_q4_metacognition,59.08,1,Attempted harder reasoning question
-thinking,t3_q1_methodological_critique,231.54,1,Attempted harder reasoning question
-thinking,t3_q2_causal_inference,62.1,1,Attempted harder reasoning question
-thinking,t3_q3_reasoning_trap,288.18,1,Attempted harder reasoning question
+general,t3_q1_policy_analysis,58.1,2,Good identification of overfitting and data leakage issues
+general,t3_q2_system_failure,55.9,3,Correctly identifies replica lag causing double-charges
+general,t3_q3_strategic_communication,47.0,2,Good structure for board opening statement
+general,t2_q1_synthesis,51.3,1,Asks good questions but doesn't synthesize
+general,t2_q2_transform,58.4,0,Adds extra employees - incorrect transformation
+general,t2_q3_schedule,57.0,1,Attempts schedule but has logical issues
+general,t2_q4_inconsistency,46.0,3,Correctly identifies JSON vs form-encoded inconsistency
+general,t1_q1_json,43.6,3,Correct JSON with all required fields
+general,t1_q2_multistep,58.1,2,Partially correct - didn't remove duplicates properly
+general,t1_q3_compare,54.1,2,Good comparison structure for approaches
+thinking,t3_q1_methodological_critique,217.5,0,Empty response
+thinking,t3_q2_causal_inference,248.2,0,Empty response
+thinking,t3_q3_reasoning_trap,305.5,0,Empty response
+thinking,t2_q1_paradox,214.3,0,Empty response
+thinking,t2_q2_counterfactual,57.0,2,Good counterfactual analysis
+thinking,t2_q3_formal,57.3,3,Good transitivity proof with clear steps
+thinking,t2_q4_metacognition,200.9,0,Empty response
+thinking,t1_q1_multistep,56.2,2,Good step-by-step calculation approach
+thinking,t1_q2_hypothesis,56.6,2,Good alternative explanations identified
+thinking,t1_q3_planning,50.7,2,Good systematic approach to constraints

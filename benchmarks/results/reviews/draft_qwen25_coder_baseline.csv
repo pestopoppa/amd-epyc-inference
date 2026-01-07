@@ -1,41 +1,21 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,181.98,1,Attempted but incorrect format
-general,t1_q2_summarize,89.74,2,Captures key points but may not be concise
-general,t1_q3_extract,104.44,3,All 4 emails extracted correctly
-general,t2_q1_json,191.49,1,Attempted but incorrect
-general,t2_q2_multistep,181.16,2,Partial deduplication
-general,t2_q3_compare,97.54,2,Compares both approaches
-general,t3_q1_synthesis,176.66,2,Substantial attempt at T3 question
-general,t3_q2_transform,172.07,2,Substantial attempt at T3 question
-general,t3_q3_schedule,170.61,2,Substantial attempt at T3 question
-general,t3_q4_inconsistency,174.15,2,Substantial attempt at T3 question
-general,t1_q1_json,187.7,1,Attempted but incorrect format
-general,t1_q2_multistep,141.75,1,General response generated
-general,t1_q3_compare,96.96,1,General response generated
-general,t2_q1_synthesis,172.26,1,General response generated
-general,t2_q2_transform,161.53,1,General response generated
-general,t2_q3_schedule,142.22,1,General response generated
-general,t2_q4_inconsistency,147.04,1,General response generated
-general,t3_q1_policy_analysis,171.06,2,Substantial attempt at T3 question
-general,t3_q2_system_failure,175.96,2,Substantial attempt at T3 question
-general,t3_q3_strategic_communication,177.72,2,Substantial attempt at T3 question
-thinking,t1_q1_logic,184.62,1,General thinking response
-thinking,t1_q2_sequence,187.58,1,General thinking response
-thinking,t1_q3_deduction,174.87,1,General thinking response
-thinking,t2_q1_multistep,173.32,1,Attempted harder reasoning question
-thinking,t2_q2_hypothesis,181.31,1,Attempted harder reasoning question
-thinking,t2_q3_planning,170.4,1,Attempted harder reasoning question
-thinking,t3_q1_paradox,183.08,1,Attempted harder reasoning question
-thinking,t3_q2_counterfactual,175.15,1,Attempted harder reasoning question
-thinking,t3_q3_formal,178.01,1,Attempted harder reasoning question
-thinking,t3_q4_metacognition,162.84,1,Attempted harder reasoning question
-thinking,t1_q1_multistep,171.98,1,Shows calculation attempt
-thinking,t1_q2_hypothesis,184.53,2,Identifies some confounders
-thinking,t1_q3_planning,189.3,1,Attempted ordering
-thinking,t2_q1_paradox,182.13,1,Attempted harder reasoning question
-thinking,t2_q2_counterfactual,168.46,1,Attempted harder reasoning question
-thinking,t2_q3_formal,151.62,1,Attempted harder reasoning question
-thinking,t2_q4_metacognition,144.21,1,Attempted harder reasoning question
-thinking,t3_q1_methodological_critique,189.45,1,Attempted harder reasoning question
-thinking,t3_q2_causal_inference,154.02,1,Attempted harder reasoning question
-thinking,t3_q3_reasoning_trap,195.48,1,Attempted harder reasoning question
+general,t3_q1_policy_analysis,179.7,1,Lists generic failure modes but lacks depth
+general,t3_q2_system_failure,183.0,1,Wrong explanation - misses actual idempotency timing issue
+general,t3_q3_strategic_communication,166.3,1,Generic statement - doesn't address specific board context
+general,t2_q1_synthesis,166.8,1,Provides recommendations but too generic
+general,t2_q2_transform,158.3,0,Repetitive garbage output - adds random employees
+general,t2_q3_schedule,164.3,1,Starts reasoning approach but incomplete
+general,t2_q4_inconsistency,176.0,0,Says No Inconsistencies Found - completely wrong
+general,t1_q1_json,181.2,3,Correct JSON output with all required fields
+general,t1_q2_multistep,161.4,0,Repetitive garbage - repeats Date endlessly
+general,t1_q3_compare,90.5,0,Empty response - only EOG tokens
+thinking,t3_q1_methodological_critique,60.5,0,Almost no response - just partial prompt repeat
+thinking,t3_q2_causal_inference,120.6,1,Wrong answer - incorrect adjustment set
+thinking,t3_q3_reasoning_trap,128.7,2,Addresses validation vs test issue - partially correct
+thinking,t2_q1_paradox,149.5,1,Starts philosophical discussion but confused
+thinking,t2_q2_counterfactual,137.7,2,Reasonable analysis structure for counterfactual
+thinking,t2_q3_formal,146.2,3,Correct transitivity proof structure
+thinking,t2_q4_metacognition,139.2,1,Starts estimation approach but very thin
+thinking,t1_q1_multistep,146.2,1,Starts calculation but no final answer
+thinking,t1_q2_hypothesis,136.8,1,Starts analysis but doesn't provide clear alternatives
+thinking,t1_q3_planning,144.7,1,Uses code approach but doesn't complete solution

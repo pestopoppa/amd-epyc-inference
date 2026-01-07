@@ -35,6 +35,12 @@ runtime_defaults:
     parallel_slots: 4                 # concurrent request slots
     flash_attention: true             # Enable by default, models can override with constraints.flash_attention: false
     ubatch_size: 8192                 # Large batch for faster prompt processing (diminishing returns beyond this)
+  # Prefix caching settings (RadixAttention-style)
+  prefix_cache:
+    enabled: true                     # Enable prefix caching by default
+    prefix_length: 256                # Characters to use for prefix hashing
+    canonicalize: true                # Normalize prompts before routing
+    cache_dir: /mnt/raid0/llm/cache/prefixes  # Hot prefix persistence directory
   # Model context length defaults by architecture/family
   # Models can override with max_context in their definition
   context_limits:
@@ -54,10 +60,57 @@ runtime_defaults:
     tier_c: 180      # Workers
     tier_d: 60       # Drafts are fast
     long_context: 600  # Long prompts need more time
+
+# Server mode configuration (RadixAttention with persistent llama-server)
+# Used by LLMPrimitives with mock_mode=False for real inference
+server_mode:
+  # Default server URLs for orchestrator roles
+  frontdoor:
+    url: "http://localhost:8080"
+    slots: 4
+    model_role: frontdoor  # Reference to roles section
+    description: "Root LM - generates Python code each turn"
+    acceleration:
+      type: moe_expert_reduction
+      experts: 6
+      override_key: qwen3moe.expert_used_count
+
+  coder:
+    url: "http://localhost:8081"
+    slots: 4
+    model_role: coder_primary
+    description: "Primary code generation"
+    acceleration:
+      type: moe_expert_reduction
+      experts: 6
+      override_key: qwen3moe.expert_used_count
+
+  worker:
+    url: "http://localhost:8082"
+    slots: 8  # More slots for parallel worker requests
+    model_role: worker_general
+    description: "Parallel workers for file-level tasks"
+    acceleration:
+      type: baseline
+
+  # Development/testing configuration (smaller models)
+  dev:
+    frontdoor:
+      url: "http://localhost:8080"
+      slots: 4
+      model: "Qwen2.5-Coder-0.5B-Q8_0.gguf"
+      description: "Dev frontdoor - fast small model"
+
+    worker:
+      url: "http://localhost:8082"
+      slots: 4
+      model: "Qwen2.5-Coder-0.5B-Q8_0.gguf"
+      description: "Dev worker - fast small model"
+
 roles:
   frontdoor:
     tier: A
-    description: Primary interactive orchestrator - fast, agentic, always resident
+    description: Primary interactive orchestrator - high quality, always resident
     model:
       name: Qwen3-Coder-30B-A3B-Instruct
       path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
@@ -67,18 +120,19 @@ roles:
     candidate_roles: [frontdoor, coder, general, ingest]
     acceleration:
       type: moe_expert_reduction
-      experts: 4
+      experts: 6  # Updated 2026-01-06: MoE6 gives 90% quality vs 81% for MoE4
       override_key: qwen3moe.expert_used_count
     performance:
-      baseline_tps: 27.14
-      optimized_tps: 41.55
-      speedup: 1.53x
+      baseline_tps: 17.1
+      optimized_tps: 18.3  # MoE6 speed
+      quality_pct: 90
+      speedup: 1.07x
     memory:
       residency: hot
       pinned: true
   coder_primary:
     tier: B
-    description: Primary high-throughput code generation - fastest coder with excellent quality
+    description: Primary high-throughput code generation - reuses frontdoor model
     model:
       name: Qwen3-Coder-30B-A3B-Instruct
       path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
@@ -88,16 +142,17 @@ roles:
     candidate_roles: [frontdoor, coder, general, ingest]
     acceleration:
       type: moe_expert_reduction
-      experts: 4
+      experts: 6  # Updated 2026-01-06: MoE6 gives 90% quality vs 81% for MoE4
       override_key: qwen3moe.expert_used_count
     performance:
-      baseline_tps: 34.6
-      optimized_tps: 45.3
-      speedup: 1.31x
+      baseline_tps: 17.1
+      optimized_tps: 18.3  # MoE6 speed
+      quality_pct: 90
+      speedup: 1.07x
     memory:
       residency: hot
-      pinned: true
-    benchmark_date: 2025-12-16
+      pinned: true  # Shares with frontdoor
+    benchmark_date: 2026-01-06
   coder_escalation:
     tier: B
     description: Coding escalation target - generalist coder for when primary needs support
@@ -790,22 +845,29 @@ roles:
     memory:
       residency: cold
       pinned: false
-  math_mathsmith_hard_problem_synthesizer_qwen3_8b_q:
-    tier: C
-    description: Math model - MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0
+  formalizer:
+    tier: B
+    description: Problem formalizer - converts vague tasks to formal specifications
     model:
       name: MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0
       path: mradermacher/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B-GGUF/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0.gguf
       quant: Q8_0
       size_gb: 8.1
       architecture: dense
-    candidate_roles: [math]
+    candidate_roles: [formalizer, math]
     constraints:
       forbid:
         - speculative_decoding  # MathSmith finetune has different tokens than PARD-Qwen3
     memory:
-      residency: cold
+      residency: warm  # Load on demand when formalization needed
       pinned: false
+    output_format: FormalizationIR
+    notes: |
+      MathSmith is designed to synthesize challenging math problems from concept-explanation pairs.
+      New use case: Runtime formalization preprocessing - converts vague task descriptions into
+      formal specifications with constraints, edge cases, and testable acceptance criteria.
+      This enables downstream specialists (coder, math, architect) to work on well-defined problems.
+      Reference: https://arxiv.org/html/2508.05592v1
   vision_qwen3_vl_235b_a22b_thinking:
     tier: C
     description: Vision model - Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
@@ -1433,6 +1495,34 @@ routing_hints:
 - if: '''video'' in inputs and priority != ''interactive'''
   use:
   - vision_escalation
+
+# Formalization preprocessing triggers
+# Invoke formalizer when task has implicit mathematical structure or is vague
+- if: "task_type in ['code', 'math'] and complexity == 'high'"
+  preprocess: formalizer
+  use:
+  - coder_primary
+  - worker_math
+- if: "'optimize' in objective or 'constraint' in objective"
+  preprocess: formalizer
+  use:
+  - worker_math
+  - coder_primary
+- if: "'prove' in objective or 'verify' in objective"
+  preprocess: formalizer
+  use:
+  - worker_math
+  - thinking_reasoning
+- if: "'algorithm' in objective and 'design' in objective"
+  preprocess: formalizer
+  use:
+  - architect_qwen2_5_72b
+  - coder_primary
+- if: "ambiguity_score > 0.7"
+  preprocess: formalizer
+  notes: Frontdoor detects vague requirements needing formalization
+
+# Escalation rules
 - if: escalation.max_level == 'B3'
   use:
   - architect_general

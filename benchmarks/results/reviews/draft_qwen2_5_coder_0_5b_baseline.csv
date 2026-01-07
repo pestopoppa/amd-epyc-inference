@@ -1,41 +1,21 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,87.9,1,Attempted but incorrect format
-general,t1_q2_summarize,97.47,2,Captures key points but may not be concise
-general,t1_q3_extract,111.69,3,All 4 emails extracted correctly
-general,t2_q1_json,197.92,1,Attempted but incorrect
-general,t2_q2_multistep,196.07,2,Partial deduplication
-general,t2_q3_compare,120.72,2,Compares both approaches
-general,t3_q1_synthesis,207.16,2,Substantial attempt at T3 question
-general,t3_q2_transform,192.17,2,Substantial attempt at T3 question
-general,t3_q3_schedule,196.8,2,Substantial attempt at T3 question
-general,t3_q4_inconsistency,211.99,2,Substantial attempt at T3 question
-general,t1_q1_json,226.29,1,Attempted but incorrect format
-general,t1_q2_multistep,161.2,1,General response generated
-general,t1_q3_compare,102.67,1,General response generated
-general,t2_q1_synthesis,232.38,1,General response generated
-general,t2_q2_transform,165.29,1,General response generated
-general,t2_q3_schedule,145.76,1,General response generated
-general,t2_q4_inconsistency,234.77,1,General response generated
-general,t3_q1_policy_analysis,212.29,2,Substantial attempt at T3 question
-general,t3_q2_system_failure,215.24,2,Substantial attempt at T3 question
-general,t3_q3_strategic_communication,166.51,2,Substantial attempt at T3 question
-thinking,t1_q1_logic,202.53,1,General thinking response
-thinking,t1_q2_sequence,201.04,1,General thinking response
-thinking,t1_q3_deduction,207.14,1,General thinking response
-thinking,t2_q1_multistep,192.02,1,Attempted harder reasoning question
-thinking,t2_q2_hypothesis,191.65,1,Attempted harder reasoning question
-thinking,t2_q3_planning,174.78,1,Attempted harder reasoning question
-thinking,t3_q1_paradox,204.48,1,Attempted harder reasoning question
-thinking,t3_q2_counterfactual,191.92,1,Attempted harder reasoning question
-thinking,t3_q3_formal,200.9,1,Attempted harder reasoning question
-thinking,t3_q4_metacognition,85.55,1,Attempted harder reasoning question
-thinking,t1_q1_multistep,217.41,2,Close answer - correct hour
-thinking,t1_q2_hypothesis,233.49,1,Attempted but missing key concepts
-thinking,t1_q3_planning,160.53,1,Attempted ordering
-thinking,t2_q1_paradox,92.85,1,Attempted harder reasoning question
-thinking,t2_q2_counterfactual,218.76,1,Attempted harder reasoning question
-thinking,t2_q3_formal,234.34,1,Attempted harder reasoning question
-thinking,t2_q4_metacognition,107.92,1,Attempted harder reasoning question
-thinking,t3_q1_methodological_critique,165.66,1,Attempted harder reasoning question
-thinking,t3_q2_causal_inference,213.34,1,Attempted harder reasoning question
-thinking,t3_q3_reasoning_trap,148.51,1,Attempted harder reasoning question
+general,t3_q1_policy_analysis,160.7,2,Reasonable analysis of failure modes
+general,t3_q2_system_failure,152.4,1,Mentions idempotency but doesn't identify exact timing issue
+general,t3_q3_strategic_communication,135.7,0,Repetitive garbage output
+general,t2_q1_synthesis,162.6,2,Good structure but no concrete synthesized recommendation
+general,t2_q2_transform,159.6,0,Adds extra employees - incorrect transformation
+general,t2_q3_schedule,137.4,1,Good problem decomposition but no actual solution
+general,t2_q4_inconsistency,162.9,2,Starts identifying inconsistencies properly
+general,t1_q1_json,72.6,0,Empty response
+general,t1_q2_multistep,129.6,0,Repetitive garbage output
+general,t1_q3_compare,89.0,0,Empty response
+thinking,t3_q1_methodological_critique,138.4,2,Good identification of control group bias
+thinking,t3_q2_causal_inference,158.5,2,Good structure identifying MSAS concept
+thinking,t3_q3_reasoning_trap,128.7,0,Empty response
+thinking,t2_q1_paradox,167.0,2,Good philosophical analysis approach
+thinking,t2_q2_counterfactual,168.7,2,Good counterfactual analysis structure
+thinking,t2_q3_formal,171.0,2,Good proof approach and logical structure
+thinking,t2_q4_metacognition,73.7,0,Empty response
+thinking,t1_q1_multistep,159.7,2,Good step by step calculation approach
+thinking,t1_q2_hypothesis,162.8,2,Good identification of social factors as alternatives
+thinking,t1_q3_planning,153.9,2,Good systematic approach but incomplete
