@@ -1,0 +1,54 @@
+# Orchestrator Optimization Checkpoint
+# Created by optuna_orchestrator.py
+# Do not edit manually unless recovering from corruption
+
+schema_version: 1
+
+meta:
+  started: null
+  last_updated: null
+  description: "Layered optimization checkpoint for orchestrator parameters"
+
+layers:
+  frontdoor:
+    status: pending  # pending | in_progress | complete
+    optimal_params: null
+    metrics: null
+    trials_run: 0
+    best_score: null
+    notes: |
+      Parameters: temperature [0.0, 0.5], speculative_k [8, 32], entropy_threshold [4.0, 6.0]
+      Metric: parse_success_rate * (1/avg_turns) * (1/latency)
+
+  formalizer:
+    status: pending
+    optimal_params: null
+    metrics: null
+    trials_run: 0
+    best_score: null
+    notes: |
+      Parameters: temperature [0.0, 0.2]
+      Metric: schema_validation_rate * (1/latency)
+
+  specialists:
+    status: pending
+    optimal_params: null
+    metrics: null
+    trials_run: 0
+    best_score: null
+    notes: |
+      Parameters: temperature [0.1, 0.5], speculative_k [8, 24], early_abort_tokens [50, 150]
+      Metric: task_completion_rate * escalation_accuracy * (1/latency)
+
+  workers:
+    status: pending
+    optimal_params: null
+    metrics: null
+    trials_run: 0
+    best_score: null
+    notes: |
+      Parameters: temperature [0.2, 0.6], repetition_threshold [0.15, 0.35]
+      Metric: execution_success_rate * (1/latency)
+
+# Optimization History (filled by script)
+history: []
