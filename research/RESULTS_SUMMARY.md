@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-06 (Full Claude-as-Judge rescore of 65 baseline models)
+**Last Updated:** 2026-01-07 (Draft model rescore with hardened suites - 10 models)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -917,24 +917,27 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 #### Tier D: Draft Models (Qwen2.5 Family)
 
+**⚠️ RESCORED 2026-01-07:** Previous scores from deprecated suites were inflated. New hardened suite scores below.
+
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Compatible Targets |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
-| **Qwen2.5-Coder-0.5B** (Q8_0) | draft_primary | 19/30 | 19/30 | - | - | - | - | **63%** | 182.8 | Qwen2.5-Coder-* |
-| Qwen2.5-Coder-0.5B (Q4_K_M) | draft | - | - | - | - | - | - | - | - | Qwen2.5-Coder-* |
-| **Qwen2.5-0.5B** (Q8_0) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 198.0 | Qwen2.5-* |
-| Qwen2-0.5B (Q2_K) | draft | 19/30 | 19/30 | - | - | - | - | **63%** | 185.4 | Qwen2-* |
-| Qwen2.5-Coder-1.5B (Q4_K_M) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 87.9 | Qwen2.5-* |
-| Qwen2.5-Coder-1.5B (Q2_K) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 78.7 | Qwen2.5-* |
-| Qwen2.5-Math-1.5B (Q4_K_M) | draft | 22/30 | 18/30 | - | - | - | - | **67%** | 52.5 | Qwen2.5-Math-* |
-| Qwen2.5-Math-1.5B (Q6_K) | draft | 22/30 | 18/30 | - | - | - | - | **67%** | 65.6 | Qwen2.5-Math-* |
+| **Qwen2.5-Coder-1.5B** (Q4_K_M) | draft_primary | 11/30 | 19/30 | - | - | - | - | **50%** | 99.7 | Qwen2.5-* (best quality/speed) |
+| Qwen2.5-Math-1.5B (Q4_K_M) | draft | 20/30 | 11/30 | - | - | - | - | **52%** | 54.3 | Qwen2.5-Math-* |
+| Qwen2.5-Math-1.5B (Q6_K) | draft | 17/27 | 10/30 | - | - | - | - | **47%** | 57.4 | Qwen2.5-Math-* |
+| Qwen2.5-0.5B (Q8_0) | draft | 14/30 | 12/30 | - | - | - | - | **43%** | 156.8 | Qwen2.5-* |
+| Qwen2.5-Coder-0.5B (Q8_0) | draft | 16/30 | 8/30 | - | - | - | - | **40%** | 142.2 | Qwen2.5-Coder-* |
+| Qwen2-0.5B (Q2_K) | draft ⚠️ | 5/30 | 6/30 | - | - | - | - | **18%** | 155.9 | Qwen2-* (Q2_K degrades quality) |
+| Qwen2.5-Coder-1.5B (Q2_K) | draft ⚠️ | 2/30 | 2/30 | - | - | - | - | **7%** | 87.9 | UNUSABLE (Q2_K severely degrades) |
 
 #### Tier D: Draft Models (Qwen3 Family)
 
+**⚠️ RESCORED 2026-01-07:** Previous scores from deprecated suites were inflated. Qwen3-0.6B is UNUSABLE.
+
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Compatible Targets |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|-------------------|
-| Qwen3-0.6B (Q8_0) | draft | 17/30 | 18/30 | - | - | - | - | **58%** ⚠️ | 89.2 | Qwen3-* (UNRELIABLE: repetition loops) |
-| PARD-Qwen3-0.6B (Q4_0) | draft | 17/30 | 18/30 | - | - | - | - | **58%** ⚠️ | 78.4 | Qwen3-* (UNRELIABLE: repetition loops) |
-| Qwen3-1.7B (Q4_K_M) | draft | 20/30 | 19/30 | - | - | - | - | **65%** | 39.8 | Qwen3-* |
+| **Qwen3-1.7B** (Q4_K_M) | draft_primary | 21/30 | 15/30 | - | - | - | - | **60%** | 43.3 | Qwen3-* (best quality for Qwen3) |
+| Qwen3-0.6B (Q8_0) | draft ⛔ | 0/30 | 2/30 | - | - | - | - | **3%** | 95.3 | UNUSABLE (repetitive garbage) |
+| PARD-Qwen3-0.6B (Q4_0) | draft | 18/30 | 21/30 | - | - | - | - | **65%** | 78.4 | Qwen3-* (PARD version works better) |
 | Co-Rewarding-II-Qwen3-1.7B-Math | draft (⚠️) | 21/30 | 21/30 | - | - | - | - | 70%* | 22.0 | incompatible |
 | Qwen3-Embedding-0.6B | draft (⚠️) | - | - | - | - | - | - | - | - | embedding only |
 | Qwen3-VL-1B-Merged (Q8_0) | draft (⚠️) | 4/6 | - | - | - | - | - | 67%* | 67.7 | corrupted output |
