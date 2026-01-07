@@ -1,0 +1,453 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.example/schemas/formalization_ir.schema.json",
+  "title": "FormalizationIR",
+  "description": "Intermediate representation for formalized problem specifications. Output by formalizer models (MathSmith for math, xLAM for tools, etc.) to convert vague task descriptions into well-defined specifications. Supports mathematical formalization, tool sequence planning, and architecture specification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "problem_id",
+    "original_task",
+    "formal_specification",
+    "acceptance_criteria"
+  ],
+  "properties": {
+    "problem_id": {
+      "type": "string",
+      "description": "Unique identifier for this formalization",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "original_task": {
+      "type": "string",
+      "description": "The original vague task description that was formalized",
+      "minLength": 1
+    },
+    "formal_specification": {
+      "type": "object",
+      "description": "The formal mathematical/logical specification of the problem",
+      "additionalProperties": false,
+      "required": ["problem_type"],
+      "properties": {
+        "problem_type": {
+          "type": "string",
+          "enum": [
+            "optimization",
+            "constraint_satisfaction",
+            "proof",
+            "algorithm",
+            "transformation",
+            "validation",
+            "search",
+            "classification",
+            "tool_orchestration",
+            "architecture",
+            "workflow"
+          ],
+          "description": "The fundamental type of problem being solved"
+        },
+        "variables": {
+          "type": "array",
+          "description": "Variables involved in the problem",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "type"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Variable name",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "description": "Data type (int, float, string, list, set, graph, etc.)",
+                "minLength": 1
+              },
+              "domain": {
+                "type": "string",
+                "description": "Valid domain/range for the variable (e.g., 'x > 0', 'x in [1,100]')"
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of what this variable represents"
+              }
+            }
+          },
+          "default": []
+        },
+        "constraints": {
+          "type": "array",
+          "description": "Constraints that must be satisfied",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["expression"],
+            "properties": {
+              "expression": {
+                "type": "string",
+                "description": "Mathematical or logical expression for the constraint",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of the constraint"
+              },
+              "hard": {
+                "type": "boolean",
+                "description": "Whether this is a hard constraint (must satisfy) or soft (prefer to satisfy)",
+                "default": true
+              }
+            }
+          },
+          "default": []
+        },
+        "objective": {
+          "type": "object",
+          "description": "Optimization objective (if applicable)",
+          "additionalProperties": false,
+          "properties": {
+            "direction": {
+              "type": "string",
+              "enum": ["minimize", "maximize", "satisfy", "none"],
+              "description": "Optimization direction"
+            },
+            "expression": {
+              "type": "string",
+              "description": "Mathematical expression for the objective function"
+            },
+            "description": {
+              "type": "string",
+              "description": "Human-readable description of what we're optimizing"
+            }
+          }
+        },
+        "invariants": {
+          "type": "array",
+          "description": "Properties that must always hold (useful for verification)",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "preconditions": {
+          "type": "array",
+          "description": "Conditions that must be true before solving",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "postconditions": {
+          "type": "array",
+          "description": "Conditions that must be true after solving",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "tool_sequence": {
+          "type": "array",
+          "description": "Ordered sequence of tool/API calls for tool_orchestration problems",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["tool"],
+            "properties": {
+              "step": {
+                "type": "integer",
+                "description": "Step number in the sequence (0-indexed)",
+                "minimum": 0
+              },
+              "tool": {
+                "type": "string",
+                "description": "Name of the tool or API to call",
+                "minLength": 1
+              },
+              "description": {
+                "type": "string",
+                "description": "What this tool call accomplishes"
+              },
+              "arguments": {
+                "type": "object",
+                "description": "Arguments to pass to the tool (name → value or reference)",
+                "additionalProperties": true
+              },
+              "depends_on": {
+                "type": "array",
+                "description": "Step indices this call depends on (for parallel execution planning)",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "default": []
+              },
+              "output_var": {
+                "type": "string",
+                "description": "Variable name to store the output of this call"
+              },
+              "error_handling": {
+                "type": "string",
+                "enum": ["fail", "skip", "retry", "fallback"],
+                "description": "How to handle errors from this tool call",
+                "default": "fail"
+              },
+              "fallback_tool": {
+                "type": "string",
+                "description": "Alternative tool to use if this one fails (when error_handling is 'fallback')"
+              }
+            }
+          },
+          "default": []
+        },
+        "architecture": {
+          "type": "object",
+          "description": "System architecture specification for architecture problems",
+          "additionalProperties": false,
+          "properties": {
+            "components": {
+              "type": "array",
+              "description": "System components to be created",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "role"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Component name",
+                    "minLength": 1
+                  },
+                  "role": {
+                    "type": "string",
+                    "description": "Component's role in the system"
+                  },
+                  "technology": {
+                    "type": "string",
+                    "description": "Suggested technology/framework"
+                  },
+                  "scaling": {
+                    "type": "string",
+                    "enum": ["single", "horizontal", "vertical", "auto"],
+                    "description": "Scaling strategy"
+                  }
+                }
+              },
+              "default": []
+            },
+            "interfaces": {
+              "type": "array",
+              "description": "Interfaces between components",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["from", "to", "protocol"],
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "Source component"
+                  },
+                  "to": {
+                    "type": "string",
+                    "description": "Destination component"
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "description": "Communication protocol (REST, gRPC, WebSocket, pub/sub, etc.)"
+                  },
+                  "async": {
+                    "type": "boolean",
+                    "description": "Whether communication is asynchronous",
+                    "default": false
+                  }
+                }
+              },
+              "default": []
+            },
+            "data_flow": {
+              "type": "array",
+              "description": "Data flow paths through the system",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path"],
+                "properties": {
+                  "path": {
+                    "type": "array",
+                    "description": "Ordered list of components data flows through",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "data_type": {
+                    "type": "string",
+                    "description": "Type of data flowing through this path"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "What this data flow represents"
+                  }
+                }
+              },
+              "default": []
+            },
+            "quality_attributes": {
+              "type": "array",
+              "description": "Non-functional requirements (scalability, reliability, etc.)",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["attribute"],
+                "properties": {
+                  "attribute": {
+                    "type": "string",
+                    "description": "Quality attribute name"
+                  },
+                  "requirement": {
+                    "type": "string",
+                    "description": "Specific requirement (e.g., '99.9% uptime', '<100ms latency')"
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": ["critical", "high", "medium", "low"],
+                    "default": "high"
+                  }
+                }
+              },
+              "default": []
+            }
+          }
+        }
+      }
+    },
+    "edge_cases": {
+      "type": "array",
+      "description": "Known edge cases that implementations should handle",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Description of the edge case",
+            "minLength": 1
+          },
+          "input": {
+            "type": "string",
+            "description": "Example input that triggers this edge case"
+          },
+          "expected_behavior": {
+            "type": "string",
+            "description": "Expected behavior for this edge case"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "important", "minor"],
+            "default": "important"
+          }
+        }
+      },
+      "default": []
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "description": "Criteria for determining if a solution is acceptable",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["criterion"],
+        "properties": {
+          "criterion": {
+            "type": "string",
+            "description": "The acceptance criterion",
+            "minLength": 1
+          },
+          "testable": {
+            "type": "boolean",
+            "description": "Whether this criterion can be automatically tested",
+            "default": true
+          },
+          "test_method": {
+            "type": "string",
+            "description": "How to test this criterion (e.g., 'unit test', 'property test', 'formal verification')"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["must_have", "should_have", "nice_to_have"],
+            "default": "must_have"
+          }
+        }
+      }
+    },
+    "suggested_approach": {
+      "type": "object",
+      "description": "Suggested solution approach (guidance for downstream models)",
+      "additionalProperties": false,
+      "properties": {
+        "algorithm_family": {
+          "type": "string",
+          "description": "Suggested algorithm family (e.g., 'dynamic programming', 'greedy', 'backtracking')"
+        },
+        "complexity_class": {
+          "type": "string",
+          "description": "Expected time/space complexity (e.g., 'O(n log n)', 'NP-hard')"
+        },
+        "recommended_tools": {
+          "type": "array",
+          "description": "Recommended libraries or tools",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "decomposition": {
+          "type": "array",
+          "description": "Suggested sub-problems to solve",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Formalizer's confidence in this specification (0.0-1.0). Low confidence suggests architect review.",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "ambiguities": {
+      "type": "array",
+      "description": "Unresolved ambiguities in the original task that may need clarification",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question"],
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The ambiguous aspect that needs clarification"
+          },
+          "assumption": {
+            "type": "string",
+            "description": "The assumption made in absence of clarification"
+          },
+          "impact": {
+            "type": "string",
+            "description": "How this ambiguity affects the solution"
+          }
+        }
+      },
+      "default": []
+    },
+    "related_concepts": {
+      "type": "array",
+      "description": "Related mathematical/CS concepts that may be useful",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    }
+  }
+}
