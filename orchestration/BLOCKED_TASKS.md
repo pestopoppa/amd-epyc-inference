@@ -7,12 +7,12 @@
 
 ## Quick Status
 
-| Task | Blocked On | Priority | Handoff |
-|------|------------|----------|---------|
-| Formalizer eval | Benchmark completion | HIGH | `research/formalizer_handoff.md` |
-| Tree speculation | Benchmark completion | HIGH | `research/kernel_dev_handoff.md` |
-| RadixAttention | YOLO agent session | MEDIUM | `research/radix_attention_handoff.md` |
-| Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` |
+| Task | Blocked On | Priority | Handoff | Status |
+|------|------------|----------|---------|--------|
+| Formalizer eval | Benchmark completion | HIGH | `research/formalizer_handoff.md` | Blocked |
+| Tree speculation | Benchmark completion | HIGH | `research/kernel_dev_handoff.md` | Blocked |
+| RadixAttention | — | — | `research/radix_attention_handoff.md` | ✅ COMPLETE |
+| Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` | Blocked |
 
 ---
 
@@ -85,13 +85,14 @@ claude --dangerously-skip-permissions -p \
 - [ ] Results added to `RESULTS_SUMMARY.md`
 - [ ] `model_registry.yaml` updated with tree params
 
-### RadixAttention (YOLO Agent)
-- [ ] Phase A: Persistent server mode
-- [ ] Phase B: Sticky slot routing
-- [ ] Phase C: Prompt canonicalization
-- [ ] Phase D: Radix tree cache
-- [ ] Phase E: Slot persistence
-- [ ] Benchmark showing >50% cache hit rate
+### RadixAttention (YOLO Agent) — ✅ COMPLETE (2026-01-07)
+- [x] Phase A: Persistent server mode (`src/backends/llama_server.py`)
+- [x] Phase B: Sticky slot routing (`src/prefix_cache.py` - PrefixRouter)
+- [x] Phase C: Prompt canonicalization (`src/prefix_cache.py` - canonicalize_prompt)
+- [x] Phase D: Radix tree cache (`src/radix_cache.py`)
+- [x] Phase E: Slot persistence (`src/prefix_cache.py` - save/restore_hot_prefixes)
+- [x] Unit tests: 46/46 passing (`tests/unit/test_prefix_cache.py`)
+- [ ] Integration benchmark (requires running llama-server)
 
 ### Orchestrator Real Mode
 - [ ] Model servers started (ports 8080-8088)

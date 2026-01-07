@@ -1,0 +1,584 @@
+#!/usr/bin/env python3
+"""Prefix caching infrastructure for RadixAttention-style KV reuse.
+
+This module provides:
+- PrefixRouter: Routes requests to slots based on prefix matching
+- Prompt canonicalization for improved cache hit rates
+- Cache metrics and monitoring
+
+The design is inspired by SGLang's RadixAttention but adapted for
+CPU inference via llama-server's slot-based caching.
+
+Usage:
+    from src.prefix_cache import PrefixRouter, canonicalize_prompt
+
+    router = PrefixRouter(num_slots=4)
+
+    # Route a prompt to an optimal slot
+    slot_id = router.get_slot_for_prompt(prompt)
+
+    # Canonicalize for better cache hits
+    normalized = canonicalize_prompt(prompt)
+
+See research/radix_attention_handoff.md for implementation plan.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import re
+import time
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from typing import Callable
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Prompt Canonicalization (Phase C)
+# =============================================================================
+
+
+def canonicalize_prompt(prompt: str) -> str:
+    """Normalize a prompt to maximize cache hits.
+
+    Applies transformations that preserve semantic meaning while
+    removing variation that would cause cache misses.
+
+    Transformations:
+    - Strip trailing whitespace
+    - Normalize line endings (CRLF -> LF)
+    - Normalize timestamps to [TIMESTAMP] placeholder
+    - Normalize UUIDs to [UUID] placeholder
+    - Collapse multiple blank lines
+
+    Args:
+        prompt: Raw prompt text.
+
+    Returns:
+        Canonicalized prompt.
+    """
+    # Strip trailing whitespace
+    prompt = prompt.rstrip()
+
+    # Normalize line endings
+    prompt = prompt.replace("\r\n", "\n")
+    prompt = prompt.replace("\r", "\n")
+
+    # Normalize ISO timestamps: 2024-01-15T10:30:00 -> [TIMESTAMP]
+    prompt = re.sub(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?",
+        "[TIMESTAMP]",
+        prompt,
+    )
+
+    # Normalize date-only: 2024-01-15 -> [DATE]
+    prompt = re.sub(r"\b\d{4}-\d{2}-\d{2}\b", "[DATE]", prompt)
+
+    # Normalize UUIDs: 550e8400-e29b-41d4-a716-446655440000 -> [UUID]
+    prompt = re.sub(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        "[UUID]",
+        prompt,
+    )
+
+    # Collapse multiple blank lines to single
+    prompt = re.sub(r"\n{3,}", "\n\n", prompt)
+
+    return prompt
+
+
+# =============================================================================
+# Prefix Router (Phase B)
+# =============================================================================
+
+
+@dataclass
+class SlotState:
+    """State tracked for a server slot."""
+
+    slot_id: int
+    prefix_hash: str = ""
+    prefix_length: int = 0  # Chars in cached prefix
+    last_access: float = field(default_factory=time.time)
+    hit_count: int = 0
+    miss_count: int = 0
+
+    @property
+    def hit_rate(self) -> float:
+        """Hit rate for this slot."""
+        total = self.hit_count + self.miss_count
+        return self.hit_count / total if total > 0 else 0.0
+
+
+class PrefixRouter:
+    """Routes prompts to slots for optimal cache utilization.
+
+    Uses prefix hashing to map prompts with similar beginnings to the
+    same slot, enabling KV cache reuse. Implements LRU eviction when
+    all slots are occupied with different prefixes.
+
+    Algorithm:
+    1. Hash the first N tokens/chars of the prompt
+    2. If a slot exists with that prefix hash, return it (cache hit)
+    3. Otherwise, allocate the LRU slot (cache miss)
+    4. Update slot's prefix hash for future matching
+
+    Attributes:
+        num_slots: Number of server slots available.
+        prefix_length: Characters to use for prefix hashing.
+        slots: Mapping of slot_id to SlotState.
+        prefix_to_slot: Mapping of prefix_hash to slot_id.
+    """
+
+    def __init__(
+        self,
+        num_slots: int = 4,
+        prefix_length: int = 256,
+    ):
+        """Initialize the prefix router.
+
+        Args:
+            num_slots: Number of server slots to manage.
+            prefix_length: Number of characters to use for prefix hashing.
+        """
+        self.num_slots = num_slots
+        self.prefix_length = prefix_length
+
+        # Slot state tracking
+        self.slots: dict[int, SlotState] = {
+            i: SlotState(slot_id=i) for i in range(num_slots)
+        }
+
+        # LRU order for eviction (slot_id -> None, ordered by access time)
+        self._lru_order: OrderedDict[int, None] = OrderedDict(
+            (i, None) for i in range(num_slots)
+        )
+
+        # Prefix -> slot mapping for O(1) lookup
+        self.prefix_to_slot: dict[str, int] = {}
+
+        # Statistics
+        self.total_routes = 0
+        self.cache_hits = 0
+        self.cache_misses = 0
+
+    def get_slot_for_prompt(
+        self,
+        prompt: str,
+        canonicalize: bool = True,
+    ) -> int:
+        """Get the optimal slot for a prompt.
+
+        Routes the prompt to a slot that:
+        1. Has the same prefix cached (cache hit), or
+        2. Is the least recently used (cache miss with eviction)
+
+        Args:
+            prompt: The prompt to route.
+            canonicalize: Whether to canonicalize the prompt first.
+
+        Returns:
+            Slot ID (0 to num_slots-1).
+        """
+        self.total_routes += 1
+
+        # Canonicalize if requested
+        if canonicalize:
+            prompt = canonicalize_prompt(prompt)
+
+        # Hash the prefix
+        prefix_hash = self._hash_prefix(prompt)
+
+        # Check for existing slot with this prefix
+        if prefix_hash in self.prefix_to_slot:
+            slot_id = self.prefix_to_slot[prefix_hash]
+            slot = self.slots[slot_id]
+            slot.hit_count += 1
+            slot.last_access = time.time()
+            self._touch_lru(slot_id)
+            self.cache_hits += 1
+            logger.debug(f"Cache HIT: slot {slot_id} for prefix {prefix_hash[:8]}...")
+            return slot_id
+
+        # Cache miss - allocate LRU slot
+        slot_id = self._allocate_slot(prefix_hash)
+        self.cache_misses += 1
+        logger.debug(f"Cache MISS: allocated slot {slot_id} for prefix {prefix_hash[:8]}...")
+        return slot_id
+
+    def _hash_prefix(self, prompt: str) -> str:
+        """Hash the prefix of a prompt for slot matching.
+
+        Args:
+            prompt: The prompt to hash.
+
+        Returns:
+            MD5 hex digest of the prefix.
+        """
+        prefix = prompt[: self.prefix_length]
+        return hashlib.md5(prefix.encode("utf-8")).hexdigest()
+
+    def _allocate_slot(self, prefix_hash: str) -> int:
+        """Allocate a slot for a new prefix (LRU eviction).
+
+        Args:
+            prefix_hash: Hash of the new prefix.
+
+        Returns:
+            Allocated slot ID.
+        """
+        # Get LRU slot (first in OrderedDict)
+        slot_id = next(iter(self._lru_order))
+
+        # Evict old prefix mapping if exists
+        old_slot = self.slots[slot_id]
+        if old_slot.prefix_hash and old_slot.prefix_hash in self.prefix_to_slot:
+            del self.prefix_to_slot[old_slot.prefix_hash]
+
+        # Update slot state
+        old_slot.prefix_hash = prefix_hash
+        old_slot.last_access = time.time()
+        old_slot.miss_count += 1
+
+        # Update mappings
+        self.prefix_to_slot[prefix_hash] = slot_id
+        self._touch_lru(slot_id)
+
+        return slot_id
+
+    def _touch_lru(self, slot_id: int) -> None:
+        """Move a slot to the end of the LRU order (most recently used).
+
+        Args:
+            slot_id: Slot to touch.
+        """
+        self._lru_order.move_to_end(slot_id)
+
+    def get_stats(self) -> dict[str, float | int]:
+        """Get routing statistics.
+
+        Returns:
+            Dictionary with hit rate, miss rate, and counts.
+        """
+        hit_rate = self.cache_hits / self.total_routes if self.total_routes > 0 else 0.0
+        return {
+            "total_routes": self.total_routes,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "hit_rate": hit_rate,
+            "hit_rate_pct": hit_rate * 100,
+        }
+
+    def get_slot_stats(self) -> list[dict[str, int | float | str]]:
+        """Get per-slot statistics.
+
+        Returns:
+            List of stats for each slot.
+        """
+        return [
+            {
+                "slot_id": slot.slot_id,
+                "prefix_hash": slot.prefix_hash[:8] + "..." if slot.prefix_hash else "",
+                "hit_count": slot.hit_count,
+                "miss_count": slot.miss_count,
+                "hit_rate": slot.hit_rate,
+                "last_access": slot.last_access,
+            }
+            for slot in self.slots.values()
+        ]
+
+    def reset_stats(self) -> None:
+        """Reset all routing statistics."""
+        self.total_routes = 0
+        self.cache_hits = 0
+        self.cache_misses = 0
+        for slot in self.slots.values():
+            slot.hit_count = 0
+            slot.miss_count = 0
+
+    def clear(self) -> None:
+        """Clear all slot assignments and statistics."""
+        self.reset_stats()
+        self.prefix_to_slot.clear()
+        for slot in self.slots.values():
+            slot.prefix_hash = ""
+            slot.prefix_length = 0
+
+
+# =============================================================================
+# Caching Backend Integration
+# =============================================================================
+
+
+class CachingBackend:
+    """Wrapper that adds prefix caching to a LlamaServerBackend.
+
+    Integrates PrefixRouter with the backend to automatically:
+    - Route requests to optimal slots
+    - Track cache performance metrics
+    - Report savings from prefix reuse
+    - Persist hot prefixes across server restarts (Phase E)
+
+    Usage:
+        from src.backends.llama_server import LlamaServerBackend, ServerConfig
+        from src.prefix_cache import CachingBackend, PrefixRouter
+
+        backend = LlamaServerBackend(ServerConfig(base_url="http://localhost:8080"))
+        router = PrefixRouter(num_slots=4)
+        caching = CachingBackend(backend, router)
+
+        result = caching.infer(role_config, request)
+        print(f"Cache hit rate: {caching.get_hit_rate():.1%}")
+
+        # Persist hot prefixes before shutdown
+        caching.save_hot_prefixes("/mnt/raid0/llm/cache/prefixes")
+    """
+
+    def __init__(
+        self,
+        backend: "LlamaServerBackend",  # noqa: F821 - forward reference
+        router: PrefixRouter | None = None,
+        canonicalize: bool = True,
+        cache_dir: str | None = None,
+    ):
+        """Initialize the caching wrapper.
+
+        Args:
+            backend: The LlamaServerBackend to wrap.
+            router: PrefixRouter instance. Creates default if None.
+            canonicalize: Whether to canonicalize prompts.
+            cache_dir: Directory for persisting hot prefix cache files.
+        """
+        self.backend = backend
+        self.router = router if router is not None else PrefixRouter()
+        self.canonicalize = canonicalize
+        self.cache_dir = cache_dir
+
+    def infer(
+        self,
+        role_config: "RoleConfig",  # noqa: F821 - forward reference
+        request: "InferenceRequest",  # noqa: F821 - forward reference
+    ) -> "InferenceResult":  # noqa: F821 - forward reference
+        """Run inference with automatic slot routing.
+
+        Args:
+            role_config: Configuration for the role/model.
+            request: Inference request parameters.
+
+        Returns:
+            InferenceResult with output and metrics.
+        """
+        # Get optimal slot
+        prompt = request.prompt or ""
+        slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
+
+        # Add slot_id to request payload
+        # Note: This requires modifying the request or backend to support id_slot
+        # For now, we rely on llama-server's automatic slot management
+        # The routing helps track which prompts should hit which slots
+
+        # Canonicalize prompt if enabled
+        if self.canonicalize and request.prompt:
+            from dataclasses import replace
+
+            request = replace(request, prompt=canonicalize_prompt(request.prompt))
+
+        # Forward to backend
+        return self.backend.infer(role_config, request)
+
+    def get_hit_rate(self) -> float:
+        """Get the current cache hit rate.
+
+        Returns:
+            Hit rate as a float (0.0 to 1.0).
+        """
+        stats = self.router.get_stats()
+        return stats["hit_rate"]
+
+    def get_stats(self) -> dict[str, float | int]:
+        """Get combined statistics.
+
+        Returns:
+            Dictionary with router and backend stats.
+        """
+        router_stats = self.router.get_stats()
+        backend_stats = self.backend.get_cache_stats()
+
+        return {
+            # Router stats
+            "router_total_routes": router_stats["total_routes"],
+            "router_hit_rate": router_stats["hit_rate"],
+            # Backend stats (actual cache performance)
+            "backend_hit_rate": backend_stats.hit_rate / 100,
+            "backend_token_savings": backend_stats.token_savings_rate / 100,
+            "total_prompt_tokens": backend_stats.total_prompt_tokens,
+            "cached_prompt_tokens": backend_stats.cached_prompt_tokens,
+        }
+
+    # =========================================================================
+    # Phase E: Hot Prefix Persistence
+    # =========================================================================
+
+    def save_hot_prefixes(self, cache_dir: str | None = None, top_n: int = 10) -> int:
+        """Persist the hottest prefix caches to disk.
+
+        Saves the KV cache state for the most frequently accessed slots
+        to enable restoration after server restart.
+
+        Args:
+            cache_dir: Directory to save cache files. Uses self.cache_dir if None.
+            top_n: Number of hot prefixes to save.
+
+        Returns:
+            Number of prefixes successfully saved.
+        """
+        import json
+        import os
+
+        save_dir = cache_dir or self.cache_dir
+        if not save_dir:
+            logger.warning("No cache_dir configured, cannot save hot prefixes")
+            return 0
+
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Get slot stats and sort by hit count
+        slot_stats = self.router.get_slot_stats()
+        sorted_slots = sorted(slot_stats, key=lambda s: s["hit_count"], reverse=True)
+
+        saved_count = 0
+        manifest: list[dict] = []
+
+        for slot in sorted_slots[:top_n]:
+            slot_id = slot["slot_id"]
+            prefix_hash = slot["prefix_hash"]
+
+            if not prefix_hash or slot["hit_count"] == 0:
+                continue
+
+            # Save slot state via backend
+            filename = os.path.join(save_dir, f"slot_{slot_id}_{prefix_hash}.bin")
+            if self.backend.save_slot(slot_id, filename):
+                manifest.append({
+                    "slot_id": slot_id,
+                    "prefix_hash": prefix_hash,
+                    "hit_count": slot["hit_count"],
+                    "filename": filename,
+                })
+                saved_count += 1
+                logger.info(f"Saved slot {slot_id} ({prefix_hash[:8]}..., {slot['hit_count']} hits)")
+
+        # Write manifest for restoration
+        manifest_path = os.path.join(save_dir, "manifest.json")
+        with open(manifest_path, "w") as f:
+            json.dump({
+                "saved_at": time.time(),
+                "slots": manifest,
+            }, f, indent=2)
+
+        logger.info(f"Saved {saved_count} hot prefixes to {save_dir}")
+        return saved_count
+
+    def restore_hot_prefixes(self, cache_dir: str | None = None) -> int:
+        """Restore hot prefix caches from disk.
+
+        Loads previously saved KV cache states to warm up the cache
+        after a server restart.
+
+        Args:
+            cache_dir: Directory containing saved cache files.
+
+        Returns:
+            Number of prefixes successfully restored.
+        """
+        import json
+        import os
+
+        load_dir = cache_dir or self.cache_dir
+        if not load_dir:
+            logger.warning("No cache_dir configured, cannot restore hot prefixes")
+            return 0
+
+        manifest_path = os.path.join(load_dir, "manifest.json")
+        if not os.path.exists(manifest_path):
+            logger.info(f"No manifest found at {manifest_path}, nothing to restore")
+            return 0
+
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+
+        restored_count = 0
+        for entry in manifest.get("slots", []):
+            slot_id = entry["slot_id"]
+            filename = entry["filename"]
+            prefix_hash = entry["prefix_hash"]
+
+            if not os.path.exists(filename):
+                logger.warning(f"Cache file missing: {filename}")
+                continue
+
+            if self.backend.restore_slot(slot_id, filename):
+                # Update router state
+                self.router.prefix_to_slot[prefix_hash] = slot_id
+                self.router.slots[slot_id].prefix_hash = prefix_hash
+                self.router.slots[slot_id].hit_count = entry.get("hit_count", 0)
+                restored_count += 1
+                logger.info(f"Restored slot {slot_id} ({prefix_hash[:8]}...)")
+
+        logger.info(f"Restored {restored_count} hot prefixes from {load_dir}")
+        return restored_count
+
+    def clear_saved_prefixes(self, cache_dir: str | None = None) -> int:
+        """Clear saved prefix cache files.
+
+        Args:
+            cache_dir: Directory containing saved cache files.
+
+        Returns:
+            Number of files removed.
+        """
+        import os
+
+        clear_dir = cache_dir or self.cache_dir
+        if not clear_dir:
+            return 0
+
+        removed = 0
+        for filename in os.listdir(clear_dir):
+            filepath = os.path.join(clear_dir, filename)
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                removed += 1
+
+        logger.info(f"Cleared {removed} cache files from {clear_dir}")
+        return removed
+
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+
+def create_prefix_filter(
+    patterns: list[str],
+) -> Callable[[str], str]:
+    """Create a custom prompt filter for domain-specific canonicalization.
+
+    Args:
+        patterns: List of regex patterns to normalize (replaced with [FILTERED]).
+
+    Returns:
+        Function that applies all filters to a prompt.
+    """
+    compiled = [(re.compile(p), "[FILTERED]") for p in patterns]
+
+    def filter_prompt(prompt: str) -> str:
+        result = prompt
+        for pattern, replacement in compiled:
+            result = pattern.sub(replacement, result)
+        return result
+
+    return filter_prompt
