@@ -108,7 +108,7 @@ Always verify quality after applying expert reduction:
 
 1. Run benchmark suite on new configuration
 2. Compare Claude-as-Judge scores to baseline
-3. If scores drop >10%, increase expert count
+3. If scores drop <10%, increase expert count
 
 **Quality Degradation Signs**:
 - Repetitive or looping output
