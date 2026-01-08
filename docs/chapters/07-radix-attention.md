@@ -145,9 +145,37 @@ python -m pytest tests/unit/test_prefix_cache.py -v
 
 ## References
 
-- [SGLang RadixAttention Paper](https://arxiv.org/abs/2312.07104)
-- handoffs/active/radix-attention.md
-- llama.cpp server documentation
+### RadixAttention and Prefix Caching
+
+1. Zheng, L., Yin, L., Xie, Z., Huang, J., Sun, C., Yu, C. H., ... & Stoica, I. (2024). *SGLang: Efficient Execution of Structured Language Model Programs*. arXiv preprint. https://arxiv.org/abs/2312.07104
+
+2. Kwon, W., Li, Z., Zhuang, S., Sheng, Y., Zheng, L., Yu, C. H., ... & Stoica, I. (2023). *Efficient Memory Management for Large Language Model Serving with PagedAttention*. SOSP 2023. https://arxiv.org/abs/2309.06180
+
+### KV Cache Optimization
+
+3. Liu, Z., Wang, J., Dao, T., Zhou, T., Yuan, B., Song, Z., ... & Chen, B. (2024). *Scissorhands: Exploiting the Persistence of Importance Hypothesis for LLM KV Cache Compression at Test Time*. NeurIPS 2023. https://arxiv.org/abs/2305.17118
+
+4. Zhang, Z., Sheng, Y., Zhou, T., Chen, T., Zheng, L., Cai, R., ... & Stoica, I. (2024). *H2O: Heavy-Hitter Oracle for Efficient Generative Inference of Large Language Models*. NeurIPS 2023. https://arxiv.org/abs/2306.14048
+
+5. Ge, S., Zhang, Y., Liu, L., Zhang, M., Han, J., & Gao, J. (2024). *Model Tells You What to Discard: Adaptive KV Cache Compression for LLMs*. ICLR 2024. https://arxiv.org/abs/2310.01801
+
+### LLM Serving Systems
+
+6. Yu, G. I., Jeong, J. S., Kim, G. W., Kim, S., & Chun, B. G. (2022). *Orca: A Distributed Serving System for Transformer-Based Generative Models*. OSDI 2022. https://www.usenix.org/conference/osdi22/presentation/yu
+
+7. Agrawal, A., Shanbhag, A., Bhandare, A., Ng, S., Amiri, S. H., Narayanan, S., ... & Tao, Z. (2024). *Taming Throughput-Latency Tradeoff in LLM Inference with Sarathi-Serve*. OSDI 2024. https://arxiv.org/abs/2403.02310
+
+### Radix Tree Data Structures
+
+8. Morrison, D. R. (1968). *PATRICIA—Practical Algorithm To Retrieve Information Coded in Alphanumeric*. Journal of the ACM, 15(4), 514-534. https://doi.org/10.1145/321479.321481
+
+9. Leis, V., Kemper, A., & Neumann, T. (2013). *The Adaptive Radix Tree: ARTful Indexing for Main-Memory Databases*. ICDE 2013. https://db.in.tum.de/~leis/papers/ART.pdf
+
+### Implementation Resources
+
+10. llama.cpp Contributors. (2024). *llama-server: Slot Management and KV Cache Persistence*. GitHub Documentation. https://github.com/ggml-org/llama.cpp/tree/master/examples/server
+
+11. SGLang Team. (2024). *SGLang: A Structured Generation Language*. GitHub Repository. https://github.com/sgl-project/sglang
 
 ---
 

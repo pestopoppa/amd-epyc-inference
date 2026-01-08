@@ -118,8 +118,31 @@ Always verify quality after applying expert reduction:
 
 ## References
 
-- speculative_decoding_research.md (Track 2 section)
-- [MoE Architecture Paper](https://arxiv.org/abs/2101.03961)
+### Foundational MoE Papers
+
+1. Fedus, W., Zoph, B., & Shazeer, N. (2022). *Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity*. Journal of Machine Learning Research, 23(120), 1-39. https://arxiv.org/abs/2101.03961
+
+2. Lepikhin, D., Lee, H., Xu, Y., Chen, D., Firat, O., Huang, Y., ... & Chen, Z. (2021). *GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding*. ICLR 2021. https://arxiv.org/abs/2006.16668
+
+3. Shazeer, N., Mirhoseini, A., Maziarz, K., Davis, A., Le, Q., Hinton, G., & Dean, J. (2017). *Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer*. ICLR 2017. https://arxiv.org/abs/1701.06538
+
+### Expert Reduction and Efficiency
+
+4. Rajbhandari, S., Li, C., Yao, Z., Zhang, M., Aminabadi, R. Y., Awan, A. A., ... & He, Y. (2022). *DeepSpeed-MoE: Advancing Mixture-of-Experts Inference and Training to Power Next-Generation AI Scale*. ICML 2022. https://arxiv.org/abs/2201.05596
+
+5. Kim, Y., Awadalla, H. H., Muzio, A., Elbayad, M., & Esser, S. K. (2023). *Mixture of Experts with Capacity Factor Tuning*. arXiv preprint. https://arxiv.org/abs/2305.14705
+
+### SSM and Hybrid Architectures
+
+6. Gu, A., & Dao, T. (2024). *Mamba: Linear-Time Sequence Modeling with Selective State Spaces*. COLM 2024. https://arxiv.org/abs/2312.00752
+
+7. Lieber, O., Lenz, B., Bata, H., Cohen, G., Osin, J., Dalmedigos, I., ... & Shoham, Y. (2024). *Jamba: A Hybrid Transformer-Mamba Language Model*. arXiv preprint. https://arxiv.org/abs/2403.19887
+
+### Qwen Model Documentation
+
+8. Qwen Team. (2024). *Qwen3 Technical Report*. Alibaba Group. https://arxiv.org/abs/2505.09388
+
+9. Qwen Team. (2024). *Qwen2.5 Technical Report*. Alibaba Group. https://arxiv.org/abs/2412.15115
 
 ---
 

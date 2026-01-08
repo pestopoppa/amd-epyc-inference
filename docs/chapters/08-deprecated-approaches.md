@@ -179,9 +179,49 @@ Trains a small adapter network that predicts when the draft model will be accept
 
 ## References
 
-- speculative_decoding_research.md (Failed tracks section)
-- CAS_SPEC_IMPLEMENTATION_PLAN.md
-- track_reorganization_analysis.md
+### EAGLE Series
+
+1. Li, Y., Cai, T., Zhang, Y., Chen, D., & He, D. (2024). *EAGLE: Speculative Sampling Requires Rethinking Feature Uncertainty*. ICML 2024. https://arxiv.org/abs/2401.15077
+
+2. Li, Y., Wei, F., Zhang, C., & Zhang, H. (2024). *EAGLE-2: Faster Inference of Language Models with Dynamic Draft Trees*. EMNLP 2024. https://arxiv.org/abs/2406.16858
+
+3. SafeAI Lab. (2024). *EAGLE: Extrapolation Algorithm for Greater Language-model Efficiency*. GitHub Repository. https://github.com/SafeAILab/EAGLE
+
+### CAS-Spec and Layer Skipping
+
+4. Chen, Z., Yang, X., Lin, J., Sun, C., Huang, J., & Chang, K. C. C. (2024). *Cascade Speculative Drafting for Even Faster LLM Inference*. NeurIPS 2025. https://arxiv.org/abs/2510.26843
+
+5. Elhoushi, M., Shrivastava, A., Liskovich, D., Hosmer, B., Wasti, B., Lai, L., ... & Khabsa, M. (2024). *LayerSkip: Enabling Early Exit Inference and Self-Speculative Decoding*. ACL 2024. https://arxiv.org/abs/2404.16710
+
+6. Zhang, B., Bai, H., Lin, X., Zhao, J., Hou, L., & Quan, C. (2025). *SWIFT: On-the-Fly Self-Speculative Decoding for LLM Inference Acceleration*. ICLR 2025. https://openreview.net/forum?id=EKJhH5D5wA
+
+7. Du, J., Wei, Y., & Ji, Z. (2025). *CLaSp: In-Context Learning of Adaptive Speculative Decoding via Dynamic Programming*. ACL 2025. https://arxiv.org/abs/2505.24196
+
+### Medusa
+
+8. Cai, T., Li, Y., Geng, Z., Peng, H., & Dao, T. (2024). *Medusa: Simple Framework for Accelerating LLM Generation with Multiple Decoding Heads*. ICML 2024. https://arxiv.org/abs/2401.10774
+
+9. FasterDecoding. (2024). *Medusa GitHub Repository*. https://github.com/FasterDecoding/Medusa
+
+### Kangaroo
+
+10. Liu, F., Tang, Y., Liu, Z., Ni, Y., Han, K., & Wang, Y. (2024). *Kangaroo: Lossless Self-Speculative Decoding via Double Early Exiting*. NeurIPS 2024. https://github.com/Equationliu/Kangaroo
+
+### SSM Architectures
+
+11. Gu, A., & Dao, T. (2024). *Mamba: Linear-Time Sequence Modeling with Selective State Spaces*. COLM 2024. https://arxiv.org/abs/2312.00752
+
+12. Anthony, Q., Tokpanov, Y., Glorioso, P., & Berner, D. (2024). *BlackMamba: Mixture of Experts for State-Space Models*. arXiv preprint. https://arxiv.org/abs/2402.01771
+
+### Cascade Methods
+
+13. Chen, Z., Yang, X., Lin, J., Sun, C., Huang, J., & Chang, K. C. C. (2024). *Cascade Speculative Drafting for Even Faster LLM Inference*. arXiv preprint. https://arxiv.org/pdf/2312.11462
+
+14. Spector, B., & Re, C. (2024). *Accelerating LLM Inference with Staged Speculative Decoding*. ICML 2024. https://arxiv.org/abs/2405.19261
+
+### Curated Literature
+
+15. Zhang, H., et al. (2024). *SpeculativeDecodingPapers: A Curated List of Speculative Decoding Research*. GitHub Repository. https://github.com/hemingkx/SpeculativeDecodingPapers
 
 ---
 

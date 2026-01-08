@@ -143,9 +143,37 @@ This is important because:
 
 ## References
 
-- research/*_BENCHMARKING_PLAN.md (8 files)
-- benchmarks/results/reviews/summary.csv
-- CLAUDE.md (Claude-as-Judge section)
+### LLM Evaluation and Benchmarking
+
+1. Zheng, L., Chiang, W. L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., ... & Stoica, I. (2023). *Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena*. NeurIPS 2023. https://arxiv.org/abs/2306.05685
+
+2. Hendrycks, D., Burns, C., Basart, S., Zou, A., Mazeika, M., Song, D., & Steinhardt, J. (2021). *Measuring Massive Multitask Language Understanding*. ICLR 2021. https://arxiv.org/abs/2009.03300
+
+3. Chen, M., Tworek, J., Jun, H., Yuan, Q., Pinto, H. P. D. O., Kaplan, J., ... & Zaremba, W. (2021). *Evaluating Large Language Models Trained on Code*. arXiv preprint. https://arxiv.org/abs/2107.03374
+
+### Instruction Following and Format Compliance
+
+4. Zhou, J., Lu, T., Mishra, S., Brahma, S., Basu, S., Luan, Y., ... & Hui, K. (2023). *Instruction-Following Evaluation for Large Language Models*. arXiv preprint. https://arxiv.org/abs/2311.07911
+
+5. Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., ... & Lowe, R. (2022). *Training Language Models to Follow Instructions with Human Feedback*. NeurIPS 2022. https://arxiv.org/abs/2203.02155
+
+### Long Context Evaluation
+
+6. Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., & Liang, P. (2024). *Lost in the Middle: How Language Models Use Long Contexts*. TACL 2024. https://arxiv.org/abs/2307.03172
+
+7. Kamradt, G. (2023). *Needle in a Haystack: Pressure Testing LLMs*. GitHub Repository. https://github.com/gkamradt/LLMTest_NeedleInAHaystack
+
+### LLM-as-Judge Methodology
+
+8. Chiang, W. L., & Zheng, L. (2024). *Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference*. https://chat.lmsys.org/
+
+9. Dubois, Y., Li, X., Taori, R., Zhang, T., Gulrajani, I., Ba, J., ... & Hashimoto, T. (2024). *AlpacaFarm: A Simulation Framework for Methods that Learn from Human Feedback*. NeurIPS 2023. https://arxiv.org/abs/2305.14387
+
+### Agentic and Tool Use Evaluation
+
+10. Patil, S. G., Zhang, T., Wang, X., & Gonzalez, J. E. (2023). *Gorilla: Large Language Model Connected with Massive APIs*. arXiv preprint. https://arxiv.org/abs/2305.15334
+
+11. Qin, Y., Liang, S., Ye, Y., Zhu, K., Yan, L., Lu, Y., ... & Sun, M. (2024). *ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs*. ICLR 2024. https://arxiv.org/abs/2307.16789
 
 ---
 

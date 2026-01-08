@@ -78,9 +78,25 @@ The system uses a split storage design:
 
 ## References
 
-- [AMD EPYC 9655 Specifications](https://www.amd.com/en/products/cpu/amd-epyc-9655)
-- [llama.cpp CPU Performance](https://github.com/ggml-org/llama.cpp/discussions/4167)
-- SPECULATIVE_DECODING_REPORT.md (Section 1: System Configuration)
+### Hardware Documentation
+
+1. AMD Corporation. (2024). *AMD EPYC 9655 Processor Specifications*. https://www.amd.com/en/products/cpu/amd-epyc-9655
+
+2. AMD Corporation. (2024). *AMD Zen 5 Architecture White Paper*. https://www.amd.com/en/technologies/zen-architecture
+
+### Software and Implementation
+
+3. Gerganov, G., et al. (2024). *llama.cpp: LLM inference in C/C++*. GitHub. https://github.com/ggml-org/llama.cpp
+
+4. llama.cpp Contributors. (2024). *CPU Performance Discussion: EPYC and Threadripper*. GitHub Discussions. https://github.com/ggml-org/llama.cpp/discussions/4167
+
+### System Optimization
+
+5. Drepper, U. (2007). *What Every Programmer Should Know About Memory*. Red Hat, Inc. https://people.freebsd.org/~lstewart/articles/cpumemory.pdf
+
+6. Linux Kernel Documentation. *Transparent Hugepages*. https://www.kernel.org/doc/Documentation/vm/transhuge.txt
+
+7. Linux Kernel Documentation. *NUMA Memory Policy*. https://www.kernel.org/doc/Documentation/admin-guide/mm/numa_memory_policy.rst
 
 ---
 

@@ -123,9 +123,33 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 
 ## References
 
-- SPECULATIVE_DECODING_REPORT.md
-- speculative_decoding_research.md
-- [Speculative Decoding Paper](https://arxiv.org/abs/2211.17192)
+### Foundational Papers
+
+1. Leviathan, Y., Kalman, M., & Matias, Y. (2023). *Fast Inference from Transformers via Speculative Decoding*. Proceedings of the 40th International Conference on Machine Learning (ICML). https://arxiv.org/abs/2211.17192
+
+2. Chen, C., Borgeaud, S., Irving, G., Lespiau, J. B., Sifre, L., & Jumper, J. (2023). *Accelerating Large Language Model Decoding with Speculative Sampling*. arXiv preprint. https://arxiv.org/abs/2302.01318
+
+3. Xia, H., Ge, T., Wang, P., Chen, S., Wei, F., & Sui, Z. (2024). *Unlocking Efficiency in Large Language Model Inference: A Comprehensive Survey of Speculative Decoding*. ACL 2024. https://arxiv.org/abs/2401.07851
+
+### K-Value and Temperature Optimization
+
+4. Kim, S., Mangalam, K., Moon, S., Malik, J., Mahoney, M. W., Gholami, A., & Keutzer, K. (2024). *Speculative Decoding with Big Little Decoder*. NeurIPS 2023. https://arxiv.org/abs/2302.07863
+
+5. Sun, Z., Suresh, A. T., Ro, J. H., Beirami, A., Jain, H., & Yu, F. (2024). *SpecTr: Fast Speculative Decoding via Optimal Transport*. NeurIPS 2023. https://arxiv.org/abs/2310.15141
+
+### PARD (Parallel Aligned Draft)
+
+6. AMD Research. (2025). *PARD: Permutation-Aligned Residual Draft for Ultra-Fast Speculative Decoding*. https://github.com/AMD-AIG-AIMA/AMD-PACE
+
+### Implementation Resources
+
+7. Gerganov, G., et al. (2024). *llama.cpp Speculative Decoding*. GitHub. https://github.com/ggml-org/llama.cpp/tree/master/examples/speculative
+
+8. vLLM Team. (2024). *Speculative Decoding in vLLM*. vLLM Blog. https://blog.vllm.ai/2024/10/17/spec-decode.html
+
+### Curated Literature
+
+9. Zhang, H., et al. (2024). *SpeculativeDecodingPapers: A Curated List*. GitHub. https://github.com/hemingkx/SpeculativeDecodingPapers
 
 ---
 

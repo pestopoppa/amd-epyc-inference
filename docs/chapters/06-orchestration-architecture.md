@@ -147,9 +147,39 @@ The orchestration layer is implemented in:
 
 ## References
 
-- Hierarchical_Orchestration_Methodology.md
-- Orchestrator_Implementation_Plan.md
-- orchestration/task_ir.schema.json
+### Multi-Agent Systems and Orchestration
+
+1. Wu, Q., Bansal, G., Zhang, J., Wu, Y., Li, B., Zhu, E., ... & Wang, C. (2023). *AutoGen: Enabling Next-Gen LLM Applications via Multi-Agent Conversation*. arXiv preprint. https://arxiv.org/abs/2308.08155
+
+2. Hong, S., Zhuge, M., Chen, J., Zheng, X., Cheng, Y., Zhang, C., ... & Wu, Y. (2024). *MetaGPT: Meta Programming for A Multi-Agent Collaborative Framework*. ICLR 2024. https://arxiv.org/abs/2308.00352
+
+3. Park, J. S., O'Brien, J. C., Cai, C. J., Morris, M. R., Liang, P., & Bernstein, M. S. (2023). *Generative Agents: Interactive Simulacra of Human Behavior*. UIST 2023. https://arxiv.org/abs/2304.03442
+
+### Task Decomposition and Planning
+
+4. Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., ... & Zhou, D. (2022). *Chain-of-Thought Prompting Elicits Reasoning in Large Language Models*. NeurIPS 2022. https://arxiv.org/abs/2201.11903
+
+5. Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T., Cao, Y., & Narasimhan, K. (2024). *Tree of Thoughts: Deliberate Problem Solving with Large Language Models*. NeurIPS 2023. https://arxiv.org/abs/2305.10601
+
+6. Khot, T., Trivedi, H., Finlayson, M., Fu, Y., Richardson, K., Clark, P., & Sabharwal, A. (2023). *Decomposed Prompting: A Modular Approach for Solving Complex Tasks*. ICLR 2023. https://arxiv.org/abs/2210.02406
+
+### Verification and Self-Correction
+
+7. Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L., Wiegreffe, S., ... & Clark, P. (2024). *Self-Refine: Iterative Refinement with Self-Feedback*. NeurIPS 2023. https://arxiv.org/abs/2303.17651
+
+8. Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K., & Yao, S. (2024). *Reflexion: Language Agents with Verbal Reinforcement Learning*. NeurIPS 2023. https://arxiv.org/abs/2303.11366
+
+### Code Generation and Software Engineering
+
+9. Jimenez, C. E., Yang, J., Wettig, A., Yao, S., Pei, K., Press, O., & Narasimhan, K. (2024). *SWE-bench: Can Language Models Resolve Real-World GitHub Issues?*. ICLR 2024. https://arxiv.org/abs/2310.06770
+
+10. Yang, J., Jimenez, C. E., Wettig, A., Liber, K., Yao, S., Pei, K., ... & Narasimhan, K. (2024). *SWE-agent: Agent-Computer Interfaces Enable Automated Software Engineering*. arXiv preprint. https://arxiv.org/abs/2405.15793
+
+### Hierarchical and Scalable Architectures
+
+11. Shen, Y., Song, K., Tan, X., Li, D., Lu, W., & Zhuang, Y. (2024). *HuggingGPT: Solving AI Tasks with ChatGPT and its Friends in Hugging Face*. NeurIPS 2023. https://arxiv.org/abs/2303.17580
+
+12. Qiao, S., Ou, Y., Zhang, N., Chen, X., Yao, Y., Deng, S., ... & Chen, H. (2024). *Reasoning with Language Model Prompting: A Survey*. ACL 2023. https://arxiv.org/abs/2212.09597
 
 ---
 

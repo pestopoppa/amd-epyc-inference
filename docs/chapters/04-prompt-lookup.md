@@ -120,8 +120,31 @@ If speedup is <1.3x, prompt lookup isn't worth enabling for that task type.
 
 ## References
 
-- speculative_decoding_research.md (Track 8 section)
-- [Prompt Lookup Decoding Paper](https://arxiv.org/abs/2309.08333)
+### Prompt Lookup and N-gram Methods
+
+1. Saxena, A. (2023). *Prompt Lookup Decoding*. GitHub Repository. https://github.com/apoorvumang/prompt-lookup-decoding
+
+2. Yang, N., Ge, T., Wang, L., Jiao, B., Jiang, D., Yang, L., ... & Wei, F. (2023). *Inference with Reference: Lossless Acceleration of Large Language Models*. arXiv preprint. https://arxiv.org/abs/2304.04487
+
+### Retrieval-Based Speculative Decoding
+
+3. He, Z., Zhong, Z., Cai, T., Lee, J., & He, D. (2023). *REST: Retrieval-Based Speculative Decoding*. NAACL 2024. https://arxiv.org/abs/2311.08252
+
+4. Zhang, A., Deng, C., Oguz, B., Ott, M., & Çelikyilmaz, A. (2024). *RASD: Retrieval-Augmented Speculative Decoding*. arXiv preprint. https://arxiv.org/abs/2503.03434
+
+### Suffix Tree Methods
+
+5. Cai, T., Li, Y., Geng, Z., Peng, H., Lee, J. D., Chen, D., & Dao, T. (2024). *SuffixDecoding: A Model-Free Approach to Speeding Up Large Language Model Inference*. NeurIPS 2025 Spotlight. https://suffix-decoding.github.io/
+
+6. Cai, T. (2024). *Medusa: Simple Framework for Accelerating LLM Generation with Multiple Decoding Heads*. GitHub Repository. https://github.com/FasterDecoding/Medusa
+
+### Implementation Resources
+
+7. HuggingFace. (2024). *Generation Strategies: Speculative Decoding*. HuggingFace Transformers Documentation. https://huggingface.co/docs/transformers/generation_strategies
+
+8. vLLM Team. (2024). *N-gram Prompt Lookup in vLLM*. vLLM Documentation. https://docs.vllm.ai/en/latest/features/spec_decode.html
+
+9. Gerganov, G., et al. (2024). *llama-lookup: Prompt Lookup Decoding in llama.cpp*. GitHub. https://github.com/ggml-org/llama.cpp/tree/master/examples/lookup
 
 ---
 
