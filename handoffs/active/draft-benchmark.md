@@ -79,6 +79,16 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
   -p "Write a Python function to merge two sorted lists:"
 ```
 
+*53B (Quick test - same tokenizer as 30B):*
+```bash
+numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
+  -m "/mnt/raid0/llm/lmstudio/models/mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L.i1-Q4_K_M.gguf" \
+  -md /mnt/raid0/llm/models/Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf \
+  --override-kv qwen3moe.expert_used_count=int:4 \
+  --draft-max {K} -t 96 -n 100 \
+  -p "Write a Python function to merge two sorted lists:"
+```
+
 *480B (Full test after 30B succeeds):*
 ```bash
 numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
@@ -87,6 +97,28 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
   --override-kv qwen3moe.expert_used_count=int:3 \
   --draft-max {K} -t 96 -n 100 \
   -p "Write a Python function to merge two sorted lists:"
+```
+
+### 1.4 Qwen3 Thinking Family (MoE - standard Qwen3 drafts)
+
+**Draft Models:**
+- `/mnt/raid0/llm/models/Qwen3-1.7B-Q8_0.gguf` (1.7 GB)
+- `/mnt/raid0/llm/models/Qwen_Qwen3-0.6B-Q8_0.gguf` (768 MB)
+
+| Target Model | Quality Score | Current Best | Test K Values |
+|--------------|---------------|--------------|---------------|
+| Qwen3-30B-A3B-Thinking-2507 + MoE6 | (available) | TBD | 8, 16, 24 |
+
+**NOTE:** This is base Qwen3 MoE (not Qwen3-Coder), so use standard Qwen3 drafts, not jukofyork.
+
+**Command Template:**
+```bash
+numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
+  -m /mnt/raid0/llm/lmstudio/models/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF/Qwen3-30B-A3B-Thinking-2507-Q4_K_S.gguf \
+  -md /mnt/raid0/llm/models/Qwen3-1.7B-Q8_0.gguf \
+  --override-kv qwen3moe.expert_used_count=int:6 \
+  --draft-max {K} -t 96 -n 100 \
+  -p "Solve this step by step: What is 17 * 23?"
 ```
 
 ---
@@ -133,17 +165,19 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
 2. Qwen3-1.7B → Qwen3-32B
 3. Qwen3-0.6B → Qwen3-32B
 4. jukofyork draft → Qwen3-Coder-30B + MoE6 (verify draft compatibility)
+5. Qwen3-1.7B → Qwen3-30B-A3B-Thinking + MoE6 (base Qwen3 MoE)
+6. jukofyork draft → Qwen3-Coder-53B + MoE4 (same tokenizer as 30B)
 
 ### Batch 2: Large Model Tests (~1 hr)
-5. Gemma-3-1B → Gemma-3-27B-IT-QAT
-6. Qwen3-1.7B → Qwen3-235B-A22B + MoE4
-7. jukofyork draft → Qwen3-Coder-480B + MoE3 (if 30B succeeds)
+7. Gemma-3-1B → Gemma-3-27B-IT-QAT
+8. Qwen3-1.7B → Qwen3-235B-A22B + MoE4
+9. jukofyork draft → Qwen3-Coder-480B + MoE3 (if 30B succeeds)
 
 ### Batch 3: Formalizers (~1.5 hr)
-8. MathSmith-Qwen3-8B evaluation (problem formalization)
-9. xLAM-2-1B evaluation (tool sequences)
-10. xLAM-1b evaluation (tool sequences)
-11. NexusRaven-V2-13B evaluation (complex functions)
+10. MathSmith-Qwen3-8B evaluation (problem formalization)
+11. xLAM-2-1B evaluation (tool sequences)
+12. xLAM-1b evaluation (tool sequences)
+13. NexusRaven-V2-13B evaluation (complex functions)
 
 ---
 
@@ -193,7 +227,9 @@ After testing, update `orchestration/model_registry.yaml`:
 - [ ] Qwen3-1.7B → Qwen3-32B (K=8,16,24)
 - [ ] Qwen3-0.6B → Qwen3-32B (K=8,16,24)
 - [ ] Qwen3-1.7B → Qwen3-235B-A22B + MoE4 (K=8,16)
+- [ ] Qwen3-1.7B → Qwen3-30B-A3B-Thinking + MoE6 (K=8,16,24) - base Qwen3 MoE
 - [ ] jukofyork-0.75B → Qwen3-Coder-30B + MoE6 (K=8,16,24) - compatibility test
+- [ ] jukofyork-0.75B → Qwen3-Coder-53B + MoE4 (K=8,16,24) - same tokenizer as 30B
 - [ ] jukofyork-0.75B → Qwen3-Coder-480B + MoE3 (K=8,16,24) - if 30B works
 
 ### Formalizer Evaluation
