@@ -2,9 +2,9 @@
 
 **Goal**: Hierarchical LLM orchestration system using RLM (Recursive Language Models) pattern.
 
-**Status**: CORE COMPONENTS COMPLETE (Mock Mode) + RadixAttention Ready
+**Status**: CORE COMPONENTS COMPLETE (Mock Mode) + RadixAttention Ready + Tooling Architecture
 
-**Last Updated**: 2026-01-07
+**Last Updated**: 2026-01-08
 
 ---
 
@@ -16,7 +16,12 @@ python3 -m pytest tests/unit/test_repl_environment.py \
     tests/unit/test_llm_primitives.py \
     tests/unit/test_gate_runner.py \
     tests/unit/test_failure_router.py \
-    tests/unit/test_api.py -v
+    tests/unit/test_api.py \
+    tests/unit/test_tool_registry.py \
+    tests/unit/test_script_registry.py -v
+
+# Test tooling infrastructure (mock mode)
+python scripts/test_tooling_mock.py
 
 # Start API server (mock mode)
 cd /mnt/raid0/llm/claude
@@ -69,6 +74,33 @@ curl -X POST http://localhost:8000/chat \
 
 **Next Step**: Integration into `llm_primitives.py` - see `research/orchestration_integration_handoff.md`
 
+### ✅ Tooling Architecture (2026-01-08)
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| Tool Registry | `src/tool_registry.py` | Role-based permission system (5 categories) |
+| Script Registry | `src/script_registry.py` | Prepared scripts with fuzzy discovery |
+| Source Registry | `orchestration/source_registry.yaml` | Website hierarchy by language/task |
+| Parsing Config | `src/parsing_config.py` | GBNF vs Instructor by role |
+| Web Tools | `src/tools/web/` | fetch_docs, web_search |
+| File Tools | `src/tools/file/` | read_file, list_dir |
+| Code Tools | `src/tools/code/` | run_tests, lint_python |
+| Data Tools | `src/tools/data/` | json_parse, yaml_parse |
+
+**REPL Integration**: `TOOL()`, `SCRIPT()`, `list_tools()`, `find_scripts()` injected into globals
+
+**Tests**: 29 passing in `tests/unit/test_tool_registry.py` + `tests/unit/test_script_registry.py`
+
+**Token Savings**: 92% via prepared scripts vs generating code from scratch
+
+**Role Permissions**:
+| Tier | Web Access | Categories |
+|------|------------|------------|
+| A (frontdoor) | Yes | web, file, data |
+| B (specialists) | Yes | web, file, code, data, system |
+| C (workers) | No | file, data (read-only) |
+| D (draft) | No | None |
+
 ### ❌ Not Implemented (Requires Models)
 
 | Component | Blocker | Priority |
@@ -97,6 +129,7 @@ User Request
 │  │  context = "<user input>"  # NEVER sent to LLM          ││
 │  │  artifacts = {}            # Step outputs                ││
 │  │  Built-ins: peek(), grep(), FINAL(), llm_call()         ││
+│  │  Tooling:   TOOL(), SCRIPT(), list_tools(), find_scripts()│
 │  └─────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────┘
       │
@@ -174,11 +207,21 @@ for r in results:
 ### Source Code
 ```
 src/
-├── repl_environment.py    # Sandboxed REPL
+├── repl_environment.py    # Sandboxed REPL with TOOL/SCRIPT
 ├── llm_primitives.py      # LLM call/batch
+├── tool_registry.py       # Tool registry with permissions (NEW)
+├── script_registry.py     # Script registry with fuzzy search (NEW)
+├── parsing_config.py      # Parsing strategy by role (NEW)
 ├── gate_runner.py         # Gate execution
 ├── failure_router.py      # Escalation routing
 ├── api.py                 # FastAPI endpoints
+├── tools/                 # Tool implementations (NEW)
+│   ├── __init__.py       # register_all_tools()
+│   ├── base.py           # Base tool classes
+│   ├── web/              # Web tools (fetch, search)
+│   ├── file/             # File tools (read, list)
+│   ├── code/             # Code tools (tests, lint)
+│   └── data/             # Data tools (json, yaml)
 ├── prompts/
 │   ├── root_lm_system.txt
 │   ├── coder_system.txt
@@ -198,9 +241,16 @@ config/
 └── gates.yaml             # Gate definitions (7 gates)
 
 orchestration/
-├── model_registry.yaml    # Role → model mapping
+├── model_registry.yaml    # Role → model mapping (with tool_permissions)
+├── source_registry.yaml   # Website hierarchy by language/task (NEW)
+├── tool_registry.schema.json  # Tool schema (NEW)
 ├── task_ir.schema.json    # TaskIR JSON schema
-└── architecture_ir.schema.json
+├── formalization_ir.schema.json  # With script/web_sources fields
+├── architecture_ir.schema.json
+└── script_registry/       # Prepared scripts (NEW)
+    ├── web/              # fetch_docs.json, search_arxiv.json
+    ├── code/             # run_pytest.json, lint_python.json
+    └── data/             # parse_json.json
 ```
 
 ### Tests
@@ -211,9 +261,15 @@ tests/unit/
 ├── test_gate_runner.py       # 22 tests
 ├── test_failure_router.py    # 51 tests
 ├── test_api.py               # 26 tests
+├── test_tool_registry.py     # 15 tests (NEW)
+├── test_script_registry.py   # 14 tests (NEW)
+├── test_prefix_cache.py      # 46 tests
 ├── test_dispatcher.py        # (existing)
 ├── test_executor.py          # (existing)
 └── test_context_manager.py   # (existing)
+
+scripts/
+└── test_tooling_mock.py      # Integration test for tooling (NEW)
 ```
 
 ---
@@ -369,9 +425,10 @@ Based on model benchmarks:
 |----------|---------|
 | `research/Hierarchical_Orchestration_Methodology.md` | Full design spec |
 | `research/amd_pace_testing.md` | AMD PACE benchmark handoff |
-| `orchestration/progress/PROGRESS_2026-01-04.md` | Today's progress |
+| `research/orchestration_integration_handoff.md` | RadixAttention integration |
+| `orchestration/progress/PROGRESS_2026-01-08.md` | Tooling architecture progress |
 | `orchestration/model_registry.yaml` | Role → model mapping |
-| Plan file | Detailed implementation phases |
+| Plan file (`twinkly-sniffing-crescent.md`) | Tooling architecture phases |
 
 ---
 
