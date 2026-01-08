@@ -16,7 +16,7 @@
     }
   },
   "code": "import json\ntry:\n    data = json.loads(args['content'])\n    if args.get('extract_path'):\n        parts = args['extract_path'].split('.')\n        for part in parts:\n            if isinstance(data, dict):\n                data = data.get(part)\n            elif isinstance(data, list) and part.isdigit():\n                data = data[int(part)]\n    result = {'success': True, 'data': data}\nexcept json.JSONDecodeError as e:\n    result = {'success': False, 'error': str(e)}",
-  "code_hash": "a1b2c3d4e5f67890",
+  "code_hash": "7c963c997074f320",
   "examples": [
     {
       "args": {"content": "{\"name\": \"test\", \"value\": 42}", "extract_path": "value"},
