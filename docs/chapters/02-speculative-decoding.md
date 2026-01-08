@@ -1,0 +1,133 @@
+# Chapter 02: Speculative Decoding (Track 1)
+
+## Introduction
+
+Speculative decoding is our primary optimization technique, achieving **11x speedup** on code generation. The approach uses a small "draft" model to propose multiple tokens, which are then verified in parallel by the larger "target" model. Since the memory-bound generation step reads the entire model for each token, verifying N tokens in one pass costs only slightly more than generating one token.
+
+## How It Works
+
+```
+Standard Generation:
+  Token 1 → Read full model → Token 2 → Read full model → Token 3 → ...
+
+Speculative Decoding:
+  Draft K tokens → Read full model once → Verify all K → Accept N of K
+```
+
+**Key Insight**: If the draft model proposes K tokens and N are accepted, we generate N tokens for approximately the cost of 1, achieving up to Kx speedup (limited by acceptance rate).
+
+## Best Results
+
+| Target Model | Draft Model | K | Acceptance | Speedup |
+|--------------|-------------|---|------------|---------|
+| **Qwen2.5-Coder-32B** | Qwen2.5-Coder-0.5B | **24** | 70.8% | **11x** |
+| Qwen2.5-Coder-32B | Qwen2.5-Coder-0.5B | 16 | 75% | 5.9x |
+| Qwen2.5-VL-7B | Qwen2.5-Coder-0.5B | 8 (temp=0.7) | 74.2% | **3.7x** |
+| Qwen2.5-Math-7B | Qwen2.5-Coder-0.5B | 8 | 65.6% | **3.9x** |
+| Qwen2.5-Math-72B | Qwen2.5-Coder-0.5B | 16 (temp=0.5) | 60.3% | **7.3x** |
+| Meta-Llama-70B | PARD-Llama-3.2-1B | 8 | 79% | **5.0x** |
+
+## K-Value Optimization
+
+### Discovery: Larger K for Larger Models
+
+A key finding was that optimal K depends on model size:
+
+| Model Size | Optimal K | Reasoning |
+|------------|-----------|-----------|
+| 7B targets | K=8 | High baseline speed, K>8 reduces acceptance too much |
+| 32B targets | K=16-24 | Lower baseline speed, more tokens per verification worthwhile |
+| 72B targets | K=16 | Balance of acceptance vs verification cost |
+
+**Process for New Models**:
+1. Start with K=8, measure speed and acceptance
+2. If acceptance >60%, try K=12, K=16, K=24
+3. Plot speed vs K - optimal is where curve flattens
+4. Higher K = more draft tokens but lower acceptance per token
+
+### Context-Dependent Performance
+
+Critical finding: Content type dramatically affects optimal K.
+
+| Context Type | K | Speed (t/s) | Acceptance | Speedup |
+|--------------|---|-------------|------------|---------|
+| **Code** | 24 | **28.79** | 83.33% | **10.0x** |
+| Code | 8 | 17.32 | 86.84% | 6.0x |
+| Prose | 8 | **7.85** | 32.44% | 2.7x |
+| Prose | 24 | 6.22 | 14.76% | 2.2x |
+
+**Insight**: Code is highly predictable (syntax, patterns), enabling aggressive K. Prose is more creative, limiting acceptance.
+
+### Recommended K by Content Type
+
+| Content Type | Optimal K | Expected Acceptance | Expected Speedup |
+|--------------|-----------|---------------------|------------------|
+| Code/structured | 20-24 | 80-90% | 8-10x |
+| JSON/schemas | 8-12 | 60-80% | 5-7x |
+| General/mixed | 8-12 | 50-70% | 4-6x |
+| Creative/prose | 4-8 | 30-50% | 2-4x |
+
+## Temperature Tuning Discovery
+
+Unexpected finding: Non-zero temperature can IMPROVE speculative decoding.
+
+| Model | temp=0 | temp=0.5 | temp=0.7 | Best |
+|-------|--------|----------|----------|------|
+| Qwen2.5-VL-7B | 28.3 t/s | 37.4 t/s | **57.1 t/s** | temp=0.7 |
+| Qwen2.5-Math-72B | 6.0 t/s | **7.5 t/s** | N/A | temp=0.5 |
+| Qwen2.5-Coder-32B | **26.6 t/s** | 19.0 t/s | 19.4 t/s | temp=0 |
+
+**Hypothesis**: temp=0 produces overly deterministic drafts that diverge from the target model's probability distribution. Slight temperature increases draft diversity, improving acceptance for some model pairs.
+
+**Recommendation**: If acceptance is <50% at temp=0, try temp=0.3-0.7.
+
+## Compatibility Matrix
+
+Speculative decoding requires **exact tokenizer compatibility**:
+- Same vocabulary size
+- Identical BOS/EOS/PAD tokens
+- Same tokenizer type
+
+| Target Family | Compatible Drafts | Incompatible |
+|---------------|-------------------|--------------|
+| Qwen2.5-* | Qwen2.5-0.5B, Qwen2.5-1.5B | Qwen3-*, DeepSeek-*, PARD variants |
+| Qwen3-* | Qwen3-0.6B | Qwen2.5-* |
+| Meta-Llama-3.* | PARD-Llama-3.2-1B | Other families |
+| DeepSeek-R1-Distill-* | **None found** | All tested |
+
+**Critical Failure Mode**: Same model family is NOT enough. DeepSeek-R1-Distill-Qwen-32B cannot use DeepSeek-R1-Distill-Qwen-1.5B despite similar names - they have different vocab sizes (152,064 vs 151,936).
+
+## Quick Start Command
+
+```bash
+OMP_NUM_THREADS=1 numactl --interleave=all \
+  /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
+  -m /mnt/raid0/llm/models/Qwen2.5-Coder-32B-Q4_K_M.gguf \
+  -md /mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf \
+  --draft-max 24 -t 96 -p "Your prompt"
+```
+
+**Flags**:
+- `-m`: Target (large) model
+- `-md`: Draft (small) model
+- `--draft-max`: K value (max tokens to draft)
+- `-t 96`: Use all physical cores
+
+## SSM Architecture Incompatibility
+
+**CRITICAL**: Hybrid SSM models (Qwen3-Next series) are incompatible with speculative decoding.
+
+**Root Cause**: SSM architectures maintain recurrent state that cannot be rolled back like KV cache. When draft tokens are rejected, the state is corrupted.
+
+**Solution**: Use expert reduction only for SSM models. See [Chapter 03: MoE Optimization](03-moe-optimization.md).
+
+## References
+
+- SPECULATIVE_DECODING_REPORT.md
+- speculative_decoding_research.md
+- [Speculative Decoding Paper](https://arxiv.org/abs/2211.17192)
+
+---
+
+*Previous: [Chapter 01: Hardware System](01-hardware-system.md)*
+*Next: [Chapter 03: MoE Optimization](03-moe-optimization.md)*

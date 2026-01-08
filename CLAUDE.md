@@ -1,5 +1,33 @@
 # AMD EPYC 9655 "Turin" Inference Optimization Project
 
+## Table of Contents
+
+- [Critical Constraints](#-absolute-rule-no-root-filesystem-writes-)
+- [System Identity](#system-identity)
+- [Hardware Specifications](#hardware-specifications)
+- [Current Status](#current-status-production-orchestration-december-2025)
+- [Hierarchical Orchestration System](#hierarchical-orchestration-system)
+- [Directory Structure](#directory-structure)
+- [Session Startup](#session-startup-mandatory)
+- [Quick Reference Commands](#quick-reference-commands)
+- [Orchestration Workflow](#orchestration-workflow)
+- [Verification Gates](#verification-gates)
+- [Model Routing Strategy](#model-routing-strategy)
+- [Logging Requirements](#mandatory-append-only-agent-logging)
+- [Model Testing Workflow](#-new-model-testing-workflow)
+- [Benchmarking Pitfalls](#%EF%B8%8F-benchmarking-pitfalls)
+- [Claude-as-Judge Review](#claude-as-judge-quality-review)
+- [Benchmark Hardening](#benchmark-hardening-2025-12-18)
+- [Research Summary Maintenance](#research-summary-maintenance)
+- [Key Resources](#key-resources)
+- [Code Style](#code-style)
+- [Git Workflow](#git-commit-workflow)
+
+> **For human readers**: See [CLAUDE_GUIDE.md](CLAUDE_GUIDE.md) for a guide to navigating this document.
+> **For detailed reference**: See [docs/reference/](docs/reference/) for extracted reference material.
+
+---
+
 ## ⛔⛔⛔ ABSOLUTE RULE: NO ROOT FILESYSTEM WRITES ⛔⛔⛔
 
 **ALL LLM-related files MUST reside on `/mnt/raid0/` — NEVER on root (`/`).**
