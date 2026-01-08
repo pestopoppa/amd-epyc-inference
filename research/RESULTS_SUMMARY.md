@@ -873,8 +873,8 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 | Model | Role | Thinking | General | Math | Agentic | Coder | Inst.Prec | Pct | Baseline t/s | Opt t/s | Draft | K | Temp |
 |-------|------|----------|---------|------|---------|-------|-----------|-----|--------------|---------|-------|---|------|
-| DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | 30/30 | 29/30 | 21/21 | 24/30 | 30/30 | 17/33 | **86.8%** | 6.44 | - | - | - | - |
-| DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | 6/6† | - | - | - | - | - | **100%†** | 4.2 | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-14B (Q4_K_M) | thinking | 29/30 | 22/30 | 26/30 | 27/30 | 23/30 | 22/33 | **81.4%** | 2.8 | - | - | - | - |
+| DeepSeek-R1-Distill-Qwen-14B (Q6_K_L) | thinking | 29/30 | 29/30 | 28/30 | 29/30 | 30/30 | 29/33 | **95.1%** | 4.4 | - | - | - | - |
 | DeepSeek-R1-Distill-Llama-8B | thinking | 28/30 | 24/30 | 30/30 | 30/30 | - | - | **93%*** | 7.2 | - | - | - | - |
 | DeepSeek-R1-Distill-Qwen-7B | thinking | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 85%* | 7.7 | - | - | - | - |
 | DeepSeek-R1-0528-Qwen3-8B | thinking | 21/30 | 18/30 | 24/30 | 19/30 | 23/30 | 12/33 | **63.9%** ⚠️ | 8.1 | - | - | - | - |
@@ -892,7 +892,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | ~~Qwen2.5-VL-7B-Instruct~~ | worker_vision | ❌ | ❌ | - | ❌ | - | - | **INVALID**⚠️ | 11.8 | 57.1 | Qwen2.5-0.5B | 8 | 0.7 |
 | Qwen2.5-Coder-32B | worker_summarize | - | - | - | - | - | - | - | 5.79 | 95.18 | (lookup) | - | - |
 | **Gemma-3-12B-IT** | general | 29/30 | 30/30 | 27/30 | 28/30 | 26/30 | 28/33 | **91.8%** | 9.3 | - | - | - | - |
-| Gemma-3-27B-IT-QAT | general | 30/30 | 30/30 | - | 30/30 | 30/30 | 22/33 | **92.8%** | 2.1 | - | - | - | - |
+| Gemma-3-27B-IT-QAT | general | 12/12 | 29/30 | 27/30 | 30/30 | 29/30 | 27/33 | **93.3%** | 2.0 | - | - | - | - |
 | MathSmith-Qwen3-8B ⚠️ | math | 30/30 | 28/30 | 28/30 | - | - | - | **95.6%** | **3.4** ⚠️ | - | - | - | - |
 | MathSmith-Hard-Problem-Synthesizer-Qwen3-8B | formalizer | - | 20/30 | 10/15 | - | - | - | **66.7%** | 11.1 | - | - | - | - |
 
@@ -914,7 +914,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | Qwen3-VL-4B (Q4_K_M) | vision | **18%** ⚠️ | 78.9 | - | Catastrophic failure: prompt echoing, 0% agentic |
 | Qwen3-VL-4B (Q8_0) | vision | **INVALID** | 32.5 | - | Scores deleted |
 | Qwen3-VL-8B (Q4_K_M) | vision | **42.2%** ⚠️ | 14.5 | - | General 16/30, VL 22/30, Agentic 0/30 (echoed prompts) |
-| Qwen3-VL-8B (Q8_0) | vision | **INVALID** | 18.7 | - | Scores deleted |
+| Qwen3-VL-8B (Q8_0) | vision | **43.3%** ⚠️ | 12.0 | - | General 20/30, VL 19/30, Agentic 0/30 (echoed prompts) |
 
 #### Tier D: Draft Models (Qwen2.5 Family)
 

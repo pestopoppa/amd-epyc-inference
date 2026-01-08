@@ -31,6 +31,9 @@ dependencies = [
     # Utilities
     "requests>=2.31.0",
     "rich>=13.7.0",
+
+    # Web UI
+    "gradio>=4.44.0",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +45,7 @@ dev = [
 [project.scripts]
 validate-ir = "orchestration.validate_ir:main"
 registry-loader = "src.registry_loader:main"
+orchestrator-ui = "src.gradio_ui:main"
 
 [tool.ruff]
 line-length = 100

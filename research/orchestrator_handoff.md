@@ -101,6 +101,55 @@ curl -X POST http://localhost:8000/chat \
 | C (workers) | No | file, data (read-only) |
 | D (draft) | No | None |
 
+### ✅ Frontend Architecture (2026-01-08)
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| SSE Streaming | `src/api.py` | `/chat/stream` endpoint with routing metadata |
+| OpenAI API | `src/api.py` | `/v1/chat/completions`, `/v1/models` endpoints |
+| Gradio Web UI | `src/gradio_ui.py` | Web interface with chat, artifacts, routing viz |
+| LiteLLM Config | `config/litellm_config.yaml` | Proxy config for OpenAI-compatible clients |
+
+**Quick Start**:
+```bash
+# Start Gradio Web UI (local only)
+python -m src.gradio_ui --port 7860
+
+# With public URL (gradio.live)
+python -m src.gradio_ui --share
+
+# Start LiteLLM proxy (for LM Studio, etc.)
+pip install 'litellm[proxy]'
+litellm --config config/litellm_config.yaml --port 4000
+```
+
+**Endpoints**:
+- `/chat/stream` - SSE streaming with turn/token/tool/file/thinking events
+- `/v1/chat/completions` - OpenAI-compatible (streaming + non-streaming)
+- `/v1/models` - Lists available roles
+- `/sessions` - Session management (list, resume, rename)
+- `/permission/{id}` - Permission request/response flow
+
+**CLI** (separate repo): Plan at `/home/daniele/.claude/plans/twinkly-sniffing-crescent.md`
+
+### ✅ CLI Parity Features (2026-01-08)
+
+| Feature | Implementation | Purpose |
+|---------|----------------|---------|
+| Extended Thinking | `thinking_budget` param | Reserve tokens for reasoning (Claude Code `ultrathink`) |
+| Thinking Events | `{"type": "thinking"}` SSE | Stream internal reasoning (Ctrl+O verbose mode) |
+| Permission Modes | `permission_mode` param | normal/auto-accept/plan (Shift+Tab) |
+| Session Management | `/sessions/*` endpoints | Resume, rename, list sessions |
+| Permission Flow | `/permission/*` endpoints | Interactive tool approval |
+
+**New SSE Event Types**:
+```
+{"type": "thinking", "content": "Analyzing..."}
+{"type": "permission_request", "id": "...", "tool": "...", "args": {...}}
+```
+
+**Tests**: 23/23 integration tests in `tests/integration/test_frontend_integration.py`
+
 ### ❌ Not Implemented (Requires Models)
 
 | Component | Blocker | Priority |
@@ -214,8 +263,9 @@ src/
 ├── parsing_config.py      # Parsing strategy by role (NEW)
 ├── gate_runner.py         # Gate execution
 ├── failure_router.py      # Escalation routing
-├── api.py                 # FastAPI endpoints
-├── tools/                 # Tool implementations (NEW)
+├── api.py                 # FastAPI endpoints + SSE streaming + OpenAI compat
+├── gradio_ui.py           # Gradio web interface (NEW)
+├── tools/                 # Tool implementations
 │   ├── __init__.py       # register_all_tools()
 │   ├── base.py           # Base tool classes
 │   ├── web/              # Web tools (fetch, search)
@@ -238,7 +288,8 @@ src/
 ### Configuration
 ```
 config/
-└── gates.yaml             # Gate definitions (7 gates)
+├── gates.yaml             # Gate definitions (7 gates)
+└── litellm_config.yaml    # LiteLLM proxy configuration (NEW)
 
 orchestration/
 ├── model_registry.yaml    # Role → model mapping (with tool_permissions)

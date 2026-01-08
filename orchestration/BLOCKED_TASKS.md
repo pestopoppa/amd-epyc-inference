@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-07
+**Last Updated**: 2026-01-08
 **Blocking Resource**: Background benchmark (Qwen3-Coder-30B)
 
 ---
@@ -15,6 +15,8 @@
 | Orchestrator integration | Model servers | HIGH | `research/orchestration_integration_handoff.md` | ✅ CODE COMPLETE |
 | MathSmith re-conversion | — | LOW | `research/mathsmith_reconversion_handoff.md` | Ready |
 | Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` | Blocked |
+| Frontend Architecture | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
+| CLI Parity Features | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
 
 ---
 

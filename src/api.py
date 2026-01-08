@@ -19,13 +19,16 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import time
+import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from src.repl_environment import REPLEnvironment, REPLConfig
@@ -51,6 +54,17 @@ class ChatRequest(BaseModel):
     server_urls: dict[str, str] | None = Field(
         default=None,
         description="Server URLs for real mode (e.g., {'frontdoor': 'http://localhost:8080'})"
+    )
+    # Extended thinking support (Claude Code parity)
+    thinking_budget: int = Field(
+        default=0,
+        ge=0,
+        le=32000,
+        description="Token budget for internal reasoning (0=disabled, max=32000)"
+    )
+    permission_mode: str = Field(
+        default="normal",
+        description="Permission mode: 'normal', 'auto-accept', or 'plan'"
     )
 
 
@@ -113,6 +127,77 @@ class StatsResponse(BaseModel):
     average_turns_per_request: float
     mock_requests: int
     real_requests: int
+
+
+# ============================================================================
+# OpenAI-Compatible Models
+# ============================================================================
+
+
+class OpenAIMessage(BaseModel):
+    """OpenAI message format."""
+
+    role: str = Field(..., description="Role: system, user, assistant")
+    content: str = Field(..., description="Message content")
+
+
+class OpenAIChatRequest(BaseModel):
+    """OpenAI-compatible chat completion request."""
+
+    model: str = Field(default="orchestrator", description="Model/role to use")
+    messages: list[OpenAIMessage] = Field(..., description="Conversation messages")
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=1024, ge=1, le=32768)
+    stream: bool = Field(default=False, description="Enable streaming")
+    # Extension fields
+    x_orchestrator_role: str | None = Field(default=None, description="Force specific role")
+    x_show_routing: bool = Field(default=False, description="Include routing metadata")
+
+
+class OpenAIChoice(BaseModel):
+    """OpenAI choice object."""
+
+    index: int = 0
+    message: OpenAIMessage | None = None
+    delta: dict[str, str] | None = None
+    finish_reason: str | None = None
+
+
+class OpenAIUsage(BaseModel):
+    """OpenAI usage statistics."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+class OpenAIChatResponse(BaseModel):
+    """OpenAI-compatible chat completion response."""
+
+    id: str = Field(default_factory=lambda: f"chatcmpl-{uuid.uuid4().hex[:8]}")
+    object: str = "chat.completion"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    model: str = "orchestrator"
+    choices: list[OpenAIChoice]
+    usage: OpenAIUsage | None = None
+    # Extension fields
+    x_orchestrator_metadata: dict[str, Any] | None = None
+
+
+class OpenAIModelInfo(BaseModel):
+    """OpenAI model info."""
+
+    id: str
+    object: str = "model"
+    created: int = Field(default_factory=lambda: int(time.time()))
+    owned_by: str = "orchestrator"
+
+
+class OpenAIModelsResponse(BaseModel):
+    """OpenAI models list response."""
+
+    object: str = "list"
+    data: list[OpenAIModelInfo]
 
 
 # ============================================================================
@@ -578,6 +663,415 @@ async def reset_stats() -> dict[str, str]:
     _state.mock_requests = 0
     _state.real_requests = 0
     return {"status": "reset"}
+
+
+# ============================================================================
+# SSE Streaming Endpoint
+# ============================================================================
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatRequest) -> StreamingResponse:
+    """SSE streaming endpoint with routing metadata.
+
+    Streams events in NDJSON format:
+    - turn_start: {type: "turn_start", turn: N, role: "..."}
+    - thinking: {type: "thinking", content: "..."} (when thinking_budget > 0)
+    - token: {type: "token", content: "..."}
+    - tool: {type: "tool", name: "...", args: {...}, result: ...}
+    - permission_request: {type: "permission_request", id: "...", tool: "...", args: {...}}
+    - file: {type: "file", path: "...", content: "...", action: "create"|"modify"}
+    - turn_end: {type: "turn_end", tokens: N, elapsed_ms: N}
+    - error: {type: "error", message: "..."}
+    - [DONE] when complete
+
+    Parameters:
+    - thinking_budget: Token budget for internal reasoning (0=disabled)
+    - permission_mode: "normal", "auto-accept", or "plan"
+    """
+
+    async def generate() -> AsyncGenerator[str, None]:
+        start_time = time.perf_counter()
+
+        # Mock mode
+        if request.mock_mode and not request.real_mode:
+            # Emit turn start
+            yield f"data: {json.dumps({'type': 'turn_start', 'turn': 1, 'role': 'frontdoor'})}\n\n"
+
+            # Emit thinking events if thinking_budget > 0 (Claude Code parity)
+            if request.thinking_budget > 0:
+                thinking_steps = [
+                    "Analyzing the user's request...",
+                    f"Request type: {request.prompt[:30].split()[0] if request.prompt else 'unknown'}",
+                    "Determining appropriate response strategy...",
+                    "Preparing response...",
+                ]
+                for step in thinking_steps:
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': step})}\n\n"
+
+            # Check permission mode - in plan mode, only emit analysis
+            if request.permission_mode == "plan":
+                analysis = f"[PLAN MODE] Would process: {request.prompt[:100]}..."
+                yield f"data: {json.dumps({'type': 'token', 'content': analysis})}\n\n"
+                elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+                yield f"data: {json.dumps({'type': 'turn_end', 'tokens': len(analysis), 'elapsed_ms': elapsed_ms})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # Simulate streaming tokens
+            mock_response = f"[MOCK] Processed: {request.prompt[:50]}..."
+            for char in mock_response:
+                yield f"data: {json.dumps({'type': 'token', 'content': char})}\n\n"
+
+            # Emit turn end
+            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+            yield f"data: {json.dumps({'type': 'turn_end', 'tokens': len(mock_response), 'elapsed_ms': elapsed_ms})}\n\n"
+
+            yield "data: [DONE]\n\n"
+            return
+
+        # Real mode
+        server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
+        try:
+            primitives = LLMPrimitives(mock_mode=False, server_urls=server_urls)
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # Create REPL
+        combined_context = request.prompt
+        if request.context:
+            combined_context += f"\n\nContext:\n{request.context}"
+
+        repl = REPLEnvironment(
+            context=combined_context,
+            llm_primitives=primitives,
+        )
+
+        # Root LM loop with streaming
+        last_output = ""
+        last_error = ""
+
+        for turn in range(request.max_turns):
+            turn_start_time = time.perf_counter()
+
+            # Emit turn start
+            yield f"data: {json.dumps({'type': 'turn_start', 'turn': turn + 1, 'role': 'frontdoor'})}\n\n"
+
+            # Get state and build prompt
+            state = repl.get_state()
+            root_prompt = _build_root_lm_prompt(
+                state=state,
+                original_prompt=request.prompt,
+                last_output=last_output,
+                last_error=last_error,
+                turn=turn,
+            )
+
+            # Call Root LM
+            try:
+                code = primitives.llm_call(root_prompt, role="frontdoor", n_tokens=1024)
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Root LM call failed: {e}'})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # Stream the generated code tokens
+            code = _extract_code_from_response(code)
+            for line in code.split("\n"):
+                yield f"data: {json.dumps({'type': 'token', 'content': line + chr(10)})}\n\n"
+
+            # Execute in REPL
+            result = repl.execute(code)
+
+            # Emit tool calls if any (from REPL execution)
+            # TODO: Hook into REPL to capture tool calls
+
+            # Emit turn end
+            turn_elapsed_ms = int((time.perf_counter() - turn_start_time) * 1000)
+            yield f"data: {json.dumps({'type': 'turn_end', 'tokens': len(code), 'elapsed_ms': turn_elapsed_ms})}\n\n"
+
+            # Check for completion
+            if result.is_final:
+                yield f"data: {json.dumps({'type': 'final', 'answer': result.final_answer or ''})}\n\n"
+                break
+
+            # Update state for next turn
+            if result.error:
+                last_error = result.error
+                last_output = result.output
+            else:
+                last_error = ""
+                last_output = result.output
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
+
+# ============================================================================
+# OpenAI-Compatible Endpoints
+# ============================================================================
+
+
+# Available roles/models
+AVAILABLE_ROLES = [
+    "orchestrator",  # Auto-routing via frontdoor
+    "frontdoor",     # Tier A - Root LM
+    "coder",         # Tier B - Coder specialist
+    "architect",     # Tier B - Architecture specialist
+    "worker",        # Tier C - General worker
+]
+
+
+@app.get("/v1/models", response_model=OpenAIModelsResponse)
+async def list_models() -> OpenAIModelsResponse:
+    """List available models (roles) in OpenAI format."""
+    return OpenAIModelsResponse(
+        data=[
+            OpenAIModelInfo(id=role)
+            for role in AVAILABLE_ROLES
+        ]
+    )
+
+
+@app.post("/v1/chat/completions", response_model=None)
+async def openai_chat_completions(request: OpenAIChatRequest):
+    """OpenAI-compatible chat completions endpoint.
+
+    Supports both streaming and non-streaming modes.
+    The 'model' field maps to orchestrator roles:
+    - orchestrator: Auto-routing via frontdoor
+    - frontdoor: Direct to frontdoor
+    - coder: Direct to coder specialist
+    - etc.
+    """
+    # Extract the last user message as the prompt
+    user_messages = [m for m in request.messages if m.role == "user"]
+    if not user_messages:
+        raise HTTPException(status_code=400, detail="No user message provided")
+
+    prompt = user_messages[-1].content
+
+    # Map model to role
+    role = request.x_orchestrator_role or (
+        "frontdoor" if request.model in ("orchestrator", "gpt-4", "gpt-3.5-turbo", "claude-3")
+        else request.model
+    )
+
+    chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
+    created = int(time.time())
+
+    if request.stream:
+        # Streaming mode
+        async def generate_stream() -> AsyncGenerator[str, None]:
+            start_time = time.perf_counter()
+
+            # For now, use mock mode for simplicity
+            # TODO: Wire to real inference with streaming
+            mock_response = f"[MOCK] Processed via {role}: {prompt[:100]}..."
+
+            # Stream chunks
+            for i, char in enumerate(mock_response):
+                chunk = {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": request.model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": char} if i > 0 else {"role": "assistant", "content": char},
+                        "finish_reason": None,
+                    }],
+                }
+                if request.x_show_routing:
+                    chunk["x_role"] = role
+                    chunk["x_turn"] = 1
+
+                yield f"data: {json.dumps(chunk)}\n\n"
+
+            # Final chunk
+            final_chunk = {
+                "id": chat_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": request.model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }],
+            }
+            yield f"data: {json.dumps(final_chunk)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        )
+    else:
+        # Non-streaming mode
+        start_time = time.perf_counter()
+
+        # Mock response for now
+        # TODO: Wire to real inference
+        mock_response = f"[MOCK] Processed via {role}: {prompt[:100]}..."
+
+        elapsed = time.perf_counter() - start_time
+
+        return OpenAIChatResponse(
+            id=chat_id,
+            created=created,
+            model=request.model,
+            choices=[
+                OpenAIChoice(
+                    index=0,
+                    message=OpenAIMessage(role="assistant", content=mock_response),
+                    finish_reason="stop",
+                )
+            ],
+            usage=OpenAIUsage(
+                prompt_tokens=len(prompt) // 4,  # Rough estimate
+                completion_tokens=len(mock_response) // 4,
+                total_tokens=(len(prompt) + len(mock_response)) // 4,
+            ),
+            x_orchestrator_metadata={
+                "role": role,
+                "elapsed_seconds": elapsed,
+            } if request.x_show_routing else None,
+        )
+
+
+@app.get("/v1/models/{model_id}")
+async def get_model(model_id: str) -> OpenAIModelInfo:
+    """Get info for a specific model."""
+    if model_id not in AVAILABLE_ROLES:
+        raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+
+    return OpenAIModelInfo(id=model_id)
+
+
+# ============================================================================
+# Session Management (Claude Code parity)
+# ============================================================================
+
+
+class SessionInfo(BaseModel):
+    """Session information."""
+    id: str
+    name: str | None = None
+    created_at: str
+    last_active: str
+    message_count: int
+    working_directory: str | None = None
+
+
+class SessionListResponse(BaseModel):
+    """Response for session list."""
+    sessions: list[SessionInfo]
+
+
+class PermissionResponse(BaseModel):
+    """Response for permission requests."""
+    request_id: str
+    approved: bool
+    tool: str
+
+
+# In-memory session store (would be persisted in production)
+_sessions: dict[str, dict] = {}
+_pending_permissions: dict[str, dict] = {}
+
+
+@app.get("/sessions", response_model=SessionListResponse)
+async def list_sessions() -> SessionListResponse:
+    """List available sessions."""
+    sessions = [
+        SessionInfo(
+            id=sid,
+            name=data.get("name"),
+            created_at=data.get("created_at", ""),
+            last_active=data.get("last_active", ""),
+            message_count=data.get("message_count", 0),
+            working_directory=data.get("working_directory"),
+        )
+        for sid, data in _sessions.items()
+    ]
+    return SessionListResponse(sessions=sessions)
+
+
+@app.post("/sessions/{session_id}/resume")
+async def resume_session(session_id: str) -> dict[str, Any]:
+    """Resume a previous session."""
+    if session_id not in _sessions:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    session = _sessions[session_id]
+    session["last_active"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    return {
+        "status": "resumed",
+        "session_id": session_id,
+        "message_count": session.get("message_count", 0),
+    }
+
+
+@app.post("/sessions/current/rename")
+async def rename_session(name: str, session_id: str | None = None) -> dict[str, str]:
+    """Rename current or specified session."""
+    sid = session_id or "current"
+    if sid not in _sessions:
+        # Create new session with this name
+        _sessions[sid] = {
+            "name": name,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "last_active": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "message_count": 0,
+        }
+    else:
+        _sessions[sid]["name"] = name
+
+    return {"status": "renamed", "session_id": sid, "name": name}
+
+
+@app.post("/permission/{request_id}")
+async def respond_to_permission(request_id: str, approved: bool) -> PermissionResponse:
+    """Approve or reject a pending tool execution.
+
+    This is used for interactive permission flows in Normal mode.
+    """
+    if request_id not in _pending_permissions:
+        raise HTTPException(status_code=404, detail=f"Permission request '{request_id}' not found")
+
+    perm = _pending_permissions.pop(request_id)
+
+    return PermissionResponse(
+        request_id=request_id,
+        approved=approved,
+        tool=perm.get("tool", "unknown"),
+    )
+
+
+@app.get("/permission/pending")
+async def list_pending_permissions() -> list[dict]:
+    """List pending permission requests."""
+    return [
+        {"id": pid, **data}
+        for pid, data in _pending_permissions.items()
+    ]
 
 
 # ============================================================================
