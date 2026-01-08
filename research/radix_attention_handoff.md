@@ -1,3 +1,5 @@
+> **DEPRECATED**: This handoff has moved to `handoffs/active/radix-attention.md`. This file is kept for historical reference only.
+
 # RadixAttention-Style Prefix KV Reuse - YOLO Agent Handoff
 
 **Status**: ✅ COMPLETE (2026-01-07)

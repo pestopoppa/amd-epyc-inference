@@ -1,3 +1,5 @@
+> **DEPRECATED**: This handoff has moved to `handoffs/active/mathsmith-reconversion.md`. This file is kept for historical reference only.
+
 # MathSmith Model Re-Conversion Handoff
 
 **Status**: ✅ COMPLETE (2026-01-08)

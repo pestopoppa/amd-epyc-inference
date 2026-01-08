@@ -1,3 +1,5 @@
+> **DEPRECATED**: This handoff has moved to `handoffs/active/orchestrator.md`. This file is kept for historical reference only.
+
 # Orchestrator Implementation - Handoff Document
 
 **Goal**: Hierarchical LLM orchestration system using RLM (Recursive Language Models) pattern.

@@ -1,3 +1,5 @@
+> **DEPRECATED**: This handoff has moved to `handoffs/active/kernel-development.md`. This file is kept for historical reference only.
+
 # AVX-512 Kernel Development - Agent Handoff
 
 **Purpose**: Autonomous development of Zen 5-optimized AVX-512 kernels for ggml.

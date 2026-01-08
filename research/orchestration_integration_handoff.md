@@ -1,3 +1,5 @@
+> **DEPRECATED**: This handoff has moved to `handoffs/active/orchestration-integration.md`. This file is kept for historical reference only.
+
 # Orchestration Integration with RadixAttention - YOLO Agent Handoff
 
 **Status**: CODE COMPLETE - TEST AND ITERATE ONLY

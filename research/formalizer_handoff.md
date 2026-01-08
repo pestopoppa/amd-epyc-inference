@@ -1,3 +1,5 @@
+> **DEPRECATED**: This handoff has moved to `handoffs/active/formalizer-evaluation.md`. This file is kept for historical reference only.
+
 # Research Handoff: Formalizer Model Evaluation
 
 **Created**: 2026-01-07

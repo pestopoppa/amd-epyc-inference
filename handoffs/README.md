@@ -43,6 +43,7 @@ When a handoff task is complete, follow this checklist:
 |---------|---------|--------|
 | [amd-pace-testing.md](active/amd-pace-testing.md) | AMD PACE native PyTorch vs llama.cpp | Ready |
 | [cpu-optimization.md](active/cpu-optimization.md) | T-MAC evaluation, Tree speculation | Research |
+| [draft-benchmark.md](active/draft-benchmark.md) | Draft model speed tests & formalizer eval | Ready |
 | [early-failure-prediction.md](active/early-failure-prediction.md) | Heuristic failure detection | In Progress |
 | [formalizer-evaluation.md](active/formalizer-evaluation.md) | Formalizer model evaluation | Blocked |
 | [kernel-development.md](active/kernel-development.md) | AVX-512 kernel optimization | Blocked |

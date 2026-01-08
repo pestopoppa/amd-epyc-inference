@@ -180,25 +180,56 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 └── claude/                       # Project documentation & scripts
     ├── CLAUDE.md                 # This file
     ├── OPENING_PROMPT.md         # Opening prompt template
-    ├── logs/                     # Benchmark and runtime logs
-    │   ├── research_report.md    # Main results document
-    │   ├── agent_audit.log       # Agent action log
-    │   └── benchmarks/           # Benchmark CSV results
-    ├── orchestration/            # NEW: Orchestration layer
+    ├── handoffs/                 # Work-in-progress handoffs
+    │   ├── active/               # Currently active work
+    │   ├── blocked/              # Work awaiting dependencies
+    │   └── README.md             # Handoff lifecycle docs
+    ├── docs/                     # Curated documentation
+    │   ├── chapters/             # Permanent research chapters
+    │   ├── reference/            # Quick-lookup reference
+    │   │   ├── benchmarks/RESULTS.md  # Canonical benchmark results
+    │   │   └── models/           # MODELS.md, QUIRKS.md
+    │   ├── guides/               # Human tutorials
+    │   └── deprecated/           # Superseded documents
+    ├── benchmarks/               # Benchmark infrastructure
+    │   ├── prompts/              # Test prompts by category
+    │   └── results/              # Raw benchmark data
+    │       ├── index.jsonl       # Master index
+    │       ├── runs/             # Timestamped run directories
+    │       └── reviews/          # Claude-as-Judge scores
+    ├── orchestration/            # Orchestration layer
     │   ├── task_ir.schema.json   # TaskIR JSON Schema
-    │   ├── architecture_ir.schema.json
     │   ├── model_registry.yaml   # Deterministic model mapping
     │   ├── validate_ir.py        # IR validator
-    │   └── last_task_ir.json     # Current task (gitignored)
+    │   └── progress/             # Weekly progress snapshots
+    ├── research/                 # Research docs & findings (NOT handoffs)
+    ├── progress/                 # Lab notebook (daily entries)
     ├── agents/                   # Specialized agent definitions
     ├── patches/                  # llama.cpp patches for upstream
-    ├── research/                 # Research documents
+    ├── logs/                     # Runtime logs
+    │   └── agent_audit.log       # Agent action log
     └── scripts/                  # All scripts organized here
         ├── benchmark/            # bench_zen5.sh, run_inference.sh
         ├── session/              # session_init.sh, health_check.sh
         ├── system/               # system_audit.sh
         └── utils/                # agent_log.sh, agent_log_analyze.sh
 ```
+
+### Where to Save What
+
+| Content Type | Location |
+|--------------|----------|
+| **Handoffs (new work)** | `handoffs/active/{topic}.md` |
+| **Blocked handoffs** | `handoffs/blocked/` (update `BLOCKED.md`) |
+| **Benchmark results (raw)** | `benchmarks/results/runs/{timestamp}/` |
+| **Benchmark results (summary)** | `docs/reference/benchmarks/RESULTS.md` |
+| **Model registry updates** | `orchestration/model_registry.yaml` |
+| **Model quirks discovered** | `docs/reference/models/QUIRKS.md` |
+| **Research findings** | `research/` (NOT handoffs) |
+| **Progress logs** | `progress/YYYY-MM/YYYY-MM-DD.md` |
+| **Permanent documentation** | `docs/chapters/` |
+
+**Handoff Lifecycle:** Create in `active/` → Work → (optional) Move to `blocked/` → Complete → Extract findings to `docs/`, then DELETE handoff.
 
 ---
 
@@ -221,7 +252,7 @@ bash /mnt/raid0/llm/claude/scripts/session/session_init.sh
 
 ### 3. Load Research Context
 ```bash
-head -100 /mnt/raid0/llm/claude/logs/research_report.md
+cat /mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md
 ```
 
 ### 4. Run Gates (After Any Work)
