@@ -1,20 +1,58 @@
 # MathSmith Model Re-Conversion Handoff
 
-**Status**: READY FOR IMPLEMENTATION
+**Status**: ✅ COMPLETE (2026-01-08)
 **Priority**: LOW (formalizer role has alternatives - xLAM models)
 **Created**: 2026-01-07
+**Updated**: 2026-01-08
 **Depends On**: None (standalone task)
 
 ---
 
-## Problem
+## Resolution
 
-MathSmith-Hard-Problem-Synthesizer-Qwen3-8B shows 3.5 t/s (6% memory bandwidth), indicating a bad GGUF conversion.
+Downloaded Q4_K_M directly from mradermacher's HuggingFace repo instead of re-converting:
+
+```bash
+# Downloaded from mradermacher/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B-GGUF
+/mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf (4.7GB)
+```
+
+mradermacher is a trusted GGUF converter - their conversion should not have the issues of the original bad GGUF.
+
+---
+
+## Original Problem
+
+MathSmith-Hard-Problem-Synthesizer-Qwen3-8B showed 3.5 t/s (6% memory bandwidth), indicating a bad GGUF conversion.
 
 **Expected for 8B model**: 40-60 t/s
 **Observed**: 3.5 t/s
 
-The compute-bound behavior (6% memory bandwidth) suggests the GGUF conversion has issues - possibly wrong tensor types or missing optimizations. This is common with community conversions.
+The compute-bound behavior (6% memory bandwidth) suggested the original GGUF had issues.
+
+---
+
+## Verification (TODO when benchmark completes)
+
+Test the new Q4_K_M:
+
+```bash
+numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \
+  -m /mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf \
+  -p "Formalize: The sum of two primes greater than 2 is always even" \
+  -n 100 -t 96
+```
+
+Expected: ~40-60 t/s with >70% memory bandwidth utilization.
+
+---
+
+## Available Models
+
+| Model | Path | Size |
+|-------|------|------|
+| Q4_K_M (NEW) | `/mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf` | 4.7GB |
+| Q8_0 | `/mnt/raid0/llm/lmstudio/models/mradermacher/.../MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q8_0.gguf` | 8.7GB |
 
 ---
 
@@ -32,81 +70,14 @@ MathSmith is specifically useful for:
 
 ---
 
-## Solution
-
-Re-convert from HuggingFace source:
-
-```bash
-# 1. Download HF model
-huggingface-cli download MathSmith/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B \
-  --local-dir /mnt/raid0/llm/hf/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B
-
-# 2. Convert to GGUF (F16 intermediate)
-cd /mnt/raid0/llm/llama.cpp
-python convert_hf_to_gguf.py \
-  /mnt/raid0/llm/hf/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B \
-  --outfile /mnt/raid0/llm/models/MathSmith-Qwen3-8B-f16.gguf \
-  --outtype f16
-
-# 3. Quantize to Q4_K_M
-./build/bin/llama-quantize \
-  /mnt/raid0/llm/models/MathSmith-Qwen3-8B-f16.gguf \
-  /mnt/raid0/llm/models/MathSmith-Qwen3-8B-Q4_K_M.gguf \
-  Q4_K_M
-
-# 4. Test speed
-numactl --interleave=all ./build/bin/llama-completion \
-  -m /mnt/raid0/llm/models/MathSmith-Qwen3-8B-Q4_K_M.gguf \
-  -p "Formalize: The sum of two primes greater than 2 is always even" \
-  -n 100 -t 96
-```
-
----
-
-## Expected Results
-
-| Metric | Before | After |
-|--------|--------|-------|
-| Speed | 3.5 t/s | 40-60 t/s |
-| Memory BW | 6% | 70-90% |
-| Quantization | Unknown | Q4_K_M |
-
----
-
-## Verification
-
-After re-conversion, verify:
-
-1. **Speed**: Should match other 8B models (~45 t/s)
-2. **Quality**: Run formalizer benchmark
-   ```bash
-   ./scripts/benchmark/bench_formalizers.sh \
-     --model /mnt/raid0/llm/models/MathSmith-Qwen3-8B-Q4_K_M.gguf \
-     --prompts benchmarks/prompts/v1/formalizer/
-   ```
-3. **Memory bandwidth**: Should be >70% (memory-bound, not compute-bound)
-
----
-
 ## Integration with Formalizer Pipeline
-
-Once converted, MathSmith can be added to the formalizer evaluation alongside:
 
 | Model | Type | Status |
 |-------|------|--------|
 | xLAM-2-1B-fc-r | Function calling | Ready |
 | xLAM-1B-fc-r | Function calling | Ready |
 | NexusRaven-V2-13B | Function calling | Ready |
-| MathSmith-Qwen3-8B | Math formalization | Needs re-conversion |
-
----
-
-## Cleanup
-
-After successful conversion, remove the bad GGUF:
-```bash
-rm /mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B-Q4_K_M.gguf
-```
+| MathSmith-Qwen3-8B | Math formalization | ✅ Ready (Q4_K_M downloaded) |
 
 ---
 

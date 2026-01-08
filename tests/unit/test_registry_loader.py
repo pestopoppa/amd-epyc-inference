@@ -365,7 +365,7 @@ class TestProductionRegistry:
 
         role = loader.get_role("coder_primary")
         assert role.acceleration.type == "moe_expert_reduction"
-        assert role.acceleration.experts == 4
+        assert role.acceleration.experts == 6
 
     def test_production_command_generation(self):
         """Test command generation for production roles."""

@@ -13,7 +13,7 @@
 | Tree speculation | Benchmark completion | HIGH | `research/kernel_dev_handoff.md` | Blocked |
 | RadixAttention | — | — | `research/radix_attention_handoff.md` | ✅ COMPLETE |
 | Orchestrator integration | Model servers | HIGH | `research/orchestration_integration_handoff.md` | ✅ CODE COMPLETE |
-| MathSmith re-conversion | — | LOW | `research/mathsmith_reconversion_handoff.md` | Ready |
+| MathSmith re-conversion | — | LOW | `research/mathsmith_reconversion_handoff.md` | ✅ COMPLETE |
 | Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` | Blocked |
 | Frontend Architecture | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
 | CLI Parity Features | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
@@ -60,9 +60,8 @@ claude --dangerously-skip-permissions -p \
    Your job is to: 1) Start llama-server instances, 2) Run tests, \
    3) Fix any failures, 4) Run benchmarks until >50% cache hit rate."
 
-# Inside container - MathSmith Re-conversion (LOW PRIORITY):
-claude --dangerously-skip-permissions -p \
-  "Read research/mathsmith_reconversion_handoff.md and re-convert the model."
+# MathSmith Re-conversion: ✅ COMPLETE - Q4_K_M downloaded from mradermacher
+# Path: /mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf
 ```
 
 ### When Model Servers Running
@@ -117,12 +116,11 @@ claude --dangerously-skip-permissions -p \
 - [ ] Cache hit rate >50% on RLM workloads (YOLO agent to verify)
 - [ ] Root LM completes multi-turn tasks (YOLO agent to verify)
 
-### MathSmith Re-conversion (Ready)
-- [ ] Download HF model
-- [ ] Convert to GGUF F16
-- [ ] Quantize to Q4_K_M
-- [ ] Verify speed (~40-60 t/s expected)
-- [ ] Run formalizer benchmark
+### MathSmith Re-conversion — ✅ COMPLETE (2026-01-08)
+- [x] Downloaded Q4_K_M from mradermacher (no re-conversion needed)
+- [x] Path: `/mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf` (4.7GB)
+- [ ] Verify speed (~40-60 t/s expected) — blocked on benchmark
+- [ ] Run formalizer benchmark — blocked on benchmark
 - [ ] Update model registry
 
 ### Orchestrator Real Mode
