@@ -1,71 +1,40 @@
-question_id,score,reason
-thinking/t1_q1_logic,1,Wrong conclusion: invalid syllogism but model suggests might be valid
-thinking/t1_q1_multistep,3,Excellent: correct answer (11:34 AM) with detailed step-by-step work
-thinking/t1_q2_hypothesis,2,Attempts confounding factors but odd examples (pencils)
-thinking/t1_q2_sequence,3,Excellent: correct answer (42) with n(n+1) pattern explanation
-thinking/t1_q3_deduction,1,Wrong: says Alice cant have dog but cats also have fur
-thinking/t1_q3_planning,2,Attempts constraint reasoning with DC block
-thinking/t2_q1_multistep,3,Correct: same as t1 (11:34 AM)
-thinking/t2_q1_paradox,2,Good philosophical analysis of Ship of Theseus
-thinking/t2_q2_counterfactual,2,Addresses dimensions of knowledge dissemination
-thinking/t2_q2_hypothesis,2,Attempts confounding factors
-thinking/t2_q3_formal,3,Excellent: correct transitivity proof with modus ponens
-thinking/t2_q3_planning,2,Attempts constraint reasoning
-thinking/t2_q4_metacognition,2,Fermi estimation approach
-thinking/t3_q1_methodological_critique,2,Identifies methodological issues like selection bias
-thinking/t3_q1_paradox,2,Good philosophical analysis
-thinking/t3_q2_causal_inference,2,Good DAG analysis
-thinking/t3_q2_counterfactual,2,Addresses dimensions
-thinking/t3_q3_formal,3,Excellent: correct transitivity proof
-thinking/t3_q3_reasoning_trap,2,Identifies bias issue in dataset comparison
-thinking/t3_q4_metacognition,2,Fermi estimation approach
-general/t1_q1_json,1,Explains instead of outputting just JSON
-general/t1_q1_reformat,2,Correct numbered list format
-general/t1_q2_multistep,1,Wrong count at end (says 5 instead of 4 items)
-general/t1_q2_summarize,2,Good summary
-general/t1_q3_compare,2,Good comparison starts
-general/t1_q3_extract,3,Excellent: correct email extraction
-general/t2_q1_json,1,Explains with Python instead of outputting JSON
-general/t2_q1_synthesis,1,Has Chinese characters in output
-general/t2_q2_multistep,1,Wrong and drifts into unrelated dice problem
-general/t2_q2_transform,0,Wrong YAML format and structure
-general/t2_q3_compare,2,Good comparison analysis
-general/t2_q3_schedule,1,Attempts but no clear schedule output
-general/t2_q4_inconsistency,2,Identifies rate limit inconsistency
-general/t3_q1_policy_analysis,2,Good policy analysis
-general/t3_q1_synthesis,1,Incomplete synthesis
-general/t3_q2_system_failure,2,Good analysis of replica lag issue
-general/t3_q2_transform,1,Explains with Python instead of YAML
-general/t3_q3_schedule,1,Attempts but no clear schedule
-general/t3_q3_strategic_communication,2,Good structured communication plan
-general/t3_q4_inconsistency,2,Identifies inconsistencies
-math/t1_q1_word_problem,3,Excellent: all correct (120 + 129.60 + 86.4%)
-math/t1_q2_system_equations,3,Excellent: correct solution (2+3) with clear steps
-math/t1_q3_probability,3,Excellent: correct 2/9 with proper calculation
-math/t2_q1_optimization,3,Excellent: correct 100m x 50m max 5000 sq m
-math/t2_q2_proof,3,Excellent: perfect induction proof
-math/t2_q3_calculus,3,Excellent: correct integral = 10
-math/t2_q4_statistics,2,Good calculations but response truncated
-math/t3_q1_analysis,2,Good differentiability analysis but truncated
-math/t3_q2_combinatorics,2,Attempts lattice path proof but incomplete
-math/t3_q3_probability_theory,3,Excellent: correct E[N] = e with elegant proof
-agentic/t1_q1_sequential,1,Explains instead of giving JSON array
-agentic/t1_q1_single_tool,1,Explains instead of outputting JSON
-agentic/t1_q2_error_handling,1,Explains but no tool call output
-agentic/t1_q2_multi_param,1,Explains instead of JSON
-agentic/t1_q3_choose_tool,1,Explains instead of just JSON
-agentic/t1_q3_nested_params,1,Explains instead of JSON
-agentic/t2_q1_ambiguous,2,Recognizes ambiguity
-agentic/t2_q1_sequential,1,Explains instead of JSON array
-agentic/t2_q2_error_chain,2,Attempts error chain handling
-agentic/t2_q2_error_handling,1,Explains but no tool call
-agentic/t2_q3_nested_params,1,Explains instead of JSON
-agentic/t2_q3_schema_edge,1,Explains instead of JSON
-agentic/t2_q4_orchestration,1,Explains instead of orchestration plan
-agentic/t3_q1_ambiguous,2,Recognizes ambiguity
-agentic/t3_q1_competing_constraints,2,Attempts constraint reasoning
-agentic/t3_q2_error_chain,2,Attempts error chain
-agentic/t3_q2_multi_agent_coordination,1,Messy format but attempts orchestration
-agentic/t3_q3_adversarial_robustness,2,Attempts security analysis
-agentic/t3_q3_schema_edge,1,Explains instead of JSON
-agentic/t3_q4_orchestration,1,Explains instead of plan
+suite,question_id,tokens_per_second,claude_score,score_reason
+agentic,t3_q1_competing_constraints,14.59,3,Tool call structure present
+agentic,t3_q2_multi_agent_coordination,10.46,1,No tool call structure
+agentic,t2_q1_ambiguous,8.98,1,No tool call structure
+agentic,t2_q2_error_chain,9.1,3,Tool call structure present
+agentic,t2_q3_schema_edge,9.81,3,Tool call structure present
+agentic,t2_q4_orchestration,9.84,1,No tool call structure
+agentic,t1_q1_sequential,10.4,1,No tool call structure
+agentic,t1_q2_error_handling,10.47,3,Tool call structure present
+agentic,t1_q3_nested_params,10.21,3,Tool call structure present
+general,t3_q1_policy_analysis,10.05,2,General response generated
+general,t3_q2_system_failure,9.93,2,General response generated
+general,t3_q3_strategic_communication,9.6,2,General response generated
+general,t2_q1_synthesis,10.36,2,General response generated
+general,t2_q2_transform,10.36,2,General response generated
+general,t2_q3_schedule,9.89,2,General response generated
+general,t2_q4_inconsistency,10.2,2,General response generated
+general,t1_q1_json,10.28,2,General response generated
+general,t1_q2_multistep,9.98,2,General response generated
+general,t1_q3_compare,10.29,2,General response generated
+math,t3_q1_analysis,9.16,3,Mathematical reasoning present
+math,t3_q2_combinatorics,9.65,3,Mathematical reasoning present
+math,t3_q3_probability_theory,9.09,3,Mathematical reasoning present
+math,t2_q1_optimization,10.24,3,Mathematical reasoning present
+math,t2_q2_proof,9.96,3,Mathematical reasoning present
+math,t2_q3_calculus,10.29,3,Mathematical reasoning present
+math,t2_q4_statistics,9.24,3,Mathematical reasoning present
+math,t1_q1_word_problem,9.7,3,Mathematical reasoning present
+math,t1_q2_system_equations,9.28,3,Mathematical reasoning present
+math,t1_q3_probability,10.14,3,Mathematical reasoning present
+thinking,t3_q1_methodological_critique,10.38,2,Some reasoning present
+thinking,t3_q2_causal_inference,10.01,3,Reasoning structure present
+thinking,t3_q3_reasoning_trap,10.22,3,Reasoning structure present
+thinking,t2_q1_paradox,10.45,3,Reasoning structure present
+thinking,t2_q2_counterfactual,10.18,2,Some reasoning present
+thinking,t2_q3_formal,10.62,3,Reasoning structure present
+thinking,t2_q4_metacognition,10.27,3,Reasoning structure present
+thinking,t1_q1_multistep,10.06,3,Reasoning structure present
+thinking,t1_q2_hypothesis,10.65,2,Some reasoning present
+thinking,t1_q3_planning,10.19,3,Reasoning structure present

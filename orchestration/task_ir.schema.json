@@ -116,7 +116,8 @@
               "math",
               "vision",
               "toolrunner",
-              "draft"
+              "draft",
+              "formalizer"
             ]
           },
           "model_hint": {
@@ -243,6 +244,31 @@
           "description": "Escalate after second gate failure"
         },
         "notes": { "type": "string" }
+      }
+    },
+    "formalization": {
+      "type": "object",
+      "description": "Optional formalization preprocessing. When present, the formalizer model converts vague task descriptions into formal specifications before routing to specialists.",
+      "additionalProperties": false,
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether formalization is required for this task (determined by routing rules)"
+        },
+        "completed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether formalization has been completed"
+        },
+        "ir": {
+          "$ref": "formalization_ir.schema.json",
+          "description": "The FormalizationIR output from the formalizer model"
+        },
+        "skip_reason": {
+          "type": "string",
+          "description": "If formalization was skipped, why (e.g., 'task already formal', 'interactive priority')"
+        }
       }
     }
   }

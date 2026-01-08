@@ -88,6 +88,9 @@ SERVER_HEALTH_TIMEOUT = 60  # seconds
 API_HEALTH_TIMEOUT = 30  # seconds
 TRIAL_TIMEOUT = 300  # seconds
 
+# Global mock mode flag (set by --mock argument)
+USE_MOCK_MODE = False
+
 
 # =============================================================================
 # Layer Configuration
@@ -537,7 +540,8 @@ def run_test_suite(
                     f"{api_url}/chat",
                     json={
                         "prompt": prompt_text,
-                        "real_mode": True,
+                        "real_mode": not USE_MOCK_MODE,
+                        "mock_mode": USE_MOCK_MODE,
                         **config
                     }
                 )
@@ -990,26 +994,30 @@ def update_registry(checkpoint: dict):
 # Main Entry Points
 # =============================================================================
 
-def run_preflight() -> bool:
+def run_preflight(mock_mode: bool = False) -> bool:
     """Run preflight checks."""
     print("\n=== Preflight Checks ===\n")
 
+    if mock_mode:
+        print("[MOCK MODE] Skipping model and server checks\n")
+
     checks_passed = True
 
-    # Check model exists
-    if DEV_MODEL.exists():
-        print(f"[OK] Dev model exists: {DEV_MODEL.name}")
-    else:
-        print(f"[FAIL] Dev model not found: {DEV_MODEL}")
-        checks_passed = False
+    # Check model exists (skip in mock mode)
+    if not mock_mode:
+        if DEV_MODEL.exists():
+            print(f"[OK] Dev model exists: {DEV_MODEL.name}")
+        else:
+            print(f"[FAIL] Dev model not found: {DEV_MODEL}")
+            checks_passed = False
 
-    # Check llama-server
-    server_bin = LLAMA_CPP_PATH / "llama-server"
-    if server_bin.exists():
-        print(f"[OK] llama-server exists")
-    else:
-        print(f"[FAIL] llama-server not found: {server_bin}")
-        checks_passed = False
+        # Check llama-server
+        server_bin = LLAMA_CPP_PATH / "llama-server"
+        if server_bin.exists():
+            print(f"[OK] llama-server exists")
+        else:
+            print(f"[FAIL] llama-server not found: {server_bin}")
+            checks_passed = False
 
     # Check test suite exists
     prompt_dir = PROJECT_ROOT / "benchmarks" / "prompts" / "v1" / "orchestrator"
@@ -1135,8 +1143,19 @@ Examples:
         action="store_true",
         help="Show what would be done without running"
     )
+    parser.add_argument(
+        "--mock",
+        action="store_true",
+        help="Use mock mode (no real inference, for testing the optimization flow)"
+    )
 
     args = parser.parse_args()
+
+    # Set global mock mode
+    global USE_MOCK_MODE
+    if args.mock:
+        USE_MOCK_MODE = True
+        args.no_servers = True  # Mock mode doesn't need llama-servers
 
     # Handle status
     if args.status:
@@ -1166,12 +1185,13 @@ Examples:
             return
 
     # Run preflight
-    if not run_preflight():
+    if not run_preflight(mock_mode=USE_MOCK_MODE):
         print("Preflight checks failed. Fix issues and retry.")
         sys.exit(1)
 
     if args.dry_run:
         print("\n=== DRY RUN ===")
+        print(f"Mock mode: {USE_MOCK_MODE}")
         print(f"Would optimize layers: {layers_to_optimize}")
         for layer in layers_to_optimize:
             n_trials = args.trials or args.trials_per_layer or LAYER_CONFIGS[layer].default_trials

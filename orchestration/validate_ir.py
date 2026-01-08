@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate TaskIR / ArchitectureIR JSON files against local JSON Schemas.
+"""Validate TaskIR / ArchitectureIR / FormalizationIR JSON files against local JSON Schemas.
 
 Usage:
   python orchestration/validate_ir.py task path/to/task_ir.json
   python orchestration/validate_ir.py arch path/to/architecture_ir.json
+  python orchestration/validate_ir.py formal path/to/formalization_ir.json
   echo '{"task_id": ...}' | python orchestration/validate_ir.py task -
 
 Exit codes:
@@ -33,6 +34,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parent
 SCHEMA_TASK = ROOT / "task_ir.schema.json"
 SCHEMA_ARCH = ROOT / "architecture_ir.schema.json"
+SCHEMA_FORMAL = ROOT / "formalization_ir.schema.json"
 
 
 def load_json(path: Path | None, from_stdin: bool = False) -> dict[str, Any]:
@@ -98,20 +100,25 @@ def validate(instance: dict[str, Any], schema_path: Path, source_name: str) -> i
 def main(argv: list[str]) -> int:
     """Main entry point."""
     if len(argv) < 3:
-        print("Usage: validate_ir.py (task|arch) <path.json | ->")
+        print("Usage: validate_ir.py (task|arch|formal) <path.json | ->")
         print("  Use '-' to read from stdin")
         return 1
 
     kind = argv[1]
-    if kind not in {"task", "arch"}:
-        print(f"ERROR: unknown kind '{kind}', expected 'task' or 'arch'")
+    if kind not in {"task", "arch", "formal"}:
+        print(f"ERROR: unknown kind '{kind}', expected 'task', 'arch', or 'formal'")
         return 1
 
     input_arg = argv[2]
     from_stdin = input_arg == "-"
 
     # Select schema
-    schema_path = SCHEMA_TASK if kind == "task" else SCHEMA_ARCH
+    schema_map = {
+        "task": SCHEMA_TASK,
+        "arch": SCHEMA_ARCH,
+        "formal": SCHEMA_FORMAL,
+    }
+    schema_path = schema_map[kind]
     source_name = "stdin" if from_stdin else input_arg
 
     # Load instance

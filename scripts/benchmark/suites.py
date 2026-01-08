@@ -43,6 +43,8 @@ class Question:
     context_type: Optional[str] = None
     needle: Optional[str] = None
     needle_position: Optional[str] = None
+    # Vision fields (optional)
+    image_path: Optional[str] = None
 
 
 @dataclass
@@ -116,6 +118,7 @@ def load_suite(name: str, prompts_dir: str = PROMPTS_DIR) -> Optional[Suite]:
                 context_type=context_type,
                 needle=needle,
                 needle_position=needle_position,
+                image_path=qdata.get("image_path"),
             )
         )
 

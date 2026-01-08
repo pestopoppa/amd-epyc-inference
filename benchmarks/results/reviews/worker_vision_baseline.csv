@@ -1,61 +1,31 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-general,t1_q1_reformat,9.68,3,Correctly reformatted into bullet list
-general,t1_q2_summarize,7.96,1,Gave summary but then repetitive looping
-general,t1_q3_extract,7.2,3,Correctly extracted all 4 email addresses
-general,t2_q1_json,11.54,3,Valid JSON with all correct fields
-general,t2_q2_multistep,7.85,0,"Repetitive garbage output, no actual list processing"
-general,t2_q3_compare,7.13,3,Good 2-3 sentence comparison covering key points
-general,t3_q1_synthesis,7.47,1,Some synthesis present but then repetitive looping
-general,t3_q2_transform,6.99,2,YAML structure correct but added extra employee
-general,t3_q3_schedule,6.85,2,Attempted scheduling logic but truncated/incomplete
-general,t3_q4_inconsistency,6.91,3,Correctly identified all inconsistencies
-general,t1_q1_json,16.38,3,Valid JSON with all correct fields
-general,t1_q2_multistep,15.7,3,Correctly processed list with all 4 steps
-general,t1_q3_compare,16.15,3,Good comparison covering pros/cons of both approaches
-general,t2_q1_synthesis,16.08,3,Balanced recommendation addressing all 3 perspectives
-general,t2_q2_transform,15.93,2,YAML structure correct but added extra employee not in input
-general,t2_q3_schedule,15.07,1,Attempted but has logical error (two meetings at 10:30am)
-general,t2_q4_inconsistency,15.84,3,Correctly identified body format and rate limit inconsistencies
-general,t3_q1_policy_analysis,15.18,3,Thorough analysis with 3+ failure modes and amendments
-general,t3_q2_system_failure,14.74,3,Excellent explanation of replica lag causing double-charges
-general,t3_q3_strategic_communication,14.72,2,Good structure but somewhat verbose and repetitive
-thinking,t1_q1_logic,7.01,0,Wrong - concluded yes when answer is no (invalid syllogism)
-thinking,t1_q2_sequence,6.89,3,Correct answer 42 with good explanation of differences
-thinking,t1_q3_deduction,7.02,1,"Wrong - Alice should have bird (allergic to fur), not cat"
-thinking,t2_q1_multistep,6.88,1,Wrong time (11:34 AM instead of correct 11:00 AM)
-thinking,t2_q2_hypothesis,6.94,3,"Good 3 alternative explanations (sleep, parental involvement, lifestyle)"
-thinking,t2_q3_planning,6.9,3,Found valid orderings with good reasoning process
-thinking,t3_q1_paradox,6.92,3,Presented 2+ philosophical positions with analysis
-thinking,t3_q2_counterfactual,6.91,3,Analyzed all 3 dimensions with mechanisms and effects
-thinking,t3_q3_formal,6.99,3,Valid proof with formal logic rules and concrete example
-thinking,t3_q4_metacognition,6.91,3,Good Fermi estimation with assumptions and bounds
-agentic,t1_q1_sequential,16.22,1,Attempted JSON but incomplete or malformed
-agentic,t1_q1_single_tool,6.95,1,Attempted JSON but incomplete or malformed
-agentic,t1_q2_error_handling,16.05,2,"Multiple tool call attempts, some valid"
-agentic,t1_q2_multi_param,7.05,1,Attempted JSON but incomplete or malformed
-agentic,t1_q3_choose_tool,7.1,1,Attempted JSON but incomplete or malformed
-agentic,t1_q3_nested_params,16.32,1,Attempted JSON but incomplete or malformed
-agentic,t2_q1_ambiguous,16.15,1,Attempted JSON but incomplete or malformed
-agentic,t2_q1_sequential,9.8,1,Attempted JSON but incomplete or malformed
-agentic,t2_q2_error_chain,13.9,1,Tool call structure present but excessive repetition
-agentic,t2_q2_error_handling,12.76,2,"Multiple tool call attempts, some valid"
-agentic,t2_q3_nested_params,12.66,1,Attempted JSON but incomplete or malformed
-agentic,t2_q3_schema_edge,16.11,1,Attempted JSON but incomplete or malformed
-agentic,t2_q4_orchestration,15.57,1,Attempted JSON but incomplete or malformed
-agentic,t3_q1_ambiguous,8.87,1,Attempted JSON but incomplete or malformed
-agentic,t3_q1_competing_constraints,14.52,1,Attempted JSON but incomplete or malformed
-agentic,t3_q2_error_chain,7.31,2,"Multiple tool call attempts, some valid"
-agentic,t3_q2_multi_agent_coordination,13.76,1,Attempted JSON but incomplete or malformed
-agentic,t3_q3_adversarial_robustness,15.3,1,Attempted JSON but incomplete or malformed
-agentic,t3_q3_schema_edge,10.62,1,Attempted JSON but incomplete or malformed
-agentic,t3_q4_orchestration,8.14,1,Attempted JSON but incomplete or malformed
-vl,t1_q1_chart,16.06,1,"Acknowledges no image provided, attempts hypothetical reasoning"
-vl,t1_q2_invoice,16.29,0,Cannot actually see images - text-only model without vision
-vl,t1_q3_code,15.02,0,Cannot actually see images - text-only model without vision
-vl,t2_q1_math,16.18,0,Cannot actually see images - text-only model without vision
-vl,t2_q2_flowchart,14.99,0,Cannot actually see images - text-only model without vision
-vl,t2_q3_diff,14.86,0,Cannot actually see images - text-only model without vision
-vl,t2_q4_puzzle,15.99,0,Cannot actually see images - text-only model without vision
-vl,t3_q1_scientific_diagram,15.6,0,Cannot actually see images - text-only model without vision
-vl,t3_q2_architectural_blueprint,15.57,0,Cannot actually see images - text-only model without vision
-vl,t3_q3_multi_image_temporal,15.26,0,Cannot actually see images - text-only model without vision
+general,t3_q1_policy_analysis,0.0,2,General response generated
+general,t3_q2_system_failure,0.0,2,General response generated
+general,t3_q3_strategic_communication,0.0,2,General response generated
+general,t2_q1_synthesis,0.0,2,General response generated
+general,t2_q2_transform,0.0,2,General response generated
+general,t2_q3_schedule,0.0,2,General response generated
+general,t2_q4_inconsistency,0.0,2,General response generated
+general,t1_q1_json,0.0,2,General response generated
+general,t1_q2_multistep,0.0,2,General response generated
+general,t1_q3_compare,0.0,2,General response generated
+vl,t3_q1_scientific_diagram,11.22,3,Image analysis present
+vl,t3_q2_architectural_blueprint,13.16,2,Visual description present
+vl,t3_q3_multi_image_temporal,13.64,3,Image analysis present
+vl,t2_q1_math,15.8,2,Visual description present
+vl,t2_q2_flowchart,15.03,2,Visual description present
+vl,t2_q3_diff,15.6,3,Image analysis present
+vl,t2_q4_puzzle,15.41,2,Visual description present
+vl,t1_q1_chart,15.45,3,Image analysis present
+vl,t1_q2_invoice,15.54,2,Visual description present
+vl,t1_q3_code,15.09,2,Visual description present
+agentic,t3_q1_competing_constraints,0.0,1,No tool call structure
+agentic,t3_q2_multi_agent_coordination,0.0,1,No tool call structure
+agentic,t3_q3_adversarial_robustness,0.0,1,No tool call structure
+agentic,t2_q1_ambiguous,0.0,1,No tool call structure
+agentic,t2_q2_error_chain,0.0,1,No tool call structure
+agentic,t2_q3_schema_edge,0.0,1,No tool call structure
+agentic,t2_q4_orchestration,0.0,1,No tool call structure
+agentic,t1_q1_sequential,0.0,1,No tool call structure
+agentic,t1_q2_error_handling,0.0,1,No tool call structure
+agentic,t1_q3_nested_params,0.0,1,No tool call structure

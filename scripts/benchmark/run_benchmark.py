@@ -43,7 +43,13 @@ from lib.output_parser import parse_output
 from lib.scorer import score_response
 
 from suites import load_suite, get_suites_for_role, get_inference_params, get_all_suite_names
-from results import ResultsManager, QuestionResult, result_exists
+from results import (
+    ResultsManager,
+    QuestionResult,
+    result_exists,
+    result_exists_for_model,
+    copy_result_from_role,
+)
 
 
 # Lock file for single instance
@@ -237,7 +243,7 @@ def run_benchmark(
     for model_path, role_list in model_to_roles.items():
         size_gb = role_sizes[role_list[0]]  # All roles for same model have same size
         models_sorted.append((model_path, size_gb, role_list))
-    models_sorted.sort(key=lambda x: x[1], reverse=True)
+    models_sorted.sort(key=lambda x: x[1], reverse=False)
 
     # Flatten back to role list but preserve model grouping order
     valid_roles = []
@@ -245,7 +251,7 @@ def run_benchmark(
         for role in role_list:
             valid_roles.append((role, size_gb))
 
-    print(f"\nBenchmark: {run_id} | {len(models_sorted)} models, {len(valid_roles)} roles (largest first)")
+    print(f"\nBenchmark: {run_id} | {len(models_sorted)} models, {len(valid_roles)} roles (smallest first)")
 
     # Track which models we've already printed and speed-tested
     printed_models: set[str] = set()
@@ -260,6 +266,7 @@ def run_benchmark(
     try:
       for role, size_gb in role_iter:
         model_path = registry.get_model_path(role)
+        mmproj_path = registry.get_mmproj_path(role)  # VL models have mmproj
         arch = registry.get_architecture(role)
         configs = executor.get_configs_for_architecture(arch, role, registry)
 
@@ -292,6 +299,7 @@ def run_benchmark(
                             max_tokens=256,
                             temperature=0.6,
                             timeout=180,  # Conservative timeout for speed test
+                            mmproj_path=mmproj_path,  # VL models need mmproj even for text
                         )
                         if speed_result.success and not speed_result.timed_out:
                             parsed = parse_output(speed_result.raw_output)
@@ -418,6 +426,7 @@ def run_benchmark(
                         max_tokens=256,
                         temperature=0.6,
                         timeout=120,
+                        mmproj_path=mmproj_path,  # VL models need mmproj even for speed tests
                     )
 
                     if result.timed_out:
@@ -484,19 +493,42 @@ def run_benchmark(
                     if dry_run:
                         continue
 
-                    # Skip check
+                    # Skip check - first check if THIS role has the result
                     exists = result_exists(run_id, role, config.name, suite_name, question.id)
                     if not force and exists:
                         stats["skipped"] += 1
                         continue
 
+                    # Model-path deduplication: check if ANOTHER role with same model has result
+                    if not force:
+                        existing_role = result_exists_for_model(
+                            run_id, model_path, config.name, suite_name, question.id
+                        )
+                        if existing_role and existing_role != role:
+                            # Copy result from the other role instead of re-testing
+                            copied = copy_result_from_role(
+                                run_id=run_id,
+                                from_role=existing_role,
+                                to_role=role,
+                                config_name=config.name,
+                                suite=suite_name,
+                                question_id=question.id,
+                                model_path=model_path,
+                            )
+                            if copied:
+                                stats["skipped"] += 1
+                                print(f"    [COPY] {role}/{config.name}/{question.id} <- {existing_role}")
+                                continue
+
                     try:
                         # Use server for baseline/MoE configs (model stays in RAM)
                         # Use subprocess for spec decode (needs external draft model)
+                        # VL models MUST use subprocess (server doesn't support vision)
                         use_server = (
                             active_server is not None
                             and active_server.is_running()
                             and config.config_type in ("baseline", "moe")
+                            and mmproj_path is None  # VL models can't use server
                         )
 
                         if use_server:
@@ -514,6 +546,8 @@ def run_benchmark(
                                 max_tokens=params["max_tokens"],
                                 temperature=params["temperature"],
                                 timeout=params["timeout"],
+                                mmproj_path=mmproj_path,
+                                image_path=question.image_path,
                             )
 
                         if result.timed_out:

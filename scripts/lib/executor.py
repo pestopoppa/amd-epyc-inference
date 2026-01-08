@@ -561,6 +561,8 @@ class Executor:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = DEFAULT_TEMPERATURE,
         threads: int = DEFAULT_THREADS,
+        mmproj_path: Optional[str] = None,
+        image_path: Optional[str] = None,
     ) -> list[str]:
         """Build the llama.cpp command for a configuration.
 
@@ -571,11 +573,40 @@ class Executor:
             max_tokens: Maximum tokens to generate.
             temperature: Sampling temperature.
             threads: Number of threads.
+            mmproj_path: Path to mmproj file for VL models.
+            image_path: Path to image file for VL models.
 
         Returns:
             Command as list of strings.
         """
-        # Select binary based on config type (reads from registry)
+        # Check if this is a vision model (determined by mmproj_path presence)
+        is_vision = mmproj_path is not None
+
+        if is_vision:
+            # Vision models use llama-mtmd-cli with different invocation
+            binary = get_binary("mtmd", self.registry)
+            cmd = [
+                "numactl", "--interleave=all",
+                binary,
+                "-m", model_path,
+                "--mmproj", mmproj_path,
+                "-t", str(threads),
+                "-n", str(max_tokens),
+                "--temp", str(temperature),
+            ]
+            # Add image if provided
+            if image_path:
+                cmd.extend(["--image", image_path])
+            # mtmd-cli uses -f for prompt file (same as llama-cli)
+            cmd.extend(["-f", prompt_file])
+            # Add MoE override if applicable (VL MoE models like Qwen3-VL-30B)
+            if config.config_type == "moe":
+                cmd.extend([
+                    "--override-kv", f"{config.moe_override_key}=int:{config.moe_experts}",
+                ])
+            return cmd
+
+        # Non-vision models: select binary based on config type
         if config.config_type == "spec" or config.config_type == "moe_spec":
             binary = get_binary("speculative", self.registry)
         elif config.config_type == "lookup" or config.config_type == "moe_lookup":
@@ -637,6 +668,8 @@ class Executor:
         temperature: float = DEFAULT_TEMPERATURE,
         threads: int = DEFAULT_THREADS,
         timeout: int = DEFAULT_TIMEOUT,
+        mmproj_path: Optional[str] = None,
+        image_path: Optional[str] = None,
     ) -> InferenceResult:
         """Run inference with the given configuration.
 
@@ -648,6 +681,8 @@ class Executor:
             temperature: Sampling temperature.
             threads: Number of threads.
             timeout: Timeout in seconds.
+            mmproj_path: Path to mmproj file for VL models.
+            image_path: Path to image file for VL models.
 
         Returns:
             InferenceResult with output and status.
@@ -661,7 +696,8 @@ class Executor:
 
         try:
             cmd = self.build_command(
-                model_path, config, prompt_file, max_tokens, temperature, threads
+                model_path, config, prompt_file, max_tokens, temperature, threads,
+                mmproj_path=mmproj_path, image_path=image_path
             )
             cmd_str = " ".join(cmd)
 
@@ -711,10 +747,15 @@ def build_command(
     config: Config,
     prompt_file: str,
     registry: Optional[ModelRegistry] = None,
+    mmproj_path: Optional[str] = None,
+    image_path: Optional[str] = None,
 ) -> list[str]:
     """Convenience function to build a command."""
     executor = Executor(registry)
-    return executor.build_command(model_path, config, prompt_file)
+    return executor.build_command(
+        model_path, config, prompt_file,
+        mmproj_path=mmproj_path, image_path=image_path
+    )
 
 
 def run_inference(
@@ -723,10 +764,15 @@ def run_inference(
     prompt: str,
     timeout: int = DEFAULT_TIMEOUT,
     registry: Optional[ModelRegistry] = None,
+    mmproj_path: Optional[str] = None,
+    image_path: Optional[str] = None,
 ) -> InferenceResult:
     """Convenience function to run inference."""
     executor = Executor(registry)
-    return executor.run_inference(model_path, config, prompt, timeout=timeout)
+    return executor.run_inference(
+        model_path, config, prompt, timeout=timeout,
+        mmproj_path=mmproj_path, image_path=image_path
+    )
 
 
 if __name__ == "__main__":

@@ -6,107 +6,85 @@ runtime_defaults:
   threads: 96
   numa_policy: interleave=all
   model_base_path: /mnt/raid0/llm/lmstudio/models
-  # Binary paths - SINGLE SOURCE OF TRUTH for all launch commands
   binaries:
     base_dir: /mnt/raid0/llm/llama.cpp/build/bin
-    # Core inference binaries
-    completion: llama-completion      # baseline, MoE reduction (preferred for benchmarks)
-    speculative: llama-speculative    # spec decode with draft model
-    lookup: llama-lookup              # prompt n-gram lookup
-    cli: llama-cli                    # interactive mode (AVOID for benchmarks - hangs)
-    server: llama-server              # persistent model server for benchmarks
-    # Vision/multimodal binaries
-    mtmd: llama-mtmd-cli              # multimodal (vision) inference
-    qwen2vl: llama-qwen2vl-cli        # Qwen2-VL specific (deprecated, use mtmd)
-    # Utility binaries
-    bench: llama-bench                # quick speed benchmarks (no quality)
-    embedding: llama-embedding        # embedding generation
-    perplexity: llama-perplexity      # quality/perplexity testing
-    quantize: llama-quantize          # model quantization
-  # Server mode settings
+    completion: llama-completion
+    speculative: llama-speculative
+    lookup: llama-lookup
+    cli: llama-cli
+    server: llama-server
+    mtmd: llama-mtmd-cli
+    qwen2vl: llama-qwen2vl-cli
+    bench: llama-bench
+    embedding: llama-embedding
+    perplexity: llama-perplexity
+    quantize: llama-quantize
   server_defaults:
     port: 8080
-    # NOTE: context_length is the MAXIMUM for benchmarks, but actual context
-    # is min(this, model.max_context). Models with smaller limits should set
-    # max_context in their model definition. Default assumes 64K support.
-    context_length: 65536             # 64K default - models needing more set max_context
-    startup_timeout: 600              # 10 minutes for large models (480B loads in ~35s)
-    request_timeout: 300              # 5 minutes per request
-    parallel_slots: 4                 # concurrent request slots
-    flash_attention: true             # Enable by default, models can override with constraints.flash_attention: false
-    ubatch_size: 8192                 # Large batch for faster prompt processing (diminishing returns beyond this)
-  # Prefix caching settings (RadixAttention-style)
+    context_length: 65536
+    startup_timeout: 600
+    request_timeout: 300
+    parallel_slots: 4
+    flash_attention: true
+    ubatch_size: 8192
   prefix_cache:
-    enabled: true                     # Enable prefix caching by default
-    prefix_length: 256                # Characters to use for prefix hashing
-    canonicalize: true                # Normalize prompts before routing
-    cache_dir: /mnt/raid0/llm/cache/prefixes  # Hot prefix persistence directory
-  # Model context length defaults by architecture/family
-  # Models can override with max_context in their definition
+    enabled: true
+    prefix_length: 256
+    canonicalize: true
+    cache_dir: /mnt/raid0/llm/cache/prefixes
   context_limits:
-    default: 65536                    # Most modern models support 64K+
-    llama2: 4096                      # Llama 2 base: 4K
-    llama3: 8192                      # Llama 3 base: 8K (instruct versions support 128K)
-    llama3_instruct: 131072           # Llama 3 Instruct: 128K
-    qwen2: 131072                     # Qwen2/2.5: 128K
-    qwen3: 131072                     # Qwen3: 128K+
-    deepseek_r1: 65536                # DeepSeek R1 distills: 64K
-    gemma3: 131072                    # Gemma 3: 128K
-  # Inference timeouts by role tier
+    default: 65536
+    llama2: 4096
+    llama3: 8192
+    llama3_instruct: 131072
+    qwen2: 131072
+    qwen3: 131072
+    deepseek_r1: 65536
+    gemma3: 131072
   timeouts:
     default: 180
-    tier_a: 120      # Fast frontdoor
-    tier_b: 300      # Specialists may need longer
-    tier_c: 180      # Workers
-    tier_d: 60       # Drafts are fast
-    long_context: 600  # Long prompts need more time
-
-# Server mode configuration (RadixAttention with persistent llama-server)
-# Used by LLMPrimitives with mock_mode=False for real inference
+    tier_a: 120
+    tier_b: 300
+    tier_c: 180
+    tier_d: 60
+    long_context: 600
 server_mode:
-  # Default server URLs for orchestrator roles
   frontdoor:
-    url: "http://localhost:8080"
+    url: http://localhost:8080
     slots: 4
-    model_role: frontdoor  # Reference to roles section
-    description: "Root LM - generates Python code each turn"
+    model_role: frontdoor
+    description: Root LM - generates Python code each turn
     acceleration:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
-
   coder:
-    url: "http://localhost:8081"
+    url: http://localhost:8081
     slots: 4
     model_role: coder_primary
-    description: "Primary code generation"
+    description: Primary code generation
     acceleration:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
-
   worker:
-    url: "http://localhost:8082"
-    slots: 8  # More slots for parallel worker requests
+    url: http://localhost:8082
+    slots: 8
     model_role: worker_general
-    description: "Parallel workers for file-level tasks"
+    description: Parallel workers for file-level tasks
     acceleration:
       type: baseline
-
-  # Development/testing configuration (smaller models)
   dev:
     frontdoor:
-      url: "http://localhost:8080"
+      url: http://localhost:8080
       slots: 4
-      model: "Qwen2.5-Coder-0.5B-Q8_0.gguf"
-      description: "Dev frontdoor - fast small model"
-
+      model: Qwen2.5-Coder-0.5B-Q8_0.gguf
+      description: Dev frontdoor - fast small model
     worker:
-      url: "http://localhost:8082"
+      url: http://localhost:8082
       slots: 4
-      model: "Qwen2.5-Coder-0.5B-Q8_0.gguf"
-      description: "Dev worker - fast small model"
-
+      model: Qwen2.5-Coder-0.5B-Q8_0.gguf
+      description: Dev worker - fast small model
 roles:
   frontdoor:
     tier: A
@@ -117,14 +95,18 @@ roles:
       quant: Q4_K_M
       size_gb: 17.5
       architecture: moe
-    candidate_roles: [frontdoor, coder, general, ingest]
+    candidate_roles:
+    - frontdoor
+    - coder
+    - general
+    - ingest
     acceleration:
       type: moe_expert_reduction
-      experts: 6  # Updated 2026-01-06: MoE6 gives 90% quality vs 81% for MoE4
+      experts: 6
       override_key: qwen3moe.expert_used_count
     performance:
       baseline_tps: 17.1
-      optimized_tps: 18.3  # MoE6 speed
+      optimized_tps: 18.3
       quality_pct: 90
       speedup: 1.07x
     memory:
@@ -139,30 +121,38 @@ roles:
       quant: Q4_K_M
       size_gb: 17.5
       architecture: moe
-    candidate_roles: [frontdoor, coder, general, ingest]
+    candidate_roles:
+    - frontdoor
+    - coder
+    - general
+    - ingest
     acceleration:
       type: moe_expert_reduction
-      experts: 6  # Updated 2026-01-06: MoE6 gives 90% quality vs 81% for MoE4
+      experts: 6
       override_key: qwen3moe.expert_used_count
     performance:
       baseline_tps: 17.1
-      optimized_tps: 18.3  # MoE6 speed
+      optimized_tps: 18.3
       quality_pct: 90
       speedup: 1.07x
     memory:
       residency: hot
-      pinned: true  # Shares with frontdoor
+      pinned: true
     benchmark_date: 2026-01-06
   coder_escalation:
     tier: B
-    description: Coding escalation target - generalist coder for when primary needs support
+    description: Coding escalation target - generalist coder for when primary needs
+      support
     model:
       name: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
       path: mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L.i1-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 30
       architecture: moe
-    candidate_roles: [coder, architect, general]
+    candidate_roles:
+    - coder
+    - architect
+    - general
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -190,7 +180,9 @@ roles:
       quant: Q4_K_M
       size_gb: 45
       architecture: ssm_moe_hybrid
-    candidate_roles: [ingest, architect]
+    candidate_roles:
+    - ingest
+    - architect
     acceleration:
       type: moe_expert_reduction
       experts: 2
@@ -200,7 +192,8 @@ roles:
       - speculative_decoding
       - prompt_lookup
       - eagle
-      reason: SSM requires consecutive positions - incompatible with ALL speculation methods
+      reason: SSM requires consecutive positions - incompatible with ALL speculation
+        methods
     performance:
       baseline_tps: 10.12
       optimized_tps: 11.55
@@ -218,7 +211,9 @@ roles:
       size_gb: 133
       split_count: 4
       architecture: moe
-    candidate_roles: [architect, general]
+    candidate_roles:
+    - architect
+    - general
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -240,12 +235,14 @@ roles:
       size_gb: 271
       split_count: 8
       architecture: moe
-      max_context: 131072       # 128K for long_context tests
-    candidate_roles: [architect, coder]
+      max_context: 131072
+    candidate_roles:
+    - architect
+    - coder
     acceleration:
       type: moe_expert_reduction
-      experts: 3                # MOE3 is optimal: +58% speedup with good quality
-      baseline_experts: 8       # Model default (qwen3moe.expert_used_count in GGUF)
+      experts: 3
+      baseline_experts: 8
       override_key: qwen3moe.expert_used_count
     constraints:
       forbid:
@@ -253,13 +250,13 @@ roles:
       - prompt_lookup
       reason: BOS token mismatch - no compatible draft models exist
     performance:
-      baseline_tps: 6.53       # Tested 2025-12-21 (with parallel repack)
-      optimized_tps: 10.30     # MOE3 (3 experts)
-      speedup: 1.58x           # +58% speedup
-      moe2_tps: 11.51          # MOE2 is faster but produces garbage output
-      moe4_tps: 9.25           # MOE4 works but slower than MOE3
-      moe5_tps: 8.50           # MOE5 works but slower
-      legacy_baseline_tps: 2.25   # Old measurement with OMP_NUM_THREADS=1
+      baseline_tps: 6.53
+      optimized_tps: 10.3
+      speedup: 1.58x
+      moe2_tps: 11.51
+      moe4_tps: 9.25
+      moe5_tps: 8.5
+      legacy_baseline_tps: 2.25
     memory:
       residency: warm
       pinned: false
@@ -273,7 +270,10 @@ roles:
       quant: Q4_K_S
       size_gb: 45
       architecture: ssm_moe_hybrid
-    candidate_roles: [thinking, ingest, architect]
+    candidate_roles:
+    - thinking
+    - ingest
+    - architect
     acceleration:
       type: moe_expert_reduction
       experts: 2
@@ -283,7 +283,8 @@ roles:
       - speculative_decoding
       - prompt_lookup
       - eagle
-      reason: SSM requires consecutive positions - incompatible with ALL speculation methods
+      reason: SSM requires consecutive positions - incompatible with ALL speculation
+        methods
     performance:
       baseline_tps: null
       optimized_tps: null
@@ -292,7 +293,8 @@ roles:
       residency: warm
       pinned: false
     benchmark_date: null
-    notes: Thinking variant optimized for chain-of-thought reasoning. Use for complex multi-step problems.
+    notes: Thinking variant optimized for chain-of-thought reasoning. Use for complex
+      multi-step problems.
   worker_general:
     tier: C
     description: Boilerplate, rewrites, doc polish, small diffs
@@ -302,10 +304,12 @@ roles:
       quant: Q4_K_M
       size_gb: 4.7
       architecture: dense
-    candidate_roles: [worker, general]
+    candidate_roles:
+    - worker
+    - general
     constraints:
       forbid:
-        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3-8B
+      - speculative_decoding
     acceleration:
       type: prompt_lookup
       ngram_min: 3
@@ -326,7 +330,10 @@ roles:
       quant: Q4_K_M
       size_gb: 4.4
       architecture: dense
-    candidate_roles: [math, worker, thinking]
+    candidate_roles:
+    - math
+    - worker
+    - thinking
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25
@@ -348,7 +355,8 @@ roles:
       quant: Q4_K_M
       size_gb: 4.4
       architecture: dense
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25
@@ -371,7 +379,8 @@ roles:
       quant: Q4_K_M
       size_gb: 18.0
       architecture: qwen3vlmoe
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -394,37 +403,41 @@ roles:
     notes: Qwen3-VL MoE outperforms Qwen2.5-VL-72B dense on reasoning tasks
   worker_summarize:
     tier: C
-    description: Document summarization (96% quality) - fastest with spec decode or prompt lookup
+    description: Document summarization (96% quality) - fastest with spec decode or
+      prompt lookup
     model:
       name: Qwen2.5-Coder-32B-Instruct
       path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 18.5
       architecture: dense
-    candidate_roles: [coder, frontdoor, ingest, general]
+    candidate_roles:
+    - coder
+    - frontdoor
+    - ingest
+    - general
     acceleration:
-      # Primary: spec decode for general generation tasks
       type: speculative_decoding
       draft_role: draft_qwen25_coder
-      k: 8   # K=8 matches K=24 speed, lower latency
-      # Alternative: prompt_lookup for document QA where output copies source
+      k: 8
       alternative:
         type: prompt_lookup
         ngram_min: 3
         optimized_tps: 95.18
-        best_for: "Document QA, summarization where output contains source excerpts"
+        best_for: Document QA, summarization where output contains source excerpts
     performance:
       baseline_tps: 3.1
       optimized_tps: 172.4
       speedup: 55.9x
-      quality_score: "66/69 (96%)"
+      quality_score: 66/69 (96%)
       lookup_tps: 95.18
       lookup_speedup: 12.7x
     memory:
       residency: warm
       pinned: false
     benchmark_date: 2026-01-06
-    notes: Spec decode 172 t/s for general tasks; prompt lookup 95 t/s for document QA with source material
+    notes: Spec decode 172 t/s for general tasks; prompt lookup 95 t/s for document
+      QA with source material
   toolrunner:
     tier: C
     description: Summarize tool outputs, triage logs, propose next commands
@@ -434,10 +447,12 @@ roles:
       quant: Q4_K_M
       size_gb: 4.7
       architecture: dense
-    candidate_roles: [worker, general]
+    candidate_roles:
+    - worker
+    - general
     constraints:
       forbid:
-        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3-8B
+      - speculative_decoding
     acceleration:
       type: none
     performance:
@@ -454,7 +469,8 @@ roles:
       quant: Q8_0
       size_gb: 0.5
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     compatible_targets:
     - Qwen2.5-Coder-32B
     - Qwen2.5-Coder-14B
@@ -473,7 +489,8 @@ roles:
       quant: Q8_0
       size_gb: 0.5
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     compatible_targets:
     - Qwen2.5-72B
     - Qwen2.5-Math-72B
@@ -491,20 +508,28 @@ roles:
       quant: Q4_K_M
       size_gb: 39.6
       architecture: dense
-    candidate_roles: [architect, frontdoor, general, ingest]
+    candidate_roles:
+    - architect
+    - frontdoor
+    - general
+    - ingest
     memory:
       residency: cold
       pinned: false
   architect_meta_llama_3_1_70b:
     tier: B
-    description: Architect model - Meta-Llama-3.1-70B-Instruct (90% quality, 40x spec speedup)
+    description: Architect model - Meta-Llama-3.1-70B-Instruct (90% quality, 40x spec
+      speedup)
     model:
       name: Meta-Llama-3.1-70B-Instruct-Q4_K_M
       path: lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 39.6
       architecture: dense
-    candidate_roles: [architect, general, ingest]
+    candidate_roles:
+    - architect
+    - general
+    - ingest
     acceleration:
       type: speculative_decoding
       draft_model: PARD-Llama-3.2-1B-Instruct-Q4_0
@@ -514,7 +539,7 @@ roles:
       baseline_tps: 2.1
       optimized_tps: 84.3
       speedup: 40.1x
-      quality_score: "165/183 (90%)"
+      quality_score: 165/183 (90%)
     memory:
       residency: cold
       pinned: false
@@ -529,20 +554,28 @@ roles:
       quant: Q4_K_M
       size_gb: 39.6
       architecture: dense
-    candidate_roles: [architect, general, ingest]
+    candidate_roles:
+    - architect
+    - general
+    - ingest
     memory:
       residency: cold
       pinned: false
   architect_qwen2_5_72b:
     tier: B
-    description: Architect model - Qwen2.5-72B-Instruct-Q4_K_M (87% quality, 76x spec speedup)
+    description: Architect model - Qwen2.5-72B-Instruct-Q4_K_M (87% quality, 76x spec
+      speedup)
     model:
       name: Qwen2.5-72B-Instruct-Q4_K_M
       path: lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 44.2
       architecture: dense
-    candidate_roles: [architect, frontdoor, general, ingest]
+    candidate_roles:
+    - architect
+    - frontdoor
+    - general
+    - ingest
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25
@@ -551,7 +584,7 @@ roles:
       baseline_tps: 1.9
       optimized_tps: 147.8
       speedup: 76.2x
-      quality_score: "173/198 (87%)"
+      quality_score: 173/198 (87%)
     memory:
       residency: cold
       pinned: false
@@ -565,7 +598,10 @@ roles:
       quant: Q4_K_M
       size_gb: 44.2
       architecture: dense
-    candidate_roles: [architect, general, ingest]
+    candidate_roles:
+    - architect
+    - general
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -578,7 +614,11 @@ roles:
       quant: Q4_K_M
       size_gb: 17.3
       architecture: moe
-    candidate_roles: [frontdoor, coder, general, ingest]
+    candidate_roles:
+    - frontdoor
+    - coder
+    - general
+    - ingest
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -595,7 +635,10 @@ roles:
       quant: Q6_K
       size_gb: 32.5
       architecture: dense
-    candidate_roles: [math, architect, thinking]
+    candidate_roles:
+    - math
+    - architect
+    - thinking
     memory:
       residency: cold
       pinned: false
@@ -608,7 +651,10 @@ roles:
       quant: Q4_K_M
       size_gb: 44.2
       architecture: dense
-    candidate_roles: [math, architect, thinking]
+    candidate_roles:
+    - math
+    - architect
+    - thinking
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25
@@ -617,7 +663,7 @@ roles:
       baseline_tps: 2.0
       optimized_tps: 158.8
       speedup: 80.6x
-      quality_score: "141/183 (77%)"
+      quality_score: 141/183 (77%)
     memory:
       residency: cold
       pinned: false
@@ -631,10 +677,13 @@ roles:
       quant: Q4_K_M
       size_gb: 39.6
       architecture: dense
-    candidate_roles: [thinking, architect, general]
+    candidate_roles:
+    - thinking
+    - architect
+    - general
     constraints:
       forbid:
-        - speculative_decoding  # No compatible draft - DeepSeek's Llama tokenizer differs from PARD-Llama-3.2
+      - speculative_decoding
     memory:
       residency: cold
       pinned: false
@@ -647,10 +696,12 @@ roles:
       quant: Q4_K_M
       size_gb: 4.6
       architecture: dense
-    candidate_roles: [thinking, worker]
+    candidate_roles:
+    - thinking
+    - worker
     constraints:
       forbid:
-        - speculative_decoding  # No compatible draft - DeepSeek's Llama tokenizer differs from PARD-Llama-3.2
+      - speculative_decoding
     memory:
       residency: cold
       pinned: false
@@ -663,20 +714,28 @@ roles:
       quant: Q4_K_M
       size_gb: 8.4
       architecture: dense
-    candidate_roles: [thinking, general, worker]
+    candidate_roles:
+    - thinking
+    - general
+    - worker
     memory:
       residency: cold
       pinned: false
   thinking_deepseek_r1_distill_qwen_32b:
     tier: B
-    description: Thinking model - DeepSeek-R1-Distill-Qwen-32B (81% quality, 36x spec speedup)
+    description: Thinking model - DeepSeek-R1-Distill-Qwen-32B (81% quality, 36x spec
+      speedup)
     model:
       name: DeepSeek-R1-Distill-Qwen-32B-Q6_K
       path: bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF/DeepSeek-R1-Distill-Qwen-32B-Q6_K.gguf
       quant: Q6_K
       size_gb: 25.0
       architecture: dense
-    candidate_roles: [thinking, coder, general, architect]
+    candidate_roles:
+    - thinking
+    - coder
+    - general
+    - architect
     acceleration:
       type: speculative_decoding
       draft_model: DeepSeek-R1-Distill-Qwen-1.5B
@@ -686,7 +745,7 @@ roles:
       baseline_tps: 2.0
       optimized_tps: 72.2
       speedup: 35.9x
-      quality_score: "39/48 (81%)"
+      quality_score: 39/48 (81%)
     memory:
       residency: cold
       pinned: false
@@ -701,7 +760,9 @@ roles:
       quant: Q4_K_M
       size_gb: 4.4
       architecture: dense
-    candidate_roles: [thinking, worker]
+    candidate_roles:
+    - thinking
+    - worker
     memory:
       residency: cold
       pinned: false
@@ -714,7 +775,10 @@ roles:
       quant: Q8_0
       size_gb: 30.3
       architecture: moe
-    candidate_roles: [thinking, coder, ingest]
+    candidate_roles:
+    - thinking
+    - coder
+    - ingest
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -731,7 +795,9 @@ roles:
       quant: Q8_0
       size_gb: 4.0
       architecture: dense
-    candidate_roles: [thinking, worker]
+    candidate_roles:
+    - thinking
+    - worker
     memory:
       residency: cold
       pinned: false
@@ -744,7 +810,10 @@ roles:
       quant: Q8_0
       size_gb: 8.1
       architecture: dense
-    candidate_roles: [thinking, general, worker]
+    candidate_roles:
+    - thinking
+    - general
+    - worker
     memory:
       residency: cold
       pinned: false
@@ -757,7 +826,9 @@ roles:
       quant: Q4_K_M
       size_gb: 6.8
       architecture: dense
-    candidate_roles: [general, worker]
+    candidate_roles:
+    - general
+    - worker
     memory:
       residency: cold
       pinned: false
@@ -770,7 +841,9 @@ roles:
       quant: Q4_0
       size_gb: 14.5
       architecture: dense
-    candidate_roles: [general, frontdoor]
+    candidate_roles:
+    - general
+    - frontdoor
     memory:
       residency: cold
       pinned: false
@@ -783,7 +856,10 @@ roles:
       quant: Q4_K_S
       size_gb: 46.2
       architecture: dense
-    candidate_roles: [general, architect, ingest]
+    candidate_roles:
+    - general
+    - architect
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -796,10 +872,12 @@ roles:
       quant: Q4_K_S
       size_gb: 4.4
       architecture: dense
-    candidate_roles: [general, worker]
+    candidate_roles:
+    - general
+    - worker
     constraints:
       forbid:
-        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3.1-8B
+      - speculative_decoding
     memory:
       residency: cold
       pinned: false
@@ -812,10 +890,12 @@ roles:
       quant: fp16
       size_gb: 15.0
       architecture: dense
-    candidate_roles: [general, worker]
+    candidate_roles:
+    - general
+    - worker
     constraints:
       forbid:
-        - speculative_decoding  # PARD-Llama-3.2-1B has different tokens than Llama-3-8B
+      - speculative_decoding
     memory:
       residency: cold
       pinned: false
@@ -828,7 +908,9 @@ roles:
       quant: Q4_K_S
       size_gb: 4.2
       architecture: dense
-    candidate_roles: [general, worker]
+    candidate_roles:
+    - general
+    - worker
     memory:
       residency: cold
       pinned: false
@@ -841,7 +923,11 @@ roles:
       quant: Q4_K_M
       size_gb: 18.4
       architecture: dense
-    candidate_roles: [general, frontdoor, coder, ingest]
+    candidate_roles:
+    - general
+    - frontdoor
+    - coder
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -854,20 +940,31 @@ roles:
       quant: Q8_0
       size_gb: 8.1
       architecture: dense
-    candidate_roles: [formalizer, math]
+    candidate_roles:
+    - formalizer
+    - math
     constraints:
       forbid:
-        - speculative_decoding  # MathSmith finetune has different tokens than PARD-Qwen3
+      - speculative_decoding
     memory:
-      residency: warm  # Load on demand when formalization needed
+      residency: warm
       pinned: false
     output_format: FormalizationIR
-    notes: |
-      MathSmith is designed to synthesize challenging math problems from concept-explanation pairs.
-      New use case: Runtime formalization preprocessing - converts vague task descriptions into
-      formal specifications with constraints, edge cases, and testable acceptance criteria.
-      This enables downstream specialists (coder, math, architect) to work on well-defined problems.
+    notes: 'MathSmith is designed to synthesize challenging math problems from concept-explanation
+      pairs.
+
+      New use case: Runtime formalization preprocessing - converts vague task descriptions
+      into
+
+      formal specifications with constraints, edge cases, and testable acceptance
+      criteria.
+
+      This enables downstream specialists (coder, math, architect) to work on well-defined
+      problems.
+
       Reference: https://arxiv.org/html/2508.05592v1
+
+      '
   vision_qwen3_vl_235b_a22b_thinking:
     tier: C
     description: Vision model - Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
@@ -877,13 +974,16 @@ roles:
       quant: Q4_K_S
       size_gb: 46.2
       architecture: qwen3vlmoe
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     acceleration:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3vlmoe.expert_used_count
     constraints:
-      forbid: [speculative_decoding, prompt_lookup]
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
       reason: VL model - no compatible text-only drafts
     memory:
       residency: cold
@@ -897,9 +997,12 @@ roles:
       quant: Q4_K_M
       size_gb: 1.0
       architecture: dense
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     constraints:
-      forbid: [speculative_decoding, prompt_lookup]
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
       reason: VL model - no compatible text-only drafts
     memory:
       residency: cold
@@ -913,9 +1016,12 @@ roles:
       quant: Q4_K_M
       size_gb: 2.3
       architecture: dense
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     constraints:
-      forbid: [speculative_decoding, prompt_lookup]
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
       reason: VL model - no compatible text-only drafts
     memory:
       residency: cold
@@ -929,16 +1035,19 @@ roles:
       quant: Q4_K_M
       size_gb: 4.7
       architecture: dense
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     constraints:
-      forbid: [speculative_decoding, prompt_lookup]
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
       reason: VL model - no compatible text-only drafts
     memory:
       residency: cold
       pinned: false
   draft_co_rewarding_ii_qwen3_1_7b_base_math_q8_0:
     tier: D
-    deprecated: true  # Spec decode fails - fine-tuned model incompatible with base Qwen3
+    deprecated: true
     description: Draft model - Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0
     model:
       name: Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0
@@ -960,12 +1069,13 @@ roles:
       quant: Q8_0
       size_gb: 1.8
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
     compatible_targets:
-    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
+    - DeepSeek-R1-Distill-Qwen
   draft_pard_deepseek_r1_distill_qwen_1_5b_q5_k_s:
     tier: D
     description: Draft model - PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q5_K_S
@@ -975,12 +1085,13 @@ roles:
       quant: Q4_K_M
       size_gb: 1.2
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
     compatible_targets:
-    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
+    - DeepSeek-R1-Distill-Qwen
   draft_pard_deepseek_r1_distill_qwen_1_5b_q8_0:
     tier: D
     description: Draft model - PARD-DeepSeek-R1-Distill-Qwen-1.5B.Q8_0
@@ -990,12 +1101,13 @@ roles:
       quant: Q8_0
       size_gb: 1.8
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
     compatible_targets:
-    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
+    - DeepSeek-R1-Distill-Qwen
   draft_pard_llama_3_2_1b_q4_0:
     tier: D
     description: Draft model - pard-llama-3.2-1b-q4_0
@@ -1005,7 +1117,8 @@ roles:
       quant: Q4_0
       size_gb: 0.9
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1021,7 +1134,8 @@ roles:
       quant: Q8_0
       size_gb: 1.5
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1037,7 +1151,8 @@ roles:
       quant: Q4_0
       size_gb: 0.4
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1052,7 +1167,8 @@ roles:
       quant: Q2_K
       size_gb: 0.3
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1067,7 +1183,8 @@ roles:
       quant: Q4_K_M
       size_gb: 0.4
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1083,7 +1200,8 @@ roles:
       quant: Q2_K
       size_gb: 0.6
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1099,7 +1217,8 @@ roles:
       quant: Q4_K_M
       size_gb: 0.9
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1115,7 +1234,8 @@ roles:
       quant: Q4_K_M
       size_gb: 0.9
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1131,7 +1251,8 @@ roles:
       quant: Q2_K
       size_gb: 0.3
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1146,7 +1267,8 @@ roles:
       quant: Q4_K_M
       size_gb: 1.2
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1154,7 +1276,7 @@ roles:
     - qwen3
   draft_qwen3_embedding_0_6b:
     tier: D
-    deprecated: true  # Embedding model - not for text generation
+    deprecated: true
     description: Draft model - Qwen3-Embedding-0.6B-Q8_0
     model:
       name: Qwen3-Embedding-0.6B-Q8_0
@@ -1169,7 +1291,7 @@ roles:
     - qwen3
   draft_qwen3_vl_1b_merged_q8_0:
     tier: D
-    deprecated: true  # Merged VL model produces corrupted output
+    deprecated: true
     description: Draft model - qwen3-vl-1b-merged-q8_0
     model:
       name: qwen3-vl-1b-merged-q8_0
@@ -1191,12 +1313,13 @@ roles:
       quant: Q8_0
       size_gb: 1.8
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
     compatible_targets:
-    - DeepSeek-R1-Distill-Qwen  # Only Qwen-based targets (not Llama)
+    - DeepSeek-R1-Distill-Qwen
   thinking_deepseek_r1_distill_qwen_14b_q6kl:
     tier: B
     description: Thinking model - DeepSeek-R1-Distill-Qwen-14B-Q6_K_L
@@ -1206,7 +1329,9 @@ roles:
       quant: Q6_K_L
       size_gb: 11.6
       architecture: dense
-    candidate_roles: [thinking, general]
+    candidate_roles:
+    - thinking
+    - general
     memory:
       residency: cold
       pinned: false
@@ -1219,7 +1344,8 @@ roles:
       quant: Q6_K
       size_gb: 1.2
       architecture: dense
-    candidate_roles: [draft]
+    candidate_roles:
+    - draft
     memory:
       residency: cold
       pinned: false
@@ -1235,7 +1361,10 @@ roles:
       quant: Q4_K_S
       size_gb: 16.3
       architecture: moe
-    candidate_roles: [thinking, coder, ingest]
+    candidate_roles:
+    - thinking
+    - coder
+    - ingest
     acceleration:
       type: moe_expert_reduction
       experts: 4
@@ -1252,9 +1381,12 @@ roles:
       quant: Q8_0
       size_gb: 4.0
       architecture: dense
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     constraints:
-      forbid: [speculative_decoding, prompt_lookup]
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
       reason: VL model - no compatible text-only drafts
     memory:
       residency: cold
@@ -1268,9 +1400,12 @@ roles:
       quant: Q8_0
       size_gb: 8.1
       architecture: dense
-    candidate_roles: [vision]
+    candidate_roles:
+    - vision
     constraints:
-      forbid: [speculative_decoding, prompt_lookup]
+      forbid:
+      - speculative_decoding
+      - prompt_lookup
       reason: VL model - no compatible text-only drafts
     memory:
       residency: cold
@@ -1284,7 +1419,11 @@ roles:
       quant: Q4_K_M
       size_gb: 18.4
       architecture: dense
-    candidate_roles: [general, frontdoor, coder, ingest]
+    candidate_roles:
+    - general
+    - frontdoor
+    - coder
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -1297,7 +1436,11 @@ roles:
       quant: Q4_K_M
       size_gb: 18.5
       architecture: dense
-    candidate_roles: [coder, frontdoor, ingest, general]
+    candidate_roles:
+    - coder
+    - frontdoor
+    - ingest
+    - general
     acceleration:
       type: speculative_decoding
       draft_role: draft_qwen25_coder
@@ -1306,7 +1449,7 @@ roles:
       baseline_tps: 3.4
       optimized_tps: 174.6
       speedup: 50.9x
-      quality_score: "132/183 (72%)"
+      quality_score: 132/183 (72%)
     memory:
       residency: cold
       pinned: false
@@ -1321,7 +1464,11 @@ roles:
       quant: Q4_K_M
       size_gb: 17.3
       architecture: moe
-    candidate_roles: [frontdoor, coder, general, ingest]
+    candidate_roles:
+    - frontdoor
+    - coder
+    - general
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -1338,7 +1485,10 @@ roles:
       quant: Q4_K_M
       size_gb: 39.6
       architecture: dense
-    candidate_roles: [architect, general, ingest]
+    candidate_roles:
+    - architect
+    - general
+    - ingest
     acceleration:
       type: speculative_decoding
       draft_model: PARD-Llama-3.2-1B-Instruct-Q4_0
@@ -1348,7 +1498,7 @@ roles:
       baseline_tps: 2.1
       optimized_tps: 85.8
       speedup: 40.9x
-      quality_score: "149/183 (81%)"
+      quality_score: 149/183 (81%)
     memory:
       residency: cold
       pinned: false
@@ -1362,7 +1512,10 @@ roles:
       quant: Q4_K_M
       size_gb: 44.2
       architecture: dense
-    candidate_roles: [architect, general, ingest]
+    candidate_roles:
+    - architect
+    - general
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -1375,7 +1528,11 @@ roles:
       quant: Q4_K_M
       size_gb: 39.6
       architecture: dense
-    candidate_roles: [architect, frontdoor, general, ingest]
+    candidate_roles:
+    - architect
+    - frontdoor
+    - general
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -1388,7 +1545,10 @@ roles:
       quant: Q8_0
       size_gb: 30.3
       architecture: moe
-    candidate_roles: [thinking, coder, ingest]
+    candidate_roles:
+    - thinking
+    - coder
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -1405,7 +1565,10 @@ roles:
       quant: Q4_K_S
       size_gb: 46.2
       architecture: dense
-    candidate_roles: [general, architect, ingest]
+    candidate_roles:
+    - general
+    - architect
+    - ingest
     memory:
       residency: cold
       pinned: false
@@ -1495,34 +1658,29 @@ routing_hints:
 - if: '''video'' in inputs and priority != ''interactive'''
   use:
   - vision_escalation
-
-# Formalization preprocessing triggers
-# Invoke formalizer when task has implicit mathematical structure or is vague
-- if: "task_type in ['code', 'math'] and complexity == 'high'"
+- if: task_type in ['code', 'math'] and complexity == 'high'
   preprocess: formalizer
   use:
   - coder_primary
   - worker_math
-- if: "'optimize' in objective or 'constraint' in objective"
+- if: '''optimize'' in objective or ''constraint'' in objective'
   preprocess: formalizer
   use:
   - worker_math
   - coder_primary
-- if: "'prove' in objective or 'verify' in objective"
+- if: '''prove'' in objective or ''verify'' in objective'
   preprocess: formalizer
   use:
   - worker_math
   - thinking_reasoning
-- if: "'algorithm' in objective and 'design' in objective"
+- if: '''algorithm'' in objective and ''design'' in objective'
   preprocess: formalizer
   use:
   - architect_qwen2_5_72b
   - coder_primary
-- if: "ambiguity_score > 0.7"
+- if: ambiguity_score > 0.7
   preprocess: formalizer
   notes: Frontdoor detects vague requirements needing formalization
-
-# Escalation rules
 - if: escalation.max_level == 'B3'
   use:
   - architect_general
@@ -1530,25 +1688,25 @@ routing_hints:
   use:
   - architect_coding
 command_templates:
-  # NOTE: Do NOT use OMP_NUM_THREADS=1 - it disables parallel tensor repacking
-  # and hurts prompt processing speed (49 vs 119 t/s). See PR #18239.
   speculative_decoding: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative\
-    \ \\\n  -m {model_path} \\\n  -md {draft_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
+    \ \\\n  -m {model_path} \\\n  -md {draft_path} \\\n  --draft-max {k} \\\n  -t\
+    \ {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
   moe_expert_reduction: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion\
-    \ \\\n  -m {model_path} \\\n  --override-kv {override_key}=int:{experts} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp\
-    \ {temperature}\n"
-  prompt_lookup: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup \\\n\
-    \  -m {model_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
-  baseline: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion \\\n\
-    \  -m {model_path} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
-  vision: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli \\\n  -m\
-    \ {model_path} \\\n  --mmproj {mmproj_path} \\\n  -t {threads}\n"
-  # Server mode templates - keeps model resident in RAM
-  server_start: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-server \\\n\
-    \  -m {model_path} \\\n  -t {threads} \\\n  --host 127.0.0.1 \\\n  --port {port} \\\n  -c {context_length}\n"
-  server_start_moe: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-server \\\n\
-    \  -m {model_path} \\\n  -t {threads} \\\n  --host 127.0.0.1 \\\n  --port {port} \\\n  -c {context_length} \\\n\
-    \  --override-kv {override_key}=int:{experts}\n"
+    \ \\\n  -m {model_path} \\\n  --override-kv {override_key}=int:{experts} \\\n\
+    \  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
+  prompt_lookup: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-lookup\
+    \ \\\n  -m {model_path} \\\n  --draft-max {k} \\\n  -t {threads} \\\n  -n 100\
+    \ \\\n  --temp {temperature}\n"
+  baseline: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-completion\
+    \ \\\n  -m {model_path} \\\n  -t {threads} \\\n  -n 100 \\\n  --temp {temperature}\n"
+  vision: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli\
+    \ \\\n  -m {model_path} \\\n  --mmproj {mmproj_path} \\\n  -t {threads}\n"
+  server_start: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-server\
+    \ \\\n  -m {model_path} \\\n  -t {threads} \\\n  --host 127.0.0.1 \\\n  --port\
+    \ {port} \\\n  -c {context_length}\n"
+  server_start_moe: "numactl --interleave=all \\\n  /mnt/raid0/llm/llama.cpp/build/bin/llama-server\
+    \ \\\n  -m {model_path} \\\n  -t {threads} \\\n  --host 127.0.0.1 \\\n  --port\
+    \ {port} \\\n  -c {context_length} \\\n  --override-kv {override_key}=int:{experts}\n"
 runtime_quirks:
   qwen25_coder_32b_instruct:
     description: Qwen2.5-Coder-32B-Instruct
@@ -1560,7 +1718,8 @@ runtime_quirks:
       workaround: Use MoE models instead for high throughput
       discovered: 2025-12-16
     - issue: Baseline generation very slow (7 t/s) on CPU
-      workaround: Not recommended for high-throughput tasks - use Qwen3-Coder-30B-A3B instead
+      workaround: Not recommended for high-throughput tasks - use Qwen3-Coder-30B-A3B
+        instead
       discovered: 2025-12-16
   qwen3_coder_30b_a3b:
     description: Qwen3-Coder-30B-A3B-Instruct
@@ -1583,31 +1742,40 @@ runtime_quirks:
     - issue: MOE2 (2 experts) produces garbage output despite being faster
       workaround: Use MOE3 (3 experts) - 10.30 t/s with good quality (+58% speedup)
       discovered: 2025-12-21
-      explanation: |
-        With parallel repack enabled (no OMP_NUM_THREADS=1):
-        - Baseline: 6.53 t/s (good output)
-        - MOE3: 10.30 t/s (+58% speedup, good output) ✓ OPTIMAL
-        - MOE4: 9.25 t/s (+42% speedup, good output) ✓ Safe fallback
-        - MOE5: 8.50 t/s (+30% speedup, good output)
-        - MOE2: 11.51 t/s (+76% speedup, GARBAGE output) ✗ UNUSABLE
-        The 480B model needs at least 3 experts for coherent output.
+      explanation: "With parallel repack enabled (no OMP_NUM_THREADS=1):\n- Baseline:\
+        \ 6.53 t/s (good output)\n- MOE3: 10.30 t/s (+58% speedup, good output) \u2713\
+        \ OPTIMAL\n- MOE4: 9.25 t/s (+42% speedup, good output) \u2713 Safe fallback\n\
+        - MOE5: 8.50 t/s (+30% speedup, good output)\n- MOE2: 11.51 t/s (+76% speedup,\
+        \ GARBAGE output) \u2717 UNUSABLE\nThe 480B model needs at least 3 experts\
+        \ for coherent output.\n"
   qwen2_5_72b:
     description: Qwen2.5-72B-Instruct and Qwen2.5-Math-72B
     quirks:
     - issue: Speculative decoding shows ~2% acceptance with ALL tested draft models
-      workaround: Do not use speculative decoding - use baseline or prompt lookup only
+      workaround: Do not use speculative decoding - use baseline or prompt lookup
+        only
       discovered: 2025-12-31
-      explanation: |
-        Tested draft models (all showed ~2% acceptance):
+      explanation: 'Tested draft models (all showed ~2% acceptance):
+
         - Qwen2.5-Coder-0.5B (2.4%)
+
         - Qwen2.5-Coder-1.5B Q4_K_M (2.4%)
+
         - Qwen2.5-Coder-1.5B Q2_K (2.2%)
+
         - Qwen2.5-0.5B base (2.3%)
+
         - Qwen2.5-Math-1.5B (2.3%)
+
         - Qwen2.5-Math-1.5B Q6K (2.3%)
+
         All Qwen2.5 variants share the same tokenizer, so this is not a vocab mismatch.
+
         Root cause unclear - possibly generation pattern differences in 72B models.
+
         For comparison: Qwen2.5-Coder-32B achieves 11x speedup with the same drafts.
+
+        '
   qwen3_next_80b:
     description: Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)
     quirks:
@@ -1680,7 +1848,8 @@ runtime_quirks:
   general_llama_cli:
     description: llama-cli binary - AVOID FOR BENCHMARKING
     quirks:
-    - issue: Auto-enables interactive/conversation mode for Instruct models with chat templates
+    - issue: Auto-enables interactive/conversation mode for Instruct models with chat
+        templates
       workaround: Use llama-completion instead, or add --no-conversation flag
       discovered: 2025-12-16
     - issue: Hangs waiting for user input after prompt completion
@@ -1698,3 +1867,20 @@ runtime_quirks:
     - issue: OMP_NUM_THREADS=1 before timeout doesn't work
       workaround: timeout runs in subshell, use 'env' to pass env vars
       discovered: 2025-12-16
+optimized_params:
+  frontdoor:
+    temperature: 0.0736042256959058
+    speculative_k: 31
+    entropy_threshold: 4.09045566671701
+  formalizer:
+    temperature: 0.19014286128198324
+  specialists:
+    temperature: 0.3394633936788146
+    speculative_k: 10
+    early_abort_tokens: 65
+  workers:
+    temperature: 0.49279757672456204
+    repetition_threshold: 0.2697316968394073
+  _meta:
+    optimized: '2026-01-07T23:14:00.047514'
+    schema_version: 1

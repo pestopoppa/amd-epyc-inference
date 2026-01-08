@@ -112,6 +112,30 @@ class ModelRegistry:
 
         return str(Path(self.model_base_path) / rel_path)
 
+    def get_mmproj_path(self, role: str) -> Optional[str]:
+        """Get the absolute mmproj path for a VL model role.
+
+        Args:
+            role: The role name.
+
+        Returns:
+            Absolute path to the mmproj file, or None if not a VL model.
+        """
+        config = self.get_role_config(role)
+        if not config:
+            return None
+
+        model = config.get("model", {})
+        rel_path = model.get("mmproj_path")
+        if not rel_path:
+            return None
+
+        # Handle absolute vs relative paths
+        if rel_path.startswith("/"):
+            return rel_path
+
+        return str(Path(self.model_base_path) / rel_path)
+
     def get_architecture(self, role: str) -> str:
         """Get the model architecture for a role.
 

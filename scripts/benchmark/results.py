@@ -18,10 +18,13 @@ Directory structure:
 
 import json
 import os
+import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+import yaml
 
 
 # Default paths
@@ -387,6 +390,134 @@ def result_exists(
     """Convenience function to check if result exists."""
     manager = ResultsManager()
     return manager.result_exists(run_id, model_role, config_name, suite, question_id)
+
+
+# Model registry path for model-path deduplication
+MODEL_REGISTRY_PATH = "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+
+
+def get_roles_by_model_path(model_path: str) -> list[str]:
+    """Get all roles that use the same model path.
+
+    Reads model_registry.yaml and returns all role names that point to the
+    same underlying model file. This enables skip logic based on model path
+    rather than role name.
+
+    Args:
+        model_path: Absolute path to the model file.
+
+    Returns:
+        List of role names using this model path.
+    """
+    if not os.path.exists(MODEL_REGISTRY_PATH):
+        return []
+
+    with open(MODEL_REGISTRY_PATH) as f:
+        registry = yaml.safe_load(f)
+
+    roles_with_path = []
+    model_basename = os.path.basename(model_path)
+
+    for role_name, role_config in registry.get("roles", {}).items():
+        # Model path can be in role_config["model"]["path"] or role_config["model_path"]
+        model_info = role_config.get("model", {})
+        if isinstance(model_info, dict):
+            role_model_path = model_info.get("path", "")
+        else:
+            role_model_path = role_config.get("model_path", "")
+
+        # Match on full path or basename (for flexibility)
+        if role_model_path == model_path or os.path.basename(role_model_path) == model_basename:
+            roles_with_path.append(role_name)
+
+    return roles_with_path
+
+
+def result_exists_for_model(
+    run_id: str,
+    model_path: str,
+    config_name: str,
+    suite: str,
+    question_id: str,
+) -> Optional[str]:
+    """Check if ANY role using the same model path has results for this question.
+
+    This enables model-path-aware skip logic: if frontdoor has already tested
+    a question, coder_primary (which uses the same model) can skip that test
+    and copy the result.
+
+    Args:
+        run_id: The run identifier.
+        model_path: Path to the model file being tested.
+        config_name: The configuration name (e.g., 'baseline', 'moe4').
+        suite: The test suite name.
+        question_id: The question identifier.
+
+    Returns:
+        The role name that has the result, or None if no result exists.
+    """
+    roles_with_same_model = get_roles_by_model_path(model_path)
+    manager = ResultsManager()
+
+    for other_role in roles_with_same_model:
+        if manager.result_exists(run_id, other_role, config_name, suite, question_id):
+            return other_role
+
+    return None
+
+
+def copy_result_from_role(
+    run_id: str,
+    from_role: str,
+    to_role: str,
+    config_name: str,
+    suite: str,
+    question_id: str,
+    model_path: str,
+) -> bool:
+    """Copy a specific question result from one role to another.
+
+    Used when the same model is tested under different role names. Instead of
+    re-running the test, copy the existing result.
+
+    Args:
+        run_id: The run identifier.
+        from_role: Source role that has the result.
+        to_role: Destination role to copy to.
+        config_name: The configuration name.
+        suite: The test suite name.
+        question_id: The question identifier.
+        model_path: Path to the model (for the new result's metadata).
+
+    Returns:
+        True if copy succeeded, False otherwise.
+    """
+    manager = ResultsManager()
+
+    # Load source result
+    source_result = manager.load_result(run_id, from_role, config_name)
+    if not source_result:
+        return False
+
+    # Get the question result from source
+    if suite not in source_result.results:
+        return False
+    if question_id not in source_result.results[suite]:
+        return False
+
+    source_question = source_result.results[suite][question_id]
+
+    # Add to destination role
+    manager.add_question_result(
+        run_id=run_id,
+        model_role=to_role,
+        config_name=config_name,
+        model_path=model_path,
+        suite=suite,
+        question_result=source_question,
+    )
+
+    return True
 
 
 if __name__ == "__main__":

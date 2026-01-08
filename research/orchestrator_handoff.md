@@ -2,9 +2,9 @@
 
 **Goal**: Hierarchical LLM orchestration system using RLM (Recursive Language Models) pattern.
 
-**Status**: CORE COMPONENTS COMPLETE (Mock Mode)
+**Status**: CORE COMPONENTS COMPLETE (Mock Mode) + RadixAttention Ready
 
-**Last Updated**: 2026-01-04
+**Last Updated**: 2026-01-07
 
 ---
 
@@ -54,6 +54,20 @@ curl -X POST http://localhost:8000/chat \
 | Context Manager | `src/context_manager.py` | Inter-step context |
 | Model Server | `src/model_server.py` | Inference abstraction |
 | CLI | `src/cli.py` | Command-line interface |
+
+### ✅ RadixAttention Infrastructure (2026-01-07)
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| LlamaServerBackend | `src/backends/llama_server.py` | HTTP client for llama-server with prefix caching |
+| PrefixRouter | `src/prefix_cache.py` | Routes prompts to slots based on prefix hash |
+| CachingBackend | `src/prefix_cache.py` | Wraps backend with automatic slot routing |
+| canonicalize_prompt() | `src/prefix_cache.py` | Normalizes prompts for better cache hits |
+| RadixCache | `src/radix_cache.py` | O(n) prefix lookup with LRU eviction |
+
+**Tests**: 46/46 passing in `tests/unit/test_prefix_cache.py`
+
+**Next Step**: Integration into `llm_primitives.py` - see `research/orchestration_integration_handoff.md`
 
 ### ❌ Not Implemented (Requires Models)
 

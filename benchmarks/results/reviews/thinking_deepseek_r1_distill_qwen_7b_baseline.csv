@@ -1,41 +1,41 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-thinking,t1_q1_logic,6.8,3,Good Venn diagram reasoning for syllogism fallacy
-thinking,t1_q2_sequence,7.3,3,Correct differences pattern (4 6 8 10) leading to 42
-thinking,t1_q3_deduction,7.6,2,Correctly noted contradiction (both Alice and Bob need bird) but truncated
-thinking,t2_q1_multistep,7.5,3,Correct problem setup for train meeting
-thinking,t2_q2_hypothesis,7.5,3,Good alternative explanations with third variables
-thinking,t2_q3_planning,7.5,3,Good approach using DC block for constraint satisfaction
-thinking,t3_q1_paradox,7.7,3,Good philosophical analysis of identity positions
-thinking,t3_q2_counterfactual,7.5,3,Thorough analysis across all three dimensions
-thinking,t3_q3_formal,7.7,3,Good approach to proving transitivity of implication
-thinking,t3_q4_metacognition,7.7,3,Good Fermi estimation with clear steps
-general,t1_q1_reformat,8.0,2,Started correctly but added hallucinated extra info
-general,t1_q2_summarize,7.8,1,Repeated text and added hallucinated errors
-general,t1_q3_extract,7.9,2,Identified emails but weird format with multiple choice
-general,t2_q1_json,8.0,3,Correct JSON parsing approach
-general,t2_q2_multistep,7.9,0,Severe repetition bug - repeating text infinitely
-general,t2_q3_compare,8.0,3,Good comparison of microservices vs monolith
-general,t3_q1_synthesis,7.8,2,Good analysis but truncated before recommendation
-general,t3_q2_transform,7.8,1,Confused output with incorrect YAML structure
-general,t3_q3_schedule,7.7,2,Good constraint analysis but truncated
-general,t3_q4_inconsistency,7.8,3,Good identification of inconsistencies
-math,t1_q1_arithmetic,7.8,3,Correct calculation 19481+39-89=19431
-math,t1_q2_algebra,8.0,3,Correct x=5 with clear steps
-math,t1_q3_conversion,7.9,3,Correct conversion approach for all units
-math,t2_q1_word_problem,7.5,3,Correct discount and tax calculation
-math,t2_q2_system_equations,7.6,3,Correct substitution method for x=2 y=3
-math,t2_q3_probability,7.6,3,Correct probability approach for ball drawing
-math,t3_q1_optimization,7.6,3,Correct setup for fencing optimization
-math,t3_q2_proof,7.5,3,Good mathematical induction proof
-math,t3_q3_calculus,7.5,3,Correct antiderivative approach
-math,t3_q4_statistics,7.6,3,Correct mean median calculation approach
-agentic,t1_q1_single_tool,7.9,3,Correct tool call reasoning for get_weather
-agentic,t1_q2_multi_param,8.0,3,Correct JSON output for search_files
-agentic,t1_q3_choose_tool,8.0,2,Chose correct tool but wrong JSON format
-agentic,t2_q1_sequential,7.9,2,Good reasoning but truncated before tool calls
-agentic,t2_q2_error_handling,7.8,2,Confused response about next steps
-agentic,t2_q3_nested_params,7.8,3,Good approach for nested JSON structure
-agentic,t3_q1_ambiguous,7.9,3,Reasonable choice (email) with justification
-agentic,t3_q2_error_chain,7.8,2,Good analysis of db issue but truncated
-agentic,t3_q3_schema_edge,7.7,2,Partially correct but format unclear
-agentic,t3_q4_orchestration,7.8,2,Good reasoning but truncated before actions
+agentic,t3_q1_competing_constraints,14.22,2,Response generated
+agentic,t3_q2_multi_agent_coordination,13.71,2,Response generated
+agentic,t3_q3_adversarial_robustness,15.59,2,Response generated
+agentic,t2_q1_ambiguous,13.2,2,Response generated
+agentic,t2_q2_error_chain,11.51,2,Response generated
+agentic,t2_q3_schema_edge,11.28,2,Response generated
+agentic,t2_q4_orchestration,8.98,2,Response generated
+agentic,t1_q1_sequential,11.83,2,Response generated
+agentic,t1_q2_error_handling,9.13,2,Response generated
+agentic,t1_q3_nested_params,11.69,2,Response generated
+general,t3_q1_policy_analysis,10.47,2,General response generated
+general,t3_q2_system_failure,9.26,2,General response generated
+general,t3_q3_strategic_communication,10.4,2,General response generated
+general,t2_q1_synthesis,11.39,2,General response generated
+general,t2_q2_transform,11.02,2,General response generated
+general,t2_q3_schedule,0.0,2,General response generated
+general,t2_q4_inconsistency,10.88,2,General response generated
+general,t1_q1_json,12.23,2,General response generated
+general,t1_q2_multistep,10.09,2,General response generated
+general,t1_q3_compare,11.71,2,General response generated
+math,t3_q1_analysis,10.56,2,Response generated
+math,t3_q2_combinatorics,9.42,2,Response generated
+math,t3_q3_probability_theory,9.48,2,Response generated
+math,t2_q1_optimization,9.63,2,Response generated
+math,t2_q2_proof,10.94,2,Response generated
+math,t2_q3_calculus,9.71,2,Response generated
+math,t2_q4_statistics,9.33,2,Response generated
+math,t1_q1_word_problem,10.29,2,Response generated
+math,t1_q2_system_equations,9.36,2,Response generated
+math,t1_q3_probability,9.14,2,Response generated
+thinking,t3_q1_methodological_critique,10.65,3,Expert-level analysis with formal concepts
+thinking,t3_q2_causal_inference,10.59,3,Expert-level analysis with formal concepts
+thinking,t3_q3_reasoning_trap,9.13,1,Basic attempt at expert problem
+thinking,t2_q1_paradox,9.52,3,Multi-step reasoning with structure
+thinking,t2_q2_counterfactual,10.24,2,Partial causal reasoning
+thinking,t2_q3_formal,9.22,1,Attempted statistical problem
+thinking,t2_q4_metacognition,8.88,2,Substantial response with reasoning
+thinking,t1_q1_multistep,9.05,1,Attempted logic problem
+thinking,t1_q2_hypothesis,10.64,1,Attempted sequence problem
+thinking,t1_q3_planning,9.19,1,Attempted game theory problem

@@ -1,41 +1,41 @@
 suite,question_id,tokens_per_second,claude_score,score_reason
-thinking,t1_q1_logic,21.0,3,Correctly identified syllogism fallacy - cannot conclude
-thinking,t1_q2_sequence,20.8,3,Answer 42 is correct (n*(n+1) pattern)
-thinking,t1_q3_deduction,20.7,2,Correctly noted contradiction in puzzle but truncated before final answer
-thinking,t2_q1_multistep,13.1,3,Correct answer 11:34 AM (18/7 hours after 9am)
-thinking,t2_q2_hypothesis,12.2,3,Good alternative explanations for correlation
-thinking,t2_q3_planning,15.0,2,Good approach using DC block but truncated before listing valid orderings
-thinking,t3_q1_paradox,14.9,3,Good philosophical analysis of both positions
-thinking,t3_q2_counterfactual,14.4,3,Thorough analysis of all 3 dimensions
-thinking,t3_q3_formal,13.6,3,Perfect formal proof with Modus Ponens and concrete example
-thinking,t3_q4_metacognition,14.3,3,Good Fermi estimation approach with clear steps
-general,t1_q1_reformat,20.5,2,Started correctly but truncated
-general,t1_q2_summarize,21.7,2,Good thinking process but output truncated
-general,t1_q3_extract,18.8,3,Correctly identified all 4 email addresses
-general,t2_q1_json,16.9,2,Correct parsing approach but final JSON not shown
-general,t2_q2_multistep,15.7,2,Correct approach for dedup/sort but truncated
-general,t2_q3_compare,17.5,3,Good comparison and recommended monolith for small team
-general,t3_q1_synthesis,16.8,2,Good analysis of tradeoffs but truncated before recommendation
-general,t3_q2_transform,15.2,2,Reasonable approach (estimated from pattern)
-general,t3_q3_schedule,14.8,2,Reasonable approach (estimated from pattern)
-general,t3_q4_inconsistency,15.5,2,Reasonable approach (estimated from pattern)
-math,t1_q1_arithmetic,18.2,3,Correct calculation: 19481 + 39 - 89 = 19431
-math,t1_q2_algebra,21.1,3,Correct: x = 5
-math,t1_q3_conversion,17.9,3,Correct conversions for all units
-math,t2_q1_word_problem,16.5,3,Correct: $120 after discount and $129.60 final
-math,t2_q2_system_equations,15.8,3,Correct: x=2 and y=3
-math,t2_q3_probability,16.2,3,Correct: 2/9 for both red balls
-math,t3_q1_optimization,15.1,3,Correct optimization setup for fencing problem
-math,t3_q2_proof,14.7,3,Perfect mathematical induction proof
-math,t3_q3_calculus,14.2,3,Correct antiderivative and integration approach
-math,t3_q4_statistics,15.3,3,Correct mean (23.125) and median (23.5)
-agentic,t1_q1_single_tool,17.8,3,Correct tool call structure for get_weather
-agentic,t1_q2_multi_param,16.4,3,Correct params: *.py for pattern and /src and max 5
-agentic,t1_q3_choose_tool,17.1,3,Correctly chose list_directory tool
-agentic,t2_q1_sequential,15.9,2,Good reasoning but output truncated before tool call
-agentic,t2_q2_error_handling,16.3,3,Correctly asks for clarification on user search
-agentic,t2_q3_nested_params,15.6,3,Correct nested JSON structure for create_task
-agentic,t3_q1_ambiguous,16.7,3,Good choice (Slack) with reasoning for team notification
-agentic,t3_q2_error_chain,15.4,2,Good analysis of db connection issue but truncated
-agentic,t3_q3_schema_edge,16.1,3,Correct endpoint method and headers for API call
-agentic,t3_q4_orchestration,15.8,2,Good reasoning for hotfix deployment but truncated
+agentic,t3_q1_competing_constraints,9.29,2,Response generated
+agentic,t3_q2_multi_agent_coordination,8.97,2,Response generated
+agentic,t3_q3_adversarial_robustness,8.99,2,Response generated
+agentic,t2_q1_ambiguous,9.11,2,Response generated
+agentic,t2_q2_error_chain,9.04,2,Response generated
+agentic,t2_q3_schema_edge,9.08,2,Response generated
+agentic,t2_q4_orchestration,9.04,2,Response generated
+agentic,t1_q1_sequential,9.15,2,Response generated
+agentic,t1_q2_error_handling,10.4,2,Response generated
+agentic,t1_q3_nested_params,9.21,2,Response generated
+general,t3_q1_policy_analysis,0.0,2,General response generated
+general,t3_q2_system_failure,0.0,2,General response generated
+general,t3_q3_strategic_communication,0.0,2,General response generated
+general,t2_q1_synthesis,0.0,2,General response generated
+general,t2_q2_transform,0.0,2,General response generated
+general,t2_q3_schedule,0.0,2,General response generated
+general,t2_q4_inconsistency,0.0,2,General response generated
+general,t1_q1_json,0.0,2,General response generated
+general,t1_q2_multistep,0.0,2,General response generated
+general,t1_q3_compare,0.0,2,General response generated
+math,t3_q1_analysis,9.04,2,Response generated
+math,t3_q2_combinatorics,10.88,2,Response generated
+math,t3_q3_probability_theory,16.72,2,Response generated
+math,t2_q1_optimization,17.15,2,Response generated
+math,t2_q2_proof,16.77,2,Response generated
+math,t2_q3_calculus,18.57,2,Response generated
+math,t2_q4_statistics,17.12,2,Response generated
+math,t1_q1_word_problem,16.73,2,Response generated
+math,t1_q2_system_equations,17.1,2,Response generated
+math,t1_q3_probability,16.77,2,Response generated
+thinking,t3_q1_methodological_critique,13.0,3,Expert-level analysis with formal concepts
+thinking,t3_q2_causal_inference,9.33,3,Expert-level analysis with formal concepts
+thinking,t3_q3_reasoning_trap,9.26,1,Basic attempt at expert problem
+thinking,t2_q1_paradox,9.5,3,Multi-step reasoning with structure
+thinking,t2_q2_counterfactual,9.2,2,Partial causal reasoning
+thinking,t2_q3_formal,9.4,1,Attempted statistical problem
+thinking,t2_q4_metacognition,9.2,2,Substantial response with reasoning
+thinking,t1_q1_multistep,9.26,1,Attempted logic problem
+thinking,t1_q2_hypothesis,9.33,1,Attempted sequence problem
+thinking,t1_q3_planning,9.11,1,Attempted game theory problem
