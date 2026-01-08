@@ -169,6 +169,54 @@ Workers are **stateless** and cheap; many run concurrently.
 - One per active dense-model stream
 - **Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0 (85 t/s)
 
+### Formalizers (Preprocessing)
+
+Formalizers are specialized models that convert vague natural language into structured IR **before** routing to execution tiers. They're a preprocessing step, not part of the main execution flow.
+
+```
+User: "Download the file, parse it, and upload results to S3"
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FORMALIZER (Preprocessing)                                 │
+│                                                             │
+│  Input: Vague natural language task                         │
+│  Output: FormalizationIR (structured tool sequence)         │
+│                                                             │
+│  Candidate Models:                                          │
+│  • xLAM-2-1B-fc-r (~90 t/s, outperforms GPT-4o on BFCL)    │
+│  • xLAM-1B-fc-r (older version)                            │
+│  • NexusRaven-V2-13B (better at nested functions)          │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────────────────────┐
+│  FormalizationIR Output:                                    │
+│  {                                                          │
+│    "tool_sequence": [                                       │
+│      {"step": 0, "tool": "download_file", "args": {...}},   │
+│      {"step": 1, "tool": "parse_data", "depends_on": [0]},  │
+│      {"step": 2, "tool": "upload_s3", "depends_on": [1]}    │
+│    ]                                                        │
+│  }                                                          │
+└─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+              Frontdoor → Execution Tiers
+```
+
+**When to use formalizers**:
+- `task_type == 'agentic'` with multiple tool calls
+- `ambiguity_score > 0.7` (detected by frontdoor)
+- User request involves multi-step workflows
+
+**Why not use general models?**
+- Formalizers are trained specifically for function/tool extraction
+- 1B params = fast preprocessing (doesn't bottleneck)
+- Higher accuracy on structured output than general instruction models
+
+**Status**: Evaluation pending. See `handoffs/active/formalizer-evaluation.md`.
+
 ## TaskIR Schema
 
 The Front Door emits a TaskIR JSON for every non-trivial request:
