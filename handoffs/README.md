@@ -41,8 +41,11 @@ When a handoff task is complete, follow this checklist:
 
 | Handoff | Purpose | Status |
 |---------|---------|--------|
-| [formalizer-evaluation.md](active/formalizer-evaluation.md) | Formalizer model evaluation | Ready |
-| [kernel-development.md](active/kernel-development.md) | AVX-512 kernel optimization | Ready |
+| [amd-pace-testing.md](active/amd-pace-testing.md) | AMD PACE native PyTorch vs llama.cpp | Ready |
+| [cpu-optimization.md](active/cpu-optimization.md) | T-MAC evaluation, Tree speculation | Research |
+| [early-failure-prediction.md](active/early-failure-prediction.md) | Heuristic failure detection | In Progress |
+| [formalizer-evaluation.md](active/formalizer-evaluation.md) | Formalizer model evaluation | Blocked |
+| [kernel-development.md](active/kernel-development.md) | AVX-512 kernel optimization | Blocked |
 | [mathsmith-reconversion.md](active/mathsmith-reconversion.md) | MathSmith GGUF re-conversion | Complete |
 | [orchestration-integration.md](active/orchestration-integration.md) | RadixAttention integration | Code Complete |
 | [orchestrator.md](active/orchestrator.md) | Main orchestrator implementation | Ready |

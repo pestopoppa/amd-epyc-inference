@@ -9,14 +9,15 @@
 
 | Task | Blocked On | Priority | Handoff | Status |
 |------|------------|----------|---------|--------|
-| Formalizer eval | Benchmark completion | HIGH | `research/formalizer_handoff.md` | Blocked |
-| Tree speculation | Benchmark completion | HIGH | `research/kernel_dev_handoff.md` | Blocked |
-| RadixAttention | — | — | `research/radix_attention_handoff.md` | ✅ COMPLETE |
-| Orchestrator integration | Model servers | HIGH | `research/orchestration_integration_handoff.md` | ✅ CODE COMPLETE |
-| MathSmith re-conversion | — | LOW | `research/mathsmith_reconversion_handoff.md` | ✅ COMPLETE |
-| Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` | Blocked |
-| Frontend Architecture | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
-| CLI Parity Features | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
+| AMD PACE testing | — | MEDIUM | `handoffs/active/amd-pace-testing.md` | Ready |
+| T-MAC / Tree speculation | — | MEDIUM/HIGH | `handoffs/active/cpu-optimization.md` | Research |
+| Early failure prediction | — | MEDIUM | `handoffs/active/early-failure-prediction.md` | In Progress |
+| Formalizer eval | Benchmark completion | HIGH | `handoffs/active/formalizer-evaluation.md` | Blocked |
+| Kernel development | Benchmark completion | HIGH | `handoffs/active/kernel-development.md` | Blocked |
+| RadixAttention | — | — | `handoffs/active/radix-attention.md` | ✅ COMPLETE |
+| Orchestrator integration | Model servers | HIGH | `handoffs/active/orchestration-integration.md` | ✅ CODE COMPLETE |
+| MathSmith re-conversion | — | LOW | `handoffs/active/mathsmith-reconversion.md` | ✅ COMPLETE |
+| Orchestrator real mode | Model servers | LOW | `handoffs/active/orchestrator.md` | Blocked |
 
 ---
 
