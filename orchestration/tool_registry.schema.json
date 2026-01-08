@@ -1,0 +1,185 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/pestopoppa/amd-epyc-inference/orchestration/tool_registry.schema.json",
+  "title": "Tool Registry Schema",
+  "description": "Schema for tool and script registry entries",
+  "definitions": {
+    "parameter_spec": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "integer", "number", "boolean", "array", "object"],
+          "description": "Parameter data type"
+        },
+        "description": {
+          "type": "string",
+          "description": "Parameter description"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether parameter is required"
+        },
+        "default": {
+          "description": "Default value if not provided"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for string validation"
+        },
+        "enum": {
+          "type": "array",
+          "description": "Allowed values"
+        },
+        "minimum": {
+          "type": "number",
+          "description": "Minimum value for numbers"
+        },
+        "maximum": {
+          "type": "number",
+          "description": "Maximum value for numbers"
+        }
+      },
+      "required": ["type"]
+    },
+    "tool_category": {
+      "type": "string",
+      "enum": ["web", "file", "code", "data", "system", "specialized"],
+      "description": "Tool category for permission grouping"
+    },
+    "tool_permissions": {
+      "type": "object",
+      "properties": {
+        "web_access": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether role can use web tools"
+        },
+        "allowed_categories": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/tool_category" },
+          "description": "Categories this role can access"
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicit tool allow list"
+        },
+        "forbidden_tools": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicit tool deny list"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Tool Definition",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Tool identifier"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "category": {
+          "$ref": "#/definitions/tool_category"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/parameter_spec" },
+          "description": "Tool parameters"
+        },
+        "mcp_server": {
+          "type": "string",
+          "description": "MCP server identifier if MCP-backed"
+        },
+        "returns": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string" },
+            "description": { "type": "string" }
+          },
+          "description": "Return value specification"
+        }
+      },
+      "required": ["name", "description", "category", "parameters"]
+    },
+    {
+      "title": "Script Definition",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Script identifier"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "category": {
+          "type": "string",
+          "description": "Script category"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for search/discovery"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/parameter_spec" },
+          "description": "Script parameters"
+        },
+        "default_args": {
+          "type": "object",
+          "description": "Default argument values"
+        },
+        "code": {
+          "type": "string",
+          "description": "Python code to execute"
+        },
+        "code_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{16}$",
+          "description": "SHA256 hash prefix for integrity"
+        },
+        "mcp_server": {
+          "type": "string",
+          "description": "MCP server for delegation"
+        },
+        "mcp_tool": {
+          "type": "string",
+          "description": "Tool name on MCP server"
+        },
+        "command": {
+          "type": "string",
+          "description": "Shell command template"
+        },
+        "token_savings": {
+          "type": "string",
+          "description": "Estimated token savings (e.g., '92%')"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "args": { "type": "object" },
+              "result": { "type": "string" }
+            }
+          },
+          "description": "Usage examples"
+        }
+      },
+      "required": ["id", "description", "parameters"]
+    }
+  ]
+}

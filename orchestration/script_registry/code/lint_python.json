@@ -1,0 +1,33 @@
+{
+  "id": "lint_python",
+  "description": "Run ruff linter on Python files",
+  "category": "code",
+  "tags": ["lint", "ruff", "python", "style", "quality"],
+  "token_savings": "90%",
+  "parameters": {
+    "file_path": {
+      "type": "string",
+      "description": "Path to file or directory to lint",
+      "required": true
+    },
+    "fix": {
+      "type": "boolean",
+      "description": "Automatically fix fixable issues",
+      "default": false
+    },
+    "select": {
+      "type": "string",
+      "description": "Rule codes to check (comma-separated)"
+    }
+  },
+  "command": "python -m ruff check {file_path}",
+  "default_args": {
+    "fix": false
+  },
+  "examples": [
+    {
+      "args": {"file_path": "src/tool_registry.py"},
+      "result": "3 issues found (2 fixable)"
+    }
+  ]
+}

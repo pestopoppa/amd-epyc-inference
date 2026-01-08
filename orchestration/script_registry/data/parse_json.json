@@ -1,0 +1,26 @@
+{
+  "id": "parse_json",
+  "description": "Parse and validate JSON content with optional path extraction",
+  "category": "data",
+  "tags": ["json", "parse", "validate", "extract", "data"],
+  "token_savings": "90%",
+  "parameters": {
+    "content": {
+      "type": "string",
+      "description": "JSON string to parse",
+      "required": true
+    },
+    "extract_path": {
+      "type": "string",
+      "description": "Dot-notation path to extract (e.g., 'data.results.0')"
+    }
+  },
+  "code": "import json\ntry:\n    data = json.loads(args['content'])\n    if args.get('extract_path'):\n        parts = args['extract_path'].split('.')\n        for part in parts:\n            if isinstance(data, dict):\n                data = data.get(part)\n            elif isinstance(data, list) and part.isdigit():\n                data = data[int(part)]\n    result = {'success': True, 'data': data}\nexcept json.JSONDecodeError as e:\n    result = {'success': False, 'error': str(e)}",
+  "code_hash": "a1b2c3d4e5f67890",
+  "examples": [
+    {
+      "args": {"content": "{\"name\": \"test\", \"value\": 42}", "extract_path": "value"},
+      "result": "42"
+    }
+  ]
+}

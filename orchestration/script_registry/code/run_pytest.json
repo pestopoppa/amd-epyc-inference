@@ -1,0 +1,39 @@
+{
+  "id": "run_pytest",
+  "description": "Run pytest tests with optional filtering",
+  "category": "code",
+  "tags": ["pytest", "tests", "testing", "unit", "integration"],
+  "token_savings": "92%",
+  "parameters": {
+    "test_path": {
+      "type": "string",
+      "description": "Path to test file or directory",
+      "default": "tests/"
+    },
+    "pattern": {
+      "type": "string",
+      "description": "Test name pattern (-k flag)"
+    },
+    "verbose": {
+      "type": "boolean",
+      "description": "Enable verbose output",
+      "default": false
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "Maximum execution time in seconds",
+      "default": 300
+    }
+  },
+  "command": "python -m pytest {test_path} -q",
+  "default_args": {
+    "test_path": "tests/",
+    "timeout": 300
+  },
+  "examples": [
+    {
+      "args": {"test_path": "tests/unit/", "pattern": "test_registry"},
+      "result": "5 passed, 0 failed"
+    }
+  ]
+}

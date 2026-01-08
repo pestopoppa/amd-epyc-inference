@@ -150,6 +150,14 @@ class REPLEnvironment:
     - `grep(pattern)`: Regex search in context
     - `FINAL(answer)`: Signal completion with final answer
     - `FINAL_VAR(var_name)`: Signal completion, return variable contents
+
+    When tool_registry is provided:
+    - `TOOL(name, **kwargs)`: Invoke a registered tool
+    - `list_tools()`: List available tools for current role
+
+    When script_registry is provided:
+    - `SCRIPT(id, **kwargs)`: Invoke a prepared script by ID
+    - `find_scripts(query)`: Find scripts matching a description
     """
 
     def __init__(
@@ -158,6 +166,9 @@ class REPLEnvironment:
         artifacts: dict[str, Any] | None = None,
         config: REPLConfig | None = None,
         llm_primitives: Any | None = None,  # LLMPrimitives instance
+        tool_registry: Any | None = None,  # ToolRegistry instance
+        script_registry: Any | None = None,  # ScriptRegistry instance
+        role: str | None = None,  # Role for permission checking
     ):
         """Initialize the REPL environment.
 
@@ -166,11 +177,17 @@ class REPLEnvironment:
             artifacts: Optional dict of pre-existing artifacts from previous turns.
             config: Optional configuration for timeouts, output caps, etc.
             llm_primitives: Optional LLMPrimitives instance for llm_call/llm_batch.
+            tool_registry: Optional ToolRegistry for TOOL() invocations.
+            script_registry: Optional ScriptRegistry for SCRIPT() invocations.
+            role: Role name for permission checking (e.g., "frontdoor", "coder_primary").
         """
         self.context = context
         self.artifacts = artifacts if artifacts is not None else {}
         self.config = config if config is not None else REPLConfig()
         self.llm_primitives = llm_primitives
+        self.tool_registry = tool_registry
+        self.script_registry = script_registry
+        self.role = role or "worker_general"  # Default to restricted role
 
         # Execution state
         self._final_answer: str | None = None
@@ -205,6 +222,16 @@ class REPLEnvironment:
         if self.llm_primitives is not None:
             globals_dict["llm_call"] = self.llm_primitives.llm_call
             globals_dict["llm_batch"] = self.llm_primitives.llm_batch
+
+        # Add tool registry functions if available
+        if self.tool_registry is not None:
+            globals_dict["TOOL"] = self._invoke_tool
+            globals_dict["list_tools"] = self._list_tools
+
+        # Add script registry functions if available
+        if self.script_registry is not None:
+            globals_dict["SCRIPT"] = self._invoke_script
+            globals_dict["find_scripts"] = self._find_scripts
 
         return globals_dict
 
@@ -267,6 +294,83 @@ class REPLEnvironment:
         if var_name not in self.artifacts:
             raise KeyError(f"Variable '{var_name}' not found in artifacts")
         raise FinalSignal(str(self.artifacts[var_name]))
+
+    def _invoke_tool(self, tool_name: str, **kwargs) -> Any:
+        """Invoke a registered tool.
+
+        Args:
+            tool_name: Name of the tool to invoke.
+            **kwargs: Tool arguments.
+
+        Returns:
+            Tool result.
+
+        Raises:
+            ValueError: If tool doesn't exist.
+            PermissionError: If role cannot use this tool.
+        """
+        if self.tool_registry is None:
+            raise RuntimeError("No tool registry configured")
+
+        return self.tool_registry.invoke(tool_name, self.role, **kwargs)
+
+    def _list_tools(self) -> list[dict[str, Any]]:
+        """List available tools for the current role.
+
+        Returns:
+            List of tool info dicts.
+        """
+        if self.tool_registry is None:
+            return []
+
+        return self.tool_registry.list_tools(role=self.role)
+
+    def _invoke_script(self, script_id: str, **kwargs) -> Any:
+        """Invoke a prepared script by ID.
+
+        Args:
+            script_id: Script identifier.
+            **kwargs: Script arguments.
+
+        Returns:
+            Script result.
+
+        Raises:
+            ValueError: If script doesn't exist.
+        """
+        if self.script_registry is None:
+            raise RuntimeError("No script registry configured")
+
+        # Pass sandbox globals for code execution
+        return self.script_registry.invoke(
+            script_id,
+            sandbox_globals=self._globals,
+            **kwargs,
+        )
+
+    def _find_scripts(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Find scripts matching a natural language query.
+
+        Args:
+            query: Search query (e.g., "fetch python documentation").
+            limit: Maximum results to return.
+
+        Returns:
+            List of matching script info dicts.
+        """
+        if self.script_registry is None:
+            return []
+
+        matches = self.script_registry.find_scripts(query, limit=limit)
+        return [
+            {
+                "id": m.script.id,
+                "description": m.script.description,
+                "score": round(m.score, 2),
+                "matched_on": m.matched_on,
+            }
+            for m in matches
+        ]
 
     def _validate_code(self, code: str) -> None:
         """Validate code for dangerous patterns before execution.

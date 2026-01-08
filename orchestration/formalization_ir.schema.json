@@ -151,7 +151,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["tool"],
+            "anyOf": [
+              {"required": ["tool"]},
+              {"required": ["script"]}
+            ],
             "properties": {
               "step": {
                 "type": "integer",
@@ -162,6 +165,11 @@
                 "type": "string",
                 "description": "Name of the tool or API to call",
                 "minLength": 1
+              },
+              "script": {
+                "type": "string",
+                "description": "Script ID to invoke (alternative to tool)",
+                "pattern": "^[a-z][a-z0-9_]*$"
               },
               "description": {
                 "type": "string",
@@ -448,6 +456,38 @@
         "type": "string"
       },
       "default": []
+    },
+    "web_sources": {
+      "type": "object",
+      "description": "Configuration for web source access",
+      "additionalProperties": false,
+      "properties": {
+        "task_type": {
+          "type": "string",
+          "enum": ["coding", "research", "llm_specific", "general"],
+          "description": "Task type for source registry lookup"
+        },
+        "required_trust_level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "Minimum trust level (1=high, 2=medium, 3=low)",
+          "default": 2
+        },
+        "preferred_domains": {
+          "type": "array",
+          "description": "Specific domains to prefer for this task",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "language": {
+          "type": "string",
+          "description": "Programming language (for coding task_type)",
+          "enum": ["python", "rust", "c_cpp", "go", "zig", "javascript", "java", "cuda"]
+        }
+      }
     }
   }
 }

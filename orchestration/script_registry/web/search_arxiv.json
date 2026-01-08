@@ -1,0 +1,36 @@
+{
+  "id": "search_arxiv",
+  "description": "Search arXiv for academic papers",
+  "category": "web",
+  "tags": ["arxiv", "search", "papers", "research", "academic"],
+  "token_savings": "93%",
+  "parameters": {
+    "query": {
+      "type": "string",
+      "description": "Search query for arXiv",
+      "required": true
+    },
+    "max_results": {
+      "type": "integer",
+      "description": "Maximum number of results",
+      "default": 5
+    },
+    "sort_by": {
+      "type": "string",
+      "description": "Sort order (relevance, lastUpdatedDate, submittedDate)",
+      "default": "relevance"
+    }
+  },
+  "mcp_server": "@community/arxiv-search",
+  "mcp_tool": "search",
+  "default_args": {
+    "max_results": 5,
+    "sort_by": "relevance"
+  },
+  "examples": [
+    {
+      "args": {"query": "speculative decoding LLM", "max_results": 3},
+      "result": "Found 3 papers on speculative decoding"
+    }
+  ]
+}

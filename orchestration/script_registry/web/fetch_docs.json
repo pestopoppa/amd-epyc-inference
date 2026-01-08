@@ -1,0 +1,35 @@
+{
+  "id": "fetch_docs",
+  "description": "Fetch documentation from a URL with content extraction",
+  "category": "web",
+  "tags": ["fetch", "docs", "documentation", "web", "url"],
+  "token_savings": "92%",
+  "parameters": {
+    "url": {
+      "type": "string",
+      "description": "URL to fetch documentation from",
+      "required": true
+    },
+    "max_length": {
+      "type": "integer",
+      "description": "Maximum content length to return",
+      "default": 8000
+    }
+  },
+  "mcp_server": "@anthropic/fetch",
+  "mcp_tool": "fetch",
+  "default_args": {
+    "selector": "article, main, .content, .documentation",
+    "max_length": 8000
+  },
+  "examples": [
+    {
+      "args": {"url": "https://docs.python.org/3/library/asyncio.html"},
+      "result": "Fetched 8000 chars of asyncio documentation"
+    },
+    {
+      "args": {"url": "https://doc.rust-lang.org/book/ch01-00-getting-started.html"},
+      "result": "Fetched Rust book getting started chapter"
+    }
+  ]
+}

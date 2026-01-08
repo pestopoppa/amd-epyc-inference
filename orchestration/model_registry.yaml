@@ -112,6 +112,9 @@ roles:
     memory:
       residency: hot
       pinned: true
+    tool_permissions:
+      web_access: true
+      allowed_categories: [web, file, data]
   coder_primary:
     tier: B
     description: Primary high-throughput code generation - reuses frontdoor model
@@ -138,6 +141,10 @@ roles:
     memory:
       residency: hot
       pinned: true
+    tool_permissions:
+      web_access: true
+      allowed_categories: [web, file, code, data, system]
+      allowed_tools: [run_tests, lint_python, fetch_docs]
     benchmark_date: 2026-01-06
   coder_escalation:
     tier: B
@@ -321,6 +328,10 @@ roles:
       residency: hot
       pinned: true
       max_instances: 2
+    tool_permissions:
+      web_access: false
+      allowed_categories: [file, data]
+      forbidden_tools: [write_file]
   worker_math:
     tier: C
     description: Edge cases, invariants, property-test generation

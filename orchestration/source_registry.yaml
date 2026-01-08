@@ -1,0 +1,288 @@
+# Source Registry - Prioritized websites by task type
+# Used by web tools to select trustworthy sources
+#
+# Trust levels:
+#   1 (high): Official documentation, authoritative sources
+#   2 (medium): Framework/library docs, established projects
+#   3 (validate): Community sources, require cross-reference
+
+coding:
+  # Language-specific documentation sources
+  by_language:
+    python:
+      - domain: docs.python.org
+        trust: 1
+        description: Official Python documentation
+      - domain: peps.python.org
+        trust: 1
+        description: Python Enhancement Proposals
+      - domain: packaging.python.org
+        trust: 1
+        description: Python packaging guide
+
+    rust:
+      - domain: doc.rust-lang.org
+        trust: 1
+        description: Official Rust documentation
+      - domain: docs.rs
+        trust: 1
+        description: Rust crate documentation
+      - domain: rust-lang.github.io
+        trust: 1
+        description: Rust project guides
+
+    c_cpp:
+      - domain: en.cppreference.com
+        trust: 1
+        description: C/C++ reference (community-maintained, high quality)
+      - domain: learn.microsoft.com/cpp
+        trust: 1
+        description: Microsoft C++ documentation
+      - domain: isocpp.org
+        trust: 1
+        description: ISO C++ standards body
+
+    go:
+      - domain: pkg.go.dev
+        trust: 1
+        description: Go package documentation
+      - domain: go.dev/doc
+        trust: 1
+        description: Official Go documentation
+      - domain: gobyexample.com
+        trust: 2
+        description: Go by Example
+
+    zig:
+      - domain: ziglang.org/documentation
+        trust: 1
+        description: Official Zig documentation
+      - domain: ziglearn.org
+        trust: 2
+        description: Zig learning resources
+
+    javascript:
+      - domain: developer.mozilla.org
+        trust: 1
+        description: MDN Web Docs (authoritative for JS/Web)
+      - domain: nodejs.org/docs
+        trust: 1
+        description: Official Node.js documentation
+      - domain: tc39.es
+        trust: 1
+        description: ECMAScript specification
+
+    java:
+      - domain: docs.oracle.com/javase
+        trust: 1
+        description: Official Java SE documentation
+      - domain: openjdk.org
+        trust: 1
+        description: OpenJDK project
+
+    cuda:
+      - domain: docs.nvidia.com/cuda
+        trust: 1
+        description: Official CUDA documentation
+      - domain: developer.nvidia.com
+        trust: 1
+        description: NVIDIA developer resources
+
+  # Universal documentation aggregators
+  universal:
+    - domain: devdocs.io
+      trust: 1
+      description: Aggregates documentation for all major languages
+    - domain: rosettacode.org
+      trust: 2
+      description: Cross-language code examples
+
+  # Build system documentation
+  build_systems:
+    - domain: cmake.org/documentation
+      trust: 1
+      description: CMake documentation
+    - domain: mesonbuild.com/documentation
+      trust: 1
+      description: Meson build system
+    - domain: bazel.build/docs
+      trust: 1
+      description: Bazel build system
+    - domain: ninja-build.org/manual
+      trust: 1
+      description: Ninja build tool
+
+  # Systems programming resources
+  systems_programming:
+    - domain: llvm.org/docs
+      trust: 1
+      description: LLVM compiler infrastructure
+    - domain: gcc.gnu.org/onlinedocs
+      trust: 1
+      description: GCC documentation
+    - domain: kernel.org/doc
+      trust: 1
+      description: Linux kernel documentation
+
+  # Community sources (require validation)
+  community:
+    - domain: stackoverflow.com
+      trust: 3
+      description: Programming Q&A (validate answers)
+    - domain: github.com
+      trust: 3
+      description: Source code and issues (check context)
+
+research:
+  # Academic sources
+  primary:
+    - domain: arxiv.org
+      trust: 1
+      description: Preprint server (verify with published versions)
+    - domain: ar5iv.labs.arxiv.org
+      trust: 1
+      description: arXiv with HTML rendering
+
+  # Conference proceedings
+  conferences:
+    - domain: proceedings.neurips.cc
+      trust: 1
+      description: NeurIPS proceedings
+    - domain: aclanthology.org
+      trust: 1
+      description: ACL Anthology (NLP papers)
+    - domain: openaccess.thecvf.com
+      trust: 1
+      description: CVPR/ICCV/ECCV papers
+
+  # Reviews and aggregators
+  aggregators:
+    - domain: openreview.net
+      trust: 2
+      description: Open peer review (check acceptance status)
+    - domain: paperswithcode.com
+      trust: 2
+      description: Papers with implementations
+    - domain: semanticscholar.org
+      trust: 2
+      description: Academic search engine
+
+llm_specific:
+  # Hugging Face ecosystem
+  huggingface:
+    - domain: huggingface.co/docs
+      trust: 1
+      description: HF Transformers/Datasets docs
+    - domain: huggingface.co/blog
+      trust: 2
+      description: HF blog posts
+
+  # Inference frameworks
+  inference:
+    - domain: github.com/ggml-org/llama.cpp
+      trust: 1
+      description: llama.cpp main repository
+    - domain: ollama.com
+      trust: 2
+      description: Ollama documentation
+    - domain: docs.vllm.ai
+      trust: 1
+      description: vLLM documentation
+
+  # API documentation
+  apis:
+    - domain: docs.anthropic.com
+      trust: 1
+      description: Anthropic Claude API
+    - domain: platform.openai.com/docs
+      trust: 1
+      description: OpenAI API
+
+  # Benchmarks and evaluation
+  evaluation:
+    - domain: lmsys.org
+      trust: 2
+      description: LMSYS Chatbot Arena
+    - domain: github.com/EleutherAI/lm-evaluation-harness
+      trust: 1
+      description: LM Evaluation Harness
+
+general:
+  # Reference sources
+  reference:
+    - domain: wikipedia.org
+      trust: 2
+      description: Wikipedia (check citations)
+    - domain: britannica.com
+      trust: 1
+      description: Encyclopedia Britannica
+
+  # Web standards
+  web_standards:
+    - domain: developer.mozilla.org
+      trust: 1
+      description: MDN Web Docs
+    - domain: w3.org
+      trust: 1
+      description: W3C standards
+
+  # Tech news (for recent developments)
+  news:
+    - domain: news.ycombinator.com
+      trust: 3
+      description: Hacker News (validate claims)
+
+# Role access configuration
+# Defines which roles can access web sources
+role_access:
+  # Tier A - Full web access
+  frontdoor:
+    enabled: true
+    allowed_categories: [coding, research, llm_specific, general]
+
+  # Tier B - Specialists with web access
+  coder_primary:
+    enabled: true
+    allowed_categories: [coding, llm_specific]
+
+  coder_escalation:
+    enabled: true
+    allowed_categories: [coding, llm_specific]
+
+  architect_general:
+    enabled: true
+    allowed_categories: [coding, research, general]
+
+  architect_coding:
+    enabled: true
+    allowed_categories: [coding, llm_specific]
+
+  formalizer:
+    enabled: true
+    allowed_categories: [coding, research]
+
+  # Tier C - Workers, no web access
+  worker_general:
+    enabled: false
+    reason: "Receives context from orchestrator"
+
+  worker_math:
+    enabled: false
+    reason: "Receives context from orchestrator"
+
+  worker_vision:
+    enabled: false
+    reason: "Receives context from orchestrator"
+
+  toolrunner:
+    enabled: false
+    reason: "Tool execution only"
+
+  # Tier D - Draft models
+  draft_coder:
+    enabled: false
+    reason: "Speculation only"
+
+  draft_general:
+    enabled: false
+    reason: "Speculation only"

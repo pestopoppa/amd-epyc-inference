@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""Tool Registry for orchestrator models.
+
+This module provides a registry for tools that orchestrator models can invoke.
+Tools are registered with standardized interfaces and role-based permissions.
+
+Design principles:
+- MCP-first architecture (can integrate with MCP servers)
+- Role-based access control (Tier A/B have web access, Tier C doesn't)
+- Tool invocations are logged and validated
+
+Usage:
+    from src.tool_registry import ToolRegistry, ToolPermissions
+
+    registry = ToolRegistry()
+    registry.load_from_yaml("orchestration/tool_registry.yaml")
+
+    # Check if role can use a tool
+    if registry.can_use_tool("frontdoor", "fetch_docs"):
+        result = registry.invoke("fetch_docs", url="https://docs.python.org")
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Callable
+
+import yaml
+
+logger = logging.getLogger(__name__)
+
+
+class ToolCategory(str, Enum):
+    """Categories of tools available to models."""
+    WEB = "web"
+    FILE = "file"
+    CODE = "code"
+    DATA = "data"
+    SYSTEM = "system"
+    SPECIALIZED = "specialized"
+
+
+@dataclass
+class ToolPermissions:
+    """Permissions for a specific role's tool access."""
+    web_access: bool = False
+    allowed_categories: list[ToolCategory] = field(default_factory=list)
+    allowed_tools: list[str] = field(default_factory=list)
+    forbidden_tools: list[str] = field(default_factory=list)
+
+    def can_use_tool(self, tool: "Tool") -> bool:
+        """Check if this permission set allows using a tool.
+
+        Args:
+            tool: The tool to check access for.
+
+        Returns:
+            True if the tool can be used under these permissions.
+        """
+        # Check forbidden list first
+        if tool.name in self.forbidden_tools:
+            return False
+
+        # Check explicit allow list
+        if self.allowed_tools and tool.name in self.allowed_tools:
+            return True
+
+        # Check category
+        if tool.category in self.allowed_categories:
+            # Web tools require web_access
+            if tool.category == ToolCategory.WEB and not self.web_access:
+                return False
+            return True
+
+        return False
+
+
+@dataclass
+class Tool:
+    """A registered tool that models can invoke."""
+    name: str
+    description: str
+    category: ToolCategory
+    parameters: dict[str, dict[str, Any]]  # name -> {type, description, required}
+    handler: Callable[..., Any] | None = None
+    mcp_server: str | None = None  # MCP server identifier if MCP-backed
+    code_hash: str | None = None  # SHA256 of handler code for integrity
+
+    def validate_args(self, args: dict[str, Any]) -> list[str]:
+        """Validate arguments against parameter schema.
+
+        Args:
+            args: Arguments to validate.
+
+        Returns:
+            List of validation errors (empty if valid).
+        """
+        errors = []
+
+        # Check required parameters
+        for param_name, param_spec in self.parameters.items():
+            if param_spec.get("required", False) and param_name not in args:
+                errors.append(f"Missing required parameter: {param_name}")
+
+        # Check types (basic validation)
+        for arg_name, arg_value in args.items():
+            if arg_name not in self.parameters:
+                errors.append(f"Unknown parameter: {arg_name}")
+                continue
+
+            expected_type = self.parameters[arg_name].get("type", "string")
+            if expected_type == "string" and not isinstance(arg_value, str):
+                errors.append(f"Parameter {arg_name} must be string, got {type(arg_value).__name__}")
+            elif expected_type == "integer" and not isinstance(arg_value, int):
+                errors.append(f"Parameter {arg_name} must be integer, got {type(arg_value).__name__}")
+            elif expected_type == "boolean" and not isinstance(arg_value, bool):
+                errors.append(f"Parameter {arg_name} must be boolean, got {type(arg_value).__name__}")
+            elif expected_type == "array" and not isinstance(arg_value, list):
+                errors.append(f"Parameter {arg_name} must be array, got {type(arg_value).__name__}")
+
+        return errors
+
+
+@dataclass
+class ToolInvocation:
+    """Record of a tool invocation."""
+    tool_name: str
+    args: dict[str, Any]
+    role: str
+    success: bool
+    result: Any
+    error: str | None = None
+    elapsed_ms: float = 0.0
+
+
+class ToolRegistry:
+    """Registry of tools available to orchestrator models.
+
+    Manages tool registration, permission checking, and invocation.
+    Supports both native Python handlers and MCP server backends.
+    """
+
+    def __init__(self):
+        """Initialize an empty tool registry."""
+        self._tools: dict[str, Tool] = {}
+        self._permissions: dict[str, ToolPermissions] = {}
+        self._invocation_log: list[ToolInvocation] = []
+
+    def register_tool(self, tool: Tool) -> None:
+        """Register a tool in the registry.
+
+        Args:
+            tool: Tool to register.
+
+        Raises:
+            ValueError: If tool with same name already exists.
+        """
+        if tool.name in self._tools:
+            raise ValueError(f"Tool '{tool.name}' already registered")
+
+        self._tools[tool.name] = tool
+        logger.info(f"Registered tool: {tool.name} ({tool.category.value})")
+
+    def register_handler(
+        self,
+        name: str,
+        description: str,
+        category: ToolCategory,
+        parameters: dict[str, dict[str, Any]],
+    ) -> Callable[[Callable], Callable]:
+        """Decorator to register a function as a tool handler.
+
+        Usage:
+            @registry.register_handler(
+                name="fetch_docs",
+                description="Fetch documentation from URL",
+                category=ToolCategory.WEB,
+                parameters={"url": {"type": "string", "required": True}}
+            )
+            def fetch_docs(url: str) -> str:
+                ...
+        """
+        def decorator(func: Callable) -> Callable:
+            # Compute code hash for integrity
+            import inspect
+            source = inspect.getsource(func)
+            code_hash = hashlib.sha256(source.encode()).hexdigest()[:16]
+
+            tool = Tool(
+                name=name,
+                description=description,
+                category=category,
+                parameters=parameters,
+                handler=func,
+                code_hash=code_hash,
+            )
+            self.register_tool(tool)
+            return func
+        return decorator
+
+    def set_role_permissions(self, role: str, permissions: ToolPermissions) -> None:
+        """Set permissions for a role.
+
+        Args:
+            role: Role name (e.g., "frontdoor", "coder_primary", "worker_general").
+            permissions: Permission configuration for this role.
+        """
+        self._permissions[role] = permissions
+        logger.debug(f"Set permissions for role: {role}")
+
+    def load_permissions_from_registry(self, registry_path: str | Path) -> None:
+        """Load role permissions from model_registry.yaml.
+
+        Args:
+            registry_path: Path to model_registry.yaml.
+        """
+        path = Path(registry_path)
+        if not path.exists():
+            logger.warning(f"Registry file not found: {path}")
+            return
+
+        with open(path) as f:
+            data = yaml.safe_load(f)
+
+        roles = data.get("roles", {})
+        for role_name, role_config in roles.items():
+            perms = role_config.get("tool_permissions", {})
+            if perms:
+                permissions = ToolPermissions(
+                    web_access=perms.get("web_access", False),
+                    allowed_categories=[
+                        ToolCategory(c) for c in perms.get("allowed_categories", [])
+                    ],
+                    allowed_tools=perms.get("allowed_tools", []),
+                    forbidden_tools=perms.get("forbidden_tools", []),
+                )
+                self.set_role_permissions(role_name, permissions)
+
+    def can_use_tool(self, role: str, tool_name: str) -> bool:
+        """Check if a role can use a specific tool.
+
+        Args:
+            role: Role name.
+            tool_name: Tool name.
+
+        Returns:
+            True if the role can use the tool.
+        """
+        if tool_name not in self._tools:
+            return False
+
+        if role not in self._permissions:
+            logger.warning(f"Unknown role: {role}, denying access")
+            return False
+
+        return self._permissions[role].can_use_tool(self._tools[tool_name])
+
+    def invoke(
+        self,
+        tool_name: str,
+        role: str,
+        **kwargs: Any,
+    ) -> Any:
+        """Invoke a tool with the given arguments.
+
+        Args:
+            tool_name: Name of the tool to invoke.
+            role: Role making the invocation (for permission check).
+            **kwargs: Tool arguments.
+
+        Returns:
+            Tool result.
+
+        Raises:
+            PermissionError: If role cannot use this tool.
+            ValueError: If tool doesn't exist or args are invalid.
+            RuntimeError: If tool execution fails.
+        """
+        import time
+
+        start = time.perf_counter()
+
+        # Check tool exists
+        if tool_name not in self._tools:
+            raise ValueError(f"Unknown tool: {tool_name}")
+
+        tool = self._tools[tool_name]
+
+        # Check permissions
+        if not self.can_use_tool(role, tool_name):
+            raise PermissionError(f"Role '{role}' cannot use tool '{tool_name}'")
+
+        # Validate arguments
+        errors = tool.validate_args(kwargs)
+        if errors:
+            raise ValueError(f"Invalid arguments: {'; '.join(errors)}")
+
+        # Execute
+        try:
+            if tool.handler is not None:
+                result = tool.handler(**kwargs)
+            elif tool.mcp_server is not None:
+                result = self._invoke_mcp(tool.mcp_server, tool_name, kwargs)
+            else:
+                raise RuntimeError(f"Tool '{tool_name}' has no handler")
+
+            elapsed = (time.perf_counter() - start) * 1000
+
+            # Log invocation
+            self._invocation_log.append(ToolInvocation(
+                tool_name=tool_name,
+                args=kwargs,
+                role=role,
+                success=True,
+                result=result,
+                elapsed_ms=elapsed,
+            ))
+
+            return result
+
+        except Exception as e:
+            elapsed = (time.perf_counter() - start) * 1000
+
+            self._invocation_log.append(ToolInvocation(
+                tool_name=tool_name,
+                args=kwargs,
+                role=role,
+                success=False,
+                result=None,
+                error=str(e),
+                elapsed_ms=elapsed,
+            ))
+
+            raise RuntimeError(f"Tool execution failed: {e}") from e
+
+    def _invoke_mcp(
+        self,
+        server: str,
+        tool_name: str,
+        args: dict[str, Any],
+    ) -> Any:
+        """Invoke a tool via MCP server.
+
+        Args:
+            server: MCP server identifier.
+            tool_name: Tool name on the server.
+            args: Tool arguments.
+
+        Returns:
+            MCP tool result.
+        """
+        # Placeholder for MCP integration
+        # Will be implemented when MCP client is available
+        raise NotImplementedError(
+            f"MCP invocation not yet implemented (server={server}, tool={tool_name})"
+        )
+
+    def list_tools(self, role: str | None = None) -> list[dict[str, Any]]:
+        """List available tools, optionally filtered by role permissions.
+
+        Args:
+            role: Optional role to filter by permissions.
+
+        Returns:
+            List of tool info dicts.
+        """
+        result = []
+        for tool in self._tools.values():
+            if role is None or self.can_use_tool(role, tool.name):
+                result.append({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "category": tool.category.value,
+                    "parameters": tool.parameters,
+                    "mcp_backed": tool.mcp_server is not None,
+                })
+        return result
+
+    def get_invocation_log(self) -> list[ToolInvocation]:
+        """Get the invocation log."""
+        return self._invocation_log.copy()
+
+    def clear_invocation_log(self) -> None:
+        """Clear the invocation log."""
+        self._invocation_log.clear()
+
+
+# Default global registry
+_default_registry: ToolRegistry | None = None
+
+
+def get_registry() -> ToolRegistry:
+    """Get or create the default tool registry."""
+    global _default_registry
+    if _default_registry is None:
+        _default_registry = ToolRegistry()
+    return _default_registry
