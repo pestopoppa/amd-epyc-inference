@@ -141,7 +141,8 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 |------|---------|-------|--------------|
 | **B1: Coder** | Code generation, refactors | Qwen2.5-Coder-32B | Speculative (K=24) → 33 t/s |
 | **B2: Ingestion** | Long-context synthesis | Qwen3-Next-80B-A3B | Expert reduction only (SSM!) |
-| **B3: Architect** | System design, invariants | Qwen3-235B-A22B | Expert reduction |
+| **B3: Architect (General)** | System design, invariants | Qwen3-235B-A22B | Expert reduction → 6.75 t/s |
+| **B4: Architect (Coding)** | Ultimate code escalation | Qwen3-Coder-480B-A35B | MoE3 only → 10.3 t/s |
 
 #### Tier C — Workers (Parallel)
 - File-level implementation, tests, docs

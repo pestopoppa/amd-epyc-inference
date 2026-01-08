@@ -52,9 +52,104 @@ This mirrors speculative decoding at the *system level*:
 |------|---------|-------|--------------|
 | **B1: Coder** | Code generation, refactors | Qwen2.5-Coder-32B | Speculative (K=24) → 33 t/s |
 | **B2: Ingestion** | Long-context synthesis | Qwen3-Next-80B-A3B | MoE reduction only (SSM!) |
-| **B3: Architect** | System design, invariants | Qwen3-235B-A22B | MoE reduction |
+| **B3: Architect (General)** | System design, invariants | Qwen3-235B-A22B | MoE reduction → 6.75 t/s |
+| **B4: Architect (Coding)** | Ultimate code escalation | Qwen3-Coder-480B-A35B | MoE3 only → 10.3 t/s |
 
-**Escalation**: B1 → B2 → B3 on repeated failures
+**Note**: Qwen3-Coder-480B (271GB) has a BOS token mismatch that breaks all speculation methods. Use expert reduction (MoE3) only. Despite being only ~35B active parameters per token, it achieves 95% quality on coding benchmarks with MoE3.
+
+### Detailed Escalation Flow
+
+```
+User Request
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│           FRONTDOOR (Tier A - Always Resident)              │
+│                                                             │
+│  Model: Qwen3-Coder-30B-A3B + MoE6                          │
+│  Speed: 18.3 t/s | Quality: 90%                             │
+│                                                             │
+│  • Intent classification                                    │
+│  • TaskIR emission (JSON)                                   │
+│  • Result synthesis                                         │
+│  • Interactive chat (short queries handled directly)        │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ├─────────────┬─────────────┬─────────────┬─────────────┐
+     ▼             ▼             ▼             ▼             ▼
+   CODE        THINKING      INGEST        MATH         VISION
+```
+
+#### CODE Escalation Path
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CODER PRIMARY (B1)                                         │
+│  Model: Qwen3-Coder-30B-A3B + MoE6                          │
+│  Speed: 18.3 t/s | Quality: 90%                             │
+│  Handles: Single-file changes, simple refactors             │
+└─────────────────────────────────────────────────────────────┘
+     │ [failure OR multi-file OR review needed]
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  WORKER_SUMMARIZE                                           │
+│  Model: Qwen2.5-Coder-32B + spec K=8                        │
+│  Speed: 172.4 t/s | Quality: 96%                            │
+│  Handles: Code review, summarization, refactoring           │
+└─────────────────────────────────────────────────────────────┘
+     │ [architectural decision needed]
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ARCHITECT_72B                                              │
+│  Model: Qwen2.5-72B + spec K=16                             │
+│  Speed: 147.8 t/s | Quality: 87%                            │
+│  Handles: Multi-module design, API contracts                │
+└─────────────────────────────────────────────────────────────┘
+     │ [ultimate escalation]
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ARCHITECT_CODING (B4 - Ultimate)                           │
+│  Model: Qwen3-Coder-480B-A35B + MoE3                        │
+│  Speed: 10.3 t/s | Quality: 83%                             │
+│  Handles: Hardest architecture, novel algorithms            │
+│  ⚠️  NO speculation - BOS mismatch breaks all drafting     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### THINKING Escalation Path
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  THINKING_4B (Fast First Attempt)                           │
+│  Model: Qwen3-4B-Thinking                                   │
+│  Speed: 16.5 t/s | Quality: 89%                             │
+│  Handles: Quick reasoning, simple chain-of-thought          │
+└─────────────────────────────────────────────────────────────┘
+     │ [needs deeper reasoning]
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  THINKING_32B                                               │
+│  Model: DeepSeek-R1-Distill-Qwen-32B + spec K=16            │
+│  Speed: 72.2 t/s | Quality: 81%                             │
+│  Handles: Multi-step reasoning, hypothesis generation       │
+└─────────────────────────────────────────────────────────────┘
+     │ [complex multi-step OR extended thinking]
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  INGESTION (B2) / THINKING_80B (Ultimate)                   │
+│  Model: Qwen3-Next-80B-A3B + MoE2                           │
+│  Speed: 9.2 t/s | Quality: 92%                              │
+│  Handles: Hardest reasoning, 128K context                   │
+│  ⚠️  SSM architecture - NO speculation/prompt lookup!       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Escalation Triggers**:
+- Gate failure (lint, typecheck, unit tests)
+- Multi-file changes detected
+- Repetition loop detected (entropy spike)
+- Context size exceeds model limit
+- Explicit `max_escalation_level` in TaskIR
 
 ### Tier C - Workers (Parallel)
 
