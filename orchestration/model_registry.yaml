@@ -251,11 +251,15 @@ roles:
       experts: 3
       baseline_experts: 8
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_coder_0_75b
+        k: 16
+        notes: jukofyork vocab transplant draft fixes BOS mismatch - UNTESTED, benchmark needed
     constraints:
       forbid:
-      - speculative_decoding
       - prompt_lookup
-      reason: BOS token mismatch - no compatible draft models exist
+      reason: No prompt lookup - MoE architecture
     performance:
       baseline_tps: 6.53
       optimized_tps: 10.3
@@ -565,7 +569,7 @@ roles:
     acceleration:
       type: speculative_decoding
       draft_model: PARD-Llama-3.2-1B-Instruct-Q4_0
-      draft_path: pestopoppa/PARD-Llama-3.2-1B-Instruct-GGUF/PARD-Llama-3.2-1B-Instruct-Q4_0.gguf
+      draft_path: fernandoruiz/PARD-Llama-3.2-1B-Q4_0-GGUF/pard-llama-3.2-1b-q4_0.gguf
       k: 24
     performance:
       baseline_tps: 2.1
@@ -771,7 +775,7 @@ roles:
     acceleration:
       type: speculative_decoding
       draft_model: DeepSeek-R1-Distill-Qwen-1.5B
-      draft_path: bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf
+      draft_path: lmstudio-community/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/DeepSeek-R1-Distill-Qwen-1.5B-Q8_0.gguf
       k: 16
     performance:
       baseline_tps: 2.0
@@ -1386,7 +1390,7 @@ roles:
     description: Draft model for Qwen3-Coder family (jukofyork) - vocab transplant for 480B BOS fix
     model:
       name: Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0
-      path: models/Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf
+      path: /mnt/raid0/llm/models/Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf
       quant: Q4_0
       size_gb: 0.45
       architecture: dense
@@ -1399,13 +1403,13 @@ roles:
     - qwen3_coder_30b
     - qwen3_coder_53b
     - qwen3_coder_480b
-    notes: Specifically designed by jukofyork for Qwen3-Coder-480B with vocabulary transplant to fix BOS token mismatch. Should work with entire Qwen3-Coder family.
+    notes: Specifically designed by jukofyork for Qwen3-Coder-480B with vocabulary transplant to fix BOS token mismatch. VERIFIED compatible with all Qwen3-Coder targets (30B, 53B, 480B) on 2026-01-09.
   draft_qwen3_1_7b_q8_0:
     tier: D
     description: Draft model - Qwen3-1.7B-Q8_0 (higher quality for spec decode)
     model:
       name: Qwen3-1.7B-Q8_0
-      path: models/Qwen3-1.7B-Q8_0.gguf
+      path: /mnt/raid0/llm/models/Qwen3-1.7B-Q8_0.gguf
       quant: Q8_0
       size_gb: 1.7
       architecture: dense
@@ -1423,7 +1427,7 @@ roles:
     description: Draft model - Qwen3-0.6B-Q8_0 (higher quality for spec decode)
     model:
       name: Qwen_Qwen3-0.6B-Q8_0
-      path: models/Qwen_Qwen3-0.6B-Q8_0.gguf
+      path: /mnt/raid0/llm/models/Qwen_Qwen3-0.6B-Q8_0.gguf
       quant: Q8_0
       size_gb: 0.75
       architecture: dense
@@ -1654,7 +1658,7 @@ roles:
     acceleration:
       type: speculative_decoding
       draft_model: PARD-Llama-3.2-1B-Instruct-Q4_0
-      draft_path: pestopoppa/PARD-Llama-3.2-1B-Instruct-GGUF/PARD-Llama-3.2-1B-Instruct-Q4_0.gguf
+      draft_path: fernandoruiz/PARD-Llama-3.2-1B-Q4_0-GGUF/pard-llama-3.2-1b-q4_0.gguf
       k: 24
     performance:
       baseline_tps: 2.1
@@ -1898,9 +1902,10 @@ runtime_quirks:
   qwen3_coder_480b:
     description: Qwen3-Coder-480B-A35B-Instruct
     quirks:
-    - issue: BOS token mismatch - uses ',' (token 11) instead of standard
-      workaround: Cannot use speculative decoding - no compatible draft exists
+    - issue: BOS token mismatch - standard drafts incompatible
+      workaround: Use jukofyork draft (draft_qwen3_coder_0_75b) with vocab transplant - verified compatible 2026-01-09
       discovered: 2025-12-15
+      updated: 2026-01-09
     - issue: MOE2 (2 experts) produces garbage output despite being faster
       workaround: Use MOE3 (3 experts) - 10.30 t/s with good quality (+58% speedup)
       discovered: 2025-12-21
