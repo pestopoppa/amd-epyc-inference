@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-01-09
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -11,15 +11,17 @@
 |------|------------|----------|---------|--------|
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
 | AVX-512 VNNI Q8_0 | — | — | — | ❌ NOT SUBMITTING (8% speedup) |
-| Draft model benchmarks | Benchmark completion | HIGH | `research/draft_benchmark_handoff.md` | Blocked |
-| Formalizer eval | Benchmark completion | HIGH | `research/formalizer_handoff.md` | Blocked |
-| Tree speculation | Benchmark completion | HIGH | `research/kernel_dev_handoff.md` | Blocked |
-| RadixAttention | — | — | `research/radix_attention_handoff.md` | ✅ COMPLETE |
-| Orchestrator integration | Model servers | HIGH | `research/orchestration_integration_handoff.md` | ✅ CODE COMPLETE |
-| MathSmith re-conversion | — | LOW | `research/mathsmith_reconversion_handoff.md` | ✅ COMPLETE |
-| Orchestrator real mode | Model servers | LOW | `research/orchestrator_handoff.md` | Blocked |
-| Frontend Architecture | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
-| CLI Parity Features | — | — | `research/orchestrator_handoff.md` | ✅ COMPLETE |
+| Draft model benchmarks | — | HIGH | `handoffs/active/draft-benchmark.md` | ✅ READY (registry verified) |
+| Formalizer eval | — | HIGH | `handoffs/active/formalizer-evaluation.md` | ✅ READY (`nohup ./scripts/benchmark/run_all_formalizers.sh &`) |
+| Tree speculation | — | MEDIUM | `handoffs/active/cpu-optimization.md` | ✅ COMPLETE (K=24 optimal) |
+| RadixAttention | — | — | `handoffs/active/radix-attention.md` | ✅ VERIFIED (80% hit rate) |
+| Orchestrator integration | — | HIGH | `handoffs/active/orchestration-integration.md` | ✅ VERIFIED (12/12 tests) |
+| MathSmith re-conversion | — | LOW | `handoffs/active/mathsmith-reconversion.md` | ✅ COMPLETE |
+| Orchestrator real mode | — | LOW | `handoffs/active/orchestrator.md` | ✅ READY (see startup commands below) |
+| Kernel development | — | — | `handoffs/active/kernel-development.md` | ✅ COMPLETE (no PR - gains too small) |
+| Frontend Architecture | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
+| CLI Parity Features | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
+| AMD PACE Testing | — | — | `handoffs/active/amd-pace-testing.md` | ✅ COMPLETE (not adopting) |
 
 ---
 

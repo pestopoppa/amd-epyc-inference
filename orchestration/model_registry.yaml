@@ -510,6 +510,28 @@ roles:
     memory:
       residency: hot
       pinned: true
+  draft_gemma3:
+    tier: D
+    description: Draft model for Gemma-3 family (recommended by Google)
+    model:
+      name: Gemma-3-1B-IT
+      path: /mnt/raid0/llm/models/gemma-3-1b-it-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 1.0
+      architecture: dense
+    candidate_roles:
+    - draft
+    compatible_targets:
+    - Gemma-3-27B-IT
+    - Gemma-3-27B-IT-QAT
+    - Gemma-3-12B-IT
+    performance:
+      raw_tps: null  # TBD - not yet benchmarked
+    memory:
+      residency: warm
+      pinned: false
+    benchmark_date: null  # TBD
+    notes: Google-recommended draft model for Gemma-3 family
   architect_hermes_4_70b:
     tier: B
     description: Architect model - Hermes-4-70B-Q4_K_M
@@ -976,6 +998,81 @@ roles:
       Reference: https://arxiv.org/html/2508.05592v1
 
       '
+  formalizer_q4:
+    tier: B
+    description: Problem formalizer (Q4_K_M) - smaller quantization for faster preprocessing
+    model:
+      name: MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M
+      path: /mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 4.7
+      architecture: dense
+    candidate_roles:
+    - formalizer
+    - math
+    constraints:
+      forbid:
+      - speculative_decoding
+    memory:
+      residency: warm
+      pinned: false
+    output_format: FormalizationIR
+    notes: Smaller quantization of MathSmith. Use for faster preprocessing when memory
+      is constrained. Same capabilities as Q8_0 version.
+  tool_formalizer_xlam2:
+    tier: D
+    description: Tool sequence formalizer - xLAM-2 (newest, outperforms GPT-4o on BFCL)
+    model:
+      name: xLAM-2-1B-fc-r-Q4_K_M
+      path: /mnt/raid0/llm/models/xLAM-2-1B-fc-r-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 0.9
+      architecture: dense
+    candidate_roles:
+    - tool_formalizer
+    - agentic
+    performance:
+      prompt_tps: 91.2
+      gen_tps: 9.4
+    memory:
+      residency: warm
+      pinned: false
+    benchmark_date: 2026-01-06
+    notes: Salesforce xLAM-2 for function calling. Best for tool sequence formalization.
+      See research/formalizer_handoff.md for evaluation plan.
+  tool_formalizer_xlam1:
+    tier: D
+    description: Tool sequence formalizer - xLAM-1 (older version, smaller)
+    model:
+      name: xLAM-1b-fc-r-Q4_K_M
+      path: /mnt/raid0/llm/models/xLAM-1b-fc-r.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 0.8
+      architecture: dense
+    candidate_roles:
+    - tool_formalizer
+    - agentic
+    memory:
+      residency: cold
+      pinned: false
+    notes: Older xLAM version. Use xLAM-2 unless testing compatibility.
+  tool_formalizer_nexusraven:
+    tier: C
+    description: Tool formalizer - NexusRaven-V2-13B (best for complex/nested functions)
+    model:
+      name: nexusraven-v2-13b-Q4_K_M
+      path: /mnt/raid0/llm/models/nexusraven-v2-13b.Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 7.4
+      architecture: dense
+    candidate_roles:
+    - tool_formalizer
+    - agentic
+    memory:
+      residency: cold
+      pinned: false
+    notes: 7% better than GPT-4 on complex function calling. Use for nested/composite
+      tool sequences. Generates explanations (can disable to save tokens).
   vision_qwen3_vl_235b_a22b_thinking:
     tier: C
     description: Vision model - Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
@@ -1285,6 +1382,61 @@ roles:
       pinned: false
     compatible_targets:
     - qwen3
+  draft_qwen3_coder_0_75b:
+    tier: D
+    description: Draft model for Qwen3-Coder family (jukofyork) - vocab transplant for 480B BOS fix
+    model:
+      name: Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0
+      path: models/Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf
+      quant: Q4_0
+      size_gb: 0.45
+      architecture: dense
+    candidate_roles:
+    - draft
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3_coder_30b
+    - qwen3_coder_53b
+    - qwen3_coder_480b
+    notes: Specifically designed by jukofyork for Qwen3-Coder-480B with vocabulary transplant to fix BOS token mismatch. Should work with entire Qwen3-Coder family.
+  draft_qwen3_1_7b_q8_0:
+    tier: D
+    description: Draft model - Qwen3-1.7B-Q8_0 (higher quality for spec decode)
+    model:
+      name: Qwen3-1.7B-Q8_0
+      path: models/Qwen3-1.7B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 1.7
+      architecture: dense
+    candidate_roles:
+    - draft
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+    - qwen3_32b
+    - qwen3_235b
+  draft_qwen3_0_6b_q8_0:
+    tier: D
+    description: Draft model - Qwen3-0.6B-Q8_0 (higher quality for spec decode)
+    model:
+      name: Qwen_Qwen3-0.6B-Q8_0
+      path: models/Qwen_Qwen3-0.6B-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 0.75
+      architecture: dense
+    candidate_roles:
+    - draft
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen3
+    - qwen3_32b
+    - qwen3_235b
   draft_qwen3_embedding_0_6b:
     tier: D
     deprecated: true

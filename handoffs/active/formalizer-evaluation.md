@@ -74,11 +74,24 @@ formalizer/
     └── verif_t2_invariant.json
 ```
 
-### 4. Evaluation Script
+### 4. Evaluation Scripts
 
-**Location**: `scripts/benchmark/bench_formalizers.sh`
+**Single model**: `scripts/benchmark/bench_formalizers.sh`
+**All models**: `scripts/benchmark/run_all_formalizers.sh` (NEW - 2026-01-09)
 
-**Usage**:
+**Quick Start (run in background)**:
+```bash
+# Run all 3 formalizers in background (~10-20 minutes)
+nohup ./scripts/benchmark/run_all_formalizers.sh > /dev/null 2>&1 &
+
+# Check progress
+tail -f logs/formalizer_eval/run.log
+
+# View final comparison
+cat logs/formalizer_eval/run.log | tail -20
+```
+
+**Single model (for debugging)**:
 ```bash
 ./scripts/benchmark/bench_formalizers.sh \
   --model /mnt/raid0/llm/models/xLAM-2-1B-fc-r-Q4_K_M.gguf \

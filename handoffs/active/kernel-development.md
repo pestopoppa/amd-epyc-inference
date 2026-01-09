@@ -444,11 +444,14 @@ gcc -O3 -march=znver5 -mavx512f -mavx512bw -mavx512vnni \
 ./q8_0_test
 ```
 
-### Verified Results (Host Testing 2026-01-05)
+### Verified Results (Host Testing 2026-01-05, Re-verified 2026-01-09)
 
 | Implementation | Actual Speedup vs AVX2 | Notes |
 |----------------|------------------------|-------|
-| AVX-512 F/BW | **+13-15%** | Correct, works |
+| Q8_0 quantize AVX-512 | **+39%** (1.39x) | Correct, significant |
+| Q8_0 vec_dot AVX-512 | **+13%** (1.13x) | Correct, modest |
+| Q4_K AVX-512 VBMI | **-4%** (0.96x) | Correct but SLOWER |
+| Q4_K AVX-512 Full | **-9%** (0.91x) | Correct but SLOWER |
 | AVX-512 VNNI | N/A | Bug: `_mm512_dpbssd_epi32` doesn't exist |
 
 **Key insight**: Gains are modest due to memory bandwidth limits, not compute.

@@ -41,16 +41,18 @@ When a handoff task is complete, follow this checklist:
 
 | Handoff | Purpose | Status |
 |---------|---------|--------|
-| [amd-pace-testing.md](active/amd-pace-testing.md) | AMD PACE native PyTorch vs llama.cpp | Ready |
-| [cpu-optimization.md](active/cpu-optimization.md) | T-MAC evaluation, Tree speculation | Research |
-| [draft-benchmark.md](active/draft-benchmark.md) | Draft model speed tests & formalizer eval | Ready |
+| [amd-pace-testing.md](active/amd-pace-testing.md) | AMD PACE native PyTorch vs llama.cpp | ✅ COMPLETE (not adopting) |
+| [cpu-optimization.md](active/cpu-optimization.md) | T-MAC evaluation, Tree speculation | ✅ COMPLETE (K=24 optimal) |
+| [draft-benchmark.md](active/draft-benchmark.md) | Draft model speed tests | ✅ Ready |
 | [early-failure-prediction.md](active/early-failure-prediction.md) | Heuristic failure detection | In Progress |
-| [formalizer-evaluation.md](active/formalizer-evaluation.md) | Formalizer model evaluation | Blocked |
-| [kernel-development.md](active/kernel-development.md) | AVX-512 kernel optimization | Blocked |
-| [mathsmith-reconversion.md](active/mathsmith-reconversion.md) | MathSmith GGUF re-conversion | Complete |
-| [orchestration-integration.md](active/orchestration-integration.md) | RadixAttention integration | Code Complete |
-| [orchestrator.md](active/orchestrator.md) | Main orchestrator implementation | Ready |
-| [radix-attention.md](active/radix-attention.md) | Prefix caching implementation | Complete |
+| [formalizer-evaluation.md](active/formalizer-evaluation.md) | Formalizer model evaluation | ✅ Ready (batch script) |
+| [kernel-development.md](active/kernel-development.md) | AVX-512 kernel optimization | ✅ COMPLETE (no PR) |
+| [mathsmith-reconversion.md](active/mathsmith-reconversion.md) | MathSmith GGUF re-conversion | ✅ COMPLETE |
+| [orchestration-integration.md](active/orchestration-integration.md) | RadixAttention integration | ✅ VERIFIED (12/12 tests) |
+| [orchestrator.md](active/orchestrator.md) | Main orchestrator implementation | ✅ Ready |
+| [radix-attention.md](active/radix-attention.md) | Prefix caching implementation | ✅ VERIFIED (80% cache hit) |
+
+**Last Updated**: 2026-01-09
 
 ## Blocked Tasks
 

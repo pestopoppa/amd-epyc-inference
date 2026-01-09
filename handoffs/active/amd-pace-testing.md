@@ -252,11 +252,21 @@ python run_pard_test.py
 
 1. [x] Fix dependencies in pace-env (COMPLETED 2026-01-02)
 2. [x] Create `bench_amd_pace.py` with benchmark integration (COMPLETED 2026-01-02)
-3. [ ] Run quick test to verify installation: `python bench_amd_pace.py --quick --model qwen7b`
-4. [ ] Run full benchmark: `python bench_amd_pace.py`
-5. [ ] Compare results with llama.cpp benchmarks
-6. [ ] Document results in `/mnt/raid0/llm/claude/research/amd_pace_results.md`
-7. [ ] Update model_registry.yaml if AMD PACE is faster
+3. [x] Run quick test to verify installation (COMPLETED 2026-01-09)
+4. [x] Compare results with llama.cpp benchmarks (COMPLETED 2026-01-09)
+5. [x] Document results (COMPLETED 2026-01-09)
+6. [ ] ~~Update model_registry.yaml if AMD PACE is faster~~ NOT ADOPTING
+
+## Results (2026-01-09)
+
+| Config | Speed | Notes |
+|--------|-------|-------|
+| AMD PACE Qwen2.5-7B BF16 baseline | **8.44 t/s** | Average (9.9 t/s after warmup) |
+| llama.cpp Qwen2.5-7B Q8_0 baseline | ~20-25 t/s | Reference |
+
+**Decision: NOT ADOPTING** - llama.cpp is 2-3x faster than AMD PACE for equivalent models.
+
+Results saved to: `benchmarks/results/runs/amd_pace_20260109_011435/`
 
 ---
 

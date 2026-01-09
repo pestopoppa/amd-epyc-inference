@@ -588,13 +588,28 @@ class LLMPrimitives:
             Model response.
         """
         from src.model_server import InferenceRequest
-        from src.registry_loader import RoleConfig, AccelerationConfig
+        from src.registry_loader import (
+            RoleConfig,
+            AccelerationConfig,
+            ModelConfig,
+            PerformanceMetrics,
+            MemoryConfig,
+        )
 
         # Create minimal RoleConfig for backend
         role_config = RoleConfig(
             name=role,
-            model_path="",  # Backend already knows the model
-            acceleration=AccelerationConfig(type="baseline"),
+            tier="C",
+            description=f"Dynamic role for {role}",
+            model=ModelConfig(
+                name="dynamic-model",
+                path="",  # Backend already knows the model
+                quant="Q4_K_M",
+                size_gb=0.0,
+            ),
+            acceleration=AccelerationConfig(type="baseline", temperature=0.0),
+            performance=PerformanceMetrics(),
+            memory=MemoryConfig(residency="warm"),
         )
 
         request = InferenceRequest(

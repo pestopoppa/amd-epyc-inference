@@ -186,7 +186,13 @@ def run_live_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
     from src.backends.llama_server import LlamaServerBackend, ServerConfig
     from src.prefix_cache import CachingBackend, PrefixRouter, canonicalize_prompt
     from src.model_server import InferenceRequest
-    from src.registry_loader import RoleConfig, AccelerationConfig
+    from src.registry_loader import (
+        RoleConfig,
+        AccelerationConfig,
+        ModelConfig,
+        PerformanceMetrics,
+        MemoryConfig,
+    )
 
     print(f"Running against live server: {config.server_url}")
 
@@ -201,11 +207,20 @@ def run_live_benchmark(config: BenchmarkConfig) -> BenchmarkResult:
         print(f"ERROR: Server not healthy at {config.server_url}")
         return BenchmarkResult(config=config, errors=["Server not healthy"])
 
-    # Create role config
+    # Create role config with proper nested objects
     role_config = RoleConfig(
-        name="worker",
-        model_path="",
-        acceleration=AccelerationConfig(type="baseline"),
+        name="benchmark_worker",
+        tier="C",
+        description="Cache benchmark worker",
+        model=ModelConfig(
+            name="benchmark-model",
+            path="",
+            quant="Q8_0",
+            size_gb=0.5,
+        ),
+        acceleration=AccelerationConfig(type="baseline", temperature=0.0),
+        performance=PerformanceMetrics(),
+        memory=MemoryConfig(residency="warm"),
     )
 
     result = BenchmarkResult(config=config)

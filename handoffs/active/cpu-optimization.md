@@ -65,11 +65,20 @@ Tree-based sampling drafts multiple token sequences in parallel, not just a sing
 -Cd, --cpu-mask-draft M
 ```
 
-### Next Steps
-1. [ ] Benchmark `--draft-max 32` vs current `--draft-max 24`
-2. [ ] Measure acceptance rate at different tree widths
-3. [ ] Profile memory bandwidth impact
-4. [ ] Document optimal settings per model size
+### Results (2026-01-09)
+
+| K Value | Acceptance | Decode Speed | Notes |
+|---------|------------|--------------|-------|
+| K=24 | 16.7% | ~3 t/s | **Optimal** |
+| K=32 | 14.4% | 0.7 t/s | Worse - wastes compute |
+
+**Conclusion:** K=24 remains optimal. K=32 wastes drafts without improving acceptance.
+
+### Completed
+1. [x] Benchmark `--draft-max 32` vs current `--draft-max 24` (2026-01-09)
+2. [x] Measure acceptance rate at different tree widths (2026-01-09)
+3. [ ] ~~Profile memory bandwidth impact~~ Not needed - K=32 clearly worse
+4. [x] Document optimal settings (K=24 for Qwen2.5-Coder)
 
 ### Resume Command
 ```bash

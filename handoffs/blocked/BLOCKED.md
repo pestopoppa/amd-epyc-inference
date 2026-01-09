@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-01-09
 **Blocking Resource**: Background benchmark (Qwen3-Coder-30B)
 
 ---
@@ -9,15 +9,15 @@
 
 | Task | Blocked On | Priority | Handoff | Status |
 |------|------------|----------|---------|--------|
-| AMD PACE testing | — | MEDIUM | `handoffs/active/amd-pace-testing.md` | Ready |
-| T-MAC / Tree speculation | — | MEDIUM/HIGH | `handoffs/active/cpu-optimization.md` | Research |
+| AMD PACE testing | — | — | `handoffs/active/amd-pace-testing.md` | ✅ COMPLETE (not adopting - 2-3x slower) |
+| T-MAC / Tree speculation | — | — | `handoffs/active/cpu-optimization.md` | ✅ COMPLETE (K=24 optimal) |
 | Early failure prediction | — | MEDIUM | `handoffs/active/early-failure-prediction.md` | In Progress |
-| Formalizer eval | Benchmark completion | HIGH | `handoffs/active/formalizer-evaluation.md` | Blocked |
-| Kernel development | Benchmark completion | HIGH | `handoffs/active/kernel-development.md` | Blocked |
-| RadixAttention | — | — | `handoffs/active/radix-attention.md` | ✅ COMPLETE |
-| Orchestrator integration | Model servers | HIGH | `handoffs/active/orchestration-integration.md` | ✅ CODE COMPLETE |
+| Formalizer eval | — | HIGH | `handoffs/active/formalizer-evaluation.md` | ✅ READY (`nohup ./scripts/benchmark/run_all_formalizers.sh &`) |
+| Kernel development | — | — | `handoffs/active/kernel-development.md` | ✅ COMPLETE (no PR - gains too small) |
+| RadixAttention | — | — | `handoffs/active/radix-attention.md` | ✅ VERIFIED (80% cache hit) |
+| Orchestrator integration | — | HIGH | `handoffs/active/orchestration-integration.md` | ✅ VERIFIED (12/12 tests) |
 | MathSmith re-conversion | — | LOW | `handoffs/active/mathsmith-reconversion.md` | ✅ COMPLETE |
-| Orchestrator real mode | Model servers | LOW | `handoffs/active/orchestrator.md` | Blocked |
+| Orchestrator real mode | — | LOW | `handoffs/active/orchestrator.md` | ✅ READY (see startup commands below) |
 
 ---
 
