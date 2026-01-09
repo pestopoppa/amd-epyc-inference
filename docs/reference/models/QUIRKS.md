@@ -61,6 +61,32 @@ llama-speculative -m gemma-3-27B.gguf -md gemma-3-1b.gguf --draft 4 -t 96
 **Discovered**: 2026-01-09
 **Fixed**: 2026-01-09 (PR #18720)
 
+### Vision-Language (VL) Models
+
+**Issue**: `llama-speculative` doesn't support VL models with mmproj files
+
+**Symptoms**: Timeout or crash when running spec decode on Qwen2.5-VL, Qwen3-VL, or similar models
+
+**Root Cause**: VL models require the mmproj (multimodal projector) file for vision processing. The `llama-speculative` binary doesn't support loading mmproj files, only the main model weights.
+
+**Workaround**: Use baseline mode or MoE expert reduction (for MoE-VL models):
+
+```bash
+# ✅ Safe - baseline mode
+llama-cli -m Qwen2.5-VL-7B.gguf --mmproj mmproj-model-f16.gguf -p "prompt"
+
+# ✅ Safe - MoE reduction for VL-MoE models
+llama-cli -m Qwen3-VL-30B-A3B.gguf --mmproj mmproj.gguf \
+    --override-kv qwen3vlmoe.expert_used_count=int:4
+
+# ❌ Broken - spec decode not supported
+llama-speculative -m Qwen2.5-VL-7B.gguf -md draft.gguf  # Times out
+```
+
+**Note**: Manual testing achieved 57.1 t/s with `--temp 0.7` using a special llama-cli workaround, but this is not automated.
+
+**Discovered**: 2026-01-09
+
 ## Benchmarking Quirks
 
 ### Interactive Mode Hangs

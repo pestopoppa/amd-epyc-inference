@@ -373,14 +373,16 @@ roles:
     candidate_roles:
     - vision
     acceleration:
-      type: speculative_decoding
-      draft_role: draft_qwen25
-      k: 8
-      temperature: 0.7
+      type: baseline
+      disallowed:
+        - speculative_decoding
+        - prompt_lookup
+      reason: VL models with mmproj not supported by llama-speculative binary
+      notes: Manual spec decode achieved 57.1 t/s with --temp 0.7 (needs llama-cli workaround)
     performance:
       baseline_tps: 15.28
-      optimized_tps: 57.1
-      speedup: 3.7x
+      optimized_tps: 20.0
+      speedup: 1.3x
     memory:
       residency: warm
       pinned: false
