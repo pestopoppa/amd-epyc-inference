@@ -77,6 +77,15 @@ export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
 - **Working Directory**: `/mnt/raid0/llm/`
 - **Python Environment**: `pace-env`
 
+### Key Files (Most Commonly Needed)
+
+| File | Purpose |
+|------|---------|
+| `/mnt/raid0/llm/claude/orchestration/model_registry.yaml` | **Model configurations, paths, compatible drafts** |
+| `/mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md` | Benchmark results summary |
+| `/mnt/raid0/llm/claude/docs/reference/models/QUIRKS.md` | Known model issues & workarounds |
+| `/mnt/raid0/llm/claude/benchmarks/results/reviews/summary.csv` | Claude-as-Judge scores |
+
 ---
 
 ## Hardware Specifications
