@@ -11,6 +11,7 @@
 |------|------------|----------|---------|--------|
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
 | **MTP ISWA Fix** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
+| **Gemma-3 SWA Spec Decode** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
 | AVX-512 VNNI Q8_0 | — | — | — | ❌ NOT SUBMITTING (8% speedup) |
 | Draft model benchmarks | — | HIGH | `handoffs/active/draft-benchmark.md` | ✅ READY (registry verified) |
 | Formalizer eval | — | HIGH | `handoffs/active/formalizer-evaluation.md` | ✅ READY (`nohup ./scripts/benchmark/run_all_formalizers.sh &`) |
@@ -250,7 +251,7 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
 
 ### Draft Model Benchmarks (Speed Tests)
 - [x] Gemma-3-1B → Gemma-3-12B-IT (K=8,16,24) — WORKS (upstream b7684+)
-- [x] Gemma-3-1B → Gemma-3-27B-IT-QAT (K=8,16,24) — WORKS (20.8% acceptance)
+- [x] Gemma-3-1B → Gemma-3-27B-IT-QAT (K=8,16,24) — WORKS (42-81% acceptance, PR #18720)
 - [ ] Qwen3-1.7B → Qwen3-32B (K=8,16,24)
 - [ ] Qwen3-0.6B → Qwen3-32B (K=8,16,24)
 - [ ] Qwen3-1.7B → Qwen3-235B-A22B + MoE4 (K=8,16)
