@@ -854,6 +854,11 @@ roles:
     - thinking
     - general
     - worker
+    acceleration:
+      type: baseline
+      disallowed:
+        - speculative_decoding
+      reason: DeepSeek-R1 uses DeepSeek vocab, not Qwen3 vocab despite architecture name
     memory:
       residency: cold
       pinned: false
