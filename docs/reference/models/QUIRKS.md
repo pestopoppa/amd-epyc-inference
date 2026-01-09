@@ -41,28 +41,25 @@ llama-speculative -m Qwen3-Next-80B.gguf -md draft.gguf
 
 ### Gemma-3 Family (SWA Architecture)
 
-**Issue**: Sliding Window Attention (SWA) incompatible with speculative decoding in llama.cpp
+**Issue**: ~~Sliding Window Attention (SWA) incompatible with speculative decoding in llama.cpp~~
 
-**Symptoms**:
-- `std::bad_alloc` crash during KV cache initialization
-- Crash in `llama_kv_cache::slot_info::operator=`
-- Error: `terminate called after throwing std::bad_alloc`
+**Status**: ✅ FIXED with PR #18720 (forward-looking SWA masking)
 
-**Root Cause**: Gemma-3 uses Interleaved Sliding Window Attention (ISWA) with `sliding_window=1024`. The spec decode KV cache allocation fails because draft and target have incompatible cache structures.
+**Original Problem**: Gemma-3 uses Interleaved Sliding Window Attention (ISWA) with `sliding_window=1024`. The spec decode KV cache allocation failed because draft and target had incompatible cache structures.
 
-**Workaround**: No speculative decoding with Gemma-3. Use baseline only. Track llama.cpp upstream for SWA+spec decode fix.
+**Solution**: PR #18720 adds forward-looking SWA masking in `find_slot()`, allowing cells that will be outside the attention window *after* batch insertion to be reused. This reduces SWA cache from 10240 MiB to 624 MiB (94% reduction).
 
 ```bash
-# ❌ Crashes
-llama-speculative -m gemma-3-27B.gguf -md gemma-3-1b.gguf
+# ✅ Now works (PR #18720 or upstream after merge)
+llama-speculative -m gemma-3-27B.gguf -md gemma-3-1b.gguf --draft 4 -t 96
 
-# ✅ Works
-llama-cli -m gemma-3-27B.gguf -p "prompt"
+# Results: 42-81% acceptance rate, 12.26 t/s
 ```
 
-**Note**: Also has vocab mismatch (1B=262144, 27B=262208) but SWA crash occurs first.
+**Note**: Vocab mismatch (1B=262144, 27B=262208) is safe - 64 token diff doesn't affect generation.
 
 **Discovered**: 2026-01-09
+**Fixed**: 2026-01-09 (PR #18720)
 
 ## Benchmarking Quirks
 
