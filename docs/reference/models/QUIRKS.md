@@ -39,6 +39,31 @@ llama-speculative -m Qwen3-Next-80B.gguf -md draft.gguf
 
 **Workaround**: No speculation available. Use baseline or MoE reduction if applicable.
 
+### Gemma-3 Family (SWA Architecture)
+
+**Issue**: Sliding Window Attention (SWA) incompatible with speculative decoding in llama.cpp
+
+**Symptoms**:
+- `std::bad_alloc` crash during KV cache initialization
+- Crash in `llama_kv_cache::slot_info::operator=`
+- Error: `terminate called after throwing std::bad_alloc`
+
+**Root Cause**: Gemma-3 uses Interleaved Sliding Window Attention (ISWA) with `sliding_window=1024`. The spec decode KV cache allocation fails because draft and target have incompatible cache structures.
+
+**Workaround**: No speculative decoding with Gemma-3. Use baseline only. Track llama.cpp upstream for SWA+spec decode fix.
+
+```bash
+# ❌ Crashes
+llama-speculative -m gemma-3-27B.gguf -md gemma-3-1b.gguf
+
+# ✅ Works
+llama-cli -m gemma-3-27B.gguf -p "prompt"
+```
+
+**Note**: Also has vocab mismatch (1B=262144, 27B=262208) but SWA crash occurs first.
+
+**Discovered**: 2026-01-09
+
 ## Benchmarking Quirks
 
 ### Interactive Mode Hangs
