@@ -68,11 +68,23 @@ def get_tokenizer_info(path: str) -> Dict[str, Any]:
 
         elif fname == 'tokenizer.ggml.model':
             val = field.parts[-1]
-            info['tokenizer_model'] = str(val[0]) if hasattr(val, '__getitem__') else str(val)
+            # Decode bytes to string
+            if hasattr(val, 'tobytes'):
+                info['tokenizer_model'] = val.tobytes().decode('utf-8')
+            elif hasattr(val, '__iter__'):
+                info['tokenizer_model'] = bytes(val).decode('utf-8')
+            else:
+                info['tokenizer_model'] = str(val)
 
         elif fname == 'tokenizer.ggml.pre':
             val = field.parts[-1]
-            info['tokenizer_pre'] = str(val[0]) if hasattr(val, '__getitem__') else str(val)
+            # Decode bytes to string
+            if hasattr(val, 'tobytes'):
+                info['tokenizer_pre'] = val.tobytes().decode('utf-8')
+            elif hasattr(val, '__iter__'):
+                info['tokenizer_pre'] = bytes(val).decode('utf-8')
+            else:
+                info['tokenizer_pre'] = str(val)
 
         elif fname == 'tokenizer.ggml.add_bos_token':
             val = field.parts[-1]
