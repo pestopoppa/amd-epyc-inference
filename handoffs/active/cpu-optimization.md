@@ -1,8 +1,8 @@
 # Handoff: CPU Optimization Research
 
 **Created**: 2026-01-05
-**Status**: Active (Research Phase)
-**Priority**: MEDIUM (T-MAC), HIGH (Tree Speculation)
+**Status**: ✅ COMPLETE (T-MAC abandoned, Tree Speculation done)
+**Priority**: —
 **Source**: `research/cpu_optimization_findings.md`
 
 ---
@@ -11,40 +11,28 @@
 
 Two CPU optimization tracks identified during research:
 
-1. **T-MAC** - LUT-based low-bit inference (MEDIUM priority)
-2. **Tree Speculation** - Already in llama.cpp, needs benchmarking (HIGH priority)
+1. **T-MAC** - LUT-based low-bit inference — ❌ ABANDONED
+2. **Tree Speculation** - Already in llama.cpp — ✅ COMPLETE (K=24 optimal)
 
 ---
 
 ## Track A: T-MAC Evaluation
 
-### What It Is
-T-MAC replaces dequantization with lookup tables for 1-4 bit inference. Published at EuroSys 2025.
+### Status: ❌ ABANDONED (2026-01-09)
 
-- **Repository**: `/mnt/raid0/llm/T-MAC/`
-- **Paper**: [arXiv:2407.00088](https://arxiv.org/abs/2407.00088)
+**Reason:** Not viable for our use case.
 
-### Current Assessment
+| Issue | Why It's a Blocker |
+|-------|-------------------|
+| Old llama.cpp fork (May 2024) | Incompatible with current codebase |
+| Only supports GPTQ format | Can't use our Q4_K_M GGUF models |
+| Uncertain x86/AVX-512 support | Authors warn "no guarantee on x86" |
+| Best gains at 1-2 bit | Quality degrades significantly |
+| Model reconversion required | High effort, uncertain payoff |
 
-| Aspect | Status |
-|--------|--------|
-| Quantization support | Partial - W4A16 from GPTQ, NOT Q4_K_M |
-| llama.cpp version | Old (b2794, May 2024) |
-| Model conversion | Required - HF → T-MAC GGUF |
-| x86/AVX-512 support | Uncertain |
-| Existing GGUF models | NOT compatible |
+**What It Was:** LUT-based low-bit inference (EuroSys 2025, arXiv:2407.00088)
 
-### Critical Warning
-> "We cannot guarantee significant speedup (especially for 4-bit token generation) on all x86 platforms."
-
-### Next Steps
-1. [ ] Build T-MAC with `-DLLAMA_TMAC=ON`
-2. [ ] Test with small 2-bit GPTQ model (not production)
-3. [ ] Validate x86 performance before full conversion pipeline
-4. [ ] If promising, reconvert production models
-
-### Recommendation
-Start with a small test to validate x86 performance. Best gains are at 1-2 bit which degrades quality. May not be worth the effort for 4-bit.
+**Why We're Not Pursuing:** Our existing speculative decoding already gives 11x speedup. T-MAC would require model reconversion, uses an outdated llama.cpp fork, and the authors explicitly warn about x86 performance.
 
 ---
 
