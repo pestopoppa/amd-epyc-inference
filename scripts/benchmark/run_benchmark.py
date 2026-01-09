@@ -274,6 +274,12 @@ def run_benchmark(
         if suite_filter:
             suite_names = [s for s in suite_names if s == suite_filter]
 
+        # LONG_CONTEXT OPTIMIZATION: If spec decode is available, use it for quality tests
+        # (faster than baseline, produces identical output since same target model)
+        spec_configs = [c for c in configs if c.config_type == "spec"]
+        has_long_context = "long_context" in suite_names
+        long_context_spec_config = spec_configs[0].name if (spec_configs and has_long_context) else None
+
         # PREFLIGHT CHECK: Skip model entirely if all tests are complete
         pending_tests, total_tests = count_pending_tests(run_id, role, configs, suite_names, force)
         if pending_tests == 0 and not dry_run:
@@ -474,13 +480,25 @@ def run_benchmark(
                     stats["errors"] += 1
                     print(f"    [ERROR] {role}/{config.name}: {e}")
 
-                continue  # Skip to next config
+                # LONG_CONTEXT OPTIMIZATION: First spec config falls through to run
+                # quality tests for long_context suite (faster than baseline)
+                if config.name != long_context_spec_config:
+                    continue  # Normal case: skip to next config after speed test
+                # else: fall through to quality loop for long_context only
 
             # FULL QUALITY BENCHMARK for baseline and non-spec configs
             for suite_name, sdata in suites_data.items():
                 # Skip lookup configs for short-prompt suites
                 # Only long_context has prompts long enough for lookup to be effective
                 if config.config_type in ("lookup", "moe_lookup") and suite_name != "long_context":
+                    continue
+
+                # LONG_CONTEXT OPTIMIZATION: Skip baseline long_context if spec decode handles it
+                if suite_name == "long_context" and config.name == "baseline" and long_context_spec_config:
+                    continue
+
+                # First spec config only runs long_context quality (already did speed test for others)
+                if suite_name != "long_context" and config.name == long_context_spec_config:
                     continue
 
                 suite = sdata["suite"]
