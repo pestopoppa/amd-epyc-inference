@@ -1374,7 +1374,9 @@ roles:
     - qwen2-
   draft_qwen3_0_6b:
     tier: D
-    description: Draft model - Qwen3-0.6B-Q2_K
+    deprecated: true
+    deprecated_reason: Q2_K quant causes token errors with Qwen3-Thinking models. Use draft_qwen3_0_6b_q8_0 instead.
+    description: Draft model - Qwen3-0.6B-Q2_K (DEPRECATED - use Q8_0)
     model:
       name: Qwen3-0.6B-Q2_K
       path: unsloth/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q2_K.gguf
@@ -1386,8 +1388,7 @@ roles:
     memory:
       residency: cold
       pinned: false
-    compatible_targets:
-    - qwen3
+    compatible_targets: []
   draft_qwen3_1_7b:
     tier: D
     description: Draft model - Qwen3-1.7B-Q4_K_M

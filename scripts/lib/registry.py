@@ -189,9 +189,26 @@ class ModelRegistry:
         return config.get("constraints", {})
 
     def get_forbidden_configs(self, role: str) -> list[str]:
-        """Get list of forbidden optimization types for a role."""
+        """Get list of forbidden optimization types for a role.
+
+        Checks both:
+        - constraints.forbid (legacy format)
+        - acceleration.disallowed (new format for VL models, SSM, etc.)
+        """
+        forbidden = []
+
+        # Check legacy constraints.forbid
         constraints = self.get_constraints(role)
-        return constraints.get("forbid", [])
+        forbidden.extend(constraints.get("forbid", []))
+
+        # Check acceleration.disallowed (newer format)
+        config = self.get_role_config(role)
+        if config:
+            accel = config.get("acceleration", {})
+            disallowed = accel.get("disallowed", [])
+            forbidden.extend(disallowed)
+
+        return list(set(forbidden))  # Dedupe
 
     def get_quirks(self, role: str) -> list[dict[str, str]]:
         """Get runtime quirks for a role's model.
