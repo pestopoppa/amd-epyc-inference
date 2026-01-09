@@ -512,7 +512,9 @@ roles:
       pinned: true
   draft_gemma3:
     tier: D
-    description: Draft model for Gemma-3 family (recommended by Google)
+    deprecated: true
+    deprecation_reason: "LLAMA.CPP BUG: Gemma-3's Sliding Window Attention (SWA) is incompatible with speculative decoding. Crashes with std::bad_alloc in llama_kv_cache::slot_info."
+    description: Draft model for Gemma-3 family (BROKEN - SWA incompatibility)
     model:
       name: Gemma-3-1B-IT
       path: /mnt/raid0/llm/models/gemma-3-1b-it-Q8_0.gguf
@@ -521,17 +523,14 @@ roles:
       architecture: dense
     candidate_roles:
     - draft
-    compatible_targets:
-    - Gemma-3-27B-IT
-    - Gemma-3-27B-IT-QAT
-    - Gemma-3-12B-IT
+    compatible_targets: []  # NONE - Gemma-3 SWA architecture incompatible with spec decode
     performance:
-      raw_tps: null  # TBD - not yet benchmarked
+      raw_tps: null
     memory:
-      residency: warm
+      residency: cold
       pinned: false
-    benchmark_date: null  # TBD
-    notes: Google-recommended draft model for Gemma-3 family
+    benchmark_date: 2026-01-09
+    notes: "BROKEN: Gemma-3 uses Interleaved Sliding Window Attention (ISWA, sliding_window=1024) which crashes llama.cpp speculative decoding with std::bad_alloc. This is a llama.cpp bug, not vocab mismatch. Track upstream fix."
   architect_hermes_4_70b:
     tier: B
     description: Architect model - Hermes-4-70B-Q4_K_M
@@ -1999,6 +1998,22 @@ runtime_quirks:
     - issue: Best K varies by target model
       workaround: K=24 for 32B, K=16 for 72B, K=8 for 7B
       discovered: 2025-12-15
+  gemma3_spec_decode_crash:
+    description: Gemma-3 family crashes with speculative decoding due to Sliding Window Attention
+    quirks:
+    - issue: "Speculative decoding crashes with std::bad_alloc in llama_kv_cache::slot_info"
+      workaround: Cannot use speculative decoding with Gemma-3 models until llama.cpp fixes SWA support
+      discovered: 2026-01-09
+      explanation: |
+        Gemma-3 uses Interleaved Sliding Window Attention (ISWA) with sliding_window=1024.
+        When spec decode runs, the KV cache allocation fails because the draft and target
+        have different KV cache structures (ISWA vs standard). The crash happens during
+        llama_context::initialize_decode_context() -> llama_kv_cache::slot_info::operator=().
+        This is a llama.cpp architectural limitation, not a tokenizer/vocab issue.
+        Note: Vocab sizes DO differ (1B=262144, 27B=262208) but this is NOT the crash cause.
+    - issue: "Vocab mismatch between Gemma-3-1B and Gemma-3-27B-QAT (64 tokens)"
+      workaround: Not relevant - SWA crash happens before vocab mismatch could cause issues
+      discovered: 2026-01-09
   general_llama_speculative:
     description: llama-speculative binary general quirks
     quirks:
