@@ -1,0 +1,13 @@
+suite,question_id,tokens_per_second,claude_score,score_reason
+general,t3_q1_policy_analysis,19.4,1,Good thinking but output stuck in loop with repeated closing tags
+general,t3_q2_system_failure,16.9,3,Excellent detailed answer about replica lag and monitoring
+general,t3_q3_strategic_communication,17.8,3,Complete board statement with good ending and timing
+general,t2_q1_synthesis,21.3,3,Good unified recommendation balancing all perspectives
+general,t2_q2_transform,18.3,2,Verbose explanation but correct transformation approach
+general,t2_q3_schedule,17.0,1,Working through constraints but truncated mid-sentence
+general,t2_q4_inconsistency,18.3,2,Identified key inconsistencies but truncated
+general,t1_q1_json,25.6,3,Correct JSON output with all fields
+general,t1_q2_multistep,17.3,2,Correct approach but truncated before final output
+general,t1_q3_compare,22.6,3,Good comparison recommending monolith for startup
+long_context,t3_q1_multi_hop_reasoning,1.9,0,Context issue - received API docs instead of financial data
+long_context,t3_q2_contradiction_detection,2.5,0,Context issue - received API docs instead of witness statements

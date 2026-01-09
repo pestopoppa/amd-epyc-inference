@@ -187,6 +187,7 @@ coder_primary_moe6,moe,76.0,17.6,61
 ingest_qwen2_5_72b_baseline,baseline,75.4,2.2,61
 ingest_long_context_baseline,baseline,73.5,9.7,34
 worker_math_spec_draft_qwen25_k24,spec,73.3,186.0,40
+general_meta_llama_3_8b_instruct_fp16_baseline,baseline,72.7,2.1,61
 worker_math_spec_draft_qwen2_5_coder_1_5b_q2_k_k24,spec,72.6,68.3,39
 worker_math_spec_draft_qwen2_5_coder_0_5b_k16,spec,72.5,201.5,40
 worker_math_spec_draft_qwen2_5_coder_1_5b_q4_k_m_k16,spec,72.5,54.3,40
@@ -226,6 +227,7 @@ draft_pard_llama_3_2_1b_q8_0_baseline,baseline,68.3,44.7,20
 vision_qwen3_vl_2b_q4_k_m_baseline,baseline,66.7,46.6,30
 draft_pard_qwen3_0_6b_q4_0_baseline,baseline,65.0,101.6,20
 thinking_qwen3_30b_a3b_thinking_2507_baseline,baseline,64.5,17.4,61
+thinking_qwen3_30b_a3b_thinking_2507_q4ks_baseline,baseline,63.9,16.6,12
 thinking_deepseek_r1_distill_llama_70b_baseline,baseline,62.3,0.0,61
 coder_escalation_moe4,moe,60.7,14.0,61
 ingest_glm_4_6_baseline,baseline,60.2,222225.0,36
