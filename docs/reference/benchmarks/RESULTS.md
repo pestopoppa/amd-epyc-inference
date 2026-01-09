@@ -167,7 +167,7 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 | Qwen2.5-Math-72B | 41GB | Q4_K_M | **1.41 t/s** | Math specialist |
 | Qwen2.5-72B | 41GB | Q4_K_M | **0.85 t/s** | Base (slow) |
 
-### Speculative Decoding Results (Dense) - Updated 2026-01-06
+### Speculative Decoding Results (Dense) - Updated 2026-01-09
 
 **New comprehensive K-sweep benchmarks** with quality-validated configurations:
 
@@ -180,11 +180,13 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 | **ingest_llama_3_1_70b + PARD** | 81% | 2.1 t/s | **85.8 t/s** | **41x** | K=24 |
 | **architect_meta_llama_3_1_70b + PARD** | 90% | 2.1 t/s | **84.3 t/s** | **40x** | K=24 |
 | **thinking_deepseek_r1_32b + 1.5B** | 81% | 2.0 t/s | **72.2 t/s** | **36x** | K=16 |
+| **thinking_deepseek_r1_14b_q6kl + PARD-1.5B** | 95% | 4.0 t/s | **71.6 t/s** | **18x** | K=24 |
+| **thinking_qwen3_4b + 0.6B** | 65% | 8.6 t/s | **106.7 t/s** | **12x** | K=16 |
 
 **Key findings:**
 - K=16 often optimal (not K=24) - balances draft overhead vs acceptance rate
 - Quality preserved: spec decode is mathematically equivalent to baseline
-- Best draft models: qwen2.5-coder-0.5b (Qwen family), PARD-Llama-3.2-1B (Llama family), DeepSeek-R1-Distill-1.5B (R1 family)
+- Best draft models: qwen2.5-coder-0.5b (Qwen2.5 family), Qwen3-0.6B (Qwen3 family), PARD-Llama-3.2-1B (Llama family), PARD-DeepSeek-R1-1.5B (R1 family)
 
 **Legacy results (from earlier testing):**
 | Model + Draft | Speed | Speedup | Accept | K |
@@ -247,9 +249,11 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 | Gemma-3-12B | 6.8GB | Q4_K_M | **10.42 t/s** | Medium |
 | DeepSeek-R1-Qwen-14B | 8.4GB | Q4_K_M | **6.44 t/s** | Larger R1 |
 
-### Speculative Decoding (7B)
+### Speculative Decoding (Small Models: 4B-14B)
 | Model + Draft | Speed | Speedup | Accept | Notes |
 |---------------|-------|---------|--------|-------|
+| **Qwen3-4B-Thinking + 0.6B** | **106.7 t/s** | **12.4x** | — | K=16, 65% quality |
+| **DeepSeek-R1-14B-Q6_K_L + PARD-1.5B** | **71.6 t/s** | **18x** | — | K=24, 95% quality |
 | **Qwen2.5-VL-7B + 0.5B (t=0.7)** | **57.1 t/s** | **3.7x** | 74.2% | Temp tuned! |
 | **Qwen2.5-Math-7B + 0.5B** | **48.5 t/s** | **3.9x** | 65.6% | K=8 optimal |
 | Qwen2.5-VL-7B + 0.5B (t=0) | 28.3 t/s | 1.9x | — | Baseline temp |
