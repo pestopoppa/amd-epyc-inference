@@ -531,12 +531,12 @@ roles:
     - Gemma-3-27B-QAT
     performance:
       raw_tps: 41
-      acceptance_rate: 0.21
+      acceptance_rate: 0.42-0.81
     memory:
       residency: cold
       pinned: false
     benchmark_date: 2026-01-09
-    notes: "Works with upstream llama.cpp (b7684+). 64 token vocab diff (1B=262144, 27B=262208) - verified compatible 2026-01-09."
+    notes: "Works with upstream llama.cpp (b7684+) and PR #18720. 42-81% acceptance rate. 64 token vocab diff is safe."
   architect_hermes_4_70b:
     tier: B
     description: Architect model - Hermes-4-70B-Q4_K_M
@@ -867,12 +867,16 @@ roles:
     candidate_roles:
     - general
     - worker
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_gemma3
+      k: 8
     memory:
       residency: cold
       pinned: false
   general_gemma_3_27b_it_qat:
     tier: C
-    description: General model - gemma-3-27B-it-QAT-Q4_0
+    description: General model - gemma-3-27B-it-QAT-Q4_0 (42-81% spec decode acceptance)
     model:
       name: gemma-3-27B-it-QAT-Q4_0
       path: lmstudio-community/gemma-3-27B-it-qat-GGUF/gemma-3-27B-it-QAT-Q4_0.gguf
@@ -882,9 +886,19 @@ roles:
     candidate_roles:
     - general
     - frontdoor
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_gemma3
+      k: 8
+    performance:
+      baseline_tps: null
+      optimized_tps: 12.26
+      acceptance_rate: 0.42
     memory:
       residency: cold
       pinned: false
+    benchmark_date: 2026-01-09
+    notes: "Spec decode working after PR #18720 (SWA forward-masking). 42-81% acceptance rate."
   general_glm_4_6:
     tier: C
     description: General model - GLM-4.6-Q4_K_S-00001-of-00005
