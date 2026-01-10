@@ -176,11 +176,14 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 - Contains local optimizations (parallel tensor repack, etc.)
 - Patches in `claude/patches/` for upstream submission
 - PR: https://github.com/ggml-org/llama.cpp/pull/18239
+- **Worktree setup:** See [docs/reference/LLAMA_CPP_WORKTREES.md](docs/reference/LLAMA_CPP_WORKTREES.md)
 
 ```
 /mnt/raid0/llm/
-├── llama.cpp/                    # Main inference engine (modded)
-│   └── build/                    # CMake build directory
+├── llama.cpp/                    # PRODUCTION - stay on production-consolidated
+│   └── build/                    # Production build directory
+├── llama.cpp-experimental/       # EXPERIMENTAL - feature branches go here
+│   └── build/                    # Experimental build directory
 ├── hf/                           # HuggingFace format models
 ├── models/                       # GGUF converted models
 ├── lmstudio/                     # LM Studio models
