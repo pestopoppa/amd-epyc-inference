@@ -815,6 +815,7 @@ roles:
       quant: Q8_0
       size_gb: 30.3
       architecture: moe
+      baseline_experts: 8
     candidate_roles:
     - thinking
     - coder
@@ -905,7 +906,7 @@ roles:
       residency: cold
       pinned: false
     benchmark_date: 2026-01-09
-    notes: "Spec decode working after PR #18720 (SWA forward-masking). 42-81% acceptance rate."
+    notes: "Spec decode working after PR #18720 (SWA forward-masking). Prompt lookup needs SWA fix (see handoffs/blocked/swa_prompt_lookup.md)."
   general_glm_4_6:
     tier: C
     description: General model - GLM-4.6-Q4_K_S-00001-of-00005
@@ -1291,7 +1292,11 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - qwen3
+    - qwen3-32b
+    - qwen3-235b
+    - qwen3-4b
+    - qwen3-30b-a3b-thinking
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
   draft_qwen2_0_5b_q2_k:
     tier: D
     deprecated: true
@@ -1409,7 +1414,11 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - qwen3
+    - qwen3-32b
+    - qwen3-235b
+    - qwen3-4b
+    - qwen3-30b-a3b-thinking
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
   draft_qwen3_coder_0_75b:
     tier: D
     description: Draft model for Qwen3-Coder family (jukofyork) - vocab transplant for 480B BOS fix
@@ -1444,9 +1453,11 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - qwen3
-    - qwen3_32b
-    - qwen3_235b
+    - qwen3-32b
+    - qwen3-235b
+    - qwen3-4b
+    - qwen3-30b-a3b-thinking
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
   draft_qwen3_0_6b_q8_0:
     tier: D
     description: Draft model - Qwen3-0.6B-Q8_0 (higher quality for spec decode)
@@ -1462,9 +1473,11 @@ roles:
       residency: cold
       pinned: false
     compatible_targets:
-    - qwen3
-    - qwen3_32b
-    - qwen3_235b
+    - qwen3-32b
+    - qwen3-235b
+    - qwen3-4b
+    - qwen3-30b-a3b-thinking
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
   draft_qwen3_embedding_0_6b:
     tier: D
     deprecated: true
@@ -1552,6 +1565,7 @@ roles:
       quant: Q4_K_S
       size_gb: 16.3
       architecture: moe
+      baseline_experts: 8
     candidate_roles:
     - thinking
     - coder

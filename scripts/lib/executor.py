@@ -151,6 +151,7 @@ class ServerManager:
         self.request_timeout = server_defaults["request_timeout"]
         self.process: Optional[subprocess.Popen] = None
         self.model_path: Optional[str] = None
+        self.draft_model_path: Optional[str] = None
 
     def start(
         self,
@@ -160,6 +161,8 @@ class ServerManager:
         no_mmap: bool = False,
         context_length: Optional[int] = None,
         role: Optional[str] = None,
+        draft_model_path: Optional[str] = None,
+        draft_max: Optional[int] = None,
     ) -> None:
         """Start llama-server with model loaded.
 
@@ -170,11 +173,14 @@ class ServerManager:
             no_mmap: If True, use bulk read instead of mmap (may be faster for cold loads).
             context_length: Override context length. If None, uses model's max_context from registry.
             role: Optional role name to look up model-specific max_context.
+            draft_model_path: Optional path to draft model for speculative decoding.
+            draft_max: Optional default K value for speculation (can be overridden per-request).
         """
         if self.process is not None:
             self.stop()
 
         self.model_path = model_path
+        self.draft_model_path = draft_model_path
         binary = get_binary("server", registry)
 
         # Determine context length: explicit > role-based > default
@@ -206,15 +212,21 @@ class ServerManager:
             cmd.extend(["--override-kv", moe_override])
         if no_mmap:
             cmd.append("--no-mmap")
+        if draft_model_path:
+            cmd.extend(["-md", draft_model_path])
+            if draft_max:
+                cmd.extend(["--draft-max", str(draft_max)])
 
         # Start server in background
         # Capture stderr to temp file for debugging if server fails
         import tempfile
         self._stderr_file = tempfile.NamedTemporaryFile(mode='w', prefix='llama_server_', suffix='.log', delete=False)
 
-        # Debug: print server command (check for MoE override)
+        # Debug: print server command (check for MoE override and draft)
         if moe_override:
             print(f"      [DEBUG] Server cmd includes: --override-kv {moe_override}", flush=True)
+        if draft_model_path:
+            print(f"      [DEBUG] Server cmd includes: -md {draft_model_path}", flush=True)
         print(f"      [DEBUG] Server log: {self._stderr_file.name}", flush=True)
 
         self.process = subprocess.Popen(
@@ -298,6 +310,7 @@ class ServerManager:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = DEFAULT_TEMPERATURE,
         timeout: int = DEFAULT_TIMEOUT,
+        speculative_n_max: Optional[int] = None,
     ) -> "InferenceResult":
         """Run inference via HTTP API with streaming to capture partial output.
 
@@ -306,6 +319,7 @@ class ServerManager:
             max_tokens: Maximum tokens to generate.
             temperature: Sampling temperature.
             timeout: Request timeout in seconds.
+            speculative_n_max: Optional K value for speculative decoding (overrides startup default).
 
         Returns:
             InferenceResult with response content and timing.
@@ -316,17 +330,22 @@ class ServerManager:
         timed_out = False
         timings = {}
 
+        # Build request payload
+        payload = {
+            "prompt": prompt,
+            "n_predict": max_tokens,
+            "temperature": temperature,
+            "cache_prompt": False,  # Fresh context for each question
+            "stream": True,  # Enable streaming for incremental collection
+        }
+        if speculative_n_max is not None:
+            payload["speculative.n_max"] = speculative_n_max
+
         try:
             # Use streaming to collect tokens incrementally
             response = requests.post(
                 url,
-                json={
-                    "prompt": prompt,
-                    "n_predict": max_tokens,
-                    "temperature": temperature,
-                    "cache_prompt": False,  # Fresh context for each question
-                    "stream": True,  # Enable streaming for incremental collection
-                },
+                json=payload,
                 timeout=(30, timeout),  # (connect timeout, read timeout)
                 stream=True,
             )
@@ -471,6 +490,25 @@ class Config:
             lookup_ngram=ngram,
         )
 
+    @classmethod
+    def compound_moe_spec(
+        cls, experts: int, override_key: str, k: int, draft_path: str, draft_name: str = ""
+    ) -> "Config":
+        """Create compound config: MoE expert reduction + speculative decoding."""
+        if draft_name:
+            name = f"moe{experts}_spec_{draft_name}_k{k}"
+        else:
+            draft_stem = Path(draft_path).stem if draft_path else "unknown"
+            name = f"moe{experts}_spec_{draft_stem}_k{k}"
+        return cls(
+            name=name,
+            config_type="moe_spec",
+            moe_experts=experts,
+            moe_override_key=override_key,
+            spec_k=k,
+            draft_model_path=draft_path,
+        )
+
 class Executor:
     """Executes llama.cpp inference commands."""
 
@@ -505,25 +543,43 @@ class Executor:
         forbidden = reg.get_forbidden_configs(role)
 
         # Architecture-specific configs
-        # Test expert counts from 2 up to (baseline - 2), stepping by 2
-        # E.g., baseline=8 → test [2, 4, 6], baseline=6 → test [2, 4]
+        # Test expert counts from 4 up to (baseline - 2), stepping by 2
+        # E.g., baseline=8 → test [4, 6], baseline=6 → test [4]
+        # NOTE: 2 experts often causes SIGSEGV or garbage output (see QUIRKS.md)
+        MIN_SAFE_EXPERTS = 4
         if architecture in ("moe", "qwen3moe", "qwen3vlmoe", "mixtral", "deepseek2"):
             override_key = reg.get_moe_override_key(role) or "qwen3moe.expert_used_count"
             baseline_experts = reg.get_baseline_experts(role)
             max_test_experts = baseline_experts - 2  # Don't test baseline or baseline-1
-            for experts in range(2, max_test_experts + 1, 2):  # [2, 4, 6, ...] up to max
+            for experts in range(MIN_SAFE_EXPERTS, max_test_experts + 1, 2):  # [4, 6, ...] up to max
                 configs.append(Config.moe(experts, override_key))
 
-            # MoE + lookup compound config (no spec decode - no MoE-compatible drafts exist)
+            # MoE + lookup compound config
             if "prompt_lookup" not in forbidden:
                 configs.append(Config.compound_moe_lookup(4, override_key, 4))
+
+            # MoE + spec decode compound configs (if compatible drafts exist)
+            # E.g., Qwen3-Coder-480B with jukofyork vocab transplant draft
+            if "speculative_decoding" not in forbidden:
+                drafts = reg.get_drafts_for_model(role)
+                for draft_role in drafts:
+                    draft_path = reg.get_model_path(draft_role)
+                    if draft_path and os.path.exists(draft_path):
+                        # Test MoE + spec decode at optimal expert count (usually 4)
+                        for k in [8, 16, 24]:
+                            cfg = Config.compound_moe_spec(
+                                MIN_SAFE_EXPERTS, override_key, k, draft_path, draft_role
+                            )
+                            cfg.speed_test_only = True
+                            cfg.inherits_quality_from = "baseline"
+                            configs.append(cfg)
 
         elif architecture in ("ssm_moe_hybrid", "qwen3next"):
             # SSM models - MoE reduction ONLY, no speculation (SSM incompatible with all spec methods)
             override_key = reg.get_moe_override_key(role) or "qwen3moe.expert_used_count"
             baseline_experts = reg.get_baseline_experts(role)
             max_test_experts = baseline_experts - 2
-            for experts in range(2, max_test_experts + 1, 2):
+            for experts in range(MIN_SAFE_EXPERTS, max_test_experts + 1, 2):
                 configs.append(Config.moe(experts, override_key))
 
         else:
@@ -563,6 +619,7 @@ class Executor:
         threads: int = DEFAULT_THREADS,
         mmproj_path: Optional[str] = None,
         image_path: Optional[str] = None,
+        context_size: Optional[int] = None,
     ) -> list[str]:
         """Build the llama.cpp command for a configuration.
 
@@ -575,6 +632,7 @@ class Executor:
             threads: Number of threads.
             mmproj_path: Path to mmproj file for VL models.
             image_path: Path to image file for VL models.
+            context_size: Context size in tokens (default: llama.cpp default ~8K).
 
         Returns:
             Command as list of strings.
@@ -594,6 +652,9 @@ class Executor:
                 "-n", str(max_tokens),
                 "--temp", str(temperature),
             ]
+            # Add context size if specified (required for long prompts > 8K default)
+            if context_size is not None:
+                cmd.extend(["-c", str(context_size)])
             # Add image if provided
             if image_path:
                 cmd.extend(["--image", image_path])
@@ -626,6 +687,12 @@ class Executor:
             "--temp", str(temperature),
             "-f", prompt_file,
         ]
+
+        # Add context size if specified (required for long prompts > 8K default)
+        # Also set batch size to match - lookup/lookahead need batch >= prompt tokens
+        if context_size is not None:
+            cmd.extend(["-c", str(context_size)])
+            cmd.extend(["-b", str(context_size)])
 
         # --no-conversation only works with llama-completion (prevents interactive hangs)
         if binary == completion_binary:
@@ -670,6 +737,7 @@ class Executor:
         timeout: int = DEFAULT_TIMEOUT,
         mmproj_path: Optional[str] = None,
         image_path: Optional[str] = None,
+        context_size: Optional[int] = None,
     ) -> InferenceResult:
         """Run inference with the given configuration.
 
@@ -683,6 +751,7 @@ class Executor:
             timeout: Timeout in seconds.
             mmproj_path: Path to mmproj file for VL models.
             image_path: Path to image file for VL models.
+            context_size: Context size in tokens (for long prompts).
 
         Returns:
             InferenceResult with output and status.
@@ -697,7 +766,7 @@ class Executor:
         try:
             cmd = self.build_command(
                 model_path, config, prompt_file, max_tokens, temperature, threads,
-                mmproj_path=mmproj_path, image_path=image_path
+                mmproj_path=mmproj_path, image_path=image_path, context_size=context_size
             )
             cmd_str = " ".join(cmd)
 
@@ -749,12 +818,13 @@ def build_command(
     registry: Optional[ModelRegistry] = None,
     mmproj_path: Optional[str] = None,
     image_path: Optional[str] = None,
+    context_size: Optional[int] = None,
 ) -> list[str]:
     """Convenience function to build a command."""
     executor = Executor(registry)
     return executor.build_command(
         model_path, config, prompt_file,
-        mmproj_path=mmproj_path, image_path=image_path
+        mmproj_path=mmproj_path, image_path=image_path, context_size=context_size
     )
 
 
@@ -766,12 +836,13 @@ def run_inference(
     registry: Optional[ModelRegistry] = None,
     mmproj_path: Optional[str] = None,
     image_path: Optional[str] = None,
+    context_size: Optional[int] = None,
 ) -> InferenceResult:
     """Convenience function to run inference."""
     executor = Executor(registry)
     return executor.run_inference(
         model_path, config, prompt, timeout=timeout,
-        mmproj_path=mmproj_path, image_path=image_path
+        mmproj_path=mmproj_path, image_path=image_path, context_size=context_size
     )
 
 

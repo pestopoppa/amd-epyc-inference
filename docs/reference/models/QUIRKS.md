@@ -41,7 +41,7 @@ llama-speculative -m Qwen3-Next-80B.gguf -md draft.gguf
 
 ### Gemma-3 Family (SWA Architecture)
 
-**Issue**: ~~Sliding Window Attention (SWA) incompatible with speculative decoding in llama.cpp~~
+**Speculative Decoding Issue**: ~~Sliding Window Attention (SWA) incompatible with speculative decoding in llama.cpp~~
 
 **Status**: ✅ FIXED with PR #18720 (forward-looking SWA masking)
 
@@ -56,10 +56,31 @@ llama-speculative -m gemma-3-27B.gguf -md gemma-3-1b.gguf --draft 4 -t 96
 # Results: 42-81% acceptance rate, 12.26 t/s
 ```
 
+**Prompt Lookup Issue**: ✅ FIXED (PRs #18729, #18730)
+
+**Symptoms**: `GGML_ASSERT(batch.seq_id[...])` crash without `-c` flag (affects ALL models, not just SWA)
+
+**Root Cause**: Two pre-existing bugs activated by upstream default changes:
+- `lookup.cpp:109` - batch init with `params.n_ctx` (now defaults to 0)
+- `lookahead.cpp:121` - same issue + n_seq_max validation
+
+```bash
+# ❌ Crashed without -c (before fix)
+llama-lookup -m any-model.gguf -f prompt.txt --draft-max 4
+
+# ✅ Now works (with PRs #18729 + #18730 or local cherry-pick)
+llama-lookup -m gemma-3-27B.gguf -f prompt.txt --draft-max 4
+```
+
+**Test Result**: Prompt lookup works with SWA models (32.8% acceptance on Gemma-3-1b).
+
+**Status**: PRs submitted, fixes cherry-picked locally. See `handoffs/blocked/swa_prompt_lookup.md`.
+
 **Note**: Vocab mismatch (1B=262144, 27B=262208) is safe - 64 token diff doesn't affect generation.
 
 **Discovered**: 2026-01-09
-**Fixed**: 2026-01-09 (PR #18720)
+**Spec Decode Fixed**: 2026-01-09 (PR #18720)
+**Prompt Lookup**: Still broken as of 2026-01-10
 
 ### Vision-Language (VL) Models
 
@@ -137,14 +158,18 @@ llama-cli ... 2>&1 | tee output.log
 
 ### MoE Expert Count Sweet Spots
 
-**Issue**: Below 3 experts, quality degrades significantly
+**Issue**: Below 4 experts causes instability (SIGSEGV, garbage output, UTF-8 decode errors)
 
-| Model | Min Safe Experts | Quality Impact |
-|-------|------------------|----------------|
-| Qwen3-VL-30B | 3 | ✅ Good |
-| Qwen3-Next-80B | 3 | ✅ Good |
-| Qwen3-235B | 4 | ✅ Good |
-| Any | 2 | ⚠️ Often garbage |
+| Model | Min Safe Experts | Issue at 2 Experts |
+|-------|------------------|-------------------|
+| Qwen3-VL-30B | 4 | ⚠️ Garbage output |
+| Qwen3-Next-80B | 4 | ⚠️ Garbage output |
+| Qwen3-235B | 4 | ⚠️ Garbage output |
+| Any MoE | 4 | ⚠️ Unstable |
+
+**Workaround**: Benchmark system starts MoE testing at 4 experts minimum
+
+**Note**: Earlier reports of Qwen3-30B-A3B-Thinking crashes were caused by a stale build issue, not the model itself. Model works fine with moe2 and moe4 on clean builds.
 
 ## Memory Quirks
 

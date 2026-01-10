@@ -308,9 +308,12 @@ class ModelRegistry:
                 continue
 
             # Check if target model is in compatible_targets
+            # Normalize underscores/hyphens for matching (registry uses both)
             compatible_targets = draft_config.get("compatible_targets", [])
+            model_name_normalized = model_name.lower().replace("_", "-")
             for target in compatible_targets:
-                if target.lower() in model_name.lower():
+                target_normalized = target.lower().replace("_", "-")
+                if target_normalized in model_name_normalized:
                     compatible_drafts.append(draft_role)
                     break
 

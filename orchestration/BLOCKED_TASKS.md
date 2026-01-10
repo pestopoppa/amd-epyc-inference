@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-09
+**Last Updated**: 2026-01-10
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -12,6 +12,9 @@
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
 | **MTP ISWA Fix** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
 | **Gemma-3 SWA Spec Decode** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
+| **Prompt Lookup/Lookahead Bugs** | — | **LOW** | `handoffs/blocked/swa_prompt_lookup.md` | ✅ PRs #18729 + #18730 SUBMITTED (cherry-picked locally) |
+| **Qwen3-A3B MoE Instability** | — | — | — | ✅ RESOLVED (was stale build issue) |
+| **Hybrid Lookup+Spec Decode** | Implementation needed | **MEDIUM** | `handoffs/active/hybrid-lookup-spec-decode.md` | 📋 PROPOSAL (no upstream work exists) |
 | AVX-512 VNNI Q8_0 | — | — | — | ❌ NOT SUBMITTING (8% speedup) |
 | Draft model benchmarks | — | HIGH | `handoffs/active/draft-benchmark.md` | ✅ READY (registry verified) |
 | Formalizer eval | — | HIGH | `handoffs/active/formalizer-evaluation.md` | ✅ READY (`nohup ./scripts/benchmark/run_all_formalizers.sh &`) |

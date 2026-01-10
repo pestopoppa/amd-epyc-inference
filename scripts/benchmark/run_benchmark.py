@@ -259,6 +259,7 @@ def run_benchmark(
     active_server: Optional[ServerManager] = None  # Server for current model
     current_server_model: Optional[str] = None  # Model path loaded in server
     current_server_experts: Optional[int] = None  # Expert count loaded in server (None = default)
+    current_server_draft: Optional[str] = None  # Draft model path loaded in server (None = no draft)
 
     # Outer progress bar: roles
     role_iter = tqdm(valid_roles, desc="Roles") if TQDM_AVAILABLE else valid_roles
@@ -304,7 +305,7 @@ def run_benchmark(
                             prompt=SPEED_TEST_PROMPT,
                             max_tokens=256,
                             temperature=0.6,
-                            timeout=180,  # Conservative timeout for speed test
+                            timeout=max(180, int(size_gb * 3) + 120),  # Dynamic based on model size
                             mmproj_path=mmproj_path,  # VL models need mmproj even for text
                         )
                         if speed_result.success and not speed_result.timed_out:
@@ -369,6 +370,7 @@ def run_benchmark(
                     else:
                         current_server_model = model_path
                         current_server_experts = None  # Default expert count
+                        current_server_draft = None  # No draft model initially
                         print(f"    [SERVER] Ready, model loaded in RAM (default experts)", flush=True)
 
         print(f"    [{role}] {pending_tests}/{inner_total} tests pending ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
@@ -406,7 +408,47 @@ def run_benchmark(
                         current_server_experts = None
                     else:
                         current_server_experts = required_experts
+                        current_server_draft = None  # MoE restart clears draft
                         print(f"      [SERVER] Ready", flush=True)
+
+            # SERVER RESTART for different draft models (spec decode configs)
+            # Only restart if draft model differs from currently loaded one
+            if server_mode and active_server is not None and active_server.is_running():
+                if config.config_type in ("spec", "moe_spec"):
+                    required_draft = config.draft_model_path
+                    if required_draft != current_server_draft:
+                        # Need to restart with draft model
+                        # Determine MoE override for moe_spec configs
+                        if config.config_type == "moe_spec":
+                            moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
+                            moe_override = f"{moe_key}=int:{config.moe_experts}"
+                        else:
+                            moe_override = None
+
+                        draft_name = Path(required_draft).stem if required_draft else "unknown"
+                        print(f"      [SERVER] Restarting with draft {draft_name}...", flush=True)
+                        active_server.stop()
+                        active_server = ServerManager(port=8080)
+                        active_server.start(
+                            model_path,
+                            moe_override=moe_override,
+                            registry=registry,
+                            no_mmap=no_mmap,
+                            role=role,
+                            draft_model_path=required_draft,
+                            draft_max=config.spec_k,  # Use this K as default
+                        )
+
+                        server_timeout = max(600, int(size_gb * 3) + 120)
+                        if not active_server.wait_ready(timeout=server_timeout):
+                            print(f"      [SERVER] Failed to restart with draft, falling back to subprocess", flush=True)
+                            active_server = None
+                            current_server_draft = None
+                        else:
+                            current_server_draft = required_draft
+                            if config.config_type == "moe_spec":
+                                current_server_experts = config.moe_experts
+                            print(f"      [SERVER] Ready with draft", flush=True)
 
             # SPEED-TEST OPTIMIZATION: For configs that only need speed measurement
             # (e.g., spec decode variants), run a single speed test instead of all questions.
@@ -424,16 +466,36 @@ def run_benchmark(
                     continue
 
                 try:
-                    # Speed tests use subprocess (spec decode configs need external draft)
-                    result = executor.run_inference(
-                        model_path=model_path,
-                        config=config,
-                        prompt=SPEED_TEST_PROMPT,
-                        max_tokens=256,
-                        temperature=0.6,
-                        timeout=120,
-                        mmproj_path=mmproj_path,  # VL models need mmproj even for speed tests
+                    # Speed tests can use server if draft model is loaded
+                    # This avoids reloading the large model for each K value
+                    use_server_for_speed = (
+                        active_server is not None
+                        and active_server.is_running()
+                        and config.config_type in ("spec", "moe_spec")
+                        and current_server_draft == config.draft_model_path
+                        and mmproj_path is None
                     )
+
+                    if use_server_for_speed:
+                        # Use server - K is per-request, no reload needed
+                        result = active_server.run_inference(
+                            prompt=SPEED_TEST_PROMPT,
+                            max_tokens=256,
+                            temperature=0.6,
+                            timeout=max(180, int(size_gb * 3) + 120),
+                            speculative_n_max=config.spec_k,
+                        )
+                    else:
+                        # Fallback to subprocess (VL models, or server not available)
+                        result = executor.run_inference(
+                            model_path=model_path,
+                            config=config,
+                            prompt=SPEED_TEST_PROMPT,
+                            max_tokens=256,
+                            temperature=0.6,
+                            timeout=max(180, int(size_gb * 3) + 120),
+                            mmproj_path=mmproj_path,  # VL models need mmproj even for speed tests
+                        )
 
                     if result.timed_out:
                         stats["errors"] += 1
@@ -539,22 +601,25 @@ def run_benchmark(
                                 continue
 
                     try:
-                        # Use server for baseline/MoE configs (model stays in RAM)
-                        # Use subprocess for spec decode (needs external draft model)
+                        # Use server for all supported config types (model stays in RAM)
+                        # Server supports: baseline, MoE, spec decode (K is per-request)
                         # VL models MUST use subprocess (server doesn't support vision)
                         use_server = (
                             active_server is not None
                             and active_server.is_running()
-                            and config.config_type in ("baseline", "moe")
+                            and config.config_type in ("baseline", "moe", "spec", "moe_spec")
                             and mmproj_path is None  # VL models can't use server
                         )
 
                         if use_server:
+                            # Pass K value for spec decode configs (per-request override)
+                            spec_k = config.spec_k if config.config_type in ("spec", "moe_spec") else None
                             result = active_server.run_inference(
                                 prompt=question.prompt,
                                 max_tokens=params["max_tokens"],
                                 temperature=params["temperature"],
                                 timeout=params["timeout"],
+                                speculative_n_max=spec_k,
                             )
                         else:
                             result = executor.run_inference(
