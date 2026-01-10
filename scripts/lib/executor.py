@@ -690,9 +690,12 @@ class Executor:
 
         # Add context size if specified (required for long prompts > 8K default)
         # Also set batch size to match - lookup/lookahead need batch >= prompt tokens
+        # Note: context_tokens from YAML is an estimate (chars/4). Different tokenizers
+        # may produce 2-3x more tokens, so we apply a 3x safety multiplier.
         if context_size is not None:
-            cmd.extend(["-c", str(context_size)])
-            cmd.extend(["-b", str(context_size)])
+            safe_context = context_size * 3  # Safety margin for tokenizer differences
+            cmd.extend(["-c", str(safe_context)])
+            cmd.extend(["-b", str(safe_context)])
 
         # --no-conversation only works with llama-completion (prevents interactive hangs)
         if binary == completion_binary:
