@@ -631,6 +631,7 @@ def run_benchmark(
                                 timeout=params["timeout"],
                                 mmproj_path=mmproj_path,
                                 image_path=question.image_path,
+                                context_size=question.context_tokens,  # For long_context prompts
                             )
 
                         if result.timed_out:
