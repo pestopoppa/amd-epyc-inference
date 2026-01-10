@@ -104,6 +104,10 @@ roles:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_coder_0_75b
+        k: 16
     performance:
       baseline_tps: 17.1
       optimized_tps: 18.3
@@ -133,6 +137,10 @@ roles:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_coder_0_75b
+        k: 16
     performance:
       baseline_tps: 17.1
       optimized_tps: 18.3
@@ -164,6 +172,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_coder_0_75b
+        k: 16
     performance:
       baseline_tps: 20.4
       optimized_tps: 30.4
@@ -225,6 +237,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_0_6b_q8_0
+        k: 16
     performance:
       baseline_tps: 3.6
       optimized_tps: 6.75
@@ -598,6 +614,10 @@ roles:
     - architect
     - general
     - ingest
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_pard_llama_3_2_1b_q8_0
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -642,6 +662,10 @@ roles:
     - architect
     - general
     - ingest
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen25
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -663,6 +687,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_coder_0_75b
+        k: 16
     memory:
       residency: cold
       pinned: false
@@ -679,6 +707,10 @@ roles:
     - math
     - architect
     - thinking
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen25
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -758,6 +790,10 @@ roles:
     - thinking
     - general
     - worker
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_deepseek_r1_distill_qwen_1_5b_q80
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -824,6 +860,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_0_6b_q8_0
+        k: 16
     memory:
       residency: cold
       pinned: false
@@ -988,6 +1028,10 @@ roles:
     - frontdoor
     - coder
     - ingest
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen3_0_6b_q8_0
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -1536,6 +1580,10 @@ roles:
     candidate_roles:
     - thinking
     - general
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_deepseek_r1_distill_qwen_1_5b_q80
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -1574,6 +1622,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_0_6b_q8_0
+        k: 16
     memory:
       residency: cold
       pinned: false
@@ -1629,6 +1681,10 @@ roles:
     - frontdoor
     - coder
     - ingest
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen3_0_6b_q8_0
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -1681,6 +1737,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_coder_0_75b
+        k: 16
   ingest_llama_3_1_70b:
     tier: B
     description: Ingest candidate - Meta-Llama-3.1-70B (81% quality, 41x spec speedup)
@@ -1721,6 +1781,10 @@ roles:
     - architect
     - general
     - ingest
+    acceleration:
+      type: speculative_decoding
+      draft_role: draft_qwen25
+      k: 16
     memory:
       residency: cold
       pinned: false
@@ -1761,6 +1825,10 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
+      alternative:
+        type: speculative_decoding
+        draft_role: draft_qwen3_0_6b_q8_0
+        k: 16
   ingest_glm_4_6:
     tier: B
     description: Ingest candidate - GLM-4.6-Q4_K_S-00001-of-00005
