@@ -9,6 +9,7 @@
 
 | Task | Blocked On | Priority | Handoff | Status |
 |------|------------|----------|---------|--------|
+| **Paged Attention CoW** | Paged attention PR submission | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
 | **MTP ISWA Fix** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
 | **Gemma-3 SWA Spec Decode** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
@@ -320,6 +321,29 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
 - [ ] Compare results with vLLM baseline
 - [ ] Update model_registry.yaml with MTP performance
 - [ ] Correct GLM-4.6 entry (remove incorrect MoE optimization reference)
+
+---
+
+## Paged Attention Copy-on-Write (CoW)
+
+**Blocked on**: Current paged attention PR must be submitted and reviewed first.
+
+**Purpose**: Enable prefix sharing between sequences (e.g., shared system prompts in llama-server).
+
+**Expected benefit**: Additional 10-30% memory savings in multi-sequence scenarios.
+
+**Implementation plan**: See `handoffs/active/paged-attention.md` Section 9 for:
+- Infrastructure already in place (ref_count, is_shared(), add_ref())
+- What needs to be implemented (seq_cp, cpy_k, cpy_v modifications)
+- Test cases to add
+- Benchmark plan
+
+**Resume command**:
+```bash
+cd /mnt/raid0/llm/llama.cpp-experimental
+git checkout feature/paged-attention
+cat handoffs/active/paged-attention.md  # Section 9 has full plan
+```
 
 ---
 

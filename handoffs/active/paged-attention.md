@@ -189,7 +189,138 @@ common/common.h              |   4 +  (params struct)
 
 ---
 
-## 9. Commands to Resume
+## 9. Future Work: Prefix Sharing (Copy-on-Write)
+
+### Overview
+
+Prefix sharing allows multiple sequences to share common KV cache blocks (e.g., system prompts) without duplication. When a sequence modifies a shared block, it gets a private copy (copy-on-write).
+
+**Use case**: llama-server with multiple concurrent users sharing the same system prompt.
+
+**Expected savings**: Additional 10-30% memory reduction in multi-sequence scenarios (on top of current 80-84%).
+
+### Infrastructure Already In Place
+
+The current implementation has CoW-ready infrastructure:
+
+```cpp
+// In llama_kv_block (src/llama-kv-block.h)
+struct llama_kv_block {
+    uint32_t ref_count = 0;  // 0=free, 1=exclusive, >1=shared (CoW)
+    // ...
+    bool is_shared() const { return ref_count > 1; }
+};
+
+// In llama_kv_block_pool
+void add_ref(int32_t idx);      // Increment ref count
+void deallocate(int32_t idx);   // Decrements ref_count, only frees when 0
+```
+
+### What Needs to Be Implemented
+
+#### 1. Modify `seq_cp()` to share blocks
+
+**Current behavior**: Copies block table entries (logical mapping) but doesn't share physical blocks.
+
+**Needed behavior**:
+```cpp
+void llama_kv_cache::seq_cp(...) {
+    // When copying sequence, share blocks instead of duplicating
+    const auto * src_blocks = table.get_sequence_blocks(seq_id_src);
+    for (int32_t physical_block : *src_blocks) {
+        pool.add_ref(physical_block);  // Increment ref count
+        table.append_block(seq_id_dst, physical_block);  // Share same physical block
+    }
+}
+```
+
+#### 2. Modify K/V write path for copy-before-write
+
+**Files**: `src/llama-kv-cache.cpp` - `cpy_k()` and `cpy_v()` methods
+
+**Current behavior**: Writes directly to physical block.
+
+**Needed behavior**:
+```cpp
+ggml_tensor * llama_kv_cache::cpy_k(...) {
+    // Before writing to a block, check if it's shared
+    for (each block being written) {
+        if (pool.get(physical_block).is_shared()) {
+            // Copy-on-write: allocate new block, copy data, update mapping
+            int32_t new_block = pool.allocate();
+            copy_block_data(physical_block, new_block);
+            pool.deallocate(physical_block);  // Decrement ref on old
+            table.set_mapping(seq_id, logical_idx, new_block);
+            physical_block = new_block;
+        }
+    }
+    // Now safe to write
+}
+```
+
+#### 3. Handle partial block modifications
+
+When a shared block is only partially modified:
+- Option A: Copy entire block (simpler, some waste)
+- Option B: Split block at modification point (complex, optimal)
+
+**Recommendation**: Start with Option A for simplicity.
+
+#### 4. Update `set_input_block_table()`
+
+Ensure block table tensor correctly reflects shared blocks for the attention kernel.
+
+### Test Cases to Add
+
+```cpp
+// tests/test-kv-block.cpp additions
+
+static bool test_cow_share_on_copy() {
+    // seq_cp should share blocks, not duplicate
+    pool.allocate() -> block 0
+    table.append_block(seq_0, block_0)
+
+    seq_cp(seq_0, seq_1)  // Should share block 0
+
+    ASSERT(pool.get(0).ref_count == 2);
+    ASSERT(table.get_physical(seq_0, 0) == table.get_physical(seq_1, 0));
+}
+
+static bool test_cow_copy_on_write() {
+    // Writing to shared block should trigger copy
+    // ... setup shared block ...
+
+    write_to_seq_1_block_0()
+
+    ASSERT(pool.get(0).ref_count == 1);  // seq_0 still owns original
+    ASSERT(table.get_physical(seq_1, 0) != 0);  // seq_1 has new block
+}
+```
+
+### Benchmark Plan
+
+1. **Setup**: llama-server with 4 concurrent sequences, same 2K token system prompt
+2. **Baseline**: Current paged attention (no sharing)
+3. **With CoW**: Measure memory reduction
+4. **Expected**: ~2K tokens × 3 sequences saved (75% reduction in shared prefix memory)
+
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/llama-kv-cache.cpp` | `seq_cp()`, `cpy_k()`, `cpy_v()` |
+| `src/llama-kv-cache.h` | Possibly add CoW helper methods |
+| `tests/test-kv-block.cpp` | Add CoW test cases |
+
+### Estimated Complexity
+
+- **Lines of code**: ~200-300
+- **Risk**: Medium (touches write path, needs careful testing)
+- **Recommendation**: Implement as separate PR after core paged attention is merged
+
+---
+
+## 10. Commands to Resume
 
 ```bash
 # Switch to experimental worktree
