@@ -59,6 +59,125 @@ QUEUE_FILE = "/mnt/raid0/llm/tmp/benchmark_queue.txt"
 # Speed test prompt for configs that only need speed measurement (quality inherited from baseline)
 SPEED_TEST_PROMPT = """Write a Python function that calculates the Fibonacci sequence up to n terms. Include a docstring explaining the function and type hints for all parameters and return value. Then write a brief example showing how to use the function."""
 
+# Longer speed test prompt for lookup configs (lookup needs substantial input for n-gram matching)
+# This prompt includes repetitive patterns (code, technical docs) that give lookup n-grams to match.
+LOOKUP_SPEED_TEST_PROMPT = """You are reviewing the following codebase. Summarize what each function does:
+
+```python
+# Module: cache_manager.py
+# Provides caching utilities for the application
+
+import hashlib
+import json
+import os
+import time
+from typing import Any, Dict, Optional, TypeVar, Generic
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+T = TypeVar('T')
+
+@dataclass
+class CacheEntry(Generic[T]):
+    \"\"\"Represents a single cache entry with metadata.\"\"\"
+    value: T
+    created_at: datetime = field(default_factory=datetime.now)
+    expires_at: Optional[datetime] = None
+    access_count: int = 0
+    last_accessed: Optional[datetime] = None
+
+    def is_expired(self) -> bool:
+        \"\"\"Check if this cache entry has expired.\"\"\"
+        if self.expires_at is None:
+            return False
+        return datetime.now() > self.expires_at
+
+    def access(self) -> T:
+        \"\"\"Mark entry as accessed and return value.\"\"\"
+        self.access_count += 1
+        self.last_accessed = datetime.now()
+        return self.value
+
+
+class CacheManager:
+    \"\"\"Thread-safe cache manager with TTL and eviction support.\"\"\"
+
+    def __init__(self, max_size: int = 1000, default_ttl: int = 3600):
+        self._cache: Dict[str, CacheEntry] = {}
+        self._max_size = max_size
+        self._default_ttl = default_ttl
+        self._stats = {"hits": 0, "misses": 0, "evictions": 0}
+
+    def _generate_key(self, *args, **kwargs) -> str:
+        \"\"\"Generate a unique cache key from arguments.\"\"\"
+        data = json.dumps({"args": args, "kwargs": kwargs}, sort_keys=True)
+        return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+    def get(self, key: str) -> Optional[Any]:
+        \"\"\"Get a value from cache by key.\"\"\"
+        entry = self._cache.get(key)
+        if entry is None:
+            self._stats["misses"] += 1
+            return None
+        if entry.is_expired():
+            self._evict(key)
+            self._stats["misses"] += 1
+            return None
+        self._stats["hits"] += 1
+        return entry.access()
+
+    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        \"\"\"Set a value in cache with optional TTL.\"\"\"
+        if len(self._cache) >= self._max_size:
+            self._evict_lru()
+        ttl = ttl if ttl is not None else self._default_ttl
+        expires_at = datetime.now() + timedelta(seconds=ttl)
+        self._cache[key] = CacheEntry(value=value, expires_at=expires_at)
+
+    def _evict(self, key: str) -> None:
+        \"\"\"Evict a specific key from cache.\"\"\"
+        if key in self._cache:
+            del self._cache[key]
+            self._stats["evictions"] += 1
+
+    def _evict_lru(self) -> None:
+        \"\"\"Evict the least recently used entry.\"\"\"
+        if not self._cache:
+            return
+        lru_key = min(self._cache.keys(),
+                      key=lambda k: self._cache[k].last_accessed or self._cache[k].created_at)
+        self._evict(lru_key)
+
+    def clear(self) -> None:
+        \"\"\"Clear all cache entries.\"\"\"
+        self._cache.clear()
+
+    @property
+    def stats(self) -> Dict[str, int]:
+        \"\"\"Get cache statistics.\"\"\"
+        return dict(self._stats)
+
+
+def cached(ttl: int = 3600, cache: Optional[CacheManager] = None):
+    \"\"\"Decorator to cache function results.\"\"\"
+    _cache = cache or CacheManager()
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            key = _cache._generate_key(func.__name__, *args, **kwargs)
+            result = _cache.get(key)
+            if result is None:
+                result = func(*args, **kwargs)
+                _cache.set(key, result, ttl)
+            return result
+        return wrapper
+    return decorator
+```
+
+Provide a summary of:
+1. The main classes and their purposes
+2. Key methods and what they do
+3. Any design patterns used"""
+
 # Reference TPS for timeout multiplier calculation (20 t/s = 1.0x multiplier)
 REFERENCE_TPS = 20.0
 # Minimum timeout multiplier (even fast models don't get shorter timeouts)
@@ -452,7 +571,7 @@ def run_benchmark(
                             print(f"      [SERVER] Ready with draft", flush=True)
 
             # SPEED-TEST OPTIMIZATION: For configs that only need speed measurement
-            # (e.g., spec decode variants), run a single speed test instead of all questions.
+            # (e.g., spec decode variants, lookup), run a single speed test instead of all questions.
             # Quality is inherited from baseline since target model is the same.
             if config.speed_test_only:
                 stats["total"] += 1
@@ -467,6 +586,13 @@ def run_benchmark(
                     continue
 
                 try:
+                    # Choose prompt based on config type
+                    # Lookup needs a longer prompt for n-gram matching to work
+                    is_lookup = config.config_type in ("lookup", "moe_lookup")
+                    speed_prompt = LOOKUP_SPEED_TEST_PROMPT if is_lookup else SPEED_TEST_PROMPT
+                    speed_max_tokens = 512 if is_lookup else 256  # Longer response for longer prompt
+                    speed_timeout = max(300 if is_lookup else 180, int(size_gb * 3) + 120)
+
                     # Speed tests can use server if draft model is loaded
                     # This avoids reloading the large model for each K value
                     use_server_for_speed = (
@@ -480,21 +606,21 @@ def run_benchmark(
                     if use_server_for_speed:
                         # Use server - K is per-request, no reload needed
                         result = active_server.run_inference(
-                            prompt=SPEED_TEST_PROMPT,
-                            max_tokens=256,
+                            prompt=speed_prompt,
+                            max_tokens=speed_max_tokens,
                             temperature=0.6,
-                            timeout=max(180, int(size_gb * 3) + 120),
+                            timeout=speed_timeout,
                             speculative_n_max=config.spec_k,
                         )
                     else:
-                        # Fallback to subprocess (VL models, or server not available)
+                        # Fallback to subprocess (VL models, lookup, or server not available)
                         result = executor.run_inference(
                             model_path=model_path,
                             config=config,
-                            prompt=SPEED_TEST_PROMPT,
-                            max_tokens=256,
+                            prompt=speed_prompt,
+                            max_tokens=speed_max_tokens,
                             temperature=0.6,
-                            timeout=max(180, int(size_gb * 3) + 120),
+                            timeout=speed_timeout,
                             mmproj_path=mmproj_path,  # VL models need mmproj even for speed tests
                             role=role,  # For paged attention on 70B+ models
                         )

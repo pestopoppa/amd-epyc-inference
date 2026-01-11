@@ -554,9 +554,12 @@ class Executor:
             for experts in range(MIN_SAFE_EXPERTS, max_test_experts + 1, 2):  # [4, 6, ...] up to max
                 configs.append(Config.moe(experts, override_key))
 
-            # MoE + lookup compound config
+            # MoE + lookup compound config (speed-only: inherits quality from moe4)
             if "prompt_lookup" not in forbidden:
-                configs.append(Config.compound_moe_lookup(4, override_key, 4))
+                cfg = Config.compound_moe_lookup(4, override_key, 4)
+                cfg.speed_test_only = True
+                cfg.inherits_quality_from = "moe4"  # Quality from MoE, not baseline
+                configs.append(cfg)
 
             # MoE + spec decode compound configs (if compatible drafts exist)
             # E.g., Qwen3-Coder-480B with jukofyork vocab transplant draft
@@ -603,9 +606,14 @@ class Executor:
             role_config = reg.get_role_config(role)
             is_draft = role_config and role_config.get("tier") == "D"
 
+            # Prompt lookup configs (speed-only: inherits quality from baseline)
+            # Same target model, just different draft strategy
             if "prompt_lookup" not in forbidden and not is_draft:
                 for ngram in [3, 4, 5]:
-                    configs.append(Config.lookup(ngram))
+                    cfg = Config.lookup(ngram)
+                    cfg.speed_test_only = True
+                    cfg.inherits_quality_from = "baseline"
+                    configs.append(cfg)
 
         return configs
 

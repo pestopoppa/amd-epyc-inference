@@ -1,23 +1,25 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-07 (Draft model rescore with hardened suites - 10 models)
+**Last Updated:** 2026-01-11 (Master table rebuilt from 78 models in summary.csv)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
 
 ## Best Results
 
+> **Note:** Quality percentages from master benchmark table. Speeds from K-sweep testing.
+
 | Configuration | Speed | Speedup | Quality | Use Case |
 |---------------|-------|---------|---------|----------|
-| **Qwen2.5-Coder-32B + 0.5B (K=16)** | **174.6 t/s** | **51x** | 72% | Ingest/code tasks |
-| **worker_summarize + 0.5B (K=8)** | **172.4 t/s** | **56x** | 96% | Document summarization |
-| **Qwen2.5-Math-72B + qwen25 (K=24)** | **158.8 t/s** | **80x** | 77% | Math reasoning |
-| **Qwen2.5-72B + qwen25 (K=16)** | **147.8 t/s** | **76x** | 87% | Architect tasks |
-| Prompt Lookup (summarization) | 95.18 t/s | 12.7x | 96% | Document QA with source |
-| **Meta-Llama-3.1-70B + PARD (K=24)** | **84.3 t/s** | **40x** | 90% | High-quality architect |
-| **DeepSeek-R1-32B + 1.5B (K=16)** | **72.2 t/s** | **36x** | 81% | Thinking/reasoning |
-| Qwen3-Coder-30B-A3B + MoE 4 | 45.3 t/s | +31% | 80% | Code generation |
-| MoE Expert Reduction (4 experts) | +21-48% | — | — | MoE models |
+| **Qwen2.5-Coder-32B + 0.5B (K=16)** | **174.6 t/s** | **51x** | 93% | Ingest/code tasks |
+| **Qwen2.5-Math-72B + spec (K=24)** | **158.8 t/s** | **80x** | 92% | Math reasoning |
+| **Qwen2.5-72B + spec (K=16)** | **147.8 t/s** | **76x** | 91% | Architect tasks |
+| **Qwen3-4B-Thinking + spec** | **103.7 t/s** | **9x** | 88% | Fast thinking |
+| Prompt Lookup (summarization) | 95.18 t/s | 12.7x | — | Document QA with source |
+| **Meta-Llama-3.1-70B + PARD (K=24)** | **84.3 t/s** | **40x** | 93% | High-quality architect |
+| **DeepSeek-R1-14B-Q6_K_L + spec (K=24)** | **70.8 t/s** | **14x** | 98% | Thinking/reasoning |
+| Qwen3-Coder-30B-A3B + MoE6 | 17.6 t/s | +37% | **100%** | Code generation |
+| MoE Expert Reduction (4-6 experts) | +21-48% | — | — | MoE models |
 
 ---
 
@@ -578,60 +580,81 @@ Independent quality evaluation using Claude as judge. Models scored using refere
 
 See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuristics and methodology.
 
-**2026-01-07 Update:** 61 baseline models reviewed, 381 total configs scored (baselines + MoE + spec decode variants).
+**2026-01-11 Update:** 78 models scored from `benchmarks/results/reviews/summary.csv`. Auto-generated from result files.
 
-### Master Baseline Scores (All Models)
+### Master Benchmark Scores (All Models)
 
-| Model | Thinking | General | Math | Agentic | Coder | Inst.Prec | Total | Pct | t/s |
-|-------|----------|---------|------|---------|-------|-----------|-------|-----|-----|
-| general_qwen3_32b | 28/30 | - | - | - | 30/30 | - | 58/60 | **97%** | 1.6 |
-| worker_summarize | 28/30 | - | - | 8/9 | 30/30 | - | 66/69 | **96%** | 3.0 |
-| thinking_deepseek_r1_distill_llama_8b | 28/30 | 24/30 | 30/30 | 30/30 | - | - | 112/120 | **93%** | 7.2 |
-| thinking_reasoning (Qwen3-Next-80B) | 30/30 | 30/30 | 30/30 | 27/30 | 21/30 | 28/33 | 193/210 | **92%** | 9.2 |
-| architect_qwen2_5_72b_q4_k_m | 30/30 | - | 9/9 | - | 24/30 | - | 63/69 | **91%** | - |
-| architect_meta_llama_3_1_70b | 29/30 | 29/30 | 25/30 | 30/30 | 27/30 | 25/33 | 165/183 | **90%** | 2.1 |
-| thinking_qwen3_4b_thinking_2507 | 28/30 | 22/30 | 30/30 | 27/30 | - | - | 107/120 | **89%** | 16.5 |
-| architect_general (Qwen3-235B) | 28/30 | 23/30 | 29/30 | 28/30 | 30/30 | 25/33 | 172/195 | **88%** | 5.9 |
-| architect_qwen2_5_72b | 30/30 | 29/30 | 30/30 | 24/30 | 30/30 | 17/33 | 173/198 | **87%** | 1.9 |
-| ingest_qwen3_32b | 30/30 | 27/30 | 30/30 | 21/30 | 29/30 | 22/33 | 159/183 | **87%** | 1.6 |
-| thinking_deepseek_r1_distill_qwen_7b | 29/30 | 19/30 | 30/30 | 24/30 | - | - | 102/120 | **85%** | 7.7 |
-| architect_hermes_4_70b | 29/30 | 29/30 | 22/30 | 28/30 | 30/30 | 15/33 | 153/183 | **84%** | 2.7 |
-| ingest_hermes_4_70b | 30/30 | 29/30 | 30/30 | 24/30 | 25/30 | 15/33 | 153/183 | **84%** | 2.9 |
-| architect_coding (Qwen3-480B) | 28/30 | - | - | 28/30 | 27/27 | - | 87/105 | **83%** | 5.7 |
-| ingest_llama_3_1_70b | 28/30 | 28/30 | 23/30 | 26/30 | 23/30 | 21/33 | 149/183 | **81%** | 2.0 |
-| thinking_deepseek_r1_distill_qwen_32b | 26/30 | - | - | - | 13/18 | - | 39/48 | **81%** | 1.8 |
-| frontdoor (Qwen3-Coder-30B) | 27/30 | 20/30 | 20/30 | 27/30 | 30/30 | 22/33 | 146/183 | **80%** | 17.1 |
-| ingest_qwen3_30b_thinking | 26/30 | 25/30 | 25/30 | 24/30 | 21/30 | 22/33 | 143/183 | **78%** | 17.6 |
-| math_qwen2_5_math_72b_2 | 22/30 | 30/30 | 26/30 | 20/30 | 21/30 | 22/33 | 141/183 | **77%** | 2.0 |
-| ingest_qwen2_5_72b | 28/30 | 26/30 | 27/30 | 20/30 | 19/30 | 18/33 | 138/183 | **75%** | 2.2 |
-| ingest_long_context (Qwen3-Next-80B) | 29/30 | - | - | 25/30 | - | 12/33 | 75/102 | **74%** | 9.7 |
-| ingest_qwen2_5_coder_32b | 22/30 | 20/30 | 20/30 | 22/30 | 29/30 | 19/33 | 132/183 | **72%** | 3.4 |
-| draft_deepseek_r1_distill_qwen_1_5b_q80 | 22/30 | 21/30 | - | - | - | - | 43/60 | **72%** | 51.3 |
-| draft_pard_deepseek_r1_1.5b (Q5_K_S) | 22/30 | 21/30 | - | - | - | - | 43/60 | **72%** | 60.7 |
-| draft_pard_deepseek_r1_1.5b (Q8_0) | 22/30 | 21/30 | - | - | - | - | 43/60 | **72%** | 45.0 |
-| draft_co_rewarding_ii_qwen3_1.7b | 21/30 | 21/30 | - | - | - | - | 42/60 | **70%** | 22.0 |
-| draft_deepseek_r1_distill_qwen_1_5b | 22/30 | 20/30 | - | - | - | - | 42/60 | **70%** | 31.9 |
-| draft_pard_llama_3_2_1b_q4_0 | 21/30 | 21/30 | - | - | - | - | 42/60 | **70%** | 83.5 |
-| draft_qwen2_0_5b_q2_k | 21/30 | 21/30 | - | - | - | - | 42/60 | **70%** | 200.2 |
-| draft_pard_llama_3_2_1b_q8_0 | 20/30 | 21/30 | - | - | - | - | 41/60 | **68%** | 44.7 |
-| draft_pard_qwen3_0_6b_q4_0 | 18/30 | 21/30 | - | - | - | - | 39/60 | **65%** | 101.6 |
-| thinking_qwen3_30b_a3b_thinking_2507 | 24/30 | 22/30 | 20/30 | 20/30 | 21/30 | 11/33 | 118/183 | **64%** | 17.4 |
-| thinking_deepseek_r1_distill_llama_70b | 20/30 | 20/30 | 20/30 | 21/30 | 20/30 | 13/33 | 114/183 | **62%** | 1.0 |
-| math_qwen2_5_math_72b | 21/30 | 18/30 | 21/30 | 19/30 | 21/30 | 11/33 | 111/183 | **61%** | ~2.0 |
-| ingest_glm_4_6 | 29/30 | - | - | 13/30 | - | 19/33 | 65/108 | **60%** | 3.7 |
-| general_glm_4_6 | 24/30 | - | - | 12/30 | 5/6 | 18/33 | 74/126 | **59%** | 3.4 |
-| draft_qwen25 | 24/60 | 30/60 | - | - | - | - | 54/120 | **45%** | 187.7 |
-| draft_qwen2_5_coder_1_5b_q4_k_m | 23/60 | 31/60 | - | - | - | - | 54/120 | **45%** | 85.1 |
-| draft_qwen3_1_7b | 22/60 | 32/60 | - | - | - | - | 54/120 | **45%** | 41.9 |
-| draft_qwen25_coder | 21/60 | 32/60 | - | - | - | - | 53/120 | **44%** | 165.4 |
-| draft_qwen2_5_coder_0_5b | 21/60 | 32/60 | - | - | - | - | 53/120 | **44%** | 178.2 |
-| draft_qwen2_5_math_1_5b_q6k | 23/60 | 30/60 | - | - | - | - | 53/120 | **44%** | 62.5 |
-| draft_qwen2_5_coder_1_5b_q2_k | 20/60 | 32/60 | - | - | - | - | 52/120 | **43%** | 77.9 |
-| draft_qwen2_5_math_1_5b | 22/60 | 30/60 | - | - | - | - | 52/120 | **43%** | 54.3 |
-| draft_qwen3_0_6b | 20/60 | 30/60 | - | - | - | - | 50/120 | **42%** | 108.5 |
-| general_deepseek_r1_0528_qwen3_8b | 14/30 | 14/30 | 13/30 | 16/30 | 15/30 | 0/33 | 72/183 | **39%** ⚠️ | 7.2 |
-| coder_escalation (Qwen3-53B) | 19/30 | 11/27 | 12/30 | 11/30 | 9/30 | 7/33 | 69/180 | **38%** ⚠️ | 9.2 |
-| architect_meta_llama_3_70b | 0/30 | 13/30 | 5/30 | 12/30 | 15/30 | 16/33 | 61/183 | **33%** ⚠️ | 14.9 |
+> **Source:** `scripts/benchmark/rebuild_summary.py` rebuilds this from raw result files.
+> **Columns:** Thinking/General/Math/Agentic/Coder/Inst.Prec/Long.Ctx show correct/total per suite. Spec columns show best draft and speed.
+
+| Model | Thinking | General | Math | Agentic | Coder | Inst.Prec | Long.Ctx | Total | Pct | t/s | Spec Draft | Spec t/s |
+|-------|----------|---------|------|---------|-------|-----------|----------|-------|-----|-----|------------|----------|
+| Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0 | 10/10 | 10/10 | - | - | - | - | - | 20/20 | 100% | 22.0 | - | - |
+| nexusraven-v2-13b.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 13.4 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q4_K_S | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | 9/9 | 70/70 | 100% | 16.3 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | 9/9 | 70/70 | 100% | 21.2 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q8_0_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 61/61 | 100% | 19.5 | - | - |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 11/11 | 10/10 | 11/11 | - | 62/62 | 100% | 12.9 | - | - |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 61/61 | 100% | 17.6 | - | - |
+| Qwen3_VL_2B.Q4_K_M | - | 10/10 | - | 10/10 | - | - | - | 20/20 | 100% | 46.6 | - | - |
+| xLAM-1b-fc-r.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 56.0 | - | - |
+| xLAM-2-1B-fc-r-Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 50.4 | - | - |
+| Qwen3-Next-80B-A3B-Thinking-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | 9/9 | 69/70 | 99% | 9.8 | - | - |
+| DeepSeek-R1-Distill-Qwen-14B-Q6_K_L | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 5.1 | pard_deepseek_r1 | 70.8 |
+| Qwen3-30B-A3B-Thinking-2507-Q8_0_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 21.4 | - | - |
+| gemma-3-12b-it-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 10/11 | - | 59/61 | 97% | 9.3 | - | - |
+| MathSmith-Qwen3-8B.Q4_K_M | 10/10 | 9/10 | 10/10 | - | - | - | - | 29/30 | 97% | 14.0 | - | - |
+| Qwen3-Coder-53B-TOTAL-RECALL_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 9/11 | - | 59/61 | 97% | 12.7 | - | - |
+| DeepSeek-R1-Distill-Qwen-1.5B-Q8_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 59.1 | - | - |
+| gemma-3-27B-it-QAT-Q4_0 | 4/4 | 10/10 | 9/10 | 10/10 | 10/10 | 9/11 | - | 52/55 | 95% | 2.2 | - | - |
+| PARD-DeepSeek-R1-Distill-Qwen-1.5B (Q5/Q8) | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 45-47 | - | - |
+| pard-llama-3.2-1b-q4_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 75.9 | - | - |
+| pard-qwen3-0.6b-q4_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 81.6 | - | - |
+| Qwen3-32B-Q4_K_M | 10/10 | 10/10 | 10/10 | 7/10 | 10/10 | 11/11 | - | 58/61 | 95% | 1.6 | - | - |
+| DeepSeek-R1-Distill-Qwen-32B-Q6_K | 10/10 | - | - | - | 5/6 | - | - | 15/16 | 94% | 2.0 | - | - |
+| Qwen3-235B-A22B-Q4_K_M | 9/10 | 9/10 | 10/10 | 10/10 | 9/10 | 10/11 | 5/5 | 62/66 | 94% | 5.8 | - | - |
+| Qwen3-Coder-480B-A35B_moe4 | 10/10 | - | - | 10/10 | 10/10 | - | 4/6 | 34/36 | 94% | 6.6 | - | - |
+| Meta-Llama-3.1-70B-Instruct-Q4_K_M | 10/10 | 10/10 | 9/10 | 10/10 | 9/10 | 9/11 | - | 57/61 | 93% | 2.1 | - | - |
+| Meta-Llama-3.1-8B.Q4_K_S | 6/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 57/61 | 93% | 77.0 | - | - |
+| Qwen2.5-Coder-32B-Instruct-Q4_K_M | 9/10 | 10/10 | 10/10 | 10/10 | 10/10 | 8/11 | - | 57/61 | 93% | 3.4 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q8_0 | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 8/11 | - | 57/61 | 93% | 17.6 | - | - |
+| Qwen2.5-Math-72B-Instruct-Q4_K_M | 8/10 | 10/10 | 8/10 | 10/10 | 9/10 | 11/11 | - | 56/61 | 92% | 2.0 | - | - |
+| Qwen2.5-72B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 6/11 | 4/5 | 60/66 | 91% | 1.9 | - | - |
+| Qwen3-235B-A22B-Q4_K_M_moe4 | 9/10 | 9/10 | 10/10 | 10/10 | 8/10 | 11/11 | 3/5 | 60/66 | 91% | 7.2 | - | - |
+| Qwen3-235B-A22B-Q4_K_M_moe6 | 9/10 | 9/10 | 10/10 | 10/10 | 7/10 | 11/11 | 4/5 | 60/66 | 91% | 6.6 | - | - |
+| Meta-Llama-3-8B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 4/10 | 10/10 | 11/11 | - | 55/61 | 90% | 14.7 | - | - |
+| Qwen2.5-7B.Q4_K_S | 5/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 55/61 | 90% | 18.5 | qwen2_5_coder_0_5b | 214.5 |
+| Qwen2.5-Math-7B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 5/9 | - | - | - | 35/39 | 90% | 10.2 | qwen2_5_coder_0_5b | 201.5 |
+| Hermes-4-70B-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 4/11 | - | 54/61 | 89% | 2.7 | - | - |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M_moe4 | 10/10 | 10/10 | 10/10 | 4/10 | 10/10 | 10/11 | - | 54/61 | 89% | 19.1 | - | - |
+| DeepSeek-R1-Distill-Llama-8B-Q4_K_M | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 9.4 | - | - |
+| DeepSeek-R1-Distill-Qwen-7B-Q4_K_M | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 10.6 | pard_deepseek_r1 | 71.8 |
+| Qwen3-4B-Thinking-2507-Q8_0 | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 11.5 | pard_qwen3_0_6b | 103.7 |
+| DeepSeek-R1-Distill-Qwen-14B-Q4_K_M | 10/10 | 7/10 | 10/10 | 9/10 | 10/10 | 7/11 | - | 53/61 | 87% | 3.9 | pard_deepseek_r1 | 68.7 |
+| Qwen3-Coder-480B-A35B-Instruct-Q4_K_M | 9/10 | - | - | 10/10 | 9/9 | - | 1/6 | 29/35 | 83% | 6.0 | - | - |
+| DeepSeek-R1-Distill-Llama-70B-Q4_K_M | 10/10 | 9/10 | 10/10 | 10/10 | 10/10 | 1/11 | - | 50/61 | 82% | 1.0 | - | - |
+| gemma-3-1b-it-Q8_0 | 8/10 | 4/5 | - | - | - | - | - | 12/15 | 80% | 114.1 | - | - |
+| Qwen3-235B-A22B-Q4_K_M_moe2 | 9/10 | 8/10 | 9/10 | 6/10 | 7/10 | 11/11 | 3/5 | 53/66 | 80% | 8.0 | - | - |
+| Qwen3-Coder-480B-A35B-Instruct-Q4_K_M_moe6 | 9/10 | 9/10 | 10/10 | 9/10 | 8/10 | 4/11 | 6/9 | 55/70 | 79% | 5.6 | - | - |
+| Qwen2.5-72B.Q4_K_M | 10/10 | 9/10 | 9/10 | 7/10 | 7/10 | 5/11 | - | 47/61 | 77% | 2.2 | - | - |
+| Qwen3-1.7B-Q4_K_M | 10/10 | 5/10 | - | - | - | - | - | 15/20 | 75% | 43.3 | - | - |
+| DeepSeek-R1-0528-Qwen3-8B-Q8_0 | 9/10 | 6/10 | 9/10 | 7/10 | 10/10 | 3/11 | - | 44/61 | 72% | 8.2 | - | - |
+| Qwen3-Coder-53B-TOTAL-RECALL_moe4 | 2/10 | 8/10 | 10/10 | 8/10 | 6/10 | 5/11 | - | 39/61 | 64% | 14.0 | - | - |
+| Qwen2.5-Coder-1.5B.Q4_K_M | 5/10 | 7/10 | - | - | - | - | - | 12/20 | 60% | 99.7 | - | - |
+| Qwen2.5-Math-1.5B-Instruct-Q4_K_M | 9/10 | 3/10 | - | - | - | - | - | 12/20 | 60% | 54.3 | - | - |
+| Qwen2.5-Coder-0.5B-Q4_K_M | 8/10 | 3/10 | - | - | - | - | - | 11/20 | 55% | 142.2 | - | - |
+| Qwen2.5-VL-7B-Instruct-Q4_K_M | - | 10/10 | - | 0/10 | - | - | - | 10/20 | 50% | 14.6 | qwen2_5_coder_0_5b | 222.8 |
+| Qwen2.5-0.5B.Q8_0 | 5/10 | 3/10 | - | - | - | - | - | 8/20 | 40% | 156.8 | - | - |
+| Qwen3-Coder-Instruct-DRAFT-0.75B | 4/10 | 2/10 | - | - | - | - | - | 6/20 | 30% | 63.1 | - | - |
+| Qwen_Qwen3-0.6B-Q8_0 | 3/10 | 2/10 | - | - | - | - | - | 5/20 | 25% | 67.8 | - | - |
+| Qwen3-Coder-53B-TOTAL-RECALL (baseline) | 5/10 | 3/9 | 3/10 | 2/10 | 0/10 | 0/11 | - | 13/60 | 22% | 10.3 | - | - |
+| Qwen2.5-Coder-0.5B-Q8_0 | 3/10 | 1/10 | - | - | - | - | - | 4/20 | 20% | 146.9 | - | - |
+| Qwen3-1.7B-Q8_0 | 1/10 | 2/10 | - | - | - | - | - | 3/20 | 15% | 36.3 | - | - |
+| Qwen2.5-Coder-1.5B.Q2_K | 1/10 | 1/10 | - | - | - | - | - | 2/20 | 10% | 87.9 | - | - |
+| Qwen2-0.5B.Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 156.0 | - | - |
+| Qwen3-0.6B-Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 95.3 | - | - |
+
+**Total: 78 models** (includes MoE variants as separate entries)
 
 ### Global Role Recommendations (Updated 2026-01-06)
 
@@ -646,93 +669,97 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 **HOT POOL (~35 GB) - Always Resident:**
 | Model | Size | Speed | Purpose |
 |-------|------|-------|---------|
-| frontdoor (Qwen3-Coder-30B + MoE4) | 17.5 GB | 41.5 t/s | Orchestrator (always on) |
-| draft_qwen25_coder (0.5B Q8_0) | 0.5 GB | 178 t/s | Draft for Qwen2.5-Coder family |
-| draft_qwen25 (0.5B Q8_0) | 0.5 GB | 188 t/s | Draft for Qwen2.5 family |
-| draft_pard_llama (1B Q4_0) | 0.9 GB | 84 t/s | Draft for Llama family |
-| draft_r1_distill (1.5B Q8_0) | 1.8 GB | 51 t/s | Draft for DeepSeek R1 family |
-| worker_general (Llama-3-8B) | 4.7 GB | 37 t/s | Boilerplate, rewrites |
-| worker_math (Qwen2.5-Math-7B) | 4.4 GB | 48 t/s | Edge cases, invariants |
-| toolrunner (Llama-3-8B) | 4.7 GB | 17 t/s | Log triage, tool output |
+| frontdoor (Qwen3-Coder-30B + MoE6) | 17.5 GB | 17.6 t/s | Orchestrator (always on) |
+| draft_qwen25_coder (0.5B Q4_K_M) | 0.4 GB | 142 t/s | Draft for Qwen2.5-Coder family |
+| draft_qwen25 (0.5B Q8_0) | 0.5 GB | 157 t/s | Draft for Qwen2.5 family |
+| draft_pard_llama (1B Q4_0) | 0.9 GB | 76 t/s | Draft for Llama family |
+| draft_r1_distill (1.5B Q8_0) | 1.8 GB | 59 t/s | Draft for DeepSeek R1 family |
+| worker_general (Llama-3-8B) | 4.7 GB | 14.7 t/s | Boilerplate, rewrites |
+| worker_math (Qwen2.5-Math-7B) | 4.4 GB | 201.5 t/s | Edge cases (with spec) |
+| toolrunner (Llama-3-8B) | 4.7 GB | 14.7 t/s | Log triage, tool output |
 
 **WARM POOL (~460 GB) - Load 2-3 Based on Task:**
 | Model | Size | Quality | Speed | Acceleration | Best For |
 |-------|------|---------|-------|--------------|----------|
-| **architect_qwen2_5_72b** | 44 GB | **87%** | 147.8 t/s | spec K=16 | General architecture |
-| **architect_meta_llama_3_1_70b** | 40 GB | **90%** | 84.3 t/s | spec K=24 | Highest quality design |
-| **math_qwen2_5_math_72b** | 44 GB | 77% | 158.8 t/s | spec K=24 | Math reasoning |
-| **worker_summarize** | 18 GB | **96%** | 172.4 t/s | spec K=8 | Document summarization |
-| **ingest_qwen2_5_coder_32b** | 18 GB | 72% | 174.6 t/s | spec K=16 | Fast ingest/code |
-| **thinking_deepseek_r1_32b** | 25 GB | 81% | 72.2 t/s | spec K=16 | Chain-of-thought |
-| **thinking_reasoning** (Next-80B) | 45 GB | **92%** | 9.2 t/s | MoE2 (SSM) | Deep reasoning |
-| **ingest_long_context** (Next-80B) | 45 GB | 74% | 11.6 t/s | MoE2 (SSM) | Very long docs |
-| **architect_general** (235B) | 133 GB | 88% | 6.75 t/s | MoE4 | System design |
+| **architect_qwen2_5_72b** | 44 GB | **91%** | 147.8 t/s | spec K=16 | General architecture |
+| **architect_meta_llama_3_1_70b** | 40 GB | **93%** | 84.3 t/s | spec K=24 | Highest quality design |
+| **math_qwen2_5_math_72b** | 44 GB | **92%** | 158.8 t/s | spec K=24 | Math reasoning |
+| **worker_summarize** | 18 GB | **93%** | 172.4 t/s | spec K=8 | Document summarization |
+| **ingest_qwen2_5_coder_32b** | 18 GB | 93% | 174.6 t/s | spec K=16 | Fast ingest/code |
+| **thinking_deepseek_r1_14b** | 8 GB | **98%** | 70.8 t/s | spec K=24 | Chain-of-thought |
+| **thinking_reasoning** (Next-80B) | 45 GB | **99%** | 9.8 t/s | MoE4 | Deep reasoning |
+| **ingest_long_context** (Next-80B) | 45 GB | **99%** | 9.8 t/s | MoE4 | Very long docs |
+| **architect_general** (235B) | 133 GB | 91% | 7.2 t/s | MoE4 | System design |
 | vision_escalation (30B-A3B) | 18 GB | - | 35.0 t/s | MoE4 | Complex vision |
-| architect_coding (480B) | 271 GB | 83% | 10.3 t/s | MoE3 | Ultimate escalation |
+| architect_coding (480B) | 271 GB | **94%** | 6.6 t/s | MoE4 | Ultimate escalation |
 
 ---
 
 #### Production Role Assignments
 
+> **Note:** Quality percentages from master benchmark table (2026-01-11). Speeds for spec decode configs from separate K-sweep testing.
+
 **Tier A: Frontdoor (Interactive, Low Latency)**
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| **PRIMARY** | **Qwen3-Coder-30B-A3B + MoE6** | **90%** | 18.3 t/s | Default for all routing ⭐ |
-| FAST | Qwen3-Coder-30B-A3B + MoE4 | 81% | 23.6 t/s | When speed > quality |
+| **PRIMARY** | **Qwen3-Coder-30B-A3B + MoE6** | **100%** | 17.6 t/s | Default for all routing ⭐ |
+| FAST | Qwen3-Coder-30B-A3B + MoE4 | 89% | 19.1 t/s | When speed > quality |
 
-**Note (2026-01-06):** MoE6 is now recommended over MoE4. Quality increases from 81% → 90% with modest speed reduction (23.6 → 18.3 t/s). MoE2 is BROKEN (0%).
+**Note (2026-01-11):** MoE6 is now recommended over MoE4. Quality increases from 89% → 100% with modest speed reduction. MoE2 is BROKEN (0%).
 
 **Tier B: Architects (Quality > Speed)**
 
 | Role | Priority | Model | Quality | Speed | When to Use |
 |------|----------|-------|---------|-------|-------------|
-| **architect_coding** | 1 | Qwen3-Coder-480B + MoE3 | 83% | 10.3 t/s | Final escalation for complex code |
-| | 2 | Qwen3-235B + MoE4 | 88% | 6.75 t/s | General architecture fallback |
-| **architect_general** | 1 | **Qwen2.5-72B + spec K=16** | **87%** | **147.8 t/s** | **Fast high-quality design** ⭐ |
-| | 2 | Meta-Llama-3.1-70B + spec K=24 | **90%** | 84.3 t/s | Highest quality (slower) |
-| | 3 | Qwen3-235B + MoE2 | 88% | 8.2 t/s | SSM hybrid (no spec) |
+| **architect_coding** | 1 | Qwen3-Coder-480B + MoE4 | 94% | 6.6 t/s | Final escalation for complex code |
+| | 2 | Qwen3-235B + MoE4 | 91% | 7.2 t/s | General architecture fallback |
+| **architect_general** | 1 | **Qwen2.5-72B + spec K=16** | **91%** | **147.8 t/s** | **Fast high-quality design** ⭐ |
+| | 2 | Meta-Llama-3.1-70B + spec K=24 | **93%** | 84.3 t/s | Highest quality (slower) |
+| | 3 | Qwen3-235B + MoE4 | 91% | 7.2 t/s | Large MoE (no spec) |
 
 **Tier B: Thinking/Reasoning**
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| 1 | **Qwen3-Next-80B-Thinking + MoE2** | **92%** | 9.2 t/s | **Deep multi-step reasoning** |
-| 2 | DeepSeek-R1-Distill-Qwen-32B + spec K=16 | 81% | 72.2 t/s | Fast reasoning with spec decode |
-| 3 | DeepSeek-R1-Distill-Llama-8B | 93% | 7.2 t/s | Small fast reasoner (no spec) |
-| 4 | Qwen3-4B-Thinking-2507 | 89% | 16.5 t/s | Tiny fast reasoner |
+| 1 | **Qwen3-Next-80B-Thinking + MoE4** | **99%** | 9.8 t/s | **Deep multi-step reasoning** |
+| 2 | DeepSeek-R1-Distill-Qwen-14B-Q6_K_L + spec K=24 | 98% | 70.8 t/s | Fast reasoning with spec decode |
+| 3 | DeepSeek-R1-Distill-Qwen-32B | 94% | 2.0 t/s | Large reasoner (no spec) |
+| 4 | DeepSeek-R1-Distill-Llama-8B | 88% | 9.4 t/s | Small fast reasoner |
+| 5 | Qwen3-4B-Thinking-2507 + spec | 88% | 103.7 t/s | Tiny fast reasoner |
 
 **Tier B: Math Specialist**
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| 1 | **Qwen2.5-Math-72B + spec K=24** | 77% | **158.8 t/s** | **Production math** ⭐ |
-| 2 | worker_math (Qwen2.5-Math-7B) | - | 48.5 t/s | Fast edge cases |
+| 1 | **Qwen2.5-Math-72B + spec** | 92% | **158.8 t/s** | **Production math** ⭐ |
+| 2 | Qwen2.5-Math-7B + spec | 90% | 201.5 t/s | Fast math with spec |
 
 **Tier B: Ingest/Long Context**
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| 1 | **Qwen2.5-Coder-32B + spec K=16** | 72% | **174.6 t/s** | **Fast bulk ingest** ⭐ |
-| 2 | Meta-Llama-3.1-70B + spec K=24 | 81% | 85.8 t/s | Higher quality ingest |
-| 3 | Qwen3-Next-80B + MoE2 (SSM) | 74% | 11.6 t/s | Very long context (128K+) |
+| 1 | **Qwen2.5-Coder-32B + spec** | 93% | **174.6 t/s** | **Fast bulk ingest** ⭐ |
+| 2 | Meta-Llama-3.1-70B + spec K=24 | 93% | 85.8 t/s | Higher quality ingest |
+| 3 | Qwen3-Next-80B + MoE4 (SSM) | 99% | 9.8 t/s | Very long context (128K+) |
 
 **Tier C: Workers (Speed > Quality)**
 
 | Role | Model | Quality | Speed | Acceleration |
 |------|-------|---------|-------|--------------|
-| **worker_summarize** | Qwen2.5-Coder-32B | **96%** | **172.4 t/s** | spec K=8 ⭐ |
-| worker_general | Llama-3-8B | - | 37 t/s | prompt lookup |
-| worker_math | Qwen2.5-Math-7B | - | 48.5 t/s | spec K=8 |
+| **worker_summarize** | Qwen2.5-Coder-32B | **93%** | **172.4 t/s** | spec K=8 ⭐ |
+| worker_general | Llama-3-8B | 90% | 14.7 t/s | baseline |
+| worker_math | Qwen2.5-Math-7B | 90% | 201.5 t/s | spec |
 
 **Tier D: Draft Models (Spec Decode Targets)**
 
 | Family | Draft Model | Quality | Speed | Compatible With |
 |--------|-------------|---------|-------|-----------------|
-| **Qwen2.5** | qwen2.5-coder-0.5B Q8_0 | 44% | 178 t/s | Qwen2.5-Coder-32B, worker_summarize |
-| **Qwen2.5** | qwen2.5-0.5B Q8_0 | 45% | 188 t/s | Qwen2.5-72B, Qwen2.5-Math-72B |
-| **Llama** | PARD-Llama-3.2-1B Q4_0 | 70% | 84 t/s | Meta-Llama-3.1-70B, Llama-3-8B |
-| **DeepSeek** | R1-Distill-Qwen-1.5B Q8_0 | 72% | 51 t/s | DeepSeek-R1-Distill-Qwen-32B |
+| **Qwen2.5** | qwen2.5-coder-0.5B Q4_K_M | 55% | 142 t/s | Qwen2.5-Coder-32B, Qwen2.5-72B |
+| **Qwen2.5** | qwen2.5-0.5B Q8_0 | 40% | 157 t/s | Qwen2.5-72B, Qwen2.5-Math-72B |
+| **Llama** | PARD-Llama-3.2-1B Q4_0 | 95% | 76 t/s | Meta-Llama-3.1-70B, Llama-3-8B |
+| **DeepSeek** | R1-Distill-Qwen-1.5B Q8_0 | 95% | 59 t/s | DeepSeek-R1-Distill-Qwen-32B |
+| **Qwen3** | PARD-Qwen3-0.6B Q4_0 | 95% | 82 t/s | Qwen3-4B-Thinking |
 
 ---
 
@@ -740,15 +767,15 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 
 | Task Type | Model + Config | Quality | Speed |
 |-----------|----------------|---------|-------|
-| **Code generation** | Qwen2.5-Coder-32B + spec K=16 | 72% | 174.6 t/s |
-| **Document summary** | worker_summarize + spec K=8 | **96%** | 172.4 t/s |
-| **Math reasoning** | Qwen2.5-Math-72B + spec K=24 | 77% | 158.8 t/s |
-| **Architecture design** | Qwen2.5-72B + spec K=16 | 87% | 147.8 t/s |
-| **High-quality design** | Llama-3.1-70B + spec K=24 | **90%** | 84.3 t/s |
-| **Deep reasoning** | DeepSeek-R1-32B + spec K=16 | 81% | 72.2 t/s |
-| **Complex reasoning** | Qwen3-Next-80B + MoE2 | **92%** | 9.2 t/s |
-| **Long context** | Qwen3-Next-80B + MoE2 | 74% | 11.6 t/s |
-| **Ultimate escalation** | Qwen3-Coder-480B + MoE3 | 83% | 10.3 t/s |
+| **Code generation** | Qwen2.5-Coder-32B + spec | 93% | 174.6 t/s |
+| **Document summary** | Qwen2.5-Coder-32B + spec K=8 | **93%** | 172.4 t/s |
+| **Math reasoning** | Qwen2.5-Math-72B + spec | **92%** | 158.8 t/s |
+| **Architecture design** | Qwen2.5-72B + spec K=16 | 91% | 147.8 t/s |
+| **High-quality design** | Llama-3.1-70B + spec K=24 | **93%** | 84.3 t/s |
+| **Fast reasoning** | DeepSeek-R1-14B-Q6_K_L + spec K=24 | **98%** | 70.8 t/s |
+| **Complex reasoning** | Qwen3-Next-80B + MoE4 | **99%** | 9.8 t/s |
+| **Long context** | Qwen3-Next-80B + MoE4 | **99%** | 9.8 t/s |
+| **Ultimate escalation** | Qwen3-Coder-480B + MoE4 | 94% | 6.6 t/s |
 
 ---
 

@@ -131,6 +131,42 @@ def parse_timing(raw_output: str) -> dict[str, Optional[float]]:
         "prompt_eval_time_ms": None,
     }
 
+    # Check for llama-speculative output format first
+    # This has "n_predict = X" and separate "draft:" / "target:" sections
+    # The correct speed is: n_predict / (target total time)
+    n_predict_match = re.search(r"n_predict\s*=\s*(\d+)", raw_output)
+    if n_predict_match:
+        n_predict = int(n_predict_match.group(1))
+
+        # Find the target section's total time
+        # Look for "target:" marker, then find "total time = X ms" after it
+        target_section = re.search(r"target:\s*(.*)", raw_output, re.DOTALL)
+        if target_section:
+            target_text = target_section.group(1)
+            # Pattern: "total time = X ms / Y tokens"
+            total_time_match = re.search(
+                r"total time\s*=\s*([\d.]+)\s*ms", target_text
+            )
+            if total_time_match:
+                total_time_ms = float(total_time_match.group(1))
+                result["total_time_ms"] = total_time_ms
+                # Calculate effective speed: tokens / seconds
+                if total_time_ms > 0:
+                    result["tokens_per_second"] = n_predict / (total_time_ms / 1000)
+
+        # If we found speculative output, also get prompt eval from target section
+        if target_section:
+            prompt_match = re.search(
+                r"prompt eval time\s*=\s*([\d.]+)\s*ms", target_section.group(1)
+            )
+            if prompt_match:
+                result["prompt_eval_time_ms"] = float(prompt_match.group(1))
+
+        # Return early if we successfully parsed speculative output
+        if result["tokens_per_second"] is not None:
+            return result
+
+    # Standard llama-cli output format
     # Pattern for eval time (NOT prompt eval): "eval time = X ms / Y runs (Z ms per token, W tokens per second)"
     # Must NOT be preceded by "prompt"
     eval_pattern = r"(?<!prompt\s)eval time\s*=\s*([\d.]+)\s*ms\s*/\s*(\d+)\s*(?:runs|tokens).*?([\d.]+)\s*tokens per second"
@@ -145,19 +181,23 @@ def parse_timing(raw_output: str) -> dict[str, Optional[float]]:
     if match:
         result["prompt_eval_time_ms"] = float(match.group(1))
 
-    # Alternative pattern: "decoded X tokens in Y seconds, speed: Z t/s" (llama-speculative)
+    # Alternative pattern: "decoded X tokens in Y seconds, speed: Z t/s" (some llama.cpp tools)
     if result["tokens_per_second"] is None:
         speed_pattern = r"speed:\s*([\d.]+)\s*t/s"
         match = re.search(speed_pattern, raw_output)
         if match:
             result["tokens_per_second"] = float(match.group(1))
 
-    # Another alternative: look for "X tokens per second" anywhere
+    # Last resort fallback: look for "X tokens per second" in eval time line only
+    # IMPORTANT: Only match in lines containing "eval time" to avoid matching prompt eval
     if result["tokens_per_second"] is None:
-        simple_pattern = r"([\d.]+)\s*tokens per second"
-        match = re.search(simple_pattern, raw_output)
-        if match:
-            result["tokens_per_second"] = float(match.group(1))
+        # Find lines with eval time (not prompt eval) and extract speed from those
+        for line in raw_output.split("\n"):
+            if "eval time" in line.lower() and "prompt" not in line.lower():
+                simple_match = re.search(r"([\d.]+)\s*tokens per second", line)
+                if simple_match:
+                    result["tokens_per_second"] = float(simple_match.group(1))
+                    break
 
     return result
 
@@ -195,10 +235,17 @@ def parse_acceptance_rate(raw_output: str) -> Optional[float]:
 
     Returns acceptance rate as a float (0.0-1.0) or None.
     """
-    # Pattern: "draft acceptance rate: 0.XXX" or "accept = X.XXX"
+    # Pattern: "accept = X.XXX%" (llama-speculative format)
+    # Must handle percentage sign and convert to 0-1 range
+    accept_pct_match = re.search(r"accept\s*=\s*([\d.]+)\s*%", raw_output)
+    if accept_pct_match:
+        rate = float(accept_pct_match.group(1)) / 100
+        return rate
+
+    # Pattern: "draft acceptance rate: 0.XXX" or "accept = X.XXX" (without %)
     patterns = [
         r"draft acceptance rate:\s*([\d.]+)",
-        r"accept\s*=\s*([\d.]+)",
+        r"accept\s*=\s*([\d.]+)",  # Without % sign
         r"acceptance[:\s]+([\d.]+)",
     ]
 
@@ -206,7 +253,7 @@ def parse_acceptance_rate(raw_output: str) -> Optional[float]:
         match = re.search(pattern, raw_output, re.IGNORECASE)
         if match:
             rate = float(match.group(1))
-            # Normalize to 0-1 range if given as percentage
+            # Normalize to 0-1 range if given as percentage (>1 means it was a percentage)
             if rate > 1:
                 rate = rate / 100
             return rate
@@ -240,7 +287,7 @@ def parse_output(raw_output: str) -> ParsedOutput:
 
 
 if __name__ == "__main__":
-    # Test with sample output
+    # Test with standard llama-cli output
     sample_output = """
 build: 7404 (52392291b) with GNU 13.3.0 for Linux x86_64
 main: llama backend init
@@ -258,14 +305,56 @@ common_perf_print:        eval time =   16012.44 ms /   505 runs   (   31.71 ms 
 common_perf_print:       total time =   17776.75 ms /   567 tokens
     """
 
-    print("=== Output Parser Test ===\n")
+    print("=== Output Parser Test: Standard llama-cli ===\n")
 
     parsed = parse_output(sample_output)
 
     print(f"Response:\n{parsed.response}\n")
-    print(f"Tokens/second: {parsed.tokens_per_second}")
+    print(f"Tokens/second: {parsed.tokens_per_second} (expected: 31.54)")
     print(f"Prompt tokens: {parsed.prompt_tokens}")
     print(f"Completion tokens: {parsed.completion_tokens}")
     print(f"Total time: {parsed.total_time_ms} ms")
     print(f"Prompt eval time: {parsed.prompt_eval_time_ms} ms")
     print(f"Acceptance rate: {parsed.acceptance_rate}")
+
+    # Test with llama-speculative output
+    spec_output = """
+build: 7699 (6b43356a1) with GNU 13.3.0 for Linux x86_64
+n_draft   = 16
+n_predict = 52
+n_drafted = 240
+n_accept  = 36
+accept    = 15.000%
+
+draft:
+
+llama_perf_context_print:        load time =     625.48 ms
+llama_perf_context_print: prompt eval time =    2514.33 ms /    31 tokens (   81.11 ms per token,    12.33 tokens per second)
+llama_perf_context_print:        eval time =    3010.31 ms /   225 runs   (   13.38 ms per token,    74.74 tokens per second)
+llama_perf_context_print:       total time =    6089.18 ms /   256 tokens
+
+target:
+
+common_perf_print:    sampling time =      13.06 ms
+common_perf_print:    samplers time =       5.58 ms /    52 tokens
+common_perf_print:        load time =   11265.46 ms
+common_perf_print: prompt eval time =    2325.26 ms /   257 tokens (    9.05 ms per token,   110.53 tokens per second)
+common_perf_print:        eval time =       0.00 ms /     1 runs   (    0.00 ms per token,      inf tokens per second)
+common_perf_print:       total time =    6905.68 ms /   258 tokens
+    """
+
+    print("\n=== Output Parser Test: llama-speculative ===\n")
+
+    parsed_spec = parse_output(spec_output)
+
+    # Expected: 52 tokens / 6.906 seconds = 7.53 t/s
+    expected_tps = 52 / (6905.68 / 1000)
+    print(f"Tokens/second: {parsed_spec.tokens_per_second:.2f} (expected: {expected_tps:.2f})")
+    print(f"Total time: {parsed_spec.total_time_ms} ms (expected: 6905.68)")
+    print(f"Prompt eval time: {parsed_spec.prompt_eval_time_ms} ms")
+    print(f"Acceptance rate: {parsed_spec.acceptance_rate} (expected: 0.15)")
+
+    # Verify correctness
+    assert abs(parsed_spec.tokens_per_second - expected_tps) < 0.01, "Speed mismatch!"
+    assert abs(parsed_spec.acceptance_rate - 0.15) < 0.001, "Acceptance rate mismatch!"
+    print("\n✓ All tests passed!")
