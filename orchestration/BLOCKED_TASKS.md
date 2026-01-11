@@ -9,7 +9,8 @@
 
 | Task | Blocked On | Priority | Handoff | Status |
 |------|------------|----------|---------|--------|
-| **Paged Attention CoW** | Paged attention PR submission | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
+| **Model Registry: Paged Attention Flag** | Benchmark script running | **LOW** | See below | 🔄 BLOCKED |
+| **Paged Attention CoW** | Paged attention PR review | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
 | **MTP ISWA Fix** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
 | **Gemma-3 SWA Spec Decode** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
