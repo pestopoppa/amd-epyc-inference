@@ -741,6 +741,7 @@ class Executor:
         mmproj_path: Optional[str] = None,
         image_path: Optional[str] = None,
         context_size: Optional[int] = None,
+        role: Optional[str] = None,
     ) -> InferenceResult:
         """Run inference with the given configuration.
 
@@ -752,6 +753,7 @@ class Executor:
             temperature: Sampling temperature.
             threads: Number of threads.
             timeout: Timeout in seconds.
+            role: Role name for looking up paged_attention config.
             mmproj_path: Path to mmproj file for VL models.
             image_path: Path to image file for VL models.
             context_size: Context size in tokens (for long prompts).
@@ -773,12 +775,26 @@ class Executor:
             )
             cmd_str = " ".join(cmd)
 
+            # Build environment with paged attention if recommended for this role
+            env = None
+            if role and self.registry:
+                role_config = self.registry.get_role_config(role)
+                if role_config:
+                    paged_attn = role_config.get('paged_attention', {})
+                    if paged_attn.get('recommended'):
+                        env = os.environ.copy()
+                        block_size = paged_attn.get('block_size', 64)
+                        env['LLAMA_PAGED_ATTN'] = str(block_size)
+                        # Log that we're using paged attention
+                        print(f"      [PAGED_ATTN] Enabling block_size={block_size} for {role}", flush=True)
+
             try:
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     timeout=timeout,
+                    env=env,
                 )
                 # Separate stdout (model output) from stderr (llama.cpp logs/errors)
                 # Timing info is in stderr, so append it to raw_output for parsing

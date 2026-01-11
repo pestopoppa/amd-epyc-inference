@@ -307,6 +307,7 @@ def run_benchmark(
                             temperature=0.6,
                             timeout=max(180, int(size_gb * 3) + 120),  # Dynamic based on model size
                             mmproj_path=mmproj_path,  # VL models need mmproj even for text
+                            role=role,  # For paged attention on 70B+ models
                         )
                         if speed_result.success and not speed_result.timed_out:
                             parsed = parse_output(speed_result.raw_output)
@@ -495,6 +496,7 @@ def run_benchmark(
                             temperature=0.6,
                             timeout=max(180, int(size_gb * 3) + 120),
                             mmproj_path=mmproj_path,  # VL models need mmproj even for speed tests
+                            role=role,  # For paged attention on 70B+ models
                         )
 
                     if result.timed_out:
@@ -632,6 +634,7 @@ def run_benchmark(
                                 mmproj_path=mmproj_path,
                                 image_path=question.image_path,
                                 context_size=question.context_tokens,  # For long_context prompts
+                                role=role,  # For paged attention on 70B+ models
                             )
 
                         if result.timed_out:
