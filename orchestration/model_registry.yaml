@@ -48,6 +48,17 @@ runtime_defaults:
     tier_c: 180
     tier_d: 60
     long_context: 600
+  paged_attention:
+    description: "CPU paged attention for memory-bound large models (70B+)"
+    enabled_threshold_gb: 39  # Models >= 39GB benefit from paged attention
+    default_block_size: 256   # Optimal for 70B+ models
+    env_vars:
+      LLAMA_PAGED_ATTN: "${block_size}"
+      LLAMA_PAGED_ATTN_MAX_BLOCKS: "${max_blocks}"  # Optional memory reduction
+    benefits:
+      speedup: "+15-25% on memory-bound models via block prefetching"
+      memory_savings: "Up to 80% KV cache reduction with max_blocks"
+    notes: "PR #18747 submitted upstream. Cherry-picked to production-consolidated."
 server_mode:
   frontdoor:
     url: http://localhost:8080
@@ -248,6 +259,10 @@ roles:
     memory:
       residency: warm
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "133GB model is memory-bound, benefits from block prefetching"
   architect_coding:
     tier: B
     description: Hardest coding/architecture escalation - IR-first
@@ -287,6 +302,10 @@ roles:
     memory:
       residency: warm
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "271GB model is heavily memory-bound, estimated +15-25% speedup"
     benchmark_date: 2025-12-21
   thinking_reasoning:
     tier: B
@@ -572,6 +591,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "70B dense model benefits from block prefetching"
   architect_meta_llama_3_1_70b:
     tier: B
     description: Architect model - Meta-Llama-3.1-70B-Instruct (90% quality, 40x spec
@@ -599,6 +622,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "70B dense model benefits from block prefetching (+19% measured on Llama-70B)"
     benchmark_date: 2026-01-06
     notes: Highest quality architect model with excellent spec decode support
   architect_meta_llama_3_70b:
@@ -621,6 +648,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "70B dense model benefits from block prefetching"
   architect_qwen2_5_72b:
     tier: B
     description: Architect model - Qwen2.5-72B-Instruct-Q4_K_M (87% quality, 76x spec
@@ -648,6 +679,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "72B dense model benefits from block prefetching"
     benchmark_date: 2026-01-06
   architect_qwen2_5_72b_q4_k_m:
     tier: B
@@ -669,6 +704,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "72B dense model benefits from block prefetching"
   coder_qwen3_coder_30b_a3b:
     tier: B
     description: Coder model - Qwen3-Coder-30B-A3B-Instruct-Q4_K_M
@@ -739,6 +778,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "72B dense model benefits from block prefetching"
     benchmark_date: 2026-01-06
   thinking_deepseek_r1_distill_llama_70b:
     tier: B
@@ -759,6 +802,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "70B dense model benefits from block prefetching"
   thinking_deepseek_r1_distill_llama_8b:
     tier: B
     description: Thinking model - DeepSeek-R1-Distill-Llama-8B-Q4_K_M
@@ -1167,6 +1214,10 @@ roles:
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 256
+      reason: "235B VL model is memory-bound, benefits from block prefetching"
   vision_qwen3_vl_2b_q4_k_m:
     tier: C
     description: Vision model - Qwen3_VL_2B.Q4_K_M
