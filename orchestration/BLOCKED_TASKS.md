@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-10
+**Last Updated**: 2026-01-13
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -29,6 +29,69 @@
 | Frontend Architecture | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
 | CLI Parity Features | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
 | AMD PACE Testing | — | — | `handoffs/active/amd-pace-testing.md` | ✅ COMPLETE (not adopting) |
+| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
+
+---
+
+## RLM-Enhanced Orchestrator Development Phases
+
+**Master Handoff**: `handoffs/active/rlm-orchestrator-roadmap.md`
+**Research**: `research/rlm_analysis.md`
+
+| Phase | Description | Status | Dependencies |
+|-------|-------------|--------|--------------|
+| 1 | Backend Completion | READY | None |
+| 2 | RLM Enhancements | READY | Phase 1 |
+| 3 | Escalation Integration | READY | Phase 1 |
+| 4 | Formalizer Integration | READY | Phase 3 |
+| 5 | Tool/Script Completion | READY | None |
+| 6 | Early Failure Detection | READY | Phase 3 |
+| 7 | Hyperparameter Tuning | BLOCKED | Benchmarks |
+| 8 | Trajectory Visualization | LOW | Phase 2 |
+
+### Phase 1: Backend Completion (CRITICAL)
+- [ ] Complete LlamaServerBackend HTTP (`src/backends/llama_server.py`)
+- [ ] Wire CachingBackend init (`src/llm_primitives.py`)
+- [ ] Connect role→backend routing (`src/llm_primitives.py`)
+- [ ] Fix real mode initialization (`src/api.py`)
+
+### Phase 2: RLM Enhancements
+- [ ] Forced exploration validation (`src/repl_environment.py`)
+- [ ] Async `llm_batch_async()` (`src/llm_primitives.py`)
+- [ ] Configurable recursion depth (`src/llm_primitives.py`)
+- [ ] Per-query cost tracking (`src/llm_primitives.py`)
+
+### Phase 3: Escalation Integration
+- [ ] Error classification (`src/failure_router.py`)
+- [ ] Wire FailureRouter into Root LM loop (`src/api.py`)
+- [ ] Role switching on escalation (`src/api.py`)
+- [ ] Gate execution integration (`src/api.py`)
+
+### Phase 4: Formalizer Integration
+- [ ] Formalizer routing (`src/dispatcher.py`)
+- [ ] Create formalizer module (`src/formalizer.py`)
+- [ ] IR → REPL context injection (`src/api.py`)
+
+### Phase 5: Tool/Script Completion
+- [ ] MCP client implementation (`src/tool_registry.py`)
+- [ ] Script `invoke()` method (`src/script_registry.py`)
+- [ ] Script `find_scripts()` method (`src/script_registry.py`)
+- [ ] Tool result capture (`src/repl_environment.py`)
+
+### Phase 6: Early Failure Detection
+- [ ] Wire GenerationMonitor (`src/llm_primitives.py`)
+- [ ] Add entropy thresholds to registry (`model_registry.yaml`)
+- [ ] Early abort trigger (`src/llm_primitives.py`)
+
+### Phase 7: Hyperparameter Tuning
+- [ ] Sweep framework (`scripts/benchmark/sweep_hyperparams.py`)
+- [ ] Temperature sweep per task type
+- [ ] Expert count optimization
+
+### Phase 8: Trajectory Visualization
+- [ ] Enhanced SSE events (`src/api.py`)
+- [ ] Trajectory logging (`src/llm_primitives.py`)
+- [ ] Gradio visualization tab (`src/gradio_ui.py`)
 
 ---
 
