@@ -101,3 +101,15 @@ git push fork feature/paged-attention
 - [PR #18747](https://github.com/ggml-org/llama.cpp/pull/18747)
 - [vLLM PagedAttention Paper](https://arxiv.org/abs/2309.06180)
 - Plan file: `/home/daniele/.claude/plans/playful-plotting-creek.md`
+
+---
+
+## Related: Parallel Tensor Repack PR (#18239)
+
+**PR:** https://github.com/ggml-org/llama.cpp/pull/18239
+**Branch:** `parallel-repack` on pestopoppa/llama.cpp
+**Status:** Test infrastructure added (2026-01-12)
+
+Added `test-repack-parallel.cpp` to address maintainer concern about testing infrastructure. Test validates byte-identical output between sequential and parallel repacking across all quantization types (Q4_0, Q4_K, Q2_K, IQ4_NL).
+
+See progress log `2026-01-12.md` for details.
