@@ -39,6 +39,32 @@ llama-speculative -m Qwen3-Next-80B.gguf -md draft.gguf
 
 **Workaround**: No speculation available. Use baseline or MoE reduction if applicable.
 
+### Qwen3-Thinking-2507 Models (unsloth)
+
+**Issue**: Missing BOS token metadata in GGUF
+
+**Symptoms**: `draft model special tokens must match target model to use speculation`
+
+**Root Cause**: The Qwen3-*-Thinking-2507 models from unsloth have `tokenizer.ggml.eos_token_id` but no `tokenizer.ggml.bos_token_id` in their GGUF metadata. All draft models have BOS tokens defined, causing a mismatch.
+
+**Affected Models**:
+- Qwen3-30B-A3B-Thinking-2507 (Q8_0 and Q4_K_S)
+- Qwen3-4B-Thinking-2507
+
+**Workaround**: Use MoE expert reduction only. Speculative decoding is incompatible.
+
+```bash
+# ✅ Safe - MoE reduction
+llama-cli -m Qwen3-30B-A3B-Thinking-2507.gguf \
+    --override-kv qwen3moe.expert_used_count=int:4
+
+# ❌ Fails - spec decode (BOS mismatch)
+llama-speculative -m Qwen3-30B-A3B-Thinking-2507.gguf \
+    -md Qwen3-0.6B.gguf --draft-max 8
+```
+
+**Discovered**: 2026-01-12
+
 ### Gemma-3 Family (SWA Architecture)
 
 **Speculative Decoding Issue**: ~~Sliding Window Attention (SWA) incompatible with speculative decoding in llama.cpp~~

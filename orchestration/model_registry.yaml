@@ -903,14 +903,12 @@ roles:
     - thinking
     - coder
     - ingest
+    forbidden_configs:
+    - speculative_decoding  # Missing BOS token in GGUF prevents spec decode
     acceleration:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
-      alternative:
-        type: speculative_decoding
-        draft_role: draft_qwen3_0_6b_q8_0
-        k: 16
     memory:
       residency: cold
       pinned: false
@@ -1390,8 +1388,8 @@ roles:
     - qwen3-32b
     - qwen3-235b
     - qwen3-4b
-    - qwen3-30b-a3b-thinking
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
+    # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
   draft_qwen2_0_5b_q2_k:
     tier: D
     deprecated: true
@@ -1512,8 +1510,8 @@ roles:
     - qwen3-32b
     - qwen3-235b
     - qwen3-4b
-    - qwen3-30b-a3b-thinking
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
+    # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
   draft_qwen3_coder_0_75b:
     tier: D
     description: Draft model for Qwen3-Coder family (jukofyork) - vocab transplant for 480B BOS fix
@@ -1551,8 +1549,8 @@ roles:
     - qwen3-32b
     - qwen3-235b
     - qwen3-4b
-    - qwen3-30b-a3b-thinking
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
+    # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
   draft_qwen3_0_6b_q8_0:
     tier: D
     description: Draft model - Qwen3-0.6B-Q8_0 (higher quality for spec decode)
@@ -1571,8 +1569,8 @@ roles:
     - qwen3-32b
     - qwen3-235b
     - qwen3-4b
-    - qwen3-30b-a3b-thinking
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder (BOS mismatch) - use draft_qwen3_coder_0_75b instead.
+    # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
   draft_qwen3_embedding_0_6b:
     tier: D
     deprecated: true
@@ -1669,14 +1667,12 @@ roles:
     - thinking
     - coder
     - ingest
+    forbidden_configs:
+    - speculative_decoding  # Missing BOS token in GGUF prevents spec decode
     acceleration:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
-      alternative:
-        type: speculative_decoding
-        draft_role: draft_qwen3_0_6b_q8_0
-        k: 16
     memory:
       residency: cold
       pinned: false
@@ -1869,6 +1865,8 @@ roles:
     - thinking
     - coder
     - ingest
+    forbidden_configs:
+    - speculative_decoding  # Missing BOS token in GGUF prevents spec decode
     memory:
       residency: cold
       pinned: false
@@ -1876,10 +1874,6 @@ roles:
       type: moe_expert_reduction
       experts: 4
       override_key: qwen3moe.expert_used_count
-      alternative:
-        type: speculative_decoding
-        draft_role: draft_qwen3_0_6b_q8_0
-        k: 16
   ingest_glm_4_6:
     tier: B
     description: Ingest candidate - GLM-4.6-Q4_K_S-00001-of-00005
@@ -2073,6 +2067,18 @@ runtime_quirks:
         - MOE5: 8.50 t/s (+30% speedup, good output)\n- MOE2: 11.51 t/s (+76% speedup,\
         \ GARBAGE output) \u2717 UNUSABLE\nThe 480B model needs at least 3 experts\
         \ for coherent output.\n"
+  qwen3_thinking_models:
+    description: Qwen3-*-Thinking-2507 models (unsloth fine-tunes)
+    quirks:
+    - issue: Missing BOS token metadata in GGUF prevents speculative decoding
+      workaround: Use MoE expert reduction only (no spec decode)
+      discovered: 2026-01-12
+      explanation: >
+        The Qwen3-Thinking-2507 models from unsloth have tokenizer.ggml.eos_token_id
+        but no tokenizer.ggml.bos_token_id in their GGUF metadata. Since all draft
+        models have BOS tokens defined, llama.cpp speculative decoding fails with
+        "draft model special tokens must match target model to use speculation".
+        MoE expert reduction still works normally for these models.
   qwen2_vs_qwen2_5:
     description: Qwen2 and Qwen2.5 tokenizer incompatibility
     quirks:
