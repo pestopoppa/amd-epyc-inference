@@ -1,7 +1,7 @@
 # AMD EPYC 9655 Inference Optimization - Research Progress
 
 **Project Start:** December 2025
-**Last Updated:** 2026-01-04
+**Last Updated:** 2026-01-13
 **Hardware:** AMD EPYC 9655 "Turin" (96 cores, 192 threads), 1.13 TB DDR5-5600, 2x 2TB NVMe RAID0
 
 ---
@@ -72,6 +72,7 @@ Optimize local LLM inference on AMD EPYC 9655 CPU for a hierarchical multi-agent
 | Jan 2 | AMD PACE setup complete | Dependencies installed, benchmark script ready |
 | Jan 4 | RLM integration planning | Recursive Language Models architecture design |
 | Jan 4 | Research consolidation | This document created |
+| Jan 13 | TTT research completed | Fixed llama.cpp training, benchmarked vs baseline, NO-GO |
 
 ---
 
@@ -533,6 +534,7 @@ Adopt AMD PACE if:
 | EAGLE-1 (2-3x speedup) | **0% acceptance** ❌ | Quantization mismatch |
 | CAS-Spec (2.3x speedup) | **0.446% acceptance** ❌ | Missing trained classifiers |
 | Layer-skip self-speculation | **Not viable** ❌ | Same as CAS-Spec |
+| Vanilla TTT (long context) | **Worse than baseline** ❌ | FFN-only training insufficient, needs meta-trained checkpoints |
 
 ### Partially Verified
 
@@ -555,6 +557,7 @@ Adopt AMD PACE if:
 | SSM speculation | 2 hours | Fundamental architecture incompatibility |
 | Medusa | 0 hours | Training required, no checkpoints |
 | Kangaroo | 0 hours | Adapter training required |
+| Vanilla TTT | 8 hours | Worse than baseline on retrieval, requires FP32 + custom checkpoints |
 
 ### Conditions for Revival
 
@@ -565,6 +568,11 @@ Adopt AMD PACE if:
 **CAS-Spec/CLaSp:**
 - Pre-trained exit classifiers released
 - OR we develop training infrastructure
+
+**Vanilla TTT:**
+- TTT-E2E checkpoints released (meta-trained models)
+- OR attention-inclusive training support in llama.cpp
+- AND quantization support (currently requires FP32)
 
 ---
 
@@ -660,6 +668,15 @@ Adopt AMD PACE if:
 | Mixture of Experts (Original) | Shazeer et al. 2017 | Foundation |
 | DeepSeek-MoE | DeepSeek technical report | Expert routing |
 | Qwen3-MoE | Qwen technical report | 3B active params |
+
+### Test-Time Training (Deprecated)
+
+| Resource | Link | Notes |
+|----------|------|-------|
+| TTT-E2E Paper | https://arxiv.org/abs/2512.23675 | Meta-trained models required |
+| TTT-E2E Repo | https://github.com/test-time-training/e2e | JAX, no checkpoints |
+| Bug Report | https://github.com/ggml-org/llama.cpp/issues/18805 | llama.cpp training fixes |
+| Handoff | `handoffs/archived/vanilla-ttt-feasibility.md` | Full analysis |
 
 ---
 

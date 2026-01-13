@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-11 (Master table rebuilt from 78 models in summary.csv)
+**Last Updated:** 2026-01-13 (Added TTT research findings)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -392,6 +392,21 @@ llama-cli -m MOE.gguf \
 - Tested drafts: Qwen2.5-Coder-0.5B (fails - token mismatch), Qwen3-0.6B (works but 8.96% accept)
 - Lesson: MoE models with different distributions don't benefit from small dense drafts
 - **Workaround:** Use expert reduction instead (+50% with 4 experts)
+
+### Vanilla Test-Time Training (2026-01-13)
+- **Paper**: [TTT-E2E](https://arxiv.org/abs/2512.23675) - End-to-End Test-Time Training for Long Context
+- **Goal**: Adapt model weights on context during inference for improved long-context handling
+- **Problem**: FFN-only training (required due to missing attention backward pass) failed to improve factual retrieval
+- **Benchmark**: Needle-in-haystack at 3.5K tokens
+  - Baseline: **Correctly retrieved** secret key
+  - TTT (90% training accuracy): **Failed** - hallucinated "not specified in documentation"
+- **Additional constraints**:
+  - Requires FP32 models (4.6GB for 1B, ~100GB for 7B)
+  - llama.cpp training crashes fixed but attention gradients still unavailable
+  - TTT-E2E paper used meta-trained checkpoints (not available)
+- **Lesson**: Vanilla TTT on off-the-shelf models doesn't improve retrieval; likely needs attention-inclusive training + custom TTT-fine-tuned checkpoints
+- **Bug report**: https://github.com/ggml-org/llama.cpp/issues/18805
+- **Status**: Research paused - NO-GO
 
 ---
 
