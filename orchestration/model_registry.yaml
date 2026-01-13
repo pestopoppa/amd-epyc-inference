@@ -1653,6 +1653,25 @@ roles:
     compatible_targets:
     - qwen2.5
     - qwen2-
+  draft_qwen2_5_0_5b_instruct_f16:
+    tier: D
+    description: Qwen2.5-0.5B-Instruct FP16 - benchmarking only (FP16 not recommended for draft)
+    model:
+      name: Qwen2.5-0.5B-Instruct-f16
+      path: /mnt/raid0/llm/models/Qwen2.5-0.5B-Instruct-f16.gguf
+      quant: f16
+      size_gb: 0.9
+      architecture: dense
+    candidate_roles:
+    - draft
+    - benchmark
+    memory:
+      residency: cold
+      pinned: false
+    compatible_targets:
+    - qwen2.5
+    - qwen2-
+    notes: "FP16 quantization - slower than Q4/Q8 variants. Added for benchmarking purposes only."
   thinking_qwen3_30b_a3b_thinking_2507_q4ks:
     tier: B
     description: Thinking model - Qwen3-30B-A3B-Thinking-2507-Q4_K_S
