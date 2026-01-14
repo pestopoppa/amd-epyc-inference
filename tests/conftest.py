@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Pytest configuration and fixtures for the orchestrator test suite.
+
+Memory Safety:
+    This file includes a memory guard that warns/exits if available RAM is below
+    a safe threshold. This prevents crashes from running tests with pytest-xdist
+    parallel workers that each load models.
+
+    The 192-thread EPYC system with 1.13TB RAM can still crash if pytest spawns
+    too many workers that each initialize the API (which loads the TaskEmbedder
+    model). The lazy loading in src/api.py prevents this for mock mode tests,
+    but this guard provides an additional safety net.
+
+Usage:
+    pytest tests/              # Normal test run with memory check
+    pytest tests/ -n 4         # Safe parallel execution (max 4 workers)
+    pytest tests/ -n auto      # DANGEROUS on this machine - avoid
+
+See also:
+    - CLAUDE.md for memory constraints
+    - research/ESCALATION_FLOW.md for memory pool architecture
+"""
+
+import warnings
+
+import pytest
+
+
+# Memory threshold in GB (fail if less available)
+MEMORY_THRESHOLD_GB = 100
+
+# Maximum safe parallel workers for this machine
+MAX_SAFE_WORKERS = 4
+
+
+def pytest_configure(config):
+    """Check memory and register custom markers before running tests."""
+    # Register custom markers
+    config.addinivalue_line(
+        "markers", "heavy: marks tests that load models (may need more memory)"
+    )
+    config.addinivalue_line(
+        "markers", "real_mode: marks tests that require real inference servers"
+    )
+
+    # Check available memory
+    try:
+        import psutil
+        free_gb = psutil.virtual_memory().available / (1024**3)
+
+        if free_gb < MEMORY_THRESHOLD_GB:
+            # Hard fail if memory is critically low
+            pytest.exit(
+                f"DANGER: Only {free_gb:.0f}GB free RAM. "
+                f"Need {MEMORY_THRESHOLD_GB}GB+ for safe testing.\n"
+                "This machine can crash if tests load too many models.\n"
+                "Free up memory or wait for other processes to complete.",
+                returncode=1,
+            )
+        elif free_gb < MEMORY_THRESHOLD_GB * 2:
+            # Warn if memory is getting low
+            warnings.warn(
+                f"Low memory: {free_gb:.0f}GB free. "
+                f"Tests may be slow. Consider freeing memory.",
+                UserWarning,
+            )
+    except ImportError:
+        warnings.warn(
+            "psutil not installed - cannot check memory. "
+            "Install with: pip install psutil",
+            UserWarning,
+        )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Add markers and warnings for parallel execution."""
+    # Check if pytest-xdist is being used with too many workers
+    try:
+        num_workers = config.option.numprocesses
+        if num_workers is not None:
+            if num_workers == "auto":
+                warnings.warn(
+                    f"DANGER: pytest -n auto on 192-thread machine will spawn ~192 workers!\n"
+                    f"Each worker may load models, causing memory exhaustion.\n"
+                    f"Use: pytest -n {MAX_SAFE_WORKERS} instead.",
+                    UserWarning,
+                )
+            elif isinstance(num_workers, int) and num_workers > MAX_SAFE_WORKERS:
+                warnings.warn(
+                    f"High parallelism: {num_workers} workers requested.\n"
+                    f"Recommended max: {MAX_SAFE_WORKERS}. May cause memory issues.",
+                    UserWarning,
+                )
+    except (AttributeError, TypeError):
+        # pytest-xdist not installed or not using -n flag
+        pass

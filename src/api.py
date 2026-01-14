@@ -35,6 +35,18 @@ from src.repl_environment import REPLEnvironment, REPLConfig
 from src.llm_primitives import LLMPrimitives, LLMPrimitivesConfig
 from src.gate_runner import GateRunner
 from src.failure_router import FailureRouter
+from orchestration.repl_memory.progress_logger import ProgressLogger, ProgressReader
+from orchestration.repl_memory.episodic_store import EpisodicStore
+from orchestration.repl_memory.embedder import TaskEmbedder
+from orchestration.repl_memory.q_scorer import QScorer, ScoringConfig
+from orchestration.repl_memory.retriever import (
+    TwoPhaseRetriever,
+    HybridRouter,
+    RuleBasedRouter,
+    RetrievalConfig,
+)
+from src.tool_registry import ToolRegistry
+from src.script_registry import ScriptRegistry
 
 
 # ============================================================================
@@ -212,12 +224,36 @@ class AppState:
     llm_primitives: LLMPrimitives | None = None
     gate_runner: GateRunner | None = None
     failure_router: FailureRouter | None = None
+    progress_logger: ProgressLogger | None = None
+
+    # Q-scorer components (for idle-time scoring)
+    q_scorer: QScorer | None = None
+    episodic_store: EpisodicStore | None = None
+
+    # Hybrid routing (learned + rule-based)
+    hybrid_router: HybridRouter | None = None
+
+    # Tool and script registries for REPL
+    tool_registry: ToolRegistry | None = None
+    script_registry: ScriptRegistry | None = None
+
+    # Registry loader (for role defaults)
+    registry: Any = None  # RegistryLoader, typed as Any to avoid import cycle
 
     # Stats tracking
     total_requests: int = 0
     total_turns: int = 0
     mock_requests: int = 0
     real_requests: int = 0
+
+    # Idle scoring control
+    active_requests: int = 0
+    q_scorer_enabled: bool = True
+    _q_scorer_task: Any = None  # asyncio.Task
+
+    # Lazy initialization flag for MemRL components
+    # These are only loaded when real inference or Q-scoring is needed
+    _memrl_initialized: bool = False
 
     def increment_request(self, mock_mode: bool, turns: int) -> None:
         """Track a completed request."""
@@ -252,20 +288,179 @@ _state = AppState()
 # ============================================================================
 
 
+def _score_completed_task(task_id: str) -> None:
+    """Score a completed task immediately (no inference required).
+
+    Called after log_task_completed() to update Q-values in real-time.
+    This is lightweight - just DB reads/writes, no LLM inference.
+    """
+    if not _state.q_scorer or not _state.q_scorer_enabled:
+        return
+
+    try:
+        # Score just this task
+        _state.q_scorer._score_task(task_id)
+        # Flush logger to persist Q-value updates
+        if _state.progress_logger:
+            _state.progress_logger.flush()
+    except Exception:
+        # Silently ignore scoring errors - don't affect user request
+        pass
+
+
+async def _background_cleanup():
+    """Background task for opportunistic cleanup when idle.
+
+    Processes backlog of unscored tasks when server has no active requests.
+    This catches any tasks that weren't scored immediately (e.g., from restarts).
+    """
+    import asyncio
+
+    while True:
+        try:
+            # Check every 10 seconds
+            await asyncio.sleep(10)
+
+            # Only run when idle and Q-scorer is available
+            # Note: Don't call _ensure_memrl_initialized() here - only init on real use
+            if _state.active_requests == 0 and _state.q_scorer and _state.q_scorer_enabled:
+                # Score a small batch of pending tasks
+                results = _state.q_scorer.score_pending_tasks()
+
+                if results and not results.get("skipped"):
+                    tasks_processed = results.get("tasks_processed", 0)
+                    if tasks_processed > 0 and _state.progress_logger:
+                        _state.progress_logger.flush()
+
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            # Silently ignore errors
+            pass
+
+
+def _ensure_memrl_initialized() -> bool:
+    """Lazy-load MemRL components on first real use.
+
+    This prevents loading the TaskEmbedder model during tests that only use mock mode.
+    MemRL components are only needed for:
+    - Real inference with Q-scoring/HybridRouter
+    - Background Q-value updates
+
+    Returns:
+        True if MemRL is initialized and available, False otherwise.
+    """
+    if _state._memrl_initialized:
+        return _state.q_scorer is not None
+
+    # Mark as initialized (even if it fails) to prevent repeated attempts
+    _state._memrl_initialized = True
+
+    try:
+        _state.episodic_store = EpisodicStore()
+        embedder = TaskEmbedder()
+        reader = ProgressReader()
+        config = ScoringConfig(
+            use_claude_judge=False,  # Basic mode only - no LLM required
+            min_score_interval_seconds=30,  # Background cleanup interval
+            batch_size=10,  # Process 10 tasks per cleanup round
+        )
+        _state.q_scorer = QScorer(
+            store=_state.episodic_store,
+            embedder=embedder,
+            logger=_state.progress_logger,
+            reader=reader,
+            config=config,
+        )
+
+        # Initialize HybridRouter for learned routing
+        retrieval_config = RetrievalConfig(
+            semantic_k=20,
+            min_similarity=0.3,
+            q_weight=0.7,
+            confidence_threshold=0.6,
+        )
+        retriever = TwoPhaseRetriever(
+            store=_state.episodic_store,
+            embedder=embedder,
+            config=retrieval_config,
+        )
+        # Load routing hints from registry for rule-based fallback
+        from src.registry_loader import RegistryLoader
+        registry = RegistryLoader(validate_paths=False)
+        _state.registry = registry  # Store for role defaults
+        rule_router = RuleBasedRouter(routing_hints=registry.routing_hints)
+        _state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
+
+        return True
+    except Exception:
+        # MemRL initialization failed - continue without it
+        _state.q_scorer = None
+        _state.episodic_store = None
+        _state.hybrid_router = None
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan."""
-    # Startup
+    import asyncio
+
+    # Startup - initialize lightweight components only
+    # MemRL components (TaskEmbedder, QScorer, HybridRouter) are lazy-loaded
+    # via _ensure_memrl_initialized() on first real use to avoid loading
+    # the 0.5B embedding model during tests that only use mock mode.
     _state.llm_primitives = LLMPrimitives(mock_mode=True)
-    _state.gate_runner = GateRunner()
+    _state.progress_logger = ProgressLogger()
+    _state.gate_runner = GateRunner(progress_logger=_state.progress_logger)
     _state.failure_router = FailureRouter()
+
+    # Initialize tool registry with role permissions (no model loading)
+    try:
+        _state.tool_registry = ToolRegistry()
+        _state.tool_registry.load_permissions_from_registry(
+            "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+        )
+    except Exception:
+        _state.tool_registry = None
+
+    # Initialize script registry (no model loading)
+    try:
+        _state.script_registry = ScriptRegistry()
+        _state.script_registry.load_from_directory(
+            "/mnt/raid0/llm/claude/orchestration/script_registry"
+        )
+    except Exception:
+        _state.script_registry = None
+
+    # Start background cleanup task for processing backlog when idle
+    # This task checks if MemRL is initialized before doing any work
+    _state._q_scorer_task = asyncio.create_task(_background_cleanup())
 
     yield
 
-    # Shutdown
+    # Shutdown - cancel background task first
+    if _state._q_scorer_task:
+        _state._q_scorer_task.cancel()
+        try:
+            await _state._q_scorer_task
+        except asyncio.CancelledError:
+            pass
+
+    # Flush progress logger before cleanup
+    if _state.progress_logger:
+        _state.progress_logger.flush()
+
     _state.llm_primitives = None
     _state.gate_runner = None
     _state.failure_router = None
+    _state.progress_logger = None
+    _state.q_scorer = None
+    _state.episodic_store = None
+    _state.hybrid_router = None
+    _state.tool_registry = None
+    _state.script_registry = None
+    _state.registry = None
 
 
 # ============================================================================
@@ -455,10 +650,43 @@ async def chat(request: ChatRequest) -> ChatResponse:
     - Cache statistics in response
     - Full orchestration loop with Root LM (Phase 8)
     """
+    # Track active requests for idle-time Q-scoring
+    _state.active_requests += 1
+    try:
+        return await _handle_chat(request)
+    finally:
+        _state.active_requests -= 1
+
+
+async def _handle_chat(request: ChatRequest) -> ChatResponse:
+    """Internal handler for chat requests."""
     start_time = time.perf_counter()
+
+    # Generate task ID for MemRL tracking
+    task_id = f"chat-{uuid.uuid4().hex[:8]}"
+
+    # Construct task_ir for logging
+    task_ir = {
+        "task_type": "chat",
+        "objective": request.prompt[:200],
+        "priority": "interactive",
+    }
 
     # Determine mode (real_mode takes precedence over mock_mode)
     use_mock = request.mock_mode and not request.real_mode
+
+    # Determine routing for logging
+    routing_decision = [request.role]
+    routing_strategy = "mock" if use_mock else "rules"
+
+    # Log task start (MemRL integration)
+    if _state.progress_logger:
+        _state.progress_logger.log_task_started(
+            task_id=task_id,
+            task_ir=task_ir,
+            routing_decision=routing_decision,
+            routing_strategy=routing_strategy,
+        )
 
     if use_mock:
         # Mock mode: simulate orchestration
@@ -470,6 +698,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
         elapsed = time.perf_counter() - start_time
         _state.increment_request(mock_mode=True, turns=turns)
+
+        # Log task completion (MemRL integration)
+        if _state.progress_logger:
+            _state.progress_logger.log_task_completed(
+                task_id=task_id,
+                success=True,
+                details=f"Mock response in {elapsed:.3f}s",
+            )
+            _score_completed_task(task_id)
 
         return ChatResponse(
             answer=answer,
@@ -483,6 +720,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # Real mode: use RadixAttention with CachingBackend
     if request.real_mode:
+        # Initialize MemRL components on first real use (lazy loading)
+        # This loads TaskEmbedder (0.5B model) for Q-scoring and HybridRouter
+        _ensure_memrl_initialized()
+
         # Get server URLs from request or use defaults
         server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
 
@@ -490,6 +731,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             primitives = LLMPrimitives(
                 mock_mode=False,
                 server_urls=server_urls,
+                registry=_state.registry,
             )
         except Exception as e:
             raise HTTPException(
@@ -506,7 +748,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     else:
         # Legacy mode: use ModelServer (if configured)
-        primitives = LLMPrimitives(mock_mode=False)
+        primitives = LLMPrimitives(mock_mode=False, registry=_state.registry)
 
         if primitives.model_server is None:
             raise HTTPException(
@@ -522,6 +764,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     repl = REPLEnvironment(
         context=combined_context,
         llm_primitives=primitives,
+        tool_registry=_state.tool_registry,
+        script_registry=_state.script_registry,
+        role=request.role or "frontdoor",
     )
 
     # Run Root LM orchestration loop
@@ -589,6 +834,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
     cache_stats = None
     if request.real_mode and primitives._backends:
         cache_stats = primitives.get_cache_stats()
+
+    # Log task completion (MemRL integration)
+    success = not answer.startswith("[ERROR") and not answer.startswith("[Max turns")
+    if _state.progress_logger:
+        _state.progress_logger.log_task_completed(
+            task_id=task_id,
+            success=success,
+            details=f"Real inference: {turns} turns, {elapsed:.3f}s",
+        )
+        _score_completed_task(task_id)
 
     return ChatResponse(
         answer=answer,
@@ -689,12 +944,29 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     - thinking_budget: Token budget for internal reasoning (0=disabled)
     - permission_mode: "normal", "auto-accept", or "plan"
     """
+    # Generate task ID for MemRL tracking (outside generator for closure)
+    task_id = f"stream-{uuid.uuid4().hex[:8]}"
 
     async def generate() -> AsyncGenerator[str, None]:
         start_time = time.perf_counter()
+        use_mock = request.mock_mode and not request.real_mode
+
+        # Construct task_ir and log start (MemRL integration)
+        task_ir = {
+            "task_type": "chat_stream",
+            "objective": request.prompt[:200],
+            "priority": "interactive",
+        }
+        if _state.progress_logger:
+            _state.progress_logger.log_task_started(
+                task_id=task_id,
+                task_ir=task_ir,
+                routing_decision=[request.role],
+                routing_strategy="mock" if use_mock else "rules",
+            )
 
         # Mock mode
-        if request.mock_mode and not request.real_mode:
+        if use_mock:
             # Emit turn start
             yield f"data: {json.dumps({'type': 'turn_start', 'turn': 1, 'role': 'frontdoor'})}\n\n"
 
@@ -715,6 +987,10 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 yield f"data: {json.dumps({'type': 'token', 'content': analysis})}\n\n"
                 elapsed_ms = int((time.perf_counter() - start_time) * 1000)
                 yield f"data: {json.dumps({'type': 'turn_end', 'tokens': len(analysis), 'elapsed_ms': elapsed_ms})}\n\n"
+                # Log completion (MemRL)
+                if _state.progress_logger:
+                    _state.progress_logger.log_task_completed(task_id, success=True, details="Plan mode")
+                    _score_completed_task(task_id)
                 yield "data: [DONE]\n\n"
                 return
 
@@ -727,14 +1003,24 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             elapsed_ms = int((time.perf_counter() - start_time) * 1000)
             yield f"data: {json.dumps({'type': 'turn_end', 'tokens': len(mock_response), 'elapsed_ms': elapsed_ms})}\n\n"
 
+            # Log completion (MemRL)
+            if _state.progress_logger:
+                _state.progress_logger.log_task_completed(task_id, success=True, details="Mock stream")
+                _score_completed_task(task_id)
             yield "data: [DONE]\n\n"
             return
 
-        # Real mode
+        # Real mode - initialize MemRL components on first real use (lazy loading)
+        _ensure_memrl_initialized()
+
         server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
         try:
-            primitives = LLMPrimitives(mock_mode=False, server_urls=server_urls)
+            primitives = LLMPrimitives(mock_mode=False, server_urls=server_urls, registry=_state.registry)
         except Exception as e:
+            # Log failure (MemRL)
+            if _state.progress_logger:
+                _state.progress_logger.log_task_completed(task_id, success=False, details=str(e))
+                _score_completed_task(task_id)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
             yield "data: [DONE]\n\n"
             return
@@ -747,6 +1033,9 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         repl = REPLEnvironment(
             context=combined_context,
             llm_primitives=primitives,
+            tool_registry=_state.tool_registry,
+            script_registry=_state.script_registry,
+            role=request.role or "frontdoor",
         )
 
         # Root LM loop with streaming
@@ -773,6 +1062,10 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             try:
                 code = primitives.llm_call(root_prompt, role="frontdoor", n_tokens=1024)
             except Exception as e:
+                # Log failure (MemRL)
+                if _state.progress_logger:
+                    _state.progress_logger.log_task_completed(task_id, success=False, details=f"Root LM failed: {e}")
+                    _score_completed_task(task_id)
                 yield f"data: {json.dumps({'type': 'error', 'message': f'Root LM call failed: {e}'})}\n\n"
                 yield "data: [DONE]\n\n"
                 return
@@ -805,6 +1098,15 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 last_error = ""
                 last_output = result.output
 
+        # Log completion (MemRL) - success if we got a final answer
+        if _state.progress_logger:
+            # Check if result exists and is final (may not exist if loop didn't run)
+            try:
+                success = result.is_final
+            except NameError:
+                success = False
+            _state.progress_logger.log_task_completed(task_id, success=success, details="Stream complete")
+            _score_completed_task(task_id)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

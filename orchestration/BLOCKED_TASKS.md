@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-01-14
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -30,6 +30,77 @@
 | CLI Parity Features | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
 | AMD PACE Testing | — | — | `handoffs/active/amd-pace-testing.md` | ✅ COMPLETE (not adopting) |
 | **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
+| **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-3 COMPLETE |
+| **Tool/Script Registry Wiring** | — | **MEDIUM** | `glowing-splashing-eclipse.md` (plan file) | 📋 READY (crashed before start) |
+
+---
+
+## MemRL Episodic Memory Integration
+
+**Master Handoff**: `handoffs/active/memrl-episodic-memory.md`
+**Benchmark**: `benchmarks/prompts/v1/orchestrator_planning.yaml`
+**Paper**: arXiv:2601.03192 (MemRL)
+
+| Phase | Description | Status | Dependencies |
+|-------|-------------|--------|--------------|
+| 1 | Core Implementation | ✅ COMPLETE | None |
+| 2 | Wire Logging | ✅ COMPLETE | Phase 1 |
+| 3 | Enable Hybrid Routing | ✅ COMPLETE | Phase 2 |
+| 4 | Escalation Learning | READY | Phase 3 |
+| 5 | REPL Exploration Learning | READY | Phase 3 |
+| 6 | Claude-as-Judge | OPTIONAL | Phase 3 |
+
+### Phase 1: Core Implementation (COMPLETE)
+- [x] `episodic_store.py` - SQLite + numpy memory storage
+- [x] `embedder.py` - Task embedding via 0.5B model
+- [x] `retriever.py` - Two-phase retrieval + hybrid router
+- [x] `progress_logger.py` - Structured JSONL logging
+- [x] `q_scorer.py` - Async Q-value update agent
+- [x] `model_registry.yaml` - repl_memory configuration
+- [x] `orchestrator_planning.yaml` - Claude-as-Judge benchmark
+
+### Phase 2: Wire Logging (COMPLETE - 2026-01-13)
+- [x] Add `ProgressLogger` to dispatcher (`src/dispatcher.py`)
+- [x] Log routing decisions in Front Door (`src/api.py`)
+- [x] Log gate results in GateRunner (`src/gate_runner.py`)
+- [ ] Log escalations in FailureRouter (`src/failure_router.py`) - Deferred to Phase 4
+
+### Phase 3: Enable Hybrid Routing (COMPLETE - 2026-01-13)
+- [x] Replace hard-coded routing with `HybridRouter` (`src/dispatcher.py`)
+- [x] Add confidence logging for monitoring
+- [x] Q-scorer integrated (real-time + idle cleanup in API)
+
+### Phase 4: Escalation Learning
+- [ ] Store failure contexts with escalation decisions
+- [ ] Implement `LearnedEscalationPolicy` in FailureRouter
+- [ ] Connect to episodic memory
+
+### Phase 5: REPL Exploration Learning
+- [ ] Log exploration strategies in REPLEnvironment
+- [ ] Implement `EpisodicREPL.suggest_exploration()`
+- [ ] Track token efficiency metrics
+
+### Phase 6: Claude-as-Judge (Optional)
+- [ ] Run orchestrator_planning.yaml benchmark
+- [ ] Evaluate baseline scores
+- [ ] Enable graded rewards if beneficial
+
+### MemRL Resume Commands
+
+```bash
+# Verify module imports
+python3 -c "from orchestration.repl_memory import EpisodicStore, TaskEmbedder; print('OK')"
+
+# Check memory stats
+python3 -c "from orchestration.repl_memory import EpisodicStore; print(EpisodicStore().get_stats())"
+
+# Run Q-scorer manually
+python3 -c "
+from orchestration.repl_memory import EpisodicStore, TaskEmbedder, ProgressLogger, ProgressReader, QScorer
+scorer = QScorer(EpisodicStore(), TaskEmbedder(), ProgressLogger(), ProgressReader())
+print(scorer.score_pending_tasks())
+"
+```
 
 ---
 

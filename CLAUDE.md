@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Critical Constraints](#-absolute-rule-no-root-filesystem-writes-)
+- [Test Memory Safety](#-test-memory-safety-)
 - [System Identity](#system-identity)
 - [Hardware Specifications](#hardware-specifications)
 - [Current Status](#current-status-production-orchestration-december-2025)
@@ -70,6 +71,46 @@ export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
 
 ---
 
+## ⚠️ Test Memory Safety ⚠️
+
+**NEVER use `pytest -n auto` on this 192-thread machine!**
+
+This machine has 192 hardware threads. Running `pytest -n auto` (pytest-xdist parallel mode) will spawn ~192 worker processes. If each worker initializes the API (which loads models), you can exhaust the 1.13TB RAM and crash the machine.
+
+### What Happened (2026-01-13)
+
+An agent ran orchestration liveness tests with parallel execution. Each pytest worker initialized `TaskEmbedder` which loads a 0.5B embedding model. With ~192 workers, memory exhausted and the machine crashed.
+
+### Safeguards Added
+
+1. **Lazy MemRL loading** (`src/api.py`): TaskEmbedder and Q-scorer components only load when `real_mode=True`, not during mock mode tests.
+
+2. **Memory guard** (`tests/conftest.py`): Tests fail early if < 100GB free RAM.
+
+3. **Makefile check** (`make check-memory`): Run before `test-all` to verify memory.
+
+### Safe Test Commands
+
+```bash
+# Safe: Sequential test execution
+pytest tests/
+
+# Safe: Limited parallelism (max 4 workers)
+pytest tests/ -n 4
+
+# DANGEROUS: Do NOT use!
+pytest tests/ -n auto  # Spawns ~192 workers!
+```
+
+### Memory Architecture Reference
+
+See `research/ESCALATION_FLOW.md` for the HOT/WARM/COLD memory pool design:
+- **HOT (~35GB)**: Always resident (frontdoor, drafts, workers)
+- **WARM (~460GB)**: Load on demand via mmap
+- **COLD**: Disk only
+
+---
+
 ## System Identity
 
 - **Host**: Beelzebub
@@ -81,7 +122,7 @@ export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
 
 | File | Purpose |
 |------|---------|
-| `/mnt/raid0/llm/claude/orchestration/model_registry.yaml` | **Model configurations, paths, compatible drafts** |
+| `/mnt/raid0/llm/claude/orchestration/model_registry.yaml` | **Model configurations, paths, compatible drafts, launch commands** |
 | `/mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md` | Benchmark results summary |
 | `/mnt/raid0/llm/claude/docs/reference/models/QUIRKS.md` | Known model issues & workarounds |
 | `/mnt/raid0/llm/claude/benchmarks/results/reviews/summary.csv` | Claude-as-Judge scores |
@@ -96,6 +137,12 @@ export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
 | RAM | 1.13 TB DDR5-5600 ECC, 12 channels (~460 GB/s) |
 | Storage | 2× Solidigm P44 Pro 2TB NVMe RAID0 (models), 120GB SSD (OS) |
 | Architecture | Zen 5 with true 512-bit AVX-512 (not double-pumped) |
+
+## Plan Mode
+- Make the plan extremely concise. Sacrifice grammar for the sake of concision.
+- At the end of each plan, give me a list of unresolved questions to answer, if any.
+- when presenting potential solutions to problems, generate 2-3 primary and 5 alternative fixes, each within a separate <response> tag.  
+Each <response> must include a <text> and a numeric <probability>.  Please sample the 5 alternative fixes at random from the tails of the distribution (e.g., probabilities < 0.10). This should help us ultrathink outside the box a little more and consider an even wider range of options.
 
 ---
 

@@ -41,6 +41,7 @@ help:
 	@echo "  make pylint     - Lint Python with ruff"
 	@echo "  make unit       - Run unit tests"
 	@echo "  make validate-registry - Validate model registry and paths"
+	@echo "  make check-memory - Check available RAM before tests (prevents crashes)"
 	@echo ""
 	@echo "Formatting:"
 	@echo "  make shfmt      - Format shell scripts (in-place)"
@@ -185,6 +186,24 @@ check-large-files:
 	@find . -type f -size +50M -not -path './.git/*' -exec ls -lh {} \; 2>/dev/null | \
 		grep -v -E '\.(gguf|bin|safetensors)$$' || echo "  ✓ no unexpected large files"
 
+# Check available memory before running tests
+# DANGER: pytest -n auto on 192-thread machine spawns ~192 workers that may load models
+check-memory:
+	@echo "==> check-memory"
+	@FREE_GB=$$(python3 -c "import psutil; print(int(psutil.virtual_memory().available / (1024**3)))" 2>/dev/null || echo "unknown"); \
+	if [ "$$FREE_GB" = "unknown" ]; then \
+		echo "  ⚠ psutil not installed - cannot check memory (pip install psutil)"; \
+	elif [ "$$FREE_GB" -lt 100 ]; then \
+		echo "  ✗ DANGER: Only $${FREE_GB}GB free RAM!"; \
+		echo "    Tests may crash the machine if they load models."; \
+		echo "    Free up memory or wait for other processes."; \
+		exit 1; \
+	elif [ "$$FREE_GB" -lt 200 ]; then \
+		echo "  ⚠ Low memory: $${FREE_GB}GB free (recommend 200GB+)"; \
+	else \
+		echo "  ✓ Memory OK: $${FREE_GB}GB free"; \
+	fi
+
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
 clean:
@@ -208,8 +227,8 @@ install-dev-deps:
 
 # ── Convenience Aliases ──────────────────────────────────────────────────────
 
-# Full test suite
-test-all: schema pylint unit integration
+# Full test suite (runs memory check first to avoid crashes)
+test-all: check-memory schema pylint unit integration
 	@echo ""
 	@echo "✅ All tests passed"
 
