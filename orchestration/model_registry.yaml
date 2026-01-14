@@ -249,6 +249,13 @@ roles:
     - Architecture-level code decisions
     - Complex debugging spanning multiple components
     benchmark_date: 2025-12-16
+    generation_defaults:
+      n_tokens: 2048
+      temperature: 0.2
+    system_prompt_suffix: |
+      Output code only. No explanations unless requested.
+      Include minimal inline comments.
+      Handle edge cases explicitly.
   ingest_long_context:
     tier: B
     description: Large document ingestion and synthesis - SSM+MoE hybrid
@@ -279,6 +286,13 @@ roles:
     memory:
       residency: warm
       pinned: false
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.2
+    system_prompt_suffix: |
+      Synthesize key points from the provided documents.
+      Use structured headings for organization.
+      Cite source locations when referencing specific content.
   architect_general:
     tier: B
     description: System architecture, invariants, acceptance tests - emits IR only
@@ -403,6 +417,13 @@ roles:
     benchmark_date: null
     notes: Thinking variant optimized for chain-of-thought reasoning. Use for complex
       multi-step problems.
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.3
+    system_prompt_suffix: |
+      Think step by step. Show your reasoning process.
+      For complex problems, break down into sub-problems.
+      Verify your answer before concluding.
   worker_general:
     tier: C
     description: Boilerplate, rewrites, doc polish, small diffs
@@ -561,6 +582,12 @@ roles:
     benchmark_date: 2026-01-06
     notes: Spec decode 172 t/s for general tasks; prompt lookup 95 t/s for document
       QA with source material
+    generation_defaults:
+      n_tokens: 2048
+      temperature: 0.2
+    system_prompt_suffix: |
+      Produce concise summaries. Focus on key points.
+      For document QA, cite specific sections.
   toolrunner:
     tier: C
     description: Summarize tool outputs, triage logs, propose next commands
@@ -583,6 +610,12 @@ roles:
     memory:
       residency: hot
       pinned: true
+    generation_defaults:
+      n_tokens: 512
+      temperature: 0.2
+    system_prompt_suffix: |
+      Summarize tool output briefly. Focus on actionable results.
+      Propose next command if appropriate.
   draft_qwen25_coder:
     tier: D
     description: Default draft for Qwen2.5-Coder family

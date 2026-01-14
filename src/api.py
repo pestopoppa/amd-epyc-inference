@@ -386,10 +386,11 @@ def _ensure_memrl_initialized() -> bool:
             config=retrieval_config,
         )
         # Load routing hints from registry for rule-based fallback
-        from src.registry_loader import RegistryLoader
-        registry = RegistryLoader(validate_paths=False)
-        _state.registry = registry  # Store for role defaults
-        rule_router = RuleBasedRouter(routing_hints=registry.routing_hints)
+        # Reuse existing registry if loaded at startup, otherwise load it
+        if _state.registry is None:
+            from src.registry_loader import RegistryLoader
+            _state.registry = RegistryLoader(validate_paths=False)
+        rule_router = RuleBasedRouter(routing_hints=_state.registry.routing_hints)
         _state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
 
         return True
@@ -410,7 +411,15 @@ async def lifespan(app: FastAPI):
     # MemRL components (TaskEmbedder, QScorer, HybridRouter) are lazy-loaded
     # via _ensure_memrl_initialized() on first real use to avoid loading
     # the 0.5B embedding model during tests that only use mock mode.
-    _state.llm_primitives = LLMPrimitives(mock_mode=True)
+
+    # Load registry for role-based generation defaults (YAML parsing only, no models)
+    try:
+        from src.registry_loader import RegistryLoader
+        _state.registry = RegistryLoader(validate_paths=False)
+    except Exception:
+        _state.registry = None
+
+    _state.llm_primitives = LLMPrimitives(mock_mode=True, registry=_state.registry)
     _state.progress_logger = ProgressLogger()
     _state.gate_runner = GateRunner(progress_logger=_state.progress_logger)
     _state.failure_router = FailureRouter()
