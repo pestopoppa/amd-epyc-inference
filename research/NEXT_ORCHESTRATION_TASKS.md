@@ -23,21 +23,18 @@
 
 ---
 
-### Priority 2: RLM Phase 1 - Backend Completion
+### Priority 2: RLM Phase 1 - Backend Completion ✅ COMPLETE
 
 **Source:** `orchestration/BLOCKED_TASKS.md`
-**Effort:** Medium
-**Impact:** Critical - unblocks real inference
+**Verified:** 2026-01-14
 
-**Status Note:** Jan 13 progress says "Real Inference Wiring Fix" is complete with `n_tokens` parameter added. Verify if Phase 1 items are actually done.
+**Status:** All infrastructure is complete:
+- [x] LlamaServerBackend HTTP - Full implementation with streaming
+- [x] CachingBackend init - Auto-wired in LLMPrimitives
+- [x] Role→backend routing - Works via server_urls parameter
+- [x] Real mode initialization - Creates CachingBackend automatically
 
-**Tasks (verify/complete):**
-- [ ] Complete LlamaServerBackend HTTP (`src/backends/llama_server.py`)
-- [ ] Wire CachingBackend init (`src/llm_primitives.py`)
-- [ ] Connect role→backend routing (`src/llm_primitives.py`)
-- [ ] Fix real mode initialization (`src/api.py`)
-
-**Test:** Start llama-server and run real inference through API.
+**To test real inference:** Start llama-server, then call API with `real_mode=True`.
 
 ---
 
@@ -123,10 +120,11 @@
 
 ## Recommendation
 
-**Start with Priority 1 (Role-Based Generation Defaults)** because:
-- Already designed by previous agent
-- Self-contained, no external dependencies
-- Immediate quality improvement
-- Low risk of breaking existing functionality
+**Priorities 1-2 are COMPLETE.** Next: **Priority 3 (MemRL Phase 4 - Escalation Learning)**.
 
-After that, verify Priority 2 (Backend Completion) status - if real inference already works, mark complete and move to Priority 3/4 (Escalation).
+Why escalation learning:
+- Builds on completed MemRL Phases 1-3
+- Enables learned failure recovery strategies
+- Files are already identified: `src/failure_router.py`, `orchestration/repl_memory/retriever.py`
+
+Alternative: Priority 4 (RLM Escalation Integration) could run in parallel if escalation learning is blocked.

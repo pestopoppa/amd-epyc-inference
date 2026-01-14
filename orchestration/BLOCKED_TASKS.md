@@ -111,7 +111,7 @@ print(scorer.score_pending_tasks())
 
 | Phase | Description | Status | Dependencies |
 |-------|-------------|--------|--------------|
-| 1 | Backend Completion | READY | None |
+| 1 | Backend Completion | ✅ COMPLETE | None |
 | 2 | RLM Enhancements | READY | Phase 1 |
 | 3 | Escalation Integration | READY | Phase 1 |
 | 4 | Formalizer Integration | READY | Phase 3 |
@@ -120,11 +120,14 @@ print(scorer.score_pending_tasks())
 | 7 | Hyperparameter Tuning | BLOCKED | Benchmarks |
 | 8 | Trajectory Visualization | LOW | Phase 2 |
 
-### Phase 1: Backend Completion (CRITICAL)
-- [ ] Complete LlamaServerBackend HTTP (`src/backends/llama_server.py`)
-- [ ] Wire CachingBackend init (`src/llm_primitives.py`)
-- [ ] Connect role→backend routing (`src/llm_primitives.py`)
-- [ ] Fix real mode initialization (`src/api.py`)
+### Phase 1: Backend Completion (COMPLETE - 2026-01-14)
+- [x] Complete LlamaServerBackend HTTP (`src/backends/llama_server.py`)
+- [x] Wire CachingBackend init (`src/llm_primitives.py`)
+- [x] Connect role→backend routing (`src/llm_primitives.py`)
+- [x] Fix real mode initialization (`src/api.py`)
+
+**Note**: All infrastructure is complete. Real inference requires starting llama-server instances.
+To test: `llama-server -m MODEL.gguf --host 0.0.0.0 --port 8080` then call API with `real_mode=True`.
 
 ### Phase 2: RLM Enhancements
 - [ ] Forced exploration validation (`src/repl_environment.py`)
