@@ -214,7 +214,7 @@ class TestRouteFailureRetry:
         decision = router.route_failure(context)
 
         assert decision.action == "escalate"
-        assert decision.next_role == "coder"
+        assert decision.next_role == "coder_primary"  # Specific role name
 
     def test_zero_failures_retries(self):
         """Test that zero failures still allows retry."""
@@ -245,7 +245,7 @@ class TestRouteFailureEscalation:
         decision = router.route_failure(context)
 
         assert decision.action == "escalate"
-        assert decision.next_role == "coder"
+        assert decision.next_role == "coder_primary"  # Specific role name
 
     def test_coder_to_architect(self):
         """Test coder escalates to architect."""
@@ -258,7 +258,7 @@ class TestRouteFailureEscalation:
         decision = router.route_failure(context)
 
         assert decision.action == "escalate"
-        assert decision.next_role == "architect"
+        assert decision.next_role == "architect_general"  # Specific role name
 
     def test_architect_cannot_escalate(self):
         """Test architect has no escalation path."""
@@ -640,7 +640,7 @@ class TestIngestRole:
         decision = router.route_failure(context)
 
         assert decision.action == "escalate"
-        assert decision.next_role == "architect"
+        assert decision.next_role == "architect_general"  # Specific role name
 
     def test_ingest_path(self):
         """Test ingest escalation path."""

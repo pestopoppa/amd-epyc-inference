@@ -1,0 +1,157 @@
+tools:
+  duckduckgo_search:
+    name: duckduckgo_search
+    description: Search the web using DuckDuckGo
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: langchain
+    category: web
+  wikipedia:
+    name: wikipedia
+    description: Search and retrieve Wikipedia articles
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: langchain
+    category: web
+  arxiv:
+    name: arxiv
+    description: Search arXiv for academic papers
+    parameters:
+      query:
+        type: string
+        description: Search query
+      max_results:
+        type: integer
+        default: 5
+    source: langchain
+    category: web
+  pubmed:
+    name: pubmed
+    description: Search PubMed for medical/biomedical literature
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: langchain
+    category: web
+  wolfram_alpha:
+    name: wolfram_alpha
+    description: Query Wolfram Alpha for computational knowledge
+    parameters:
+      query:
+        type: string
+        description: Query to compute
+    source: langchain
+    category: math
+  python_repl:
+    name: python_repl
+    description: Execute Python code in a REPL
+    parameters:
+      code:
+        type: string
+        description: Python code to execute
+    source: langchain
+    category: code
+  shell:
+    name: shell
+    description: Execute shell commands
+    parameters:
+      command:
+        type: string
+        description: Shell command
+    source: langchain
+    category: code
+  requests_get:
+    name: requests_get
+    description: Make HTTP GET request
+    parameters:
+      url:
+        type: string
+        description: URL to fetch
+    source: langchain
+    category: web
+  requests_post:
+    name: requests_post
+    description: Make HTTP POST request
+    parameters:
+      url:
+        type: string
+        description: URL to post to
+      data:
+        type: object
+        description: JSON data to send
+    source: langchain
+    category: web
+  file_search:
+    name: file_search
+    description: Search for files matching a pattern
+    parameters:
+      pattern:
+        type: string
+        description: Glob pattern
+      directory:
+        type: string
+        default: .
+    source: langchain
+    category: system
+  read_file:
+    name: read_file
+    description: Read contents of a file
+    parameters:
+      path:
+        type: string
+        description: File path
+    source: langchain
+    category: system
+  write_file:
+    name: write_file
+    description: Write content to a file
+    parameters:
+      path:
+        type: string
+        description: File path
+      content:
+        type: string
+        description: Content to write
+    source: langchain
+    category: system
+  youtube_search:
+    name: youtube_search
+    description: Search YouTube for videos
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: langchain
+    category: web
+  google_serper:
+    name: google_serper
+    description: Search Google using Serper API
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: langchain
+    category: web
+  bing_search:
+    name: bing_search
+    description: Search using Bing API
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: langchain
+    category: web
+  human:
+    name: human
+    description: Ask a human for input or clarification
+    parameters:
+      question:
+        type: string
+        description: Question to ask
+    source: langchain
+    category: interaction

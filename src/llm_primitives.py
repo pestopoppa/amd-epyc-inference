@@ -44,6 +44,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -91,6 +92,40 @@ class LLMResult:
 
 
 @dataclass
+class QueryCost:
+    """Cost tracking for a single query/task.
+
+    Tracks tokens used and estimates cost based on model rates.
+    """
+
+    query_id: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    calls_made: int = 0
+    batch_calls_made: int = 0
+    elapsed_seconds: float = 0.0
+
+    # Cost estimation (per 1M tokens, configurable)
+    prompt_rate: float = 0.0  # $ per 1M prompt tokens
+    completion_rate: float = 0.0  # $ per 1M completion tokens
+
+    @property
+    def estimated_cost(self) -> float:
+        """Estimate cost in dollars based on token counts and rates."""
+        prompt_cost = (self.prompt_tokens / 1_000_000) * self.prompt_rate
+        completion_cost = (self.completion_tokens / 1_000_000) * self.completion_rate
+        return prompt_cost + completion_cost
+
+    def __str__(self) -> str:
+        return (
+            f"QueryCost(id={self.query_id}, tokens={self.total_tokens}, "
+            f"calls={self.calls_made}, batch={self.batch_calls_made}, "
+            f"cost=${self.estimated_cost:.6f})"
+        )
+
+
+@dataclass
 class LLMPrimitivesConfig:
     """Configuration for LLM primitives."""
 
@@ -98,6 +133,10 @@ class LLMPrimitivesConfig:
     batch_parallelism: int = 4  # Max parallel calls in llm_batch
     call_timeout: int = 120  # Timeout per call in seconds
     mock_response_prefix: str = "[MOCK]"  # Prefix for mock responses
+    max_recursion_depth: int = 5  # Maximum nesting depth for sub-LM calls
+    # Cost estimation rates (per 1M tokens)
+    default_prompt_rate: float = 0.50  # $ per 1M input tokens
+    default_completion_rate: float = 1.50  # $ per 1M output tokens
 
 
 class LLMPrimitives:
@@ -160,6 +199,14 @@ class LLMPrimitives:
         self.total_batch_calls = 0
         self.total_tokens_generated = 0
 
+        # Recursion depth tracking
+        self._recursion_depth = 0
+        self._max_recursion_depth_reached = 0
+
+        # Per-query cost tracking
+        self._current_query: QueryCost | None = None
+        self._completed_queries: list[QueryCost] = []
+
     def _init_caching_backends(self, server_urls: dict[str, str], num_slots: int) -> None:
         """Initialize CachingBackend instances for each role.
 
@@ -205,6 +252,90 @@ class LLMPrimitives:
                 stats[role] = backend.get_stats()
         return stats
 
+    def start_query(self, query_id: str) -> None:
+        """Start tracking costs for a new query.
+
+        Args:
+            query_id: Unique identifier for this query (e.g., task_id).
+        """
+        # End any existing query first
+        if self._current_query is not None:
+            self.end_query()
+
+        self._current_query = QueryCost(
+            query_id=query_id,
+            prompt_rate=self.config.default_prompt_rate,
+            completion_rate=self.config.default_completion_rate,
+        )
+
+    def end_query(self) -> QueryCost | None:
+        """End current query tracking and return the cost.
+
+        Returns:
+            QueryCost for the completed query, or None if no query active.
+        """
+        if self._current_query is None:
+            return None
+
+        query = self._current_query
+        self._completed_queries.append(query)
+        self._current_query = None
+        return query
+
+    def get_current_query_cost(self) -> QueryCost | None:
+        """Get cost for the current query (if active).
+
+        Returns:
+            QueryCost for current query, or None if no query active.
+        """
+        return self._current_query
+
+    def get_completed_queries(self, last_n: int | None = None) -> list[QueryCost]:
+        """Get completed query costs.
+
+        Args:
+            last_n: Only return last N queries (None = all).
+
+        Returns:
+            List of QueryCost for completed queries.
+        """
+        if last_n is None:
+            return list(self._completed_queries)
+        return self._completed_queries[-last_n:]
+
+    def get_total_cost(self) -> float:
+        """Get total estimated cost for all completed queries.
+
+        Returns:
+            Total cost in dollars.
+        """
+        return sum(q.estimated_cost for q in self._completed_queries)
+
+    def _estimate_prompt_tokens(self, prompt: str) -> int:
+        """Estimate number of tokens in a prompt.
+
+        Uses a simple heuristic of ~4 characters per token.
+        More accurate tokenization would require the model's tokenizer.
+
+        Args:
+            prompt: The prompt text.
+
+        Returns:
+            Estimated token count.
+        """
+        return len(prompt) // 4
+
+    def _estimate_completion_tokens(self, response: str) -> int:
+        """Estimate number of tokens in a response.
+
+        Args:
+            response: The response text.
+
+        Returns:
+            Estimated token count.
+        """
+        return len(response) // 4
+
     def llm_call(
         self,
         prompt: str,
@@ -222,7 +353,33 @@ class LLMPrimitives:
 
         Returns:
             Sub-LM response (capped at output_cap chars).
+
+        Raises:
+            RecursionError: If max recursion depth exceeded.
         """
+        # Check recursion depth
+        if self._recursion_depth >= self.config.max_recursion_depth:
+            raise RecursionError(
+                f"Maximum recursion depth ({self.config.max_recursion_depth}) exceeded. "
+                f"Sub-LM calls cannot be nested more than {self.config.max_recursion_depth} levels deep."
+            )
+
+        self._recursion_depth += 1
+        self._max_recursion_depth_reached = max(self._max_recursion_depth_reached, self._recursion_depth)
+
+        try:
+            return self._llm_call_impl(prompt, context_slice, role, n_tokens)
+        finally:
+            self._recursion_depth -= 1
+
+    def _llm_call_impl(
+        self,
+        prompt: str,
+        context_slice: str = "",
+        role: str = "worker",
+        n_tokens: int | None = None,
+    ) -> str:
+        """Internal implementation of llm_call (after recursion check)."""
         start_time = time.perf_counter()
         self.total_calls += 1
 
@@ -267,6 +424,16 @@ class LLMPrimitives:
             log_entry.result = result[:500]  # Truncate for log
             log_entry.elapsed_seconds = time.perf_counter() - start_time
             self.call_log.append(log_entry)
+
+            # Track tokens for current query cost
+            if self._current_query is not None:
+                prompt_tokens = self._estimate_prompt_tokens(full_prompt)
+                completion_tokens = self._estimate_completion_tokens(result)
+                self._current_query.prompt_tokens += prompt_tokens
+                self._current_query.completion_tokens += completion_tokens
+                self._current_query.total_tokens += prompt_tokens + completion_tokens
+                self._current_query.calls_made += 1
+                self._current_query.elapsed_seconds += log_entry.elapsed_seconds
 
             return result
 
@@ -317,6 +484,91 @@ class LLMPrimitives:
             log_entry.result = [r[:200] for r in capped_results[:3]]  # Truncate for log
             log_entry.elapsed_seconds = time.perf_counter() - start_time
             self.call_log.append(log_entry)
+
+            # Track tokens for current query cost
+            if self._current_query is not None:
+                total_prompt_tokens = sum(self._estimate_prompt_tokens(p) for p in prompts)
+                total_completion_tokens = sum(self._estimate_completion_tokens(r) for r in capped_results)
+                self._current_query.prompt_tokens += total_prompt_tokens
+                self._current_query.completion_tokens += total_completion_tokens
+                self._current_query.total_tokens += total_prompt_tokens + total_completion_tokens
+                self._current_query.batch_calls_made += 1
+                self._current_query.elapsed_seconds += log_entry.elapsed_seconds
+
+            return capped_results
+
+        except Exception as e:
+            log_entry.error = str(e)
+            log_entry.elapsed_seconds = time.perf_counter() - start_time
+            self.call_log.append(log_entry)
+            return [f"[ERROR: {e}]" for _ in prompts]
+
+    async def llm_batch_async(
+        self,
+        prompts: list[str],
+        role: str = "worker",
+    ) -> list[str]:
+        """Call multiple sub-LMs in parallel using asyncio.
+
+        This is the async version of llm_batch() for use in async contexts.
+        Uses asyncio.gather for parallel execution.
+
+        Args:
+            prompts: List of prompts to send to sub-LMs.
+            role: Role determining which model to use.
+
+        Returns:
+            List of responses in the same order as prompts.
+        """
+        start_time = time.perf_counter()
+        self.total_batch_calls += 1
+
+        # Create log entry
+        log_entry = CallLogEntry(
+            timestamp=time.time(),
+            call_type="batch_async",
+            prompts=prompts[:5] if len(prompts) <= 5 else prompts[:5] + ["..."],
+            role=role,
+        )
+
+        try:
+            if self.mock_mode:
+                # Mock mode: simulate async calls
+                results = self._mock_batch(prompts, role)
+            else:
+                # Real mode: run calls in parallel using asyncio
+                loop = asyncio.get_event_loop()
+                tasks = [
+                    loop.run_in_executor(None, self._real_call, prompt, role)
+                    for prompt in prompts
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Convert exceptions to error strings
+                results = [
+                    str(r) if isinstance(r, Exception) else r
+                    for r in results
+                ]
+
+            # Cap each output
+            capped_results = []
+            for result in results:
+                if len(result) > self.config.output_cap:
+                    result = result[: self.config.output_cap] + f"\n[... truncated at {self.config.output_cap} chars]"
+                capped_results.append(result)
+
+            log_entry.result = [r[:200] for r in capped_results[:3]]  # Truncate for log
+            log_entry.elapsed_seconds = time.perf_counter() - start_time
+            self.call_log.append(log_entry)
+
+            # Track tokens for current query cost
+            if self._current_query is not None:
+                total_prompt_tokens = sum(self._estimate_prompt_tokens(p) for p in prompts)
+                total_completion_tokens = sum(self._estimate_completion_tokens(r) for r in capped_results)
+                self._current_query.prompt_tokens += total_prompt_tokens
+                self._current_query.completion_tokens += total_completion_tokens
+                self._current_query.total_tokens += total_prompt_tokens + total_completion_tokens
+                self._current_query.batch_calls_made += 1
+                self._current_query.elapsed_seconds += log_entry.elapsed_seconds
 
             return capped_results
 
@@ -697,6 +949,8 @@ class LLMPrimitives:
             "total_tokens_generated": self.total_tokens_generated,
             "call_log_size": len(self.call_log),
             "mock_mode": self.mock_mode,
+            "max_recursion_depth_reached": self._max_recursion_depth_reached,
+            "current_recursion_depth": self._recursion_depth,
         }
 
         # Add cache stats if using CachingBackend
@@ -736,3 +990,5 @@ class LLMPrimitives:
         self.total_batch_calls = 0
         self.total_tokens_generated = 0
         self.call_log.clear()
+        self._max_recursion_depth_reached = 0
+        # Note: _recursion_depth is not reset as it tracks current call stack

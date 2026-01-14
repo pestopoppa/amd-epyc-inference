@@ -1,0 +1,241 @@
+"""MemRL service for lazy-loaded memory-based RL components.
+
+This module handles:
+- Lazy loading of optional MemRL imports based on feature flags
+- Initialization of Q-scorer and HybridRouter on first use
+- Background task scoring for completed tasks
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import TYPE_CHECKING
+
+from src.features import features
+
+if TYPE_CHECKING:
+    from src.api.state import AppState
+
+logger = logging.getLogger(__name__)
+
+# Optional imports - populated by load_optional_imports()
+ProgressLogger: type | None = None
+ProgressReader: type | None = None
+EpisodicStore: type | None = None
+TaskEmbedder: type | None = None
+QScorer: type | None = None
+ScoringConfig: type | None = None
+TwoPhaseRetriever: type | None = None
+HybridRouter: type | None = None
+RuleBasedRouter: type | None = None
+RetrievalConfig: type | None = None
+ToolRegistry: type | None = None
+ScriptRegistry: type | None = None
+
+
+def load_optional_imports() -> None:
+    """Load optional module imports based on feature flags.
+
+    This is called during app startup to load only the modules needed
+    for the enabled features, improving startup time and reducing
+    memory usage when features are disabled.
+    """
+    global ProgressLogger, ProgressReader, EpisodicStore, TaskEmbedder
+    global QScorer, ScoringConfig, TwoPhaseRetriever, HybridRouter
+    global RuleBasedRouter, RetrievalConfig, ToolRegistry, ScriptRegistry
+
+    f = features()
+
+    # MemRL components
+    if f.memrl:
+        from orchestration.repl_memory.progress_logger import (
+            ProgressLogger as _PL,
+            ProgressReader as _PR,
+        )
+        from orchestration.repl_memory.episodic_store import EpisodicStore as _ES
+        from orchestration.repl_memory.embedder import TaskEmbedder as _TE
+        from orchestration.repl_memory.q_scorer import QScorer as _QS, ScoringConfig as _SC
+        from orchestration.repl_memory.retriever import (
+            TwoPhaseRetriever as _TPR,
+            HybridRouter as _HR,
+            RuleBasedRouter as _RBR,
+            RetrievalConfig as _RC,
+        )
+        ProgressLogger = _PL
+        ProgressReader = _PR
+        EpisodicStore = _ES
+        TaskEmbedder = _TE
+        QScorer = _QS
+        ScoringConfig = _SC
+        TwoPhaseRetriever = _TPR
+        HybridRouter = _HR
+        RuleBasedRouter = _RBR
+        RetrievalConfig = _RC
+    else:
+        # Minimal progress logger that doesn't require MemRL
+        from orchestration.repl_memory.progress_logger import (
+            ProgressLogger as _PL,
+            ProgressReader as _PR,
+        )
+        ProgressLogger = _PL
+        ProgressReader = _PR
+
+    # Tool registry
+    if f.tools:
+        from src.tool_registry import ToolRegistry as _TR
+        ToolRegistry = _TR
+
+    # Script registry (requires tools)
+    if f.scripts:
+        from src.script_registry import ScriptRegistry as _SR
+        ScriptRegistry = _SR
+
+
+def get_progress_logger_class() -> type | None:
+    """Get the ProgressLogger class (after load_optional_imports called)."""
+    return ProgressLogger
+
+
+def get_tool_registry_class() -> type | None:
+    """Get the ToolRegistry class (after load_optional_imports called)."""
+    return ToolRegistry
+
+
+def get_script_registry_class() -> type | None:
+    """Get the ScriptRegistry class (after load_optional_imports called)."""
+    return ScriptRegistry
+
+
+def score_completed_task(state: "AppState", task_id: str) -> None:
+    """Score a completed task immediately (no inference required).
+
+    Called after log_task_completed() to update Q-values in real-time.
+    This is lightweight - just DB reads/writes, no LLM inference.
+
+    Args:
+        state: Application state containing Q-scorer.
+        task_id: The task ID to score.
+    """
+    if not state.q_scorer or not state.q_scorer_enabled:
+        return
+
+    try:
+        # Score just this task
+        state.q_scorer._score_task(task_id)
+        # Flush logger to persist Q-value updates
+        if state.progress_logger:
+            state.progress_logger.flush()
+    except Exception as e:
+        # Log but don't fail the user request - scoring is non-critical
+        logger.warning(f"Q-scoring failed for task {task_id}: {e}", exc_info=True)
+
+
+async def background_cleanup(state: "AppState") -> None:
+    """Background task for opportunistic cleanup when idle.
+
+    Processes backlog of unscored tasks when server has no active requests.
+    This catches any tasks that weren't scored immediately (e.g., from restarts).
+
+    Args:
+        state: Application state to check for idle and Q-scorer availability.
+    """
+    while True:
+        try:
+            # Check every 10 seconds
+            await asyncio.sleep(10)
+
+            # Only run when idle and Q-scorer is available
+            # Note: Don't call ensure_memrl_initialized() here - only init on real use
+            if state.active_requests == 0 and state.q_scorer and state.q_scorer_enabled:
+                # Score a small batch of pending tasks
+                results = state.q_scorer.score_pending_tasks()
+
+                if results and not results.get("skipped"):
+                    tasks_processed = results.get("tasks_processed", 0)
+                    if tasks_processed > 0 and state.progress_logger:
+                        state.progress_logger.flush()
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            # Log background task errors but continue running
+            logger.warning(f"Background cleanup error: {e}", exc_info=True)
+
+
+def ensure_memrl_initialized(state: "AppState") -> bool:
+    """Lazy-load MemRL components on first real use.
+
+    This function respects the memrl feature flag - if disabled, returns False
+    immediately without attempting to load any MemRL components.
+
+    MemRL components are only needed for:
+    - Real inference with Q-scoring/HybridRouter
+    - Background Q-value updates
+
+    Args:
+        state: Application state to initialize.
+
+    Returns:
+        True if MemRL is initialized and available, False otherwise.
+    """
+    # Check feature flag first
+    if not features().memrl:
+        return False
+
+    if state._memrl_initialized:
+        return state.q_scorer is not None
+
+    # Mark as initialized (even if it fails) to prevent repeated attempts
+    state._memrl_initialized = True
+
+    # Ensure optional imports are loaded
+    if EpisodicStore is None or TaskEmbedder is None or QScorer is None:
+        logger.warning("MemRL feature enabled but imports not available")
+        return False
+
+    try:
+        state.episodic_store = EpisodicStore()
+        embedder = TaskEmbedder()
+        reader = ProgressReader()
+        config = ScoringConfig(
+            use_claude_judge=False,  # Basic mode only - no LLM required
+            min_score_interval_seconds=30,  # Background cleanup interval
+            batch_size=10,  # Process 10 tasks per cleanup round
+        )
+        state.q_scorer = QScorer(
+            store=state.episodic_store,
+            embedder=embedder,
+            logger=state.progress_logger,
+            reader=reader,
+            config=config,
+        )
+
+        # Initialize HybridRouter for learned routing
+        retrieval_config = RetrievalConfig(
+            semantic_k=20,
+            min_similarity=0.3,
+            q_weight=0.7,
+            confidence_threshold=0.6,
+        )
+        retriever = TwoPhaseRetriever(
+            store=state.episodic_store,
+            embedder=embedder,
+            config=retrieval_config,
+        )
+        # Load routing hints from registry for rule-based fallback
+        # Reuse existing registry if loaded at startup, otherwise load it
+        if state.registry is None:
+            from src.registry_loader import RegistryLoader
+            state.registry = RegistryLoader(validate_paths=False)
+        rule_router = RuleBasedRouter(routing_hints=state.registry.routing_hints)
+        state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
+
+        return True
+    except Exception as e:
+        # MemRL initialization failed - log and continue without it
+        logger.warning(f"MemRL initialization failed, continuing without it: {e}", exc_info=True)
+        state.q_scorer = None
+        state.episodic_store = None
+        state.hybrid_router = None
+        return False

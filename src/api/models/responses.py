@@ -1,0 +1,58 @@
+"""Response models for the orchestrator API."""
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class ChatResponse(BaseModel):
+    """Response model for chat endpoint."""
+
+    answer: str = Field(..., description="The final answer")
+    turns: int = Field(..., description="Number of orchestration turns used")
+    tokens_used: int = Field(default=0, description="Approximate tokens used")
+    elapsed_seconds: float = Field(..., description="Total processing time")
+    mock_mode: bool = Field(..., description="Whether mock mode was used")
+    real_mode: bool = Field(default=False, description="Whether real inference was used")
+    cache_stats: dict[str, Any] | None = Field(
+        default=None,
+        description="Cache performance statistics (real_mode only)"
+    )
+
+
+class HealthResponse(BaseModel):
+    """Response model for health endpoint."""
+
+    status: str = Field(..., description="Health status")
+    models_loaded: int = Field(default=0, description="Number of models loaded")
+    mock_mode_available: bool = Field(default=True, description="Mock mode availability")
+    version: str = Field(default="0.1.0", description="API version")
+
+
+class GateResultModel(BaseModel):
+    """Model for individual gate result."""
+
+    gate_name: str
+    passed: bool
+    exit_code: int
+    elapsed_seconds: float
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class GatesResponse(BaseModel):
+    """Response model for gates endpoint."""
+
+    results: list[GateResultModel]
+    all_passed: bool
+    total_elapsed_seconds: float
+
+
+class StatsResponse(BaseModel):
+    """Response model for stats endpoint."""
+
+    total_requests: int
+    total_turns: int
+    average_turns_per_request: float
+    mock_requests: int
+    real_requests: int

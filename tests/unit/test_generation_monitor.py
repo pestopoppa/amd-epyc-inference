@@ -522,8 +522,9 @@ class TestIntegrationWithFailureRouter:
         decision = router.route_failure(context)
 
         # Should escalate immediately, not retry
+        # Note: "coder" chain maps to "coder_primary" specific role
         assert decision.action == "escalate"
-        assert decision.next_role == "coder"
+        assert decision.next_role == "coder_primary"
 
     def test_early_abort_at_architect_fails(self):
         """Test early abort at architect tier fails gracefully."""

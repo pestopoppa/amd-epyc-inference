@@ -129,17 +129,25 @@ class EpisodicStore:
 
     def _load_embeddings(self) -> None:
         """Load or create embeddings array (memory-mapped)."""
-        if self.embeddings_path.exists():
-            # Load existing embeddings
-            self._embeddings = np.load(self.embeddings_path, mmap_mode="r+")
-            self._next_idx = len(self._embeddings)
-        else:
-            # Create new embeddings array (start with 1000 slots)
-            initial_size = 1000
-            self._embeddings = np.zeros((initial_size, self.embedding_dim), dtype=np.float32)
-            np.save(self.embeddings_path, self._embeddings)
-            self._embeddings = np.load(self.embeddings_path, mmap_mode="r+")
-            self._next_idx = 0
+        # Check if file exists AND has content (not empty)
+        if self.embeddings_path.exists() and self.embeddings_path.stat().st_size > 0:
+            try:
+                # Load existing embeddings
+                self._embeddings = np.load(self.embeddings_path, mmap_mode="r+")
+                self._next_idx = len(self._embeddings)
+                return
+            except (EOFError, ValueError) as e:
+                # Corrupt file - recreate
+                import logging
+                logging.warning(f"Corrupt embeddings file, recreating: {e}")
+                self.embeddings_path.unlink()
+
+        # Create new embeddings array (start with 1000 slots)
+        initial_size = 1000
+        self._embeddings = np.zeros((initial_size, self.embedding_dim), dtype=np.float32)
+        np.save(self.embeddings_path, self._embeddings)
+        self._embeddings = np.load(self.embeddings_path, mmap_mode="r+")
+        self._next_idx = 0
 
     def _grow_embeddings(self) -> None:
         """Double the embeddings array size when full."""

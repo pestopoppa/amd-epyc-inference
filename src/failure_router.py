@@ -248,12 +248,44 @@ class FailureRouter:
     to rules when not confident or during cold start.
     """
 
-    # Standard escalation chains
+    # Standard escalation chains (use generic names)
     ESCALATION_CHAINS: dict[str, EscalationChain] = {
         "worker": EscalationChain("worker", "coder", max_retries=2, max_escalations=2),
         "coder": EscalationChain("coder", "architect", max_retries=2, max_escalations=1),
         "architect": EscalationChain("architect", None, max_retries=3, max_escalations=0),
         "ingest": EscalationChain("ingest", "architect", max_retries=1, max_escalations=1),
+        "frontdoor": EscalationChain("frontdoor", "coder", max_retries=2, max_escalations=2),
+    }
+
+    # Map specific role names to generic chain names
+    ROLE_TO_CHAIN: dict[str, str] = {
+        # Workers -> worker chain
+        "worker_general": "worker",
+        "worker_math": "worker",
+        "worker_summarize": "worker",
+        # Coders -> coder chain
+        "coder_primary": "coder",
+        "coder_escalation": "coder",
+        # Architects -> architect chain
+        "architect_general": "architect",
+        "architect_coding": "architect",
+        # Ingest -> ingest chain
+        "ingest_long_context": "ingest",
+        # Frontdoor uses its own chain
+        "frontdoor": "frontdoor",
+        # Thinking -> coder chain (escalates to architect)
+        "thinking_reasoning": "coder",
+        # Toolrunner -> worker chain
+        "toolrunner": "worker",
+    }
+
+    # Map generic chain names to specific role names for escalation targets
+    CHAIN_TO_ROLE: dict[str, str] = {
+        "worker": "worker_general",
+        "coder": "coder_primary",
+        "architect": "architect_general",
+        "ingest": "ingest_long_context",
+        "frontdoor": "frontdoor",
     }
 
     # Error categories that should not trigger escalation
@@ -318,14 +350,16 @@ class FailureRouter:
             context: Information about the failure.
 
         Returns:
-            RoutingDecision with action and next role.
+            RoutingDecision with action and next role (using specific role names).
         """
-        chain = self.chains.get(context.role)
+        # Map specific role name to generic chain name
+        chain_name = self.ROLE_TO_CHAIN.get(context.role, context.role)
+        chain = self.chains.get(chain_name)
         if chain is None:
             return RoutingDecision(
                 action="fail",
                 next_role=None,
-                reason=f"Unknown role: {context.role}",
+                reason=f"Unknown role: {context.role} (chain: {chain_name})",
                 should_include_context=False,
             )
 
@@ -345,8 +379,40 @@ class FailureRouter:
         # Rule-based escalation (default path)
         self._strategy_counts["rules"] += 1
         decision = self._rule_based_route(context, chain)
+
+        # Translate generic chain names to specific role names
+        if decision.next_role is not None:
+            decision = RoutingDecision(
+                action=decision.action,
+                next_role=self._chain_to_specific_role(decision.next_role, context.role),
+                reason=decision.reason,
+                should_include_context=decision.should_include_context,
+                max_retries_remaining=decision.max_retries_remaining,
+            )
+
         self._log_decision(context, decision, "rules", learned_result)
         return decision
+
+    def _chain_to_specific_role(self, chain_name: str, original_role: str) -> str:
+        """Map a generic chain name to a specific role name.
+
+        If the chain_name matches the original role's chain, return the original.
+        Otherwise, map to the default specific role for that chain.
+
+        Args:
+            chain_name: Generic chain name (e.g., "coder", "architect").
+            original_role: The original specific role that failed.
+
+        Returns:
+            Specific role name.
+        """
+        # If returning to same chain, use original role
+        original_chain = self.ROLE_TO_CHAIN.get(original_role, original_role)
+        if chain_name == original_chain:
+            return original_role
+
+        # Map to default specific role for this chain
+        return self.CHAIN_TO_ROLE.get(chain_name, chain_name)
 
     def _apply_learned_decision(
         self,

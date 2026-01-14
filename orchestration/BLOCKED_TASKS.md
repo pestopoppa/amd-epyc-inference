@@ -47,8 +47,19 @@
 | 2 | Wire Logging | ✅ COMPLETE | Phase 1 |
 | 3 | Enable Hybrid Routing | ✅ COMPLETE | Phase 2 |
 | 4 | Escalation Learning | ✅ COMPLETE | Phase 3 |
+| 4b | Memory Seeding (~5K) | ✅ COMPLETE | Phase 4 |
 | 5 | REPL Exploration Learning | READY | Phase 3 |
 | 6 | Claude-as-Judge | OPTIONAL | Phase 3 |
+
+### Memory Seeding Complete (2026-01-14)
+
+~5,000 memories seeded with 67%/33% success/failure ratio:
+- Hierarchical decomposition patterns (70)
+- Coding/diverse/template failures (~1,340)
+- Probabilistic strategies (~450)
+- Tool registry created (608 tools mined)
+
+Seeding scripts: `scripts/seed_*.py`
 
 ### Phase 1: Core Implementation (COMPLETE)
 - [x] `episodic_store.py` - SQLite + numpy memory storage
@@ -120,8 +131,8 @@ print(scorer.score_pending_tasks())
 | Phase | Description | Status | Dependencies |
 |-------|-------------|--------|--------------|
 | 1 | Backend Completion | ✅ COMPLETE | None |
-| 2 | RLM Enhancements | READY | Phase 1 |
-| 3 | Escalation Integration | READY | Phase 1 |
+| 2 | RLM Enhancements | ✅ COMPLETE | Phase 1 |
+| 3 | Escalation Integration | ✅ COMPLETE | Phase 1 |
 | 4 | Formalizer Integration | READY | Phase 3 |
 | 5 | Tool/Script Completion | READY | None |
 | 6 | Early Failure Detection | READY | Phase 3 |
@@ -137,17 +148,32 @@ print(scorer.score_pending_tasks())
 **Note**: All infrastructure is complete. Real inference requires starting llama-server instances.
 To test: `llama-server -m MODEL.gguf --host 0.0.0.0 --port 8080` then call API with `real_mode=True`.
 
-### Phase 2: RLM Enhancements
-- [ ] Forced exploration validation (`src/repl_environment.py`)
-- [ ] Async `llm_batch_async()` (`src/llm_primitives.py`)
-- [ ] Configurable recursion depth (`src/llm_primitives.py`)
-- [ ] Per-query cost tracking (`src/llm_primitives.py`)
+### Phase 2: RLM Enhancements (COMPLETE - 2026-01-14)
+- [x] Forced exploration validation (`src/repl_environment.py` - REPLConfig.require_exploration_before_final)
+- [x] Async `llm_batch_async()` (`src/llm_primitives.py`)
+- [x] Configurable recursion depth (`src/llm_primitives.py` - LLMPrimitivesConfig.max_recursion_depth)
+- [x] Per-query cost tracking (`src/llm_primitives.py` - QueryCost, start_query/end_query)
 
-### Phase 3: Escalation Integration
-- [ ] Error classification (`src/failure_router.py`)
-- [ ] Wire FailureRouter into Root LM loop (`src/api.py`)
-- [ ] Role switching on escalation (`src/api.py`)
-- [ ] Gate execution integration (`src/api.py`)
+**Implementation:**
+- Forced exploration: tracks peek/grep/llm_call before FINAL(); opt-in via config
+- Async batch: `llm_batch_async()` using asyncio.gather for parallel execution
+- Recursion depth: max 5 levels by default, RecursionError on exceed
+- Cost tracking: QueryCost dataclass, token estimation, per-query cost in dollars
+
+### Phase 3: Escalation Integration (COMPLETE - 2026-01-14)
+- [x] Error classification (`src/api.py` - `_classify_error()`)
+- [x] Wire FailureRouter into Root LM loop (`src/api.py`)
+- [x] Role switching on escalation (`src/api.py`)
+- [x] Gate execution integration (`src/api.py` - FailureContext supports gate_name)
+
+**Implementation:**
+- Added `_classify_error()` helper in api.py to map errors to ErrorCategory
+- Added `_build_escalation_prompt()` for escalated role context
+- Root LM loop now tracks current_role, consecutive_failures, and role_history
+- FailureRouter consulted on errors, returns RoutingDecision (retry/escalate/fail)
+- Role switching on "escalate" action with escalation prompt
+- Escalations logged via `progress_logger.log_escalation()`
+- 26 API tests + 51 failure_router tests pass
 
 ### Phase 4: Formalizer Integration
 - [ ] Formalizer routing (`src/dispatcher.py`)

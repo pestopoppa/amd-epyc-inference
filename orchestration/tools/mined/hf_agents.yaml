@@ -1,0 +1,91 @@
+tools:
+  image_captioner:
+    name: image_captioner
+    description: Generate a caption for an image
+    parameters:
+      image:
+        type: string
+        description: Path or URL to image
+    source: hf_agents
+    category: vision
+  image_qa:
+    name: image_qa
+    description: Answer questions about an image
+    parameters:
+      image:
+        type: string
+      question:
+        type: string
+    source: hf_agents
+    category: vision
+  text_to_image:
+    name: text_to_image
+    description: Generate an image from a text description
+    parameters:
+      prompt:
+        type: string
+        description: Image description
+    source: hf_agents
+    category: vision
+  document_qa:
+    name: document_qa
+    description: Answer questions about a document
+    parameters:
+      document:
+        type: string
+        description: Document text or path
+      question:
+        type: string
+    source: hf_agents
+    category: data
+  text_summarizer:
+    name: text_summarizer
+    description: Summarize a piece of text
+    parameters:
+      text:
+        type: string
+      max_length:
+        type: integer
+        default: 150
+    source: hf_agents
+    category: llm
+  text_classifier:
+    name: text_classifier
+    description: Classify text into categories
+    parameters:
+      text:
+        type: string
+      labels:
+        type: array
+        description: Possible labels
+    source: hf_agents
+    category: llm
+  translator:
+    name: translator
+    description: Translate text between languages
+    parameters:
+      text:
+        type: string
+      src_lang:
+        type: string
+      tgt_lang:
+        type: string
+    source: hf_agents
+    category: llm
+  speech_to_text:
+    name: speech_to_text
+    description: Transcribe audio to text
+    parameters:
+      audio:
+        type: string
+        description: Path to audio file
+    source: hf_agents
+    category: audio
+  text_to_speech:
+    name: text_to_speech
+    description: Convert text to speech audio
+    parameters:
+      text:
+        type: string
+    source: hf_agents
+    category: audio

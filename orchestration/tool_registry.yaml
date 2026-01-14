@@ -1,0 +1,356 @@
+# Tool Registry - Callable tools for orchestration
+# Each tool has: name, description, parameters, implementation, permissions
+
+metadata:
+  version: "1.0"
+  description: "Registry of callable tools for REPL and agent use"
+  categories:
+    - web        # HTTP, search, scrape
+    - data       # JSON, CSV, SQL, transform
+    - code       # lint, format, test, git
+    - math       # numerical, symbolic, statistics
+    - system     # files, processes, environment
+    - llm        # embeddings, completions, classification
+
+tools:
+  # ============ WEB TOOLS ============
+  http_get:
+    category: web
+    description: "Fetch content from a URL via HTTP GET"
+    parameters:
+      url: {type: string, required: true, description: "URL to fetch"}
+      headers: {type: object, required: false, description: "Optional headers"}
+      timeout: {type: integer, required: false, default: 30, description: "Timeout in seconds"}
+    returns: {type: object, fields: [status_code, headers, body, elapsed_ms]}
+    implementation:
+      type: python
+      module: orchestration.tools.web
+      function: http_get
+    permissions: [network]
+    examples:
+      - input: {url: "https://api.github.com/repos/python/cpython"}
+        description: "Fetch GitHub repo metadata"
+
+  http_post:
+    category: web
+    description: "Send data to a URL via HTTP POST"
+    parameters:
+      url: {type: string, required: true}
+      data: {type: object, required: false, description: "JSON body"}
+      headers: {type: object, required: false}
+      timeout: {type: integer, required: false, default: 30}
+    returns: {type: object, fields: [status_code, headers, body, elapsed_ms]}
+    implementation:
+      type: python
+      module: orchestration.tools.web
+      function: http_post
+    permissions: [network]
+
+  web_search:
+    category: web
+    description: "Search the web using DuckDuckGo (no API key needed)"
+    parameters:
+      query: {type: string, required: true, description: "Search query"}
+      max_results: {type: integer, required: false, default: 10}
+      region: {type: string, required: false, default: "wt-wt", description: "Region code"}
+    returns: {type: array, items: {type: object, fields: [title, url, snippet]}}
+    implementation:
+      type: python
+      module: orchestration.tools.web
+      function: web_search
+    permissions: [network]
+    examples:
+      - input: {query: "Python asyncio tutorial", max_results: 5}
+        description: "Search for Python tutorials"
+
+  fetch_wikipedia:
+    category: web
+    description: "Fetch Wikipedia article summary"
+    parameters:
+      title: {type: string, required: true, description: "Article title"}
+      sentences: {type: integer, required: false, default: 5}
+    returns: {type: object, fields: [title, summary, url, categories]}
+    implementation:
+      type: python
+      module: orchestration.tools.web
+      function: fetch_wikipedia
+    permissions: [network]
+
+  # ============ DATA TOOLS ============
+  json_query:
+    category: data
+    description: "Query JSON data using JMESPath expressions"
+    parameters:
+      data: {type: object, required: true, description: "JSON data to query"}
+      query: {type: string, required: true, description: "JMESPath expression"}
+    returns: {type: any, description: "Query result"}
+    implementation:
+      type: python
+      module: orchestration.tools.data
+      function: json_query
+    permissions: []
+    examples:
+      - input: {data: {users: [{name: "Alice"}, {name: "Bob"}]}, query: "users[*].name"}
+        description: "Extract all user names"
+
+  csv_to_json:
+    category: data
+    description: "Convert CSV data to JSON array"
+    parameters:
+      csv_content: {type: string, required: true, description: "CSV string"}
+      delimiter: {type: string, required: false, default: ","}
+      has_header: {type: boolean, required: false, default: true}
+    returns: {type: array, items: {type: object}}
+    implementation:
+      type: python
+      module: orchestration.tools.data
+      function: csv_to_json
+    permissions: []
+
+  json_to_csv:
+    category: data
+    description: "Convert JSON array to CSV"
+    parameters:
+      data: {type: array, required: true, description: "Array of objects"}
+      columns: {type: array, required: false, description: "Column order (optional)"}
+    returns: {type: string, description: "CSV content"}
+    implementation:
+      type: python
+      module: orchestration.tools.data
+      function: json_to_csv
+    permissions: []
+
+  sql_query:
+    category: data
+    description: "Execute SQL query on in-memory SQLite database"
+    parameters:
+      query: {type: string, required: true, description: "SQL query"}
+      tables: {type: object, required: false, description: "Dict of table_name -> list of dicts"}
+    returns: {type: array, description: "Query results as list of dicts"}
+    implementation:
+      type: python
+      module: orchestration.tools.data
+      function: sql_query
+    permissions: []
+    examples:
+      - input:
+          query: "SELECT name, age FROM users WHERE age > 25"
+          tables: {users: [{name: "Alice", age: 30}, {name: "Bob", age: 20}]}
+        description: "Query in-memory data with SQL"
+
+  # ============ CODE TOOLS ============
+  python_eval:
+    category: code
+    description: "Evaluate a Python expression safely"
+    parameters:
+      expression: {type: string, required: true, description: "Python expression"}
+      variables: {type: object, required: false, description: "Variables to inject"}
+    returns: {type: any}
+    implementation:
+      type: python
+      module: orchestration.tools.code
+      function: python_eval
+    permissions: [compute]
+    examples:
+      - input: {expression: "sum(range(100))", variables: {}}
+        description: "Calculate sum of 0-99"
+
+  run_shell:
+    category: code
+    description: "Execute a shell command (sandboxed)"
+    parameters:
+      command: {type: string, required: true}
+      timeout: {type: integer, required: false, default: 30}
+      cwd: {type: string, required: false}
+    returns: {type: object, fields: [stdout, stderr, returncode, elapsed_ms]}
+    implementation:
+      type: python
+      module: orchestration.tools.code
+      function: run_shell
+    permissions: [shell]
+
+  git_status:
+    category: code
+    description: "Get git repository status"
+    parameters:
+      repo_path: {type: string, required: false, default: ".", description: "Path to repo"}
+    returns: {type: object, fields: [branch, modified, staged, untracked]}
+    implementation:
+      type: python
+      module: orchestration.tools.code
+      function: git_status
+    permissions: [filesystem]
+
+  lint_python:
+    category: code
+    description: "Lint Python code using ruff"
+    parameters:
+      code: {type: string, required: true, description: "Python code to lint"}
+      fix: {type: boolean, required: false, default: false}
+    returns: {type: object, fields: [issues, fixed_code, summary]}
+    implementation:
+      type: python
+      module: orchestration.tools.code
+      function: lint_python
+    permissions: [compute]
+
+  # ============ MATH TOOLS ============
+  calculate:
+    category: math
+    description: "Evaluate mathematical expression"
+    parameters:
+      expression: {type: string, required: true, description: "Math expression (numpy available)"}
+    returns: {type: number}
+    implementation:
+      type: python
+      module: orchestration.tools.math
+      function: calculate
+    permissions: [compute]
+    examples:
+      - input: {expression: "np.sin(np.pi/4) * np.sqrt(2)"}
+        description: "Calculate sin(π/4) × √2"
+
+  statistics:
+    category: math
+    description: "Calculate statistics for a dataset"
+    parameters:
+      data: {type: array, required: true, description: "Array of numbers"}
+      metrics: {type: array, required: false, default: ["mean", "std", "min", "max", "median"]}
+    returns: {type: object, description: "Calculated statistics"}
+    implementation:
+      type: python
+      module: orchestration.tools.math
+      function: statistics
+    permissions: [compute]
+
+  monte_carlo:
+    category: math
+    description: "Run Monte Carlo simulation"
+    parameters:
+      expression: {type: string, required: true, description: "Expression to evaluate (use 'x' for random)"}
+      samples: {type: integer, required: false, default: 10000}
+      distribution: {type: string, required: false, default: "uniform", description: "uniform, normal, exponential"}
+    returns: {type: object, fields: [mean, std, percentiles, histogram]}
+    implementation:
+      type: python
+      module: orchestration.tools.math
+      function: monte_carlo
+    permissions: [compute]
+    examples:
+      - input: {expression: "x**2", samples: 100000, distribution: "uniform"}
+        description: "Estimate E[X²] where X ~ Uniform(0,1)"
+
+  symbolic_solve:
+    category: math
+    description: "Solve equation symbolically using SymPy"
+    parameters:
+      equation: {type: string, required: true, description: "Equation (use 'x' as variable)"}
+      variable: {type: string, required: false, default: "x"}
+    returns: {type: array, description: "Solutions"}
+    implementation:
+      type: python
+      module: orchestration.tools.math
+      function: symbolic_solve
+    permissions: [compute]
+    examples:
+      - input: {equation: "x**2 - 5*x + 6"}
+        description: "Solve x² - 5x + 6 = 0"
+
+  # ============ SYSTEM TOOLS ============
+  read_file:
+    category: system
+    description: "Read file contents"
+    parameters:
+      path: {type: string, required: true}
+      encoding: {type: string, required: false, default: "utf-8"}
+      max_bytes: {type: integer, required: false, default: 1000000}
+    returns: {type: object, fields: [content, size, modified]}
+    implementation:
+      type: python
+      module: orchestration.tools.system
+      function: read_file
+    permissions: [filesystem]
+
+  write_file:
+    category: system
+    description: "Write content to file"
+    parameters:
+      path: {type: string, required: true}
+      content: {type: string, required: true}
+      mode: {type: string, required: false, default: "w", description: "w=overwrite, a=append"}
+    returns: {type: object, fields: [bytes_written, path]}
+    implementation:
+      type: python
+      module: orchestration.tools.system
+      function: write_file
+    permissions: [filesystem]
+
+  list_directory:
+    category: system
+    description: "List directory contents"
+    parameters:
+      path: {type: string, required: true}
+      pattern: {type: string, required: false, default: "*"}
+      recursive: {type: boolean, required: false, default: false}
+    returns: {type: array, items: {type: object, fields: [name, path, type, size, modified]}}
+    implementation:
+      type: python
+      module: orchestration.tools.system
+      function: list_directory
+    permissions: [filesystem]
+
+  # ============ LLM TOOLS ============
+  embed_text:
+    category: llm
+    description: "Generate embedding for text"
+    parameters:
+      text: {type: string, required: true}
+    returns: {type: array, description: "Embedding vector"}
+    implementation:
+      type: python
+      module: orchestration.tools.llm
+      function: embed_text
+    permissions: [compute]
+
+  similarity_search:
+    category: llm
+    description: "Find similar items by embedding"
+    parameters:
+      query: {type: string, required: true}
+      items: {type: array, required: true, description: "Array of strings to search"}
+      top_k: {type: integer, required: false, default: 5}
+    returns: {type: array, items: {type: object, fields: [item, score, index]}}
+    implementation:
+      type: python
+      module: orchestration.tools.llm
+      function: similarity_search
+    permissions: [compute]
+
+  classify_text:
+    category: llm
+    description: "Classify text into categories"
+    parameters:
+      text: {type: string, required: true}
+      categories: {type: array, required: true, description: "Possible categories"}
+    returns: {type: object, fields: [category, confidence, scores]}
+    implementation:
+      type: python
+      module: orchestration.tools.llm
+      function: classify_text
+    permissions: [compute]
+
+# Permission definitions
+permissions:
+  network:
+    description: "Can make network requests"
+    requires_approval: false
+  filesystem:
+    description: "Can read/write files"
+    requires_approval: true
+    allowed_paths: ["/mnt/raid0/llm/", "/tmp/"]
+  shell:
+    description: "Can execute shell commands"
+    requires_approval: true
+  compute:
+    description: "Can execute computation"
+    requires_approval: false

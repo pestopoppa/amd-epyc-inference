@@ -17,7 +17,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 # Default model path (Qwen2.5-Coder-0.5B for embeddings)
-DEFAULT_MODEL_PATH = Path("/mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf")
+# Use lmstudio path structure per model_registry.yaml (model_base_path + relative path)
+DEFAULT_MODEL_PATH = Path("/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
 DEFAULT_EMBEDDING_BINARY = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-embedding")
 
 
@@ -143,8 +144,18 @@ class TaskEmbedder:
             # Parse JSON output
             output = json.loads(result.stdout)
 
-            # llama-embedding returns list of embeddings (one per prompt)
-            if isinstance(output, list) and len(output) > 0:
+            # llama-embedding returns embeddings in different formats:
+            # Format 1: {'object': 'list', 'data': [{'embedding': [...]}]}
+            # Format 2: [{'embedding': [...]}]
+            if isinstance(output, dict) and "data" in output:
+                # Format 1: OpenAI-compatible format
+                data = output["data"]
+                if data and len(data) > 0:
+                    embedding = np.array(data[0]["embedding"], dtype=np.float32)
+                else:
+                    raise ValueError(f"Empty data in output: {output}")
+            elif isinstance(output, list) and len(output) > 0:
+                # Format 2: Simple list format
                 embedding = np.array(output[0]["embedding"], dtype=np.float32)
             else:
                 raise ValueError(f"Unexpected output format: {output}")

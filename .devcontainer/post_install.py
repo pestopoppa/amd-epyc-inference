@@ -10,6 +10,9 @@ from pathlib import Path
 
 FISH_CONFIG = """\
 # default fish config for the devcontainer
+# Set umask so files created in container are readable by host user
+umask 022
+
 set -g __fish_git_prompt_showdirtystate 0
 set -g __fish_git_prompt_showuntrackedfiles 0
 set -g __fish_git_prompt_showupstream none

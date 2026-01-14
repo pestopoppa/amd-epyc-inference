@@ -1,0 +1,70 @@
+tools:
+  get_current_weather:
+    name: get_current_weather
+    description: Get the current weather in a given location
+    parameters:
+      location:
+        type: string
+        description: City and state, e.g. San Francisco, CA
+      unit:
+        type: string
+        enum:
+        - celsius
+        - fahrenheit
+    source: openai_cookbook
+    category: web
+  search_bing:
+    name: search_bing
+    description: Search the web using Bing
+    parameters:
+      query:
+        type: string
+        description: Search query
+    source: openai_cookbook
+    category: web
+  get_stock_price:
+    name: get_stock_price
+    description: Get current stock price for a ticker symbol
+    parameters:
+      ticker:
+        type: string
+        description: Stock ticker symbol
+    source: openai_cookbook
+    category: data
+  send_email:
+    name: send_email
+    description: Send an email to a recipient
+    parameters:
+      to:
+        type: string
+        description: Email address
+      subject:
+        type: string
+      body:
+        type: string
+    source: openai_cookbook
+    category: interaction
+  create_calendar_event:
+    name: create_calendar_event
+    description: Create a calendar event
+    parameters:
+      title:
+        type: string
+      start_time:
+        type: string
+        description: ISO datetime
+      end_time:
+        type: string
+      description:
+        type: string
+    source: openai_cookbook
+    category: interaction
+  execute_sql:
+    name: execute_sql
+    description: Execute a SQL query against the database
+    parameters:
+      query:
+        type: string
+        description: SQL query to execute
+    source: openai_cookbook
+    category: data

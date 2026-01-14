@@ -46,3 +46,17 @@ orchestration/gate_report_*.json
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+
+# Large MemRL data files (stored locally)
+orchestration/repl_memory/embeddings.npy
+orchestration/repl_memory/episodic.db
+
+# Local-only directories (not for GitHub)
+# These contain work-in-progress, internal notes, and session logs
+logs/
+progress/
+handoffs/
+
+# Large MemRL data files (stored locally)
+orchestration/repl_memory/embeddings.npy
+orchestration/repl_memory/episodic.db

@@ -1,22 +1,76 @@
 #!/usr/bin/env python3
 """Unit tests for FastAPI endpoints."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import app, _state
+from src.api import app
+from src.api.state import get_state, reset_state
+from src.gate_runner import GateResult
 
 
 @pytest.fixture
 def client():
     """Create a test client."""
     # Reset state before each test
-    _state.total_requests = 0
-    _state.total_turns = 0
-    _state.mock_requests = 0
-    _state.real_requests = 0
+    reset_state()
+    state = get_state()
 
     with TestClient(app) as client:
+        yield client
+
+
+@pytest.fixture
+def mock_gate_runner():
+    """Create a mock gate runner that returns fast results."""
+    mock = MagicMock()
+    mock.get_gate_names.return_value = ["format", "lint", "unit"]
+
+    # Create fast mock results
+    mock_results = [
+        GateResult(
+            gate_name="format",
+            passed=True,
+            exit_code=0,
+            output="OK",
+            elapsed_seconds=0.1,
+        ),
+        GateResult(
+            gate_name="lint",
+            passed=True,
+            exit_code=0,
+            output="OK",
+            elapsed_seconds=0.1,
+        ),
+        GateResult(
+            gate_name="unit",
+            passed=True,
+            exit_code=0,
+            output="OK",
+            elapsed_seconds=0.1,
+        ),
+    ]
+    mock.run_all_gates.return_value = mock_results
+    mock.run_gates_by_name.return_value = [mock_results[0]]  # Return format gate
+
+    return mock
+
+
+@pytest.fixture
+def client_with_mock_gates(mock_gate_runner):
+    """Create a test client with mocked gate runner.
+
+    The mock is injected AFTER the TestClient starts (which runs the lifespan
+    handler that creates the real GateRunner). We then replace it with our mock.
+    """
+    reset_state()
+
+    with TestClient(app) as client:
+        # Inject mock AFTER lifespan has run (overwrites the real gate_runner)
+        state = get_state()
+        state.gate_runner = mock_gate_runner
         yield client
 
 
@@ -140,28 +194,31 @@ class TestChatEndpoint:
 
 
 class TestGatesEndpoint:
-    """Test /gates endpoints."""
+    """Test /gates endpoints.
 
-    def test_list_gates(self, client):
+    Uses mocked gate runner to avoid slow subprocess calls.
+    """
+
+    def test_list_gates(self, client_with_mock_gates):
         """Test listing available gates."""
-        response = client.get("/gates")
+        response = client_with_mock_gates.get("/gates")
 
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert len(data) > 0
 
-    def test_list_gates_includes_expected(self, client):
+    def test_list_gates_includes_expected(self, client_with_mock_gates):
         """Test that expected gates are in the list."""
-        response = client.get("/gates")
+        response = client_with_mock_gates.get("/gates")
 
         data = response.json()
-        # These are from the default gates or config
+        # These are from the mock
         assert "format" in data or "unit" in data
 
-    def test_run_gates_returns_results(self, client):
+    def test_run_gates_returns_results(self, client_with_mock_gates):
         """Test that running gates returns results."""
-        response = client.post(
+        response = client_with_mock_gates.post(
             "/gates",
             json={}
         )
@@ -172,9 +229,9 @@ class TestGatesEndpoint:
         assert "all_passed" in data
         assert "total_elapsed_seconds" in data
 
-    def test_run_specific_gates(self, client):
+    def test_run_specific_gates(self, client_with_mock_gates):
         """Test running specific gates by name."""
-        response = client.post(
+        response = client_with_mock_gates.post(
             "/gates",
             json={"gate_names": ["format"]}
         )
@@ -184,9 +241,9 @@ class TestGatesEndpoint:
         # Should have at least one result
         assert len(data["results"]) >= 1
 
-    def test_gate_results_have_required_fields(self, client):
+    def test_gate_results_have_required_fields(self, client_with_mock_gates):
         """Test that gate results have required fields."""
-        response = client.post(
+        response = client_with_mock_gates.post(
             "/gates",
             json={"gate_names": ["format"]}
         )

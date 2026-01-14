@@ -59,6 +59,46 @@ agent_session_start "New optimization session"
 agent_observe "storage_constraint" "All writes to /mnt/raid0/ only"
 
 # ============================================
+# 0.5 VERIFY LLAMA.CPP BRANCH (CRITICAL)
+# ============================================
+echo ""
+echo "--- Verifying llama.cpp branch ---"
+VERIFY_SCRIPT="$SCRIPT_DIR/verify_llama_cpp.sh"
+if [[ -x "$VERIFY_SCRIPT" ]]; then
+    if ! "$VERIFY_SCRIPT"; then
+        echo ""
+        echo "⛔ WARNING: llama.cpp branch verification failed!"
+        echo "   Production inference may use wrong binary."
+        echo "   Fix before running benchmarks or live inference."
+        echo ""
+        agent_observe "llama_cpp_branch" "VERIFICATION FAILED - wrong branch or missing binary"
+    else
+        agent_observe "llama_cpp_branch" "production-consolidated verified"
+    fi
+else
+    echo "  Verification script not found (skip in dev environments)"
+fi
+
+# ============================================
+# 0.6 VERIFY DEPENDENCIES (UV)
+# ============================================
+echo ""
+echo "--- Checking Python dependencies ---"
+if command -v uv &> /dev/null; then
+    if [[ -f "/mnt/raid0/llm/claude/pyproject.toml" ]]; then
+        cd /mnt/raid0/llm/claude
+        if uv sync --dry-run 2>&1 | grep -q "Would install"; then
+            echo "⚠ Dependencies out of sync. Running: uv sync"
+            uv sync 2>&1 | tail -5
+        else
+            echo "✓ Dependencies up to date"
+        fi
+    fi
+else
+    echo "  uv not installed (using pip)"
+fi
+
+# ============================================
 # 1. MODEL DISCOVERY
 # ============================================
 agent_task_start "Discover models" "Scanning all model directories"

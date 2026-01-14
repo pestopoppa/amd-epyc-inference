@@ -20,33 +20,102 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator
 
+logger = logging.getLogger(__name__)
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+# Core imports (always available)
 from src.repl_environment import REPLEnvironment, REPLConfig
 from src.llm_primitives import LLMPrimitives, LLMPrimitivesConfig
 from src.gate_runner import GateRunner
-from src.failure_router import FailureRouter
-from orchestration.repl_memory.progress_logger import ProgressLogger, ProgressReader
-from orchestration.repl_memory.episodic_store import EpisodicStore
-from orchestration.repl_memory.embedder import TaskEmbedder
-from orchestration.repl_memory.q_scorer import QScorer, ScoringConfig
-from orchestration.repl_memory.retriever import (
-    TwoPhaseRetriever,
-    HybridRouter,
-    RuleBasedRouter,
-    RetrievalConfig,
-)
-from src.tool_registry import ToolRegistry
-from src.script_registry import ScriptRegistry
+from src.failure_router import FailureRouter, FailureContext, ErrorCategory, RoutingDecision
+from src.features import Features, get_features, features
+
+# Optional imports - these are lazy-loaded based on feature flags
+# MemRL components (Phase 4)
+ProgressLogger: type | None = None
+ProgressReader: type | None = None
+EpisodicStore: type | None = None
+TaskEmbedder: type | None = None
+QScorer: type | None = None
+ScoringConfig: type | None = None
+TwoPhaseRetriever: type | None = None
+HybridRouter: type | None = None
+RuleBasedRouter: type | None = None
+RetrievalConfig: type | None = None
+
+# Tool/Script registries
+ToolRegistry: type | None = None
+ScriptRegistry: type | None = None
+
+
+def _load_optional_imports() -> None:
+    """Load optional module imports based on feature flags.
+
+    This is called during app startup to load only the modules needed
+    for the enabled features, improving startup time and reducing
+    memory usage when features are disabled.
+    """
+    global ProgressLogger, ProgressReader, EpisodicStore, TaskEmbedder
+    global QScorer, ScoringConfig, TwoPhaseRetriever, HybridRouter
+    global RuleBasedRouter, RetrievalConfig, ToolRegistry, ScriptRegistry
+
+    f = features()
+
+    # MemRL components
+    if f.memrl:
+        from orchestration.repl_memory.progress_logger import (
+            ProgressLogger as _PL,
+            ProgressReader as _PR,
+        )
+        from orchestration.repl_memory.episodic_store import EpisodicStore as _ES
+        from orchestration.repl_memory.embedder import TaskEmbedder as _TE
+        from orchestration.repl_memory.q_scorer import QScorer as _QS, ScoringConfig as _SC
+        from orchestration.repl_memory.retriever import (
+            TwoPhaseRetriever as _TPR,
+            HybridRouter as _HR,
+            RuleBasedRouter as _RBR,
+            RetrievalConfig as _RC,
+        )
+        ProgressLogger = _PL
+        ProgressReader = _PR
+        EpisodicStore = _ES
+        TaskEmbedder = _TE
+        QScorer = _QS
+        ScoringConfig = _SC
+        TwoPhaseRetriever = _TPR
+        HybridRouter = _HR
+        RuleBasedRouter = _RBR
+        RetrievalConfig = _RC
+    else:
+        # Minimal progress logger that doesn't require MemRL
+        from orchestration.repl_memory.progress_logger import (
+            ProgressLogger as _PL,
+            ProgressReader as _PR,
+        )
+        ProgressLogger = _PL
+        ProgressReader = _PR
+
+    # Tool registry
+    if f.tools:
+        from src.tool_registry import ToolRegistry as _TR
+        ToolRegistry = _TR
+
+    # Script registry (requires tools)
+    if f.scripts:
+        from src.script_registry import ScriptRegistry as _SR
+        ScriptRegistry = _SR
 
 
 # ============================================================================
@@ -219,7 +288,10 @@ class OpenAIModelsResponse(BaseModel):
 
 @dataclass
 class AppState:
-    """Application state container."""
+    """Application state container.
+
+    Thread-safe statistics tracking using locks for concurrent request handling.
+    """
 
     llm_primitives: LLMPrimitives | None = None
     gate_runner: GateRunner | None = None
@@ -240,13 +312,13 @@ class AppState:
     # Registry loader (for role defaults)
     registry: Any = None  # RegistryLoader, typed as Any to avoid import cycle
 
-    # Stats tracking
+    # Stats tracking (protected by _stats_lock)
     total_requests: int = 0
     total_turns: int = 0
     mock_requests: int = 0
     real_requests: int = 0
 
-    # Idle scoring control
+    # Idle scoring control (protected by _stats_lock)
     active_requests: int = 0
     q_scorer_enabled: bool = True
     _q_scorer_task: Any = None  # asyncio.Task
@@ -255,28 +327,44 @@ class AppState:
     # These are only loaded when real inference or Q-scoring is needed
     _memrl_initialized: bool = False
 
+    # Thread safety lock for statistics
+    _stats_lock: threading.Lock = field(default_factory=threading.Lock)
+
     def increment_request(self, mock_mode: bool, turns: int) -> None:
-        """Track a completed request."""
-        self.total_requests += 1
-        self.total_turns += turns
-        if mock_mode:
-            self.mock_requests += 1
-        else:
-            self.real_requests += 1
+        """Track a completed request (thread-safe)."""
+        with self._stats_lock:
+            self.total_requests += 1
+            self.total_turns += turns
+            if mock_mode:
+                self.mock_requests += 1
+            else:
+                self.real_requests += 1
+
+    def increment_active(self) -> None:
+        """Increment active request counter (thread-safe)."""
+        with self._stats_lock:
+            self.active_requests += 1
+
+    def decrement_active(self) -> None:
+        """Decrement active request counter (thread-safe)."""
+        with self._stats_lock:
+            self.active_requests -= 1
 
     def get_stats(self) -> dict[str, Any]:
-        """Get current statistics."""
-        return {
-            "total_requests": self.total_requests,
-            "total_turns": self.total_turns,
-            "average_turns_per_request": (
-                self.total_turns / self.total_requests
-                if self.total_requests > 0
-                else 0.0
-            ),
-            "mock_requests": self.mock_requests,
-            "real_requests": self.real_requests,
-        }
+        """Get current statistics (thread-safe snapshot)."""
+        with self._stats_lock:
+            return {
+                "total_requests": self.total_requests,
+                "total_turns": self.total_turns,
+                "average_turns_per_request": (
+                    self.total_turns / self.total_requests
+                    if self.total_requests > 0
+                    else 0.0
+                ),
+                "mock_requests": self.mock_requests,
+                "real_requests": self.real_requests,
+                "active_requests": self.active_requests,
+            }
 
 
 # Global state
@@ -303,9 +391,9 @@ def _score_completed_task(task_id: str) -> None:
         # Flush logger to persist Q-value updates
         if _state.progress_logger:
             _state.progress_logger.flush()
-    except Exception:
-        # Silently ignore scoring errors - don't affect user request
-        pass
+    except Exception as e:
+        # Log but don't fail the user request - scoring is non-critical
+        logger.warning(f"Q-scoring failed for task {task_id}: {e}", exc_info=True)
 
 
 async def _background_cleanup():
@@ -334,15 +422,17 @@ async def _background_cleanup():
 
         except asyncio.CancelledError:
             break
-        except Exception:
-            # Silently ignore errors
-            pass
+        except Exception as e:
+            # Log background task errors but continue running
+            logger.warning(f"Background cleanup error: {e}", exc_info=True)
 
 
 def _ensure_memrl_initialized() -> bool:
     """Lazy-load MemRL components on first real use.
 
-    This prevents loading the TaskEmbedder model during tests that only use mock mode.
+    This function respects the memrl feature flag - if disabled, returns False
+    immediately without attempting to load any MemRL components.
+
     MemRL components are only needed for:
     - Real inference with Q-scoring/HybridRouter
     - Background Q-value updates
@@ -350,11 +440,20 @@ def _ensure_memrl_initialized() -> bool:
     Returns:
         True if MemRL is initialized and available, False otherwise.
     """
+    # Check feature flag first
+    if not features().memrl:
+        return False
+
     if _state._memrl_initialized:
         return _state.q_scorer is not None
 
     # Mark as initialized (even if it fails) to prevent repeated attempts
     _state._memrl_initialized = True
+
+    # Ensure optional imports are loaded
+    if EpisodicStore is None or TaskEmbedder is None or QScorer is None:
+        logger.warning("MemRL feature enabled but imports not available")
+        return False
 
     try:
         _state.episodic_store = EpisodicStore()
@@ -394,8 +493,9 @@ def _ensure_memrl_initialized() -> bool:
         _state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
 
         return True
-    except Exception:
-        # MemRL initialization failed - continue without it
+    except Exception as e:
+        # MemRL initialization failed - log and continue without it
+        logger.warning(f"MemRL initialization failed, continuing without it: {e}", exc_info=True)
         _state.q_scorer = None
         _state.episodic_store = None
         _state.hybrid_router = None
@@ -404,47 +504,69 @@ def _ensure_memrl_initialized() -> bool:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application lifespan."""
+    """Manage application lifespan.
+
+    Initialization order:
+    1. Load feature flags from environment
+    2. Load optional module imports based on features
+    3. Load registry (YAML parsing only)
+    4. Initialize core components (LLM primitives, gate runner, failure router)
+    5. Initialize optional components based on features
+    6. Start background tasks if MemRL enabled
+    """
     import asyncio
 
-    # Startup - initialize lightweight components only
-    # MemRL components (TaskEmbedder, QScorer, HybridRouter) are lazy-loaded
-    # via _ensure_memrl_initialized() on first real use to avoid loading
-    # the 0.5B embedding model during tests that only use mock mode.
+    # Load feature flags and optional imports
+    f = features()
+    _load_optional_imports()
+
+    logger.info(f"Starting orchestrator with features: {f.enabled_features()}")
 
     # Load registry for role-based generation defaults (YAML parsing only, no models)
     try:
         from src.registry_loader import RegistryLoader
         _state.registry = RegistryLoader(validate_paths=False)
-    except Exception:
+    except Exception as e:
+        logger.info(f"Registry file not found or invalid, using defaults: {e}")
         _state.registry = None
 
-    _state.llm_primitives = LLMPrimitives(mock_mode=True, registry=_state.registry)
-    _state.progress_logger = ProgressLogger()
+    # Core components (always initialized)
+    _state.llm_primitives = LLMPrimitives(mock_mode=f.mock_mode, registry=_state.registry)
+    _state.progress_logger = ProgressLogger() if ProgressLogger else None
     _state.gate_runner = GateRunner(progress_logger=_state.progress_logger)
     _state.failure_router = FailureRouter()
 
-    # Initialize tool registry with role permissions (no model loading)
-    try:
-        _state.tool_registry = ToolRegistry()
-        _state.tool_registry.load_permissions_from_registry(
-            "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
-        )
-    except Exception:
+    # Tool registry (feature-gated)
+    if f.tools and ToolRegistry:
+        try:
+            _state.tool_registry = ToolRegistry()
+            _state.tool_registry.load_permissions_from_registry(
+                "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+            )
+        except Exception as e:
+            logger.info(f"Tool registry not available: {e}")
+            _state.tool_registry = None
+    else:
         _state.tool_registry = None
 
-    # Initialize script registry (no model loading)
-    try:
-        _state.script_registry = ScriptRegistry()
-        _state.script_registry.load_from_directory(
-            "/mnt/raid0/llm/claude/orchestration/script_registry"
-        )
-    except Exception:
+    # Script registry (feature-gated, requires tools)
+    if f.scripts and ScriptRegistry and _state.tool_registry:
+        try:
+            _state.script_registry = ScriptRegistry()
+            _state.script_registry.load_from_directory(
+                "/mnt/raid0/llm/claude/orchestration/script_registry"
+            )
+        except Exception as e:
+            logger.info(f"Script registry not available: {e}")
+            _state.script_registry = None
+    else:
         _state.script_registry = None
 
-    # Start background cleanup task for processing backlog when idle
-    # This task checks if MemRL is initialized before doing any work
-    _state._q_scorer_task = asyncio.create_task(_background_cleanup())
+    # Background Q-scoring task (only if MemRL feature enabled)
+    if f.memrl:
+        _state._q_scorer_task = asyncio.create_task(_background_cleanup())
+    else:
+        _state._q_scorer_task = None
 
     yield
 
@@ -537,8 +659,10 @@ def _build_root_lm_prompt(
         "1. NEVER send the full context to llm_call - use peek() or grep() to extract relevant parts",
         "2. Break complex tasks into smaller sub-tasks using llm_call/llm_batch",
         "3. Store intermediate results in artifacts dict",
-        "4. Call FINAL(answer) when you have the complete answer",
-        "5. Output only valid Python code - no explanations or markdown",
+        "4. ALWAYS call FINAL(answer) to return your answer - this is REQUIRED",
+        "5. For code generation: FINAL('''def example(): pass''')",
+        "6. For questions: FINAL('answer text')",
+        "7. Output only valid Python code - no markdown or explanations",
         "",
         f"## Current State (Turn {turn + 1})",
         state,
@@ -568,7 +692,7 @@ def _build_root_lm_prompt(
         original_prompt,
         "",
         "## Your Code",
-        "Write Python code to complete the task. Output only the code:",
+        "Write Python code that ends with FINAL(...) to return the answer:",
     ])
 
     return "\n".join(prompt_parts)
@@ -629,6 +753,157 @@ def _extract_code_from_response(response: str) -> str:
     return response.strip()
 
 
+def _auto_wrap_final(code: str) -> str:
+    """Auto-wrap code in FINAL() if it looks like a final answer.
+
+    The model often outputs clean code without FINAL(). This detects when
+    the code is a complete answer (no exploration functions) and wraps it.
+
+    Args:
+        code: Extracted Python code
+
+    Returns:
+        Code wrapped in FINAL() if appropriate, otherwise unchanged
+    """
+    # Already has FINAL() - return as-is
+    if "FINAL(" in code:
+        return code
+
+    # Check for exploration function calls - don't wrap if exploring
+    exploration_patterns = ["peek(", "grep(", "llm_call(", "llm_batch(", "artifacts["]
+    for pattern in exploration_patterns:
+        if pattern in code:
+            return code
+
+    # Check if it's primarily a function/class definition (code generation task)
+    lines = [l.strip() for l in code.split("\n") if l.strip() and not l.strip().startswith("#")]
+    if not lines:
+        return code
+
+    # If starts with def/class and looks like complete code, wrap it
+    if lines[0].startswith(("def ", "class ")):
+        # Escape triple quotes in the code for FINAL()
+        escaped_code = code.replace("'''", r"\'\'\'")
+        return f"FINAL('''{escaped_code}''')"
+
+    # If it's a simple expression/value, wrap it
+    if len(lines) == 1 and not any(kw in lines[0] for kw in ["import ", "from ", "for ", "while ", "if "]):
+        return f"FINAL({code.strip()})"
+
+    return code
+
+
+def _classify_error(error_message: str, gate_name: str = "") -> ErrorCategory:
+    """Classify an error message into an ErrorCategory.
+
+    Args:
+        error_message: The error message to classify.
+        gate_name: Optional gate name if error came from a gate.
+
+    Returns:
+        ErrorCategory for the error.
+    """
+    error_lower = error_message.lower()
+
+    # Schema/format errors (from gates or parsing)
+    if gate_name in ("schema", "format", "lint", "mdformat", "shfmt"):
+        return ErrorCategory.FORMAT
+    if "schema" in error_lower or "validation" in error_lower:
+        return ErrorCategory.SCHEMA
+    if "format" in error_lower or "style" in error_lower:
+        return ErrorCategory.FORMAT
+
+    # Code errors (syntax, type, import)
+    if any(kw in error_lower for kw in [
+        "syntaxerror", "indentationerror", "typeerror", "nameerror",
+        "importerror", "modulenotfound", "attributeerror"
+    ]):
+        return ErrorCategory.CODE
+
+    # Logic errors (test failures, assertions)
+    if any(kw in error_lower for kw in [
+        "assertionerror", "test failed", "expected", "actual"
+    ]):
+        return ErrorCategory.LOGIC
+
+    # Timeout errors
+    if "timeout" in error_lower or "timed out" in error_lower:
+        return ErrorCategory.TIMEOUT
+
+    # Early abort (from generation monitor)
+    if "early abort" in error_lower or "high entropy" in error_lower:
+        return ErrorCategory.EARLY_ABORT
+
+    return ErrorCategory.UNKNOWN
+
+
+def _build_escalation_prompt(
+    original_prompt: str,
+    state: str,
+    failure_context: FailureContext,
+    decision: RoutingDecision,
+) -> str:
+    """Build a prompt for an escalated role.
+
+    Includes failure context to help the higher-tier model understand
+    what went wrong and what was tried.
+
+    Args:
+        original_prompt: The user's original prompt.
+        state: Current REPL state.
+        failure_context: Context about the failure.
+        decision: The routing decision with escalation reason.
+
+    Returns:
+        Prompt for the escalated role.
+    """
+    prompt_parts = [
+        f"# Escalation from {failure_context.role}",
+        "",
+        f"The {failure_context.role} failed after {failure_context.failure_count} attempts.",
+        f"Reason: {decision.reason}",
+        "",
+        "## Error Details",
+        f"Category: {failure_context.error_category}",
+    ]
+
+    if failure_context.gate_name:
+        prompt_parts.append(f"Gate: {failure_context.gate_name}")
+
+    if failure_context.error_message:
+        prompt_parts.extend([
+            "",
+            "Error message:",
+            "```",
+            failure_context.error_message[:500],
+            "```",
+        ])
+
+    prompt_parts.extend([
+        "",
+        "## Current State",
+        state,
+        "",
+        "## Original Task",
+        original_prompt,
+        "",
+        "## Instructions",
+        "Fix the issue and complete the task. You have more capability than the previous role.",
+        "Output Python code that will execute in the REPL environment.",
+    ])
+
+    return "\n".join(prompt_parts)
+
+
+# Escalation role mapping (from lower to higher tier)
+ESCALATION_ROLES = {
+    "worker": "coder",
+    "coder": "architect_general",
+    "frontdoor": "coder",
+    "ingest": "architect_general",
+}
+
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -659,12 +934,12 @@ async def chat(request: ChatRequest) -> ChatResponse:
     - Cache statistics in response
     - Full orchestration loop with Root LM (Phase 8)
     """
-    # Track active requests for idle-time Q-scoring
-    _state.active_requests += 1
+    # Track active requests for idle-time Q-scoring (thread-safe)
+    _state.increment_active()
     try:
         return await _handle_chat(request)
     finally:
-        _state.active_requests -= 1
+        _state.decrement_active()
 
 
 async def _handle_chat(request: ChatRequest) -> ChatResponse:
@@ -778,11 +1053,17 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         role=request.role or "frontdoor",
     )
 
-    # Run Root LM orchestration loop
+    # Run Root LM orchestration loop with escalation support
     turns = 0
     answer = ""
     last_output = ""
     last_error = ""
+
+    # Escalation tracking
+    current_role = request.role or "frontdoor"
+    consecutive_failures = 0
+    role_history = [current_role]
+    escalation_prompt = ""  # Set when escalating
 
     for turn in range(request.max_turns):
         turns += 1
@@ -790,29 +1071,36 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         # 1. Get current REPL state
         state = repl.get_state()
 
-        # 2. Build prompt for Root LM (frontdoor)
-        root_prompt = _build_root_lm_prompt(
-            state=state,
-            original_prompt=request.prompt,
-            last_output=last_output,
-            last_error=last_error,
-            turn=turn,
-        )
+        # 2. Build prompt - use escalation prompt if we just escalated
+        if escalation_prompt:
+            root_prompt = escalation_prompt
+            escalation_prompt = ""  # Clear after use
+        else:
+            root_prompt = _build_root_lm_prompt(
+                state=state,
+                original_prompt=request.prompt,
+                last_output=last_output,
+                last_error=last_error,
+                turn=turn,
+            )
 
-        # 3. Call Root LM to generate Python code
+        # 3. Call Root LM (current role) to generate Python code
         try:
             code = primitives.llm_call(
                 root_prompt,
-                role="frontdoor",
+                role=current_role,
                 n_tokens=1024,
             )
         except Exception as e:
-            # If frontdoor call fails, return error
-            answer = f"[ERROR: Root LM call failed: {e}]"
+            # If LLM call fails, return error
+            answer = f"[ERROR: {current_role} LM call failed: {e}]"
             break
 
         # Extract code from response (handle markdown code blocks)
         code = _extract_code_from_response(code)
+
+        # Auto-wrap in FINAL() if it looks like a complete answer
+        code = _auto_wrap_final(code)
 
         # 4. Execute code in REPL
         result = repl.execute(code)
@@ -820,13 +1108,57 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         # 5. Check for FINAL() completion
         if result.is_final:
             answer = result.final_answer or ""
+            consecutive_failures = 0  # Success resets failure count
             break
 
-        # 6. Handle errors - feed back to Root LM for recovery
+        # 6. Handle errors with FailureRouter for escalation decisions
         if result.error:
+            consecutive_failures += 1
             last_error = result.error
             last_output = result.output
+
+            # Consult FailureRouter for escalation decision
+            if _state.failure_router:
+                error_category = _classify_error(result.error)
+                failure_ctx = FailureContext(
+                    role=current_role,
+                    error_message=result.error,
+                    error_category=error_category,
+                    failure_count=consecutive_failures,
+                    task_type="code",
+                    code_generated=code[:500] if code else None,
+                )
+                decision = _state.failure_router.route_failure(failure_ctx)
+
+                # Log escalation decision (for escalate actions)
+                if decision.action == "escalate" and _state.progress_logger:
+                    _state.progress_logger.log_escalation(
+                        task_id=task_id,
+                        from_tier=current_role,
+                        to_tier=decision.next_role or current_role,
+                        reason=f"{decision.reason} (failures: {consecutive_failures})",
+                    )
+
+                # Act on routing decision
+                if decision.action == "escalate" and decision.next_role:
+                    # Switch to higher-tier role
+                    current_role = decision.next_role
+                    role_history.append(current_role)
+                    consecutive_failures = 0  # Reset for new role
+                    # Build escalation prompt with failure context
+                    escalation_prompt = _build_escalation_prompt(
+                        original_prompt=request.prompt,
+                        state=state,
+                        failure_context=failure_ctx,
+                        decision=decision,
+                    )
+                elif decision.action == "fail":
+                    # Max retries/escalations reached - stop with error
+                    answer = f"[FAILED: {decision.reason}]"
+                    break
         else:
+            # Success - reset failure count but keep role
+            consecutive_failures = 0
             last_error = ""
             last_output = result.output
 
@@ -847,10 +1179,12 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
     # Log task completion (MemRL integration)
     success = not answer.startswith("[ERROR") and not answer.startswith("[Max turns")
     if _state.progress_logger:
+        # Include role history if escalation occurred
+        role_info = f", roles: {' -> '.join(role_history)}" if len(role_history) > 1 else ""
         _state.progress_logger.log_task_completed(
             task_id=task_id,
             success=success,
-            details=f"Real inference: {turns} turns, {elapsed:.3f}s",
+            details=f"Real inference: {turns} turns, {elapsed:.3f}s{role_info}",
         )
         _score_completed_task(task_id)
 
@@ -1081,6 +1415,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
             # Stream the generated code tokens
             code = _extract_code_from_response(code)
+            code = _auto_wrap_final(code)
             for line in code.split("\n"):
                 yield f"data: {json.dumps({'type': 'token', 'content': line + chr(10)})}\n\n"
 

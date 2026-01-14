@@ -294,12 +294,27 @@ class TestSecuritySandbox:
 
         assert result.error is not None
 
-    def test_builtins_blocked(self):
-        """Test that __builtins__ access is blocked."""
+    def test_builtins_is_safe_dict(self):
+        """Test that __builtins__ is a safe dict with restricted functions."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(__builtins__)")
 
-        assert result.error is not None
+        # __builtins__ is accessible but is a restricted dict (not full module)
+        result = repl.execute("print(type(__builtins__))")
+        assert result.error is None
+        assert "dict" in result.output
+
+        # Dangerous functions should NOT be in __builtins__
+        result = repl.execute("print('exec' in __builtins__)")
+        assert result.error is None
+        assert "False" in result.output
+
+        result = repl.execute("print('eval' in __builtins__)")
+        assert result.error is None
+        assert "False" in result.output
+
+        result = repl.execute("print('open' in __builtins__)")
+        assert result.error is None
+        assert "False" in result.output
 
 
 class TestOutputCapping:

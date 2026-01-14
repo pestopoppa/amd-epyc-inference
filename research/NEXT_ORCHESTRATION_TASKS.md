@@ -58,44 +58,108 @@
 
 ---
 
-### Priority 4: RLM Phase 3 - Escalation Integration
+### Priority 4: RLM Phase 3 - Escalation Integration ✅ COMPLETE
 
 **Source:** `handoffs/active/rlm-orchestrator-roadmap.md`
-**Effort:** High
-**Impact:** High - enables automatic recovery
+**Completed:** 2026-01-14
 
-**Tasks:**
-- [ ] Error classification in `failure_router.py`
-- [ ] Wire FailureRouter into Root LM loop
-- [ ] Role switching on escalation
-- [ ] Gate execution integration
+**What was done:**
+- [x] Error classification (`_classify_error()` in api.py)
+- [x] Wire FailureRouter into Root LM loop
+- [x] Role switching on escalation
+- [x] Gate execution integration (FailureContext supports gate_name)
+
+**Implementation:**
+- Root LM loop tracks current_role, consecutive_failures, role_history
+- FailureRouter consulted on errors, returns RoutingDecision (retry/escalate/fail)
+- On "escalate" action: switch role, build escalation prompt with failure context
+- Escalations logged via `progress_logger.log_escalation()`
+
+**Files modified:**
+- `src/api.py` - Escalation integration in Root LM loop
 
 ---
 
-### Priority 5: RLM Phase 2 - RLM Enhancements
+### Priority 5: RLM Phase 2 - RLM Enhancements ✅ COMPLETE
 
 **Source:** `handoffs/active/rlm-orchestrator-roadmap.md`
-**Effort:** High
-**Impact:** Medium - improves RLM capabilities
+**Completed:** 2026-01-14
 
-**Tasks:**
-- [ ] Forced exploration validation (prevent premature FINAL)
-- [ ] Async `llm_batch_async()` for parallel sub-LM calls
-- [ ] Configurable recursion depth
-- [ ] Per-query cost tracking
+**What was done:**
+- [x] Forced exploration validation (`REPLConfig.require_exploration_before_final`)
+- [x] Async `llm_batch_async()` using asyncio.gather
+- [x] Configurable recursion depth (`LLMPrimitivesConfig.max_recursion_depth`, default 5)
+- [x] Per-query cost tracking (`QueryCost` dataclass, `start_query/end_query` methods)
+
+**Files modified:**
+- `src/repl_environment.py` - Exploration tracking, FINAL validation
+- `src/llm_primitives.py` - Async batch, recursion depth, cost tracking
+
+**Test results:** 80 tests pass (31 primitives + 49 REPL)
+
+---
+
+### Priority 6: MemRL Memory Seeding ✅ COMPLETE
+
+**Source:** `handoffs/active/memrl-episodic-memory.md`
+**Completed:** 2026-01-14
+
+**What was done:**
+- [x] Seeded ~5,000 episodic memories (67% success, 33% failure)
+- [x] Hierarchical decomposition patterns (70 memories)
+- [x] Coding failure patterns (100 memories)
+- [x] Diverse cross-domain failures (240 memories)
+- [x] Template-generated failures (~1,000 memories)
+- [x] Probabilistic strategies (~450 memories with variable outcomes)
+
+**Key anti-patterns encoded:**
+- Worker for architecture tasks (Q=0.10)
+- Frontdoor for complex code (Q=0.05)
+- No escalation after failures (Q=0.0)
+- Unsafe code execution (Q=0.0)
+- Conservative > aggressive estimates
+
+**Files created:**
+- `scripts/seed_decomposition_memories.py`
+- `scripts/seed_failure_memories.py`
+- `scripts/seed_diverse_failures.py`
+- `scripts/seed_probabilistic_memories.py`
+
+---
+
+### Priority 7: Tool Registry Infrastructure ✅ COMPLETE
+
+**Source:** Previous agent's plan (`glowing-splashing-eclipse.md`)
+**Completed:** 2026-01-14
+
+**What was done:**
+- [x] Created `orchestration/tool_registry.yaml` (20+ tools)
+- [x] Created tool executor (`orchestration/tools/executor.py`)
+- [x] Created tool implementations (web, data, math, system, code, llm)
+- [x] Created mining script (`scripts/mine_tool_definitions.py`)
+- [x] Mined 608 tools from BFCL v4, LangChain, OpenAI, HuggingFace
+
+**Pending:**
+- [ ] Wire `TOOL()` into REPLEnvironment (not yet connected)
 
 ---
 
 ## Lower Priority (When Time Permits)
 
-### Phase 5: Tool/Script Completion
+### Phase 5: Tool/Script REPL Integration
+- Wire TOOL() and SCRIPT() into REPLEnvironment
+- Script invoke/find methods
 - MCP client implementation (blocked on MCP server setup)
-- Script invoke/find methods (already have basic wiring)
 
 ### Phase 6: Early Failure Detection
 - GenerationMonitor integration
 - Entropy thresholds in registry
 - Early abort on high-entropy output
+
+### Phase 7: REPL Exploration Learning
+- Log exploration strategies in REPLEnvironment
+- Implement `EpisodicREPL.suggest_exploration()`
+- Track token efficiency metrics
 
 ### Phase 8: Trajectory Visualization
 - Enhanced SSE events for debugging
@@ -110,27 +174,25 @@
 | Hyperparameter Tuning | Need live benchmarks | Medium |
 | MTP Testing (GLM-4.6) | PR #15225 merge | Low |
 | Claude-as-Judge scoring | Run baseline benchmark | Low |
+| Production validation | Start llama-server | High |
 
 ---
 
 ## Quick Wins (Can Do Anytime)
 
-1. **Update BLOCKED_TASKS.md Phase 1** - Verify real inference is working, update checkboxes
-2. **Create sample scripts** in `orchestration/script_registry/` for testing SCRIPT() function
+1. **Wire TOOL() into REPL** - Executor exists, just needs connection
+2. **Run formalizer benchmark** - `nohup ./scripts/benchmark/run_all_formalizers.sh &`
 3. **Run orchestrator_planning.yaml benchmark** - Get baseline scores for MemRL evaluation
+4. **Production validation** - Start llama-server, test real_mode=True
 
 ---
 
 ## Recommendation
 
-**Priorities 1-3 are COMPLETE.** Next: **Priority 4 (RLM Escalation Integration)** or **Priority 5 (RLM Enhancements)**.
+**Priorities 1-7 are COMPLETE.** Next: **Wire TOOL() into REPL** or **Production validation**.
 
-Why RLM Escalation Integration:
-- Wires FailureRouter into Root LM loop
-- Enables automatic recovery with role switching
-- Gate execution integration
-
-Alternative: Priority 5 (RLM Enhancements) can run in parallel:
-- Async llm_batch_async() for parallel sub-LM calls
-- Configurable recursion depth
-- Per-query cost tracking
+Immediate options:
+- **Wire TOOL() into REPL** - 30 min, enables tool use in REPL
+- **Production validation** - Debug llama-server startup, test real inference
+- **Phase 7: REPL Exploration Learning** - Log strategies, suggest exploration
+- **Run benchmarks** - Formalizer eval or Claude-as-Judge

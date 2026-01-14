@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+import ast
 import io
 import re
 import signal
@@ -30,6 +31,89 @@ class REPLError(Exception):
     """Error during REPL execution."""
 
     pass
+
+
+class ASTSecurityVisitor(ast.NodeVisitor):
+    """AST visitor that checks for dangerous code patterns.
+
+    This is more robust than regex because it analyzes the parsed syntax tree,
+    making it immune to string concatenation tricks like:
+        getattr(__builtins__, '__im' + 'port__')('os')
+    """
+
+    # Forbidden module imports
+    FORBIDDEN_MODULES = frozenset({
+        "os", "sys", "subprocess", "socket", "shutil", "pathlib",
+        "tempfile", "multiprocessing", "threading", "ctypes", "pickle",
+        "importlib", "builtins", "code", "codeop", "runpy", "pkgutil",
+    })
+
+    # Forbidden built-in function calls
+    FORBIDDEN_CALLS = frozenset({
+        "__import__", "eval", "exec", "compile", "open",
+        "getattr", "setattr", "delattr", "hasattr",
+        "globals", "locals", "vars", "dir",
+        "input", "breakpoint", "memoryview",
+    })
+
+    # Forbidden attribute accesses (dunder attributes for escaping sandbox)
+    FORBIDDEN_ATTRS = frozenset({
+        "__class__", "__bases__", "__subclasses__", "__mro__",
+        "__dict__", "__globals__", "__locals__", "__code__",
+        "__builtins__", "__closure__", "__func__", "__self__",
+        "__module__", "__qualname__", "__annotations__",
+        "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__",
+    })
+
+    def __init__(self):
+        self.violations: list[str] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        """Check regular imports: import os"""
+        for alias in node.names:
+            module = alias.name.split(".")[0]
+            if module in self.FORBIDDEN_MODULES:
+                self.violations.append(f"import {alias.name}")
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        """Check from imports: from os import path"""
+        if node.module:
+            module = node.module.split(".")[0]
+            if module in self.FORBIDDEN_MODULES:
+                self.violations.append(f"from {node.module} import ...")
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """Check function calls for forbidden functions."""
+        # Check direct calls: eval(...)
+        if isinstance(node.func, ast.Name):
+            if node.func.id in self.FORBIDDEN_CALLS:
+                self.violations.append(f"{node.func.id}()")
+
+        # Check attribute calls: obj.__class__()
+        elif isinstance(node.func, ast.Attribute):
+            if node.func.attr in self.FORBIDDEN_ATTRS:
+                self.violations.append(f".{node.func.attr}()")
+
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        """Check attribute access for forbidden dunder attributes."""
+        if node.attr in self.FORBIDDEN_ATTRS:
+            self.violations.append(f".{node.attr}")
+        self.generic_visit(node)
+
+    def visit_Subscript(self, node: ast.Subscript) -> None:
+        """Check subscript access for string-based dunder bypass attempts.
+
+        Catches patterns like: obj['__class__'] or obj["__globals__"]
+        """
+        if isinstance(node.slice, ast.Constant):
+            if isinstance(node.slice.value, str):
+                if node.slice.value in self.FORBIDDEN_ATTRS:
+                    self.violations.append(f"['{node.slice.value}']")
+        self.generic_visit(node)
 
 
 class REPLTimeout(REPLError):
@@ -53,12 +137,90 @@ class FinalSignal(Exception):
 
 
 @dataclass
+class ExplorationEvent:
+    """A single exploration event for logging."""
+
+    function: str  # peek, grep, llm_call, llm_batch
+    args: dict[str, Any]  # Arguments passed
+    result_size: int  # Size of result (chars or items)
+    timestamp: float  # Time of call
+    token_estimate: int = 0  # Estimated tokens used
+
+
+@dataclass
+class ExplorationLog:
+    """Log of exploration events for a REPL session."""
+
+    events: list[ExplorationEvent] = field(default_factory=list)
+    total_exploration_tokens: int = 0
+
+    def add_event(
+        self,
+        function: str,
+        args: dict[str, Any],
+        result: Any,
+    ) -> None:
+        """Add an exploration event to the log."""
+        import time
+
+        # Estimate result size
+        if isinstance(result, str):
+            result_size = len(result)
+        elif isinstance(result, list):
+            result_size = len(result)
+        else:
+            result_size = 0
+
+        # Rough token estimate (4 chars per token)
+        token_estimate = result_size // 4
+
+        event = ExplorationEvent(
+            function=function,
+            args=args,
+            result_size=result_size,
+            timestamp=time.time(),
+            token_estimate=token_estimate,
+        )
+        self.events.append(event)
+        self.total_exploration_tokens += token_estimate
+
+    def get_strategy_summary(self) -> dict[str, Any]:
+        """Get a summary of the exploration strategy used."""
+        function_counts: dict[str, int] = {}
+        for event in self.events:
+            function_counts[event.function] = function_counts.get(event.function, 0) + 1
+
+        return {
+            "total_events": len(self.events),
+            "function_counts": function_counts,
+            "total_tokens": self.total_exploration_tokens,
+            "strategy_type": self._classify_strategy(function_counts),
+        }
+
+    def _classify_strategy(self, counts: dict[str, int]) -> str:
+        """Classify the exploration strategy based on function usage."""
+        if not counts:
+            return "none"
+        if counts.get("llm_call", 0) > 0 or counts.get("llm_batch", 0) > 0:
+            return "delegated"  # Used sub-LLM calls
+        if counts.get("grep", 0) > counts.get("peek", 0):
+            return "search"  # Primarily used grep
+        if counts.get("peek", 0) > 0:
+            return "scan"  # Primarily used peek
+        return "mixed"
+
+
+@dataclass
 class REPLConfig:
     """Configuration for the REPL environment."""
 
     timeout_seconds: int = 120
     output_cap: int = 8192
     max_grep_results: int = 100
+    # Forced exploration validation (prevent premature FINAL)
+    # Default False for backwards compatibility - enable for production use
+    require_exploration_before_final: bool = False
+    min_exploration_calls: int = 1  # Minimum peek/grep/llm_call before FINAL
     allowed_builtins: frozenset[str] = field(
         default_factory=lambda: frozenset(
             {
@@ -193,6 +355,10 @@ class REPLEnvironment:
         self._final_answer: str | None = None
         self._execution_count = 0
 
+        # Exploration tracking (for forced exploration validation)
+        self._exploration_calls = 0  # Count of peek/grep/llm_call calls
+        self._exploration_log = ExplorationLog()  # Detailed exploration log
+
         # Build restricted globals
         self._globals = self._build_globals()
 
@@ -218,10 +384,10 @@ class REPLEnvironment:
             "FINAL_VAR": self._final_var,
         }
 
-        # Add LLM primitives if available
+        # Add LLM primitives if available (wrapped for exploration tracking)
         if self.llm_primitives is not None:
-            globals_dict["llm_call"] = self.llm_primitives.llm_call
-            globals_dict["llm_batch"] = self.llm_primitives.llm_batch
+            globals_dict["llm_call"] = self._tracked_llm_call
+            globals_dict["llm_batch"] = self._tracked_llm_batch
 
         # Add tool registry functions if available
         if self.tool_registry is not None:
@@ -244,7 +410,10 @@ class REPLEnvironment:
         Returns:
             First n characters of the context.
         """
-        return self.context[:n]
+        self._exploration_calls += 1
+        result = self.context[:n]
+        self._exploration_log.add_event("peek", {"n": n}, result)
+        return result
 
     def _grep(self, pattern: str) -> list[str]:
         """Search context with regex and return matching lines.
@@ -255,6 +424,7 @@ class REPLEnvironment:
         Returns:
             List of lines containing matches (capped at max_grep_results).
         """
+        self._exploration_calls += 1
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
@@ -268,7 +438,38 @@ class REPLEnvironment:
                     matches.append(f"[... truncated at {self.config.max_grep_results} results]")
                     break
 
+        self._exploration_log.add_event("grep", {"pattern": pattern}, matches)
         return matches
+
+    def _tracked_llm_call(self, *args, **kwargs) -> str:
+        """Wrapper for llm_call that tracks exploration.
+
+        Args:
+            *args: Positional arguments for llm_call.
+            **kwargs: Keyword arguments for llm_call.
+
+        Returns:
+            llm_call result.
+        """
+        self._exploration_calls += 1
+        result = self.llm_primitives.llm_call(*args, **kwargs)
+        self._exploration_log.add_event("llm_call", {"args": args, "kwargs": kwargs}, result)
+        return result
+
+    def _tracked_llm_batch(self, *args, **kwargs) -> list[str]:
+        """Wrapper for llm_batch that tracks exploration.
+
+        Args:
+            *args: Positional arguments for llm_batch.
+            **kwargs: Keyword arguments for llm_batch.
+
+        Returns:
+            llm_batch result.
+        """
+        self._exploration_calls += 1
+        result = self.llm_primitives.llm_batch(*args, **kwargs)
+        self._exploration_log.add_event("llm_batch", {"args": args, "kwargs": kwargs}, result)
+        return result
 
     def _final(self, answer: str) -> None:
         """Signal completion with final answer.
@@ -277,8 +478,18 @@ class REPLEnvironment:
             answer: The final answer to return.
 
         Raises:
-            FinalSignal: Always raised to terminate execution.
+            FinalSignal: Raised to terminate execution (after validation).
+            ValueError: If exploration requirement not met.
         """
+        # Check forced exploration validation
+        if self.config.require_exploration_before_final:
+            if self._exploration_calls < self.config.min_exploration_calls:
+                raise ValueError(
+                    f"Premature FINAL: Must call at least {self.config.min_exploration_calls} "
+                    f"exploration function(s) (peek, grep, llm_call, llm_batch) before FINAL(). "
+                    f"Current exploration calls: {self._exploration_calls}. "
+                    "Use peek() or grep() to examine the context first."
+                )
         raise FinalSignal(str(answer))
 
     def _final_var(self, var_name: str) -> None:
@@ -288,9 +499,19 @@ class REPLEnvironment:
             var_name: Name of variable in artifacts dict to return.
 
         Raises:
-            FinalSignal: Always raised to terminate execution.
+            FinalSignal: Raised to terminate execution (after validation).
             KeyError: If variable not found in artifacts.
+            ValueError: If exploration requirement not met.
         """
+        # Check forced exploration validation
+        if self.config.require_exploration_before_final:
+            if self._exploration_calls < self.config.min_exploration_calls:
+                raise ValueError(
+                    f"Premature FINAL_VAR: Must call at least {self.config.min_exploration_calls} "
+                    f"exploration function(s) (peek, grep, llm_call, llm_batch) before FINAL_VAR(). "
+                    f"Current exploration calls: {self._exploration_calls}. "
+                    "Use peek() or grep() to examine the context first."
+                )
         if var_name not in self.artifacts:
             raise KeyError(f"Variable '{var_name}' not found in artifacts")
         raise FinalSignal(str(self.artifacts[var_name]))
@@ -373,48 +594,34 @@ class REPLEnvironment:
         ]
 
     def _validate_code(self, code: str) -> None:
-        """Validate code for dangerous patterns before execution.
+        """Validate code for dangerous patterns using AST analysis.
+
+        Uses AST-based validation which is more robust than regex because it
+        analyzes the parsed syntax tree, making it immune to string tricks like:
+            getattr(__builtins__, '__im' + 'port__')('os')
 
         Args:
             code: Python code to validate.
 
         Raises:
-            REPLSecurityError: If dangerous patterns detected.
+            REPLSecurityError: If dangerous patterns detected or syntax is invalid.
         """
-        # Patterns that indicate dangerous operations
-        dangerous_patterns = [
-            (r"\bimport\s+os\b", "import os"),
-            (r"\bimport\s+sys\b", "import sys"),
-            (r"\bimport\s+subprocess\b", "import subprocess"),
-            (r"\bimport\s+socket\b", "import socket"),
-            (r"\bimport\s+shutil\b", "import shutil"),
-            (r"\bfrom\s+os\s+import\b", "from os import"),
-            (r"\bfrom\s+sys\s+import\b", "from sys import"),
-            (r"\bfrom\s+subprocess\s+import\b", "from subprocess import"),
-            (r"\b__import__\s*\(", "__import__()"),
-            (r"\beval\s*\(", "eval()"),
-            (r"\bexec\s*\(", "exec()"),
-            (r"\bcompile\s*\(", "compile()"),
-            (r"\bopen\s*\(", "open()"),
-            (r"\bgetattr\s*\(", "getattr()"),
-            (r"\bsetattr\s*\(", "setattr()"),
-            (r"\bdelattr\s*\(", "delattr()"),
-            (r"\bglobals\s*\(", "globals()"),
-            (r"\blocals\s*\(", "locals()"),
-            (r"\bvars\s*\(", "vars()"),
-            (r"\b__class__\b", "__class__"),
-            (r"\b__bases__\b", "__bases__"),
-            (r"\b__subclasses__\b", "__subclasses__"),
-            (r"\b__mro__\b", "__mro__"),
-            (r"\b__dict__\b", "__dict__"),
-            (r"\b__globals__\b", "__globals__"),
-            (r"\b__code__\b", "__code__"),
-            (r"\b__builtins__\b", "__builtins__"),
-        ]
+        # First, try to parse the code to get an AST
+        try:
+            tree = ast.parse(code, mode="exec")
+        except SyntaxError:
+            # Let the actual execution handle syntax errors for better messages
+            return
 
-        for pattern, description in dangerous_patterns:
-            if re.search(pattern, code):
-                raise REPLSecurityError(f"Dangerous operation not allowed: {description}")
+        # Run AST-based security analysis
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        if visitor.violations:
+            # Report first violation (avoids info disclosure about all checks)
+            raise REPLSecurityError(
+                f"Dangerous operation not allowed: {visitor.violations[0]}"
+            )
 
     def execute(self, code: str) -> ExecutionResult:
         """Execute Python code in the sandboxed environment.
@@ -524,9 +731,192 @@ class REPLEnvironment:
 
         return "\n".join(state_lines)
 
+    def get_exploration_log(self) -> ExplorationLog:
+        """Get the detailed exploration log.
+
+        Returns:
+            ExplorationLog containing all exploration events.
+        """
+        return self._exploration_log
+
+    def get_exploration_strategy(self) -> dict[str, Any]:
+        """Get a summary of the exploration strategy used.
+
+        Returns:
+            Dictionary with strategy summary including event counts and type.
+        """
+        return self._exploration_log.get_strategy_summary()
+
+    def suggest_exploration(
+        self,
+        task_description: str,
+        retriever: Any | None = None,
+    ) -> list[str]:
+        """Suggest exploration strategies based on similar past tasks.
+
+        Uses episodic memory (if available) to suggest effective exploration
+        strategies based on successful past tasks.
+
+        Args:
+            task_description: Description of the current task.
+            retriever: TwoPhaseRetriever from orchestration.repl_memory (optional).
+
+        Returns:
+            List of suggested exploration function calls as strings.
+        """
+        suggestions = []
+
+        # Default suggestions based on context characteristics
+        context_len = len(self.context)
+
+        if context_len < 500:
+            suggestions.append("peek(500)  # Context is short, read it all")
+        elif context_len < 2000:
+            suggestions.append("peek(1000)  # Scan the beginning")
+        else:
+            suggestions.append("peek(500)  # Preview context")
+            suggestions.append("grep('keyword')  # Search for specific patterns")
+
+        # If retriever available, query for similar successful tasks
+        if retriever is not None:
+            try:
+                # Try to get suggestions from episodic memory
+                task_ir = {"objective": task_description, "task_type": "exploration"}
+                results = retriever.retrieve_for_routing(task_ir)
+
+                if results:
+                    for r in results[:3]:
+                        if hasattr(r.memory, "metadata") and r.memory.metadata:
+                            metadata = r.memory.metadata
+                            strategy = metadata.get("exploration_strategy", {})
+                            if strategy.get("function_counts"):
+                                counts = strategy["function_counts"]
+                                if counts.get("grep", 0) > 0:
+                                    suggestions.insert(0, "# Similar task used grep effectively")
+                                if counts.get("llm_call", 0) > 0:
+                                    suggestions.insert(0, "# Similar task delegated to sub-LLM")
+            except Exception:
+                pass  # Silently ignore retrieval errors
+
+        return suggestions
+
     def reset(self) -> None:
         """Reset the REPL state (clear artifacts, keep context)."""
         self.artifacts.clear()
         self._final_answer = None
         self._execution_count = 0
+        self._exploration_calls = 0
+        self._exploration_log = ExplorationLog()  # Reset exploration log
         self._globals = self._build_globals()
+
+
+def create_repl_environment(
+    context: str,
+    artifacts: dict[str, Any] | None = None,
+    config: REPLConfig | None = None,
+    llm_primitives: Any | None = None,
+    tool_registry: Any | None = None,
+    script_registry: Any | None = None,
+    role: str | None = None,
+    use_restricted_python: bool | None = None,
+) -> REPLEnvironment:
+    """Factory function to create REPL environment with optional RestrictedPython.
+
+    When use_restricted_python is True (or None with feature flag enabled),
+    creates a REPLEnvironment that delegates to RestrictedExecutor for execution.
+
+    Args:
+        context: The full input context.
+        artifacts: Optional pre-existing artifacts.
+        config: Optional REPL configuration.
+        llm_primitives: Optional LLMPrimitives for llm_call/llm_batch.
+        tool_registry: Optional ToolRegistry for TOOL() invocations.
+        script_registry: Optional ScriptRegistry for SCRIPT() invocations.
+        role: Role name for permission checking.
+        use_restricted_python: Override feature flag (None = use flag).
+
+    Returns:
+        REPLEnvironment instance (may use RestrictedExecutor internally).
+    """
+    # Check feature flag if not explicitly set
+    if use_restricted_python is None:
+        from src.features import features
+        use_restricted_python = features().restricted_python
+
+    # Try to use RestrictedPython if requested
+    if use_restricted_python:
+        try:
+            from src.restricted_executor import is_available, RestrictedExecutor
+
+            if is_available():
+                # Create a wrapped environment that uses RestrictedExecutor
+                return _RestrictedREPLEnvironment(
+                    context=context,
+                    artifacts=artifacts,
+                    config=config,
+                    llm_primitives=llm_primitives,
+                    tool_registry=tool_registry,
+                    script_registry=script_registry,
+                    role=role,
+                )
+        except ImportError:
+            pass  # Fall back to standard REPL
+
+    # Standard REPL environment
+    return REPLEnvironment(
+        context=context,
+        artifacts=artifacts,
+        config=config,
+        llm_primitives=llm_primitives,
+        tool_registry=tool_registry,
+        script_registry=script_registry,
+        role=role,
+    )
+
+
+class _RestrictedREPLEnvironment(REPLEnvironment):
+    """REPL environment that uses RestrictedPython for execution.
+
+    This is a wrapper around the standard REPLEnvironment that delegates
+    execution to RestrictedExecutor for stronger security guarantees.
+    """
+
+    def __init__(self, *args, **kwargs):
+        """Initialize with RestrictedExecutor."""
+        super().__init__(*args, **kwargs)
+
+        # Import here to avoid issues if not available
+        from src.restricted_executor import RestrictedExecutor
+
+        # Create restricted executor with same config
+        self._restricted_executor = RestrictedExecutor(
+            context=self.context,
+            artifacts=self.artifacts,
+            timeout_seconds=self.config.timeout_seconds,
+            output_cap=self.config.output_cap,
+            max_grep_results=self.config.max_grep_results,
+            llm_primitives=self.llm_primitives,
+        )
+
+    def execute(self, code: str) -> ExecutionResult:
+        """Execute using RestrictedPython.
+
+        Args:
+            code: Python code to execute.
+
+        Returns:
+            ExecutionResult with output, is_final flag, and optional error.
+        """
+        # Use the restricted executor
+        from src.restricted_executor import ExecutionResult as RestrictedResult
+
+        result = self._restricted_executor.execute(code)
+
+        # Convert to our ExecutionResult type
+        return ExecutionResult(
+            output=result.output,
+            is_final=result.is_final,
+            final_answer=result.final_answer,
+            error=result.error,
+            elapsed_seconds=result.elapsed_seconds,
+        )

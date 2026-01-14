@@ -18,8 +18,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-# Default log path (on RAID array)
-DEFAULT_LOG_PATH = Path("/mnt/raid0/llm/claude/logs/progress")
+# Default log path (on RAID array, or fallback to workspace for devcontainer)
+_RAID_LOG_PATH = Path("/mnt/raid0/llm/claude/logs/progress")
+_WORKSPACE_LOG_PATH = Path("/workspace/logs/progress")
+
+# Use RAID path if available, otherwise fallback to workspace
+DEFAULT_LOG_PATH = _RAID_LOG_PATH if _RAID_LOG_PATH.parent.exists() else _WORKSPACE_LOG_PATH
 
 
 class EventType(str, Enum):

@@ -1,0 +1,182 @@
+"""FastAPI application factory for the orchestrator API.
+
+This module provides the main FastAPI application with all routes,
+middleware, and lifespan management.
+
+Usage:
+    # Development server
+    uvicorn src.api:app --reload --port 8000
+
+    # Production
+    uvicorn src.api:app --host 0.0.0.0 --port 8000 --workers 4
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.features import features
+from src.api.state import get_state, AppState
+from src.api.routes import create_api_router
+from src.api.services.memrl import (
+    load_optional_imports,
+    background_cleanup,
+    get_progress_logger_class,
+    get_tool_registry_class,
+    get_script_registry_class,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan.
+
+    Initialization order:
+    1. Load feature flags from environment
+    2. Load optional module imports based on features
+    3. Load registry (YAML parsing only)
+    4. Initialize core components (LLM primitives, gate runner, failure router)
+    5. Initialize optional components based on features
+    6. Start background tasks if MemRL enabled
+    """
+    state = get_state()
+    f = features()
+
+    # Load feature flags and optional imports
+    load_optional_imports()
+
+    logger.info(f"Starting orchestrator with features: {f.enabled_features()}")
+
+    # Load registry for role-based generation defaults (YAML parsing only, no models)
+    try:
+        from src.registry_loader import RegistryLoader
+        state.registry = RegistryLoader(validate_paths=False)
+    except Exception as e:
+        logger.info(f"Registry file not found or invalid, using defaults: {e}")
+        state.registry = None
+
+    # Core components (always initialized)
+    from src.llm_primitives import LLMPrimitives
+    from src.gate_runner import GateRunner
+    from src.failure_router import FailureRouter
+
+    ProgressLogger = get_progress_logger_class()
+
+    state.llm_primitives = LLMPrimitives(mock_mode=f.mock_mode, registry=state.registry)
+    state.progress_logger = ProgressLogger() if ProgressLogger else None
+    state.gate_runner = GateRunner(progress_logger=state.progress_logger)
+    state.failure_router = FailureRouter()
+
+    # Tool registry (feature-gated)
+    ToolRegistry = get_tool_registry_class()
+    if f.tools and ToolRegistry:
+        try:
+            state.tool_registry = ToolRegistry()
+            state.tool_registry.load_permissions_from_registry(
+                "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+            )
+            # Register built-in tools
+            from src.builtin_tools import register_builtin_tools
+            register_builtin_tools(state.tool_registry)
+        except Exception as e:
+            logger.info(f"Tool registry not available: {e}")
+            state.tool_registry = None
+    else:
+        state.tool_registry = None
+
+    # Script registry (feature-gated, requires tools)
+    ScriptRegistry = get_script_registry_class()
+    if f.scripts and ScriptRegistry and state.tool_registry:
+        try:
+            state.script_registry = ScriptRegistry()
+            state.script_registry.load_from_directory(
+                "/mnt/raid0/llm/claude/orchestration/script_registry"
+            )
+        except Exception as e:
+            logger.info(f"Script registry not available: {e}")
+            state.script_registry = None
+    else:
+        state.script_registry = None
+
+    # Background Q-scoring task (only if MemRL feature enabled)
+    if f.memrl:
+        state._q_scorer_task = asyncio.create_task(background_cleanup(state))
+    else:
+        state._q_scorer_task = None
+
+    yield
+
+    # Shutdown - cancel background task first
+    if state._q_scorer_task:
+        state._q_scorer_task.cancel()
+        try:
+            await state._q_scorer_task
+        except asyncio.CancelledError:
+            pass
+
+    # Flush progress logger before cleanup
+    if state.progress_logger:
+        state.progress_logger.flush()
+
+    # Clear state
+    state.llm_primitives = None
+    state.gate_runner = None
+    state.failure_router = None
+    state.progress_logger = None
+    state.q_scorer = None
+    state.episodic_store = None
+    state.hybrid_router = None
+    state.tool_registry = None
+    state.script_registry = None
+    state.registry = None
+
+
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application.
+
+    Returns:
+        Configured FastAPI application.
+    """
+    app = FastAPI(
+        title="Orchestrator API",
+        description="HTTP interface for the hierarchical orchestration system",
+        version="0.1.0",
+        lifespan=lifespan,
+    )
+
+    # CORS middleware for development
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Include all routes
+    router = create_api_router()
+    app.include_router(router)
+
+    return app
+
+
+# Create the default application instance
+app = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "src.api:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+    )

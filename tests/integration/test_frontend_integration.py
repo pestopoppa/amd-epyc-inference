@@ -10,17 +10,16 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import app, _state, _sessions, _pending_permissions
+from src.api import app
+from src.api.state import get_state, reset_state
+from src.api.routes.sessions import _sessions, _pending_permissions
 
 
 @pytest.fixture
 def client():
     """Create a test client with state reset."""
     # Reset API state
-    _state.total_requests = 0
-    _state.total_turns = 0
-    _state.mock_requests = 0
-    _state.real_requests = 0
+    reset_state()
 
     # Clear sessions and permissions
     _sessions.clear()

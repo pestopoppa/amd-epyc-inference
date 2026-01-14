@@ -1,0 +1,581 @@
+# Orchestration System Architecture
+
+**Version**: 2.0 (Post-Refactoring)
+**Last Updated**: 2026-01-14
+
+## Table of Contents
+
+1. [System Overview](#system-overview)
+2. [Request Flow](#request-flow)
+3. [Module Responsibilities](#module-responsibilities)
+4. [Escalation System](#escalation-system)
+5. [Feature Flag System](#feature-flag-system)
+6. [Security Model](#security-model)
+7. [Adding New Features](#adding-new-features)
+8. [Common Pitfalls](#common-pitfalls)
+9. [Testing Guidelines](#testing-guidelines)
+
+---
+
+## System Overview
+
+The orchestration system implements a hierarchical local-agent workflow for production LLM inference. The core philosophy:
+
+> *One model thinks. Many models work. Tools decide who is right.*
+
+### Architecture Diagram
+
+```
+                    ┌──────────────────────────────────────┐
+                    │           HTTP Request               │
+                    └──────────────────┬───────────────────┘
+                                       │
+                    ┌──────────────────▼───────────────────┐
+                    │            api.py                    │
+                    │   (FastAPI routes & request handling)│
+                    └──────────────────┬───────────────────┘
+                                       │
+         ┌─────────────────────────────┼─────────────────────────────┐
+         │                             │                             │
+         ▼                             ▼                             ▼
+┌─────────────────┐        ┌──────────────────┐        ┌─────────────────┐
+│  llm_primitives │        │  failure_router  │        │    executor     │
+│  (LLM calls)    │        │  (escalation)    │        │  (task exec)    │
+└────────┬────────┘        └────────┬─────────┘        └────────┬────────┘
+         │                          │                           │
+         │                          ▼                           │
+         │                ┌──────────────────┐                  │
+         │                │   escalation.py  │◄─────────────────┘
+         │                │ (unified policy) │
+         │                └──────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Backend Layer                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
+│  │ LlamaServer │  │  Caching    │  │   Mock      │                 │
+│  │  Backend    │  │  Backend    │  │  Backend    │                 │
+│  └─────────────┘  └─────────────┘  └─────────────┘                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent Tiers
+
+| Tier | Role | Purpose | Memory Residency |
+|------|------|---------|------------------|
+| **A** | Frontdoor | Intent classification, routing | Always HOT |
+| **B** | Specialists | Domain processing (coder, ingest, architect) | WARM (on demand) |
+| **C** | Workers | Parallel file-level tasks | COLD (transient) |
+| **D** | Draft | Speculative decoding support | HOT (small models) |
+
+---
+
+## Request Flow
+
+### 1. HTTP Request Handling (`api.py`)
+
+```
+Request → /chat endpoint
+         ↓
+    Parse ChatRequest (Pydantic)
+         ↓
+    Increment active_requests (thread-safe)
+         ↓
+    Generate task_id for tracking
+         ↓
+    Check mock_mode vs real_mode
+         ↓
+    Route to _handle_chat()
+```
+
+### 2. Chat Handler Loop
+
+```python
+# Simplified flow
+for turn in range(max_turns):
+    # 1. Build prompt for Root LM
+    prompt = _build_root_lm_prompt(state, user_prompt, last_output, turn)
+
+    # 2. Run inference (mock or real)
+    if real_mode:
+        response = llm_primitives.generate(role="frontdoor", prompt=prompt)
+    else:
+        response = mock_response(turn)
+
+    # 3. Check for FINAL signal
+    if "FINAL(" in response:
+        return extract_final_answer(response)
+
+    # 4. Execute REPL code if present
+    if contains_code_block(response):
+        result = repl.execute(code)
+        last_output = result.output
+
+    # 5. Check escalation if needed
+    if should_escalate(result):
+        next_role = failure_router.route_failure(context)
+```
+
+### 3. Escalation Flow
+
+```
+Failure detected
+      ↓
+Create EscalationContext
+      ↓
+escalation.decide(context)
+      ↓
+┌─────────────────────────────────────────┐
+│  Decision Tree:                         │
+│  1. Early abort? → ESCALATE immediately │
+│  2. Format error? → RETRY only          │
+│  3. Retries left? → RETRY               │
+│  4. Can escalate? → ESCALATE            │
+│  5. At top? → FAIL                      │
+└─────────────────────────────────────────┘
+      ↓
+Return EscalationDecision
+      ↓
+Execute decision (retry/escalate/fail)
+```
+
+---
+
+## Module Responsibilities
+
+### Core Modules
+
+| Module | Responsibility | Dependencies |
+|--------|---------------|--------------|
+| `src/api/` | HTTP endpoints (modular structure) | All |
+| `src/llm_primitives.py` | LLM call abstraction | backends |
+| `src/failure_router.py` | Legacy escalation (use escalation.py) | roles |
+| `src/executor.py` | Task execution engine | escalation |
+| `src/repl_environment.py` | Sandboxed Python REPL | - |
+| `src/registry_loader.py` | Model registry YAML | - |
+
+### API Module Structure
+
+```
+src/api/
+├── __init__.py          # FastAPI app factory, lifespan management
+├── state.py             # Thread-safe AppState, dependency providers
+├── models/
+│   ├── requests.py      # ChatRequest, GateRequest
+│   ├── responses.py     # ChatResponse, HealthResponse, GatesResponse
+│   ├── openai.py        # OpenAI-compatible models
+│   └── sessions.py      # Session management models
+├── services/
+│   ├── orchestrator.py  # Root LM logic (delegates to prompt_builders)
+│   └── memrl.py         # MemRL lazy loading, Q-scoring, background tasks
+└── routes/
+    ├── health.py        # /health endpoint
+    ├── chat.py          # /chat, /chat/stream endpoints
+    ├── gates.py         # /gates endpoints
+    ├── stats.py         # /stats endpoints
+    ├── openai_compat.py # /v1/* OpenAI-compatible endpoints
+    └── sessions.py      # /sessions/* endpoints
+```
+
+### Infrastructure Modules
+
+| Module | Responsibility | Dependencies |
+|--------|---------------|--------------|
+| `src/features.py` | Feature flag system | - |
+| `src/roles.py` | Role enum definitions | - |
+| `src/escalation.py` | Unified escalation policy | roles |
+| `src/config.py` | Centralized configuration | - |
+| `src/prompt_builders.py` | Unified prompt construction | roles, failure_router |
+| `src/backends/protocol.py` | Backend interface protocols | - |
+
+### Module Dependency Graph
+
+```
+features.py ←── api.py
+                  │
+                  ├──→ llm_primitives.py ──→ backends/*
+                  │
+                  ├──→ failure_router.py ──→ roles.py
+                  │                              ↑
+                  ├──→ executor.py ──────────────┤
+                  │                              │
+                  ├──→ escalation.py ────────────┘
+                  │
+                  └──→ repl_environment.py
+```
+
+---
+
+## Escalation System
+
+### Single Source of Truth
+
+**Use `src/escalation.py` for all escalation decisions.**
+
+The legacy `failure_router.py` is preserved for backwards compatibility but new code should use the unified escalation module.
+
+### Escalation Chains
+
+```
+Worker Chain:    worker_general → coder_primary → architect_general → FAIL
+Coder Chain:     coder_primary → architect_general → FAIL
+Ingest Chain:    ingest_long_context → architect_general → FAIL
+Frontdoor Chain: frontdoor → coder_primary → architect_general → FAIL
+```
+
+### Error Categories
+
+| Category | Behavior | Example |
+|----------|----------|---------|
+| `CODE` | Standard retry → escalate | Type error, test failure |
+| `LOGIC` | Standard retry → escalate | Wrong output |
+| `FORMAT` | Retry only, never escalate | Formatting issue |
+| `SCHEMA` | Retry only, never escalate | JSON schema violation |
+| `TIMEOUT` | Skip if optional gate | Gate timeout |
+| `EARLY_ABORT` | Immediate escalation | Model showed failure signs |
+
+### Usage Example
+
+```python
+from src.escalation import EscalationPolicy, EscalationContext, ErrorCategory
+from src.roles import Role
+
+policy = EscalationPolicy()
+context = EscalationContext(
+    current_role=Role.CODER_PRIMARY,
+    failure_count=2,
+    error_category=ErrorCategory.CODE,
+    error_message="Tests failed",
+)
+
+decision = policy.decide(context)
+if decision.should_escalate:
+    print(f"Escalating to {decision.target_role}")
+elif decision.should_retry:
+    print(f"Retrying, {decision.retries_remaining} left")
+```
+
+---
+
+## Feature Flag System
+
+### Philosophy
+
+1. Core orchestration works with ALL features disabled
+2. Features are opt-in by default in tests
+3. Each feature can be toggled independently
+4. Dependencies are documented and validated
+
+### Available Features
+
+| Feature | Description | Default (Test) | Default (Prod) |
+|---------|-------------|----------------|----------------|
+| `memrl` | Memory-based RL (Q-scoring, learned routing) | Off | On |
+| `tools` | Tool registry for REPL | Off | On |
+| `scripts` | Script registry (requires tools) | Off | On |
+| `streaming` | SSE streaming endpoints | Off | On |
+| `openai_compat` | OpenAI-compatible API | Off | On |
+| `repl` | REPL execution | On | On |
+| `caching` | Response caching | Off | On |
+
+### Environment Variables
+
+```bash
+# Enable specific features
+export ORCHESTRATOR_MEMRL=1
+export ORCHESTRATOR_TOOLS=1
+export ORCHESTRATOR_STREAMING=1
+
+# Check enabled features
+python3 -c "from src.features import features; print(features().enabled_features())"
+```
+
+### Usage in Code
+
+```python
+from src.features import features
+
+if features().memrl:
+    from orchestration.repl_memory import TaskEmbedder
+    embedder = TaskEmbedder()
+else:
+    embedder = None
+
+if features().tools:
+    from src.tool_registry import ToolRegistry
+    registry = ToolRegistry()
+```
+
+---
+
+## Security Model
+
+### REPL Sandboxing
+
+The REPL uses AST-based security validation (not regex) to prevent sandbox escapes.
+
+**Blocked Operations:**
+- All imports of dangerous modules (os, sys, subprocess, etc.)
+- Dangerous built-ins (eval, exec, open, getattr, etc.)
+- Dunder attribute access (__class__, __globals__, etc.)
+- Subscript access to dunder attributes (obj["__class__"])
+
+**Why AST?**
+Regex validation is bypassable:
+```python
+# Regex misses this:
+getattr(__builtins__, '__im' + 'port__')('os')
+
+# AST catches it because it sees the getattr() call
+```
+
+### Thread Safety
+
+Statistics counters in `AppState` are protected by `threading.Lock`:
+- `increment_request()` - thread-safe
+- `increment_active()` / `decrement_active()` - thread-safe
+- `get_stats()` - returns consistent snapshot
+
+---
+
+## Adding New Features
+
+### Step-by-Step Guide
+
+1. **Add feature flag** (`src/features.py`):
+   ```python
+   @dataclass
+   class Features:
+       # ... existing ...
+       my_feature: bool = False  # Add with description
+   ```
+
+2. **Add environment variable** (in `get_features()`):
+   ```python
+   "my_feature": _env_bool("MY_FEATURE", defaults["my_feature"]),
+   ```
+
+3. **Add optional import** (if module is heavy):
+   ```python
+   # In api.py or relevant module
+   MyModule: type | None = None
+
+   def _load_optional_imports():
+       if f.my_feature:
+           from src.my_module import MyModule as _MM
+           MyModule = _MM
+   ```
+
+4. **Guard feature code**:
+   ```python
+   if features().my_feature and MyModule:
+       instance = MyModule()
+   else:
+       instance = None
+   ```
+
+5. **Add tests for both states**:
+   ```python
+   def test_my_feature_enabled():
+       set_features(Features(my_feature=True))
+       # test enabled behavior
+
+   def test_my_feature_disabled():
+       set_features(Features(my_feature=False))
+       # test disabled behavior
+   ```
+
+6. **Update documentation**:
+   - Add to `features.py` docstring
+   - Add to this document's feature table
+   - Add to CLAUDE.md if relevant to agents
+
+### Adding New Roles
+
+1. **Add to Role enum** (`src/roles.py`):
+   ```python
+   MY_NEW_ROLE = "my_new_role"
+   """Description of what this role does."""
+   ```
+
+2. **Add tier mapping**:
+   ```python
+   _TIER_MAP: dict[Role, Tier] = {
+       # ...
+       Role.MY_NEW_ROLE: Tier.B,
+   }
+   ```
+
+3. **Add escalation mapping** (if applicable):
+   ```python
+   _ESCALATION_MAP: dict[Role, Role] = {
+       # ...
+       Role.MY_NEW_ROLE: Role.ARCHITECT_GENERAL,
+   }
+   ```
+
+4. **Add to model registry** (`orchestration/model_registry.yaml`):
+   ```yaml
+   roles:
+     my_new_role:
+       tier: B
+       model:
+         name: "Model Name"
+         path: "path/to/model.gguf"
+       # ...
+   ```
+
+---
+
+## Common Pitfalls
+
+### Pitfalls Found During Refactoring
+
+| Issue | Impact | Prevention |
+|-------|--------|------------|
+| Silent exception swallowing | Errors disappear, debugging nightmare | Always log with `logger.warning(..., exc_info=True)` |
+| Global mutable state | Race conditions in concurrent requests | Use thread-safe methods, consider request-scoped state |
+| Magic role strings | Typos cause silent bugs | Use `Role` enum exclusively |
+| Duplicate escalation logic | Inconsistent behavior, maintenance burden | Use `src/escalation.py` only |
+| Regex-based security | Bypassable with string tricks | Use AST-based validation |
+| Hardcoded paths | Fails in different environments | Use config/environment variables |
+
+### Memory Safety
+
+**NEVER use `pytest -n auto` on high-core machines!**
+
+This machine has 192 threads. Parallel pytest spawns ~192 workers, each loading models → OOM crash.
+
+Safe commands:
+```bash
+pytest tests/               # Sequential (safe)
+pytest tests/ -n 4          # Limited parallelism (safe)
+# pytest tests/ -n auto     # DANGEROUS!
+```
+
+### Root Filesystem Protection
+
+**ALL files must be on `/mnt/raid0/` - NEVER on root `/`.**
+
+The root filesystem is a 120GB SSD. Writing large files causes system instability.
+
+```bash
+# Always verify paths
+[[ "$PATH" == /mnt/raid0/* ]] || echo "ERROR: Not on RAID!"
+```
+
+---
+
+## Testing Guidelines
+
+### Test Organization
+
+```
+tests/
+├── unit/                  # Unit tests (no I/O, fast)
+│   ├── test_api.py
+│   ├── test_escalation.py
+│   ├── test_features.py
+│   └── test_roles.py
+├── integration/           # Integration tests (with I/O)
+│   └── test_full_flow.py
+└── conftest.py           # Shared fixtures, memory guards
+```
+
+### Testing Features
+
+```python
+from src.features import set_features, reset_features, Features
+
+@pytest.fixture(autouse=True)
+def reset_feature_flags():
+    """Reset feature flags between tests."""
+    yield
+    reset_features()
+
+def test_with_memrl_enabled():
+    set_features(Features(memrl=True))
+    # test behavior with MemRL
+
+def test_with_memrl_disabled():
+    set_features(Features(memrl=False))
+    # test behavior without MemRL
+```
+
+### Testing Escalation
+
+```python
+from src.escalation import EscalationPolicy, EscalationContext, EscalationAction
+from src.roles import Role
+
+def test_worker_escalates_to_coder():
+    policy = EscalationPolicy()
+    context = EscalationContext(
+        current_role=Role.WORKER_GENERAL,
+        failure_count=3,  # Exceeds max_retries
+    )
+    decision = policy.decide(context)
+    assert decision.action == EscalationAction.ESCALATE
+    assert decision.target_role == Role.CODER_PRIMARY
+```
+
+---
+
+## Appendix: Module Quick Reference
+
+### Imports for Common Tasks
+
+```python
+# Feature flags
+from src.features import features, get_features, set_features, Features
+
+# Roles
+from src.roles import Role, Tier, get_tier, get_escalation_chain
+
+# Escalation
+from src.escalation import (
+    EscalationPolicy,
+    EscalationContext,
+    EscalationDecision,
+    EscalationAction,
+    ErrorCategory,
+)
+
+# Configuration
+from src.config import get_config, OrchestratorConfigData, LLMConfig
+
+# Prompt building
+from src.prompt_builders import (
+    PromptBuilder,
+    build_root_lm_prompt,
+    build_escalation_prompt,
+    extract_code_from_response,
+    classify_error,
+)
+
+# Backend protocols
+from src.backends import (
+    LLMBackend,
+    StreamingBackend,
+    CachingBackend,
+    InferenceRequest,
+    InferenceResult,
+)
+
+# LLM calls
+from src.llm_primitives import LLMPrimitives, LLMPrimitivesConfig
+
+# REPL
+from src.repl_environment import REPLEnvironment, REPLConfig
+```
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `ORCHESTRATOR_MEMRL` | Enable MemRL | 0 (test), 1 (prod) |
+| `ORCHESTRATOR_TOOLS` | Enable tool registry | 0 (test), 1 (prod) |
+| `ORCHESTRATOR_SCRIPTS` | Enable script registry | 0 (test), 1 (prod) |
+| `ORCHESTRATOR_MOCK_MODE` | Force mock mode | 1 (test), 0 (prod) |
+| `HF_HOME` | HuggingFace cache | /mnt/raid0/llm/cache/huggingface |
+| `TMPDIR` | Temporary files | /mnt/raid0/llm/tmp |

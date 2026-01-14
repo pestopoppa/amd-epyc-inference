@@ -1,0 +1,40 @@
+"""Route modules for the orchestrator API."""
+
+from fastapi import APIRouter
+
+from src.api.routes.health import router as health_router
+from src.api.routes.chat import router as chat_router
+from src.api.routes.gates import router as gates_router
+from src.api.routes.stats import router as stats_router
+from src.api.routes.openai_compat import router as openai_router
+from src.api.routes.sessions import router as sessions_router
+
+
+def create_api_router() -> APIRouter:
+    """Create the main API router with all sub-routers.
+
+    Returns:
+        APIRouter with all routes included.
+    """
+    router = APIRouter()
+
+    # Include all routers
+    router.include_router(health_router, tags=["health"])
+    router.include_router(chat_router, tags=["chat"])
+    router.include_router(gates_router, tags=["gates"])
+    router.include_router(stats_router, tags=["stats"])
+    router.include_router(openai_router, prefix="/v1", tags=["openai"])
+    router.include_router(sessions_router, tags=["sessions"])
+
+    return router
+
+
+__all__ = [
+    "create_api_router",
+    "health_router",
+    "chat_router",
+    "gates_router",
+    "stats_router",
+    "openai_router",
+    "sessions_router",
+]

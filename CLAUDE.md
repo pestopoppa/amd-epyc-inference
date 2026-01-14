@@ -225,6 +225,20 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 - PR: https://github.com/ggml-org/llama.cpp/pull/18239
 - **Worktree setup:** See [docs/reference/LLAMA_CPP_WORKTREES.md](docs/reference/LLAMA_CPP_WORKTREES.md)
 
+### Branch Safety (CRITICAL)
+
+**Production must use `production-consolidated` branch.** The session_init.sh script automatically verifies this.
+
+```bash
+# Manual verification
+scripts/session/verify_llama_cpp.sh
+
+# If wrong branch, fix with:
+cd /mnt/raid0/llm/llama.cpp && git checkout production-consolidated
+```
+
+**Never run benchmarks or live inference on a feature branch.** Use `llama.cpp-experimental/` for feature work.
+
 ```
 /mnt/raid0/llm/
 ├── llama.cpp/                    # PRODUCTION - stay on production-consolidated

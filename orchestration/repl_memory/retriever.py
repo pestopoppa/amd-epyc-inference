@@ -214,7 +214,7 @@ class TwoPhaseRetriever:
         Criteria:
         - Have enough samples (min_samples)
         - Best result exceeds confidence threshold
-        - Q-values are based on actual observations (update_count > 0)
+        - At least some memories have been observed (Q-value != 0.5 default)
 
         Args:
             results: Retrieval results
@@ -230,8 +230,14 @@ class TwoPhaseRetriever:
         if best.combined_score < self.config.confidence_threshold:
             return False
 
-        # Check that Q-values have been updated (not just initial values)
-        observed_count = sum(1 for r in results if r.memory.update_count > 0)
+        # Check that Q-values are based on observations (not default 0.5)
+        # Initial Q-values (0.5 + reward*0.5) are informative:
+        # - Success → Q=1.0
+        # - Failure → Q=0.25
+        observed_count = sum(
+            1 for r in results
+            if r.memory.update_count > 0 or abs(r.memory.q_value - 0.5) > 0.1
+        )
         if observed_count < min_samples:
             return False
 
@@ -320,11 +326,17 @@ class RuleBasedRouter:
 
         # Check routing hints
         for hint in self.routing_hints:
-            condition = hint.get("if", "")
+            # Support both dict and RoutingHint dataclass
+            if hasattr(hint, "condition"):
+                condition = hint.condition
+                use = hint.use
+            else:
+                condition = hint.get("if", "")
+                use = hint.get("use", ["frontdoor"])
             if self._evaluate_condition(
                 condition, task_type, priority, has_images, task_ir
             ):
-                return hint.get("use", ["frontdoor"])
+                return use
 
         # Default routing
         return ["frontdoor"]

@@ -87,6 +87,9 @@ RUN mkdir -p /commandhistory \
   && touch /commandhistory/.bash_history /commandhistory/.zsh_history \
   && chown -R "node:node" /commandhistory \
   && cat >/etc/profile.d/00-commandhistory.sh <<'EOF'
+# Set umask so files created in container are readable by host user
+umask 022
+
 # Persist interactive shell history in /commandhistory.
 if [ -d /commandhistory ]; then
   export HISTSIZE=100000
