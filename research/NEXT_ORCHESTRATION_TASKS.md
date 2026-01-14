@@ -7,28 +7,19 @@
 
 ## Recommended Priority Order
 
-### Priority 1: Role-Based Generation Defaults (NEW)
+### Priority 1: Role-Based Generation Defaults ✅ COMPLETE
 
 **Source:** Previous agent's plan (`glowing-splashing-eclipse.md`)
-**Effort:** Medium (4 files)
-**Impact:** High - enables concise architect outputs, proper token budgets
+**Completed:** 2026-01-14
 
-**Why now:**
-- Already planned and designed
-- No external dependencies
-- Improves orchestration quality immediately
+**What was done:**
+- Added `generation_defaults` to 5 additional roles (ingest, thinking, coder_escalation, worker_summarize, toolrunner)
+- Registry loading at API startup for mock mode
+- Most infrastructure was already implemented by a previous agent
 
-**Tasks:**
-1. Add `generation_defaults` section to roles in `model_registry.yaml`
-2. Add `system_prompt_suffix` for architect roles ("Be maximally concise...")
-3. Extend `RoleConfig` dataclass in `registry_loader.py`
-4. Apply defaults in `llm_call()` based on role
-
-**Files:**
-- `orchestration/model_registry.yaml`
-- `src/registry_loader.py`
-- `src/llm_primitives.py`
-- `src/api.py` (pass registry to primitives)
+**Files modified:**
+- `orchestration/model_registry.yaml` - Added generation_defaults to roles
+- `src/api.py` - Registry loading at startup
 
 ---
 
