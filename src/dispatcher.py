@@ -19,9 +19,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from src.registry_loader import RegistryLoader, RoleConfig
+
+if TYPE_CHECKING:
+    from orchestration.repl_memory.progress_logger import ProgressLogger
+    from orchestration.repl_memory.retriever import HybridRouter
 
 
 @dataclass
@@ -47,6 +51,7 @@ class DispatchResult:
     timestamp: str
     roles_used: list[str]
     steps: list[StepExecution]
+    routing_strategy: str = "rules"  # "learned" or "rules"
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -56,6 +61,7 @@ class DispatchResult:
             "task_id": self.task_id,
             "timestamp": self.timestamp,
             "roles_used": self.roles_used,
+            "routing_strategy": self.routing_strategy,
             "steps": [
                 {
                     "step_id": s.step_id,
@@ -102,16 +108,23 @@ class Dispatcher:
         self,
         registry: RegistryLoader | None = None,
         validate_paths: bool = True,
+        progress_logger: "ProgressLogger | None" = None,
+        hybrid_router: "HybridRouter | None" = None,
     ):
         """Initialize the dispatcher.
 
         Args:
             registry: Pre-loaded registry. Loads default if None.
             validate_paths: Validate model paths exist.
+            progress_logger: Optional ProgressLogger for MemRL integration.
+            hybrid_router: Optional HybridRouter for learned routing.
         """
         self.registry = registry or RegistryLoader(validate_paths=validate_paths)
+        self.progress_logger = progress_logger
+        self.hybrid_router = hybrid_router
         self._warnings: list[str] = []
         self._errors: list[str] = []
+        self._routing_strategy: str = "rules"  # Track last routing strategy
 
     def dispatch(self, task_ir: dict[str, Any]) -> DispatchResult:
         """Dispatch a TaskIR to generate execution plan.
@@ -124,13 +137,23 @@ class Dispatcher:
         """
         self._warnings = []
         self._errors = []
+        self._routing_strategy = "rules"
 
         # Extract task info
         task_id = task_ir.get("task_id", str(uuid.uuid4()))
         timestamp = datetime.now().isoformat()
 
-        # Determine roles needed
+        # Determine roles needed (uses HybridRouter if available)
         roles_used = self._determine_roles(task_ir)
+
+        # Log task start with routing decision (MemRL integration)
+        if self.progress_logger:
+            self.progress_logger.log_task_started(
+                task_id=task_id,
+                task_ir=task_ir,
+                routing_decision=roles_used,
+                routing_strategy=self._routing_strategy,
+            )
 
         # Generate step executions
         steps = self._generate_steps(task_ir, roles_used)
@@ -139,6 +162,7 @@ class Dispatcher:
             task_id=task_id,
             timestamp=timestamp,
             roles_used=roles_used,
+            routing_strategy=self._routing_strategy,
             steps=steps,
             warnings=self._warnings,
             errors=self._errors,
@@ -169,9 +193,15 @@ class Dispatcher:
             if registry_role not in roles:
                 roles.append(registry_role)
 
-        # If no explicit agents, use routing hints
+        # If no explicit agents, use HybridRouter (learned + rules) or fall back to registry
         if not roles:
-            roles = self.registry.route_task(task_ir)
+            if self.hybrid_router:
+                # Use learned routing with rule-based fallback
+                roles, self._routing_strategy = self.hybrid_router.route(task_ir)
+            else:
+                # Pure rule-based routing from registry
+                roles = self.registry.route_task(task_ir)
+                self._routing_strategy = "rules"
 
         # Always include draft model if using speculative decoding
         for role_name in list(roles):
@@ -279,6 +309,26 @@ class Dispatcher:
             prompt=prompt,
             n_tokens=512,  # Default, can be overridden
         )
+
+    def log_task_completed(
+        self,
+        task_id: str,
+        success: bool,
+        details: str | None = None,
+    ) -> None:
+        """Log task completion for MemRL Q-scoring.
+
+        Args:
+            task_id: The task ID from DispatchResult.
+            success: Whether the task completed successfully.
+            details: Optional details about the outcome.
+        """
+        if self.progress_logger:
+            self.progress_logger.log_task_completed(
+                task_id=task_id,
+                success=success,
+                details=details,
+            )
 
     def dispatch_from_file(self, path: Path | str) -> DispatchResult:
         """Dispatch from a TaskIR JSON file."""

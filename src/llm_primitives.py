@@ -123,6 +123,7 @@ class LLMPrimitives:
         mock_responses: dict[str, str] | None = None,
         server_urls: dict[str, str] | None = None,
         num_slots: int = 4,
+        registry: Any | None = None,
     ):
         """Initialize LLM primitives.
 
@@ -134,6 +135,7 @@ class LLMPrimitives:
             server_urls: Dict mapping role names to llama-server URLs.
                         If provided and not mock_mode, uses CachingBackend.
             num_slots: Number of slots per server for prefix caching.
+            registry: Optional RegistryLoader for role-based generation defaults.
         """
         self.model_server = model_server
         self.mock_mode = mock_mode
@@ -141,6 +143,7 @@ class LLMPrimitives:
         self.mock_responses = mock_responses if mock_responses is not None else {}
         self.server_urls = server_urls
         self.num_slots = num_slots
+        self.registry = registry
 
         # CachingBackend instances per role (RadixAttention)
         self._backends: dict[str, Any] = {}
@@ -207,6 +210,7 @@ class LLMPrimitives:
         prompt: str,
         context_slice: str = "",
         role: str = "worker",
+        n_tokens: int | None = None,
     ) -> str:
         """Call a sub-LM with optional context slice.
 
@@ -214,12 +218,26 @@ class LLMPrimitives:
             prompt: The instruction/prompt for the sub-LM.
             context_slice: Optional context to include (appended to prompt).
             role: Role determining which model to use (e.g., "worker", "coder").
+            n_tokens: Max tokens to generate. If None, uses role default from registry.
 
         Returns:
             Sub-LM response (capped at output_cap chars).
         """
         start_time = time.perf_counter()
         self.total_calls += 1
+
+        # Get role defaults from registry if available
+        system_prompt_suffix = None
+        if self.registry:
+            default_n, _default_temp, system_prompt_suffix = self.registry.get_role_defaults(role)
+            if n_tokens is None:
+                n_tokens = default_n
+        if n_tokens is None:
+            n_tokens = 512  # Fallback default
+
+        # Apply system prompt suffix if configured for this role
+        if system_prompt_suffix:
+            prompt = f"{prompt}\n\n{system_prompt_suffix}"
 
         # Build full prompt
         if context_slice:
@@ -240,7 +258,7 @@ class LLMPrimitives:
             if self.mock_mode:
                 result = self._mock_call(full_prompt, role)
             else:
-                result = self._real_call(full_prompt, role)
+                result = self._real_call(full_prompt, role, n_tokens)
 
             # Cap output
             if len(result) > self.config.output_cap:
@@ -539,12 +557,13 @@ class LLMPrimitives:
             for i, p in enumerate(prompts)
         ]
 
-    def _real_call(self, prompt: str, role: str) -> str:
+    def _real_call(self, prompt: str, role: str, n_tokens: int = 512) -> str:
         """Make a real inference call via CachingBackend or legacy ModelServer.
 
         Args:
             prompt: The full prompt.
             role: The role determining which model to use.
+            n_tokens: Maximum tokens to generate.
 
         Returns:
             Model response.
@@ -555,7 +574,7 @@ class LLMPrimitives:
         # Try CachingBackend first (RadixAttention)
         backend = self._backends.get(role)
         if backend is not None:
-            return self._call_caching_backend(backend, prompt, role)
+            return self._call_caching_backend(backend, prompt, role, n_tokens)
 
         # Fall back to legacy ModelServer
         if self.model_server is None:
@@ -569,6 +588,7 @@ class LLMPrimitives:
         request = InferenceRequest(
             role=role,
             prompt=prompt,
+            n_tokens=n_tokens,
             timeout=self.config.call_timeout,
         )
         result = self.model_server.infer(role, request)
@@ -576,13 +596,14 @@ class LLMPrimitives:
         self.total_tokens_generated += result.tokens_generated
         return result.output
 
-    def _call_caching_backend(self, backend: Any, prompt: str, role: str) -> str:
+    def _call_caching_backend(self, backend: Any, prompt: str, role: str, n_tokens: int = 512) -> str:
         """Call a CachingBackend with RadixAttention prefix caching.
 
         Args:
             backend: CachingBackend instance.
             prompt: The full prompt.
             role: The role name.
+            n_tokens: Maximum tokens to generate.
 
         Returns:
             Model response.
@@ -615,6 +636,7 @@ class LLMPrimitives:
         request = InferenceRequest(
             role=role,
             prompt=prompt,
+            n_tokens=n_tokens,
             timeout=self.config.call_timeout,
         )
 

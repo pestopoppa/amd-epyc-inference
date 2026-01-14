@@ -326,6 +326,7 @@ def run_benchmark(
     dry_run: bool = False,
     server_mode: bool = False,
     no_mmap: bool = False,
+    skip_long_context: bool = False,
 ) -> dict:
     """Run the benchmark with nested progress bars.
 
@@ -393,6 +394,8 @@ def run_benchmark(
         suite_names = get_suites_for_role(role, registry)
         if suite_filter:
             suite_names = [s for s in suite_names if s == suite_filter]
+        if skip_long_context:
+            suite_names = [s for s in suite_names if s != "long_context"]
 
         # LONG_CONTEXT OPTIMIZATION: If spec decode is available, use it for quality tests
         # (faster than baseline, produces identical output since same target model)
@@ -909,6 +912,7 @@ Examples:
     parser.add_argument("--no-mmap", action="store_true", help="Use bulk read instead of mmap (may be faster for cold loads)")
     parser.add_argument("--list-models", action="store_true", help="List available models")
     parser.add_argument("--list-suites", action="store_true", help="List available suites")
+    parser.add_argument("--skip-long-context", action="store_true", help="Skip long_context suite (saves time on quick runs)")
 
     args = parser.parse_args()
 
@@ -979,6 +983,7 @@ Examples:
             dry_run=args.dry_run,
             server_mode=args.server_mode,
             no_mmap=args.no_mmap,
+            skip_long_context=args.skip_long_context,
         )
     finally:
         if lock_fd is not None:

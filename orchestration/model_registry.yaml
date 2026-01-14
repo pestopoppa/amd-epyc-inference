@@ -59,6 +59,42 @@ runtime_defaults:
       speedup: "+76% generation speedup on 70B+ models via block prefetching"
       memory_savings: "Up to 80% KV cache reduction with max_blocks"
     notes: "PR #18747 submitted upstream. Cherry-picked to production-consolidated."
+  repl_memory:
+    description: "MemRL-inspired episodic memory for learned orchestration"
+    enabled: true
+    database:
+      path: /mnt/raid0/llm/claude/orchestration/repl_memory/episodic.db
+      embeddings_path: /mnt/raid0/llm/claude/orchestration/repl_memory/embeddings.npy
+    embedding:
+      model_path: /mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf
+      dim: 896
+      threads: 8
+      fallback_enabled: true
+    retrieval:
+      semantic_k: 20
+      min_similarity: 0.3
+      min_q_value: 0.3
+      q_weight: 0.7
+      top_n: 5
+      confidence_threshold: 0.6
+    scoring:
+      learning_rate: 0.1
+      success_reward: 1.0
+      failure_reward: -0.5
+      partial_reward: 0.3
+      min_interval_seconds: 300
+      batch_size: 50
+    logging:
+      progress_dir: /mnt/raid0/llm/claude/logs/progress
+      buffer_size: 10
+    cold_start:
+      min_samples: 3
+      fallback_to_rules: true
+      bootstrap_days: 30
+    claude_as_judge:
+      enabled: false
+      model_path: null
+      judge_binary: null
 server_mode:
   frontdoor:
     url: http://localhost:8080
@@ -130,6 +166,12 @@ roles:
     tool_permissions:
       web_access: true
       allowed_categories: [web, file, data]
+    generation_defaults:
+      n_tokens: 1024
+      temperature: 0.3
+    system_prompt_suffix: |
+      Provide clear, user-friendly explanations.
+      Elaborate on specialist outputs when presenting to users.
   coder_primary:
     tier: B
     description: Primary high-throughput code generation - reuses frontdoor model
@@ -165,6 +207,12 @@ roles:
       allowed_categories: [web, file, code, data, system]
       allowed_tools: [run_tests, lint_python, fetch_docs]
     benchmark_date: 2026-01-06
+    generation_defaults:
+      n_tokens: 2048
+      temperature: 0.2
+    system_prompt_suffix: |
+      Output code only. No explanations unless requested.
+      Include minimal inline comments.
   coder_escalation:
     tier: B
     description: Coding escalation target - generalist coder for when primary needs
@@ -263,6 +311,13 @@ roles:
       recommended: true
       block_size: 64
       reason: "133GB model is memory-bound, benefits from block prefetching"
+    generation_defaults:
+      n_tokens: 512
+      temperature: 0.1
+    system_prompt_suffix: |
+      Be maximally concise. Use bullet points.
+      Output structured plans, not narrative.
+      Other agents will elaborate on your decisions.
   architect_coding:
     tier: B
     description: Hardest coding/architecture escalation - IR-first
@@ -307,6 +362,13 @@ roles:
       block_size: 64
       reason: "271GB model is heavily memory-bound, estimated +15-25% speedup"
     benchmark_date: 2025-12-21
+    generation_defaults:
+      n_tokens: 512
+      temperature: 0.1
+    system_prompt_suffix: |
+      Be maximally concise. Use bullet points.
+      Output structured plans with file paths.
+      Specialists will implement details.
   thinking_reasoning:
     tier: B
     description: Deep reasoning and chain-of-thought - SSM+MoE hybrid thinking model
@@ -371,6 +433,9 @@ roles:
       web_access: false
       allowed_categories: [file, data]
       forbidden_tools: [write_file]
+    generation_defaults:
+      n_tokens: 1024
+      temperature: 0.3
   worker_math:
     tier: C
     description: Edge cases, invariants, property-test generation
@@ -395,6 +460,12 @@ roles:
     memory:
       residency: hot
       pinned: true
+    generation_defaults:
+      n_tokens: 512
+      temperature: 0.0
+    system_prompt_suffix: |
+      Show work step by step.
+      Output final answer on last line.
   worker_vision:
     tier: C
     description: Screenshot/UI extraction - outputs component trees + structured notes

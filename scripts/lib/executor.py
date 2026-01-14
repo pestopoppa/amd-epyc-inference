@@ -562,7 +562,8 @@ class Executor:
                 configs.append(cfg)
 
             # MoE + spec decode compound configs (if compatible drafts exist)
-            # E.g., Qwen3-Coder-480B with jukofyork vocab transplant draft
+            # Note: Tested and found to be SLOWER than MoE alone (0.84x baseline)
+            # but kept for completeness. May want to disable to save benchmark time.
             if "speculative_decoding" not in forbidden:
                 drafts = reg.get_drafts_for_model(role)
                 for draft_role in drafts:

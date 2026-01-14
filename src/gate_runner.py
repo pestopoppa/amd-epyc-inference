@@ -22,9 +22,12 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 import yaml
+
+if TYPE_CHECKING:
+    from orchestration.repl_memory.progress_logger import ProgressLogger
 
 
 @dataclass
@@ -104,15 +107,18 @@ class GateRunner:
         self,
         config_path: Path | str | None = None,
         working_dir: Path | str | None = None,
+        progress_logger: "ProgressLogger | None" = None,
     ):
         """Initialize the gate runner.
 
         Args:
             config_path: Path to gates.yaml configuration file.
             working_dir: Working directory for running commands.
+            progress_logger: Optional ProgressLogger for MemRL integration.
         """
         self.config_path = Path(config_path) if config_path else self.DEFAULT_CONFIG_PATH
         self.working_dir = Path(working_dir) if working_dir else Path.cwd()
+        self.progress_logger = progress_logger
         self.gates: list[GateConfig] = []
         self._load_config()
 
@@ -167,12 +173,22 @@ class GateRunner:
             ),
         ]
 
-    def run_gate(self, gate: GateConfig, attempt: int = 1) -> GateResult:
+    def run_gate(
+        self,
+        gate: GateConfig,
+        attempt: int = 1,
+        task_id: str | None = None,
+        agent_tier: str = "C",
+        agent_role: str = "worker",
+    ) -> GateResult:
         """Run a single gate and parse output.
 
         Args:
             gate: Gate configuration.
             attempt: Current attempt number (for retries).
+            task_id: Optional task ID for MemRL logging.
+            agent_tier: Agent tier for logging (default "C" for workers).
+            agent_role: Agent role for logging.
 
         Returns:
             GateResult with parsed output.
@@ -196,7 +212,7 @@ class GateRunner:
             # Parse errors and warnings from output
             errors, warnings = self._parse_output(output, gate.name)
 
-            return GateResult(
+            gate_result = GateResult(
                 gate_name=gate.name,
                 passed=passed,
                 exit_code=result.returncode,
@@ -210,7 +226,7 @@ class GateRunner:
 
         except subprocess.TimeoutExpired:
             elapsed = time.perf_counter() - start_time
-            return GateResult(
+            gate_result = GateResult(
                 gate_name=gate.name,
                 passed=False,
                 exit_code=-1,
@@ -223,7 +239,7 @@ class GateRunner:
 
         except Exception as e:
             elapsed = time.perf_counter() - start_time
-            return GateResult(
+            gate_result = GateResult(
                 gate_name=gate.name,
                 passed=False,
                 exit_code=-1,
@@ -233,6 +249,20 @@ class GateRunner:
                 attempt=attempt,
                 required=gate.required,
             )
+
+        # Log gate result for MemRL if configured
+        if self.progress_logger and task_id:
+            error_msg = gate_result.errors[0] if gate_result.errors else None
+            self.progress_logger.log_gate_result(
+                task_id=task_id,
+                gate_name=gate.name,
+                passed=gate_result.passed,
+                agent_tier=agent_tier,
+                agent_role=agent_role,
+                error_message=error_msg,
+            )
+
+        return gate_result
 
     def _parse_output(self, output: str, gate_name: str) -> tuple[list[str], list[str]]:
         """Parse gate output for errors and warnings.
@@ -277,12 +307,18 @@ class GateRunner:
         self,
         stop_on_first_failure: bool = True,
         required_only: bool = False,
+        task_id: str | None = None,
+        agent_tier: str = "C",
+        agent_role: str = "worker",
     ) -> list[GateResult]:
         """Run all configured gates.
 
         Args:
             stop_on_first_failure: Stop after first required gate fails.
             required_only: Only run gates marked as required.
+            task_id: Optional task ID for MemRL logging.
+            agent_tier: Agent tier for logging.
+            agent_role: Agent role for logging.
 
         Returns:
             List of GateResult objects.
@@ -295,7 +331,13 @@ class GateRunner:
 
             # Run with retries
             for attempt in range(1, gate.retry_count + 2):  # +2 for first attempt
-                result = self.run_gate(gate, attempt=attempt)
+                result = self.run_gate(
+                    gate,
+                    attempt=attempt,
+                    task_id=task_id,
+                    agent_tier=agent_tier,
+                    agent_role=agent_role,
+                )
                 if result.passed:
                     break
 

@@ -69,6 +69,14 @@ class MemoryConfig:
 
 
 @dataclass
+class GenerationDefaults:
+    """Default generation parameters for a role."""
+    n_tokens: int = 512
+    temperature: float | None = None  # None = use global default
+    context_length: int | None = None
+
+
+@dataclass
 class Constraints:
     """Acceleration constraints for a role."""
     forbid: list[str] = field(default_factory=list)
@@ -88,6 +96,8 @@ class RoleConfig:
     constraints: Constraints | None = None
     compatible_targets: list[str] = field(default_factory=list)
     notes: str | None = None
+    generation_defaults: GenerationDefaults | None = None
+    system_prompt_suffix: str | None = None
 
 
 @dataclass
@@ -284,6 +294,16 @@ class RegistryLoader:
                 reason=constraints_data.get("reason"),
             )
 
+        # Build generation defaults
+        gen_defaults = None
+        gen_data = data.get("generation_defaults")
+        if gen_data:
+            gen_defaults = GenerationDefaults(
+                n_tokens=gen_data.get("n_tokens", 512),
+                temperature=gen_data.get("temperature"),
+                context_length=gen_data.get("context_length"),
+            )
+
         return RoleConfig(
             name=name,
             tier=data.get("tier", "C"),
@@ -295,6 +315,8 @@ class RegistryLoader:
             constraints=constraints,
             compatible_targets=data.get("compatible_targets", []),
             notes=data.get("notes"),
+            generation_defaults=gen_defaults,
+            system_prompt_suffix=data.get("system_prompt_suffix"),
         )
 
     def _validate_model_path(self, role: RoleConfig) -> None:
@@ -348,6 +370,28 @@ class RegistryLoader:
         if draft_role and draft_role in self._roles:
             return self._roles[draft_role]
         return None
+
+    def get_role_defaults(self, role_name: str) -> tuple[int, float | None, str | None]:
+        """Get generation defaults for a role.
+
+        Args:
+            role_name: The role to get defaults for.
+
+        Returns:
+            Tuple of (n_tokens, temperature, system_prompt_suffix).
+            Falls back to (512, None, None) if role not found.
+        """
+        try:
+            role = self.get_role(role_name)
+            if role.generation_defaults:
+                return (
+                    role.generation_defaults.n_tokens,
+                    role.generation_defaults.temperature,
+                    role.system_prompt_suffix,
+                )
+            return (512, None, role.system_prompt_suffix)
+        except KeyError:
+            return (512, None, None)
 
     @property
     def escalation_chains(self) -> dict[str, EscalationChain]:
