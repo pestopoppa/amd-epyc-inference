@@ -38,20 +38,23 @@
 
 ---
 
-### Priority 3: MemRL Phase 4 - Escalation Learning
+### Priority 3: MemRL Phase 4 - Escalation Learning ✅ COMPLETE
 
 **Source:** `orchestration/BLOCKED_TASKS.md`
-**Effort:** Medium
-**Impact:** Medium - improves failure handling
+**Completed:** 2026-01-14
 
-**Tasks:**
-- [ ] Store failure contexts with escalation decisions
-- [ ] Implement `LearnedEscalationPolicy` in FailureRouter
-- [ ] Wire ProgressLogger escalation logging (deferred from Phase 2)
+**What was done:**
+- [x] Added `LearnedEscalationPolicy` class to query episodic memory
+- [x] Added `LearnedEscalationResult` dataclass
+- [x] Updated `FailureRouter` with `retriever` and `progress_logger` parameters
+- [x] Hybrid routing: queries learned policy first, falls back to rules
+- [x] Escalation decisions logged via `progress_logger.log_escalation()`
+- [x] Strategy counts tracked for monitoring
 
-**Files:**
-- `src/failure_router.py`
-- `orchestration/repl_memory/retriever.py` (add escalation retrieval)
+**Files modified:**
+- `src/failure_router.py` - LearnedEscalationPolicy, hybrid routing
+
+**Note:** Retriever already had `retrieve_for_escalation()` method; embedder already had `embed_failure_context()`. Infrastructure was ready.
 
 ---
 
@@ -120,11 +123,14 @@
 
 ## Recommendation
 
-**Priorities 1-2 are COMPLETE.** Next: **Priority 3 (MemRL Phase 4 - Escalation Learning)**.
+**Priorities 1-3 are COMPLETE.** Next: **Priority 4 (RLM Escalation Integration)** or **Priority 5 (RLM Enhancements)**.
 
-Why escalation learning:
-- Builds on completed MemRL Phases 1-3
-- Enables learned failure recovery strategies
-- Files are already identified: `src/failure_router.py`, `orchestration/repl_memory/retriever.py`
+Why RLM Escalation Integration:
+- Wires FailureRouter into Root LM loop
+- Enables automatic recovery with role switching
+- Gate execution integration
 
-Alternative: Priority 4 (RLM Escalation Integration) could run in parallel if escalation learning is blocked.
+Alternative: Priority 5 (RLM Enhancements) can run in parallel:
+- Async llm_batch_async() for parallel sub-LM calls
+- Configurable recursion depth
+- Per-query cost tracking

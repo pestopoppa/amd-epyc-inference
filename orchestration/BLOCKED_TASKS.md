@@ -46,7 +46,7 @@
 | 1 | Core Implementation | ✅ COMPLETE | None |
 | 2 | Wire Logging | ✅ COMPLETE | Phase 1 |
 | 3 | Enable Hybrid Routing | ✅ COMPLETE | Phase 2 |
-| 4 | Escalation Learning | READY | Phase 3 |
+| 4 | Escalation Learning | ✅ COMPLETE | Phase 3 |
 | 5 | REPL Exploration Learning | READY | Phase 3 |
 | 6 | Claude-as-Judge | OPTIONAL | Phase 3 |
 
@@ -70,10 +70,18 @@
 - [x] Add confidence logging for monitoring
 - [x] Q-scorer integrated (real-time + idle cleanup in API)
 
-### Phase 4: Escalation Learning
-- [ ] Store failure contexts with escalation decisions
-- [ ] Implement `LearnedEscalationPolicy` in FailureRouter
-- [ ] Connect to episodic memory
+### Phase 4: Escalation Learning (COMPLETE - 2026-01-14)
+- [x] Store failure contexts with escalation decisions
+- [x] Implement `LearnedEscalationPolicy` in FailureRouter
+- [x] Connect to episodic memory
+
+**Implementation:**
+- Added `LearnedEscalationPolicy` class that queries episodic memory
+- Added `LearnedEscalationResult` dataclass for query results
+- Updated `FailureRouter` with optional `retriever` and `progress_logger` parameters
+- Hybrid routing: queries learned policy first, falls back to rules
+- Escalation decisions logged via `progress_logger.log_escalation()`
+- Strategy counts tracked for monitoring ("learned" vs "rules")
 
 ### Phase 5: REPL Exploration Learning
 - [ ] Log exploration strategies in REPLEnvironment

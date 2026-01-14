@@ -5,6 +5,10 @@ This module routes failures to the appropriate escalation level based on
 role, failure count, and error category. Implements the escalation chain:
 worker → coder → architect.
 
+Phase 4 (MemRL): LearnedEscalationPolicy queries episodic memory for similar
+failures to inform escalation decisions. Falls back to rule-based routing when
+not confident.
+
 Usage:
     from src.failure_router import FailureRouter, FailureContext
 
@@ -18,13 +22,25 @@ Usage:
     )
     next_role = router.route_failure(context)
     # Returns "coder" (escalation)
+
+    # With learned escalation (requires MemRL components):
+    from orchestration.repl_memory import TwoPhaseRetriever, ProgressLogger
+    router = FailureRouter(retriever=retriever, progress_logger=logger)
+    # Router will query episodic memory before making decisions
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from orchestration.repl_memory.progress_logger import ProgressLogger
+    from orchestration.repl_memory.retriever import TwoPhaseRetriever
+
+logger = logging.getLogger(__name__)
 
 
 class ErrorCategory(str, Enum):
@@ -106,6 +122,111 @@ class RoutingDecision:
     max_retries_remaining: int = 0
 
 
+@dataclass
+class LearnedEscalationResult:
+    """Result of querying episodic memory for escalation guidance.
+
+    Attributes:
+        should_use_learned: Whether to use learned action instead of rules.
+        suggested_action: Suggested action ("retry", "escalate", "fail").
+        suggested_role: Role to route to (for escalate action).
+        confidence: Confidence score (0-1).
+        similar_cases: Number of similar cases found.
+        memory_id: ID of the most relevant memory (for logging).
+    """
+
+    should_use_learned: bool = False
+    suggested_action: str = ""
+    suggested_role: str | None = None
+    confidence: float = 0.0
+    similar_cases: int = 0
+    memory_id: str | None = None
+
+
+class LearnedEscalationPolicy:
+    """Queries episodic memory to inform escalation decisions.
+
+    This is the key Phase 4 component that enables learned escalation.
+    It uses two-phase retrieval to find similar past failures and their
+    outcomes, then suggests actions based on what worked before.
+
+    Cold start: Returns should_use_learned=False until enough data is
+    collected. The FailureRouter falls back to rule-based escalation.
+    """
+
+    def __init__(
+        self,
+        retriever: "TwoPhaseRetriever",
+        min_samples: int = 3,
+        confidence_threshold: float = 0.6,
+    ):
+        """Initialize the learned escalation policy.
+
+        Args:
+            retriever: TwoPhaseRetriever for episodic memory queries.
+            min_samples: Minimum samples needed to trust learned actions.
+            confidence_threshold: Minimum confidence to use learned action.
+        """
+        self.retriever = retriever
+        self.min_samples = min_samples
+        self.confidence_threshold = confidence_threshold
+
+    def query(self, context: FailureContext) -> LearnedEscalationResult:
+        """Query episodic memory for similar failures.
+
+        Args:
+            context: The failure context to find matches for.
+
+        Returns:
+            LearnedEscalationResult with suggestion (or not confident).
+        """
+        # Build failure context dictionary for embedding
+        failure_dict = {
+            "role": context.role,
+            "error_category": (
+                context.error_category.value
+                if isinstance(context.error_category, ErrorCategory)
+                else context.error_category
+            ),
+            "gate_name": context.gate_name,
+            "error_message": context.error_message[:500],  # Truncate
+            "failure_count": context.failure_count,
+        }
+
+        try:
+            # Query episodic memory
+            results = self.retriever.retrieve_for_escalation(failure_dict)
+
+            if not results:
+                return LearnedEscalationResult(similar_cases=0)
+
+            # Check if we should use learned routing
+            if not self.retriever.should_use_learned(results, self.min_samples):
+                return LearnedEscalationResult(
+                    similar_cases=len(results),
+                    confidence=results[0].combined_score if results else 0.0,
+                )
+
+            # Parse the best action
+            best = results[0]
+            action_parts = best.memory.action.split(":")
+            suggested_action = action_parts[0] if action_parts else "retry"
+            suggested_role = action_parts[1] if len(action_parts) > 1 else None
+
+            return LearnedEscalationResult(
+                should_use_learned=True,
+                suggested_action=suggested_action,
+                suggested_role=suggested_role,
+                confidence=best.combined_score,
+                similar_cases=len(results),
+                memory_id=best.memory.id,
+            )
+
+        except Exception as e:
+            logger.warning(f"Learned escalation query failed: {e}")
+            return LearnedEscalationResult()
+
+
 class FailureRouter:
     """Routes failures to appropriate handlers.
 
@@ -121,6 +242,10 @@ class FailureRouter:
     Special rules:
     - Format/schema errors: Always retry same role (never escalate)
     - Timeout errors: Skip the gate if optional, fail if required
+
+    Phase 4 (MemRL): When retriever is provided, queries episodic memory
+    for similar failures before making rule-based decisions. Falls back
+    to rules when not confident or during cold start.
     """
 
     # Standard escalation chains
@@ -148,12 +273,16 @@ class FailureRouter:
         self,
         custom_chains: dict[str, EscalationChain] | None = None,
         optional_gates: set[str] | None = None,
+        retriever: "TwoPhaseRetriever | None" = None,
+        progress_logger: "ProgressLogger | None" = None,
     ):
         """Initialize the failure router.
 
         Args:
             custom_chains: Optional custom escalation chains to merge.
             optional_gates: Optional set of gate names that can be skipped.
+            retriever: Optional TwoPhaseRetriever for learned escalation.
+            progress_logger: Optional ProgressLogger for logging decisions.
         """
         self.chains = dict(self.ESCALATION_CHAINS)
         if custom_chains:
@@ -166,8 +295,24 @@ class FailureRouter:
         # Track escalation history per task
         self._escalation_history: dict[str, list[str]] = {}
 
+        # Phase 4: Learned escalation support
+        self.learned_policy: LearnedEscalationPolicy | None = None
+        if retriever is not None:
+            self.learned_policy = LearnedEscalationPolicy(retriever)
+
+        self.progress_logger = progress_logger
+
+        # Track strategy usage for monitoring
+        self._strategy_counts = {"learned": 0, "rules": 0}
+
     def route_failure(self, context: FailureContext) -> RoutingDecision:
         """Determine how to handle a failure.
+
+        Uses hybrid strategy:
+        1. Query learned policy (if available and confident)
+        2. Fall back to rule-based escalation
+
+        Logs escalation decisions via progress_logger when provided.
 
         Args:
             context: Information about the failure.
@@ -184,6 +329,118 @@ class FailureRouter:
                 should_include_context=False,
             )
 
+        # Phase 4: Try learned escalation first
+        learned_result: LearnedEscalationResult | None = None
+        if self.learned_policy is not None:
+            learned_result = self.learned_policy.query(context)
+            if learned_result.should_use_learned:
+                decision = self._apply_learned_decision(
+                    context, chain, learned_result
+                )
+                if decision is not None:
+                    self._strategy_counts["learned"] += 1
+                    self._log_decision(context, decision, "learned", learned_result)
+                    return decision
+
+        # Rule-based escalation (default path)
+        self._strategy_counts["rules"] += 1
+        decision = self._rule_based_route(context, chain)
+        self._log_decision(context, decision, "rules", learned_result)
+        return decision
+
+    def _apply_learned_decision(
+        self,
+        context: FailureContext,
+        chain: EscalationChain,
+        learned: LearnedEscalationResult,
+    ) -> RoutingDecision | None:
+        """Apply a learned escalation decision.
+
+        Validates the learned action against current state and chain limits.
+
+        Args:
+            context: Failure context.
+            chain: Escalation chain for current role.
+            learned: Result from learned policy.
+
+        Returns:
+            RoutingDecision or None if learned action is invalid.
+        """
+        action = learned.suggested_action.lower()
+
+        if action == "retry":
+            if context.failure_count < chain.max_retries:
+                return RoutingDecision(
+                    action="retry",
+                    next_role=context.role,
+                    reason=f"Learned: retry (confidence {learned.confidence:.2f}, {learned.similar_cases} similar cases)",
+                    max_retries_remaining=chain.max_retries - context.failure_count - 1,
+                )
+            # Can't retry - fall through to rules
+
+        elif action == "escalate":
+            target = learned.suggested_role or chain.escalates_to
+            if target is not None and context.escalation_count < chain.max_escalations:
+                return RoutingDecision(
+                    action="escalate",
+                    next_role=target,
+                    reason=f"Learned: escalate to {target} (confidence {learned.confidence:.2f}, {learned.similar_cases} similar cases)",
+                    should_include_context=True,
+                )
+            # Can't escalate - fall through to rules
+
+        elif action == "fail":
+            return RoutingDecision(
+                action="fail",
+                next_role=None,
+                reason=f"Learned: fail (confidence {learned.confidence:.2f}, {learned.similar_cases} similar cases)",
+                should_include_context=True,
+            )
+
+        # Learned action not applicable, return None to use rules
+        return None
+
+    def _log_decision(
+        self,
+        context: FailureContext,
+        decision: RoutingDecision,
+        strategy: str,
+        learned_result: LearnedEscalationResult | None,
+    ) -> None:
+        """Log escalation decision via progress_logger.
+
+        Args:
+            context: Failure context.
+            decision: The routing decision made.
+            strategy: "learned" or "rules".
+            learned_result: Result from learned policy (may be None).
+        """
+        if self.progress_logger is None:
+            return
+
+        if decision.action == "escalate" and decision.next_role:
+            self.progress_logger.log_escalation(
+                task_id=context.task_id or "unknown",
+                from_tier=context.role,
+                to_tier=decision.next_role,
+                reason=decision.reason,
+                memory_id=learned_result.memory_id if learned_result else None,
+            )
+
+    def _rule_based_route(
+        self,
+        context: FailureContext,
+        chain: EscalationChain,
+    ) -> RoutingDecision:
+        """Rule-based escalation logic (original implementation).
+
+        Args:
+            context: Failure context.
+            chain: Escalation chain for current role.
+
+        Returns:
+            RoutingDecision based on rules.
+        """
         # Handle timeout on optional gates
         if context.error_category == ErrorCategory.TIMEOUT:
             if context.gate_name in self.optional_gates:
@@ -370,6 +627,18 @@ class FailureRouter:
             chain: The escalation chain to add.
         """
         self.chains[chain.role] = chain
+
+    def get_strategy_counts(self) -> dict[str, int]:
+        """Get counts of learned vs rule-based decisions.
+
+        Returns:
+            Dictionary with "learned" and "rules" counts.
+        """
+        return dict(self._strategy_counts)
+
+    def reset_strategy_counts(self) -> None:
+        """Reset strategy counts to zero."""
+        self._strategy_counts = {"learned": 0, "rules": 0}
 
     def format_failure_report(self, context: FailureContext, decision: RoutingDecision) -> str:
         """Format a human-readable failure report.
