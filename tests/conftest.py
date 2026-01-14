@@ -33,6 +33,16 @@ MEMORY_THRESHOLD_GB = 100
 MAX_SAFE_WORKERS = 4
 
 
+def pytest_addoption(parser):
+    """Add custom command-line options."""
+    parser.addoption(
+        "--run-server",
+        action="store_true",
+        default=False,
+        help="Run tests that require a live llama-server instance",
+    )
+
+
 def pytest_configure(config):
     """Check memory and register custom markers before running tests."""
     # Register custom markers
@@ -41,6 +51,12 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "real_mode: marks tests that require real inference servers"
+    )
+    config.addinivalue_line(
+        "markers", "requires_server: marks tests that require a live llama-server"
+    )
+    config.addinivalue_line(
+        "markers", "integration: marks integration tests"
     )
 
     # Check available memory
