@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-15 (Updated spec decode speeds, added Qwen3-VL-30B)
+**Last Updated:** 2026-01-13 (Added TTT research findings)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -11,15 +11,15 @@
 
 | Configuration | Speed | Speedup | Quality | Use Case |
 |---------------|-------|---------|---------|----------|
-| **Qwen2.5-72B + spec (K=24)** | **198.9 t/s** | **105x** | 91% | Architect tasks |
-| **Qwen2.5-Coder-32B + 0.5B (K=24)** | **123.3 t/s** | **36x** | 93% | Ingest/code tasks |
-| **Meta-Llama-3.1-70B + PARD (K=16)** | **130.3 t/s** | **62x** | 93% | High-quality architect |
+| **Qwen2.5-Coder-32B + 0.5B (K=16)** | **174.6 t/s** | **51x** | 93% | Ingest/code tasks |
+| **Qwen2.5-Math-72B + spec (K=24)** | **158.8 t/s** | **80x** | 92% | Math reasoning |
+| **Qwen2.5-72B + spec (K=16)** | **147.8 t/s** | **76x** | 91% | Architect tasks |
+| **Qwen3-4B-Thinking + spec** | **103.7 t/s** | **9x** | 88% | Fast thinking |
 | Prompt Lookup (summarization) | 95.18 t/s | 12.7x | — | Document QA with source |
-| **DeepSeek-R1-32B + spec (K=24)** | **77.9 t/s** | **39x** | 94% | Thinking/reasoning |
-| **Qwen3-Coder-30B-A3B + MoE4 + spec** | **71.8 t/s** | **6x** | **100%** | Fast code generation |
-| **Qwen3-VL-30B-A3B + MoE4** | **27.6 t/s** | **2.1x** | **100%** | Vision tasks |
-| Qwen3-Coder-30B-A3B + MoE4 | 22.0 t/s | +83% | **100%** | Code generation |
-| MoE Expert Reduction (4-6 experts) | +21-83% | — | — | MoE models |
+| **Meta-Llama-3.1-70B + PARD (K=24)** | **84.3 t/s** | **40x** | 93% | High-quality architect |
+| **DeepSeek-R1-14B-Q6_K_L + spec (K=24)** | **70.8 t/s** | **14x** | 98% | Thinking/reasoning |
+| Qwen3-Coder-30B-A3B + MoE6 | 17.6 t/s | +37% | **100%** | Code generation |
+| MoE Expert Reduction (4-6 experts) | +21-48% | — | — | MoE models |
 
 ---
 
@@ -705,7 +705,7 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 | **thinking_reasoning** (Next-80B) | 45 GB | **99%** | 9.8 t/s | MoE4 | Deep reasoning |
 | **ingest_long_context** (Next-80B) | 45 GB | **99%** | 9.8 t/s | MoE4 | Very long docs |
 | **architect_general** (235B) | 133 GB | 91% | 7.2 t/s | MoE4 | System design |
-| **vision** (Qwen3-VL-30B) | 18 GB | **100%** | 27.6 t/s | MoE4 | Vision tasks |
+| vision_escalation (30B-A3B) | 18 GB | - | 35.0 t/s | MoE4 | Complex vision |
 | architect_coding (480B) | 271 GB | **94%** | 6.6 t/s | MoE4 | Ultimate escalation |
 
 ---
@@ -729,8 +729,8 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 |------|----------|-------|---------|-------|-------------|
 | **architect_coding** | 1 | Qwen3-Coder-480B + MoE4 | 94% | 6.6 t/s | Final escalation for complex code |
 | | 2 | Qwen3-235B + MoE4 | 91% | 7.2 t/s | General architecture fallback |
-| **architect_general** | 1 | **Qwen2.5-72B + spec K=24** | **91%** | **198.9 t/s** | **Fast high-quality design** ⭐ |
-| | 2 | Meta-Llama-3.1-70B + spec K=16 | **93%** | 130.3 t/s | Highest quality |
+| **architect_general** | 1 | **Qwen2.5-72B + spec K=16** | **91%** | **147.8 t/s** | **Fast high-quality design** ⭐ |
+| | 2 | Meta-Llama-3.1-70B + spec K=24 | **93%** | 84.3 t/s | Highest quality (slower) |
 | | 3 | Qwen3-235B + MoE4 | 91% | 7.2 t/s | Large MoE (no spec) |
 
 **Tier B: Thinking/Reasoning**
@@ -754,8 +754,8 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| 1 | **Meta-Llama-3.1-70B + spec K=16** | **93%** | **130.3 t/s** | **Fast high-quality ingest** ⭐ |
-| 2 | Qwen2.5-Coder-32B + spec K=24 | 93% | 123.3 t/s | Fast bulk ingest |
+| 1 | **Qwen2.5-Coder-32B + spec** | 93% | **174.6 t/s** | **Fast bulk ingest** ⭐ |
+| 2 | Meta-Llama-3.1-70B + spec K=24 | 93% | 85.8 t/s | Higher quality ingest |
 | 3 | Qwen3-Next-80B + MoE4 (SSM) | 99% | 9.8 t/s | Very long context (128K+) |
 
 **Tier C: Workers (Speed > Quality)**
@@ -782,13 +782,13 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 
 | Task Type | Model + Config | Quality | Speed |
 |-----------|----------------|---------|-------|
-| **Architecture design** | Qwen2.5-72B + spec K=24 | **91%** | **198.9 t/s** |
-| **High-quality design** | Llama-3.1-70B + spec K=16 | **93%** | **130.3 t/s** |
-| **Code generation** | Qwen2.5-Coder-32B + spec K=24 | 93% | 123.3 t/s |
-| **Fast code** | Qwen3-Coder-30B + MoE4 + spec | **100%** | 71.8 t/s |
-| **Fast reasoning** | DeepSeek-R1-32B + spec K=24 | **94%** | 77.9 t/s |
+| **Code generation** | Qwen2.5-Coder-32B + spec | 93% | 174.6 t/s |
+| **Document summary** | Qwen2.5-Coder-32B + spec K=8 | **93%** | 172.4 t/s |
+| **Math reasoning** | Qwen2.5-Math-72B + spec | **92%** | 158.8 t/s |
+| **Architecture design** | Qwen2.5-72B + spec K=16 | 91% | 147.8 t/s |
+| **High-quality design** | Llama-3.1-70B + spec K=24 | **93%** | 84.3 t/s |
+| **Fast reasoning** | DeepSeek-R1-14B-Q6_K_L + spec K=24 | **98%** | 70.8 t/s |
 | **Complex reasoning** | Qwen3-Next-80B + MoE4 | **99%** | 9.8 t/s |
-| **Vision tasks** | Qwen3-VL-30B + MoE4 | **100%** | 27.6 t/s |
 | **Long context** | Qwen3-Next-80B + MoE4 | **99%** | 9.8 t/s |
 | **Ultimate escalation** | Qwen3-Coder-480B + MoE4 | 94% | 6.6 t/s |
 
@@ -801,12 +801,12 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 | coder_escalation (Qwen3-53B baseline) | 38% quality, repetition loops |
 | architect_meta_llama_3_70b | 33% quality (use 3.1 instead) |
 | GLM-4.6-355B | 59% quality, slow |
-| Qwen3-VL-4B/8B | 0% agentic - empty tool calls (use 30B) |
+| Qwen3-VL-* (all sizes) | 0% agentic - empty tool calls |
 | MathSmith-Hard-Problem-Synthesizer | 5x slower than expected |
 
 ⚠️ **VL BENCHMARK INVALIDATION (2025-01-06):** ALL vision-language benchmark scores in this file are INVALID. The benchmark system was not passing images to VL models - they were run as text-only models. VL scores in the tables below measure hallucination confidence, not actual vision capability. Results deleted, fix implemented. Re-benchmarking required.
 
-⚠️ **Qwen3-VL Warning:** Smaller Qwen3-VL models (2B/4B/8B) score 0% on agentic tasks - all tool-call prompts return empty. **Use Qwen3-VL-30B-A3B** (100% quality at 27.6 t/s with MoE4) or Qwen2.5-VL for vision tasks requiring tool coordination.
+⚠️ **Qwen3-VL Warning:** All Qwen3-VL models (2B/4B/8B) score 0% on agentic tasks - all tool-call prompts return empty. Use Qwen2.5-VL for vision tasks requiring tool coordination.
 
 ⚠️ **DeepSeek-R1-0528-Qwen3-8B Warning:** 100% thinking accuracy but only 24% instruction precision. Model echoes prompts and outputs verbose reasoning instead of clean structured output. Unsuitable for orchestration tasks requiring exact format compliance.
 

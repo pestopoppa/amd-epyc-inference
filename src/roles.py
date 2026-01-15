@@ -179,6 +179,14 @@ class Role(str, Enum):
     # Utility Methods
     # =========================================================================
 
+    def __str__(self) -> str:
+        """Return the role value string.
+
+        This ensures str(Role.CODER_PRIMARY) returns "coder_primary"
+        instead of "Role.CODER_PRIMARY".
+        """
+        return self.value
+
     @classmethod
     def is_valid(cls, value: str) -> bool:
         """Check if a string is a valid role.

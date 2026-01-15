@@ -82,6 +82,35 @@ class TestFailureContext:
         assert context.task_id == "task-123"
         assert context.escalation_count == 1
 
+    def test_role_enum_repr_normalization(self):
+        """Test that Role enum repr strings are normalized to values."""
+        # Simulates the bug where Role.CODER_PRIMARY gets passed as string repr
+        context = FailureContext(
+            role="Role.CODER_PRIMARY",
+            failure_count=1,
+            error_category="code",
+        )
+        assert context.role == "coder_primary"
+
+    def test_role_enum_object_normalization(self):
+        """Test that Role enum objects are normalized to values."""
+        from src.roles import Role
+        context = FailureContext(
+            role=Role.WORKER_GENERAL,
+            failure_count=1,
+            error_category="code",
+        )
+        assert context.role == "worker_general"
+
+    def test_role_string_preserved(self):
+        """Test that normal string roles are preserved."""
+        context = FailureContext(
+            role="frontdoor",
+            failure_count=1,
+            error_category="code",
+        )
+        assert context.role == "frontdoor"
+
 
 class TestEscalationChain:
     """Test EscalationChain dataclass."""

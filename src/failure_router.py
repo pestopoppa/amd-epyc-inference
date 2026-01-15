@@ -84,6 +84,8 @@ class FailureContext:
         error_message: The error message.
         task_id: Optional task ID for tracking.
         escalation_count: How many times we've escalated already.
+        task_type: Type of task (for future routing enhancements).
+        code_generated: Generated code snippet (for debugging).
     """
 
     role: str
@@ -93,14 +95,40 @@ class FailureContext:
     error_message: str = ""
     task_id: str = ""
     escalation_count: int = 0
+    task_type: str = ""
+    code_generated: str | None = None
 
     def __post_init__(self) -> None:
-        """Convert error_category to ErrorCategory if string."""
+        """Normalize role and error_category."""
+        # Normalize role to string value
+        self.role = _normalize_role(self.role)
+
+        # Convert error_category to ErrorCategory if string
         if isinstance(self.error_category, str):
             try:
                 self.error_category = ErrorCategory(self.error_category)
             except ValueError:
                 self.error_category = ErrorCategory.UNKNOWN
+
+
+def _normalize_role(role: str) -> str:
+    """Normalize role to string value.
+
+    Handles:
+    - Role enum objects (extract .value)
+    - Role enum repr strings like "Role.CODER_PRIMARY" -> "coder_primary"
+    - Normal strings (pass through)
+    """
+    # Handle Role enum objects
+    if hasattr(role, "value"):
+        return role.value
+    # Handle enum repr strings like "Role.CODER_PRIMARY"
+    if isinstance(role, str) and role.startswith("Role."):
+        # Extract the value part after "Role."
+        enum_name = role[5:]  # Remove "Role." prefix
+        # Convert CODER_PRIMARY to coder_primary
+        return enum_name.lower()
+    return role
 
 
 @dataclass
@@ -352,6 +380,12 @@ class FailureRouter:
         Returns:
             RoutingDecision with action and next role (using specific role names).
         """
+        # Ensure role is normalized (belt and suspenders - also done in __post_init__)
+        original_role = context.role
+        context.role = _normalize_role(context.role)
+        if original_role != context.role:
+            logger.info(f"Normalized role: {original_role!r} -> {context.role!r}")
+
         # Map specific role name to generic chain name
         chain_name = self.ROLE_TO_CHAIN.get(context.role, context.role)
         chain = self.chains.get(chain_name)
