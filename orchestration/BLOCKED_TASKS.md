@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-14
+**Last Updated**: 2026-01-15
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -31,7 +31,7 @@
 | AMD PACE Testing | — | — | `handoffs/active/amd-pace-testing.md` | ✅ COMPLETE (not adopting) |
 | **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
 | **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-3 COMPLETE |
-| **Tool/Script Registry Wiring** | — | **MEDIUM** | `glowing-splashing-eclipse.md` (plan file) | 📋 READY (crashed before start) |
+| **Tool/Script Registry Wiring** | — | **MEDIUM** | `progress/2026-01/2026-01-15.md` | ✅ COMPLETE (27 tools wired) |
 
 ---
 

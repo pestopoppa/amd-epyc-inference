@@ -539,7 +539,16 @@ async def lifespan(app: FastAPI):
     # Tool registry (feature-gated)
     if f.tools and ToolRegistry:
         try:
+            from src.tool_registry import load_from_yaml as load_tools_from_yaml
+
             _state.tool_registry = ToolRegistry()
+            # Load tools from YAML registry
+            loaded = load_tools_from_yaml(
+                _state.tool_registry,
+                "/mnt/raid0/llm/claude/orchestration/tool_registry.yaml"
+            )
+            logger.info(f"Loaded {loaded} tools from registry")
+            # Load role permissions
             _state.tool_registry.load_permissions_from_registry(
                 "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
             )

@@ -78,13 +78,32 @@ async def lifespan(app: FastAPI):
     ToolRegistry = get_tool_registry_class()
     if f.tools and ToolRegistry:
         try:
+            from src.tool_registry import load_from_yaml as load_tools_from_yaml
+
             state.tool_registry = ToolRegistry()
+
+            # Load tools from YAML registry (22 tools in orchestration/tool_registry.yaml)
+            loaded = load_tools_from_yaml(
+                state.tool_registry,
+                "/mnt/raid0/llm/claude/orchestration/tool_registry.yaml"
+            )
+            logger.info(f"Loaded {loaded} tools from YAML registry")
+
+            # Load role permissions from model registry
             state.tool_registry.load_permissions_from_registry(
                 "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
             )
-            # Register built-in tools
-            from src.builtin_tools import register_builtin_tools
-            register_builtin_tools(state.tool_registry)
+
+            # Register built-in tools (programmatic tools)
+            # These may overlap with YAML tools - duplicates are skipped
+            try:
+                from src.builtin_tools import register_builtin_tools
+                register_builtin_tools(state.tool_registry)
+            except ImportError:
+                logger.debug("No builtin_tools module found")
+            except ValueError as e:
+                # Tool already registered from YAML - this is fine
+                logger.debug(f"Some builtin tools skipped (already in YAML): {e}")
         except Exception as e:
             logger.info(f"Tool registry not available: {e}")
             state.tool_registry = None

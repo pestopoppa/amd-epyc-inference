@@ -43,6 +43,8 @@ class ToolCategory(str, Enum):
     CODE = "code"
     DATA = "data"
     SYSTEM = "system"
+    MATH = "math"
+    LLM = "llm"
     SPECIALIZED = "specialized"
 
 
@@ -152,17 +154,21 @@ class ToolRegistry:
         self._permissions: dict[str, ToolPermissions] = {}
         self._invocation_log: list[ToolInvocation] = []
 
-    def register_tool(self, tool: Tool) -> None:
+    def register_tool(self, tool: Tool, update: bool = False) -> None:
         """Register a tool in the registry.
 
         Args:
             tool: Tool to register.
+            update: If True, update existing tool instead of raising.
 
         Raises:
-            ValueError: If tool with same name already exists.
+            ValueError: If tool with same name already exists and update=False.
         """
         if tool.name in self._tools:
-            raise ValueError(f"Tool '{tool.name}' already registered")
+            if update:
+                logger.debug(f"Updating existing tool: {tool.name}")
+            else:
+                raise ValueError(f"Tool '{tool.name}' already registered")
 
         self._tools[tool.name] = tool
         logger.info(f"Registered tool: {tool.name} ({tool.category.value})")
@@ -173,8 +179,17 @@ class ToolRegistry:
         description: str,
         category: ToolCategory,
         parameters: dict[str, dict[str, Any]],
+        update: bool = True,
     ) -> Callable[[Callable], Callable]:
         """Decorator to register a function as a tool handler.
+
+        Args:
+            name: Tool name.
+            description: Tool description.
+            category: Tool category.
+            parameters: Parameter definitions.
+            update: If True, update existing tool (default). Useful when
+                programmatic handlers should override YAML-loaded stubs.
 
         Usage:
             @registry.register_handler(
@@ -200,7 +215,7 @@ class ToolRegistry:
                 handler=func,
                 code_hash=code_hash,
             )
-            self.register_tool(tool)
+            self.register_tool(tool, update=update)
             return func
         return decorator
 
@@ -401,3 +416,102 @@ def get_registry() -> ToolRegistry:
     if _default_registry is None:
         _default_registry = ToolRegistry()
     return _default_registry
+
+
+def load_from_yaml(
+    registry: ToolRegistry,
+    yaml_path: str | Path,
+) -> int:
+    """Load tools from a YAML registry file.
+
+    This bridges the YAML-based tool definitions in orchestration/tool_registry.yaml
+    with the programmatic ToolRegistry. Each tool's implementation is dynamically
+    imported and wrapped as a handler.
+
+    Args:
+        registry: ToolRegistry to load tools into.
+        yaml_path: Path to tool_registry.yaml.
+
+    Returns:
+        Number of tools successfully loaded.
+
+    Example:
+        registry = ToolRegistry()
+        loaded = load_from_yaml(registry, "orchestration/tool_registry.yaml")
+        print(f"Loaded {loaded} tools")
+    """
+    import importlib
+
+    path = Path(yaml_path)
+    if not path.exists():
+        logger.warning(f"Tool registry YAML not found: {path}")
+        return 0
+
+    with open(path) as f:
+        data = yaml.safe_load(f)
+
+    tools_data = data.get("tools", {})
+    loaded_count = 0
+
+    for tool_name, tool_spec in tools_data.items():
+        try:
+            # Parse category
+            category_str = tool_spec.get("category", "specialized")
+            try:
+                category = ToolCategory(category_str)
+            except ValueError:
+                category = ToolCategory.SPECIALIZED
+
+            # Parse parameters
+            params = {}
+            for param_name, param_spec in tool_spec.get("parameters", {}).items():
+                params[param_name] = {
+                    "type": param_spec.get("type", "string"),
+                    "required": param_spec.get("required", False),
+                    "description": param_spec.get("description", ""),
+                }
+                if "default" in param_spec:
+                    params[param_name]["default"] = param_spec["default"]
+
+            # Load handler function dynamically
+            impl = tool_spec.get("implementation", {})
+            handler = None
+
+            if impl.get("type") == "python":
+                module_name = impl.get("module")
+                func_name = impl.get("function")
+
+                if module_name and func_name:
+                    try:
+                        module = importlib.import_module(module_name)
+                        handler = getattr(module, func_name)
+                    except (ImportError, AttributeError) as e:
+                        logger.warning(
+                            f"Could not load handler for tool '{tool_name}': {e}"
+                        )
+                        # Create a stub handler that returns an error
+                        def make_stub(name: str, error: str):
+                            def stub(**kwargs):
+                                return {"error": f"Tool '{name}' handler not available: {error}"}
+                            return stub
+                        handler = make_stub(tool_name, str(e))
+
+            # Create Tool object
+            tool = Tool(
+                name=tool_name,
+                description=tool_spec.get("description", ""),
+                category=category,
+                parameters=params,
+                handler=handler,
+            )
+
+            registry.register_tool(tool)
+            loaded_count += 1
+            logger.debug(f"Loaded tool from YAML: {tool_name}")
+
+        except Exception as e:
+            logger.error(f"Failed to load tool '{tool_name}': {e}")
+            continue
+
+    logger.info(f"Loaded {loaded_count}/{len(tools_data)} tools from {path}")
+    return loaded_count

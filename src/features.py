@@ -111,8 +111,8 @@ class Features:
     memrl: bool = False
 
     # Tool and Script Registries
-    tools: bool = False
-    scripts: bool = False
+    tools: bool = True  # Enable TOOL() in REPL
+    scripts: bool = False  # Scripts require script_registry.yaml to exist
 
     # API Features
     streaming: bool = False
