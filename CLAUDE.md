@@ -328,7 +328,38 @@ bash /mnt/raid0/llm/claude/scripts/session/session_init.sh
 cat /mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md
 ```
 
-### 4. Run Gates (After Any Work)
+### 4. Start Orchestrator Stack (For Live Inference)
+
+```bash
+# Development mode (single 0.5B model, fast startup)
+python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py start --dev
+
+# Production HOT tier only (~40GB RAM)
+python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py start --hot-only
+
+# Production with WARM tier (~470GB RAM total)
+python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py start --include-warm architect_general
+
+# Check status
+python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py status
+
+# Stop all
+python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py stop --all
+```
+
+**Server Topology:**
+
+| Port | Role | Model | Tier |
+|------|------|-------|------|
+| 8000 | Orchestrator API | uvicorn | - |
+| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B | HOT |
+| 8081 | coder_escalation | Qwen2.5-Coder-32B + draft | HOT |
+| 8082 | worker_* | Qwen2.5-7B + draft | HOT |
+| 8083 | architect_general | Qwen3-235B-A22B | WARM |
+| 8084 | architect_coding | Qwen3-Coder-480B-A35B | WARM |
+| 8085 | ingest_long_context | Qwen3-Next-80B-A3B | WARM |
+
+### 5. Run Gates (After Any Work)
 ```bash
 cd /mnt/raid0/llm/claude && make gates
 ```

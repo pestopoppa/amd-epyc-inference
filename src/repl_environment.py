@@ -22,9 +22,14 @@ import io
 import re
 import signal
 import sys
+import uuid
 from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from orchestration.repl_memory.progress_logger import ProgressLogger
+    from orchestration.repl_memory.retriever import TwoPhaseRetriever
 
 
 class REPLError(Exception):
@@ -197,6 +202,30 @@ class ExplorationLog:
             "strategy_type": self._classify_strategy(function_counts),
         }
 
+    def get_token_efficiency(self, result_tokens: int) -> dict[str, Any]:
+        """Calculate token efficiency metrics.
+
+        Token efficiency = result_tokens / exploration_tokens
+        Higher is better - means we got more useful output per exploration token spent.
+
+        Args:
+            result_tokens: Tokens in the final result (estimated as len(result)/4).
+
+        Returns:
+            Dictionary with efficiency metrics.
+        """
+        if self.total_exploration_tokens == 0:
+            efficiency = float("inf") if result_tokens > 0 else 0.0
+        else:
+            efficiency = result_tokens / self.total_exploration_tokens
+
+        return {
+            "exploration_tokens": self.total_exploration_tokens,
+            "result_tokens": result_tokens,
+            "efficiency_ratio": round(efficiency, 3),
+            "total_events": len(self.events),
+        }
+
     def _classify_strategy(self, counts: dict[str, int]) -> str:
         """Classify the exploration strategy based on function usage."""
         if not counts:
@@ -331,6 +360,8 @@ class REPLEnvironment:
         tool_registry: Any | None = None,  # ToolRegistry instance
         script_registry: Any | None = None,  # ScriptRegistry instance
         role: str | None = None,  # Role for permission checking
+        progress_logger: ProgressLogger | None = None,  # For exploration logging
+        task_id: str | None = None,  # Task ID for progress logging
     ):
         """Initialize the REPL environment.
 
@@ -342,11 +373,15 @@ class REPLEnvironment:
             tool_registry: Optional ToolRegistry for TOOL() invocations.
             script_registry: Optional ScriptRegistry for SCRIPT() invocations.
             role: Role name for permission checking (e.g., "frontdoor", "coder_primary").
+            progress_logger: Optional ProgressLogger for logging exploration events.
+            task_id: Optional task ID for associating exploration logs with tasks.
         """
         self.context = context
         self.artifacts = artifacts if artifacts is not None else {}
         self.config = config if config is not None else REPLConfig()
         self.llm_primitives = llm_primitives
+        self.progress_logger = progress_logger
+        self.task_id = task_id or str(uuid.uuid4())
         self.tool_registry = tool_registry
         self.script_registry = script_registry
         self.role = role or "worker_general"  # Default to restricted role
@@ -747,10 +782,50 @@ class REPLEnvironment:
         """
         return self._exploration_log.get_strategy_summary()
 
+    def log_exploration_completed(
+        self,
+        success: bool,
+        result: str = "",
+    ) -> dict[str, Any]:
+        """Log exploration completion to ProgressLogger.
+
+        This should be called when the REPL task is complete (after FINAL).
+        Logs the exploration strategy and token efficiency for Q-learning.
+
+        Args:
+            success: Whether the task completed successfully.
+            result: The final result (used for token efficiency calculation).
+
+        Returns:
+            Dictionary with the logged exploration data.
+        """
+        strategy = self.get_exploration_strategy()
+        result_tokens = len(result) // 4  # Rough token estimate
+        efficiency = self._exploration_log.get_token_efficiency(result_tokens)
+
+        exploration_data = {
+            "strategy": strategy,
+            "efficiency": efficiency,
+            "success": success,
+        }
+
+        # Log to ProgressLogger if available
+        if self.progress_logger is not None:
+            query_preview = self.context[:100] if self.context else ""
+            self.progress_logger.log_exploration(
+                task_id=self.task_id,
+                query=query_preview,
+                strategy_used=strategy.get("strategy_type", "unknown"),
+                tokens_spent=strategy.get("total_tokens", 0),
+                success=success,
+            )
+
+        return exploration_data
+
     def suggest_exploration(
         self,
         task_description: str,
-        retriever: Any | None = None,
+        retriever: TwoPhaseRetriever | None = None,
     ) -> list[str]:
         """Suggest exploration strategies based on similar past tasks.
 
@@ -765,6 +840,47 @@ class REPLEnvironment:
             List of suggested exploration function calls as strings.
         """
         suggestions = []
+        episodic_suggestions = []
+
+        # If retriever available, query for similar successful exploration tasks
+        if retriever is not None:
+            try:
+                context_preview = self.context[:500] if self.context else ""
+                results = retriever.retrieve_for_exploration(
+                    query=task_description,
+                    context_preview=context_preview,
+                )
+
+                if results:
+                    # Extract suggestions from successful similar tasks
+                    for r in results[:3]:
+                        # Only use high-quality memories (Q > 0.6, successful)
+                        if r.q_value < 0.6 or r.memory.outcome != "success":
+                            continue
+
+                        context = r.memory.context or {}
+                        strategy = context.get("exploration_strategy", {})
+                        function_counts = strategy.get("function_counts", {})
+                        strategy_type = strategy.get("strategy_type", "")
+
+                        # Generate specific suggestions based on what worked
+                        if function_counts.get("grep", 0) > 0:
+                            # Extract grep patterns that worked
+                            episodic_suggestions.append(
+                                f"grep('pattern')  # Similar task (q={r.q_value:.2f}) used grep"
+                            )
+                        if function_counts.get("llm_call", 0) > 0:
+                            episodic_suggestions.append(
+                                f"llm_call('summarize key points')  # Similar task delegated effectively"
+                            )
+                        if strategy_type == "scan" and function_counts.get("peek", 0) > 0:
+                            peek_count = function_counts["peek"]
+                            episodic_suggestions.append(
+                                f"# Scan strategy worked: {peek_count} peek() calls"
+                            )
+
+            except Exception:
+                pass  # Silently ignore retrieval errors
 
         # Default suggestions based on context characteristics
         context_len = len(self.context)
@@ -777,28 +893,8 @@ class REPLEnvironment:
             suggestions.append("peek(500)  # Preview context")
             suggestions.append("grep('keyword')  # Search for specific patterns")
 
-        # If retriever available, query for similar successful tasks
-        if retriever is not None:
-            try:
-                # Try to get suggestions from episodic memory
-                task_ir = {"objective": task_description, "task_type": "exploration"}
-                results = retriever.retrieve_for_routing(task_ir)
-
-                if results:
-                    for r in results[:3]:
-                        if hasattr(r.memory, "metadata") and r.memory.metadata:
-                            metadata = r.memory.metadata
-                            strategy = metadata.get("exploration_strategy", {})
-                            if strategy.get("function_counts"):
-                                counts = strategy["function_counts"]
-                                if counts.get("grep", 0) > 0:
-                                    suggestions.insert(0, "# Similar task used grep effectively")
-                                if counts.get("llm_call", 0) > 0:
-                                    suggestions.insert(0, "# Similar task delegated to sub-LLM")
-            except Exception:
-                pass  # Silently ignore retrieval errors
-
-        return suggestions
+        # Prepend episodic suggestions (learned patterns first)
+        return episodic_suggestions + suggestions
 
     def reset(self) -> None:
         """Reset the REPL state (clear artifacts, keep context)."""
@@ -819,6 +915,8 @@ def create_repl_environment(
     script_registry: Any | None = None,
     role: str | None = None,
     use_restricted_python: bool | None = None,
+    progress_logger: ProgressLogger | None = None,
+    task_id: str | None = None,
 ) -> REPLEnvironment:
     """Factory function to create REPL environment with optional RestrictedPython.
 
@@ -834,6 +932,8 @@ def create_repl_environment(
         script_registry: Optional ScriptRegistry for SCRIPT() invocations.
         role: Role name for permission checking.
         use_restricted_python: Override feature flag (None = use flag).
+        progress_logger: Optional ProgressLogger for exploration logging.
+        task_id: Optional task ID for associating exploration logs.
 
     Returns:
         REPLEnvironment instance (may use RestrictedExecutor internally).
@@ -858,6 +958,8 @@ def create_repl_environment(
                     tool_registry=tool_registry,
                     script_registry=script_registry,
                     role=role,
+                    progress_logger=progress_logger,
+                    task_id=task_id,
                 )
         except ImportError:
             pass  # Fall back to standard REPL
@@ -871,6 +973,8 @@ def create_repl_environment(
         tool_registry=tool_registry,
         script_registry=script_registry,
         role=role,
+        progress_logger=progress_logger,
+        task_id=task_id,
     )
 
 

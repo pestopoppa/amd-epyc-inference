@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-Optuna-based Layered Optimization for Orchestrator
+Optuna-based Runtime Parameter Optimization for Orchestrator
 
-Optimizes orchestrator parameters layer-by-layer:
-1. Frontdoor: temperature, speculative_k, entropy_threshold
-2. Formalizer: temperature
-3. Specialists: temperature, speculative_k, early_abort_tokens
-4. Workers: temperature, repetition_threshold
+Optimizes RUNTIME-TUNABLE parameters only (no server restart required):
+1. Routing: confidence_threshold, q_weight, min_q_value
+2. Escalation: max_retries, max_escalations
+
+NOTE: Model-specific params (temperature, speculative_k, entropy_threshold)
+are excluded - they require server restarts and have been benchmarked separately.
+See orchestration/model_registry.yaml for those configurations.
 
 Usage:
-    python scripts/benchmark/optuna_orchestrator.py --layer frontdoor --trials 30
-    python scripts/benchmark/optuna_orchestrator.py --layer specialists --trials 25 --checkpoint checkpoint.yaml
+    python scripts/benchmark/optuna_orchestrator.py --layer routing --trials 30
+    python scripts/benchmark/optuna_orchestrator.py --layer escalation --trials 25
     python scripts/benchmark/optuna_orchestrator.py --analyze --select-robust --checkpoint checkpoint.yaml
 """
 
@@ -61,57 +63,53 @@ class LayerConfig:
     metric_weights: dict
 
 
-# Layer configurations
+# Layer configurations - RUNTIME-TUNABLE PARAMS ONLY
+# Model-specific params (temperature, speculative_k) require server restart
+# and are benchmarked separately in orchestration/model_registry.yaml
 LAYER_CONFIGS = {
-    "frontdoor": LayerConfig(
-        name="frontdoor",
+    "routing": LayerConfig(
+        name="routing",
         params={
-            "temperature": (0.0, 0.5, "float"),
-            "speculative_k": (8, 32, "int"),
-            "entropy_threshold": (4.0, 6.0, "float"),
+            # MemRL routing parameters (all runtime-tunable)
+            "confidence_threshold": (0.4, 0.9, "float"),  # When to trust learned routing
+            "q_weight": (0.5, 0.9, "float"),  # Balance: learned vs semantic similarity
+            "min_q_value": (0.2, 0.5, "float"),  # Minimum Q-value to consider memory
+            "min_similarity": (0.2, 0.5, "float"),  # Minimum semantic similarity
         },
-        test_suite="t1_routing",  # Use easy tests to tune frontdoor
+        test_suite="t1_routing",  # Routing accuracy tests
         metric_weights={
-            "parse_success_rate": 0.4,
+            "parse_success_rate": 0.3,
+            "task_completion_rate": 0.4,
             "avg_turns_inverse": 0.3,
-            "latency_inverse": 0.3,
         }
     ),
-    "formalizer": LayerConfig(
-        name="formalizer",
+    "escalation": LayerConfig(
+        name="escalation",
         params={
-            "temperature": (0.0, 0.2, "float"),
+            # Escalation behavior (runtime-tunable)
+            "max_retries": (1, 4, "int"),  # Retries before escalation
+            "max_escalations": (1, 3, "int"),  # Max escalation depth
         },
-        test_suite="t2_delegation",
-        metric_weights={
-            "schema_validation_rate": 0.5,
-            "latency_inverse": 0.5,
-        }
-    ),
-    "specialists": LayerConfig(
-        name="specialists",
-        params={
-            "temperature": (0.1, 0.5, "float"),
-            "speculative_k": (8, 24, "int"),
-            "early_abort_tokens": (50, 150, "int"),
-        },
-        test_suite="t3_escalation",
+        test_suite="t3_escalation",  # Escalation accuracy tests
         metric_weights={
             "task_completion_rate": 0.4,
-            "escalation_accuracy": 0.3,
-            "latency_inverse": 0.3,
+            "escalation_accuracy": 0.4,
+            "avg_turns_inverse": 0.2,
         }
     ),
-    "workers": LayerConfig(
-        name="workers",
+    "learning": LayerConfig(
+        name="learning",
         params={
-            "temperature": (0.2, 0.6, "float"),
-            "repetition_threshold": (0.15, 0.35, "float"),
+            # Q-learning parameters (runtime-tunable, affect future behavior)
+            "learning_rate": (0.05, 0.2, "float"),  # Q-value update speed
+            "success_reward": (0.7, 1.0, "float"),  # Reward for success
+            "failure_reward": (-0.7, -0.3, "float"),  # Penalty for failure
         },
-        test_suite="t2_delegation",
+        test_suite="t2_delegation",  # General task completion
         metric_weights={
-            "execution_success_rate": 0.5,
-            "latency_inverse": 0.5,
+            "task_completion_rate": 0.5,
+            "execution_success_rate": 0.3,
+            "avg_turns_inverse": 0.2,
         }
     ),
 }
@@ -413,7 +411,7 @@ def optimize_layer(
     frozen_params = get_frozen_params(checkpoint)
 
     # Check if previous layers are complete
-    layer_order = ["frontdoor", "formalizer", "specialists", "workers"]
+    layer_order = ["routing", "escalation", "learning"]
     layer_idx = layer_order.index(layer_name)
     for prev_layer in layer_order[:layer_idx]:
         if checkpoint["layers"][prev_layer]["status"] != "complete":
@@ -542,8 +540,8 @@ def main():
     parser = argparse.ArgumentParser(description="Optuna Orchestrator Optimizer")
     parser.add_argument(
         "--layer",
-        choices=["frontdoor", "formalizer", "specialists", "workers"],
-        help="Layer to optimize"
+        choices=["routing", "escalation", "learning"],
+        help="Layer to optimize (runtime-tunable params only)"
     )
     parser.add_argument(
         "--trials",
@@ -594,7 +592,7 @@ def main():
 
     if args.select_robust:
         print("Re-running robust selection for all completed layers...")
-        for layer_name in ["frontdoor", "formalizer", "specialists", "workers"]:
+        for layer_name in ["routing", "escalation", "learning"]:
             if checkpoint["layers"][layer_name]["status"] == "complete":
                 study_name = f"orchestrator_{layer_name}"
                 try:

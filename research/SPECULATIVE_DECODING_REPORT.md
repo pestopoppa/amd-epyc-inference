@@ -326,6 +326,7 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 3. **DeepSeek-R1 family** - Vocab size differences between model sizes
 4. **Hybrid SSM architectures** - Fundamental KV cache vs recurrent state incompatibility
 5. **Hyperthreading for inference** - Use physical cores only (-t 96, not -t 192)
+6. **Engram-style tokenizer compression for Prompt Lookup** (tested 2026-01-16) - BPE tokenizers encode case/format variations as different byte sequences, so normalizing decoded text can't unify them. Code naming patterns (camelCase/snake_case) show some benefit but prose shows 0% improvement. See `scripts/experiments/compressed_tokenizer_analysis.py`.
 
 ### Architecture Insights
 

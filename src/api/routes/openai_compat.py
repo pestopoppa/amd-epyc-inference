@@ -1,4 +1,8 @@
-"""OpenAI-compatible endpoints for the orchestrator API."""
+"""OpenAI-compatible endpoints for the orchestrator API.
+
+These endpoints allow tools like Aider, LM Studio, and other OpenAI-compatible
+clients to use our orchestrator backend for inference.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +23,14 @@ from src.api.models import (
     OpenAIModelsResponse,
     OpenAIUsage,
 )
+from src.api.state import get_state
+from src.api.services.orchestrator import (
+    build_root_lm_prompt,
+    extract_code_from_response,
+    auto_wrap_final,
+)
+from src.llm_primitives import LLMPrimitives
+from src.repl_environment import REPLEnvironment
 
 router = APIRouter()
 
@@ -53,13 +65,30 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     - frontdoor: Direct to frontdoor
     - coder: Direct to coder specialist
     - etc.
+
+    For Aider integration:
+    - Configure ~/.aider.conf.yml with openai-api-base: http://localhost:8000/v1
+    - Aider will use this endpoint for all LLM calls
     """
+    state = get_state()
+
     # Extract the last user message as the prompt
     user_messages = [m for m in request.messages if m.role == "user"]
     if not user_messages:
         raise HTTPException(status_code=400, detail="No user message provided")
 
     prompt = user_messages[-1].content
+
+    # Build conversation context from message history
+    context_parts = []
+    for msg in request.messages[:-1]:  # All but last message
+        if msg.role == "system":
+            context_parts.append(f"System: {msg.content}")
+        elif msg.role == "user":
+            context_parts.append(f"User: {msg.content}")
+        elif msg.role == "assistant":
+            context_parts.append(f"Assistant: {msg.content}")
+    context = "\n\n".join(context_parts) if context_parts else None
 
     # Map model to role
     role = request.x_orchestrator_role or (
@@ -70,35 +99,136 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
+    # Determine if we should use real inference
+    # Real mode requires: registry loaded AND at least one backend available
+    # For testing without live servers, we always fall back to mock mode
+    from src.features import features
+    f = features()
+    use_real_mode = (
+        state.registry is not None
+        and not f.mock_mode  # Respect mock_mode feature flag
+    )
+
     if request.stream:
-        # Streaming mode
+        # Streaming mode with real orchestration
         async def generate_stream() -> AsyncGenerator[str, None]:
             start_time = time.perf_counter()
+            total_tokens = 0
+            response_text = ""
 
-            # For now, use mock mode for simplicity
-            # TODO: Wire to real inference with streaming
-            mock_response = f"[MOCK] Processed via {role}: {prompt[:100]}..."
+            if not use_real_mode:
+                # Mock mode fallback
+                mock_response = f"[MOCK] Processed via {role}: {prompt[:100]}..."
+                for i, char in enumerate(mock_response):
+                    chunk = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": request.model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": char} if i > 0 else {"role": "assistant", "content": char},
+                            "finish_reason": None,
+                        }],
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                response_text = mock_response
+            else:
+                # Real orchestration with streaming
+                try:
+                    server_urls = LLMPrimitives.DEFAULT_SERVER_URLS
+                    primitives = LLMPrimitives(
+                        mock_mode=False,
+                        server_urls=server_urls,
+                        registry=state.registry,
+                    )
+                except Exception as e:
+                    error_msg = f"Backend initialization failed: {e}"
+                    chunk = {
+                        "id": chat_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": request.model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"role": "assistant", "content": error_msg},
+                            "finish_reason": None,
+                        }],
+                    }
+                    yield f"data: {json.dumps(chunk)}\n\n"
+                    response_text = error_msg
+                    primitives = None
 
-            # Stream chunks
-            for i, char in enumerate(mock_response):
-                chunk = {
-                    "id": chat_id,
-                    "object": "chat.completion.chunk",
-                    "created": created,
-                    "model": request.model,
-                    "choices": [{
-                        "index": 0,
-                        "delta": {"content": char} if i > 0 else {"role": "assistant", "content": char},
-                        "finish_reason": None,
-                    }],
-                }
-                if request.x_show_routing:
-                    chunk["x_role"] = role
-                    chunk["x_turn"] = 1
+                if primitives:
+                    # Build combined context
+                    combined_context = prompt
+                    if context:
+                        combined_context = f"{context}\n\nUser: {prompt}"
 
-                yield f"data: {json.dumps(chunk)}\n\n"
+                    # Create REPL environment
+                    repl = REPLEnvironment(
+                        context=combined_context,
+                        llm_primitives=primitives,
+                        tool_registry=state.tool_registry,
+                        script_registry=state.script_registry,
+                        role=role,
+                    )
 
-            # Final chunk
+                    # Run orchestration loop (simplified for streaming)
+                    max_turns = request.max_tokens // 500 if request.max_tokens else 3
+                    max_turns = min(max(max_turns, 1), 5)
+
+                    for turn in range(max_turns):
+                        repl_state = repl.get_state()
+                        root_prompt = build_root_lm_prompt(
+                            state=repl_state,
+                            original_prompt=prompt,
+                            last_output="",
+                            last_error="",
+                            turn=turn,
+                        )
+
+                        try:
+                            code = primitives.llm_call(root_prompt, role=role, n_tokens=1024)
+                            code = extract_code_from_response(code)
+                            code = auto_wrap_final(code)
+                        except Exception as e:
+                            code = f'FINAL("Error during generation: {e}")'
+
+                        # Execute in REPL
+                        result = repl.execute(code)
+
+                        if result.is_final:
+                            response_text = result.final_answer or ""
+                            break
+                        elif result.output:
+                            response_text = result.output
+                    else:
+                        # Max turns reached
+                        response_text = response_text or f"[Completed {max_turns} turns]"
+
+                    total_tokens = primitives.total_tokens_generated
+
+                    # Stream the response character by character (OpenAI format)
+                    first_chunk = True
+                    for char in response_text:
+                        chunk = {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": request.model,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"role": "assistant", "content": char} if first_chunk else {"content": char},
+                                "finish_reason": None,
+                            }],
+                        }
+                        first_chunk = False
+                        if request.x_show_routing:
+                            chunk["x_role"] = role
+                        yield f"data: {json.dumps(chunk)}\n\n"
+
+            # Final chunk with finish_reason
             final_chunk = {
                 "id": chat_id,
                 "object": "chat.completion.chunk",
@@ -110,6 +240,12 @@ async def openai_chat_completions(request: OpenAIChatRequest):
                     "finish_reason": "stop",
                 }],
             }
+            if request.x_show_routing:
+                final_chunk["x_orchestrator_metadata"] = {
+                    "role": role,
+                    "elapsed_seconds": time.perf_counter() - start_time,
+                    "tokens": total_tokens,
+                }
             yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
 
@@ -122,12 +258,65 @@ async def openai_chat_completions(request: OpenAIChatRequest):
             },
         )
     else:
-        # Non-streaming mode
+        # Non-streaming mode with real orchestration
         start_time = time.perf_counter()
+        total_tokens = 0
 
-        # Mock response for now
-        # TODO: Wire to real inference
-        mock_response = f"[MOCK] Processed via {role}: {prompt[:100]}..."
+        if not use_real_mode:
+            # Mock mode fallback
+            response_text = f"[MOCK] Processed via {role}: {prompt[:100]}..."
+        else:
+            # Real orchestration
+            try:
+                server_urls = LLMPrimitives.DEFAULT_SERVER_URLS
+                primitives = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls=server_urls,
+                    registry=state.registry,
+                )
+
+                combined_context = prompt
+                if context:
+                    combined_context = f"{context}\n\nUser: {prompt}"
+
+                repl = REPLEnvironment(
+                    context=combined_context,
+                    llm_primitives=primitives,
+                    tool_registry=state.tool_registry,
+                    script_registry=state.script_registry,
+                    role=role,
+                )
+
+                max_turns = request.max_tokens // 500 if request.max_tokens else 3
+                max_turns = min(max(max_turns, 1), 5)
+
+                response_text = ""
+                for turn in range(max_turns):
+                    repl_state = repl.get_state()
+                    root_prompt = build_root_lm_prompt(
+                        state=repl_state,
+                        original_prompt=prompt,
+                        last_output="",
+                        last_error="",
+                        turn=turn,
+                    )
+
+                    code = primitives.llm_call(root_prompt, role=role, n_tokens=1024)
+                    code = extract_code_from_response(code)
+                    code = auto_wrap_final(code)
+
+                    result = repl.execute(code)
+
+                    if result.is_final:
+                        response_text = result.final_answer or ""
+                        break
+                    elif result.output:
+                        response_text = result.output
+
+                total_tokens = primitives.total_tokens_generated
+
+            except Exception as e:
+                response_text = f"[ERROR] Backend failed: {e}"
 
         elapsed = time.perf_counter() - start_time
 
@@ -138,14 +327,14 @@ async def openai_chat_completions(request: OpenAIChatRequest):
             choices=[
                 OpenAIChoice(
                     index=0,
-                    message=OpenAIMessage(role="assistant", content=mock_response),
+                    message=OpenAIMessage(role="assistant", content=response_text),
                     finish_reason="stop",
                 )
             ],
             usage=OpenAIUsage(
-                prompt_tokens=len(prompt) // 4,  # Rough estimate
-                completion_tokens=len(mock_response) // 4,
-                total_tokens=(len(prompt) + len(mock_response)) // 4,
+                prompt_tokens=len(prompt) // 4,
+                completion_tokens=total_tokens or len(response_text) // 4,
+                total_tokens=(len(prompt) // 4) + (total_tokens or len(response_text) // 4),
             ),
             x_orchestrator_metadata={
                 "role": role,

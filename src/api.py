@@ -147,6 +147,69 @@ class ChatRequest(BaseModel):
         default="normal",
         description="Permission mode: 'normal', 'auto-accept', or 'plan'"
     )
+    # Runtime hyperparameter overrides for Optuna tuning
+    # NOTE: Model params (temperature, speculative_k) require server restart
+    # and are excluded from runtime tuning.
+
+    # Routing parameters (MemRL)
+    confidence_threshold: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold for learned routing"
+    )
+    q_weight: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Balance: learned vs semantic similarity (0=semantic, 1=learned)"
+    )
+    min_q_value: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum Q-value to consider a memory"
+    )
+    min_similarity: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum semantic similarity for retrieval"
+    )
+
+    # Escalation parameters
+    max_retries: int | None = Field(
+        default=None,
+        ge=1,
+        le=10,
+        description="Max retries before escalation"
+    )
+    max_escalations: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description="Max escalation depth"
+    )
+
+    # Learning parameters (affect future behavior)
+    learning_rate: float | None = Field(
+        default=None,
+        ge=0.01,
+        le=0.5,
+        description="Q-value update learning rate"
+    )
+    success_reward: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Reward for successful task completion"
+    )
+    failure_reward: float | None = Field(
+        default=None,
+        ge=-1.0,
+        le=0.0,
+        description="Penalty for task failure"
+    )
 
 
 class ChatResponse(BaseModel):

@@ -1,25 +1,26 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-13 (Added TTT research findings)
+**Last Updated:** 2026-01-15 (Spec decode speeds corrected after timing bug fix)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
 
 ## Best Results
 
-> **Note:** Quality percentages from master benchmark table. Speeds from K-sweep testing.
-
 | Configuration | Speed | Speedup | Quality | Use Case |
 |---------------|-------|---------|---------|----------|
-| **Qwen2.5-Coder-32B + 0.5B (K=16)** | **174.6 t/s** | **51x** | 93% | Ingest/code tasks |
-| **Qwen2.5-Math-72B + spec (K=24)** | **158.8 t/s** | **80x** | 92% | Math reasoning |
-| **Qwen2.5-72B + spec (K=16)** | **147.8 t/s** | **76x** | 91% | Architect tasks |
-| **Qwen3-4B-Thinking + spec** | **103.7 t/s** | **9x** | 88% | Fast thinking |
 | Prompt Lookup (summarization) | 95.18 t/s | 12.7x | — | Document QA with source |
-| **Meta-Llama-3.1-70B + PARD (K=24)** | **84.3 t/s** | **40x** | 93% | High-quality architect |
-| **DeepSeek-R1-14B-Q6_K_L + spec (K=24)** | **70.8 t/s** | **14x** | 98% | Thinking/reasoning |
-| Qwen3-Coder-30B-A3B + MoE6 | 17.6 t/s | +37% | **100%** | Code generation |
-| MoE Expert Reduction (4-6 experts) | +21-48% | — | — | MoE models |
+| **Qwen2.5-7B + spec (K=24)** | **46.6 t/s** | **2.5x** | 90% | Fast general tasks |
+| Qwen3-Coder-30B-A3B + MoE4 + spec (K=8) | 31.9 t/s | +45% | **100%** | Code generation |
+| Qwen3-VL-30B-A3B + MoE4 | 27.6 t/s | +111% | **100%** | Vision tasks |
+| Prompt Lookup (code editing) | 25.82 t/s | 8.6x | — | Refactoring, code review |
+| **Qwen3-4B-Thinking + spec (K=4)** | **24.2 t/s** | **2.1x** | 88% | Fast thinking |
+| Qwen3-Coder-30B-A3B + MoE4 | 22.0 t/s | +83% | **100%** | Code (no spec) |
+| **Qwen2.5-Coder-32B + spec (K=24)** | **21.3 t/s** | **6.3x** | 93% | Code generation |
+| **gemma-3-27B + spec (K=16)** | **19.6 t/s** | **8.9x** | 95% | General tasks |
+| **gemma-3-12b + spec (K=16)** | **14.8 t/s** | **1.6x** | 97% | General tasks |
+| **Qwen3-32B + spec (K=8)** | **12.2 t/s** | **7.6x** | 95% | General tasks |
+| MoE Expert Reduction (4-6 experts) | +21-120% | — | — | MoE models |
 
 ---
 

@@ -34,6 +34,12 @@ DEFAULT_MAX_TOKENS = 512
 DEFAULT_TEMPERATURE = 0.6
 DEFAULT_TIMEOUT = 180
 
+# Skip prompt lookup for models larger than this (GB)
+# Lookup doesn't benefit large models - they timeout waiting for verification
+# and spec decode with draft models is always faster for 32B+ models
+# Threshold: 20GB covers ~32B Q4_K_M and above
+LOOKUP_MAX_MODEL_SIZE_GB = 20
+
 
 def get_binary_paths(registry: Optional["ModelRegistry"] = None) -> dict[str, str]:
     """Get binary paths from registry (single source of truth).
@@ -555,7 +561,14 @@ class Executor:
                 configs.append(Config.moe(experts, override_key))
 
             # MoE + lookup compound config (speed-only: inherits quality from moe4)
-            if "prompt_lookup" not in forbidden:
+            # Skip for large models - lookup times out and spec decode is always faster
+            model_path = reg.get_model_path(role)
+            role_config = reg.get_role_config(role)
+            size_gb = role_config.get("model", {}).get("size_gb", 0) if role_config else 0
+            if size_gb == 0 and model_path and os.path.exists(model_path):
+                size_gb = os.path.getsize(model_path) / (1024**3)
+
+            if "prompt_lookup" not in forbidden and size_gb < LOOKUP_MAX_MODEL_SIZE_GB:
                 cfg = Config.compound_moe_lookup(4, override_key, 4)
                 cfg.speed_test_only = True
                 cfg.inherits_quality_from = "moe4"  # Quality from MoE, not baseline
@@ -607,9 +620,16 @@ class Executor:
             role_config = reg.get_role_config(role)
             is_draft = role_config and role_config.get("tier") == "D"
 
+            # Get model size for lookup threshold check
+            model_path = reg.get_model_path(role)
+            size_gb = role_config.get("model", {}).get("size_gb", 0) if role_config else 0
+            if size_gb == 0 and model_path and os.path.exists(model_path):
+                size_gb = os.path.getsize(model_path) / (1024**3)
+
             # Prompt lookup configs (speed-only: inherits quality from baseline)
             # Same target model, just different draft strategy
-            if "prompt_lookup" not in forbidden and not is_draft:
+            # Skip for large models (>40GB) - lookup times out, spec decode is faster
+            if "prompt_lookup" not in forbidden and not is_draft and size_gb < LOOKUP_MAX_MODEL_SIZE_GB:
                 for ngram in [3, 4, 5]:
                     cfg = Config.lookup(ngram)
                     cfg.speed_test_only = True
@@ -807,9 +827,13 @@ class Executor:
                 )
                 # Separate stdout (model output) from stderr (llama.cpp logs/errors)
                 # Timing info is in stderr, so append it to raw_output for parsing
+                # Include patterns for: standard llama-cli AND llama-speculative output
                 timing_lines = [
                     line for line in result.stderr.split('\n')
-                    if any(x in line for x in ['eval time', 'tokens per second', 'acceptance'])
+                    if any(x in line for x in [
+                        'eval time', 'tokens per second', 'acceptance',
+                        'n_predict', 'target:', 'draft:', 'total time', 'decoded'
+                    ])
                 ]
                 raw_output = result.stdout
                 if timing_lines:

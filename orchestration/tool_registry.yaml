@@ -194,7 +194,7 @@ tools:
       function: lint_python
     permissions: [compute]
 
-  # ============ MATH TOOLS ============
+  # ============ MATH TOOLS (Python) ============
   calculate:
     category: math
     description: "Evaluate mathematical expression"
@@ -255,6 +255,227 @@ tools:
     examples:
       - input: {equation: "x**2 - 5*x + 6"}
         description: "Solve x² - 5x + 6 = 0"
+
+  # ============ MATH TOOLS (C++ Native) ============
+  # These call the llama-math-tools binary for high-performance computation
+  # Binary: /mnt/raid0/llm/llama.cpp/build/bin/llama-math-tools
+
+  matrix_solve:
+    category: math
+    description: "Solve linear system Ax=b using QR decomposition (C++ Eigen)"
+    parameters:
+      A: {type: array, required: true, description: "Coefficient matrix (n×n)"}
+      b: {type: array, required: true, description: "Right-hand side vector (n)"}
+    returns: {type: object, fields: [x, relative_error]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: matrix_op
+    permissions: [compute]
+    examples:
+      - input: {A: [[3, 1], [1, 2]], b: [9, 8]}
+        output: {x: [2.0, 3.0]}
+        description: "Solve 3x+y=9, x+2y=8"
+
+  matrix_eigenvalues:
+    category: math
+    description: "Compute eigenvalues and optionally eigenvectors (C++ Eigen)"
+    parameters:
+      A: {type: array, required: true, description: "Square matrix (n×n)"}
+      vectors: {type: boolean, required: false, default: false, description: "Also return eigenvectors"}
+    returns: {type: object, fields: [eigenvalues, eigenvectors]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: matrix_op
+    permissions: [compute]
+
+  matrix_svd:
+    category: math
+    description: "Singular Value Decomposition (C++ Eigen)"
+    parameters:
+      A: {type: array, required: true, description: "Matrix (m×n)"}
+      full: {type: boolean, required: false, default: false}
+    returns: {type: object, fields: [singular_values, U, V, rank]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: matrix_op
+    permissions: [compute]
+
+  solve_ode:
+    category: math
+    description: "Solve ODE dy/dt=f(t,y) with adaptive RK45 (C++ Boost.Odeint)"
+    parameters:
+      y0: {type: array, required: true, description: "Initial conditions"}
+      t_span: {type: array, required: true, description: "[t_start, t_end]"}
+      coefficients: {type: object, required: false, description: "Linear system {A, b}"}
+      system: {type: string, required: false, description: "Expression like '-0.5*y'"}
+      rtol: {type: number, required: false, default: 1e-6}
+      atol: {type: number, required: false, default: 1e-9}
+    returns: {type: object, fields: [t, y, stats]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: solve_ode
+    permissions: [compute]
+    examples:
+      - input: {y0: [1.0], t_span: [0, 5], system: "-0.5*y"}
+        description: "Exponential decay dy/dt = -0.5y, y(0)=1"
+
+  optimize:
+    category: math
+    description: "Minimize/maximize function using Nelder-Mead or gradient descent"
+    parameters:
+      x0: {type: array, required: true, description: "Initial guess"}
+      objective: {type: object, required: true, description: "Quadratic {A,b,c} or named function"}
+      method: {type: string, required: false, default: "nelder_mead"}
+      mode: {type: string, required: false, default: "minimize"}
+      max_iter: {type: integer, required: false, default: 1000}
+    returns: {type: object, fields: [x, f, iterations, converged]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: optimize
+    permissions: [compute]
+
+  monte_carlo_native:
+    category: math
+    description: "High-performance Monte Carlo integration (C++ OpenMP parallel)"
+    parameters:
+      bounds: {type: array, required: true, description: "Integration bounds [[a1,b1], [a2,b2], ...]"}
+      function: {type: string, required: false, default: "constant", description: "sphere, gaussian, polynomial"}
+      n_samples: {type: integer, required: false, default: 10000}
+      seed: {type: integer, required: false, default: 42}
+    returns: {type: object, fields: [integral, standard_error, samples_used]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: monte_carlo
+    permissions: [compute]
+    examples:
+      - input: {bounds: [[-1, 1], [-1, 1]], function: "sphere", n_samples: 100000}
+        description: "Estimate area of unit circle (≈π)"
+
+  mcmc:
+    category: math
+    description: "Metropolis-Hastings MCMC sampler (C++)"
+    parameters:
+      log_density: {type: string, required: true, description: "Log density expression (vars: x0, x1, ...)"}
+      x0: {type: array, required: true, description: "Initial state"}
+      n_samples: {type: integer, required: false, default: 10000}
+      proposal_std: {type: number, required: false, default: 1.0}
+      burnin: {type: integer, required: false, default: 1000}
+      seed: {type: integer, required: false, default: 42}
+    returns: {type: object, fields: [samples, acceptance_rate, mean, covariance]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: mcmc
+    permissions: [compute]
+    examples:
+      - input: {log_density: "-0.5*(x0**2 + x1**2)", x0: [0, 0], n_samples: 5000}
+        description: "Sample from 2D standard normal"
+
+  bayesopt:
+    category: math
+    description: "Bayesian optimization with Gaussian process (C++)"
+    parameters:
+      bounds: {type: array, required: true, description: "Parameter bounds [[min, max], ...]"}
+      objective: {type: string, required: true, description: "Expression to maximize"}
+      n_init: {type: integer, required: false, default: 5, description: "Initial random samples"}
+      n_iter: {type: integer, required: false, default: 25, description: "Optimization iterations"}
+      acquisition: {type: string, required: false, default: "ei", description: "ei, ucb, pi"}
+    returns: {type: object, fields: [x_best, y_best, history, model]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: bayesopt
+    permissions: [compute]
+
+  # ============ VISUALIZATION TOOLS (C++ Native) ============
+  plot_braille:
+    category: data
+    description: "Create braille character plot for terminal (C++)"
+    parameters:
+      x: {type: array, required: true, description: "X coordinates"}
+      y: {type: array, required: true, description: "Y coordinates"}
+      plot_type: {type: string, required: false, default: "line", description: "scatter, line"}
+      width: {type: integer, required: false, default: 80}
+      height: {type: integer, required: false, default: 20}
+      title: {type: string, required: false, default: "Plot"}
+    returns: {type: object, fields: [plot, x_range, y_range]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: plot
+    permissions: [compute]
+
+  plot_function:
+    category: data
+    description: "Plot mathematical function (sin, cos, exp, etc.)"
+    parameters:
+      function: {type: string, required: true, description: "sin, cos, exp, log, x^2, x^3, sqrt, tanh, sigmoid, gaussian"}
+      x_min: {type: number, required: false, default: -3.14159}
+      x_max: {type: number, required: false, default: 3.14159}
+      width: {type: integer, required: false, default: 80}
+      height: {type: integer, required: false, default: 20}
+    returns: {type: object, fields: [plot, x_range, y_range]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: plot
+    permissions: [compute]
+
+  histogram:
+    category: data
+    description: "Create histogram from data (C++)"
+    parameters:
+      data: {type: array, required: true, description: "Data values"}
+      bins: {type: integer, required: false, default: 20}
+      width: {type: integer, required: false, default: 80}
+      height: {type: integer, required: false, default: 20}
+    returns: {type: object, fields: [plot, n_bins, bin_edges]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: plot
+    permissions: [compute]
+
+  plot_sixel:
+    category: data
+    description: "Create high-resolution sixel graphics plot (C++)"
+    parameters:
+      x: {type: array, required: true, description: "X coordinates"}
+      y: {type: array, required: true, description: "Y coordinates"}
+      plot_type: {type: string, required: false, default: "line"}
+      width: {type: integer, required: false, default: 800, description: "Pixel width"}
+      height: {type: integer, required: false, default: 400, description: "Pixel height"}
+      title: {type: string, required: false}
+      colors: {type: array, required: false, description: "Color palette"}
+    returns: {type: object, fields: [sixel, format, dimensions]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: plot_sixel
+    permissions: [compute]
+
+  render_math:
+    category: data
+    description: "Render LaTeX to Unicode/ASCII (C++)"
+    parameters:
+      latex: {type: string, required: true, description: "LaTeX expression"}
+      format: {type: string, required: false, default: "unicode", description: "unicode or ascii"}
+    returns: {type: object, fields: [rendered, original]}
+    implementation:
+      type: cpp
+      binary: llama-math-tools
+      command: render_math
+    permissions: [compute]
+    examples:
+      - input: {latex: "\\frac{d^2y}{dx^2} + \\omega^2 y = 0"}
+        output: {rendered: "d²y/dx² + ω²y = 0"}
+        description: "Render harmonic oscillator equation"
 
   # ============ SYSTEM TOOLS ============
   read_file:

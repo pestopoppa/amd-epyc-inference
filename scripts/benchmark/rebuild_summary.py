@@ -240,9 +240,9 @@ def process_all_results() -> list[dict]:
         avg_tps = extract_eval_speed(data)
         timestamp = get_run_timestamp(filepath)
 
-        # Load quality scores
+        # Load quality scores from Claude-as-Judge reviews ONLY
+        # Algorithmic scores are deprecated and excluded from the master table
         review_scores = load_review_scores(original_name)
-        results = data.get("results", {})
 
         suite_scores = {}
         if review_scores:
@@ -254,15 +254,9 @@ def process_all_results() -> list[dict]:
                 else:
                     suite_scores[suite] = {"correct": 0, "total": 0, "str": "-"}
         else:
+            # No Claude-as-Judge review - show as unscored
             for suite in SUITES:
-                if suite in results and isinstance(results[suite], dict):
-                    questions = results[suite]
-                    total = len(questions)
-                    correct = sum(1 for q in questions.values()
-                                  if isinstance(q, dict) and q.get("algorithmic_score", 0) >= 0.5)
-                    suite_scores[suite] = {"correct": correct, "total": total, "str": f"{correct}/{total}"}
-                else:
-                    suite_scores[suite] = {"correct": 0, "total": 0, "str": "-"}
+                suite_scores[suite] = {"correct": 0, "total": 0, "str": "-"}
 
         total_correct = sum(s["correct"] for s in suite_scores.values())
         total_questions = sum(s["total"] for s in suite_scores.values())

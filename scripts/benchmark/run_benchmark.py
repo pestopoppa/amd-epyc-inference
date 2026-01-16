@@ -40,7 +40,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from lib.registry import ModelRegistry, load_registry
 from lib.executor import Executor, Config, ServerManager
 from lib.output_parser import parse_output
-from lib.scorer import score_response
+# NOTE: Algorithmic scoring is deprecated. Quality evaluation is done via Claude-as-Judge only.
+# See benchmarks/results/reviews/ for Claude-as-Judge scores.
 
 from suites import load_suite, get_suites_for_role, get_inference_params, get_all_suite_names
 from results import (
@@ -333,7 +334,7 @@ def run_benchmark(
     Outer bar: models
     Inner bar: configs × suites × questions for current model
     """
-    stats = {"total": 0, "skipped": 0, "passed": 0, "failed": 0, "errors": 0}
+    stats = {"total": 0, "skipped": 0, "passed": 0, "errors": 0}  # "passed" = completed
 
     # Get models to test
     roles = registry.get_all_roles(include_deprecated=False)
@@ -596,15 +597,10 @@ def run_benchmark(
                     speed_max_tokens = 512 if is_lookup else 256  # Longer response for longer prompt
                     speed_timeout = max(300 if is_lookup else 180, int(size_gb * 3) + 120)
 
-                    # Speed tests can use server if draft model is loaded
-                    # This avoids reloading the large model for each K value
-                    use_server_for_speed = (
-                        active_server is not None
-                        and active_server.is_running()
-                        and config.config_type in ("spec", "moe_spec")
-                        and current_server_draft == config.draft_model_path
-                        and mmproj_path is None
-                    )
+                    # NEVER use server for spec decode speed tests - server returns broken timing
+                    # (predicted_per_second is ~28x inflated due to llama-server bug)
+                    # Always use subprocess mode which runs llama-speculative CLI with correct timing
+                    use_server_for_speed = False
 
                     if use_server_for_speed:
                         # Use server - K is per-request, no reload needed
@@ -774,8 +770,7 @@ def run_benchmark(
                                 # Meaningful partial output - save it
                                 char_count = len(parsed.response)
                                 print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: partial output saved ({char_count} chars)")
-                                score_result = score_response(suite_name, question.id, parsed.response)
-                                # Fall through to save the result
+                                # Fall through to save the result (scoring done via Claude-as-Judge)
                             else:
                                 print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: no usable output")
                                 continue
@@ -807,8 +802,8 @@ def run_benchmark(
 
                         else:
                             parsed = parse_output(result.raw_output)
-                            score_result = score_response(suite_name, question.id, parsed.response)
 
+                        # NOTE: Algorithmic scoring removed. Quality evaluation via Claude-as-Judge only.
                         qresult = QuestionResult(
                             question_id=question.id,
                             prompt=question.prompt,
@@ -817,8 +812,8 @@ def run_benchmark(
                             prompt_tokens=parsed.prompt_tokens,
                             completion_tokens=parsed.completion_tokens,
                             total_time_ms=parsed.total_time_ms,
-                            algorithmic_score=score_result.score,
-                            score_reason=score_result.reason,
+                            algorithmic_score=None,  # Deprecated - use Claude-as-Judge
+                            score_reason=None,
                             acceptance_rate=parsed.acceptance_rate,
                         )
 
@@ -831,15 +826,11 @@ def run_benchmark(
                             question_result=qresult,
                         )
 
-                        # Show progress for every test (speed only - Claude-as-judge scores later)
+                        # Show progress for every test (speed only - Claude-as-Judge scores later)
                         tps = parsed.tokens_per_second
                         tps_str = f"{tps:.1f}t/s" if tps else "---"
                         print(f"      {config.name}/{suite_name}/{question.id}: {tps_str}", flush=True)
-
-                        if score_result.score >= 2:
-                            stats["passed"] += 1
-                        else:
-                            stats["failed"] += 1
+                        stats["passed"] += 1  # "passed" = completed successfully
 
                     except Exception as e:
                         stats["errors"] += 1
@@ -851,7 +842,7 @@ def run_benchmark(
             print(f"\n  [SERVER] Stopping server...", flush=True)
             active_server.stop()
 
-    print(f"\nDone: {stats['passed']} passed, {stats['failed']} failed, {stats['skipped']} skipped, {stats['errors']} errors")
+    print(f"\nDone: {stats['passed']} completed, {stats['skipped']} skipped, {stats['errors']} errors")
     return stats
 
 

@@ -144,24 +144,72 @@
 
 ---
 
+### Priority 8: Native Computational Tools - Phases 2-4 ✅ COMPLETE
+
+**Source:** `handoffs/active/native-computational-tools.md`
+**Completed:** 2026-01-15
+
+**What was done:**
+- [x] Created C++ implementations for mcmc, bayesopt, render_math, plot_sixel
+- [x] Created expression parser header (expression.hpp)
+- [x] Added Python wrappers to cpp_tools.py
+- [x] Added 14 tools to tool_registry.yaml
+- [x] Created integration guide (INTEGRATION.md)
+
+**Files created:**
+- `orchestration/tools/cpp_src/commands/statistical/mcmc.cpp`
+- `orchestration/tools/cpp_src/commands/statistical/bayesopt.cpp`
+- `orchestration/tools/cpp_src/commands/visualization/render_math.cpp`
+- `orchestration/tools/cpp_src/commands/visualization/plot_sixel.cpp`
+- `orchestration/tools/cpp_src/include/expression.hpp`
+- `orchestration/tools/cpp_src/include/command.hpp`
+- `orchestration/tools/cpp_src/INTEGRATION.md`
+
+**Pending:** Copy to host and rebuild llama-math-tools binary.
+
+---
+
 ## Lower Priority (When Time Permits)
 
-### Phase 5: Tool/Script REPL Integration
-- Wire TOOL() and SCRIPT() into REPLEnvironment
+### Phase 5: Proactive Delegation Workflow ✅ MOSTLY COMPLETE
+
+**Source:** `handoffs/active/orchestration-refactoring.md`
+**Completed:** 2026-01-15
+
+**What was done:**
+- [x] Created `src/proactive_delegation.py` (~600 lines)
+- [x] `IterationContext` - tracks review loops (max 3/subtask, 10 total)
+- [x] `ArchitectReviewService` - architect reviews specialist outputs
+- [x] `AggregationService` - combines outputs (concatenate, merge_code, structured)
+- [x] `ProactiveDelegator` - full proactive delegation workflow
+- [ ] Wire into API routes (blocked - file permissions on `src/api/routes/`)
+
+**Key Components:**
+- `ReviewDecision` enum: APPROVE, REQUEST_CHANGES, ESCALATE, REJECT
+- JSON-format review prompts for structured feedback
+- Role escalation on review failures
+
+### Phase 6: Tool/Script REPL Integration
+- Wire TOOL() and SCRIPT() into REPLEnvironment ✅ COMPLETE
 - Script invoke/find methods
 - MCP client implementation (blocked on MCP server setup)
 
-### Phase 6: Early Failure Detection
+### Phase 6: Symbolic Math Tools
+- Install SymEngine
+- Implement: symbolic_diff, symbolic_int, simplify
+- PySR wrapper for symbolic regression
+
+### Phase 7: Early Failure Detection
 - GenerationMonitor integration
 - Entropy thresholds in registry
 - Early abort on high-entropy output
 
-### Phase 7: REPL Exploration Learning
+### Phase 8: REPL Exploration Learning
 - Log exploration strategies in REPLEnvironment
 - Implement `EpisodicREPL.suggest_exploration()`
 - Track token efficiency metrics
 
-### Phase 8: Trajectory Visualization
+### Phase 9: Trajectory Visualization
 - Enhanced SSE events for debugging
 - Gradio visualization tab
 
@@ -180,19 +228,48 @@
 
 ## Quick Wins (Can Do Anytime)
 
-1. **Wire TOOL() into REPL** - Executor exists, just needs connection
-2. **Run formalizer benchmark** - `nohup ./scripts/benchmark/run_all_formalizers.sh &`
-3. **Run orchestrator_planning.yaml benchmark** - Get baseline scores for MemRL evaluation
-4. **Production validation** - Start llama-server, test real_mode=True
+1. ~~**Wire TOOL() into REPL**~~ ✅ COMPLETE
+2. ~~**Aider CLI Integration**~~ ✅ COMPLETE (2026-01-16)
+3. **Run formalizer benchmark** - `nohup ./scripts/benchmark/run_all_formalizers.sh &`
+4. **Run orchestrator_planning.yaml benchmark** - Get baseline scores for MemRL evaluation
+5. **Production validation** - Start llama-server, test real_mode=True
+6. **Wire /delegate endpoint** - Add routes to `src/api/routes/chat.py` (requires file permissions)
+
+---
+
+## Aider CLI Integration ✅ COMPLETE
+
+**Completed:** 2026-01-16
+
+Integrated Aider as the terminal CLI for the orchestrator.
+
+**What was done:**
+- Fixed `/v1/chat/completions` endpoint (was returning empty responses)
+- Added mock mode fallback for testing without llama-server
+- Documented Python 3.12 workaround (3.13 incompatible with aider deps)
+
+**Files modified:**
+- `src/api/routes/openai_compat.py` - Full orchestration support
+- `handoffs/active/orchestrator-ui.md` - Updated Quick Resume
+
+**To test:**
+```bash
+# Start API
+PYTHONPATH=/workspace python -m uvicorn src.api:app --port 8000
+
+# Run Aider (Python 3.12 venv)
+/tmp/aider-env/bin/aider --no-git --message "Hello"
+```
 
 ---
 
 ## Recommendation
 
-**Priorities 1-7 are COMPLETE.** Next: **Wire TOOL() into REPL** or **Production validation**.
+**Priorities 1-8 + Phase 5 + Aider COMPLETE.** Core implementation done, waiting on production testing.
 
 Immediate options:
-- **Wire TOOL() into REPL** - 30 min, enables tool use in REPL
-- **Production validation** - Debug llama-server startup, test real inference
-- **Phase 7: REPL Exploration Learning** - Log strategies, suggest exploration
+- **Production validation** - Start llama-server, test Aider with real inference
+- **Wire /delegate endpoint** - Add routes to `src/api/routes/chat.py` (file permissions fixed)
+- **Integrate native tools** - Copy C++ files to host, rebuild llama-math-tools
+- **Phase 7: Symbolic Math** - Install SymEngine, implement symbolic_diff/int/simplify
 - **Run benchmarks** - Formalizer eval or Claude-as-Judge

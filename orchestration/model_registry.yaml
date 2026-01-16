@@ -96,31 +96,106 @@ runtime_defaults:
       model_path: null
       judge_binary: null
 server_mode:
+  # Production topology - orchestrator_stack.py launcher
+  # Port 8000: Orchestrator API (uvicorn)
+  # Ports 8080-8085: Model servers (llama-server)
+
+  # HOT tier - always resident (~40GB total)
   frontdoor:
     url: http://localhost:8080
+    port: 8080
     slots: 4
     model_role: frontdoor
+    shared_with: [coder_primary]  # Same model serves both roles
     description: Root LM - generates Python code each turn
+    model: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
+    memory_gb: 19
+    tier: hot
     acceleration:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
-  coder:
+    throughput: 18.3  # t/s
+
+  coder_escalation:
     url: http://localhost:8081
+    port: 8081
     slots: 4
-    model_role: coder_primary
-    description: Primary code generation
+    model_role: coder_escalation
+    description: Escalation code generation with spec decode
+    model: Qwen2.5-Coder-32B-Q4_K_M.gguf
+    draft_model: Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf
+    memory_gb: 20
+    tier: hot
     acceleration:
-      type: moe_expert_reduction
-      experts: 6
-      override_key: qwen3moe.expert_used_count
+      type: speculative_decoding
+      draft_max: 24
+    throughput: 33.0  # t/s, 11x speedup
+
   worker:
     url: http://localhost:8082
+    port: 8082
     slots: 8
     model_role: worker_general
+    shared_with: [worker_math, worker_summarize, toolrunner]
     description: Parallel workers for file-level tasks
+    model: Qwen2.5-7B-Instruct-Q4_K_M.gguf
+    draft_model: Qwen2.5-0.5B-Instruct-Q8_0.gguf
+    memory_gb: 5
+    tier: hot
     acceleration:
-      type: baseline
+      type: speculative_decoding
+      draft_max: 16
+    throughput: 50.0  # t/s estimated
+
+  # WARM tier - mmap preloaded, loaded on demand (~430GB total)
+  architect_general:
+    url: http://localhost:8083
+    port: 8083
+    slots: 2
+    model_role: architect_general
+    description: System architecture decisions - large MoE
+    model: Qwen3-235B-A22B-Q4_K_M.gguf
+    memory_gb: 133
+    tier: warm
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3moe.expert_used_count
+    throughput: 6.75  # t/s
+
+  architect_coding:
+    url: http://localhost:8084
+    port: 8084
+    slots: 2
+    model_role: architect_coding
+    description: Hardest coding escalation - largest MoE
+    model: Qwen3-Coder-480B-A35B-Instruct-Q4_K_M.gguf
+    memory_gb: 271
+    tier: warm
+    acceleration:
+      type: moe_expert_reduction
+      experts: 3
+      override_key: qwen3moe.expert_used_count
+    throughput: 10.3  # t/s
+
+  ingest_long_context:
+    url: http://localhost:8085
+    port: 8085
+    slots: 2
+    model_role: ingest_long_context
+    description: Long document synthesis - SSM hybrid (NO speculation!)
+    model: Qwen3-Next-80B-A3B-Q4_K_M.gguf
+    memory_gb: 46
+    tier: warm
+    acceleration:
+      type: moe_expert_reduction
+      experts: 2
+      override_key: qwen3next.expert_used_count
+    throughput: 8.0  # t/s estimated
+    notes: "SSM architecture - incompatible with speculative decoding"
+
+  # Development mode - single small model for all roles
   dev:
     frontdoor:
       url: http://localhost:8080

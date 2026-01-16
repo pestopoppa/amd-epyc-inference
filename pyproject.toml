@@ -10,7 +10,7 @@ dependencies = [
     # Core API
     "fastapi>=0.109.0",
     "uvicorn>=0.27.0",
-    "httpx>=0.26.0",
+    "httpx>=0.27.0",  # Connection pooling for latency reduction
     "pydantic>=2.5.0",
     "pydantic-settings>=2.0.0",  # Type-safe configuration from env vars
     "sse-starlette>=2.0.0",  # Proper SSE streaming
