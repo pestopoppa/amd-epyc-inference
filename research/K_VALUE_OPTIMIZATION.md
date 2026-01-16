@@ -90,8 +90,14 @@ When target model is slow (large dense models), higher K amortizes the target in
 2. Is there a theoretical upper bound based on acceptance rate?
 3. Should we implement adaptive K search in the benchmark system?
 
+## Status Update (2026-01-16)
+
+**K=32 and K=48 now included in benchmark scripts:**
+- `run_draft_discovery.sh` updated: `K_VALUES_FULL=(4 8 16 24 32 48)`
+- These values will be tested automatically in full mode
+
 ## Next Steps
 
-- [ ] Test K=32 on priority models when model slot available
-- [ ] Test K=48 if K=32 shows improvement
+- [x] Add K=32/48 to benchmark scripts
+- [ ] Run full draft discovery to collect K=32/48 data
 - [ ] Consider implementing model-class-based K ranges in benchmark config

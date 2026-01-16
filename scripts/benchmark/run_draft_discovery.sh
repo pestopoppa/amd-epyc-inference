@@ -48,7 +48,7 @@ QUICK_TEST_TOKENS=64         # Tokens for quick acceptance test
 FULL_TEST_TOKENS=256         # Tokens for full benchmark
 
 # Sweep parameters
-K_VALUES_FULL=(4 8 16 24 32)
+K_VALUES_FULL=(4 8 16 24 32 48)
 K_VALUES_QUICK=(8 16)
 
 # Temperature optimization settings
