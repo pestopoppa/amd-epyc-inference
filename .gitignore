@@ -60,3 +60,4 @@ handoffs/
 # Large MemRL data files (stored locally)
 orchestration/repl_memory/embeddings.npy
 orchestration/repl_memory/episodic.db
+.aider*
