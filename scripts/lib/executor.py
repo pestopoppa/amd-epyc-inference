@@ -608,7 +608,7 @@ class Executor:
                 for draft_role in drafts:
                     draft_path = reg.get_model_path(draft_role)
                     if draft_path and os.path.exists(draft_path):
-                        for k in [4, 8, 16, 24]:
+                        for k in [4, 8, 16, 24, 32, 48]:
                             cfg = Config.spec(k, draft_path, draft_role)
                             cfg.speed_test_only = True
                             cfg.inherits_quality_from = "baseline"

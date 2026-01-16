@@ -811,7 +811,7 @@ def onboard_model(
         for draft_role in compatible_drafts:
             draft_path = registry.get_model_path(draft_role)
             if draft_path and os.path.exists(draft_path):
-                for k in [4, 8, 16, 24]:
+                for k in [4, 8, 16, 24, 32, 48]:
                     configs.append(Config.spec(k, draft_path, draft_role))
 
     # Step 4: Run health check
