@@ -195,6 +195,26 @@ server_mode:
     throughput: 8.0  # t/s estimated
     notes: "SSM architecture - incompatible with speculative decoding"
 
+  # Voice recognition service (separate from LLM inference)
+  voice_server:
+    url: http://localhost:9000
+    port: 9000
+    model_role: voice_transcription
+    description: Speech-to-text using faster-whisper (OpenAI-compatible API)
+    model: large-v3-turbo
+    model_type: whisper
+    memory_gb: 4
+    tier: hot
+    languages: [en, it, de, fr]
+    acceleration:
+      type: int8_quantization
+      vad_filter: true
+      vad_min_silence_ms: 300
+    throughput: 2.8  # RTF ~0.35x (2.8x real-time on CPU int8, verified 2026-01-16)
+    latency_target_ms: 500
+    launch_script: scripts/voice/start_whisper_server.sh
+    notes: "Standalone Python server (not llama.cpp). Serves Aider, Claude Code, orchestrator."
+
   # Development mode - single small model for all roles
   dev:
     frontdoor:
@@ -1106,6 +1126,40 @@ roles:
     memory:
       residency: cold
       pinned: false
+  thinking_phi_4_reasoning_plus:
+    tier: B
+    description: Thinking model - Phi-4-reasoning-plus (14.7B, 128K context, tool use)
+    model:
+      name: Phi-4-reasoning-plus-Q4_K_M
+      path: lmstudio-community/Phi-4-reasoning-plus-GGUF/Phi-4-reasoning-plus-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 8.5
+      architecture: dense
+    candidate_roles:
+    - thinking
+    - general
+    - agentic
+    memory:
+      residency: cold
+      pinned: false
+    notes: "Microsoft Phi-4-reasoning-plus. 14.7B params, 128K context. Trained for reasoning and tool use."
+  thinking_phi_4_reasoning_plus_q8:
+    tier: B
+    description: Thinking model - Phi-4-reasoning-plus Q8_0 (14.7B, 128K context, tool use)
+    model:
+      name: Phi-4-reasoning-plus-Q8_0
+      path: lmstudio-community/Phi-4-reasoning-plus-GGUF/Phi-4-reasoning-plus-Q8_0.gguf
+      quant: Q8_0
+      size_gb: 15.0
+      architecture: dense
+    candidate_roles:
+    - thinking
+    - general
+    - agentic
+    memory:
+      residency: cold
+      pinned: false
+    notes: "Microsoft Phi-4-reasoning-plus Q8_0. Higher quality quant. 14.7B params, 128K context."
   general_deepseek_r1_0528_qwen3_8b:
     tier: C
     description: General model - DeepSeek-R1-0528-Qwen3-8B-Q8_0
@@ -1173,6 +1227,8 @@ roles:
     notes: "Spec decode working after PR #18720 (SWA forward-masking). Prompt lookup needs SWA fix (see handoffs/blocked/swa_prompt_lookup.md)."
   general_glm_4_6:
     tier: C
+    deprecated: true
+    deprecation_reason: "MTP support blocked on PR #15225. No acceleration possible without MTP. Use Qwen3-32B or Llama-3.1-70B instead."
     description: General model - GLM-4.6-Q4_K_S-00001-of-00005
     model:
       name: GLM-4.6-Q4_K_S-00001-of-00005
@@ -2074,6 +2130,8 @@ roles:
       override_key: qwen3moe.expert_used_count
   ingest_glm_4_6:
     tier: B
+    deprecated: true
+    deprecation_reason: "MTP support blocked on PR #15225. No acceleration possible without MTP. Use Qwen3-32B or Llama-3.1-70B instead."
     description: Ingest candidate - GLM-4.6-Q4_K_S-00001-of-00005
     model:
       name: GLM-4.6-Q4_K_S-00001-of-00005
