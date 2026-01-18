@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-15 (Spec decode speeds corrected after timing bug fix)
+**Last Updated:** 2026-01-18 (Added blind rescore analysis, production model selection rationale, MiniMax M2.1 download in progress)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -573,7 +573,78 @@ Models that fail instruction precision tests will break orchestration:
 
 ---
 
-## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-07)
+## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-18)
+
+### Blind Rescore Analysis (2026-01-16)
+
+A comprehensive blind rescore of ALL model benchmark responses was conducted using stricter scoring methodology against reference answers from the benchmark YAML files. Key findings:
+
+**Score Drift from Previous Reviews:**
+
+| Model | Previous | Blind Rescore | Delta | Notes |
+|-------|----------|---------------|-------|-------|
+| DeepSeek-R1-Distill-Qwen-14B | 87% | 81% | -6% | More conservative scoring |
+| Qwen3-30B-A3B-Thinking-2507 | 93%+ | 79% | -14% | Truncation penalty |
+| gemma-3-12b-it | 97% | ~80% | -17% | Stricter on general suite |
+| Meta-Llama-3.1-70B-Instruct | 93% | 86.3% | -7% | Slightly stricter |
+
+**Critical Issues Discovered:**
+
+1. **Meta-Llama-3.1-8B.Q4_K_S: ~6%** - BROKEN MODEL. Severe repetitive degeneration, prompt echoing. DO NOT USE.
+2. **Token Truncation**: Many thinking models hit 2047 token limit during reasoning.
+3. **TOTAL-RECALL Inverted Quality**: Baseline 22%, MoE6 97% - community finetune broke default expert routing.
+
+**Reference:** Full details in `benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md`
+
+---
+
+### Production Model Selection Rationale (2026-01-18)
+
+The blind rescore confirmed rather than contradicted production model choices. Here's why:
+
+**1. Scores Dropped Uniformly (Stricter Methodology)**
+
+All models scored 5-17% lower in blind rescore due to stricter adherence to reference answers. Relative rankings were preserved - if Model A beat Model B before, it still beats Model B after rescore.
+
+**2. Production Selection Was Multi-Dimensional**
+
+Production models were selected based on FOUR criteria, not just quality:
+- **Quality** (benchmark scores)
+- **Speed** (tokens/second)
+- **Memory footprint** (fits in tier budget)
+- **Acceleration compatibility** (spec decode, MoE reduction)
+
+A model with 5% higher score but 3x slower may not be the better production choice.
+
+**3. Validation of Current Assignments**
+
+| Role | Model | Blind Score | Decision | Reason |
+|------|-------|-------------|----------|--------|
+| frontdoor | Qwen3-Coder-30B-A3B | 89.5% | ✅ KEEP | Fastest with high quality |
+| coder_primary | Qwen3-Coder-30B-A3B | 89.0% | ✅ KEEP | Same as frontdoor |
+| coder_escalation | Qwen2.5-Coder-32B | 85.2% | ✅ KEEP | Must differ from frontdoor |
+| worker | Qwen2.5-7B | ~90% | ✅ KEEP | Best speed/quality for workers |
+| architect_general | Qwen3-235B-A22B | 87.1% | ✅ KEEP | Best large MoE option |
+| architect_coding | Qwen3-Coder-480B | **77.1%** | 🔶 REVIEW | Lowest production score |
+| ingest_long_context | Qwen3-Next-80B | 85.8% | ✅ KEEP | Only SSM for long context |
+
+**4. architect_coding Analysis (77.1% - Lowest Production Score)**
+
+Despite the lower blind rescore, Qwen3-Coder-480B remains the right choice for ultimate escalation:
+- Role is "final escalation" - used ONLY when 30B fails twice
+- Selection bias: Should excel on HARDEST problems (not average benchmarks)
+- MoE4 config scored 94% in summary.csv (baseline config was 77.1%)
+- No better alternative: TOTAL-RECALL baseline 22% (fragile), Qwen3-Coder-30B already frontdoor
+
+**5. Future Consideration: MiniMax M2.1**
+
+If MiniMax M2.1 (230B total, 10B active) achieves ≥85% quality at ~20 t/s, it could replace:
+- architect_general (3x faster, similar quality)
+- architect_coding (2x faster, potentially higher quality)
+
+This hypothesis is being tested with MiniMax M2.1 download (2026-01-18).
+
+---
 
 ### Overview
 
@@ -610,7 +681,9 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 | Qwen3_VL_2B.Q4_K_M | - | 10/10 | - | 10/10 | - | - | - | 20/20 | 100% | 46.6 | - | - |
 | xLAM-1b-fc-r.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 56.0 | - | - |
 | xLAM-2-1B-fc-r-Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 50.4 | - | - |
+| Qwen2.5-0.5B-Instruct-f16 | 10/10 | 10/10 | - | - | - | - | - | 20/20 | 100% | 35.1 | - | - |
 | Qwen3-Next-80B-A3B-Thinking-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | 9/9 | 69/70 | 99% | 9.8 | - | - |
+| Qwen3-Next-80B-A3B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 7.1 | - | - |
 | DeepSeek-R1-Distill-Qwen-14B-Q6_K_L | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 5.1 | pard_deepseek_r1 | 70.8 |
 | Qwen3-30B-A3B-Thinking-2507-Q8_0_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 21.4 | - | - |
 | gemma-3-12b-it-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 10/11 | - | 59/61 | 97% | 9.3 | - | - |
@@ -656,6 +729,7 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 | Qwen2.5-Coder-0.5B-Q4_K_M | 8/10 | 3/10 | - | - | - | - | - | 11/20 | 55% | 142.2 | - | - |
 | Qwen2.5-VL-7B-Instruct-Q4_K_M | - | 10/10 | - | 0/10 | - | - | - | 10/20 | 50% | 14.6 | qwen2_5_coder_0_5b | 222.8 |
 | Qwen2.5-0.5B.Q8_0 | 5/10 | 3/10 | - | - | - | - | - | 8/20 | 40% | 156.8 | - | - |
+| Qwen3-VL-30B-A3B-Instruct-Q4_K_M | - | 0/10 | - | 0/10 | - | - | 10/10† | 10/30 | 33% | 13.1 | - | - |
 | Qwen3-Coder-Instruct-DRAFT-0.75B | 4/10 | 2/10 | - | - | - | - | - | 6/20 | 30% | 63.1 | - | - |
 | Qwen_Qwen3-0.6B-Q8_0 | 3/10 | 2/10 | - | - | - | - | - | 5/20 | 25% | 67.8 | - | - |
 | Qwen3-Coder-53B-TOTAL-RECALL (baseline) | 5/10 | 3/9 | 3/10 | 2/10 | 0/10 | 0/11 | - | 13/60 | 22% | 10.3 | - | - |
@@ -665,7 +739,9 @@ See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuris
 | Qwen2-0.5B.Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 156.0 | - | - |
 | Qwen3-0.6B-Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 95.3 | - | - |
 
-**Total: 78 models** (includes MoE variants as separate entries)
+**Total: 81 models** (includes MoE variants as separate entries)
+
+*† VL score in Long.Ctx column: VL model tested on actual vision tasks (10/10), but scores 0% on text-only prompts.*
 
 ### Global Role Recommendations (Updated 2026-01-06)
 

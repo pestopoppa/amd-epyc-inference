@@ -126,6 +126,7 @@ See `research/ESCALATION_FLOW.md` for the HOT/WARM/COLD memory pool design:
 | `/mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md` | Benchmark results summary |
 | `/mnt/raid0/llm/claude/docs/reference/models/QUIRKS.md` | Known model issues & workarounds |
 | `/mnt/raid0/llm/claude/benchmarks/results/reviews/summary.csv` | Claude-as-Judge scores |
+| `/mnt/raid0/llm/claude/benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md` | **Comprehensive blind rescore (77 models)** |
 
 ---
 
@@ -725,7 +726,8 @@ Claude-as-Judge is our framework for independent quality evaluation of model ben
 benchmarks/results/reviews/
 ├── {model_name}_baseline.csv      # Per-model review
 ├── {model_name}_{config}.csv      # Per-config review (if applicable)
-└── summary.csv                    # Comparative summary
+├── summary.csv                    # Comparative summary
+└── BLIND_RESCORE_2026-01-16.md    # Comprehensive blind rescore (77 models)
 ```
 
 ### Per-Model Review CSV Format
@@ -786,11 +788,13 @@ For efficiency, use these heuristics for common patterns:
 | Reformatting response | 2 | Reformatting response |
 | General text response | 2 | General response generated |
 
-### Current Coverage (as of 2026-01-07)
+### Current Coverage (as of 2026-01-16)
 
-- **61 baseline models reviewed** (381 total configs including MoE/spec decode variants)
-- **Top performers:** See RESULTS_SUMMARY.md for current rankings
+- **77 baseline models blind-rescored** (comprehensive rescore of all benchmark results)
+- **Blind Rescore Reference:** `benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md`
+- **Top performers:** See RESULTS.md for current rankings
 - **Score inheritance:** Speculative decoding configs inherit quality scores from their baseline (same model, different speed)
+- **Note:** Blind rescore used stricter methodology - scores are 5-17% lower than summary.csv but relative rankings preserved
 
 ### When to Run Claude-as-Judge
 

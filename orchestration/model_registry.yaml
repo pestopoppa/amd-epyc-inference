@@ -2479,6 +2479,79 @@ runtime_quirks:
     - issue: OMP_NUM_THREADS=1 before timeout doesn't work
       workaround: timeout runs in subshell, use 'env' to pass env vars
       discovered: 2025-12-16
+# Models deleted 2026-01-18 during MiniMax M2.1 download cleanup
+# Based on BLIND_RESCORE_2026-01-16.md analysis
+deprecated_models:
+  - model: Meta-Llama-3-70B-Instruct-Q4_K_M
+    path_was: /mnt/raid0/llm/lmstudio/models/lmstudio-community/Meta-Llama-3-70B-Instruct-GGUF/
+    size_gb: 40
+    blind_score: "36%"
+    reason: "Very poor quality, superseded by Llama 3.1-70B (86.3%)"
+    deleted: 2026-01-18
+
+  - model: Hermes-4-70B-Q4_K_M
+    path_was: /mnt/raid0/llm/lmstudio/models/lmstudio-community/Hermes-4-70B-GGUF/
+    size_gb: 40
+    blind_score: "85.2%"
+    reason: "Superseded by Llama 3.1-70B (86.3%), marginal quality difference"
+    deleted: 2026-01-18
+
+  - model: DeepSeek-R1-Distill-Llama-70B-Q4_K_M
+    path_was: /mnt/raid0/llm/lmstudio/models/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF/
+    size_gb: 40
+    blind_score: "67%"
+    reason: "Severe truncation issues, 1.0 t/s - too slow and low quality"
+    deleted: 2026-01-18
+
+  - model: Qwen2.5-72B.Q4_K_M
+    path_was: /mnt/raid0/llm/lmstudio/models/mradermacher/Qwen2.5-72B-GGUF/
+    size_gb: 45
+    blind_score: "n/a"
+    reason: "Base model (not instruct) - keep Qwen2.5-72B-Instruct instead"
+    deleted: 2026-01-18
+
+  - model: Qwen2.5-Math-72B-Instruct-Q6_K
+    path_was: /mnt/raid0/llm/lmstudio/models/tensorblock/Qwen2.5-Math-72B-Instruct-GGUF/
+    size_gb: 61
+    blind_score: "77%"
+    reason: "Q6_K duplicate, Q4_K_M version exists and performs better"
+    deleted: 2026-01-18
+
+  - model: gemma-3-27B-it-QAT-Q4_0
+    path_was: /mnt/raid0/llm/lmstudio/models/lmstudio-community/gemma-3-27B-it-qat-GGUF/
+    size_gb: 15
+    blind_score: "77%"
+    reason: "SWA (Sliding Window Attention) breaks speculative decoding"
+    deleted: 2026-01-18
+
+  - model: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
+    path_was: /mnt/raid0/llm/lmstudio/models/mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/
+    size_gb: 30
+    blind_score: "baseline 22%, moe6 97%"
+    reason: "Inverted quality curve - community finetune broke default expert routing. Must use MoE6 to work, not production-ready."
+    deleted: 2026-01-18
+
+  - model: Qwen3-Coder-30B-A3B-Instruct-GGUF (lmstudio-community duplicate)
+    path_was: /mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/
+    size_gb: 18
+    blind_score: "n/a"
+    reason: "Duplicate - unsloth version retained for production"
+    deleted: 2026-01-18
+
+  - model: Qwen3-Next-80B-A3B-Instruct-Q2_K
+    path_was: /mnt/raid0/llm/models/Qwen3-Next-80B-A3B-Instruct-Q2_K.gguf
+    size_gb: 28
+    blind_score: "n/a"
+    reason: "Lower quality Q2_K quant - Q4_K_M version retained"
+    deleted: 2026-01-18
+
+  - model: DeepSeek-R1-Distill-Qwen-32B (duplicates in models/)
+    path_was: /mnt/raid0/llm/models/DeepSeek-R1-Distill-Qwen-32B-*.gguf
+    size_gb: 31
+    blind_score: "85%"
+    reason: "Duplicate - lmstudio version retained"
+    deleted: 2026-01-18
+
 optimized_params:
   frontdoor:
     temperature: 0.0736042256959058
