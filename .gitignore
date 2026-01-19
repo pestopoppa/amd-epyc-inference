@@ -72,5 +72,3 @@ benchmarks/results/runs/
 benchmarks/evidence/
 benchmarks/results/reviews/*.csv
 !benchmarks/results/reviews/summary.csv
-!benchmarks/results/reviews/summary_relative_with_speed.csv
-!benchmarks/results/reviews/master_benchmark_table.csv

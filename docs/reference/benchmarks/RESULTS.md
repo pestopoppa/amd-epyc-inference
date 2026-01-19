@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-19 (Relative scoring methodology - proper model differentiation)
+**Last Updated:** 2026-01-18 (Added blind rescore analysis, production model selection rationale, MiniMax M2.1 download in progress)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -573,43 +573,28 @@ Models that fail instruction precision tests will break orchestration:
 
 ---
 
-## Claude-as-Judge Quality Review (Updated 2026-01-19)
+## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-18)
 
-### Relative Scoring Methodology
+### Blind Rescore Analysis (2026-01-16)
 
-**Problem with Previous Scoring:** Absolute scoring (0-3 per question → binary pass/fail) caused ceiling effects where 0.5B and 70B models scored identically (both "correct").
+A comprehensive blind rescore of ALL model benchmark responses was conducted using stricter scoring methodology against reference answers from the benchmark YAML files. Key findings:
 
-**New Methodology (2026-01-19):** Relative scoring compares each response to:
-1. The reference answer from YAML files
-2. Other model responses for the same question
+**Score Drift from Previous Reviews:**
 
-| Score | Meaning |
-|-------|---------|
-| **10** | Matches or exceeds reference answer quality |
-| **8-9** | Close to reference, minor omissions |
-| **6-7** | Correct core answer but missing depth |
-| **4-5** | Partially correct, significant gaps |
-| **0-3** | Wrong, empty, or garbage |
+| Model | Previous | Blind Rescore | Delta | Notes |
+|-------|----------|---------------|-------|-------|
+| DeepSeek-R1-Distill-Qwen-14B | 87% | 81% | -6% | More conservative scoring |
+| Qwen3-30B-A3B-Thinking-2507 | 93%+ | 79% | -14% | Truncation penalty |
+| gemma-3-12b-it | 97% | ~80% | -17% | Stricter on general suite |
+| Meta-Llama-3.1-70B-Instruct | 93% | 86.3% | -7% | Slightly stricter |
 
-**Result:** 4.5+ point gap between smallest (0.5B: ~50%) and largest models (70B+: ~95%), vs 0 points in previous scoring.
+**Critical Issues Discovered:**
 
-### Key Score Changes (Old → New)
+1. **Meta-Llama-3.1-8B.Q4_K_S: ~6%** - BROKEN MODEL. Severe repetitive degeneration, prompt echoing. DO NOT USE.
+2. **Token Truncation**: Many thinking models hit 2047 token limit during reasoning.
+3. **TOTAL-RECALL Inverted Quality**: Baseline 22%, MoE6 97% - community finetune broke default expert routing.
 
-| Model | Old Score | New Score | Change |
-|-------|-----------|-----------|--------|
-| Qwen2.5-0.5B-Instruct | 100% | 48% | -52% (proper differentiation) |
-| pard-qwen3-0.6b-q4_0 | 95% | 52% | -43% |
-| Qwen3-1.7B-Q8_0 | 95% | 88% | -7% |
-| Hermes-4-70B-Q4_K_M | 89% | 95% | +6% |
-| Qwen3-235B-A22B-Q4_K_M | 94% | 94% | 0% |
-
-**Critical Issues Confirmed:**
-
-1. **Vision models on agentic: 0%** - Output `/image` prompts instead of tool JSON (expected behavior)
-2. **Meta-Llama-3.1-8B.Q4_K_S: 44.5%** - Degenerative repetition on coder tasks
-3. **Phi-4-reasoning: 46-48%** - Frequent empty responses
-
-**Reference:** Full methodology in `benchmarks/results/reviews/BLIND_RESCORE_2026-01-19_RELATIVE.md`
+**Reference:** Full details in `benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md`
 
 ---
 
@@ -677,52 +662,88 @@ Independent quality evaluation using Claude as judge. Models scored using refere
 
 See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuristics and methodology.
 
-**2026-01-19 Update:** Relative scoring applied to all 72 models. Scores now properly differentiate model quality.
+**2026-01-11 Update:** 78 models scored from `benchmarks/results/reviews/summary.csv`. Auto-generated from result files.
 
-### Master Benchmark Scores (Relative Scoring)
+### Master Benchmark Scores (All Models)
 
-> **Source:** `benchmarks/results/reviews/master_benchmark_table.csv`
-> **Methodology:** Relative scoring (0-100 per suite) comparing against reference answers AND other models.
-> **Columns:** Scores are X/100 (or X/110 for Inst.Prec with 11 questions, X/200 for doubled suites).
+> **Source:** `scripts/benchmark/rebuild_summary.py` rebuilds this from raw result files.
+> **Columns:** Thinking/General/Math/Agentic/Coder/Inst.Prec/Long.Ctx show correct/total per suite. Spec columns show best draft and speed.
 
-| Model | Thinking | General | Math | Agentic | Coder | Inst.Prec | Long.Ctx | VL | Total | Pct | t/s |
-|-------|----------|---------|------|---------|-------|-----------|----------|-----|-------|-----|-----|
-| Qwen3-235B-A22B-Q4_K_M | - | 94/100 | - | - | 94/100 | - | - | - | 188/200 | **94.0%** | 5.8 |
-| MathSmith-Qwen3-8B.Q4_K_M | 93/100 | 95/100 | 93/100 | - | - | - | - | - | 281/300 | **93.7%** | 16.2 |
-| DeepSeek-R1-Distill-Llama-8B | 86/100 | 91/100 | 96/100 | 93/100 | - | - | - | - | 366/400 | **91.5%** | 9.4 |
-| DeepSeek-R1-Distill-Qwen-7B | 87/100 | 89/100 | 96/100 | 89/100 | - | - | - | - | 361/400 | **90.2%** | 16.9 |
-| Qwen3-4B-Thinking-2507 | 80/100 | 79/100 | 95/100 | 98/100 | - | - | - | - | 352/400 | **88.0%** | 11.5 |
-| Qwen3-1.7B-Q8_0 | 88/100 | 76/100 | - | - | - | - | - | - | 164/200 | **82.0%** | 36.3 |
-| gemma-3-1b-it-Q8_0 | 70/100 | 83/100 | - | - | - | - | - | - | 153/200 | **76.5%** | 114.1 |
-| Qwen2.5-0.5B.Q8_0 | 50/100 | 80/100 | - | - | - | - | - | - | 130/200 | **65.0%** | 156.8 |
-| pard-qwen3-0.6b-q4_0 | 52/100 | 75/100 | - | - | - | - | - | - | 127/200 | **63.5%** | 81.6 |
+| Model | Thinking | General | Math | Agentic | Coder | Inst.Prec | Long.Ctx | Total | Pct | t/s | Spec Draft | Spec t/s |
+|-------|----------|---------|------|---------|-------|-----------|----------|-------|-----|-----|------------|----------|
+| Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0 | 10/10 | 10/10 | - | - | - | - | - | 20/20 | 100% | 22.0 | - | - |
+| nexusraven-v2-13b.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 13.4 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q4_K_S | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | 9/9 | 70/70 | 100% | 16.3 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | 9/9 | 70/70 | 100% | 21.2 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q8_0_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 61/61 | 100% | 19.5 | - | - |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 11/11 | 10/10 | 11/11 | - | 62/62 | 100% | 12.9 | - | - |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 61/61 | 100% | 17.6 | - | - |
+| Qwen3_VL_2B.Q4_K_M | - | 10/10 | - | 10/10 | - | - | - | 20/20 | 100% | 46.6 | - | - |
+| xLAM-1b-fc-r.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 56.0 | - | - |
+| xLAM-2-1B-fc-r-Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 50.4 | - | - |
+| Qwen2.5-0.5B-Instruct-f16 | 10/10 | 10/10 | - | - | - | - | - | 20/20 | 100% | 35.1 | - | - |
+| Qwen3-Next-80B-A3B-Thinking-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | 9/9 | 69/70 | 99% | 9.8 | - | - |
+| Qwen3-Next-80B-A3B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 7.1 | - | - |
+| DeepSeek-R1-Distill-Qwen-14B-Q6_K_L | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 5.1 | pard_deepseek_r1 | 70.8 |
+| Qwen3-30B-A3B-Thinking-2507-Q8_0_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 21.4 | - | - |
+| gemma-3-12b-it-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 10/11 | - | 59/61 | 97% | 9.3 | - | - |
+| MathSmith-Qwen3-8B.Q4_K_M | 10/10 | 9/10 | 10/10 | - | - | - | - | 29/30 | 97% | 14.0 | - | - |
+| Qwen3-Coder-53B-TOTAL-RECALL_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 9/11 | - | 59/61 | 97% | 12.7 | - | - |
+| DeepSeek-R1-Distill-Qwen-1.5B-Q8_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 59.1 | - | - |
+| gemma-3-27B-it-QAT-Q4_0 | 4/4 | 10/10 | 9/10 | 10/10 | 10/10 | 9/11 | - | 52/55 | 95% | 2.2 | - | - |
+| PARD-DeepSeek-R1-Distill-Qwen-1.5B (Q5/Q8) | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 45-47 | - | - |
+| pard-llama-3.2-1b-q4_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 75.9 | - | - |
+| pard-qwen3-0.6b-q4_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 81.6 | - | - |
+| Qwen3-32B-Q4_K_M | 10/10 | 10/10 | 10/10 | 7/10 | 10/10 | 11/11 | - | 58/61 | 95% | 1.6 | - | - |
+| DeepSeek-R1-Distill-Qwen-32B-Q6_K | 10/10 | - | - | - | 5/6 | - | - | 15/16 | 94% | 2.0 | - | - |
+| Qwen3-235B-A22B-Q4_K_M | 9/10 | 9/10 | 10/10 | 10/10 | 9/10 | 10/11 | 5/5 | 62/66 | 94% | 5.8 | - | - |
+| Qwen3-Coder-480B-A35B_moe4 | 10/10 | - | - | 10/10 | 10/10 | - | 4/6 | 34/36 | 94% | 6.6 | - | - |
+| Meta-Llama-3.1-70B-Instruct-Q4_K_M | 10/10 | 10/10 | 9/10 | 10/10 | 9/10 | 9/11 | - | 57/61 | 93% | 2.1 | - | - |
+| Meta-Llama-3.1-8B.Q4_K_S | 6/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 57/61 | 93% | 77.0 | - | - |
+| Qwen2.5-Coder-32B-Instruct-Q4_K_M | 9/10 | 10/10 | 10/10 | 10/10 | 10/10 | 8/11 | - | 57/61 | 93% | 3.4 | - | - |
+| Qwen3-30B-A3B-Thinking-2507-Q8_0 | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 8/11 | - | 57/61 | 93% | 17.6 | - | - |
+| Qwen2.5-Math-72B-Instruct-Q4_K_M | 8/10 | 10/10 | 8/10 | 10/10 | 9/10 | 11/11 | - | 56/61 | 92% | 2.0 | - | - |
+| Qwen2.5-72B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 6/11 | 4/5 | 60/66 | 91% | 1.9 | - | - |
+| Qwen3-235B-A22B-Q4_K_M_moe4 | 9/10 | 9/10 | 10/10 | 10/10 | 8/10 | 11/11 | 3/5 | 60/66 | 91% | 7.2 | - | - |
+| Qwen3-235B-A22B-Q4_K_M_moe6 | 9/10 | 9/10 | 10/10 | 10/10 | 7/10 | 11/11 | 4/5 | 60/66 | 91% | 6.6 | - | - |
+| Meta-Llama-3-8B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 4/10 | 10/10 | 11/11 | - | 55/61 | 90% | 14.7 | - | - |
+| Qwen2.5-7B.Q4_K_S | 5/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 55/61 | 90% | 18.5 | qwen2_5_coder_0_5b | 214.5 |
+| Qwen2.5-Math-7B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 5/9 | - | - | - | 35/39 | 90% | 10.2 | qwen2_5_coder_0_5b | 201.5 |
+| Hermes-4-70B-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 4/11 | - | 54/61 | 89% | 2.7 | - | - |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M_moe4 | 10/10 | 10/10 | 10/10 | 4/10 | 10/10 | 10/11 | - | 54/61 | 89% | 19.1 | - | - |
+| DeepSeek-R1-Distill-Llama-8B-Q4_K_M | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 9.4 | - | - |
+| DeepSeek-R1-Distill-Qwen-7B-Q4_K_M | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 10.6 | pard_deepseek_r1 | 71.8 |
+| Qwen3-4B-Thinking-2507-Q8_0 | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 11.5 | pard_qwen3_0_6b | 103.7 |
+| DeepSeek-R1-Distill-Qwen-14B-Q4_K_M | 10/10 | 7/10 | 10/10 | 9/10 | 10/10 | 7/11 | - | 53/61 | 87% | 3.9 | pard_deepseek_r1 | 68.7 |
+| Qwen3-Coder-480B-A35B-Instruct-Q4_K_M | 9/10 | - | - | 10/10 | 9/9 | - | 1/6 | 29/35 | 83% | 6.0 | - | - |
+| DeepSeek-R1-Distill-Llama-70B-Q4_K_M | 10/10 | 9/10 | 10/10 | 10/10 | 10/10 | 1/11 | - | 50/61 | 82% | 1.0 | - | - |
+| gemma-3-1b-it-Q8_0 | 8/10 | 4/5 | - | - | - | - | - | 12/15 | 80% | 114.1 | - | - |
+| Qwen3-235B-A22B-Q4_K_M_moe2 | 9/10 | 8/10 | 9/10 | 6/10 | 7/10 | 11/11 | 3/5 | 53/66 | 80% | 8.0 | - | - |
+| Qwen3-Coder-480B-A35B-Instruct-Q4_K_M_moe6 | 9/10 | 9/10 | 10/10 | 9/10 | 8/10 | 4/11 | 6/9 | 55/70 | 79% | 5.6 | - | - |
+| Qwen2.5-72B.Q4_K_M | 10/10 | 9/10 | 9/10 | 7/10 | 7/10 | 5/11 | - | 47/61 | 77% | 2.2 | - | - |
+| Qwen3-1.7B-Q4_K_M | 10/10 | 5/10 | - | - | - | - | - | 15/20 | 75% | 43.3 | - | - |
+| DeepSeek-R1-0528-Qwen3-8B-Q8_0 | 9/10 | 6/10 | 9/10 | 7/10 | 10/10 | 3/11 | - | 44/61 | 72% | 8.2 | - | - |
+| Qwen3-Coder-53B-TOTAL-RECALL_moe4 | 2/10 | 8/10 | 10/10 | 8/10 | 6/10 | 5/11 | - | 39/61 | 64% | 14.0 | - | - |
+| Qwen2.5-Coder-1.5B.Q4_K_M | 5/10 | 7/10 | - | - | - | - | - | 12/20 | 60% | 99.7 | - | - |
+| Qwen2.5-Math-1.5B-Instruct-Q4_K_M | 9/10 | 3/10 | - | - | - | - | - | 12/20 | 60% | 54.3 | - | - |
+| Qwen2.5-Coder-0.5B-Q4_K_M | 8/10 | 3/10 | - | - | - | - | - | 11/20 | 55% | 142.2 | - | - |
+| Qwen2.5-VL-7B-Instruct-Q4_K_M | - | 10/10 | - | 0/10 | - | - | - | 10/20 | 50% | 14.6 | qwen2_5_coder_0_5b | 222.8 |
+| Qwen2.5-0.5B.Q8_0 | 5/10 | 3/10 | - | - | - | - | - | 8/20 | 40% | 156.8 | - | - |
+| Qwen3-VL-30B-A3B-Instruct-Q4_K_M | - | 0/10 | - | 0/10 | - | - | 10/10† | 10/30 | 33% | 13.1 | - | - |
+| Qwen3-Coder-Instruct-DRAFT-0.75B | 4/10 | 2/10 | - | - | - | - | - | 6/20 | 30% | 63.1 | - | - |
+| Qwen_Qwen3-0.6B-Q8_0 | 3/10 | 2/10 | - | - | - | - | - | 5/20 | 25% | 67.8 | - | - |
+| Qwen3-Coder-53B-TOTAL-RECALL (baseline) | 5/10 | 3/9 | 3/10 | 2/10 | 0/10 | 0/11 | - | 13/60 | 22% | 10.3 | - | - |
+| Qwen2.5-Coder-0.5B-Q8_0 | 3/10 | 1/10 | - | - | - | - | - | 4/20 | 20% | 146.9 | - | - |
+| Qwen3-1.7B-Q8_0 | 1/10 | 2/10 | - | - | - | - | - | 3/20 | 15% | 36.3 | - | - |
+| Qwen2.5-Coder-1.5B.Q2_K | 1/10 | 1/10 | - | - | - | - | - | 2/20 | 10% | 87.9 | - | - |
+| Qwen2-0.5B.Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 156.0 | - | - |
+| Qwen3-0.6B-Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 95.3 | - | - |
 
-**Full table:** See `benchmarks/results/reviews/master_benchmark_table.csv` for all 72 models.
+**Total: 81 models** (includes MoE variants as separate entries)
 
-### Top Performers by Category (Relative Scoring)
+*† VL score in Long.Ctx column: VL model tested on actual vision tasks (10/10), but scores 0% on text-only prompts.*
 
-| Category | Model | Score | TPS | Notes |
-|----------|-------|-------|-----|-------|
-| **Thinking** | Hermes-4-70B-Q4_K_M | 95/100 | 2.7 | Best overall reasoning |
-| **General** | MathSmith-Qwen3-8B.Q4_K_M | 95/100 | 14.0 | High quality generalist |
-| **Math** | DeepSeek-R1-Distill-Qwen-7B | 96/100 | 16.9 | Best math specialist |
-| **Agentic** | Qwen3-4B-Thinking-2507 | 98/100 | 5.4 | Best tool calling |
-| **Coder** | Qwen3-32B-Q4_K_M | 95/100 | 1.6 | Best code generation |
-| **Inst.Prec** | Qwen3-Coder-480B | 78/110 | 6.0 | Best format compliance |
-| **Draft (Quality)** | Qwen3-1.7B-Q8_0 | 88% | 36.3 | Best quality draft |
-| **Draft (Speed)** | Qwen2.5-0.5B.Q8_0 | 65% | 156.8 | Fastest draft |
-
-### Speed/Quality Pareto Frontier
-
-| Model | Quality | TPS | Use Case |
-|-------|---------|-----|----------|
-| MathSmith-Qwen3-8B.Q4_K_M | 93.7% | 16.2 | High quality specialist |
-| DeepSeek-R1-Distill-Qwen-7B | 90.2% | 16.9 | High quality generalist |
-| Qwen3-1.7B-Q8_0 | 82.0% | 36.3 | Quality draft |
-| gemma-3-1b-it-Q8_0 | 76.5% | 114.1 | Fast balanced |
-| Qwen2.5-0.5B.Q8_0 | 65.0% | 156.8 | Speed optimized |
-
-### Global Role Recommendations (Updated 2026-01-19)
+### Global Role Recommendations (Updated 2026-01-06)
 
 > **See also:** [ESCALATION_FLOW.md](ESCALATION_FLOW.md) for comprehensive escalation diagrams, trigger mechanisms, and deprecation list.
 
