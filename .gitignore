@@ -61,3 +61,10 @@ handoffs/
 orchestration/repl_memory/embeddings.npy
 orchestration/repl_memory/episodic.db
 .aider*
+
+# Raw benchmark data (keep locally, not on GitHub)
+# Human-readable summaries (RESULTS.md, BLIND_RESCORE, summary.csv) stay tracked
+benchmarks/results/runs/
+benchmarks/evidence/
+benchmarks/results/reviews/*.csv
+!benchmarks/results/reviews/summary.csv
