@@ -100,7 +100,7 @@ llama-lookup -m gemma-3-27B.gguf -f prompt.txt --draft-max 4
 
 **Test Result**: Prompt lookup works with SWA models (32.8% acceptance on Gemma-3-1b).
 
-**Status**: PRs submitted, fixes cherry-picked locally. See `handoffs/blocked/swa_prompt_lookup.md`.
+**Status**: PRs submitted to llama.cpp upstream, fixes cherry-picked to local fork.
 
 **Note**: Vocab mismatch (1B=262144, 27B=262208) is safe - 64 token diff doesn't affect generation.
 

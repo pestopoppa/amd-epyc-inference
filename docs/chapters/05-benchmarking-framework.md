@@ -177,5 +177,9 @@ This is important because:
 
 ---
 
+**See Also:** [Master Benchmark Results](../reference/benchmarks/RESULTS.md) — Complete scores and speeds for all 61 models
+
+---
+
 *Previous: [Chapter 04: Prompt Lookup](04-prompt-lookup.md)*
 *Next: [Chapter 06: Orchestration Architecture](06-orchestration-architecture.md)*

@@ -42,15 +42,14 @@ We optimize LLM inference on CPU using three main techniques:
 | Need | Location |
 |------|----------|
 | Research narrative | [docs/chapters/](../chapters/INDEX.md) |
+| Benchmark results | [docs/reference/benchmarks/](../reference/benchmarks/RESULTS.md) |
 | Commands | [docs/reference/commands/](../reference/commands/QUICK_REFERENCE.md) |
 | Model info | [docs/reference/models/](../reference/models/MODELS.md) |
-| Daily progress | [progress/](../../progress/INDEX.md) |
-| Current work | [handoffs/](../../handoffs/README.md) |
 
 ## Next Steps
 
 - Read the [Research Chapters](../chapters/INDEX.md) for the full story
-- Check [Active Handoffs](../../handoffs/README.md) for current work
+- Check the [Benchmark Results](../reference/benchmarks/RESULTS.md) for model scores
 - Try running a benchmark
 
 ---

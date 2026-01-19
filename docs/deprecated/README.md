@@ -11,7 +11,7 @@ This directory contains research documents that have been superseded or represen
 | `strategic_action_plan.md` | Superseded by implementation | Orchestration implementation |
 | `dynamic_speculative_depth.md` | Fixed K strategy supersedes | [Chapter 02](../chapters/02-speculative-decoding.md) |
 | `CAS_SPEC_IMPLEMENTATION_PLAN.md` | Approach failed (0.446% acceptance) | [Chapter 08](../chapters/08-deprecated-approaches.md) |
-| `MATHSMITH_CANONICALIZER_PROPOSAL.md` | Superseded by formalizer work | [formalizer-evaluation.md](../../handoffs/active/formalizer-evaluation.md) |
+| `MATHSMITH_CANONICALIZER_PROPOSAL.md` | Superseded by formalizer work | [Benchmark Results](../reference/benchmarks/RESULTS.md) (see Formalizer section) |
 
 ## When to Reference
 

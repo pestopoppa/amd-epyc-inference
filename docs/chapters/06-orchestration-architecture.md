@@ -215,7 +215,7 @@ User: "Download the file, parse it, and upload results to S3"
 - 1B params = fast preprocessing (doesn't bottleneck)
 - Higher accuracy on structured output than general instruction models
 
-**Status**: Evaluation pending. See `handoffs/active/formalizer-evaluation.md`.
+**Status**: Evaluation complete. Top performers: xLAM-2-1B (100%), MathSmith-8B (100%). See [Benchmark Results](../reference/benchmarks/RESULTS.md).
 
 ## TaskIR Schema
 

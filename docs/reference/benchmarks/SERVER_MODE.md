@@ -2,7 +2,7 @@
 
 Quick reference for how the benchmark system handles model loading efficiently.
 
-**Full details:** See `progress/2026-01/2026-01-10.md` (Session 2: Server Mode for Speculative Decoding)
+**Summary:** Server mode enables model pre-loading for efficient batch benchmarking.
 
 ---
 
