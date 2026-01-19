@@ -2,6 +2,8 @@
 
 LLM inference optimization research on AMD EPYC 9655 "Turin" (96 cores, 1.13TB DDR5).
 
+> **[Master Benchmark Results](docs/reference/benchmarks/RESULTS.md)** — Complete benchmark data, model scores, speed comparisons
+
 ## Best Results
 
 | Configuration | Speed | Speedup | Use Case |

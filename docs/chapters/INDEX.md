@@ -43,6 +43,7 @@ For newcomers, read chapters in order for the research journey narrative. For re
 
 ## Navigation
 
+- **[Master Benchmark Results](../reference/benchmarks/RESULTS.md)** — All model scores and speeds
 - [Progress Logs](../../progress/INDEX.md)
 - [Active Handoffs](../../handoffs/README.md)
 - [Back to README](../../README.md)

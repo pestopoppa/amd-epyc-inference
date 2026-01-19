@@ -122,11 +122,11 @@ See `research/ESCALATION_FLOW.md` for the HOT/WARM/COLD memory pool design:
 
 | File | Purpose |
 |------|---------|
-| `/mnt/raid0/llm/claude/orchestration/model_registry.yaml` | **Model configurations, paths, compatible drafts, launch commands** |
-| `/mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md` | Benchmark results summary |
+| `/mnt/raid0/llm/claude/docs/reference/benchmarks/RESULTS.md` | **MASTER BENCHMARK TABLE** — All model scores, speeds, optimization results |
+| `/mnt/raid0/llm/claude/orchestration/model_registry.yaml` | Model configurations, paths, compatible drafts, launch commands |
 | `/mnt/raid0/llm/claude/docs/reference/models/QUIRKS.md` | Known model issues & workarounds |
-| `/mnt/raid0/llm/claude/benchmarks/results/reviews/summary.csv` | Claude-as-Judge scores |
-| `/mnt/raid0/llm/claude/benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md` | **Comprehensive blind rescore (77 models)** |
+| `/mnt/raid0/llm/claude/benchmarks/results/reviews/summary.csv` | Claude-as-Judge scores (CSV format) |
+| `/mnt/raid0/llm/claude/benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md` | Comprehensive blind rescore methodology (77 models) |
 
 ---
 
