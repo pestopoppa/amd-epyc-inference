@@ -56,11 +56,15 @@ orchestration/repl_memory/episodic.db
 logs/
 progress/
 handoffs/
+research/
+kernel-dev/
+test_images/
 
-# Large MemRL data files (stored locally)
-orchestration/repl_memory/embeddings.npy
-orchestration/repl_memory/episodic.db
+# Tool session data
+.claude/
 .aider*
+.devcontainer/
+OPENING_PROMPT.md
 
 # Raw benchmark data (keep locally, not on GitHub)
 # Human-readable summaries (RESULTS.md, BLIND_RESCORE, summary.csv) stay tracked

@@ -1,6 +1,0 @@
-# Container-created directories (different owner)
-llama-cpp-dev/
-patches/
-scripts/
-
-# Keep source files and host-compiled binaries
