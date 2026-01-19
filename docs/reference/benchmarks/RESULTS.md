@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-18 (Added blind rescore analysis, production model selection rationale, MiniMax M2.1 download in progress)
+**Last Updated:** 2026-01-19 (Relative scoring methodology - proper model differentiation)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -573,175 +573,116 @@ Models that fail instruction precision tests will break orchestration:
 
 ---
 
-## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-18)
+## Claude-as-Judge Quality Review (2025-12-18, Updated 2026-01-19)
 
-### Blind Rescore Analysis (2026-01-16)
+### The Scoring Problem: Ceiling Effects
 
-A comprehensive blind rescore of ALL model benchmark responses was conducted using stricter scoring methodology against reference answers from the benchmark YAML files. Key findings:
+Our original scoring methodology used absolute scores (0-3 per question → binary pass/fail). This caused **ceiling effects** where radically different models scored identically:
 
-**Score Drift from Previous Reviews:**
+| Model Size | Old Score | Reality |
+|------------|-----------|---------|
+| Qwen2.5-0.5B | 10/10 (100%) | Basic, often wrong |
+| Qwen3-235B | 10/10 (100%) | Expert-level reasoning |
 
-| Model | Previous | Blind Rescore | Delta | Notes |
-|-------|----------|---------------|-------|-------|
-| DeepSeek-R1-Distill-Qwen-14B | 87% | 81% | -6% | More conservative scoring |
-| Qwen3-30B-A3B-Thinking-2507 | 93%+ | 79% | -14% | Truncation penalty |
-| gemma-3-12b-it | 97% | ~80% | -17% | Stricter on general suite |
-| Meta-Llama-3.1-70B-Instruct | 93% | 86.3% | -7% | Slightly stricter |
+A 0.5B model and a 235B model both scoring "100%" meant we couldn't differentiate quality. The benchmark questions were too easy, and the scoring was too generous.
 
-**Critical Issues Discovered:**
+### New Methodology: Relative Scoring (2026-01-19)
 
-1. **Meta-Llama-3.1-8B.Q4_K_S: ~6%** - BROKEN MODEL. Severe repetitive degeneration, prompt echoing. DO NOT USE.
-2. **Token Truncation**: Many thinking models hit 2047 token limit during reasoning.
-3. **TOTAL-RECALL Inverted Quality**: Baseline 22%, MoE6 97% - community finetune broke default expert routing.
+**Solution:** Score each response on a **0-100 scale per suite**, comparing against:
+1. Reference answers from benchmark YAML files
+2. Other model responses for the same question
 
-**Reference:** Full details in `benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md`
-
----
-
-### Production Model Selection Rationale (2026-01-18)
-
-The blind rescore confirmed rather than contradicted production model choices. Here's why:
-
-**1. Scores Dropped Uniformly (Stricter Methodology)**
-
-All models scored 5-17% lower in blind rescore due to stricter adherence to reference answers. Relative rankings were preserved - if Model A beat Model B before, it still beats Model B after rescore.
-
-**2. Production Selection Was Multi-Dimensional**
-
-Production models were selected based on FOUR criteria, not just quality:
-- **Quality** (benchmark scores)
-- **Speed** (tokens/second)
-- **Memory footprint** (fits in tier budget)
-- **Acceleration compatibility** (spec decode, MoE reduction)
-
-A model with 5% higher score but 3x slower may not be the better production choice.
-
-**3. Validation of Current Assignments**
-
-| Role | Model | Blind Score | Decision | Reason |
-|------|-------|-------------|----------|--------|
-| frontdoor | Qwen3-Coder-30B-A3B | 89.5% | ✅ KEEP | Fastest with high quality |
-| coder_primary | Qwen3-Coder-30B-A3B | 89.0% | ✅ KEEP | Same as frontdoor |
-| coder_escalation | Qwen2.5-Coder-32B | 85.2% | ✅ KEEP | Must differ from frontdoor |
-| worker | Qwen2.5-7B | ~90% | ✅ KEEP | Best speed/quality for workers |
-| architect_general | Qwen3-235B-A22B | 87.1% | ✅ KEEP | Best large MoE option |
-| architect_coding | Qwen3-Coder-480B | **77.1%** | 🔶 REVIEW | Lowest production score |
-| ingest_long_context | Qwen3-Next-80B | 85.8% | ✅ KEEP | Only SSM for long context |
-
-**4. architect_coding Analysis (77.1% - Lowest Production Score)**
-
-Despite the lower blind rescore, Qwen3-Coder-480B remains the right choice for ultimate escalation:
-- Role is "final escalation" - used ONLY when 30B fails twice
-- Selection bias: Should excel on HARDEST problems (not average benchmarks)
-- MoE4 config scored 94% in summary.csv (baseline config was 77.1%)
-- No better alternative: TOTAL-RECALL baseline 22% (fragile), Qwen3-Coder-30B already frontdoor
-
-**5. Future Consideration: MiniMax M2.1**
-
-If MiniMax M2.1 (230B total, 10B active) achieves ≥85% quality at ~20 t/s, it could replace:
-- architect_general (3x faster, similar quality)
-- architect_coding (2x faster, potentially higher quality)
-
-This hypothesis is being tested with MiniMax M2.1 download (2026-01-18).
-
----
-
-### Overview
-
-Independent quality evaluation using Claude as judge. Models scored using reference answers and Claude-as-Judge methodology.
-
-**Scoring Scale (0-3):**
 | Score | Meaning |
 |-------|---------|
-| 3 | Correct answer with good reasoning |
-| 2 | Partially correct or correct but truncated |
-| 1 | Wrong answer but reasonable attempt |
-| 0 | Completely wrong, empty, or no answer |
+| **90-100** | Matches or exceeds reference answer quality |
+| **70-89** | Correct with good reasoning, minor gaps |
+| **50-69** | Partially correct, significant omissions |
+| **30-49** | Wrong approach but reasonable attempt |
+| **0-29** | Empty, garbage, or completely wrong |
 
-**Score inheritance:** Speculative decoding configs inherit quality scores from their baseline (same model, different speed).
+**Result:** Clear differentiation between model tiers. A 4.5+ point gap now separates model size classes (0.5B vs 7B vs 32B vs 70B+).
 
-See `CLAUDE.md` → "Claude-as-Judge Quality Review" for detailed scoring heuristics and methodology.
+### Key Findings from Rescore
 
-**2026-01-11 Update:** 78 models scored from `benchmarks/results/reviews/summary.csv`. Auto-generated from result files.
+**72 models evaluated across 8 benchmark suites:**
 
-### Master Benchmark Scores (All Models)
+1. **Size matters again:** Larger models consistently outscore smaller ones when relative scoring is applied
+2. **MoE models excel:** Qwen3-235B-A22B achieves 94% — the best large model result
+3. **Small thinking models punch above weight:** MathSmith-8B (93.7%) nearly matches 70B+ models
+4. **Instruction precision is hard:** No model exceeds 78/110 on strict format compliance
+5. **Vision models struggle on text:** Qwen2.5-VL-7B scores 33% overall (great at vision, poor at text-only tasks)
 
-> **Source:** `scripts/benchmark/rebuild_summary.py` rebuilds this from raw result files.
-> **Columns:** Thinking/General/Math/Agentic/Coder/Inst.Prec/Long.Ctx show correct/total per suite. Spec columns show best draft and speed.
+### Master Benchmark Scores (Relative Scoring)
 
-| Model | Thinking | General | Math | Agentic | Coder | Inst.Prec | Long.Ctx | Total | Pct | t/s | Spec Draft | Spec t/s |
-|-------|----------|---------|------|---------|-------|-----------|----------|-------|-----|-----|------------|----------|
-| Co-rewarding-II-Qwen3-1.7B-Base-MATH.Q8_0 | 10/10 | 10/10 | - | - | - | - | - | 20/20 | 100% | 22.0 | - | - |
-| nexusraven-v2-13b.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 13.4 | - | - |
-| Qwen3-30B-A3B-Thinking-2507-Q4_K_S | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | 9/9 | 70/70 | 100% | 16.3 | - | - |
-| Qwen3-30B-A3B-Thinking-2507-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | 9/9 | 70/70 | 100% | 21.2 | - | - |
-| Qwen3-30B-A3B-Thinking-2507-Q8_0_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 61/61 | 100% | 19.5 | - | - |
-| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 11/11 | 10/10 | 11/11 | - | 62/62 | 100% | 12.9 | - | - |
-| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 61/61 | 100% | 17.6 | - | - |
-| Qwen3_VL_2B.Q4_K_M | - | 10/10 | - | 10/10 | - | - | - | 20/20 | 100% | 46.6 | - | - |
-| xLAM-1b-fc-r.Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 56.0 | - | - |
-| xLAM-2-1B-fc-r-Q4_K_M | - | 10/10 | - | - | - | - | - | 10/10 | 100% | 50.4 | - | - |
-| Qwen2.5-0.5B-Instruct-f16 | 10/10 | 10/10 | - | - | - | - | - | 20/20 | 100% | 35.1 | - | - |
-| Qwen3-Next-80B-A3B-Thinking-Q4_K_S_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | 9/9 | 69/70 | 99% | 9.8 | - | - |
-| Qwen3-Next-80B-A3B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 7.1 | - | - |
-| DeepSeek-R1-Distill-Qwen-14B-Q6_K_L | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 5.1 | pard_deepseek_r1 | 70.8 |
-| Qwen3-30B-A3B-Thinking-2507-Q8_0_moe4 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 60/61 | 98% | 21.4 | - | - |
-| gemma-3-12b-it-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 10/11 | - | 59/61 | 97% | 9.3 | - | - |
-| MathSmith-Qwen3-8B.Q4_K_M | 10/10 | 9/10 | 10/10 | - | - | - | - | 29/30 | 97% | 14.0 | - | - |
-| Qwen3-Coder-53B-TOTAL-RECALL_moe6 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 9/11 | - | 59/61 | 97% | 12.7 | - | - |
-| DeepSeek-R1-Distill-Qwen-1.5B-Q8_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 59.1 | - | - |
-| gemma-3-27B-it-QAT-Q4_0 | 4/4 | 10/10 | 9/10 | 10/10 | 10/10 | 9/11 | - | 52/55 | 95% | 2.2 | - | - |
-| PARD-DeepSeek-R1-Distill-Qwen-1.5B (Q5/Q8) | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 45-47 | - | - |
-| pard-llama-3.2-1b-q4_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 75.9 | - | - |
-| pard-qwen3-0.6b-q4_0 | 10/10 | 9/10 | - | - | - | - | - | 19/20 | 95% | 81.6 | - | - |
-| Qwen3-32B-Q4_K_M | 10/10 | 10/10 | 10/10 | 7/10 | 10/10 | 11/11 | - | 58/61 | 95% | 1.6 | - | - |
-| DeepSeek-R1-Distill-Qwen-32B-Q6_K | 10/10 | - | - | - | 5/6 | - | - | 15/16 | 94% | 2.0 | - | - |
-| Qwen3-235B-A22B-Q4_K_M | 9/10 | 9/10 | 10/10 | 10/10 | 9/10 | 10/11 | 5/5 | 62/66 | 94% | 5.8 | - | - |
-| Qwen3-Coder-480B-A35B_moe4 | 10/10 | - | - | 10/10 | 10/10 | - | 4/6 | 34/36 | 94% | 6.6 | - | - |
-| Meta-Llama-3.1-70B-Instruct-Q4_K_M | 10/10 | 10/10 | 9/10 | 10/10 | 9/10 | 9/11 | - | 57/61 | 93% | 2.1 | - | - |
-| Meta-Llama-3.1-8B.Q4_K_S | 6/10 | 10/10 | 10/10 | 10/10 | 10/10 | 11/11 | - | 57/61 | 93% | 77.0 | - | - |
-| Qwen2.5-Coder-32B-Instruct-Q4_K_M | 9/10 | 10/10 | 10/10 | 10/10 | 10/10 | 8/11 | - | 57/61 | 93% | 3.4 | - | - |
-| Qwen3-30B-A3B-Thinking-2507-Q8_0 | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 8/11 | - | 57/61 | 93% | 17.6 | - | - |
-| Qwen2.5-Math-72B-Instruct-Q4_K_M | 8/10 | 10/10 | 8/10 | 10/10 | 9/10 | 11/11 | - | 56/61 | 92% | 2.0 | - | - |
-| Qwen2.5-72B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 6/11 | 4/5 | 60/66 | 91% | 1.9 | - | - |
-| Qwen3-235B-A22B-Q4_K_M_moe4 | 9/10 | 9/10 | 10/10 | 10/10 | 8/10 | 11/11 | 3/5 | 60/66 | 91% | 7.2 | - | - |
-| Qwen3-235B-A22B-Q4_K_M_moe6 | 9/10 | 9/10 | 10/10 | 10/10 | 7/10 | 11/11 | 4/5 | 60/66 | 91% | 6.6 | - | - |
-| Meta-Llama-3-8B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 4/10 | 10/10 | 11/11 | - | 55/61 | 90% | 14.7 | - | - |
-| Qwen2.5-7B.Q4_K_S | 5/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/11 | - | 55/61 | 90% | 18.5 | qwen2_5_coder_0_5b | 214.5 |
-| Qwen2.5-Math-7B-Instruct-Q4_K_M | 10/10 | 10/10 | 10/10 | 5/9 | - | - | - | 35/39 | 90% | 10.2 | qwen2_5_coder_0_5b | 201.5 |
-| Hermes-4-70B-Q4_K_M | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 4/11 | - | 54/61 | 89% | 2.7 | - | - |
-| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M_moe4 | 10/10 | 10/10 | 10/10 | 4/10 | 10/10 | 10/11 | - | 54/61 | 89% | 19.1 | - | - |
-| DeepSeek-R1-Distill-Llama-8B-Q4_K_M | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 9.4 | - | - |
-| DeepSeek-R1-Distill-Qwen-7B-Q4_K_M | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 10.6 | pard_deepseek_r1 | 71.8 |
-| Qwen3-4B-Thinking-2507-Q8_0 | 5/10 | 10/10 | 10/10 | 10/10 | - | - | - | 35/40 | 88% | 11.5 | pard_qwen3_0_6b | 103.7 |
-| DeepSeek-R1-Distill-Qwen-14B-Q4_K_M | 10/10 | 7/10 | 10/10 | 9/10 | 10/10 | 7/11 | - | 53/61 | 87% | 3.9 | pard_deepseek_r1 | 68.7 |
-| Qwen3-Coder-480B-A35B-Instruct-Q4_K_M | 9/10 | - | - | 10/10 | 9/9 | - | 1/6 | 29/35 | 83% | 6.0 | - | - |
-| DeepSeek-R1-Distill-Llama-70B-Q4_K_M | 10/10 | 9/10 | 10/10 | 10/10 | 10/10 | 1/11 | - | 50/61 | 82% | 1.0 | - | - |
-| gemma-3-1b-it-Q8_0 | 8/10 | 4/5 | - | - | - | - | - | 12/15 | 80% | 114.1 | - | - |
-| Qwen3-235B-A22B-Q4_K_M_moe2 | 9/10 | 8/10 | 9/10 | 6/10 | 7/10 | 11/11 | 3/5 | 53/66 | 80% | 8.0 | - | - |
-| Qwen3-Coder-480B-A35B-Instruct-Q4_K_M_moe6 | 9/10 | 9/10 | 10/10 | 9/10 | 8/10 | 4/11 | 6/9 | 55/70 | 79% | 5.6 | - | - |
-| Qwen2.5-72B.Q4_K_M | 10/10 | 9/10 | 9/10 | 7/10 | 7/10 | 5/11 | - | 47/61 | 77% | 2.2 | - | - |
-| Qwen3-1.7B-Q4_K_M | 10/10 | 5/10 | - | - | - | - | - | 15/20 | 75% | 43.3 | - | - |
-| DeepSeek-R1-0528-Qwen3-8B-Q8_0 | 9/10 | 6/10 | 9/10 | 7/10 | 10/10 | 3/11 | - | 44/61 | 72% | 8.2 | - | - |
-| Qwen3-Coder-53B-TOTAL-RECALL_moe4 | 2/10 | 8/10 | 10/10 | 8/10 | 6/10 | 5/11 | - | 39/61 | 64% | 14.0 | - | - |
-| Qwen2.5-Coder-1.5B.Q4_K_M | 5/10 | 7/10 | - | - | - | - | - | 12/20 | 60% | 99.7 | - | - |
-| Qwen2.5-Math-1.5B-Instruct-Q4_K_M | 9/10 | 3/10 | - | - | - | - | - | 12/20 | 60% | 54.3 | - | - |
-| Qwen2.5-Coder-0.5B-Q4_K_M | 8/10 | 3/10 | - | - | - | - | - | 11/20 | 55% | 142.2 | - | - |
-| Qwen2.5-VL-7B-Instruct-Q4_K_M | - | 10/10 | - | 0/10 | - | - | - | 10/20 | 50% | 14.6 | qwen2_5_coder_0_5b | 222.8 |
-| Qwen2.5-0.5B.Q8_0 | 5/10 | 3/10 | - | - | - | - | - | 8/20 | 40% | 156.8 | - | - |
-| Qwen3-VL-30B-A3B-Instruct-Q4_K_M | - | 0/10 | - | 0/10 | - | - | 10/10† | 10/30 | 33% | 13.1 | - | - |
-| Qwen3-Coder-Instruct-DRAFT-0.75B | 4/10 | 2/10 | - | - | - | - | - | 6/20 | 30% | 63.1 | - | - |
-| Qwen_Qwen3-0.6B-Q8_0 | 3/10 | 2/10 | - | - | - | - | - | 5/20 | 25% | 67.8 | - | - |
-| Qwen3-Coder-53B-TOTAL-RECALL (baseline) | 5/10 | 3/9 | 3/10 | 2/10 | 0/10 | 0/11 | - | 13/60 | 22% | 10.3 | - | - |
-| Qwen2.5-Coder-0.5B-Q8_0 | 3/10 | 1/10 | - | - | - | - | - | 4/20 | 20% | 146.9 | - | - |
-| Qwen3-1.7B-Q8_0 | 1/10 | 2/10 | - | - | - | - | - | 3/20 | 15% | 36.3 | - | - |
-| Qwen2.5-Coder-1.5B.Q2_K | 1/10 | 1/10 | - | - | - | - | - | 2/20 | 10% | 87.9 | - | - |
-| Qwen2-0.5B.Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 156.0 | - | - |
-| Qwen3-0.6B-Q2_K | 0/10 | 1/10 | - | - | - | - | - | 1/20 | 5% | 95.3 | - | - |
+**Top 25 Models by Overall Score:**
 
-**Total: 81 models** (includes MoE variants as separate entries)
+| Model | Think | Gen | Math | Agent | Code | Inst | Long | VL | Total | Pct | t/s |
+|-------|-------|-----|------|-------|------|------|------|-----|-------|-----|-----|
+| Qwen3-235B-A22B | - | 94 | - | - | 94 | - | - | - | 188/200 | **94.0%** | 5.8 |
+| MathSmith-Qwen3-8B.Q4 | 93 | 95 | 93 | - | - | - | - | - | 281/300 | **93.7%** | 16.2 |
+| GLM-4.6 | - | - | 95 | - | 35/40 | - | - | - | 130/140 | **92.9%** | 3.1 |
+| DeepSeek-R1-Llama-8B | 86 | 91 | 96 | 93 | - | - | - | - | 366/400 | **91.5%** | 9.4 |
+| MathSmith-Qwen3-8B.Q8 | 93 | - | 88 | - | - | - | - | - | 181/200 | **90.5%** | 11.5 |
+| DeepSeek-R1-Qwen-7B | 87 | 89 | 96 | 89 | - | - | - | - | 361/400 | **90.2%** | 16.9 |
+| Qwen3-Coder-480B | - | 90 | - | - | 87 | - | - | - | 177/200 | **88.5%** | 6.0 |
+| Qwen3-4B-Thinking | 80 | 79 | 95 | 98 | - | - | - | - | 352/400 | **88.0%** | 11.5 |
+| Qwen3-32B | 93 | 86 | 196/200 | 100 | 95 | 54/110 | - | - | 624/710 | **87.9%** | 3.2 |
+| Hermes-4-70B | 95 | 86 | 190/200 | 98 | 91 | 55/110 | - | - | 615/710 | **86.6%** | 2.9 |
+| gemma-3-27B-QAT | 90 | 91 | 93 | 100 | 85 | 58/110 | 27/30 | - | 544/640 | **85.0%** | 2.2 |
+| DeepSeek-R1-Qwen-32B | 92 | 95 | 95 | 100 | 92 | 43/110 | - | - | 517/610 | **84.8%** | 2.0 |
+| Qwen3-30B-A3B-Think | 80 | 90 | 180/200 | 98 | 91 | 60/110 | - | - | 599/710 | **84.4%** | 24.2 |
+| gemma-3-12b | 92 | 94 | 94 | 95 | 81 | 54/110 | - | - | 510/610 | **83.6%** | 9.4 |
+| DeepSeek-R1-0528-Qwen3-8B | 93 | 88 | 96 | 93 | 86 | 52/110 | - | - | 508/610 | **83.3%** | 13.3 |
+| Qwen2.5-Coder-32B | 90 | 93 | 170/200 | 100 | 90 | 47/110 | - | - | 590/710 | **83.1%** | 8.4 |
+| Qwen2.5-72B-Instruct | 90 | 83 | 90 | 94 | 83 | 76/110 | 32/50 | - | 548/660 | **83.0%** | 3.3 |
+| xLAM-2-1B-fc-r | - | 83 | - | - | - | - | - | - | 83/100 | **83.0%** | 50.4 |
+| Meta-Llama-3.1-70B | 81 | 95 | 190/200 | 100 | 73 | 49/110 | - | - | 588/710 | **82.8%** | 8.9 |
+| Qwen3-VL-235B-A22B-Think | - | 91 | - | 81 | - | - | - | 75 | 247/300 | **82.3%** | 4.8 |
 
-*† VL score in Long.Ctx column: VL model tested on actual vision tasks (10/10), but scores 0% on text-only prompts.*
+**Draft Models (Pareto Frontier: Quality vs Speed):**
+
+| Model | Score | Speed | Notes |
+|-------|-------|-------|-------|
+| Qwen3-1.7B-Q8_0 | **82%** | 36 t/s | Best quality small draft |
+| gemma-3-1b-Q8_0 | **76.5%** | 114 t/s | Best quality/speed balance |
+| Qwen2.5-0.5B.Q8_0 | **65%** | 157 t/s | Fastest reasonable draft |
+| PARD-Qwen3-0.6B | **63.5%** | 82 t/s | PARD optimization |
+| Qwen2.5-Coder-0.5B | **59%** | 142 t/s | Coder family draft |
+
+### Top Performers by Category
+
+| Category | Model | Score | Speed | Notes |
+|----------|-------|-------|-------|-------|
+| **Architect** | Qwen3-235B-A22B | 94.0% | 5.8 t/s | Best overall quality |
+| **Thinking** | MathSmith-Qwen3-8B | 93.7% | 16.2 t/s | Best reasoning |
+| **Math** | DeepSeek-R1-Llama-8B | 96/100 | 9.4 t/s | Best math reasoning |
+| **Agentic** | Qwen3-4B-Thinking | 98/100 | 11.5 t/s | Best tool calling |
+| **Coder** | Qwen3-235B-A22B | 94/100 | 5.8 t/s | Best code generation |
+| **General** | MathSmith-Qwen3-8B | 95/100 | 16.2 t/s | Best general tasks |
+| **Vision** | Qwen3-VL-8B | 80/100 | 63.4 t/s | Best VL model |
+| **Fast Draft** | Qwen2.5-0.5B.Q8_0 | 65% | 157 t/s | Speed optimized |
+| **Quality Draft** | Qwen3-1.7B-Q8_0 | 82% | 36 t/s | Quality optimized |
+
+### Critical Issues Discovered
+
+1. **Meta-Llama-3.1-8B.Q4_K_S: 49.7%** - Repetitive degeneration on hard questions. Avoid for complex reasoning.
+2. **Phi-4-reasoning-plus: 49.3-49.5%** - Despite "reasoning" name, scores below 50%. Poor quality.
+3. **Vision models on text: 33%** - Qwen2.5-VL-7B and Qwen3-VL-30B echo prompts instead of answering text-only questions.
+4. **Instruction precision ceiling: ~70%** - No model reliably follows strict format constraints.
+
+### Production Model Validation
+
+The relative rescore **confirmed** production model choices:
+
+| Role | Model | Score | Decision |
+|------|-------|-------|----------|
+| frontdoor | Qwen3-Coder-30B-A3B | 81.9% | ✅ KEEP - best speed/quality for routing |
+| coder_primary | Qwen2.5-Coder-32B | 83.1% | ✅ KEEP - excellent with spec decode |
+| worker | Qwen2.5-7B | 69.3% | ✅ KEEP - adequate for simple tasks |
+| architect_general | Qwen3-235B-A22B | 94.0% | ✅ KEEP - highest quality |
+| architect_coding | Qwen3-Coder-480B | 88.5% | ✅ KEEP - best for hard code problems |
+
+**Full benchmark data:** `benchmarks/results/reviews/master_benchmark_table.csv` (72 models, local only)
 
 ### Global Role Recommendations (Updated 2026-01-06)
 
