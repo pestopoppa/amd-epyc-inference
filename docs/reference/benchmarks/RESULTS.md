@@ -670,19 +670,59 @@ A 0.5B model and a 235B model both scoring "100%" meant we couldn't differentiat
 3. **Vision models on text: 33%** - Qwen2.5-VL-7B and Qwen3-VL-30B echo prompts instead of answering text-only questions.
 4. **Instruction precision ceiling: ~70%** - No model reliably follows strict format constraints.
 
-### Production Model Validation
+### Production Model Configuration (2026-01-20)
 
-The relative rescore **confirmed** production model choices:
+Complete production model lineup with relative scoring validation.
 
-| Role | Model | Score | Decision |
-|------|-------|-------|----------|
-| frontdoor | Qwen3-Coder-30B-A3B | 81.9% | ✅ KEEP - best speed/quality for routing |
-| coder_primary | Qwen2.5-Coder-32B | 83.1% | ✅ KEEP - excellent with spec decode |
-| worker | Qwen2.5-7B | 69.3% | ✅ KEEP - adequate for simple tasks |
-| architect_general | Qwen3-235B-A22B | 94.0% | ✅ KEEP - highest quality |
-| architect_coding | Qwen3-Coder-480B | 88.5% | ✅ KEEP - best for hard code problems |
+#### HOT Tier (~45GB) - Always Resident
 
-**Full benchmark data:** `benchmarks/results/reviews/master_benchmark_table.csv` (72 models, local only)
+| Role | Model | Score | Speed | Configuration | Size |
+|------|-------|-------|-------|---------------|------|
+| **frontdoor** | Qwen3-Coder-30B-A3B-Instruct | 89.5% | 18.3 t/s | MoE6 experts | 17.5GB |
+| **coder_primary** | *(shared with frontdoor)* | 89.5% | 18.3 t/s | MoE6 experts | — |
+| **coder_escalation** | Qwen2.5-Coder-32B | 91.5% | 33 t/s | spec K=24 + draft | 18.5GB |
+| **worker** | Qwen2.5-7B-Instruct | 74.5% | 50 t/s | spec K=16 + draft | 4.4GB |
+| **voice_server** | faster-whisper large-v3-turbo | — | 2.8x RT | CPU int8, port 9000 | 4GB |
+
+**HOT Draft Models:** Qwen2.5-Coder-0.5B-Q8_0 (76%, 142 t/s), Qwen2.5-0.5B-Q8_0 (80%, 157 t/s)
+
+#### WARM Tier (~470GB) - Load on Demand
+
+| Role | Model | Score | Speed | Configuration | Size |
+|------|-------|-------|-------|---------------|------|
+| **architect_general** | Qwen3-235B-A22B | 94.0% | 6.75 t/s | MoE4 experts | 133GB |
+| **architect_coding** | Qwen3-Coder-480B | 88.5% | 10.3 t/s | MoE3 experts | 271GB |
+| **ingest_long_context** | Qwen3-Next-80B-A3B | 77.0% | 8 t/s | MoE2 (SSM, NO SPEC!) | 46GB |
+| **worker_vision** | Qwen2.5-VL-7B-Instruct | 46%/92 VL | 20 t/s | mmproj required | 4.4GB |
+
+#### Vision Models
+
+| Role | Model | General | VL Score | Tier |
+|------|-------|---------|----------|------|
+| **worker_vision** | Qwen2.5-VL-7B | 8% | **92/100** | WARM |
+| **vision_escalation** | Qwen3-VL-30B-A3B | 8% | **92/100** | COLD |
+| vision_qwen3_vl_8b | Qwen3-VL-8B | 79% | 80/100 | COLD |
+
+**Note:** VL models score low on text-only benchmarks (8%) but excel at vision tasks (92/100).
+
+#### Formalizers
+
+| Role | Model | Score | Speed | Purpose |
+|------|-------|-------|-------|---------|
+| **formalizer** | MathSmith-Qwen3-8B.Q8_0 | 95.0% | 14 t/s | Problem formalization |
+| **tool_formalizer** | xLAM-2-1B-fc-r | 83.0% | 50.4 t/s | Function calling / tools |
+| **document_formalizer** | LightOnOCR-2-1B-bbox-Q4_K_M | N/A | **0.17 pg/s** (8×12t) | PDF/document OCR with bbox |
+
+#### Memory Budget
+
+| Tier | RAM | Status |
+|------|-----|--------|
+| HOT | ~45GB | Always resident |
+| WARM | ~470GB | Load 2-3 at a time |
+| Headroom | ~615GB | Context/KV cache |
+| **Total** | **1.13TB** | ✅ Fits |
+
+**Full benchmark data:** `benchmarks/results/reviews/summary_relative.csv` (148 configs, 72+ models)
 
 ### Global Role Recommendations (Updated 2026-01-06)
 

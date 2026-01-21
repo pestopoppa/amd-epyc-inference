@@ -102,6 +102,11 @@ class Dispatcher:
         "vision": "worker_vision",
         "toolrunner": "toolrunner",
         "draft": "draft_qwen25_coder",
+        # Document processing roles
+        "doc": "document_formalizer",
+        "document": "document_formalizer",
+        "document_formalizer": "document_formalizer",
+        "ocr": "document_formalizer",
     }
 
     def __init__(

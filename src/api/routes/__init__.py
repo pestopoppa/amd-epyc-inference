@@ -8,6 +8,8 @@ from src.api.routes.gates import router as gates_router
 from src.api.routes.stats import router as stats_router
 from src.api.routes.openai_compat import router as openai_router
 from src.api.routes.sessions import router as sessions_router
+from src.api.routes.vision import router as vision_router
+from src.api.routes.documents import router as documents_router
 
 
 def create_api_router() -> APIRouter:
@@ -25,6 +27,8 @@ def create_api_router() -> APIRouter:
     router.include_router(stats_router, tags=["stats"])
     router.include_router(openai_router, prefix="/v1", tags=["openai"])
     router.include_router(sessions_router, tags=["sessions"])
+    router.include_router(vision_router, prefix="/v1", tags=["vision"])
+    router.include_router(documents_router, prefix="/v1", tags=["documents"])
 
     return router
 
@@ -37,4 +41,6 @@ __all__ = [
     "stats_router",
     "openai_router",
     "sessions_router",
+    "vision_router",
+    "documents_router",
 ]

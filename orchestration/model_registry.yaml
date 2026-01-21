@@ -215,6 +215,47 @@ server_mode:
     launch_script: scripts/voice/start_whisper_server.sh
     notes: "Standalone Python server (not llama.cpp). Serves Aider, Claude Code, orchestrator."
 
+  # Document processing service (llama.cpp GGUF - 19x faster than PyTorch)
+  document_formalizer:
+    url: http://localhost:9001
+    port: 9001
+    model_role: document_preprocessing
+    description: PDF/document OCR with figure localization using llama.cpp
+    model: LightOnOCR-2-1B-bbox-Q4_K_M.gguf
+    mmproj: LightOnOCR-2-1B-bbox-mmproj-F16.gguf
+    model_type: gguf_vlm
+    huggingface_id: lightonai/LightOnOCR-2-1B-bbox
+    model_path: /mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf
+    mmproj_path: /mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-mmproj-F16.gguf
+    memory_gb: 10  # 8 workers × ~1.2 GB each
+    tier: warm
+    default_params:
+      output_format: bbox
+      max_pages: 100
+      dpi: 200
+    acceleration:
+      type: worker_pool
+      workers: 8
+      threads_per_worker: 12
+      notes: "More workers > more threads for throughput. 8×12 is 15% faster than 4×24."
+    throughput: 0.17  # pages/sec on EPYC 9655 (8×12 config)
+    baseline_throughput: 0.009  # PyTorch CPU baseline
+    speedup: 19x  # vs PyTorch CPU
+    launch_script: scripts/document/start_lightonocr_llama.sh
+    launch_quirks:
+      - "llama-mtmd-cli requires BOTH --image AND -p flags for non-interactive mode"
+      - "Empty -p '' causes 'invalid argument' - use -p 'OCR' or similar"
+      - "Vision encoding is fixed ~8s bottleneck regardless of thread count"
+      - "BOS token is comma (,) - unusual but works correctly"
+      - "Default context 16384 uses ~1.8 GB KV cache per worker"
+    env_vars:
+      LIGHTONOCR_WORKERS: "8"
+      LIGHTONOCR_THREADS: "12"
+      LIGHTONOCR_MAX_TOKENS: "2048"
+      LIGHTONOCR_TIMEOUT: "120"
+    notes: "GGUF conversion via llama.cpp (native LightOnOCR support). PyTorch version deprecated. Uses Pixtral vision encoder + Qwen3 text decoder."
+    benchmark_date: 2026-01-20
+
   # Development mode - single small model for all roles
   dev:
     frontdoor:
@@ -519,6 +560,104 @@ roles:
       Think step by step. Show your reasoning process.
       For complex problems, break down into sub-problems.
       Verify your answer before concluding.
+  minimax_m21_q4:
+    tier: B
+    description: MiniMax M2.1 Q4_K_M - 230B MoE (256 experts, 8 active) with thinking
+    model:
+      name: MiniMax-M2.1
+      path: unsloth/MiniMax-M2.1-GGUF/Q4_K_M/MiniMax-M2.1-Q4_K_M-00001-of-00003.gguf
+      quant: Q4_K_M
+      size_gb: 129
+      split_count: 3
+      architecture: moe
+      max_context: 196608
+      vocab_size: 200064
+    candidate_roles:
+    - architect
+    - thinking
+    - general
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      baseline_experts: 8
+      override_key: minimax-m2.expert_used_count
+    constraints:
+      forbid:
+      - speculative_decoding
+      reason: Unique vocab (200K) - no compatible draft model exists
+    performance:
+      baseline_tps: 9.52
+      prompt_tps: 40.51
+      optimized_tps: 13.64
+      optimized_prompt_tps: 59.94
+      speedup: 1.43x
+    memory:
+      residency: warm
+      pinned: false
+      total_with_kv_gb: 180
+    benchmark_date: 2026-01-19
+    launch_quirks:
+      jinja_required: true
+      use_llama_completion: true
+      thinking_tags: true
+    notes: |
+      Reasoning model with <think> tags. Requires --jinja flag.
+      Use llama-completion (not llama-cli) to avoid interactive mode.
+      256 experts may cause sparse memory access patterns (lower speed than expected).
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.3
+    system_prompt_suffix: |
+      Think step by step. Show your reasoning process.
+      For complex problems, break down into sub-problems.
+  minimax_m21_q6:
+    tier: B
+    description: MiniMax M2.1 Q6_K - 230B MoE (256 experts, 8 active) with thinking - higher quality
+    model:
+      name: MiniMax-M2.1
+      path: unsloth/MiniMax-M2.1-GGUF/Q6_K/MiniMax-M2.1-Q6_K-00001-of-00004.gguf
+      quant: Q6_K
+      size_gb: 175
+      split_count: 4
+      architecture: moe
+      max_context: 196608
+      vocab_size: 200064
+    candidate_roles:
+    - architect
+    - thinking
+    - general
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      baseline_experts: 8
+      override_key: minimax-m2.expert_used_count
+    constraints:
+      forbid:
+      - speculative_decoding
+      reason: Unique vocab (200K) - no compatible draft model exists
+    performance:
+      baseline_tps: null  # Not yet tested
+      prompt_tps: null
+      optimized_tps: null
+      speedup: null
+    memory:
+      residency: cold
+      pinned: false
+      total_with_kv_gb: 225
+    benchmark_date: null
+    launch_quirks:
+      jinja_required: true
+      use_llama_completion: true
+      thinking_tags: true
+    notes: |
+      Higher quality Q6_K variant. Same quirks as Q4_K_M.
+      Requires --jinja flag. Use llama-completion to avoid interactive mode.
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.3
+    system_prompt_suffix: |
+      Think step by step. Show your reasoning process.
+      For complex problems, break down into sub-problems.
   worker_general:
     tier: C
     description: Boilerplate, rewrites, doc polish, small diffs
@@ -2373,6 +2512,27 @@ runtime_quirks:
         For comparison: Qwen2.5-Coder-32B achieves 11x speedup with the same drafts.
 
         '
+  minimax_m21:
+    description: MiniMax M2.1 (230B MoE, 256 experts, 8 active)
+    quirks:
+    - issue: Chat template requires Jinja engine
+      workaround: Always use --jinja flag
+      discovered: 2026-01-19
+    - issue: llama-cli enters interactive mode by default
+      workaround: Use llama-completion instead of llama-cli for non-interactive use
+      discovered: 2026-01-19
+    - issue: Model outputs <think> tags (reasoning model)
+      workaround: Parse and strip tags for non-reasoning use, or let model reason
+      discovered: 2026-01-19
+    - issue: 256 experts causes sparse memory access patterns
+      workaround: Expected speed ~9.5 t/s despite 10B active params (lower than Qwen3 MoE)
+      discovered: 2026-01-19
+    - issue: Split across 3-4 GGUF files depending on quant
+      workaround: Point to first file (-00001-of-000XX), others auto-loaded
+      discovered: 2026-01-19
+    - issue: Unique vocab (200,064 tokens)
+      workaround: No compatible draft model - speculative decoding NOT possible
+      discovered: 2026-01-19
   qwen3_next_80b:
     description: Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)
     quirks:
@@ -2479,6 +2639,27 @@ runtime_quirks:
     - issue: OMP_NUM_THREADS=1 before timeout doesn't work
       workaround: timeout runs in subshell, use 'env' to pass env vars
       discovered: 2025-12-16
+  lightonocr_2_1b_bbox:
+    description: LightOnOCR-2-1B-bbox (document_formalizer)
+    quirks:
+    - issue: llama-mtmd-cli enters interactive chat mode without --image and -p flags
+      workaround: Always provide BOTH --image AND -p flags for non-interactive OCR
+      discovered: 2026-01-20
+    - issue: Empty -p "" causes "invalid argument" error
+      workaround: Use -p "OCR" or -p "Extract text" - never empty prompt
+      discovered: 2026-01-20
+    - issue: Vision encoding bottleneck ~8s regardless of thread count
+      workaround: Use worker pool for throughput (8×12 threads > 4×24 threads)
+      discovered: 2026-01-20
+    - issue: BOS token is comma (,) - unusual but functional
+      workaround: No action needed - works correctly despite unusual token
+      discovered: 2026-01-20
+    - issue: Default context 16384 uses ~1.8 GB KV cache per worker
+      workaround: Memory budget ~10GB for 8 workers
+      discovered: 2026-01-20
+    - issue: PyTorch version extremely slow (0.009 pg/s)
+      workaround: Use GGUF version via llama.cpp for 19x speedup (0.17 pg/s)
+      discovered: 2026-01-20
 # Models deleted 2026-01-18 during MiniMax M2.1 download cleanup
 # Based on BLIND_RESCORE_2026-01-16.md analysis
 deprecated_models:
