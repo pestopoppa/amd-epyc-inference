@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-19 (Relative scoring methodology - proper model differentiation)
+**Last Updated:** 2026-01-22 (Added MiniMax-M2.1-Q4/Q6 and GLM-4.7-Flash scores)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -854,6 +854,7 @@ Complete production model lineup with relative scoring validation.
 | coder_escalation (Qwen3-53B baseline) | 38% quality, repetition loops |
 | architect_meta_llama_3_70b | 33% quality (use 3.1 instead) |
 | GLM-4.6-355B | 59% quality, slow |
+| **GLM-4.7-Flash** | **43% quality, SEVERE repetition/degeneration loops** |
 | Qwen3-VL-* (all sizes) | 0% agentic - empty tool calls |
 | MathSmith-Hard-Problem-Synthesizer | 5x slower than expected |
 
@@ -889,6 +890,9 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 | GLM-4.6-355B-A32B (MoE 2) | general | - | - | - | - | - | - | - | - | - | - |
 | GLM-4.6-355B-A32B (MoE 4) | general | - | - | - | - | - | - | - | - | 3.97 | 3.5 (+lookup) ❌ |
 | GLM-4.6-355B-A32B | ingest | 29/30 | - | - | 13/30 | - | 19/33 | - | **60%** | 3.7 | ~60% across roles |
+| ~~**GLM-4.7-Flash**~~ | general | 3/10 | 6/10 | 7/10 | 4/10 | 5/10 | 1/11 | - | **43%** ⚠️ | 19.14 | AVOID - severe repetition/degeneration |
+| **MiniMax-M2.1-Q4_K_M** | general | 8/10 | 8/10 | 9/10 | 9/10 | 8/10 | 4/11 | - | **75%** | 8.87 | Good reasoning, prompt repetition |
+| MiniMax-M2.1-Q6_K | general | 8/10 | 8/10 | 9/10 | 8/10 | 8/10 | 4/11 | - | **74%** | 8.20 | Similar to Q4, slightly slower |
 | ~~Qwen3-VL-235B-A22B-Thinking~~ | vision | - | ❌ | - | ❌ | - | - | ❌ | **INVALID**⚠️ | 5.8 | Scores invalid - no images passed |
 | ~~Qwen3-VL-235B-A22B-Thinking (MoE 2)~~ | vision | - | ❌ | - | ❌ | - | - | - | **INVALID**⚠️ | 7.6 | Scores invalid - no images passed |
 | ~~Qwen3-VL-235B-A22B-Thinking (MoE 4)~~ | vision | - | ❌ | - | ❌ | - | - | - | **INVALID**⚠️ | 6.8 | Scores invalid - no images passed |
