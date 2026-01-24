@@ -1,0 +1,126 @@
+id: add_model_to_registry
+name: Add Model to Registry
+version: "1.0.0"
+description: Add a new model entry to model_registry.yaml with all required fields including path, role, and acceleration config.
+category: registry
+estimated_tokens: 350
+
+permissions:
+  roles: ["frontdoor", "coder_primary", "architect_general", "admin"]
+  requires_approval: true
+  destructive: false
+
+inputs:
+  - name: model_path
+    type: path
+    description: Full path to the GGUF model file
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: model_name
+    type: string
+    description: Human-readable model name
+    required: true
+  - name: role
+    type: string
+    description: Role assignment for the model
+    required: true
+    validation:
+      enum: ["frontdoor", "coder_primary", "coder_escalation", "architect_general", "architect_coding", "worker_general", "worker_math", "worker_vision", "ingest_long_context"]
+  - name: quantization
+    type: string
+    description: Quantization format
+    required: false
+    default: "Q4_K_M"
+    validation:
+      enum: ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q6_K", "Q8_0", "F16"]
+  - name: context_size
+    type: integer
+    description: Default context size
+    required: false
+    default: 32768
+    validation:
+      min: 2048
+      max: 131072
+
+outputs:
+  - name: patch_path
+    type: path
+    description: Path to generated patch file
+  - name: role_key
+    type: string
+    description: Key used in registry
+
+steps:
+  - id: S1
+    name: Create Rollback Point
+    description: Backup current registry
+    action:
+      type: shell
+      command: "cp orchestration/model_registry.yaml orchestration/checkpoints/model_registry_backup.yaml"
+      capture_output: checkpoint_path
+    on_failure: abort
+
+  - id: S2
+    name: Verify Model File
+    description: Check model file exists and get size
+    action:
+      type: shell
+      command: "ls -lh ${input.model_path} 2>&1"
+      capture_output: model_info
+    on_failure: abort
+
+  - id: S3
+    name: Add Registry Entry
+    description: Add new model entry to registry
+    depends_on: ["S1", "S2"]
+    action:
+      type: registry_update
+      args:
+        role: "${input.role}"
+        model: "${input.model_name}"
+        path: "${input.model_path}"
+        quantization: "${input.quantization}"
+        context_size: "${input.context_size}"
+      capture_output: add_result
+    on_failure: rollback
+
+  - id: S4
+    name: Validate Registry
+    description: Ensure registry is valid YAML
+    depends_on: ["S3"]
+    action:
+      type: shell
+      command: "python3 -c \"import yaml; yaml.safe_load(open('orchestration/model_registry.yaml'))\" && echo 'Valid YAML'"
+      capture_output: validate_result
+    on_failure: rollback
+
+  - id: S5
+    name: Generate Patch
+    description: Create diff for review
+    depends_on: ["S4"]
+    action:
+      type: shell
+      command: "git diff orchestration/model_registry.yaml > orchestration/patches/pending/add_model.patch && echo 'Patch generated'"
+      capture_output: patch_info
+    on_failure: continue
+
+verification:
+  gates: ["registry_valid", "file_exists"]
+  assertions:
+    - expression: "'Valid YAML' in str(outputs.get('validate_result', ''))"
+      message: "Registry must be valid YAML after modification"
+
+rollback:
+  enabled: true
+  checkpoint_before: true
+  steps:
+    - id: R1
+      action:
+        type: shell
+        command: "cp orchestration/checkpoints/model_registry_backup.yaml orchestration/model_registry.yaml"
+
+metadata:
+  author: orchestrator
+  tags: ["registry", "model", "add"]

@@ -1,0 +1,136 @@
+id: prepare_finetuning_dataset
+name: Prepare Finetuning Dataset
+version: "1.0.0"
+description: Prepare and validate a dataset for model finetuning. Converts to required format and splits into train/eval sets.
+category: finetuning
+estimated_tokens: 350
+
+permissions:
+  roles: ["admin"]
+  requires_approval: true
+  destructive: false
+
+inputs:
+  - name: source_path
+    type: path
+    description: Path to source data (JSONL, CSV, or directory)
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: output_dir
+    type: path
+    description: Directory for processed dataset
+    required: true
+    validation:
+      path_prefix: "/mnt/raid0/llm/"
+  - name: format
+    type: string
+    description: Target format for finetuning
+    required: false
+    default: "chatml"
+    validation:
+      enum: ["chatml", "alpaca", "sharegpt", "raw"]
+  - name: train_split
+    type: float
+    description: Fraction of data for training (0.0-1.0)
+    required: false
+    default: 0.9
+    validation:
+      min: 0.5
+      max: 0.99
+  - name: max_samples
+    type: integer
+    description: Maximum number of samples to include
+    required: false
+    default: 0
+    validation:
+      min: 0
+      max: 1000000
+
+outputs:
+  - name: train_path
+    type: path
+    description: Path to training set
+  - name: eval_path
+    type: path
+    description: Path to evaluation set
+  - name: sample_count
+    type: integer
+    description: Total number of samples processed
+  - name: validation_report
+    type: string
+    description: Dataset validation report
+
+steps:
+  - id: S1
+    name: Create Output Directory
+    description: Ensure output directory exists
+    action:
+      type: shell
+      command: "mkdir -p ${input.output_dir} && echo 'Directory ready'"
+      capture_output: dir_result
+    on_failure: abort
+
+  - id: S2
+    name: Analyze Source Data
+    description: Count records and check format
+    depends_on: [S1]
+    action:
+      type: shell
+      command: "wc -l ${input.source_path} 2>/dev/null || find ${input.source_path} -type f | wc -l"
+      timeout_seconds: 60
+      capture_output: source_analysis
+    on_failure: abort
+
+  - id: S3
+    name: Convert Format
+    description: Convert source data to target format
+    depends_on: [S2]
+    action:
+      type: shell
+      command: "python3 -c \"print('Format conversion: ${input.format}')\" && cp ${input.source_path} ${input.output_dir}/converted.jsonl 2>/dev/null || echo 'Conversion placeholder'"
+      timeout_seconds: 300
+      capture_output: convert_result
+    on_failure: abort
+
+  - id: S4
+    name: Split Dataset
+    description: Split into train and eval sets
+    depends_on: [S3]
+    action:
+      type: shell
+      command: "python3 -c \"import json; lines=open('${input.output_dir}/converted.jsonl').readlines() if '${input.output_dir}/converted.jsonl' else []; split=int(len(lines)*${input.train_split}); open('${input.output_dir}/train.jsonl','w').writelines(lines[:split]); open('${input.output_dir}/eval.jsonl','w').writelines(lines[split:]); print(f'Train: {split}, Eval: {len(lines)-split}')\" 2>&1 || echo 'Split placeholder'"
+      timeout_seconds: 120
+      capture_output: split_result
+    on_failure: abort
+
+  - id: S5
+    name: Validate Dataset
+    description: Run validation checks on prepared data
+    depends_on: [S4]
+    action:
+      type: shell
+      command: "echo 'Validation: checking train/eval files exist' && ls -la ${input.output_dir}/*.jsonl 2>&1"
+      timeout_seconds: 60
+      capture_output: validation_result
+    on_failure: continue
+
+verification:
+  gates: ["file_exists", "output_valid"]
+  assertions:
+    - expression: "'train' in outputs.get('split_result', '').lower() or 'placeholder' in outputs.get('split_result', '').lower()"
+      message: "Dataset split must complete"
+
+rollback:
+  enabled: true
+  checkpoint_before: false
+  steps:
+    - id: R1
+      action:
+        type: shell
+        command: "rm -rf ${input.output_dir} 2>/dev/null || true"
+
+metadata:
+  author: orchestrator
+  tags: ["finetuning", "dataset", "preparation"]

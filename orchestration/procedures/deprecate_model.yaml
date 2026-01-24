@@ -1,0 +1,122 @@
+id: deprecate_model
+name: Deprecate Model in Registry
+version: "1.0.0"
+description: Mark a model as deprecated in model_registry.yaml. Model file deletion is a SEPARATE manual step requiring explicit operator approval.
+category: registry
+estimated_tokens: 250
+
+permissions:
+  roles: ["admin"]
+  requires_approval: true
+  destructive: false
+
+inputs:
+  - name: model_name
+    type: string
+    description: Model name in registry (e.g., "Qwen2.5-Coder-32B")
+    required: true
+  - name: reason
+    type: string
+    description: Why the model is being deprecated
+    required: true
+    validation:
+      enum: ["superseded", "quality_issues", "compatibility_issues", "performance_issues", "license_issues", "storage_cleanup", "other"]
+  - name: replacement_model
+    type: string
+    description: Model that replaces this one (if applicable)
+    required: false
+  - name: deprecation_date
+    type: string
+    description: Date of deprecation (YYYY-MM-DD)
+    required: false
+  - name: notes
+    type: string
+    description: Additional notes about the deprecation
+    required: false
+
+outputs:
+  - name: registry_updated
+    type: boolean
+    description: Whether model_registry.yaml was updated
+  - name: deletion_command
+    type: string
+    description: Command to delete model file (for operator to run manually)
+
+steps:
+  - id: S1
+    name: Create Rollback Point
+    description: Backup current registry
+    action:
+      type: shell
+      command: "mkdir -p orchestration/checkpoints && cp orchestration/model_registry.yaml orchestration/checkpoints/model_registry_pre_deprecate.yaml && echo 'Checkpoint created'"
+      capture_output: checkpoint_result
+    on_failure: abort
+
+  - id: S2
+    name: Verify Model Exists
+    description: Check model is in registry before deprecating
+    action:
+      type: shell
+      command: "grep -q '${input.model_name}' orchestration/model_registry.yaml && echo 'Model found' || (echo 'ERROR: Model not found in registry' && exit 1)"
+      capture_output: verify_result
+    on_failure: abort
+
+  - id: S3
+    name: Mark as Deprecated
+    description: Add deprecated flag and metadata to registry entry
+    depends_on: [S1, S2]
+    action:
+      type: shell
+      command: "python3 -c \"import yaml; from datetime import datetime; r=yaml.safe_load(open('orchestration/model_registry.yaml')); r.setdefault('deprecated_models', {}); r['deprecated_models']['${input.model_name}']={'reason': '${input.reason}', 'replacement': '${input.replacement_model}' or None, 'date': '${input.deprecation_date}' or datetime.now().strftime('%Y-%m-%d'), 'notes': '${input.notes}' or None}; yaml.dump(r, open('orchestration/model_registry.yaml', 'w'), default_flow_style=False, sort_keys=False)\" && echo 'Model marked as deprecated'"
+      capture_output: deprecate_result
+    on_failure: rollback
+
+  - id: S4
+    name: Find Model Path
+    description: Locate the model file path for deletion command
+    depends_on: [S3]
+    action:
+      type: shell
+      command: "grep -A5 '${input.model_name}' orchestration/model_registry.yaml | grep -oP 'path:\\s*\\K.*' | head -1 || echo 'Path not found in registry'"
+      capture_output: model_path
+    on_failure: continue
+
+  - id: S5
+    name: Generate Deletion Command
+    description: Create the manual deletion command (NOT executed automatically)
+    depends_on: [S4]
+    action:
+      type: shell
+      command: "echo '# MANUAL DELETION REQUIRED - Run this command ONLY after operator approval:' && echo '# rm -i ${outputs.model_path}' && echo '' && echo '# To fully remove from registry after deletion:' && echo '# Edit orchestration/model_registry.yaml and remove the model entry'"
+      capture_output: deletion_instructions
+    on_failure: continue
+
+  - id: S6
+    name: Generate Patch
+    description: Create diff for review
+    depends_on: [S3]
+    action:
+      type: shell
+      command: "git diff orchestration/model_registry.yaml > orchestration/patches/pending/deprecate_model.patch 2>/dev/null || true && echo 'Patch generated'"
+      capture_output: patch_result
+    on_failure: continue
+
+verification:
+  gates: ["registry_valid"]
+  assertions:
+    - expression: "'deprecated' in outputs.get('deprecate_result', '').lower()"
+      message: "Model should be marked as deprecated"
+
+rollback:
+  enabled: true
+  checkpoint_before: true
+  steps:
+    - id: R1
+      action:
+        type: shell
+        command: "cp orchestration/checkpoints/model_registry_pre_deprecate.yaml orchestration/model_registry.yaml && echo 'Rolled back'"
+
+metadata:
+  author: orchestrator
+  tags: ["registry", "deprecate", "cleanup"]
+  notes: "Model file deletion is NEVER automatic. Operator must manually run the deletion command after reviewing the deprecation."

@@ -1,0 +1,338 @@
+[
+  {
+    "task": "List files in a directory",
+    "code": "result = list_dir('/path/to/dir')\nFINAL(result)",
+    "tools_used": ["list_dir", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Show files in /tmp",
+    "code": "result = list_dir('/tmp')\nFINAL(result)",
+    "tools_used": ["list_dir", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "What files are in the project directory",
+    "code": "result = list_dir('/mnt/raid0/llm/claude')\nFINAL(result)",
+    "tools_used": ["list_dir", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Get information about a file",
+    "code": "info = file_info('/path/to/file.txt')\nFINAL(info)",
+    "tools_used": ["file_info", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Check file size and modification date",
+    "code": "info = file_info('/path/to/file')\nFINAL(f\"Size: {json.loads(info)['size']} bytes, Modified: {json.loads(info)['modified']}\")",
+    "tools_used": ["file_info", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Read the first 500 characters of a file",
+    "code": "content = peek(500, file_path='/path/to/file.txt')\nFINAL(content)",
+    "tools_used": ["peek", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Show me the beginning of README.md",
+    "code": "content = peek(1000, file_path='/mnt/raid0/llm/claude/README.md')\nFINAL(content)",
+    "tools_used": ["peek", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Preview a config file",
+    "code": "content = peek(2000, file_path='/path/to/config.yaml')\nFINAL(content)",
+    "tools_used": ["peek", "FINAL"],
+    "category": "filesystem"
+  },
+  {
+    "task": "Search for a pattern in a file",
+    "code": "matches = grep('error', file_path='/path/to/log.txt')\nFINAL(matches)",
+    "tools_used": ["grep", "FINAL"],
+    "category": "search"
+  },
+  {
+    "task": "Find all TODO comments in a file",
+    "code": "matches = grep('TODO', file_path='/path/to/code.py')\nFINAL(matches)",
+    "tools_used": ["grep", "FINAL"],
+    "category": "search"
+  },
+  {
+    "task": "Search for function definitions",
+    "code": "matches = grep('def ', file_path='/path/to/module.py')\nFINAL(matches)",
+    "tools_used": ["grep", "FINAL"],
+    "category": "search"
+  },
+  {
+    "task": "Extract text from a PDF",
+    "code": "doc = ocr_document('/path/to/document.pdf')\nFINAL(doc)",
+    "tools_used": ["ocr_document", "FINAL"],
+    "category": "document"
+  },
+  {
+    "task": "OCR a PDF and get the text",
+    "code": "result = json.loads(ocr_document('/path/to/file.pdf'))\nFINAL(result['full_text'])",
+    "tools_used": ["ocr_document", "FINAL"],
+    "category": "document"
+  },
+  {
+    "task": "How many pages is this PDF",
+    "code": "doc = json.loads(ocr_document('/path/to/doc.pdf'))\nFINAL(f\"The PDF has {doc['total_pages']} pages\")",
+    "tools_used": ["ocr_document", "FINAL"],
+    "category": "document"
+  },
+  {
+    "task": "Find figures in a PDF",
+    "code": "doc = json.loads(ocr_document('/path/to/paper.pdf'))\nfigures = doc['figures']\nFINAL(f\"Found {len(figures)} figures: {figures}\")",
+    "tools_used": ["ocr_document", "FINAL"],
+    "category": "document"
+  },
+  {
+    "task": "Extract a figure from page 3 of a PDF",
+    "code": "img_path = extract_figure('/path/to/doc.pdf', page=3, bbox=[100, 200, 800, 600])\nFINAL(f\"Figure saved to: {img_path}\")",
+    "tools_used": ["extract_figure", "FINAL"],
+    "category": "document"
+  },
+  {
+    "task": "Crop an image from a PDF",
+    "code": "img_path = extract_figure('/path/to/doc.pdf', page=1, bbox=[0, 0, 500, 300])\nFINAL(img_path)",
+    "tools_used": ["extract_figure", "FINAL"],
+    "category": "document"
+  },
+  {
+    "task": "Describe an image",
+    "code": "description = analyze_figure('/path/to/image.png', 'Describe this image in detail')\nFINAL(description)",
+    "tools_used": ["analyze_figure", "FINAL"],
+    "category": "vision"
+  },
+  {
+    "task": "What's in this screenshot",
+    "code": "description = analyze_figure('/path/to/screenshot.png', 'What is shown in this screenshot?')\nFINAL(description)",
+    "tools_used": ["analyze_figure", "FINAL"],
+    "category": "vision"
+  },
+  {
+    "task": "Analyze a chart",
+    "code": "analysis = analyze_figure('/path/to/chart.png', 'Describe the data shown in this chart')\nFINAL(analysis)",
+    "tools_used": ["analyze_figure", "FINAL"],
+    "category": "vision"
+  },
+  {
+    "task": "Fetch content from a URL",
+    "code": "content = web_fetch('https://example.com')\nFINAL(content)",
+    "tools_used": ["web_fetch", "FINAL"],
+    "category": "web"
+  },
+  {
+    "task": "Get the contents of a webpage",
+    "code": "page = web_fetch('https://docs.python.org/3/', max_chars=5000)\nFINAL(page)",
+    "tools_used": ["web_fetch", "FINAL"],
+    "category": "web"
+  },
+  {
+    "task": "Download and read a web page",
+    "code": "content = web_fetch('https://example.com/article')\nFINAL(content)",
+    "tools_used": ["web_fetch", "FINAL"],
+    "category": "web"
+  },
+  {
+    "task": "Run ls command",
+    "code": "output = run_shell('ls -la /path/to/dir')\nFINAL(output)",
+    "tools_used": ["run_shell", "FINAL"],
+    "category": "shell"
+  },
+  {
+    "task": "Check git status",
+    "code": "status = run_shell('git status')\nFINAL(status)",
+    "tools_used": ["run_shell", "FINAL"],
+    "category": "shell"
+  },
+  {
+    "task": "Show recent git commits",
+    "code": "log = run_shell('git log --oneline -10')\nFINAL(log)",
+    "tools_used": ["run_shell", "FINAL"],
+    "category": "shell"
+  },
+  {
+    "task": "Count lines in a file",
+    "code": "count = run_shell('wc -l /path/to/file.txt')\nFINAL(count)",
+    "tools_used": ["run_shell", "FINAL"],
+    "category": "shell"
+  },
+  {
+    "task": "Find python files",
+    "code": "files = run_shell('find /path -name \"*.py\" | head -20')\nFINAL(files)",
+    "tools_used": ["run_shell", "FINAL"],
+    "category": "shell"
+  },
+  {
+    "task": "Summarize a document",
+    "code": "doc = json.loads(ocr_document('/path/to/doc.pdf'))\ntext = doc['full_text'][:8000]\nsummary = llm_call(f'Summarize this document:\\n{text}', role='worker')\nFINAL(summary)",
+    "tools_used": ["ocr_document", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "Summarize this PDF",
+    "code": "doc = json.loads(ocr_document('/path/to/file.pdf'))\nsummary = llm_call(f'Provide a brief summary: {doc[\"full_text\"][:6000]}', role='worker')\nFINAL(summary)",
+    "tools_used": ["ocr_document", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "Answer a question about a file",
+    "code": "content = peek(4000, file_path='/path/to/doc.txt')\nanswer = llm_call(f'Based on this content, answer: What is the main topic?\\n\\nContent: {content}', role='worker')\nFINAL(answer)",
+    "tools_used": ["peek", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "Explain code in a file",
+    "code": "code = peek(3000, file_path='/path/to/script.py')\nexplanation = llm_call(f'Explain what this code does:\\n```python\\n{code}\\n```', role='worker')\nFINAL(explanation)",
+    "tools_used": ["peek", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "Find and summarize errors in a log",
+    "code": "errors = grep('ERROR', file_path='/path/to/app.log')\nsummary = llm_call(f'Summarize these errors and suggest fixes:\\n{errors}', role='worker')\nFINAL(summary)",
+    "tools_used": ["grep", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "Compare two files",
+    "code": "file1 = peek(2000, file_path='/path/to/file1.txt')\nfile2 = peek(2000, file_path='/path/to/file2.txt')\ncomparison = llm_call(f'Compare these two files:\\n\\nFile 1:\\n{file1}\\n\\nFile 2:\\n{file2}', role='worker')\nFINAL(comparison)",
+    "tools_used": ["peek", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "Extract key points from multiple sections",
+    "code": "intro = grep('Introduction', file_path='/path/to/doc.txt')\nconclusion = grep('Conclusion', file_path='/path/to/doc.txt')\nanalysis = llm_call(f'Extract key points from:\\nIntro: {intro}\\nConclusion: {conclusion}', role='worker')\nFINAL(analysis)",
+    "tools_used": ["grep", "llm_call", "FINAL"],
+    "category": "complex"
+  },
+  {
+    "task": "What is 2+2",
+    "code": "FINAL(4)",
+    "tools_used": ["FINAL"],
+    "category": "simple"
+  },
+  {
+    "task": "Calculate 10 * 5",
+    "code": "result = 10 * 5\nFINAL(result)",
+    "tools_used": ["FINAL"],
+    "category": "simple"
+  },
+  {
+    "task": "Say hello",
+    "code": "FINAL('Hello!')",
+    "tools_used": ["FINAL"],
+    "category": "simple"
+  },
+  {
+    "task": "What day is today",
+    "code": "FINAL('I cannot determine the current date without external tools.')",
+    "tools_used": ["FINAL"],
+    "category": "simple"
+  },
+  {
+    "task": "Store a value for later",
+    "code": "artifacts['my_value'] = 42\nFINAL(f\"Stored value: {artifacts['my_value']}\")",
+    "tools_used": ["FINAL"],
+    "category": "artifacts"
+  },
+  {
+    "task": "Process files and store results",
+    "code": "files = json.loads(list_dir('/path'))\nartifacts['file_count'] = len(files['files'])\nFINAL(f\"Found {artifacts['file_count']} files\")",
+    "tools_used": ["list_dir", "FINAL"],
+    "category": "artifacts"
+  },
+  {
+    "task": "Gather info from multiple sources",
+    "code": "artifacts['file_list'] = list_dir('/path')\nartifacts['readme'] = peek(1000, file_path='/path/README.md')\nFINAL(f\"Files: {artifacts['file_list']}\\nReadme: {artifacts['readme']}\")",
+    "tools_used": ["list_dir", "peek", "FINAL"],
+    "category": "artifacts"
+  },
+  {
+    "task": "This task is too complex, I need help",
+    "code": "escalate('This task requires architectural decisions beyond my capability')\nFINAL('Escalation requested')",
+    "tools_used": ["escalate", "FINAL"],
+    "category": "escalation"
+  },
+  {
+    "task": "I'm stuck on this problem",
+    "code": "escalate('Multiple approaches failed, need higher-tier model assistance')\nFINAL('Requesting escalation to architect')",
+    "tools_used": ["escalate", "FINAL"],
+    "category": "escalation"
+  },
+  {
+    "task": "Find similar past tasks",
+    "code": "similar = recall('summarize PDF document')\nFINAL(similar)",
+    "tools_used": ["recall", "FINAL"],
+    "category": "memory"
+  },
+  {
+    "task": "How did I solve this before",
+    "code": "past = recall('extract text from image')\nFINAL(past)",
+    "tools_used": ["recall", "FINAL"],
+    "category": "memory"
+  },
+  {
+    "task": "Process multiple files in parallel",
+    "code": "prompts = [\n    f'Summarize: {peek(2000, file_path=f)}' \n    for f in ['/path/file1.txt', '/path/file2.txt', '/path/file3.txt']\n]\nresults = llm_batch(prompts, role='worker')\nFINAL(results)",
+    "tools_used": ["peek", "llm_batch", "FINAL"],
+    "category": "parallel"
+  },
+  {
+    "task": "Analyze multiple documents at once",
+    "code": "docs = ['/path/doc1.pdf', '/path/doc2.pdf']\nsummaries = []\nfor doc in docs:\n    text = json.loads(ocr_document(doc))['full_text'][:3000]\n    summaries.append(text)\nbatch_results = llm_batch([f'Summarize: {s}' for s in summaries], role='worker')\nFINAL(batch_results)",
+    "tools_used": ["ocr_document", "llm_batch", "FINAL"],
+    "category": "parallel"
+  },
+  {
+    "task": "Benchmark a new model",
+    "code": "result = run_procedure('benchmark_new_model', model_path='/mnt/raid0/llm/models/NewModel.gguf', model_name='NewModel')\nFINAL(result)",
+    "tools_used": ["run_procedure", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "Add a new model to the registry",
+    "code": "result = run_procedure('add_model_to_registry', model_path='/mnt/raid0/llm/models/Model.gguf', model_name='ModelName', role='coder_primary')\nFINAL(result)",
+    "tools_used": ["run_procedure", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "Update model performance data after benchmarking",
+    "code": "result = run_procedure('update_registry_performance', model_name='Qwen2.5-Coder-32B', baseline_tps=12.5, optimized_tps=33.0)\nFINAL(result)",
+    "tools_used": ["run_procedure", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "Check if a draft model is compatible with a target",
+    "code": "result = run_procedure('check_draft_compatibility', draft_path='/mnt/raid0/llm/models/draft.gguf', target_path='/mnt/raid0/llm/models/target.gguf')\nFINAL(result)",
+    "tools_used": ["run_procedure", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "Document a model quirk",
+    "code": "result = run_procedure('add_model_quirks', model_name='Qwen3-Coder-480B', quirk_type='spec_decode', issue='BOS mismatch breaks speculation', workaround='Use expert reduction only')\nFINAL(result)",
+    "tools_used": ["run_procedure", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "Deprecate an old model",
+    "code": "result = run_procedure('deprecate_model', model_name='OldModel', reason='superseded', replacement_model='NewModel')\nFINAL(result)",
+    "tools_used": ["run_procedure", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "List available procedures",
+    "code": "procs = list_procedures()\nFINAL(procs)",
+    "tools_used": ["list_procedures", "FINAL"],
+    "category": "procedure"
+  },
+  {
+    "task": "List benchmark procedures only",
+    "code": "procs = list_procedures(category='benchmark')\nFINAL(procs)",
+    "tools_used": ["list_procedures", "FINAL"],
+    "category": "procedure"
+  }
+]

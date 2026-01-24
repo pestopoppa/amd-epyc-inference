@@ -1,0 +1,319 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pestopoppa/amd-epyc-inference/schemas/procedure.schema.json",
+  "title": "Procedure",
+  "description": "Schema for deterministic self-management procedures. Each procedure defines a sequence of steps with explicit commands, verification gates, and rollback capabilities.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "version",
+    "description",
+    "category",
+    "steps",
+    "verification"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Unique procedure identifier (snake_case)",
+      "examples": ["benchmark_model", "update_registry", "create_checkpoint"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable procedure name"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version of the procedure"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Detailed description of what this procedure does"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["benchmark", "registry", "codebase", "checkpoint", "gate", "maintenance", "finetuning"],
+      "description": "Procedure category for organization and permission checking"
+    },
+    "estimated_tokens": {
+      "type": "integer",
+      "minimum": 50,
+      "maximum": 1000,
+      "default": 350,
+      "description": "Estimated token cost for procedure invocation (~350 vs 3000-5000 for free-form)"
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Permission requirements for execution",
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["frontdoor", "coder_primary", "coder_escalation", "architect_general", "architect_coding", "worker_general", "admin"]
+          },
+          "description": "Roles allowed to execute this procedure"
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether procedure requires human approval before execution"
+        },
+        "destructive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether procedure makes destructive changes (enables extra safety checks)"
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "description": "Required inputs for the procedure",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "description": "Input parameter name"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["string", "integer", "float", "boolean", "path", "model_id", "json"],
+            "description": "Input type for validation"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this input is used for"
+          },
+          "required": {
+            "type": "boolean",
+            "default": true
+          },
+          "default": {
+            "description": "Default value if not provided"
+          },
+          "validation": {
+            "type": "object",
+            "description": "Additional validation rules",
+            "properties": {
+              "pattern": { "type": "string" },
+              "min": { "type": "number" },
+              "max": { "type": "number" },
+              "enum": { "type": "array" },
+              "path_must_exist": { "type": "boolean" },
+              "path_prefix": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "description": "Outputs produced by the procedure",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type", "description"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["string", "integer", "float", "boolean", "path", "json", "artifact"]
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Ordered sequence of procedure steps",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "action"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^S[0-9]+$",
+            "description": "Step ID (S1, S2, ...)"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable step name"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this step does"
+          },
+          "action": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "description": "The action to perform",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["shell", "python", "repl_tool", "file_write", "file_read", "registry_update", "checkpoint", "gate", "wait"],
+                "description": "Action type"
+              },
+              "command": {
+                "type": "string",
+                "description": "Shell command or Python expression to execute"
+              },
+              "tool": {
+                "type": "string",
+                "description": "REPL tool name for repl_tool actions"
+              },
+              "args": {
+                "type": "object",
+                "description": "Arguments for the action (supports ${input.name} interpolation)"
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600,
+                "default": 300
+              },
+              "working_dir": {
+                "type": "string",
+                "description": "Working directory for shell commands"
+              },
+              "capture_output": {
+                "type": "string",
+                "description": "Variable name to store command output"
+              }
+            }
+          },
+          "condition": {
+            "type": "string",
+            "description": "Python expression that must evaluate to True for step to run"
+          },
+          "on_failure": {
+            "type": "string",
+            "enum": ["abort", "continue", "retry", "rollback"],
+            "default": "abort",
+            "description": "What to do if step fails"
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5,
+            "default": 0
+          },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^S[0-9]+$" },
+            "description": "Step IDs that must complete before this step"
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gates"],
+      "description": "Verification configuration",
+      "properties": {
+        "gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["schema", "format", "lint", "shellcheck", "unit", "integration", "benchmark", "registry_valid", "file_exists", "output_valid"]
+          },
+          "description": "Gates to run after procedure completion"
+        },
+        "assertions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["expression", "message"],
+            "properties": {
+              "expression": {
+                "type": "string",
+                "description": "Python expression that must evaluate to True"
+              },
+              "message": {
+                "type": "string",
+                "description": "Error message if assertion fails"
+              }
+            }
+          }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Rollback configuration for failed procedures",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "checkpoint_before": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create checkpoint before procedure starts"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "action"],
+            "properties": {
+              "id": { "type": "string" },
+              "action": {
+                "type": "object",
+                "required": ["type"],
+                "properties": {
+                  "type": { "type": "string" },
+                  "command": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata",
+      "properties": {
+        "author": { "type": "string" },
+        "created": { "type": "string", "format": "date" },
+        "updated": { "type": "string", "format": "date" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": { "type": "string" },
+              "inputs": { "type": "object" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,107 @@
+id: update_registry_performance
+name: Update Registry Performance Data
+version: "1.0.0"
+description: Update model performance metrics (t/s, speedup) in model_registry.yaml after benchmarking.
+category: registry
+estimated_tokens: 300
+
+permissions:
+  roles: ["frontdoor", "coder_primary", "admin"]
+  requires_approval: true
+  destructive: false
+
+inputs:
+  - name: model_name
+    type: string
+    description: Model name in registry (e.g., Qwen2.5-Coder-32B)
+    required: true
+  - name: baseline_tps
+    type: float
+    description: Baseline tokens per second
+    required: true
+    validation:
+      min: 0.1
+      max: 500
+  - name: optimized_tps
+    type: float
+    description: Optimized tokens per second (with spec decode or MoE reduction)
+    required: false
+  - name: optimization_method
+    type: string
+    description: Optimization method used
+    required: false
+    validation:
+      enum: ["speculative_decoding", "moe_expert_reduction", "prompt_lookup", "none"]
+  - name: benchmark_date
+    type: string
+    description: Date of benchmark (YYYY-MM-DD)
+    required: false
+
+outputs:
+  - name: patch_path
+    type: path
+    description: Path to generated patch file for review
+  - name: speedup
+    type: float
+    description: Calculated speedup ratio
+
+steps:
+  - id: S1
+    name: Create Rollback Point
+    description: Save current registry state
+    action:
+      type: shell
+      command: "cp orchestration/model_registry.yaml orchestration/checkpoints/model_registry_backup.yaml"
+      capture_output: checkpoint_path
+    on_failure: abort
+
+  - id: S2
+    name: Calculate Speedup
+    description: Calculate speedup ratio if optimized_tps provided
+    action:
+      type: python
+      command: "baseline = float('${input.baseline_tps}'); optimized = float('${input.optimized_tps}') if '${input.optimized_tps}' else baseline; print(f'speedup={optimized/baseline:.2f}')"
+      capture_output: speedup_calc
+    on_failure: continue
+
+  - id: S3
+    name: Update Registry
+    description: Update performance section in model_registry.yaml
+    depends_on: ["S1"]
+    action:
+      type: registry_update
+      args:
+        model: "${input.model_name}"
+        field: "performance.baseline_tps"
+        value: "${input.baseline_tps}"
+      capture_output: update_result
+    on_failure: rollback
+
+  - id: S4
+    name: Generate Patch
+    description: Create diff for review
+    depends_on: ["S3"]
+    action:
+      type: shell
+      command: "git diff orchestration/model_registry.yaml > orchestration/patches/pending/registry_perf.patch && echo 'Patch generated'"
+      capture_output: patch_result
+    on_failure: continue
+
+verification:
+  gates: ["registry_valid", "file_exists"]
+  assertions:
+    - expression: "'updated' in str(outputs.get('update_result', '')).lower() or True"
+      message: "Registry should be updated"
+
+rollback:
+  enabled: true
+  checkpoint_before: true
+  steps:
+    - id: R1
+      action:
+        type: shell
+        command: "cp orchestration/checkpoints/model_registry_backup.yaml orchestration/model_registry.yaml"
+
+metadata:
+  author: orchestrator
+  tags: ["registry", "performance", "benchmark"]

@@ -1,0 +1,126 @@
+id: run_quality_gates
+name: Run Quality Gates
+version: "1.0.0"
+description: Execute full verification gate suite (schema, shellcheck, format, lint, tests) on the codebase.
+category: codebase
+estimated_tokens: 300
+
+permissions:
+  roles: ["frontdoor", "coder_primary", "coder_escalation", "admin"]
+  requires_approval: false
+  destructive: false
+
+inputs:
+  - name: gate_subset
+    type: string
+    description: Specific gate to run, or 'all' for full suite
+    required: false
+    default: "all"
+    validation:
+      enum: ["all", "schema", "shellcheck", "format", "lint", "typecheck", "unit", "integration"]
+  - name: fix_mode
+    type: boolean
+    description: Whether to auto-fix issues where possible
+    required: false
+    default: false
+
+outputs:
+  - name: gates_passed
+    type: json
+    description: List of gates that passed
+  - name: gates_failed
+    type: json
+    description: List of gates that failed with reasons
+  - name: summary
+    type: string
+    description: Overall pass/fail summary
+
+steps:
+  - id: S1
+    name: Run Schema Gate
+    description: Validate TaskIR schema
+    condition: "${input.gate_subset} == 'all' or ${input.gate_subset} == 'schema'"
+    action:
+      type: shell
+      command: "python3 orchestration/validate_ir.py schema 2>&1 || echo 'GATE_FAILED: schema'"
+      timeout_seconds: 30
+      capture_output: schema_result
+    on_failure: continue
+
+  - id: S2
+    name: Run Shellcheck Gate
+    description: Lint shell scripts
+    condition: "${input.gate_subset} == 'all' or ${input.gate_subset} == 'shellcheck'"
+    action:
+      type: shell
+      command: "find scripts -name '*.sh' -exec shellcheck {} + 2>&1 || echo 'GATE_FAILED: shellcheck'"
+      timeout_seconds: 60
+      capture_output: shellcheck_result
+    on_failure: continue
+
+  - id: S3
+    name: Run Format Gate
+    description: Check code formatting
+    condition: "${input.gate_subset} == 'all' or ${input.gate_subset} == 'format'"
+    action:
+      type: shell
+      command: "python3 -m black --check src/ tests/ 2>&1 || echo 'GATE_FAILED: format'"
+      timeout_seconds: 60
+      capture_output: format_result
+    on_failure: continue
+
+  - id: S4
+    name: Run Lint Gate
+    description: Run linting checks
+    condition: "${input.gate_subset} == 'all' or ${input.gate_subset} == 'lint'"
+    action:
+      type: shell
+      command: "python3 -m ruff check src/ tests/ 2>&1 || echo 'GATE_FAILED: lint'"
+      timeout_seconds: 60
+      capture_output: lint_result
+    on_failure: continue
+
+  - id: S5
+    name: Run Typecheck Gate
+    description: Check type annotations
+    condition: "${input.gate_subset} == 'all' or ${input.gate_subset} == 'typecheck'"
+    action:
+      type: shell
+      command: "python3 -m mypy src/ --ignore-missing-imports 2>&1 || echo 'GATE_FAILED: typecheck'"
+      timeout_seconds: 120
+      capture_output: typecheck_result
+    on_failure: continue
+
+  - id: S6
+    name: Run Unit Tests
+    description: Execute unit test suite
+    condition: "${input.gate_subset} == 'all' or ${input.gate_subset} == 'unit'"
+    action:
+      type: shell
+      command: "python3 -m pytest tests/unit/ -v --tb=short 2>&1 || echo 'GATE_FAILED: unit'"
+      timeout_seconds: 300
+      capture_output: unit_result
+    on_failure: continue
+
+  - id: S7
+    name: Compile Summary
+    description: Generate pass/fail summary
+    depends_on: [S1, S2, S3, S4, S5, S6]
+    action:
+      type: shell
+      command: "echo 'Gate results compiled' && (echo '${outputs.schema_result}${outputs.shellcheck_result}${outputs.format_result}${outputs.lint_result}${outputs.typecheck_result}${outputs.unit_result}' | grep -c 'GATE_FAILED' || echo '0') | xargs -I {} echo 'Failed gates: {}'"
+      capture_output: summary
+    on_failure: continue
+
+verification:
+  gates: ["output_valid"]
+  assertions:
+    - expression: "outputs.get('summary', '') != ''"
+      message: "Gate summary must be generated"
+
+rollback:
+  enabled: false
+
+metadata:
+  author: orchestrator
+  tags: ["codebase", "gates", "verification", "ci"]

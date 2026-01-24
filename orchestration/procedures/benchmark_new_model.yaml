@@ -1,0 +1,107 @@
+id: benchmark_new_model
+name: Benchmark New Model
+version: "1.0.0"
+description: Run comprehensive benchmark suite on a new GGUF model to evaluate quality and performance before adding to the registry.
+category: benchmark
+estimated_tokens: 400
+
+permissions:
+  roles: ["frontdoor", "coder_primary", "admin"]
+  requires_approval: false
+  destructive: false
+
+inputs:
+  - name: model_path
+    type: path
+    description: Full path to the GGUF model file
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: model_name
+    type: string
+    description: Human-readable model name for registry entry
+    required: true
+    validation:
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]+$"
+  - name: suite
+    type: string
+    description: Benchmark suite to run
+    required: false
+    default: "all"
+    validation:
+      enum: ["all", "thinking", "coder", "general", "agentic", "math", "vl", "long_context", "instruction_precision"]
+  - name: threads
+    type: integer
+    description: Number of CPU threads to use
+    required: false
+    default: 96
+    validation:
+      min: 1
+      max: 192
+
+outputs:
+  - name: results_path
+    type: path
+    description: Path to benchmark results JSON
+  - name: score_pct
+    type: float
+    description: Overall benchmark score percentage
+  - name: avg_tps
+    type: float
+    description: Average tokens per second
+
+steps:
+  - id: S1
+    name: Health Check
+    description: Verify model loads and generates output
+    action:
+      type: shell
+      command: "timeout 30 llama-cli -m ${input.model_path} -p Hello -n 10 --no-display-prompt 2>&1"
+      timeout_seconds: 60
+      capture_output: health_check_output
+    on_failure: abort
+
+  - id: S2
+    name: Detect Architecture
+    description: Extract model architecture and expert count
+    action:
+      type: shell
+      command: "llama-cli -m ${input.model_path} --show-config 2>&1 | head -50"
+      timeout_seconds: 30
+      capture_output: model_config
+    on_failure: continue
+
+  - id: S3
+    name: Run Benchmark Suite
+    description: Execute the benchmark suite
+    depends_on: ["S1"]
+    action:
+      type: shell
+      command: "./scripts/benchmark/run_overnight_benchmark_suite.sh --model ${input.model_path} --suite ${input.suite} --threads ${input.threads} 2>&1"
+      timeout_seconds: 3600
+      capture_output: benchmark_output
+    on_failure: abort
+
+  - id: S4
+    name: Collect Results
+    description: Parse benchmark results and extract metrics
+    depends_on: ["S3"]
+    action:
+      type: python
+      command: "import json; from pathlib import Path; results_dir = Path('benchmarks/results/runs'); latest = max(results_dir.iterdir(), key=lambda p: p.stat().st_mtime); print(json.dumps({'results_path': str(latest)}))"
+      capture_output: results_info
+    on_failure: abort
+
+verification:
+  gates: ["file_exists", "output_valid"]
+  assertions:
+    - expression: "outputs.get('score_pct', 0) >= 0"
+      message: "Benchmark must produce valid score"
+
+rollback:
+  enabled: false
+
+metadata:
+  author: orchestrator
+  tags: ["benchmark", "model", "evaluation"]

@@ -1,0 +1,109 @@
+id: add_model_quirks
+name: Add Model Quirks
+version: "1.0.0"
+description: Document discovered model quirks, workarounds, and known issues in docs/reference/models/QUIRKS.md and model_registry.yaml.
+category: registry
+estimated_tokens: 300
+
+permissions:
+  roles: ["frontdoor", "coder_primary", "architect_general", "admin"]
+  requires_approval: true
+  destructive: false
+
+inputs:
+  - name: model_name
+    type: string
+    description: Model name (e.g., "Qwen3-Coder-480B-A35B")
+    required: true
+  - name: quirk_type
+    type: string
+    description: Category of quirk
+    required: true
+    validation:
+      enum: ["spec_decode", "moe_override", "tokenizer", "context", "output_format", "performance", "compatibility", "other"]
+  - name: issue
+    type: string
+    description: Description of the issue or quirk
+    required: true
+  - name: workaround
+    type: string
+    description: How to work around or fix the issue
+    required: true
+  - name: severity
+    type: string
+    description: Impact severity
+    required: false
+    default: "medium"
+    validation:
+      enum: ["low", "medium", "high", "critical"]
+  - name: discovered_date
+    type: string
+    description: Date quirk was discovered (YYYY-MM-DD)
+    required: false
+
+outputs:
+  - name: quirks_md_updated
+    type: boolean
+    description: Whether QUIRKS.md was updated
+  - name: registry_updated
+    type: boolean
+    description: Whether model_registry.yaml was updated
+
+steps:
+  - id: S1
+    name: Create Rollback Point
+    description: Backup current files
+    action:
+      type: shell
+      command: "mkdir -p orchestration/checkpoints/quirks_backup && cp docs/reference/models/QUIRKS.md orchestration/checkpoints/quirks_backup/ && cp orchestration/model_registry.yaml orchestration/checkpoints/quirks_backup/ && echo 'Checkpoint created'"
+      capture_output: checkpoint_result
+    on_failure: abort
+
+  - id: S2
+    name: Update QUIRKS.md
+    description: Add quirk entry to documentation
+    depends_on: [S1]
+    action:
+      type: shell
+      command: "echo -e '\\n### ${input.model_name}\\n\\n- **Type:** ${input.quirk_type}\\n- **Severity:** ${input.severity}\\n- **Issue:** ${input.issue}\\n- **Workaround:** ${input.workaround}\\n- **Discovered:** ${input.discovered_date}' >> docs/reference/models/QUIRKS.md && echo 'QUIRKS.md updated'"
+      capture_output: quirks_result
+    on_failure: rollback
+
+  - id: S3
+    name: Validate YAML Files
+    description: Ensure registry is valid YAML after modification
+    depends_on: [S1]
+    action:
+      type: shell
+      command: "python3 -c \"import yaml; yaml.safe_load(open('orchestration/model_registry.yaml'))\" && echo 'Valid YAML'"
+      capture_output: validate_result
+    on_failure: rollback
+
+  - id: S4
+    name: Generate Patch
+    description: Create diff for review
+    depends_on: [S2, S3]
+    action:
+      type: shell
+      command: "git diff docs/reference/models/QUIRKS.md orchestration/model_registry.yaml > orchestration/patches/pending/quirks_update.patch 2>/dev/null || true && echo 'Patch generated'"
+      capture_output: patch_result
+    on_failure: continue
+
+verification:
+  gates: ["file_exists", "registry_valid"]
+  assertions:
+    - expression: "'updated' in outputs.get('quirks_result', '').lower()"
+      message: "QUIRKS.md should be updated"
+
+rollback:
+  enabled: true
+  checkpoint_before: true
+  steps:
+    - id: R1
+      action:
+        type: shell
+        command: "cp orchestration/checkpoints/quirks_backup/QUIRKS.md docs/reference/models/QUIRKS.md && cp orchestration/checkpoints/quirks_backup/model_registry.yaml orchestration/model_registry.yaml"
+
+metadata:
+  author: orchestrator
+  tags: ["registry", "quirks", "documentation"]

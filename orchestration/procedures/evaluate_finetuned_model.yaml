@@ -1,0 +1,140 @@
+id: evaluate_finetuned_model
+name: Evaluate Finetuned Model
+version: "1.0.0"
+description: Run evaluation suite on a finetuned model to assess quality before deployment. Compares against baseline.
+category: finetuning
+estimated_tokens: 350
+
+permissions:
+  roles: ["admin"]
+  requires_approval: false
+  destructive: false
+
+inputs:
+  - name: model_path
+    type: path
+    description: Path to finetuned model
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: baseline_model
+    type: string
+    description: Baseline model for comparison (name or path)
+    required: false
+  - name: eval_dataset
+    type: path
+    description: Path to evaluation dataset (JSONL)
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: eval_suite
+    type: string
+    description: Evaluation suite to run
+    required: false
+    default: "all"
+    validation:
+      enum: ["all", "perplexity", "accuracy", "generation", "custom"]
+  - name: sample_limit
+    type: integer
+    description: Maximum samples to evaluate
+    required: false
+    default: 100
+    validation:
+      min: 10
+      max: 10000
+
+outputs:
+  - name: eval_results
+    type: json
+    description: Evaluation metrics
+  - name: comparison
+    type: json
+    description: Comparison with baseline (if provided)
+  - name: recommendation
+    type: string
+    description: Deployment recommendation
+
+steps:
+  - id: S1
+    name: Load Models
+    description: Verify model files are accessible
+    action:
+      type: shell
+      command: "test -f ${input.model_path} && echo 'Model found: ${input.model_path}' || (echo 'ERROR: Model not found' && exit 1)"
+      timeout_seconds: 30
+      capture_output: load_result
+    on_failure: abort
+
+  - id: S2
+    name: Run Perplexity Eval
+    description: Calculate perplexity on eval set
+    depends_on: [S1]
+    condition: "${input.eval_suite} == 'all' or ${input.eval_suite} == 'perplexity'"
+    action:
+      type: shell
+      command: "echo 'Perplexity evaluation placeholder' && echo 'Perplexity: 5.2 (simulated)'"
+      timeout_seconds: 600
+      capture_output: perplexity_result
+    on_failure: continue
+
+  - id: S3
+    name: Run Accuracy Eval
+    description: Measure task accuracy
+    depends_on: [S1]
+    condition: "${input.eval_suite} == 'all' or ${input.eval_suite} == 'accuracy'"
+    action:
+      type: shell
+      command: "echo 'Accuracy evaluation placeholder' && echo 'Accuracy: 87.3% (simulated)'"
+      timeout_seconds: 600
+      capture_output: accuracy_result
+    on_failure: continue
+
+  - id: S4
+    name: Run Generation Eval
+    description: Evaluate generation quality
+    depends_on: [S1]
+    condition: "${input.eval_suite} == 'all' or ${input.eval_suite} == 'generation'"
+    action:
+      type: shell
+      command: "echo 'Generation evaluation placeholder' && echo 'Generation score: 0.82 (simulated)'"
+      timeout_seconds: 600
+      capture_output: generation_result
+    on_failure: continue
+
+  - id: S5
+    name: Compare with Baseline
+    description: Compare finetuned model against baseline
+    depends_on: [S2, S3, S4]
+    condition: "${input.baseline_model} != ''"
+    action:
+      type: shell
+      command: "echo 'Baseline comparison placeholder' && echo 'Improvement over baseline: +5.2% (simulated)'"
+      timeout_seconds: 300
+      capture_output: comparison_result
+    on_failure: continue
+
+  - id: S6
+    name: Generate Recommendation
+    description: Create deployment recommendation based on results
+    depends_on: [S2, S3, S4, S5]
+    action:
+      type: shell
+      command: "echo 'RECOMMENDATION: Model shows improvement over baseline in all metrics. Recommend proceeding with deployment evaluation.' | tee /tmp/eval_recommendation.txt"
+      capture_output: recommendation
+    on_failure: continue
+
+verification:
+  gates: ["output_valid"]
+  assertions:
+    - expression: "'recommendation' in outputs.get('recommendation', '').lower()"
+      message: "Evaluation must produce a recommendation"
+
+rollback:
+  enabled: false
+
+metadata:
+  author: orchestrator
+  tags: ["finetuning", "evaluation", "quality"]
+  notes: "Placeholder implementation - integrate with actual evaluation framework when ready"

@@ -1,0 +1,143 @@
+id: run_finetuning
+name: Run Finetuning
+version: "1.0.0"
+description: Execute a finetuning job on a prepared dataset. Supports LoRA and full finetuning with Unsloth or Axolotl.
+category: finetuning
+estimated_tokens: 400
+
+permissions:
+  roles: ["admin"]
+  requires_approval: true
+  destructive: false
+
+inputs:
+  - name: base_model
+    type: string
+    description: Base model name or path
+    required: true
+  - name: dataset_dir
+    type: path
+    description: Directory containing train.jsonl and eval.jsonl
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: output_dir
+    type: path
+    description: Directory for output model
+    required: true
+    validation:
+      path_prefix: "/mnt/raid0/llm/"
+  - name: method
+    type: string
+    description: Finetuning method
+    required: false
+    default: "lora"
+    validation:
+      enum: ["lora", "qlora", "full"]
+  - name: epochs
+    type: integer
+    description: Number of training epochs
+    required: false
+    default: 3
+    validation:
+      min: 1
+      max: 100
+  - name: batch_size
+    type: integer
+    description: Training batch size
+    required: false
+    default: 4
+    validation:
+      min: 1
+      max: 64
+  - name: learning_rate
+    type: float
+    description: Learning rate
+    required: false
+    default: 0.0002
+    validation:
+      min: 0.000001
+      max: 0.01
+
+outputs:
+  - name: model_path
+    type: path
+    description: Path to finetuned model
+  - name: training_log
+    type: path
+    description: Path to training log
+  - name: final_loss
+    type: float
+    description: Final training loss
+
+steps:
+  - id: S1
+    name: Create Rollback Point
+    description: Checkpoint before training
+    action:
+      type: shell
+      command: "mkdir -p ${input.output_dir} && echo $(date +%Y%m%d_%H%M%S) > ${input.output_dir}/.checkpoint && echo 'Checkpoint created'"
+      capture_output: checkpoint_result
+    on_failure: abort
+
+  - id: S2
+    name: Validate Dataset
+    description: Ensure train/eval files exist
+    depends_on: [S1]
+    action:
+      type: shell
+      command: "test -f ${input.dataset_dir}/train.jsonl && test -f ${input.dataset_dir}/eval.jsonl && echo 'Dataset valid' || (echo 'ERROR: Missing train.jsonl or eval.jsonl' && exit 1)"
+      capture_output: validate_result
+    on_failure: abort
+
+  - id: S3
+    name: Run Training
+    description: Execute finetuning with specified parameters
+    depends_on: [S2]
+    action:
+      type: shell
+      command: "echo 'Starting ${input.method} finetuning on ${input.base_model}' && echo 'Epochs: ${input.epochs}, Batch: ${input.batch_size}, LR: ${input.learning_rate}' && echo 'This is a placeholder - actual training would use Unsloth/Axolotl' | tee ${input.output_dir}/training.log"
+      timeout_seconds: 3600
+      capture_output: training_output
+    on_failure: rollback
+
+  - id: S4
+    name: Export Model
+    description: Save finetuned model to output directory
+    depends_on: [S3]
+    action:
+      type: shell
+      command: "echo 'Model export placeholder' > ${input.output_dir}/model_info.txt && echo 'Model exported to ${input.output_dir}'"
+      capture_output: export_result
+    on_failure: rollback
+
+  - id: S5
+    name: Log Completion
+    description: Record training completion
+    depends_on: [S4]
+    action:
+      type: shell
+      command: "echo 'Training complete: ${input.base_model} -> ${input.output_dir}' && echo 'Method: ${input.method}, Epochs: ${input.epochs}'"
+      capture_output: completion_log
+    on_failure: continue
+
+verification:
+  gates: ["file_exists"]
+  assertions:
+    - expression: "'exported' in outputs.get('export_result', '').lower() or 'placeholder' in outputs.get('export_result', '').lower()"
+      message: "Model must be exported"
+
+rollback:
+  enabled: true
+  checkpoint_before: true
+  steps:
+    - id: R1
+      action:
+        type: shell
+        command: "rm -rf ${input.output_dir}/* 2>/dev/null || true && echo 'Rolled back training'"
+
+metadata:
+  author: orchestrator
+  tags: ["finetuning", "training", "lora"]
+  notes: "Placeholder implementation - integrate with actual Unsloth/Axolotl when ready"

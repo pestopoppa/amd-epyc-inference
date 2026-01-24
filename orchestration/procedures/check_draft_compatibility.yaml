@@ -1,0 +1,114 @@
+id: check_draft_compatibility
+name: Check Draft Model Compatibility
+version: "1.0.0"
+description: Validate draft-target model pairing for speculative decoding by checking vocab size, BOS/EOS tokens, and tokenizer compatibility.
+category: benchmark
+estimated_tokens: 350
+
+permissions:
+  roles: ["frontdoor", "coder_primary", "admin"]
+  requires_approval: false
+  destructive: false
+
+inputs:
+  - name: draft_path
+    type: path
+    description: Path to draft model GGUF file
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: target_path
+    type: path
+    description: Path to target model GGUF file
+    required: true
+    validation:
+      path_must_exist: true
+      path_prefix: "/mnt/raid0/llm/"
+  - name: run_generation_test
+    type: boolean
+    description: Whether to run a test generation
+    required: false
+    default: true
+
+outputs:
+  - name: compatible
+    type: boolean
+    description: Whether the pairing is compatible
+  - name: vocab_match
+    type: boolean
+    description: Whether vocab sizes match
+  - name: bos_match
+    type: boolean
+    description: Whether BOS tokens match
+  - name: warnings
+    type: json
+    description: List of compatibility warnings
+
+steps:
+  - id: S1
+    name: Extract Draft Metadata
+    description: Get vocab size and token IDs from draft model
+    action:
+      type: shell
+      command: "/mnt/raid0/llm/llama.cpp/build/bin/llama-gguf-info ${input.draft_path} 2>&1 | grep -E 'vocab_size|bos_token|eos_token|tokenizer' || echo 'No metadata found'"
+      timeout_seconds: 30
+      capture_output: draft_metadata
+    on_failure: abort
+
+  - id: S2
+    name: Extract Target Metadata
+    description: Get vocab size and token IDs from target model
+    action:
+      type: shell
+      command: "/mnt/raid0/llm/llama.cpp/build/bin/llama-gguf-info ${input.target_path} 2>&1 | grep -E 'vocab_size|bos_token|eos_token|tokenizer' || echo 'No metadata found'"
+      timeout_seconds: 30
+      capture_output: target_metadata
+    on_failure: abort
+
+  - id: S3
+    name: Compare Metadata
+    description: Check for compatibility issues
+    depends_on: [S1, S2]
+    action:
+      type: shell
+      command: "python3 scripts/utils/check_draft_compatibility.py ${input.draft_path} ${input.target_path} --json 2>&1 || echo '{\"compatible\": false, \"error\": \"Script failed\"}'"
+      timeout_seconds: 60
+      capture_output: compatibility_result
+    on_failure: abort
+
+  - id: S4
+    name: Test Generation
+    description: Run a test generation if requested
+    depends_on: [S3]
+    condition: "${input.run_generation_test} == True"
+    action:
+      type: shell
+      command: "timeout 60 /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative -m ${input.target_path} -md ${input.draft_path} --draft-max 8 -t 96 -p 'Hello, world!' -n 20 --no-display-prompt 2>&1 || echo 'Generation test failed or timed out'"
+      timeout_seconds: 90
+      capture_output: generation_test
+    on_failure: continue
+    max_retries: 1
+
+  - id: S5
+    name: Generate Report
+    description: Create compatibility report
+    depends_on: [S3]
+    action:
+      type: shell
+      command: "echo '## Draft-Target Compatibility Report' && echo '' && echo 'Draft: ${input.draft_path}' && echo 'Target: ${input.target_path}' && echo '' && echo 'Result:' && cat <<< '${outputs.compatibility_result}'"
+      capture_output: report
+    on_failure: continue
+
+verification:
+  gates: ["output_valid"]
+  assertions:
+    - expression: "'compatible' in outputs.get('compatibility_result', '{}')"
+      message: "Compatibility check must produce result"
+
+rollback:
+  enabled: false
+
+metadata:
+  author: orchestrator
+  tags: ["benchmark", "draft", "compatibility"]
