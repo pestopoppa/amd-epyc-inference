@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.roles import Role
+
 # Import from unified prompt builders module
 from src.prompt_builders import (
     build_root_lm_prompt as _build_root_lm_prompt,
@@ -110,9 +112,10 @@ def build_escalation_prompt(
 
 # Escalation role mapping (from lower to higher tier)
 # NOTE: Consider migrating to src.escalation module for unified escalation logic
-ESCALATION_ROLES = {
-    "worker": "coder",
-    "coder": "architect_general",
-    "frontdoor": "coder",
-    "ingest": "architect_general",
+# Uses Role enum for type safety - str() returns the role value
+ESCALATION_ROLES: dict[Role, Role] = {
+    Role.WORKER_GENERAL: Role.CODER_PRIMARY,
+    Role.CODER_PRIMARY: Role.ARCHITECT_GENERAL,
+    Role.FRONTDOOR: Role.CODER_PRIMARY,
+    Role.INGEST_LONG_CONTEXT: Role.ARCHITECT_GENERAL,
 }

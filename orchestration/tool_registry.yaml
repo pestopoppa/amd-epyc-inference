@@ -520,6 +520,69 @@ tools:
       function: list_directory
     permissions: [filesystem]
 
+  # ============ ARCHIVE TOOLS ============
+  archive_open:
+    category: system
+    description: "Open an archive and return its manifest (zip, tar, tar.gz, 7z)"
+    parameters:
+      path: {type: string, required: true, description: "Path to archive file"}
+    returns: {type: object, fields: [total_files, total_size, types, recommendation, nested_archives]}
+    implementation:
+      type: python
+      module: src.services.archive_extractor
+      function: archive_open
+    permissions: [filesystem]
+    examples:
+      - input: {path: "/mnt/raid0/llm/uploads/documents.zip"}
+        description: "Open archive and view contents"
+
+  archive_extract:
+    category: system
+    description: "Extract files from an opened archive"
+    parameters:
+      archive_name: {type: string, required: false, description: "Archive name (uses most recent if omitted)"}
+      pattern: {type: string, required: false, description: "Glob pattern (e.g., *.pdf)"}
+      files: {type: array, required: false, description: "Specific files to extract"}
+      process_documents: {type: boolean, required: false, default: true, description: "Route PDFs through OCR"}
+    returns: {type: object, fields: [extracted, processed, sections_total, stored_in]}
+    implementation:
+      type: python
+      module: src.services.archive_extractor
+      function: archive_extract
+    permissions: [filesystem]
+    examples:
+      - input: {pattern: "*.pdf", process_documents: true}
+        description: "Extract and OCR all PDFs"
+
+  archive_file:
+    category: system
+    description: "Get content of a specific file from an extracted archive"
+    parameters:
+      filename: {type: string, required: true, description: "Path within archive"}
+      archive_name: {type: string, required: false, description: "Archive name (searches all if omitted)"}
+    returns: {type: string, description: "File content or document metadata"}
+    implementation:
+      type: python
+      module: src.services.archive_extractor
+      function: archive_file
+    permissions: [filesystem]
+
+  archive_search:
+    category: system
+    description: "Search across all extracted archive content"
+    parameters:
+      query: {type: string, required: true, description: "Search query"}
+      archive_name: {type: string, required: false, description: "Archive to search (all if omitted)"}
+    returns: {type: array, items: {type: object, fields: [file, line, section, match]}}
+    implementation:
+      type: python
+      module: src.services.archive_extractor
+      function: archive_search
+    permissions: [filesystem]
+    examples:
+      - input: {query: "authentication"}
+        description: "Search for authentication across all extracted files"
+
   # ============ LLM TOOLS ============
   embed_text:
     category: llm

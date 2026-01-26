@@ -65,6 +65,7 @@ PORT_MAP = {
     "architect_coding": 8084,
     "ingest_long_context": 8085,
     "orchestrator": 8000,
+    "document_formalizer": 9001,
 }
 
 # HOT roles (always started)
@@ -202,6 +203,7 @@ def build_server_command(
             "-np", "4",
             "-c", "4096",
             "-t", "16",
+            "--flash-attn", "on",  # Flash attention
         ]
 
     model_path = role_config.model.full_path
@@ -212,9 +214,10 @@ def build_server_command(
         "-m", model_path,
         "--host", "0.0.0.0",
         "--port", str(port),
-        "-np", "4",  # Parallel slots
-        "-c", "8192",  # Context size
+        "-np", "2",  # Parallel slots (2 slots for larger context per slot)
+        "-c", "32768",  # Context size (16K per slot with np=2)
         "-t", "96",  # Threads
+        "--flash-attn", "on",  # Flash attention
     ]
 
     # Add acceleration based on type
@@ -340,6 +343,53 @@ def start_orchestrator() -> ProcessInfo | None:
         return None
 
 
+def start_document_formalizer() -> ProcessInfo | None:
+    """Start the document formalizer (LightOnOCR-2) server."""
+    log_file = LOG_DIR / "document_formalizer.log"
+    port = 9001
+
+    print(f"  Starting document_formalizer (LightOnOCR-2) on port {port}")
+
+    # Set environment
+    env = os.environ.copy()
+    env["LIGHTONOCR_WORKERS"] = "8"
+    env["LIGHTONOCR_THREADS"] = "12"
+    env["LIGHTONOCR_MAX_TOKENS"] = "2048"
+    env["LIGHTONOCR_TIMEOUT"] = "120"
+
+    with open(log_file, "w") as log:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "/mnt/raid0/llm/claude/src/services/lightonocr_llama_server.py",
+                "--port", str(port),
+            ],
+            cwd="/mnt/raid0/llm/claude",
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+
+    print(f"    PID: {proc.pid}")
+    print(f"    Waiting for health...")
+
+    if wait_for_health(port, timeout=60):
+        print(f"    [OK] Document formalizer ready")
+        return ProcessInfo(
+            role="document_formalizer",
+            pid=proc.pid,
+            port=port,
+            started_at=datetime.now().isoformat(),
+            model_path="LightOnOCR-2-1B-bbox",
+            log_file=str(log_file),
+        )
+    else:
+        print(f"    [FAIL] Document formalizer did not start")
+        print(f"    Check log: {log_file}")
+        kill_process(proc.pid)
+        return None
+
+
 # =============================================================================
 # Commands
 # =============================================================================
@@ -443,6 +493,17 @@ def cmd_start(args: argparse.Namespace) -> int:
         return 1
 
     print()
+
+    # Start document formalizer (optional, non-fatal)
+    if not args.dev:
+        print("[5] Starting document formalizer (LightOnOCR-2)...")
+        info = start_document_formalizer()
+        if info:
+            state["document_formalizer"] = info
+        else:
+            print("  [!] Document formalizer failed (non-fatal, continuing)")
+
+        print()
 
     # Save state
     save_state(state)
@@ -584,6 +645,154 @@ def cmd_status(args: argparse.Namespace) -> int:
     print()
     print(f"State file: {STATE_FILE}")
     return 0
+
+
+# =============================================================================
+# Checkpoint Hooks for Self-Management Procedures
+# =============================================================================
+
+CHECKPOINT_DIR = Path("/mnt/raid0/llm/claude/orchestration/checkpoints")
+
+
+def checkpoint_create(name: str, include_state: bool = True) -> dict[str, Any]:
+    """Create a checkpoint of the orchestrator stack state.
+
+    Called by self-management procedures before making changes.
+
+    Args:
+        name: Descriptive checkpoint name.
+        include_state: Whether to include server state.
+
+    Returns:
+        Dict with checkpoint_id and path.
+    """
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    checkpoint_id = f"{name}_{timestamp}"
+    checkpoint_path = CHECKPOINT_DIR / f"{checkpoint_id}.json"
+
+    checkpoint_data = {
+        "id": checkpoint_id,
+        "name": name,
+        "created_at": datetime.now().isoformat(),
+        "state": {},
+        "registry_snapshot": None,
+    }
+
+    # Capture current state
+    if include_state:
+        state = load_state()
+        checkpoint_data["state"] = {k: asdict(v) for k, v in state.items()}
+
+    # Snapshot of registry (just metadata, not full file)
+    registry_path = Path("/mnt/raid0/llm/claude/orchestration/model_registry.yaml")
+    if registry_path.exists():
+        checkpoint_data["registry_snapshot"] = {
+            "path": str(registry_path),
+            "mtime": registry_path.stat().st_mtime,
+            "size": registry_path.stat().st_size,
+        }
+
+    with open(checkpoint_path, "w") as f:
+        json.dump(checkpoint_data, f, indent=2)
+
+    return {
+        "checkpoint_id": checkpoint_id,
+        "path": str(checkpoint_path),
+        "created_at": checkpoint_data["created_at"],
+    }
+
+
+def checkpoint_restore(checkpoint_id: str) -> dict[str, Any]:
+    """Restore orchestrator stack from a checkpoint.
+
+    Args:
+        checkpoint_id: ID from checkpoint_create.
+
+    Returns:
+        Dict with restoration status.
+    """
+    checkpoint_path = CHECKPOINT_DIR / f"{checkpoint_id}.json"
+
+    if not checkpoint_path.exists():
+        return {"success": False, "error": f"Checkpoint not found: {checkpoint_id}"}
+
+    try:
+        with open(checkpoint_path) as f:
+            checkpoint_data = json.load(f)
+
+        # Restore state (process info)
+        if checkpoint_data.get("state"):
+            saved_state = {
+                k: ProcessInfo(**v)
+                for k, v in checkpoint_data["state"].items()
+            }
+            save_state(saved_state)
+
+        return {
+            "success": True,
+            "checkpoint_id": checkpoint_id,
+            "restored_at": datetime.now().isoformat(),
+            "original_created_at": checkpoint_data.get("created_at"),
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def checkpoint_list(limit: int = 10) -> list[dict[str, Any]]:
+    """List available checkpoints.
+
+    Args:
+        limit: Maximum number to return (newest first).
+
+    Returns:
+        List of checkpoint summaries.
+    """
+    if not CHECKPOINT_DIR.exists():
+        return []
+
+    checkpoints = []
+    for cp_path in sorted(CHECKPOINT_DIR.glob("*.json"), reverse=True)[:limit]:
+        try:
+            with open(cp_path) as f:
+                data = json.load(f)
+            checkpoints.append({
+                "id": data.get("id", cp_path.stem),
+                "name": data.get("name"),
+                "created_at": data.get("created_at"),
+                "path": str(cp_path),
+            })
+        except Exception:
+            pass
+
+    return checkpoints
+
+
+def checkpoint_delete(checkpoint_id: str) -> bool:
+    """Delete a checkpoint.
+
+    Args:
+        checkpoint_id: Checkpoint to delete.
+
+    Returns:
+        True if deleted, False if not found.
+    """
+    checkpoint_path = CHECKPOINT_DIR / f"{checkpoint_id}.json"
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
+        return True
+    return False
+
+
+# Export hooks for use by procedure_registry
+__checkpoint_hooks__ = {
+    "create": checkpoint_create,
+    "restore": checkpoint_restore,
+    "list": checkpoint_list,
+    "delete": checkpoint_delete,
+}
 
 
 # =============================================================================

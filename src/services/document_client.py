@@ -223,6 +223,7 @@ class DocumentFormalizerClient:
         output_format: str = "bbox",
         max_pages: int = 100,
         page_timeout: float = 120.0,
+        max_concurrent: int = 8,
     ) -> OCRResult:
         """OCR a PDF with partial success handling.
 
@@ -230,11 +231,14 @@ class DocumentFormalizerClient:
         continues even if some pages fail. Failed pages are recorded
         in the result.
 
+        Pages are processed in parallel (up to max_concurrent) for speed.
+
         Args:
             path: Path to the PDF file.
             output_format: Output format ("text", "bbox", or "json").
             max_pages: Maximum pages to process.
             page_timeout: Timeout per page in seconds.
+            max_concurrent: Maximum concurrent page requests (default: 8).
 
         Returns:
             OCRResult with successful pages and failed_pages list.
@@ -251,33 +255,50 @@ class DocumentFormalizerClient:
         pdf = pdfium.PdfDocument(path)
         num_pages = min(len(pdf), max_pages)
 
-        pages: list[PageOCRResult] = []
-        failed_pages: list[dict] = []
         total_start = time.time()
 
+        # Render all pages to images first (CPU-bound, fast)
+        page_images: list[tuple[int, "Image.Image"]] = []
         for page_num in range(num_pages):
-            try:
-                # Render page to image
-                page = pdf[page_num]
-                scale = 200 / 72  # 200 DPI
-                bitmap = page.render(scale=scale)
-                image = bitmap.to_pil()
+            page = pdf[page_num]
+            scale = 200 / 72  # 200 DPI
+            bitmap = page.render(scale=scale)
+            image = bitmap.to_pil()
+            page_images.append((page_num + 1, image))
 
-                # OCR the page
-                result = await self.ocr_image(image, output_format)
-                result.page = page_num + 1
-                pages.append(result)
+        # Process pages in parallel with semaphore for concurrency control
+        semaphore = asyncio.Semaphore(max_concurrent)
+        results: list[tuple[int, PageOCRResult | Exception]] = []
 
-            except Exception as e:
-                logger.warning(f"Failed to process page {page_num + 1}: {e}")
+        async def process_page(page_num: int, image: "Image.Image") -> tuple[int, PageOCRResult | Exception]:
+            async with semaphore:
+                try:
+                    result = await self.ocr_image(image, output_format)
+                    result.page = page_num
+                    return (page_num, result)
+                except Exception as e:
+                    logger.warning(f"Failed to process page {page_num}: {e}")
+                    return (page_num, e)
+
+        # Launch all tasks in parallel
+        tasks = [process_page(page_num, image) for page_num, image in page_images]
+        results = await asyncio.gather(*tasks)
+
+        # Separate successes and failures, maintaining page order
+        pages: list[PageOCRResult] = []
+        failed_pages: list[dict] = []
+
+        for page_num, result in sorted(results, key=lambda x: x[0]):
+            if isinstance(result, Exception):
                 failed_pages.append(
                     {
-                        "page": page_num + 1,
-                        "error": str(e),
+                        "page": page_num,
+                        "error": str(result),
                         "timestamp": time.time(),
                     }
                 )
-                # Continue processing remaining pages
+            else:
+                pages.append(result)
 
         total_elapsed = time.time() - total_start
         pages_per_sec = len(pages) / total_elapsed if total_elapsed > 0 else 0
@@ -335,8 +356,8 @@ async def process_document(request: DocumentProcessRequest) -> OCRResult:
         ext = path.suffix.lower()
 
         if ext == ".pdf":
-            # Use partial success for better reliability
-            return await client.ocr_pdf_with_partial_success(
+            # Use server-side PDF processing (faster, handles parallelism internally)
+            return await client.ocr_pdf(
                 path,
                 output_format=request.output_format,
                 max_pages=request.max_pages,

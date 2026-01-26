@@ -31,6 +31,7 @@ from src.api.services.orchestrator import (
 )
 from src.llm_primitives import LLMPrimitives
 from src.repl_environment import REPLEnvironment
+from src.roles import Role
 
 router = APIRouter()
 
@@ -38,9 +39,17 @@ router = APIRouter()
 AVAILABLE_ROLES = [
     "orchestrator",  # Auto-routing via frontdoor
     "frontdoor",     # Tier A - Root LM
+    "coder_primary", # Tier A - Coder primary (same as frontdoor)
     "coder",         # Tier B - Coder specialist
+    "coder_escalation",  # Tier B - Coder escalation
     "architect",     # Tier B - Architecture specialist
+    "architect_general", # Tier B - General architect
+    "architect_coding",  # Tier B - Coding architect
     "worker",        # Tier C - General worker
+    "worker_general",    # Tier C - General worker
+    "worker_math",       # Tier C - Math worker
+    "worker_vision",     # Tier C - Vision worker
+    "ingest_long_context",  # Tier B - Long context ingestion
 ]
 
 
@@ -92,7 +101,7 @@ async def openai_chat_completions(request: OpenAIChatRequest):
 
     # Map model to role
     role = request.x_orchestrator_role or (
-        "frontdoor" if request.model in ("orchestrator", "gpt-4", "gpt-3.5-turbo", "claude-3")
+        Role.FRONTDOOR if request.model in ("orchestrator", "gpt-4", "gpt-3.5-turbo", "claude-3")
         else request.model
     )
 

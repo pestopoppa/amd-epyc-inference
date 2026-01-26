@@ -1,68 +1,413 @@
-"""Session management endpoints (Claude Code parity)."""
+"""Session management endpoints with persistent storage.
 
-import time
+Replaces in-memory session store with SQLiteSessionStore for:
+- Conversation continuity across restarts
+- Document caching and change detection
+- Key findings persistence
+- Crash recovery via checkpoints
+"""
+
+import logging
+import uuid
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
-from src.api.models import SessionInfo, SessionListResponse, PermissionResponse
+from src.api.models import (
+    CheckpointInfo,
+    FindingCreateRequest,
+    FindingInfo,
+    PermissionResponse,
+    SessionCreateRequest,
+    SessionInfo,
+    SessionListResponse,
+    SessionResumeResponse,
+)
+from src.session import SQLiteSessionStore, Session, Finding, FindingSource
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory session store (would be persisted in production)
-_sessions: dict[str, dict] = {}
+# Persistent session store (initialized lazily)
+_session_store: SQLiteSessionStore | None = None
+
+# In-memory pending permissions (not persisted - short-lived)
 _pending_permissions: dict[str, dict] = {}
 
 
+def get_session_store() -> SQLiteSessionStore:
+    """Get or initialize the session store."""
+    global _session_store
+    if _session_store is None:
+        _session_store = SQLiteSessionStore()
+        logger.info("Initialized SQLiteSessionStore")
+    return _session_store
+
+
+def _session_to_info(session: Session) -> SessionInfo:
+    """Convert Session model to SessionInfo response."""
+    return SessionInfo(
+        id=session.id,
+        name=session.name,
+        created_at=session.created_at.isoformat(),
+        last_active=session.last_active.isoformat(),
+        message_count=session.message_count,
+        working_directory=session.working_directory,
+        project=session.project,
+        status=session.status.value,
+        tags=session.tags,
+        resume_count=session.resume_count,
+        summary=session.summary,
+        last_topic=session.last_topic,
+    )
+
+
+# =========================================================================
+# Session CRUD
+# =========================================================================
+
+
 @router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions() -> SessionListResponse:
-    """List available sessions."""
-    sessions = [
-        SessionInfo(
-            id=sid,
-            name=data.get("name"),
-            created_at=data.get("created_at", ""),
-            last_active=data.get("last_active", ""),
-            message_count=data.get("message_count", 0),
-            working_directory=data.get("working_directory"),
-        )
-        for sid, data in _sessions.items()
-    ]
-    return SessionListResponse(sessions=sessions)
+async def list_sessions(
+    status: str | None = Query(None, description="Filter by status"),
+    project: str | None = Query(None, description="Filter by project"),
+    limit: int = Query(50, description="Maximum results"),
+    offset: int = Query(0, description="Skip first N results"),
+) -> SessionListResponse:
+    """List available sessions with optional filtering."""
+    store = get_session_store()
+
+    # Build filter
+    where = {}
+    if status:
+        where["status"] = status
+    if project:
+        where["project"] = project
+
+    sessions = store.list_sessions(
+        where=where if where else None,
+        limit=limit,
+        offset=offset,
+    )
+
+    return SessionListResponse(sessions=[_session_to_info(s) for s in sessions])
 
 
-@router.post("/sessions/{session_id}/resume")
-async def resume_session(session_id: str) -> dict[str, Any]:
-    """Resume a previous session."""
-    if session_id not in _sessions:
+@router.post("/sessions", response_model=SessionInfo)
+async def create_session(request: SessionCreateRequest) -> SessionInfo:
+    """Create a new session."""
+    store = get_session_store()
+
+    session = Session.create(
+        name=request.name,
+        project=request.project,
+        working_directory=request.working_directory,
+    )
+
+    store.create_session(session)
+    logger.info(f"Created session {session.id[:8]}")
+
+    return _session_to_info(session)
+
+
+@router.get("/sessions/{session_id}", response_model=SessionInfo)
+async def get_session(session_id: str) -> SessionInfo:
+    """Get session details."""
+    store = get_session_store()
+    session = store.get_session(session_id)
+
+    if not session:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
-    session = _sessions[session_id]
-    session["last_active"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return _session_to_info(session)
 
-    return {
-        "status": "resumed",
-        "session_id": session_id,
-        "message_count": session.get("message_count", 0),
-    }
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict[str, str]:
+    """Delete a session and all associated data."""
+    store = get_session_store()
+
+    if not store.delete_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    return {"status": "deleted", "session_id": session_id}
+
+
+# =========================================================================
+# Session resume (with context injection)
+# =========================================================================
+
+
+@router.post("/sessions/{session_id}/resume", response_model=SessionResumeResponse)
+async def resume_session(session_id: str) -> SessionResumeResponse:
+    """Resume a previous session with full context.
+
+    Returns context injection payload for the LLM including:
+    - Key findings from previous session
+    - Document change warnings
+    - Session summary
+    """
+    store = get_session_store()
+
+    # Build full resume context
+    context = store.build_resume_context(session_id)
+    if not context:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    # Update session activity and fork task_id for MemRL
+    session = context.session
+    session.update_activity()
+    new_task_id = session.fork_task_id()
+    store.update_session(session)
+
+    logger.info(
+        f"Resumed session {session_id[:8]}, "
+        f"resume_count={session.resume_count}, task_id={new_task_id[:8]}"
+    )
+
+    return SessionResumeResponse(
+        status="resumed",
+        session_id=session_id,
+        message_count=session.message_count,
+        context_summary=context.context_summary,
+        key_findings=[f.content for f in context.findings],
+        warnings=context.warnings,
+        document_changes=[
+            {
+                "file_path": c.file_path,
+                "changed": c.new_hash is not None,
+                "exists": c.exists,
+            }
+            for c in context.document_changes
+        ],
+    )
+
+
+# =========================================================================
+# Session rename (backward compatibility)
+# =========================================================================
 
 
 @router.post("/sessions/current/rename")
 async def rename_session(name: str, session_id: str | None = None) -> dict[str, str]:
     """Rename current or specified session."""
-    sid = session_id or "current"
-    if sid not in _sessions:
-        # Create new session with this name
-        _sessions[sid] = {
-            "name": name,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "last_active": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "message_count": 0,
-        }
-    else:
-        _sessions[sid]["name"] = name
+    store = get_session_store()
 
-    return {"status": "renamed", "session_id": sid, "name": name}
+    if session_id:
+        session = store.get_session(session_id)
+        if not session:
+            raise HTTPException(
+                status_code=404, detail=f"Session '{session_id}' not found"
+            )
+        session.name = name
+        session.update_activity()
+        store.update_session(session)
+    else:
+        # Create new session with this name (backward compatibility)
+        session = Session.create(name=name)
+        store.create_session(session)
+        session_id = session.id
+
+    return {"status": "renamed", "session_id": session_id, "name": name}
+
+
+# =========================================================================
+# Findings
+# =========================================================================
+
+
+@router.get("/sessions/{session_id}/findings", response_model=list[FindingInfo])
+async def get_findings(session_id: str) -> list[FindingInfo]:
+    """Get key findings for a session."""
+    store = get_session_store()
+
+    # Verify session exists
+    if not store.get_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    findings = store.get_findings(session_id)
+
+    return [
+        FindingInfo(
+            id=f.id,
+            session_id=f.session_id,
+            content=f.content,
+            source=f.source.value,
+            created_at=f.created_at.isoformat(),
+            confidence=f.confidence,
+            confirmed=f.confirmed,
+            tags=f.tags,
+        )
+        for f in findings
+    ]
+
+
+@router.post("/sessions/{session_id}/findings", response_model=FindingInfo)
+async def add_finding(session_id: str, request: FindingCreateRequest) -> FindingInfo:
+    """Add a key finding to a session."""
+    store = get_session_store()
+
+    # Verify session exists
+    if not store.get_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    finding = Finding(
+        id=str(uuid.uuid4()),
+        session_id=session_id,
+        content=request.content,
+        source=FindingSource.USER_MARKED,
+        created_at=datetime.utcnow(),
+        confidence=1.0,
+        confirmed=True,
+        tags=request.tags,
+    )
+
+    store.add_finding(finding)
+    logger.info(f"Added finding to session {session_id[:8]}: {request.content[:50]}")
+
+    return FindingInfo(
+        id=finding.id,
+        session_id=finding.session_id,
+        content=finding.content,
+        source=finding.source.value,
+        created_at=finding.created_at.isoformat(),
+        confidence=finding.confidence,
+        confirmed=finding.confirmed,
+        tags=finding.tags,
+    )
+
+
+@router.delete("/sessions/{session_id}/findings/{finding_id}")
+async def delete_finding(session_id: str, finding_id: str) -> dict[str, str]:
+    """Delete a finding."""
+    store = get_session_store()
+
+    if not store.delete_finding(finding_id):
+        raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
+
+    return {"status": "deleted", "finding_id": finding_id}
+
+
+# =========================================================================
+# Search
+# =========================================================================
+
+
+@router.get("/sessions/search")
+async def search_sessions(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(10, description="Maximum results"),
+) -> list[SessionInfo]:
+    """Search sessions by name, summary, or last topic."""
+    store = get_session_store()
+    sessions = store.search_sessions(q, limit=limit)
+    return [_session_to_info(s) for s in sessions]
+
+
+@router.get("/sessions/{session_id}/findings/search")
+async def search_findings(
+    session_id: str,
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(10, description="Maximum results"),
+) -> list[FindingInfo]:
+    """Search findings in a session."""
+    store = get_session_store()
+    findings = store.search_findings(q, session_id=session_id, limit=limit)
+
+    return [
+        FindingInfo(
+            id=f.id,
+            session_id=f.session_id,
+            content=f.content,
+            source=f.source.value,
+            created_at=f.created_at.isoformat(),
+            confidence=f.confidence,
+            confirmed=f.confirmed,
+            tags=f.tags,
+        )
+        for f in findings
+    ]
+
+
+# =========================================================================
+# Tags
+# =========================================================================
+
+
+@router.post("/sessions/{session_id}/tags/{tag}")
+async def add_tag(session_id: str, tag: str) -> dict[str, Any]:
+    """Add a tag to a session."""
+    store = get_session_store()
+
+    if not store.get_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    added = store.add_tag(session_id, tag)
+    return {"status": "added" if added else "exists", "session_id": session_id, "tag": tag}
+
+
+@router.delete("/sessions/{session_id}/tags/{tag}")
+async def remove_tag(session_id: str, tag: str) -> dict[str, Any]:
+    """Remove a tag from a session."""
+    store = get_session_store()
+
+    if not store.remove_tag(session_id, tag):
+        raise HTTPException(status_code=404, detail=f"Tag '{tag}' not found")
+
+    return {"status": "removed", "session_id": session_id, "tag": tag}
+
+
+# =========================================================================
+# Checkpoints
+# =========================================================================
+
+
+@router.get("/sessions/{session_id}/checkpoints", response_model=list[CheckpointInfo])
+async def get_checkpoints(
+    session_id: str,
+    limit: int = Query(10, description="Maximum results"),
+) -> list[CheckpointInfo]:
+    """Get recent checkpoints for a session."""
+    store = get_session_store()
+
+    if not store.get_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    checkpoints = store.get_checkpoints(session_id, limit=limit)
+
+    return [
+        CheckpointInfo(
+            id=c.id,
+            session_id=c.session_id,
+            created_at=c.created_at.isoformat(),
+            message_count=c.message_count,
+            trigger=c.trigger,
+        )
+        for c in checkpoints
+    ]
+
+
+# =========================================================================
+# Archive
+# =========================================================================
+
+
+@router.post("/sessions/{session_id}/archive")
+async def archive_session(session_id: str) -> dict[str, str]:
+    """Archive a session to cold storage."""
+    store = get_session_store()
+
+    if not store.archive_session(session_id):
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    return {"status": "archived", "session_id": session_id}
+
+
+# =========================================================================
+# Permissions (kept in-memory, not persisted)
+# =========================================================================
 
 
 @router.post("/permission/{request_id}")
@@ -72,7 +417,9 @@ async def respond_to_permission(request_id: str, approved: bool) -> PermissionRe
     This is used for interactive permission flows in Normal mode.
     """
     if request_id not in _pending_permissions:
-        raise HTTPException(status_code=404, detail=f"Permission request '{request_id}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"Permission request '{request_id}' not found"
+        )
 
     perm = _pending_permissions.pop(request_id)
 
@@ -86,7 +433,4 @@ async def respond_to_permission(request_id: str, approved: bool) -> PermissionRe
 @router.get("/permission/pending")
 async def list_pending_permissions() -> list[dict]:
     """List pending permission requests."""
-    return [
-        {"id": pid, **data}
-        for pid, data in _pending_permissions.items()
-    ]
+    return [{"id": pid, **data} for pid, data in _pending_permissions.items()]

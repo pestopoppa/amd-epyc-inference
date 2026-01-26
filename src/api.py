@@ -41,6 +41,7 @@ from src.llm_primitives import LLMPrimitives, LLMPrimitivesConfig
 from src.gate_runner import GateRunner
 from src.failure_router import FailureRouter, FailureContext, ErrorCategory, RoutingDecision
 from src.features import Features, get_features, features
+from src.roles import Role
 
 # Optional imports - these are lazy-loaded based on feature flags
 # MemRL components (Phase 4)
@@ -719,22 +720,64 @@ def _build_root_lm_prompt(
         "You are an orchestrator that generates Python code to solve tasks.",
         "",
         "## Available Tools",
+        "",
+        "### Context & Files",
         "- `context`: str - The full input context (large, do not send to LLM)",
         "- `artifacts`: dict - Store intermediate results",
-        "- `peek(n)`: Return first n characters of context",
-        "- `grep(pattern)`: Search context with regex, return matching lines",
+        "- `peek(n, file_path=None)`: Return first n characters of context or file",
+        "- `grep(pattern, file_path=None)`: Search context or file with regex",
+        "- `list_dir(path)`: List directory contents, returns JSON with files/dirs",
+        "- `file_info(path)`: Get file metadata (size, type, modified date)",
+        "",
+        "### Document Processing",
+        "- `ocr_document(path)`: Extract text and figure locations from PDF. Returns JSON with:",
+        "    - `full_text`: Combined text from all pages",
+        "    - `figures`: List of {page, id, bbox} for detected figures",
+        "    - `total_pages`: Number of pages processed",
+        "- `analyze_figure(image_path, prompt='Describe this figure')`: Analyze image with vision model",
+        "- `extract_figure(pdf_path, page, bbox)`: Crop figure from PDF, returns image path",
+        "",
+        "### Web & Research",
+        "- `web_fetch(url, max_chars=10000)`: Fetch web content, HTML converted to text",
+        "- `recall(query, limit=5)`: Search episodic memory for similar past tasks",
+        "",
+        "### Shell (Read-Only)",
+        "- `run_shell(cmd)`: Run sandboxed shell command (ls, grep, git status, etc.)",
+        "",
+        "### LLM Delegation",
         "- `llm_call(prompt, role='worker')`: Call a sub-LM for a task",
         "- `llm_batch(prompts, role='worker')`: Call sub-LM with multiple prompts in parallel",
-        "- `FINAL(answer)`: Signal completion with the final answer",
+        "- `escalate(reason)`: Request escalation to higher-tier model",
         "",
-        "## Rules",
-        "1. NEVER send the full context to llm_call - use peek() or grep() to extract relevant parts",
-        "2. Break complex tasks into smaller sub-tasks using llm_call/llm_batch",
-        "3. Store intermediate results in artifacts dict",
-        "4. ALWAYS call FINAL(answer) to return your answer - this is REQUIRED",
-        "5. For code generation: FINAL('''def example(): pass''')",
-        "6. For questions: FINAL('answer text')",
-        "7. Output only valid Python code - no markdown or explanations",
+        "### Completion",
+        "- `FINAL(answer)`: Signal completion with the final answer (REQUIRED)",
+        "",
+        "## CRITICAL Rules",
+        "1. **NO IMPORTS** - import/from statements are BLOCKED. Use ONLY the tools listed above.",
+        "2. **USE PROVIDED TOOLS** - For files use list_dir(), file_info(), peek(). NOT os/pathlib.",
+        "3. **ALWAYS call FINAL(answer)** - This is REQUIRED to complete the task.",
+        "4. Output only valid Python code - no markdown, no explanations, no backticks.",
+        "",
+        "## Additional Rules",
+        "5. For file access: use `peek(1000, file_path='/path')` or `grep('pattern', file_path='/path')`",
+        "6. For PDF documents: use `ocr_document(path)` to extract text and locate figures",
+        "7. Break complex tasks into sub-tasks using llm_call/llm_batch",
+        "8. Store intermediate results in artifacts dict",
+        "",
+        "## Examples",
+        "",
+        "### List files in directory:",
+        "```",
+        "result = list_dir('/path/to/dir')",
+        "FINAL(result)",
+        "```",
+        "",
+        "### Summarize PDF:",
+        "```",
+        "doc = json.loads(ocr_document('/path/to/doc.pdf'))",
+        "summary = llm_call(f'Summarize: {doc[\"full_text\"][:8000]}', role='worker')",
+        "FINAL(summary)",
+        "```",
         "",
         f"## Current State (Turn {turn + 1})",
         state,
@@ -968,11 +1011,12 @@ def _build_escalation_prompt(
 
 
 # Escalation role mapping (from lower to higher tier)
-ESCALATION_ROLES = {
-    "worker": "coder",
-    "coder": "architect_general",
-    "frontdoor": "coder",
-    "ingest": "architect_general",
+# Uses Role enum for type safety - str() returns the role value
+ESCALATION_ROLES: dict[Role, Role] = {
+    Role.WORKER_GENERAL: Role.CODER_PRIMARY,
+    Role.CODER_PRIMARY: Role.ARCHITECT_GENERAL,
+    Role.FRONTDOOR: Role.CODER_PRIMARY,
+    Role.INGEST_LONG_CONTEXT: Role.ARCHITECT_GENERAL,
 }
 
 
@@ -1122,7 +1166,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         llm_primitives=primitives,
         tool_registry=_state.tool_registry,
         script_registry=_state.script_registry,
-        role=request.role or "frontdoor",
+        role=request.role or Role.FRONTDOOR,
     )
 
     # Run Root LM orchestration loop with escalation support
@@ -1132,7 +1176,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
     last_error = ""
 
     # Escalation tracking
-    current_role = request.role or "frontdoor"
+    current_role = request.role or Role.FRONTDOOR
     consecutive_failures = 0
     role_history = [current_role]
     escalation_prompt = ""  # Set when escalating
@@ -1450,7 +1494,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             llm_primitives=primitives,
             tool_registry=_state.tool_registry,
             script_registry=_state.script_registry,
-            role=request.role or "frontdoor",
+            role=request.role or Role.FRONTDOOR,
         )
 
         # Root LM loop with streaming
@@ -1461,7 +1505,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             turn_start_time = time.perf_counter()
 
             # Emit turn start
-            yield f"data: {json.dumps({'type': 'turn_start', 'turn': turn + 1, 'role': 'frontdoor'})}\n\n"
+            yield f"data: {json.dumps({'type': 'turn_start', 'turn': turn + 1, 'role': str(Role.FRONTDOOR)})}\n\n"
 
             # Get state and build prompt
             state = repl.get_state()
@@ -1475,7 +1519,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
             # Call Root LM
             try:
-                code = primitives.llm_call(root_prompt, role="frontdoor", n_tokens=1024)
+                code = primitives.llm_call(root_prompt, role=Role.FRONTDOOR, n_tokens=1024)
             except Exception as e:
                 # Log failure (MemRL)
                 if _state.progress_logger:

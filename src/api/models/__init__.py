@@ -21,9 +21,14 @@ from src.api.models.openai import (
     OpenAIModelsResponse,
 )
 from src.api.models.sessions import (
+    CheckpointInfo,
+    FindingCreateRequest,
+    FindingInfo,
+    PermissionResponse,
+    SessionCreateRequest,
     SessionInfo,
     SessionListResponse,
-    PermissionResponse,
+    SessionResumeResponse,
 )
 
 __all__ = [
@@ -45,7 +50,12 @@ __all__ = [
     "OpenAIModelInfo",
     "OpenAIModelsResponse",
     # Sessions
+    "CheckpointInfo",
+    "FindingCreateRequest",
+    "FindingInfo",
+    "PermissionResponse",
+    "SessionCreateRequest",
     "SessionInfo",
     "SessionListResponse",
-    "PermissionResponse",
+    "SessionResumeResponse",
 ]

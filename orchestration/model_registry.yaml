@@ -95,6 +95,27 @@ runtime_defaults:
       enabled: false
       model_path: null
       judge_binary: null
+  two_stage_summarization:
+    description: "Two-stage pipeline: fast draft from frontdoor + quality review from large model"
+    enabled: true
+    threshold_tokens: 5000         # Minimum tokens to trigger (estimated from chars/4)
+    multi_doc_discount: 0.7        # Lower threshold for multi-document tasks
+    context_reduction_target: 0.15 # Stage 2 receives ~15% of original context
+    stage1_role: frontdoor         # Fast draft generation
+    stage2_role: ingest_long_context  # Quality review with large model
+    cache:
+      enabled: true
+      ttl_hours: 24
+      dir: /mnt/raid0/llm/cache/drafts
+    expected_speedup:
+      10k_tokens: "2.1x"
+      20k_tokens: "2.3x"
+      50k_tokens: "2.3x"
+      multi_doc_5x10k: "3.9x"
+    notes: |
+      Breakeven at ~5K tokens. Below this threshold, overhead dominates.
+      Stage 1 captures grep hits during exploration for Stage 2 context.
+      Caching enables instant Stage 2 for repeated documents.
 server_mode:
   # Production topology - orchestrator_stack.py launcher
   # Port 8000: Orchestrator API (uvicorn)
@@ -184,16 +205,16 @@ server_mode:
     port: 8085
     slots: 2
     model_role: ingest_long_context
-    description: Long document synthesis - SSM hybrid (NO speculation!)
+    description: Long document synthesis & summarization - SSM+MoE hybrid (NO speculation!)
     model: Qwen3-Next-80B-A3B-Q4_K_M.gguf
     memory_gb: 46
     tier: warm
     acceleration:
       type: moe_expert_reduction
-      experts: 2
+      experts: 4  # MoE4 for quality (MoE2 degrades output)
       override_key: qwen3next.expert_used_count
-    throughput: 8.0  # t/s estimated
-    notes: "SSM architecture - incompatible with speculative decoding"
+    throughput: 6.3  # t/s measured 2026-01-26 on 10K context summarization
+    notes: "SSM architecture - incompatible with speculative decoding. Best summarization quality (tested vs Qwen2.5-Coder-32B, Qwen3-32B)."
 
   # Voice recognition service (separate from LLM inference)
   voice_server:
@@ -252,9 +273,12 @@ server_mode:
       LIGHTONOCR_WORKERS: "8"
       LIGHTONOCR_THREADS: "12"
       LIGHTONOCR_MAX_TOKENS: "2048"
-      LIGHTONOCR_TIMEOUT: "120"
+      LIGHTONOCR_TIMEOUT: "300"  # Increased from 120s for complex pages
     notes: "GGUF conversion via llama.cpp (native LightOnOCR support). PyTorch version deprecated. Uses Pixtral vision encoder + Qwen3 text decoder."
-    benchmark_date: 2026-01-20
+    benchmark_date: 2026-01-24
+    quirks:
+      - "2026-01-24: Increased timeout from 120s to 300s - complex pages with figures can take 24-30s each"
+      - "Use server-side /v1/document/pdf endpoint for PDFs - client-side per-page requests add HTTP overhead"
 
   # Development mode - single small model for all roles
   dev:
@@ -351,30 +375,24 @@ roles:
       Include minimal inline comments.
   coder_escalation:
     tier: B
-    description: Coding escalation target - generalist coder for when primary needs
-      support
+    description: Coding escalation target - dense coder with spec decode
     model:
-      name: Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2
-      path: mradermacher/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L-i1-GGUF/Qwen3-Coder-53B-A3B-Instruct-TOTAL-RECALL-v2-MASTER-CODER-L.i1-Q4_K_M.gguf
+      name: Qwen2.5-Coder-32B-Instruct
+      path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
-      size_gb: 30
-      architecture: moe
+      size_gb: 20
+      architecture: dense
     candidate_roles:
     - coder
-    - architect
     - general
     acceleration:
-      type: moe_expert_reduction
-      experts: 4
-      override_key: qwen3moe.expert_used_count
-      alternative:
-        type: speculative_decoding
-        draft_role: draft_qwen3_coder_0_75b
-        k: 16
+      type: speculative_decoding
+      draft_role: draft_qwen2_5_coder_0_5b
+      k: 24
     performance:
-      baseline_tps: 20.4
-      optimized_tps: 30.4
-      speedup: 1.49x
+      baseline_tps: 3.0
+      optimized_tps: 21.3
+      speedup: 6.3x
     memory:
       residency: warm
       pinned: false
@@ -394,7 +412,7 @@ roles:
       Handle edge cases explicitly.
   ingest_long_context:
     tier: B
-    description: Large document ingestion and synthesis - SSM+MoE hybrid
+    description: Large document ingestion, synthesis & summarization - SSM+MoE hybrid
     model:
       name: Qwen3-Next-80B-A3B-Instruct
       path: lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf
@@ -403,10 +421,11 @@ roles:
       architecture: ssm_moe_hybrid
     candidate_roles:
     - ingest
+    - summarization  # Best summary quality (tested 2026-01-26)
     - architect
     acceleration:
       type: moe_expert_reduction
-      experts: 2
+      experts: 4  # MoE4 for quality (tested 2026-01-26: 6.29 t/s, best output)
       override_key: qwen3next.expert_used_count
     constraints:
       forbid:
@@ -417,8 +436,9 @@ roles:
         methods
     performance:
       baseline_tps: 10.12
-      optimized_tps: 11.55
-      speedup: 1.14x
+      optimized_tps: 6.29  # MoE4 on 10K context (2026-01-26)
+      speedup: n/a  # MoE4 trades speed for quality
+      summarization_benchmark: "73.8s for 464 tokens on Twyne whitepaper (10K context)"
     memory:
       residency: warm
       pinned: false
@@ -658,6 +678,96 @@ roles:
     system_prompt_suffix: |
       Think step by step. Show your reasoning process.
       For complex problems, break down into sub-problems.
+  glm_47_flash:
+    tier: B
+    description: GLM-4.7-Flash Q4_K_M - 30B MoE (64 experts, 4 active) with deepseek2 MLA architecture
+    model:
+      name: GLM-4.7-Flash
+      path: unsloth/GLM-4.7-Flash-GGUF/GLM-4.7-Flash-Q4_K_M.gguf
+      quant: Q4_K_M
+      size_gb: 18
+      split_count: 1
+      architecture: deepseek2
+      max_context: 131072
+      vocab_size: 151552
+    candidate_roles:
+    - frontdoor
+    - general
+    - coder
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      baseline_experts: 4
+      override_key: null  # Already uses 4 experts by default
+    constraints:
+      forbid:
+      - speculative_decoding
+      reason: MLA (Multi-head Latent Attention) incompatible with spec decode
+    performance:
+      baseline_tps: 27.88
+      prompt_tps: 91.53
+      optimized_tps: 27.88
+      speedup: 1.0x
+    memory:
+      residency: hot
+      pinned: false
+      total_with_kv_gb: 25
+    benchmark_date: 2026-01-22
+    launch_quirks:
+      jinja_required: true
+      use_llama_completion: true
+    notes: |
+      Uses deepseek2 architecture with MLA (Multi-head Latent Attention).
+      Very fast at 27.88 t/s - excellent frontdoor candidate.
+      Requires --jinja flag.
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.3
+  glm_47_reap:
+    tier: B
+    description: GLM-4.7-REAP Q4_K_M - 218B MoE (96 experts, 8 active) reasoning model
+    model:
+      name: GLM-4.7-REAP-218B-A32B
+      path: unsloth/GLM-4.7-REAP-218B-A32B-GGUF/Q4_K_M/GLM-4.7-REAP-218B-A32B-Q4_K_M-00001-of-00003.gguf
+      quant: Q4_K_M
+      size_gb: 125
+      split_count: 3
+      architecture: glm4moe
+      max_context: 131072
+      vocab_size: 151552
+    candidate_roles:
+    - architect
+    - thinking
+    - general
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      baseline_experts: 8
+      override_key: glm4moe.expert_used_count
+    constraints:
+      forbid:
+      - speculative_decoding
+      reason: Unique architecture - no compatible draft model
+    performance:
+      baseline_tps: 4.50
+      prompt_tps: 16.19
+      optimized_tps: null  # MoE reduction not yet tested
+      speedup: null
+    memory:
+      residency: warm
+      pinned: false
+      total_with_kv_gb: 160
+    benchmark_date: 2026-01-22
+    launch_quirks:
+      jinja_required: true
+      use_llama_completion: true
+    notes: |
+      218B reasoning model with 96 experts (8 active = 32B active params).
+      Uses glm4moe architecture. Requires --jinja flag.
+      MoE expert reduction likely beneficial - needs testing.
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.3
   worker_general:
     tier: C
     description: Boilerplate, rewrites, doc polish, small diffs
@@ -2533,6 +2643,39 @@ runtime_quirks:
     - issue: Unique vocab (200,064 tokens)
       workaround: No compatible draft model - speculative decoding NOT possible
       discovered: 2026-01-19
+  glm_47_flash:
+    description: GLM-4.7-Flash (30B MoE, 64 experts, 4 active, deepseek2 arch)
+    quirks:
+    - issue: Chat template requires Jinja engine
+      workaround: Always use --jinja flag
+      discovered: 2026-01-22
+    - issue: llama-cli may enter interactive mode
+      workaround: Use llama-completion for non-interactive use
+      discovered: 2026-01-22
+    - issue: Uses deepseek2 architecture with MLA (Multi-head Latent Attention)
+      workaround: No speculative decoding support - MLA incompatible
+      discovered: 2026-01-22
+    - issue: Already uses 4 experts by default (optimal)
+      workaround: No MoE reduction needed - already at minimum
+      discovered: 2026-01-22
+  glm_47_reap:
+    description: GLM-4.7-REAP-218B-A32B (218B MoE, 96 experts, 8 active, glm4moe arch)
+    quirks:
+    - issue: Chat template requires Jinja engine
+      workaround: Always use --jinja flag
+      discovered: 2026-01-22
+    - issue: llama-cli may enter interactive mode
+      workaround: Use llama-completion for non-interactive use
+      discovered: 2026-01-22
+    - issue: Split across 3 GGUF files (Q4_K_M)
+      workaround: Point to first file (-00001-of-00003), others auto-loaded
+      discovered: 2026-01-22
+    - issue: Uses glm4moe architecture - unique to GLM models
+      workaround: MoE override key is glm4moe.expert_used_count (needs testing)
+      discovered: 2026-01-22
+    - issue: No compatible draft model for speculative decoding
+      workaround: Use MoE expert reduction only
+      discovered: 2026-01-22
   qwen3_next_80b:
     description: Qwen3-Next-80B-A3B-Instruct (SSM+MoE hybrid)
     quirks:

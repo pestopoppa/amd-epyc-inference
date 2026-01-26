@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-15
+**Last Updated**: 2026-01-26
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -9,6 +9,15 @@
 
 | Task | Blocked On | Priority | Handoff | Status |
 |------|------------|----------|---------|--------|
+| **Orchestrator Document Pipeline** | — | **CRITICAL** | `handoffs/completed/orchestrator_document_pipeline.md` | ✅ RESOLVED |
+| **Orchestrator API Dependencies** | — | **HIGH** | `handoffs/active/orchestrator_deps.md` | ✅ RESOLVED |
+| **REPL File Access** | — | **MEDIUM** | `handoffs/active/repl_file_access.md` | ✅ RESOLVED |
+| **LightOnOCR 3.4x Slowdown** | — | **MEDIUM** | `handoffs/completed/lightonocr_slowdown.md` | ✅ RESOLVED (use server-side PDF processing + 300s timeout) |
+| **Figure Analysis Missing** | — | **HIGH** | `handoffs/completed/figure_analysis_missing.md` | ✅ RESOLVED |
+| **Document Pipeline Tests** | pytest-asyncio install | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY |
+| **Prompt Lookup Integration** | Workflow reconstruction | **MEDIUM** | `handoffs/active/prompt_lookup_integration.md` | 🔄 BLOCKED |
+| **Security Audit: GGUF Vulns** | — | **CRITICAL** | `handoffs/active/security_audit_orchestration_stack.md` | 📋 READY |
+| **Claude-as-Judge BLIND Re-Scoring** | YOLO Agent | **HIGH** | `handoffs/active/claude_as_judge_consistency_review.md` | 📋 READY |
 | **Model Registry: Paged Attention Flag** | Benchmark script running | **LOW** | See below | 🔄 BLOCKED |
 | **Paged Attention CoW** | Paged attention PR review | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
@@ -35,6 +44,13 @@
 | **Native Computational Tools** | — | **HIGH** | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-4 COMPLETE (integration pending) |
 | **Role Mapping Bug** | — | — | `progress/2026-01/2026-01-15.md` | ✅ FIXED (str(Role.X) now returns value) |
 | **Orchestrator Multi-Model Live Test** | — | — | `progress/2026-01/2026-01-15.md` | ✅ VERIFIED (5 models, 459GB) |
+| **Model REPL Tool Compliance** | — | **MEDIUM** | `handoffs/active/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests, 9 benchmark prompts) |
+| **Orchestrator Self-Management** | — | **HIGH** | `handoffs/active/orchestrator_self_management.md` | ✅ PHASES 1-8 COMPLETE (Phase 9 optional) |
+| **Session Persistence Layer** | — | **HIGH** | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
+| **Cmprsr Prompt Compression** | — | **HIGH** | `handoffs/active/cmprsr_prompt_compression.md` | 📋 NEW (weights availability TBD) |
+| **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
+| **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling) |
+| **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
 
 ---
 
@@ -51,6 +67,7 @@
 | 3 | Enable Hybrid Routing | ✅ COMPLETE | Phase 2 |
 | 4 | Escalation Learning | ✅ COMPLETE | Phase 3 |
 | 4b | Memory Seeding (~5K) | ✅ COMPLETE | Phase 4 |
+| 4c | REPL Tool Seeding (48) | ✅ COMPLETE | Phase 4 |
 | 5 | REPL Exploration Learning | READY | Phase 3 |
 | 6 | Claude-as-Judge | OPTIONAL | Phase 3 |
 
@@ -63,6 +80,17 @@
 - Tool registry created (608 tools mined)
 
 Seeding scripts: `scripts/seed_*.py`
+
+### REPL Tool Seeding Complete (2026-01-24)
+
+48 canonical REPL tool examples seeded with Q=0.90:
+- filesystem (8): `list_dir`, `file_info`, `peek`
+- document (6): `ocr_document`, `extract_figure`
+- complex (7): Multi-step with `llm_call`
+- shell (5): git, ls, find
+- search/vision/web/artifacts/memory/escalation/parallel (20)
+
+Seeding scripts: `orchestration/repl_memory/seed_loader.py`
 
 ### Phase 1: Core Implementation (COMPLETE)
 - [x] `episodic_store.py` - SQLite + numpy memory storage
@@ -98,6 +126,7 @@ Seeding scripts: `scripts/seed_*.py`
 - Strategy counts tracked for monitoring ("learned" vs "rules")
 
 ### Phase 5: REPL Exploration Learning
+- [x] File access in peek()/grep() — `file_path` parameter added (2026-01-24)
 - [ ] Log exploration strategies in REPLEnvironment
 - [ ] Implement `EpisodicREPL.suggest_exploration()`
 - [ ] Track token efficiency metrics
@@ -203,6 +232,85 @@ To test: `llama-server -m MODEL.gguf --host 0.0.0.0 --port 8080` then call API w
 - [ ] Enhanced SSE events (`src/api.py`)
 - [ ] Trajectory logging (`src/llm_primitives.py`)
 - [ ] Gradio visualization tab (`src/gradio_ui.py`)
+
+---
+
+## Orchestrator Self-Management Infrastructure
+
+**Handoff**: `handoffs/active/orchestrator_self_management.md`
+**Plan**: `/home/daniele/.claude/plans/mighty-prancing-pillow.md`
+**Status**: ✅ PHASES 1-8 COMPLETE (Phase 9 optional/deferred)
+
+**Goal**: Enable deterministic self-management with ~350 tokens/operation (vs 3000-5000 manual).
+
+| Phase | Description | Status | Dependencies |
+|-------|-------------|--------|--------------|
+| 1 | Procedure Registry Core | ✅ COMPLETE | — |
+| 2 | REPL Integration (9 tools) | ✅ COMPLETE | Phase 1 |
+| 3 | Checkpointing & Hot-Swap | ✅ COMPLETE | Phase 2 |
+| 4 | Pausable Procedures | ✅ COMPLETE | Phase 2 |
+| 5 | Rollback & Approval | ✅ COMPLETE | Phase 2 |
+| 6 | Core Procedures (6 YAML) | ✅ COMPLETE | Phase 1 |
+| 7 | Memory Integration | ✅ COMPLETE | Phase 6 |
+| 8 | Advanced Procedures (5 YAML) | ✅ COMPLETE | Phase 6 |
+| 9 | Self-Optimization (Optuna) | ⏸️ DEFERRED | Phase 7 |
+
+### Implementation Stats (2026-01-24)
+
+| Component | Files | Lines |
+|-----------|-------|-------|
+| Procedure Registry | `procedure_registry.py` | ~980 |
+| Procedure Scheduler | `procedure_scheduler.py` | 522 |
+| JSON Schema | `procedure.schema.json` | 319 |
+| REPL Tools | `repl_environment.py` | +180 |
+| Procedure YAMLs | 11 procedures | ~1100 |
+| Seed Examples | `seed_examples.json` | 56 examples |
+| Unit Tests | `test_procedure_registry.py` | 486 (25 tests) |
+
+### Key Decisions
+- **No K8s/Terraform**: Single-machine EPYC 9655 doesn't benefit; NUMA/mmap friction
+- **Token efficiency**: Procedures do ALL parsing, file updates, validation
+- **Approval workflow**: All changes via patches for owner review
+
+### Test Commands
+```bash
+# Run procedure registry tests
+python -m pytest tests/unit/test_procedure_registry.py -v
+
+# List all procedures
+python3 -c "from orchestration.procedure_registry import ProcedureRegistry; r=ProcedureRegistry(); print(r.list_procedures())"
+```
+
+---
+
+## Session Persistence Layer
+
+**Handoff**: `handoffs/completed/session_persistence.md`
+**Status**: ✅ ALL 7 PHASES COMPLETE (2026-01-26)
+
+**Goal**: Enable session checkpoint/resume, document caching, key findings tracking, CLI tools.
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Core Persistence (SQLiteSessionStore) | ✅ COMPLETE |
+| 2 | Document Caching (hash-based change detection) | ✅ COMPLETE |
+| 3 | Checkpoint & Resume (REPL state serialization) | ✅ COMPLETE |
+| 4 | Idle Monitoring & Auto-Summary | ✅ COMPLETE |
+| 5 | Key Findings (mark_finding, heuristic extraction) | ✅ COMPLETE |
+| 6 | MemRL Integration (ProgressLogger events) | ✅ COMPLETE |
+| 7 | CLI & UX (orch sessions commands) | ✅ COMPLETE |
+
+### CLI Commands
+```bash
+orch sessions list [--status STATUS] [--project PROJECT]
+orch sessions search QUERY
+orch sessions show SESSION_ID [--findings] [--checkpoints]
+orch sessions resume SESSION_ID [--output json|text]
+orch sessions archive SESSION_ID
+orch sessions findings SESSION_ID
+orch sessions delete SESSION_ID [--force]
+orch status
+```
 
 ---
 
@@ -382,6 +490,19 @@ export PATH="/mnt/raid0/llm/npm-global/bin:/mnt/raid0/llm/tools/devc/bin:$PATH"
 
 # Launch devcontainer
 devc /mnt/raid0/llm/claude
+
+# HIGH PRIORITY: Claude-as-Judge BLIND Re-Scoring (after benchmarks complete)
+# NOTE: reviews/*.csv files have been chmod 000 to enforce blindness
+# Backup exists at: benchmarks/results/reviews/backup_20260116/
+claude --dangerously-skip-permissions -p \
+  "Read handoffs/active/claude_as_judge_consistency_review.md. \
+   Score ALL model benchmark responses from scratch using prompt YAML \
+   reference answers as ground truth. Output scores to \
+   benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md"
+
+# AFTER agent completes - restore permissions and compare:
+# chmod 644 /mnt/raid0/llm/claude/benchmarks/results/reviews/*.csv
+# Then diff backup vs new scores
 
 # Inside container - Orchestrator Integration (CODE COMPLETE - TEST ONLY):
 claude --dangerously-skip-permissions -p \

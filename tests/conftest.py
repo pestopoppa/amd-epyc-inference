@@ -41,6 +41,12 @@ def pytest_addoption(parser):
         default=False,
         help="Run tests that require a live llama-server instance",
     )
+    parser.addoption(
+        "--run-ocr-server",
+        action="store_true",
+        default=False,
+        help="Run tests that require a live OCR server",
+    )
 
 
 def pytest_configure(config):

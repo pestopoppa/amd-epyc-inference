@@ -277,11 +277,18 @@ Paragraph 2.
         """Test header level assignment."""
         from src.services.document_chunker import DocumentChunker
 
+        # Each section needs content >= min_section_length (10 chars)
         text = """# Level 1
+
+This is level one content with enough text to pass the filter.
 
 ## Level 2
 
+This is level two content with enough text to pass the filter.
+
 ### Level 3
+
+This is level three content with enough text to pass the filter.
 """
         chunker = DocumentChunker()
         sections = chunker.chunk_by_headers(text)
@@ -602,6 +609,287 @@ class TestDocumentREPL:
         assert repl is not None
         result = repl.execute("print(sections())")
         assert "Test" in result.output
+
+
+# =============================================================================
+# Test Figure Analyzer
+# =============================================================================
+
+
+class TestFigureAnalyzer:
+    """Tests for the figure analysis service."""
+
+    @pytest.fixture
+    def sample_figure_refs(self):
+        """Create sample figure references for testing."""
+        from src.models.document import FigureRef, BoundingBox
+
+        return [
+            FigureRef(
+                id="p1_fig0",
+                page=1,
+                bbox=BoundingBox(id=0, x1=100, y1=100, x2=500, y2=400),
+                description="",  # Empty - should be filled by analysis
+            ),
+            FigureRef(
+                id="p2_fig0",
+                page=2,
+                bbox=BoundingBox(id=0, x1=200, y1=200, x2=800, y2=600),
+                description="",
+            ),
+        ]
+
+    def test_figure_analyzer_init(self):
+        """Test FigureAnalyzer initialization."""
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        analyzer = FigureAnalyzer()
+
+        assert analyzer.vision_api_url == "http://localhost:8000/v1/vision/analyze"
+        assert analyzer.timeout == 60.0
+        assert analyzer.max_concurrent == 4
+        assert "Describe this figure" in analyzer.vl_prompt
+
+    def test_figure_analyzer_custom_config(self):
+        """Test FigureAnalyzer with custom configuration."""
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        analyzer = FigureAnalyzer(
+            vision_api_url="http://custom:8001/vision",
+            timeout=30.0,
+            max_concurrent=2,
+            vl_prompt="Custom prompt",
+        )
+
+        assert analyzer.vision_api_url == "http://custom:8001/vision"
+        assert analyzer.timeout == 30.0
+        assert analyzer.max_concurrent == 2
+        assert analyzer.vl_prompt == "Custom prompt"
+
+    def test_image_to_base64(self):
+        """Test image to base64 conversion."""
+        from src.services.figure_analyzer import FigureAnalyzer
+        from PIL import Image
+
+        analyzer = FigureAnalyzer()
+
+        # Create a small test image
+        img = Image.new("RGB", (100, 100), color="red")
+        b64 = analyzer._image_to_base64(img)
+
+        assert isinstance(b64, str)
+        assert len(b64) > 0
+
+        # Verify it's valid base64
+        import base64
+        decoded = base64.b64decode(b64)
+        assert len(decoded) > 0
+
+    def test_crop_figure_normalized(self):
+        """Test figure cropping with normalized coordinates."""
+        from src.services.figure_analyzer import FigureAnalyzer
+        from PIL import Image
+
+        analyzer = FigureAnalyzer()
+
+        # Create a 1000x1000 test image
+        img = Image.new("RGB", (1000, 1000), color="white")
+
+        # Crop with normalized coords (0-1000 range)
+        # bbox = (100, 200, 300, 400) should give (100, 200, 300, 400) on 1000x1000 image
+        cropped = analyzer._crop_figure(img, (100, 200, 300, 400), normalized=True)
+
+        assert cropped.width == 200
+        assert cropped.height == 200
+
+    def test_crop_figure_non_normalized(self):
+        """Test figure cropping with pixel coordinates."""
+        from src.services.figure_analyzer import FigureAnalyzer
+        from PIL import Image
+
+        analyzer = FigureAnalyzer()
+
+        # Create a 2000x1000 test image
+        img = Image.new("RGB", (2000, 1000), color="white")
+
+        # Crop with pixel coords
+        cropped = analyzer._crop_figure(img, (100, 200, 500, 600), normalized=False)
+
+        assert cropped.width == 400
+        assert cropped.height == 400
+
+    @pytest.mark.asyncio
+    async def test_analyze_single_figure_mocked(self):
+        """Test single figure analysis with mocked vision API."""
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        analyzer = FigureAnalyzer()
+
+        with patch.object(analyzer, "_get_client") as mock_get:
+            mock_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "description": "A bar chart showing revenue growth over 5 years."
+            }
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_client
+
+            description = await analyzer._analyze_single_figure(
+                image_base64="dGVzdA==",  # "test" in base64
+                figure_id="p1_fig0",
+            )
+
+            assert "bar chart" in description
+            assert "revenue growth" in description
+
+        await analyzer.close()
+
+    @pytest.mark.asyncio
+    async def test_analyze_single_figure_timeout(self):
+        """Test single figure analysis with timeout."""
+        from src.services.figure_analyzer import FigureAnalyzer
+        import httpx
+
+        analyzer = FigureAnalyzer(timeout=0.1)
+
+        with patch.object(analyzer, "_get_client") as mock_get:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+            mock_get.return_value = mock_client
+
+            description = await analyzer._analyze_single_figure(
+                image_base64="dGVzdA==",
+                figure_id="p1_fig0",
+            )
+
+            assert "timeout" in description.lower()
+
+        await analyzer.close()
+
+    @pytest.mark.asyncio
+    async def test_analyze_single_figure_api_error(self):
+        """Test single figure analysis with API error."""
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        analyzer = FigureAnalyzer()
+
+        with patch.object(analyzer, "_get_client") as mock_get:
+            mock_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 500
+            mock_response.text = "Internal server error"
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_get.return_value = mock_client
+
+            description = await analyzer._analyze_single_figure(
+                image_base64="dGVzdA==",
+                figure_id="p1_fig0",
+            )
+
+            assert "failed" in description.lower() or "500" in description
+
+        await analyzer.close()
+
+    @pytest.mark.asyncio
+    async def test_analyze_figures_empty_list(self):
+        """Test analyzing empty figure list."""
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        analyzer = FigureAnalyzer()
+        result = await analyzer.analyze_figures("/fake/path.pdf", [])
+
+        assert result == []
+
+        await analyzer.close()
+
+    @pytest.mark.asyncio
+    async def test_analyze_figures_nonexistent_pdf(self, sample_figure_refs):
+        """Test analyzing figures with nonexistent PDF."""
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        analyzer = FigureAnalyzer()
+        result = await analyzer.analyze_figures(
+            "/nonexistent/path.pdf",
+            sample_figure_refs,
+        )
+
+        # Should return the original figures unchanged
+        assert len(result) == len(sample_figure_refs)
+        assert all(fig.description == "" for fig in result)
+
+        await analyzer.close()
+
+
+class TestFigureAnalyzerIntegration:
+    """Integration tests for figure analysis with document preprocessor."""
+
+    @pytest.mark.asyncio
+    async def test_preprocessor_with_figure_analysis(self, mock_ocr_result):
+        """Test preprocessor enables figure analysis when configured."""
+        from src.services.document_preprocessor import (
+            DocumentPreprocessor,
+            PreprocessingConfig,
+        )
+        from src.models.document import OCRResult
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        config = PreprocessingConfig(describe_figures=True)
+        preprocessor = DocumentPreprocessor(config=config)
+
+        # Mock the process_document to return our mock OCR result
+        with patch(
+            "src.services.document_preprocessor.process_document"
+        ) as mock_process:
+            mock_process.return_value = OCRResult.from_dict(mock_ocr_result)
+
+            # Mock the figure analyzer
+            with patch(
+                "src.services.document_preprocessor.analyze_figures_async"
+            ) as mock_analyze:
+                # Return figures with descriptions filled in
+                async def fill_descriptions(pdf_path, figures):
+                    for fig in figures:
+                        fig.description = f"Analyzed figure {fig.id}"
+                    return figures
+
+                mock_analyze.side_effect = fill_descriptions
+
+                # Create a temp file for testing
+                import tempfile
+
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+                    f.write(b"fake pdf content")
+                    temp_path = f.name
+
+                try:
+                    task_ir = {"inputs": [{"type": "path", "value": temp_path}]}
+                    result = await preprocessor.preprocess(task_ir)
+
+                    # Should have called figure analysis
+                    assert result.success
+                    if result.document_result and result.document_result.figures:
+                        # Verify analyze was called
+                        mock_analyze.assert_called_once()
+
+                finally:
+                    import os
+                    os.unlink(temp_path)
+
+    def test_preprocessor_figure_analyzer_injection(self):
+        """Test that preprocessor uses injected figure analyzer."""
+        from src.services.document_preprocessor import DocumentPreprocessor
+        from src.services.figure_analyzer import FigureAnalyzer
+
+        custom_analyzer = FigureAnalyzer(
+            vl_prompt="Custom figure prompt",
+            max_concurrent=2,
+        )
+
+        preprocessor = DocumentPreprocessor(figure_analyzer=custom_analyzer)
+
+        assert preprocessor.figure_analyzer is custom_analyzer
+        assert preprocessor.figure_analyzer.vl_prompt == "Custom figure prompt"
 
 
 # =============================================================================

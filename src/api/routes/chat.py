@@ -19,6 +19,8 @@ from src.api.services.orchestrator import (
     classify_error,
     build_escalation_prompt,
 )
+from src.prompt_builders import build_stage2_review_prompt
+from src.services.draft_cache import get_draft_cache, CachedDraft
 from src.api.services.memrl import (
     ensure_memrl_initialized,
     score_completed_task,
@@ -33,6 +35,7 @@ from src.escalation import (
     ErrorCategory as EscalationErrorCategory,
 )
 from src.generation_monitor import GenerationMonitor, MonitorConfig
+from src.roles import Role
 from src.sse_utils import (
     create_sse_response,
     token_event,
@@ -43,6 +46,223 @@ from src.sse_utils import (
     final_event,
     done_event,
 )
+
+# Two-stage summarization configuration
+TWO_STAGE_CONFIG = {
+    "enabled": True,
+    "threshold_tokens": 5000,  # ~20K chars
+    "multi_doc_discount": 0.7,  # Lower threshold for multiple documents
+    "stage1_role": Role.FRONTDOOR,
+    "stage2_role": Role.INGEST_LONG_CONTEXT,
+}
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text (rough: 4 chars per token)."""
+    return len(text) // 4
+
+
+def _is_summarization_task(prompt: str) -> bool:
+    """Detect if the prompt is a summarization task.
+
+    Args:
+        prompt: The user's prompt.
+
+    Returns:
+        True if this looks like a summarization request.
+    """
+    summarization_keywords = [
+        "summarize", "summary", "summarise", "summarisation",
+        "executive summary", "overview", "key points",
+        "main ideas", "tl;dr", "tldr", "synopsis",
+    ]
+    prompt_lower = prompt.lower()
+    return any(kw in prompt_lower for kw in summarization_keywords)
+
+
+def _should_use_two_stage(
+    prompt: str,
+    context: str | None,
+    doc_count: int = 1,
+) -> bool:
+    """Determine if two-stage summarization should be used.
+
+    Args:
+        prompt: The user's prompt.
+        context: The context (document content).
+        doc_count: Number of documents being processed.
+
+    Returns:
+        True if two-stage pipeline should be used.
+    """
+    if not TWO_STAGE_CONFIG["enabled"]:
+        return False
+
+    if not _is_summarization_task(prompt):
+        return False
+
+    if not context:
+        return False
+
+    # Estimate total tokens
+    total_text = prompt + (context or "")
+    token_estimate = _estimate_tokens(total_text)
+
+    # Apply multi-doc discount
+    threshold = TWO_STAGE_CONFIG["threshold_tokens"]
+    if doc_count > 1:
+        threshold = int(threshold * TWO_STAGE_CONFIG["multi_doc_discount"])
+
+    return token_estimate > threshold
+
+
+async def _run_two_stage_summarization(
+    prompt: str,
+    context: str,
+    primitives: "LLMPrimitives",
+    state: "AppState",
+    task_id: str,
+) -> tuple[str, dict]:
+    """Run two-stage summarization pipeline.
+
+    Stage 1: Fast draft from frontdoor + grep hits capture
+    Stage 2: Quality review from large model with reduced context
+
+    Args:
+        prompt: The user's summarization prompt.
+        context: The full document context.
+        primitives: LLMPrimitives instance for LLM calls.
+        state: Application state.
+        task_id: Task ID for logging.
+
+    Returns:
+        Tuple of (final_summary, stats_dict).
+    """
+    import time
+
+    stats = {
+        "pipeline": "two_stage",
+        "stage1_time_ms": 0,
+        "stage2_time_ms": 0,
+        "context_tokens": _estimate_tokens(context),
+        "cache_hit": False,
+    }
+
+    # Check cache first
+    cache = get_draft_cache()
+    cache_key = cache.make_key(context)
+
+    cached = cache.get(cache_key)
+    if cached:
+        stats["cache_hit"] = True
+        draft_summary = cached.draft_summary
+        grep_hits = cached.grep_hits
+        figures = cached.figures
+    else:
+        # Stage 1: Run frontdoor to generate draft summary directly
+        # Simpler approach: no REPL code generation, just direct summarization
+        stage1_start = time.perf_counter()
+
+        # Truncate context for Stage 1 (frontdoor reads beginning + key sections)
+        # Use first 20K chars to fit within frontdoor's context window
+        context_preview = context[:20000]
+        if len(context) > 20000:
+            context_preview += f"\n\n[... {len(context) - 20000} more chars truncated for draft ...]"
+
+        # Build Stage 1 prompt - direct summarization request
+        stage1_prompt = f"""You are summarizing a technical document. Write a draft executive summary.
+
+## Task
+{prompt}
+
+## Document Content (preview)
+{context_preview}
+
+## Instructions
+Write a draft summary covering:
+1. Main thesis and purpose
+2. Key innovations or contributions
+3. How it works (high-level mechanics)
+4. Benefits and target audience
+
+Be concise but comprehensive. This draft will be reviewed and refined.
+
+Draft Summary:"""
+
+        # Get Stage 1 response - direct LLM call, no REPL
+        draft_summary = primitives.llm_call(
+            stage1_prompt,
+            role=TWO_STAGE_CONFIG["stage1_role"],
+            n_tokens=800,
+        )
+
+        # Extract key excerpts by pattern matching for Stage 2
+        # These serve as "grep hits" for verification
+        grep_hits = []
+        key_patterns = ["abstract", "introduction", "conclusion", "key", "innovation", "benefit"]
+        for pattern in key_patterns:
+            import re
+            matches = re.findall(
+                f"(.{{0,100}}{pattern}.{{0,200}})",
+                context,
+                re.IGNORECASE
+            )
+            if matches:
+                grep_hits.append({
+                    "pattern": pattern,
+                    "source": "context",
+                    "match_count": len(matches),
+                    "hits": [{"context": m[:500]} for m in matches[:3]],
+                })
+
+        figures = []  # No figures in simple mode
+
+        stage1_time = time.perf_counter() - stage1_start
+        stats["stage1_time_ms"] = int(stage1_time * 1000)
+
+        # Cache the Stage 1 results
+        cache.set(cache_key, CachedDraft(
+            draft_summary=draft_summary,
+            grep_hits=grep_hits,
+            figures=figures,
+            timestamp=time.time(),
+            context_tokens=stats["context_tokens"],
+            processing_time_ms=stats["stage1_time_ms"],
+        ))
+
+    # Stage 2: Review with large model using reduced context
+    stage2_start = time.perf_counter()
+
+    stage2_prompt = build_stage2_review_prompt(
+        draft_summary=draft_summary,
+        grep_hits=grep_hits,
+        figures=figures,
+        original_task=prompt,
+    )
+
+    # Call Stage 2 model
+    final_summary = primitives.llm_call(
+        stage2_prompt,
+        role=TWO_STAGE_CONFIG["stage2_role"],
+        n_tokens=1024,
+    )
+
+    stage2_time = time.perf_counter() - stage2_start
+    stats["stage2_time_ms"] = int(stage2_time * 1000)
+    stats["stage2_context_tokens"] = _estimate_tokens(stage2_prompt)
+
+    # Log to progress logger if available
+    if state.progress_logger:
+        state.progress_logger.log_exploration(
+            task_id=task_id,
+            query=prompt[:100],
+            strategy_used="two_stage_summarization",
+            tokens_spent=stats["stage2_context_tokens"],
+            success=True,
+        )
+
+    return final_summary, stats
+
 
 router = APIRouter()
 
@@ -95,14 +315,14 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
 
     # Determine routing using HybridRouter if available, otherwise rules
     if use_mock:
-        routing_decision = [request.role or "frontdoor"]
+        routing_decision = [request.role or Role.FRONTDOOR]
         routing_strategy = "mock"
     elif state.hybrid_router and request.real_mode:
         # Use learned routing for real-mode requests
         routing_decision, routing_strategy = state.hybrid_router.route(task_ir)
     else:
         # Fall back to request role or default
-        routing_decision = [request.role or "frontdoor"]
+        routing_decision = [request.role or Role.FRONTDOOR]
         routing_strategy = "rules"
 
     # Log task start (MemRL integration)
@@ -186,7 +406,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         combined_context += f"\n\nContext:\n{request.context}"
 
     # Use first role from routing decision (may be learned or rule-based)
-    initial_role = routing_decision[0] if routing_decision else "frontdoor"
+    initial_role = routing_decision[0] if routing_decision else Role.FRONTDOOR
 
     repl = REPLEnvironment(
         context=combined_context,
@@ -195,6 +415,48 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         script_registry=state.script_registry,
         role=initial_role,
     )
+
+    # Check for two-stage summarization opportunity
+    if request.real_mode and _should_use_two_stage(
+        prompt=request.prompt,
+        context=request.context,
+    ):
+        try:
+            answer, two_stage_stats = await _run_two_stage_summarization(
+                prompt=request.prompt,
+                context=request.context or "",
+                primitives=primitives,
+                state=state,
+                task_id=task_id,
+            )
+
+            elapsed = time.perf_counter() - start_time
+            state.increment_request(mock_mode=False, turns=2)  # Count as 2 turns
+
+            # Log task completion
+            if state.progress_logger:
+                cache_info = "cache hit" if two_stage_stats.get("cache_hit") else "cache miss"
+                state.progress_logger.log_task_completed(
+                    task_id=task_id,
+                    success=True,
+                    details=f"Two-stage summarization ({cache_info}), {elapsed:.3f}s",
+                )
+                score_completed_task(state, task_id)
+
+            cache_stats = primitives.get_cache_stats() if primitives._backends else None
+
+            return ChatResponse(
+                answer=answer,
+                turns=2,
+                tokens_used=primitives.total_tokens_generated,
+                elapsed_seconds=elapsed,
+                mock_mode=False,
+                real_mode=True,
+                cache_stats=cache_stats,
+            )
+        except Exception as e:
+            # Fall back to standard orchestration on two-stage failure
+            pass  # Continue to normal loop below
 
     # Run Root LM orchestration loop with escalation support
     turns = 0
@@ -444,7 +706,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         # Mock mode
         if use_mock:
             # Emit turn start
-            yield turn_start_event(turn=1, role="frontdoor")
+            yield turn_start_event(turn=1, role=str(Role.FRONTDOOR))
 
             # Emit thinking events if thinking_budget > 0 (Claude Code parity)
             if request.thinking_budget > 0:
@@ -511,7 +773,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             llm_primitives=primitives,
             tool_registry=state.tool_registry,
             script_registry=state.script_registry,
-            role=request.role or "frontdoor",
+            role=request.role or Role.FRONTDOOR,
         )
 
         # Root LM loop with streaming
@@ -523,7 +785,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             turn_start_time_inner = time.perf_counter()
 
             # Emit turn start
-            yield turn_start_event(turn=turn + 1, role="frontdoor")
+            yield turn_start_event(turn=turn + 1, role=str(Role.FRONTDOOR))
 
             # Get state and build prompt
             repl_state = repl.get_state()
@@ -537,7 +799,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
             # Call Root LM
             try:
-                code = primitives.llm_call(root_prompt, role="frontdoor", n_tokens=1024)
+                code = primitives.llm_call(root_prompt, role=Role.FRONTDOOR, n_tokens=1024)
             except Exception as e:
                 # Log failure (MemRL)
                 if state.progress_logger:

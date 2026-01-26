@@ -394,6 +394,14 @@ class REPLEnvironment:
         self._exploration_calls = 0  # Count of peek/grep/llm_call calls
         self._exploration_log = ExplorationLog()  # Detailed exploration log
 
+        # Grep hits buffer for two-stage summarization pipeline
+        # Captures structured grep results for Stage 2 review
+        self._grep_hits_buffer: list[dict[str, Any]] = []
+
+        # Key findings buffer for session persistence
+        # Stores user-marked insights to be synced by SessionPersister
+        self._findings_buffer: list[dict[str, Any]] = []
+
         # Build restricted globals
         self._globals = self._build_globals()
 
@@ -429,10 +437,18 @@ class REPLEnvironment:
             # File system tools
             "list_dir": self._list_dir,
             "file_info": self._file_info,
+            # Archive tools
+            "archive_open": self._archive_open,
+            "archive_extract": self._archive_extract,
+            "archive_file": self._archive_file,
+            "archive_search": self._archive_search,
             # Web tools
             "web_fetch": self._web_fetch,
             # Memory tools
             "recall": self._recall,
+            # Session persistence tools
+            "mark_finding": self._mark_finding,
+            "list_findings": self._list_findings,
             # Orchestration tools
             "escalate": self._escalate,
             # Shell tools (sandboxed)
@@ -764,6 +780,350 @@ class REPLEnvironment:
             return json.dumps({"path": path, "exists": False})
         except Exception as e:
             return f"[ERROR: {type(e).__name__}: {e}]"
+
+    # =========================================================================
+    # Archive Tools (for document ingestion from compressed files)
+    # =========================================================================
+
+    def _archive_open(self, path: str) -> str:
+        """Open an archive and return its manifest.
+
+        This is the first step in archive processing. Returns metadata
+        about the archive contents without extracting anything.
+
+        Supported formats: .zip, .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz, .7z
+
+        Args:
+            path: Absolute path to the archive file.
+
+        Returns:
+            JSON string with archive manifest:
+            {
+                "total_files": N,
+                "total_size": "12.3 MB",
+                "types": {".pdf": 3, ".py": 12},
+                "recommendation": "auto_all"|"manifest_then_ask"|"summary_with_recommendations",
+                "nested_archives": N
+            }
+        """
+        self._exploration_calls += 1
+        import json
+        from pathlib import Path
+
+        # Validate path
+        is_valid, error = self._validate_file_path(path)
+        if not is_valid:
+            return f"[ERROR: {error}]"
+
+        try:
+            from src.services.archive_extractor import ArchiveExtractor
+
+            extractor = ArchiveExtractor()
+            archive_path = Path(path)
+
+            # Validate archive first
+            validation = extractor.validate(archive_path)
+            if not validation.is_safe:
+                return json.dumps({
+                    "error": f"Archive validation failed: {validation.status.value}",
+                    "issues": validation.issues,
+                }, indent=2)
+
+            # Get manifest
+            manifest = extractor.list_contents(archive_path)
+
+            # Store in artifacts for later use
+            if "_archives" not in self.artifacts:
+                self.artifacts["_archives"] = {}
+
+            archive_name = archive_path.name
+            self.artifacts["_archives"][archive_name] = {
+                "manifest": manifest,
+                "path": path,
+                "extracted_to": None,
+                "processed_files": {},
+            }
+            # Also track "current" archive for easier access
+            self.artifacts["_archives"]["current"] = archive_name
+
+            result = manifest.to_summary_dict()
+            self._exploration_log.add_event("archive_open", {"path": path}, result)
+            return json.dumps(result, indent=2)
+
+        except ImportError:
+            return "[ERROR: Archive extractor not available]"
+        except Exception as e:
+            return f"[ERROR: {type(e).__name__}: {e}]"
+
+    def _archive_extract(
+        self,
+        archive_name: str | None = None,
+        pattern: str | None = None,
+        files: list[str] | None = None,
+        process_documents: bool = True,
+    ) -> str:
+        """Extract files from an opened archive.
+
+        Must call archive_open() first. Extracts files and optionally
+        routes them through the document processing pipeline.
+
+        Args:
+            archive_name: Name of the archive (from archive_open). If None,
+                         uses the most recently opened archive.
+            pattern: Glob pattern to match (e.g., "*.pdf", "docs/*.md").
+            files: List of specific files to extract.
+            process_documents: If True, route PDFs through OCR pipeline.
+
+        Returns:
+            JSON string with extraction results:
+            {
+                "extracted": N,
+                "processed": N,
+                "sections_total": N,
+                "stored_in": "artifacts['_archives']['name']"
+            }
+        """
+        self._exploration_calls += 1
+        import json
+        from pathlib import Path
+
+        try:
+            from src.services.archive_extractor import ArchiveExtractor
+
+            # Get archive info from artifacts
+            if "_archives" not in self.artifacts or not self.artifacts["_archives"]:
+                return "[ERROR: No archive opened. Call archive_open() first.]"
+
+            if archive_name is None:
+                # Use the "current" marker if available
+                current = self.artifacts["_archives"].get("current")
+                if current:
+                    archive_name = current
+                else:
+                    # Fall back to last opened archive (excluding "current" key)
+                    real_archives = [k for k in self.artifacts["_archives"].keys() if k != "current"]
+                    if not real_archives:
+                        return "[ERROR: No archive opened. Call archive_open() first.]"
+                    archive_name = real_archives[-1]
+
+            if archive_name not in self.artifacts["_archives"]:
+                real_archives = [k for k in self.artifacts["_archives"].keys() if k != "current"]
+                return f"[ERROR: Archive not found: {archive_name}. Opened: {real_archives}]"
+
+            archive_info = self.artifacts["_archives"][archive_name]
+            if not isinstance(archive_info, dict):
+                return f"[ERROR: Invalid archive info for: {archive_name}]"
+            archive_path = Path(archive_info["path"])
+            manifest = archive_info["manifest"]
+
+            extractor = ArchiveExtractor()
+
+            # Determine what to extract
+            if pattern:
+                result = extractor.extract_pattern(archive_path, pattern)
+            elif files:
+                result = extractor.extract_files(archive_path, files)
+            else:
+                # Extract all
+                result = extractor.extract_all(archive_path)
+
+            if not result.success and not result.extracted_files:
+                return json.dumps({
+                    "error": "Extraction failed",
+                    "errors": result.errors,
+                }, indent=2)
+
+            # Update artifacts with extracted files
+            archive_info["extracted_to"] = str(result.extracted_files.get(
+                list(result.extracted_files.keys())[0], ""
+            ).parent if result.extracted_files else None)
+
+            # Process documents if requested
+            sections_total = 0
+            figures_total = 0
+
+            if process_documents:
+                # Route document files through preprocessing
+                doc_extensions = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
+
+                for filename, file_path in result.extracted_files.items():
+                    ext = Path(filename).suffix.lower()
+
+                    if ext in doc_extensions:
+                        # Try to process via OCR
+                        try:
+                            ocr_result = self._ocr_document(str(file_path))
+                            ocr_data = json.loads(ocr_result)
+
+                            if "error" not in ocr_result.lower():
+                                archive_info["processed_files"][filename] = {
+                                    "type": "document",
+                                    "sections": ocr_data.get("total_pages", 0),
+                                    "figures": len(ocr_data.get("figures", [])),
+                                    "text_preview": ocr_data.get("full_text", "")[:500],
+                                }
+                                sections_total += ocr_data.get("total_pages", 0)
+                                figures_total += len(ocr_data.get("figures", []))
+                        except Exception:
+                            # Store as unprocessed document
+                            archive_info["processed_files"][filename] = {
+                                "type": "document",
+                                "error": "Processing failed",
+                            }
+                    else:
+                        # Text/code files - read content directly
+                        try:
+                            content = file_path.read_text(encoding="utf-8", errors="replace")
+                            archive_info["processed_files"][filename] = {
+                                "type": "text",
+                                "content": content[:50000],  # Cap at 50K
+                                "lines": content.count("\n") + 1,
+                            }
+                        except Exception:
+                            archive_info["processed_files"][filename] = {
+                                "type": "binary",
+                                "size": file_path.stat().st_size,
+                            }
+
+            summary = {
+                "success": True,
+                "extracted": len(result.extracted_files),
+                "processed": len(archive_info["processed_files"]),
+                "sections_total": sections_total,
+                "figures_total": figures_total,
+                "skipped": len(result.skipped_files),
+                "stored_in": f"artifacts['_archives']['{archive_name}']",
+            }
+
+            self._exploration_log.add_event("archive_extract", {
+                "archive_name": archive_name,
+                "pattern": pattern,
+                "files": files,
+            }, summary)
+
+            return json.dumps(summary, indent=2)
+
+        except ImportError:
+            return "[ERROR: Archive extractor not available]"
+        except Exception as e:
+            return f"[ERROR: {type(e).__name__}: {e}]"
+
+    def _archive_file(self, filename: str, archive_name: str | None = None) -> str:
+        """Get content of a specific file from an extracted archive.
+
+        Args:
+            filename: Path of the file within the archive.
+            archive_name: Name of the archive. If None, searches all.
+
+        Returns:
+            File content (text) or document metadata (for processed PDFs).
+        """
+        self._exploration_calls += 1
+        import json
+
+        if "_archives" not in self.artifacts:
+            return "[ERROR: No archives opened]"
+
+        # Find the file
+        archives_to_search = [archive_name] if archive_name else list(self.artifacts["_archives"].keys())
+
+        for arch_name in archives_to_search:
+            if arch_name not in self.artifacts["_archives"]:
+                continue
+
+            archive_info = self.artifacts["_archives"][arch_name]
+            processed = archive_info.get("processed_files", {})
+
+            if filename in processed:
+                file_info = processed[filename]
+
+                if file_info.get("type") == "text":
+                    return file_info.get("content", "")
+                elif file_info.get("type") == "document":
+                    return json.dumps(file_info, indent=2)
+                else:
+                    return json.dumps(file_info, indent=2)
+
+        return f"[ERROR: File not found: {filename}]"
+
+    def _archive_search(self, query: str, archive_name: str | None = None) -> str:
+        """Search across all extracted archive content.
+
+        Args:
+            query: Search query string.
+            archive_name: Name of archive to search. If None, searches all.
+
+        Returns:
+            JSON string with search results:
+            [
+                {"file": "doc.pdf", "section": "s3", "match": "...context..."},
+                {"file": "code.py", "line": 45, "match": "...context..."}
+            ]
+        """
+        self._exploration_calls += 1
+        import json
+        import re
+
+        if "_archives" not in self.artifacts:
+            return json.dumps([])
+
+        results = []
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+
+        if archive_name:
+            archives_to_search = [archive_name]
+        else:
+            # Skip the "current" marker key
+            archives_to_search = [k for k in self.artifacts["_archives"].keys() if k != "current"]
+
+        for arch_name in archives_to_search:
+            if arch_name not in self.artifacts["_archives"]:
+                continue
+
+            archive_info = self.artifacts["_archives"][arch_name]
+            if not isinstance(archive_info, dict):
+                continue
+            processed = archive_info.get("processed_files", {})
+
+            for filename, file_info in processed.items():
+                file_type = file_info.get("type", "")
+
+                if file_type == "text":
+                    content = file_info.get("content", "")
+                    for i, line in enumerate(content.splitlines(), 1):
+                        if pattern.search(line):
+                            results.append({
+                                "archive": arch_name,
+                                "file": filename,
+                                "line": i,
+                                "match": line[:200],
+                            })
+                            if len(results) >= 50:  # Cap results
+                                break
+
+                elif file_type == "document":
+                    text = file_info.get("text_preview", "")
+                    if pattern.search(text):
+                        # Find match context
+                        match = pattern.search(text)
+                        if match:
+                            start = max(0, match.start() - 50)
+                            end = min(len(text), match.end() + 50)
+                            results.append({
+                                "archive": arch_name,
+                                "file": filename,
+                                "section": "document",
+                                "match": text[start:end],
+                            })
+
+                if len(results) >= 50:
+                    break
+
+            if len(results) >= 50:
+                break
+
+        self._exploration_log.add_event("archive_search", {"query": query}, results)
+        return json.dumps(results, indent=2)
 
     def _web_fetch(self, url: str, max_chars: int = 10000) -> str:
         """Fetch content from a URL.
@@ -1649,12 +2009,20 @@ class REPLEnvironment:
         except Exception as e:
             return f"[ERROR: {type(e).__name__}: {e}]"
 
-    def _grep(self, pattern: str, file_path: str | None = None) -> list[str]:
+    def _grep(
+        self,
+        pattern: str,
+        file_path: str | None = None,
+        context_lines: int = 2,
+    ) -> list[str]:
         """Search context or file with regex and return matching lines.
+
+        Also captures hits to _grep_hits_buffer for two-stage summarization.
 
         Args:
             pattern: Regular expression pattern to search for.
             file_path: Optional file path to search instead of context.
+            context_lines: Number of context lines before/after match (default 2).
 
         Returns:
             List of lines containing matches (capped at max_grep_results).
@@ -1666,6 +2034,7 @@ class REPLEnvironment:
             return [f"[REGEX ERROR: {e}]"]
 
         # Determine source text
+        source_name = "context"
         if file_path is not None:
             is_valid, error = self._validate_file_path(file_path)
             if not is_valid:
@@ -1673,6 +2042,7 @@ class REPLEnvironment:
             try:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     source_text = f.read()
+                source_name = file_path
             except FileNotFoundError:
                 return [f"[ERROR: File not found: {file_path}]"]
             except Exception as e:
@@ -1680,13 +2050,37 @@ class REPLEnvironment:
         else:
             source_text = self.context
 
+        lines = source_text.split("\n")
         matches = []
-        for line in source_text.split("\n"):
+        match_details = []  # For grep hits buffer
+
+        for i, line in enumerate(lines):
             if regex.search(line):
                 matches.append(line)
+
+                # Capture context for grep hits buffer
+                start = max(0, i - context_lines)
+                end = min(len(lines), i + context_lines + 1)
+                context_snippet = "\n".join(lines[start:end])
+
+                match_details.append({
+                    "line_num": i + 1,
+                    "match": line[:500],  # Cap line length
+                    "context": context_snippet[:1000],  # Cap context
+                })
+
                 if len(matches) >= self.config.max_grep_results:
                     matches.append(f"[... truncated at {self.config.max_grep_results} results]")
                     break
+
+        # Store in grep hits buffer for two-stage pipeline
+        if match_details:
+            self._grep_hits_buffer.append({
+                "pattern": pattern,
+                "source": source_name,
+                "match_count": len(match_details),
+                "hits": match_details[:20],  # Cap at 20 detailed hits
+            })
 
         self._exploration_log.add_event("grep", {"pattern": pattern, "file_path": file_path}, matches)
         return matches
@@ -1765,6 +2159,96 @@ class REPLEnvironment:
         if var_name not in self.artifacts:
             raise KeyError(f"Variable '{var_name}' not found in artifacts")
         raise FinalSignal(str(self.artifacts[var_name]))
+
+    def _mark_finding(
+        self,
+        content: str,
+        tags: list[str] | None = None,
+        source_file: str | None = None,
+        source_page: int | None = None,
+        source_section: str | None = None,
+    ) -> dict[str, Any]:
+        """Mark a key finding for session persistence.
+
+        Findings are stored locally and synced to SessionStore by SessionPersister.
+        Use this to capture important insights, decisions, or discoveries.
+
+        Args:
+            content: The finding text (required).
+            tags: Optional tags for categorization (e.g., ["bug", "architecture"]).
+            source_file: Optional source file path.
+            source_page: Optional page number (for PDFs).
+            source_section: Optional section ID or title.
+
+        Returns:
+            Dict with finding info including ID.
+
+        Example:
+            mark_finding("The API uses OAuth2 for authentication", tags=["auth"])
+            mark_finding("Table 3 shows 15% improvement", source_page=7)
+        """
+        import time
+        import uuid
+
+        finding = {
+            "id": str(uuid.uuid4()),
+            "content": content,
+            "tags": tags or [],
+            "source": {
+                "file": source_file,
+                "page": source_page,
+                "section": source_section,
+            },
+            "turn": self._execution_count,
+            "timestamp": time.time(),
+        }
+
+        self._findings_buffer.append(finding)
+
+        return {
+            "id": finding["id"],
+            "content": content[:100] + "..." if len(content) > 100 else content,
+            "tags": finding["tags"],
+            "status": "marked",
+        }
+
+    def _list_findings(self) -> list[dict[str, Any]]:
+        """List all findings marked in this session.
+
+        Returns:
+            List of finding summaries with id, content preview, tags, and turn.
+        """
+        return [
+            {
+                "id": f["id"],
+                "content": f["content"][:80] + "..." if len(f["content"]) > 80 else f["content"],
+                "tags": f["tags"],
+                "turn": f["turn"],
+            }
+            for f in self._findings_buffer
+        ]
+
+    def get_findings(self) -> list[dict[str, Any]]:
+        """Get all findings (full content) for external access.
+
+        This is for SessionPersister to sync findings to the store.
+
+        Returns:
+            List of full finding dicts.
+        """
+        return self._findings_buffer.copy()
+
+    def clear_findings(self) -> int:
+        """Clear the findings buffer after syncing.
+
+        Call this after SessionPersister has saved findings to avoid duplicates.
+
+        Returns:
+            Number of findings cleared.
+        """
+        count = len(self._findings_buffer)
+        self._findings_buffer = []
+        return count
 
     def _invoke_tool(self, tool_name: str, **kwargs) -> Any:
         """Invoke a registered tool.
@@ -1989,6 +2473,29 @@ class REPLEnvironment:
         """
         return self._exploration_log
 
+    def get_grep_history(self) -> list[dict[str, Any]]:
+        """Get grep hits buffer for two-stage summarization.
+
+        Returns the structured grep hits collected during this REPL session,
+        suitable for passing to Stage 2 of the two-stage summarization pipeline.
+
+        Returns:
+            List of grep hit records, each containing:
+            - pattern: The regex pattern used
+            - source: "context" or file path
+            - match_count: Number of matches found
+            - hits: List of detailed matches with line numbers and context
+        """
+        return self._grep_hits_buffer
+
+    def clear_grep_history(self) -> None:
+        """Clear the grep hits buffer.
+
+        Call this when starting a new summarization task to avoid
+        mixing grep hits from different documents.
+        """
+        self._grep_hits_buffer = []
+
     def get_exploration_strategy(self) -> dict[str, Any]:
         """Get a summary of the exploration strategy used.
 
@@ -2111,6 +2618,158 @@ class REPLEnvironment:
         # Prepend episodic suggestions (learned patterns first)
         return episodic_suggestions + suggestions
 
+    # =========================================================================
+    # Checkpoint & Restore (for session persistence)
+    # =========================================================================
+
+    def checkpoint(self) -> dict[str, Any]:
+        """Create a checkpoint of the current REPL state.
+
+        Returns a JSON-serializable dict containing:
+        - artifacts (JSON-safe values only, others marked as __unserializable__)
+        - execution_count
+        - exploration_calls
+        - grep_hits_buffer
+
+        Non-serializable artifacts (functions, objects, etc.) are replaced
+        with a marker dict: {"__unserializable__": True, "type": "ClassName"}
+
+        Returns:
+            Dict suitable for JSON serialization and later restore().
+        """
+        import json
+
+        def is_json_serializable(value: Any) -> bool:
+            """Check if a value can be JSON serialized."""
+            try:
+                json.dumps(value)
+                return True
+            except (TypeError, ValueError, OverflowError):
+                return False
+
+        def sanitize_value(value: Any) -> Any:
+            """Sanitize a value for JSON serialization."""
+            if is_json_serializable(value):
+                return value
+            # Mark as unserializable with type info
+            return {
+                "__unserializable__": True,
+                "type": type(value).__name__,
+                "repr": repr(value)[:100],  # Truncated repr for debugging
+            }
+
+        def sanitize_artifacts(artifacts: dict[str, Any]) -> dict[str, Any]:
+            """Sanitize artifacts dict, marking non-serializable values."""
+            sanitized = {}
+            for key, value in artifacts.items():
+                if isinstance(value, dict):
+                    # Recursively sanitize nested dicts
+                    sanitized[key] = sanitize_artifacts(value)
+                elif isinstance(value, list):
+                    # Sanitize list items
+                    sanitized[key] = [sanitize_value(item) for item in value]
+                else:
+                    sanitized[key] = sanitize_value(value)
+            return sanitized
+
+        # Sanitize exploration log events for serialization
+        exploration_events = []
+        for event in self._exploration_log.events:
+            exploration_events.append({
+                "function": event.function,
+                "args": sanitize_artifacts(event.args) if isinstance(event.args, dict) else {},
+                "result_size": event.result_size,
+                "timestamp": event.timestamp,
+                "token_estimate": event.token_estimate,
+            })
+
+        return {
+            "version": 1,  # Schema version for future compatibility
+            "artifacts": sanitize_artifacts(self.artifacts),
+            "execution_count": self._execution_count,
+            "exploration_calls": self._exploration_calls,
+            "exploration_tokens": self._exploration_log.total_exploration_tokens,
+            "exploration_events": exploration_events,
+            "grep_hits_buffer": self._grep_hits_buffer,
+            "findings_buffer": self._findings_buffer,  # Key findings
+            "context_length": len(self.context),  # For verification, not full context
+            "task_id": self.task_id,
+        }
+
+    def restore(self, checkpoint: dict[str, Any]) -> None:
+        """Restore REPL state from a checkpoint.
+
+        Restores:
+        - artifacts (including __unserializable__ markers)
+        - execution_count
+        - exploration_calls
+        - grep_hits_buffer
+
+        Note: Non-serializable artifacts remain as marker dicts.
+        The context is NOT restored - it should be passed to __init__.
+
+        Args:
+            checkpoint: Dict from a previous checkpoint() call.
+
+        Raises:
+            ValueError: If checkpoint format is invalid.
+        """
+        version = checkpoint.get("version", 0)
+        if version != 1:
+            raise ValueError(f"Unsupported checkpoint version: {version}")
+
+        # Restore artifacts
+        self.artifacts = checkpoint.get("artifacts", {})
+
+        # Restore execution state
+        self._execution_count = checkpoint.get("execution_count", 0)
+        self._exploration_calls = checkpoint.get("exploration_calls", 0)
+
+        # Restore exploration log
+        self._exploration_log = ExplorationLog()
+        self._exploration_log.total_exploration_tokens = checkpoint.get("exploration_tokens", 0)
+        for event_data in checkpoint.get("exploration_events", []):
+            event = ExplorationEvent(
+                function=event_data.get("function", ""),
+                args=event_data.get("args", {}),
+                result_size=event_data.get("result_size", 0),
+                timestamp=event_data.get("timestamp", 0.0),
+                token_estimate=event_data.get("token_estimate", 0),
+            )
+            self._exploration_log.events.append(event)
+
+        # Restore grep hits buffer
+        self._grep_hits_buffer = checkpoint.get("grep_hits_buffer", [])
+
+        # Restore findings buffer
+        self._findings_buffer = checkpoint.get("findings_buffer", [])
+
+        # Rebuild globals with restored artifacts
+        self._globals = self._build_globals()
+
+    def get_checkpoint_metadata(self) -> dict[str, Any]:
+        """Get metadata about current state for checkpoint decision.
+
+        Returns lightweight info useful for deciding whether to checkpoint:
+        - execution_count
+        - exploration_calls
+        - artifact_count
+        - context_length
+
+        This is cheaper than full checkpoint() for frequent checks.
+
+        Returns:
+            Dict with state metadata.
+        """
+        return {
+            "execution_count": self._execution_count,
+            "exploration_calls": self._exploration_calls,
+            "artifact_count": len(self.artifacts),
+            "context_length": len(self.context),
+            "grep_hits_count": len(self._grep_hits_buffer),
+            "findings_count": len(self._findings_buffer),
+        }
+
     def reset(self) -> None:
         """Reset the REPL state (clear artifacts, keep context)."""
         self.artifacts.clear()
@@ -2118,6 +2777,8 @@ class REPLEnvironment:
         self._execution_count = 0
         self._exploration_calls = 0
         self._exploration_log = ExplorationLog()  # Reset exploration log
+        self._grep_hits_buffer = []  # Clear grep history for two-stage pipeline
+        self._findings_buffer = []  # Clear findings buffer
         self._globals = self._build_globals()
 
 

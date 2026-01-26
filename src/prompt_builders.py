@@ -187,20 +187,46 @@ class StepPrompt:
 
 
 # Default tool descriptions for Root LM
-DEFAULT_ROOT_LM_TOOLS = """- `context`: str - The full input context (large, do not send to LLM)
+DEFAULT_ROOT_LM_TOOLS = """### Context & Files
+- `context`: str - The full input context (large, do not send to LLM)
 - `artifacts`: dict - Store intermediate results
-- `peek(n)`: Return first n characters of context
-- `grep(pattern)`: Search context with regex, return matching lines
+- `peek(n, file_path=None)`: Return first n characters of context or file
+- `grep(pattern, file_path=None)`: Search context or file with regex
+- `list_dir(path)`: List directory contents, returns JSON with files/dirs
+- `file_info(path)`: Get file metadata (size, type, modified date)
+
+### Document Processing (all return JSON strings - use json.loads())
+- `ocr_document(path)`: Extract text from PDF, returns JSON with full_text, pages, figures
+- `analyze_figure(image_path, prompt)`: Analyze image with vision model
+- `extract_figure(pdf_path, page, bbox)`: Crop figure from PDF, returns image path
+
+### Web & Shell
+- `web_fetch(url)`: Fetch web content
+- `run_shell(cmd)`: Run sandboxed shell command (ls, grep, git status only)
+
+### LLM Delegation
 - `llm_call(prompt, role='worker')`: Call a sub-LM for a task
-- `llm_batch(prompts, role='worker')`: Call sub-LM with multiple prompts in parallel
-- `FINAL(answer)`: Signal completion with the final answer"""
+- `llm_batch(prompts, role='worker')`: Parallel sub-LM calls
+- `escalate(reason)`: Request escalation to higher-tier model
+- `recall(query)`: Search episodic memory for similar past tasks
+
+### Completion
+- `FINAL(answer)`: Signal completion with the final answer (REQUIRED)"""
 
 # Default rules for Root LM
-DEFAULT_ROOT_LM_RULES = """1. NEVER send the full context to llm_call - use peek() or grep() to extract relevant parts
-2. Break complex tasks into smaller sub-tasks using llm_call/llm_batch
-3. Store intermediate results in artifacts dict
-4. Call FINAL(answer) when you have the complete answer
-5. Output only valid Python code - no explanations or markdown"""
+DEFAULT_ROOT_LM_RULES = """## CRITICAL
+1. **NO IMPORTS** - import/from are BLOCKED. The `json` module is pre-loaded, just use `json.loads()` directly.
+2. **USE list_dir()** for files - NOT os.listdir or pathlib
+3. **ALWAYS call FINAL(answer)** to complete the task
+
+## Examples
+List files: `result = list_dir('/path'); FINAL(result)`
+Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
+Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); summary = llm_call(f"Summarize: {doc['full_text'][:6000]}", role='worker'); FINAL(summary)`
+
+## Other Rules
+4. NEVER send full context to llm_call - use peek() or grep() first
+5. Output only valid Python code - no markdown, no explanations"""
 
 
 class PromptBuilder:
@@ -421,6 +447,111 @@ class PromptBuilder:
             return prompt
         return prompt.to_string()
 
+    def build_stage2_review_prompt(
+        self,
+        draft_summary: str,
+        grep_hits: list[dict[str, Any]],
+        figures: list[dict[str, Any]],
+        original_task: str = "",
+    ) -> str:
+        """Build a prompt for Stage 2 of two-stage summarization.
+
+        Stage 2 receives the frontdoor's draft summary along with key excerpts
+        (grep hits) and figure descriptions. The large model refines the summary
+        without reading the full document.
+
+        Args:
+            draft_summary: The draft summary from Stage 1 (frontdoor).
+            grep_hits: List of grep hit records from REPL's get_grep_history().
+                       Each record contains pattern, source, match_count, hits.
+            figures: List of figure descriptions from document processing.
+            original_task: Optional original summarization task.
+
+        Returns:
+            Prompt string for Stage 2 model.
+        """
+        parts = [
+            "# Document Summary Review",
+            "",
+            "You are reviewing a draft summary produced by a fast model. Your task is to:",
+            "1. Verify accuracy against the provided excerpts",
+            "2. Add important details that may be missing",
+            "3. Improve clarity and completeness",
+            "4. Correct any inaccuracies",
+            "",
+        ]
+
+        # Add original task if provided
+        if original_task:
+            parts.extend([
+                "## Original Request",
+                original_task,
+                "",
+            ])
+
+        # Add draft summary
+        parts.extend([
+            "## Draft Summary (to review and refine)",
+            "```",
+            draft_summary[:8000],  # Cap draft length
+            "```",
+            "",
+        ])
+
+        # Add grep excerpts (key source material)
+        if grep_hits:
+            parts.extend([
+                "## Key Excerpts from Source Document",
+                "These are search results the draft model found relevant:",
+                "",
+            ])
+
+            total_chars = 0
+            max_excerpt_chars = 6000  # Cap total excerpt size
+
+            for hit_record in grep_hits:
+                if total_chars >= max_excerpt_chars:
+                    parts.append(f"[... additional excerpts truncated at {max_excerpt_chars} chars]")
+                    break
+
+                pattern = hit_record.get("pattern", "")
+                hits = hit_record.get("hits", [])
+
+                if hits:
+                    parts.append(f"### Search: `{pattern}`")
+                    for hit in hits[:5]:  # Cap at 5 hits per pattern
+                        context = hit.get("context", hit.get("match", ""))
+                        line_num = hit.get("line_num", "?")
+                        excerpt = f"Line {line_num}: {context[:500]}"
+                        total_chars += len(excerpt)
+                        parts.append(excerpt)
+                        if total_chars >= max_excerpt_chars:
+                            break
+                    parts.append("")
+
+        # Add figure descriptions
+        if figures:
+            parts.extend([
+                "## Figures in Document",
+                "",
+            ])
+
+            for i, fig in enumerate(figures[:10], 1):  # Cap at 10 figures
+                desc = fig.get("description", fig.get("text", "No description"))
+                page = fig.get("page", "?")
+                parts.append(f"**Figure {i}** (Page {page}): {desc[:500]}")
+            parts.append("")
+
+        # Final instruction
+        parts.extend([
+            "## Your Task",
+            "Write a refined, accurate summary based on the draft and excerpts above.",
+            "Preserve the draft's structure but improve accuracy and completeness.",
+            "Write the summary directly, without meta-commentary about your review process.",
+        ])
+
+        return "\n".join(parts)
+
     def get_system_prompt(self, role: Role) -> str:
         """Get the system prompt for a specific role.
 
@@ -557,49 +688,105 @@ def build_step_prompt(
     return result if isinstance(result, str) else result.to_string()
 
 
+def build_stage2_review_prompt(
+    draft_summary: str,
+    grep_hits: list[dict[str, Any]],
+    figures: list[dict[str, Any]],
+    original_task: str = "",
+) -> str:
+    """Build a prompt for Stage 2 of two-stage summarization.
+
+    Module-level function for backwards compatibility.
+    See PromptBuilder.build_stage2_review_prompt() for full documentation.
+    """
+    return _get_builder().build_stage2_review_prompt(
+        draft_summary=draft_summary,
+        grep_hits=grep_hits,
+        figures=figures,
+        original_task=original_task,
+    )
+
+
 # Code extraction utilities (moved from orchestrator.py)
+
+
+def _strip_import_lines(code: str) -> str:
+    """Strip import/from lines since all needed modules are pre-loaded in REPL globals.
+
+    Models frequently generate 'import json' or 'import os' even when told not to.
+    Safe modules (json) are already available; unsafe modules would be blocked anyway.
+    """
+    lines = code.split("\n")
+    filtered = [
+        line for line in lines
+        if not line.strip().startswith("import ")
+        and not line.strip().startswith("from ")
+    ]
+    return "\n".join(filtered).strip()
+
+
 def extract_code_from_response(response: str) -> str:
     """Extract Python code from an LLM response.
 
     Handles responses that may be wrapped in markdown code blocks
-    or contain explanatory text.
-
-    Args:
-        response: Raw LLM response
-
-    Returns:
-        Extracted Python code
+    or contain explanatory text. Also strips import lines since
+    all needed modules are pre-loaded in the REPL globals.
     """
+    response = response.strip()
+
+    # Remove trailing backticks that aren't properly paired
+    # (model sometimes outputs code followed by ``` without opening)
+    if response.endswith("```"):
+        # Check if there's a matching opening
+        if response.count("```") % 2 == 1:
+            response = response[:-3].rstrip()
+
     # Try to extract from markdown code block
     code_block_pattern = r"```(?:python)?\s*\n(.*?)```"
     matches = re.findall(code_block_pattern, response, re.DOTALL)
 
     if matches:
-        return matches[0].strip()
+        return _strip_import_lines(matches[0].strip())
 
     # If no code block, try to find code-like content
     lines = response.split("\n")
     code_lines = []
     in_code = False
 
+    # Include REPL tool functions as code starters
     code_starters = [
         "import ", "from ", "def ", "class ", "if ", "for ", "while ",
         "try:", "except", "with ", "return ", "print(", "FINAL(",
         "artifacts[", "result =", "answer =", "output =",
+        # REPL tools
+        "peek(", "grep(", "list_dir(", "file_info(", "ocr_document(",
+        "analyze_figure(", "extract_figure(", "web_fetch(", "run_shell(",
+        "recall(", "escalate(", "llm_call(", "llm_batch(",
     ]
 
     for line in lines:
-        if any(line.strip().startswith(kw) for kw in code_starters):
+        stripped = line.strip()
+        if any(stripped.startswith(kw) for kw in code_starters):
             in_code = True
 
-        if in_code or line.strip().startswith("#") or "=" in line or "()" in line:
+        if in_code or stripped.startswith("#") or "=" in line or "()" in line:
             code_lines.append(line)
 
     if code_lines:
-        return "\n".join(code_lines)
+        # Strip common leading whitespace from all lines
+        code = "\n".join(code_lines)
+        # Dedent the code to remove consistent leading whitespace
+        import textwrap
+        code = textwrap.dedent(code).strip()
+        # Strip import lines - modules like json are pre-loaded in REPL globals
+        code = _strip_import_lines(code)
+        return code
 
-    # Fallback: return the whole response
-    return response.strip()
+    # Fallback: return the whole response, dedented
+    import textwrap
+    code = textwrap.dedent(response).strip()
+    code = _strip_import_lines(code)
+    return code
 
 
 def auto_wrap_final(code: str) -> str:

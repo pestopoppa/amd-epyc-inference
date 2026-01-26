@@ -56,6 +56,13 @@ class EventType(str, Enum):
     Q_VALUE_UPDATED = "q_value_updated"
     MEMORY_STORED = "memory_stored"
 
+    # Session lifecycle events (for session persistence)
+    SESSION_CREATED = "session_created"
+    SESSION_RESUMED = "session_resumed"
+    SESSION_CHECKPOINTED = "session_checkpointed"
+    SESSION_ARCHIVED = "session_archived"
+    SESSION_FINDING_ADDED = "session_finding_added"
+
 
 @dataclass
 class ProgressEntry:
@@ -324,6 +331,167 @@ class ProgressLogger:
                     "old_q": old_q,
                     "new_q": new_q,
                     "reward": reward,
+                },
+            )
+        )
+
+    # =========================================================================
+    # Session lifecycle events
+    # =========================================================================
+
+    def log_session_created(
+        self,
+        session_id: str,
+        task_id: str,
+        name: Optional[str] = None,
+        project: Optional[str] = None,
+    ) -> None:
+        """Log session creation event.
+
+        Args:
+            session_id: The session UUID.
+            task_id: Initial task ID for MemRL lineage.
+            name: Optional session name.
+            project: Optional project identifier.
+        """
+        self.log(
+            ProgressEntry(
+                event_type=EventType.SESSION_CREATED,
+                task_id=task_id,
+                data={
+                    "session_id": session_id,
+                    "name": name,
+                    "project": project,
+                },
+            )
+        )
+
+    def log_session_resumed(
+        self,
+        session_id: str,
+        task_id: str,
+        previous_task_id: str,
+        resume_count: int,
+        message_count: int,
+        document_changes: int = 0,
+    ) -> None:
+        """Log session resume event.
+
+        Args:
+            session_id: The session UUID.
+            task_id: New forked task ID (e.g., "original__r1").
+            previous_task_id: Task ID before resume.
+            resume_count: Total resume count for this session.
+            message_count: Messages in session at resume time.
+            document_changes: Number of source documents that changed.
+        """
+        self.log(
+            ProgressEntry(
+                event_type=EventType.SESSION_RESUMED,
+                task_id=task_id,
+                data={
+                    "session_id": session_id,
+                    "previous_task_id": previous_task_id,
+                    "resume_count": resume_count,
+                    "message_count": message_count,
+                    "document_changes": document_changes,
+                },
+            )
+        )
+
+    def log_session_checkpointed(
+        self,
+        session_id: str,
+        task_id: str,
+        checkpoint_id: str,
+        trigger: str,
+        message_count: int,
+        findings_synced: int = 0,
+    ) -> None:
+        """Log session checkpoint event.
+
+        Args:
+            session_id: The session UUID.
+            task_id: Current task ID.
+            checkpoint_id: The checkpoint UUID.
+            trigger: What triggered checkpoint ("turns", "idle", "explicit").
+            message_count: Messages at checkpoint time.
+            findings_synced: Number of findings synced to store.
+        """
+        self.log(
+            ProgressEntry(
+                event_type=EventType.SESSION_CHECKPOINTED,
+                task_id=task_id,
+                data={
+                    "session_id": session_id,
+                    "checkpoint_id": checkpoint_id,
+                    "trigger": trigger,
+                    "message_count": message_count,
+                    "findings_synced": findings_synced,
+                },
+            )
+        )
+
+    def log_session_archived(
+        self,
+        session_id: str,
+        task_id: str,
+        message_count: int,
+        findings_count: int,
+        summary_generated: bool = False,
+    ) -> None:
+        """Log session archive event.
+
+        Args:
+            session_id: The session UUID.
+            task_id: Final task ID.
+            message_count: Total messages in session.
+            findings_count: Total findings in session.
+            summary_generated: Whether LLM summary was generated.
+        """
+        self.log(
+            ProgressEntry(
+                event_type=EventType.SESSION_ARCHIVED,
+                task_id=task_id,
+                data={
+                    "session_id": session_id,
+                    "message_count": message_count,
+                    "findings_count": findings_count,
+                    "summary_generated": summary_generated,
+                },
+                outcome="success",
+            )
+        )
+
+    def log_session_finding(
+        self,
+        session_id: str,
+        task_id: str,
+        finding_id: str,
+        source: str,
+        confidence: float,
+        tags: Optional[List[str]] = None,
+    ) -> None:
+        """Log finding added to session.
+
+        Args:
+            session_id: The session UUID.
+            task_id: Current task ID.
+            finding_id: The finding UUID.
+            source: Finding source ("user_marked", "heuristic", "llm_extracted").
+            confidence: Finding confidence score (0-1).
+            tags: Optional finding tags.
+        """
+        self.log(
+            ProgressEntry(
+                event_type=EventType.SESSION_FINDING_ADDED,
+                task_id=task_id,
+                data={
+                    "session_id": session_id,
+                    "finding_id": finding_id,
+                    "source": source,
+                    "confidence": confidence,
+                    "tags": tags or [],
                 },
             )
         )

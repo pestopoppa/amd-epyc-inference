@@ -19,7 +19,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from src.models.document import (
     DocumentPreprocessResult,
@@ -42,11 +42,19 @@ from src.services.document_chunker import (
     chunk_document,
     get_document_chunker,
 )
+from src.services.figure_analyzer import (
+    FigureAnalyzer,
+    analyze_figures as analyze_figures_async,
+    get_figure_analyzer,
+)
 
 logger = logging.getLogger(__name__)
 
 # Document extensions that trigger OCR
 DOCUMENT_EXTENSIONS = frozenset({".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".docx"})
+
+# Archive extensions that contain documents
+ARCHIVE_EXTENSIONS = frozenset({".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".7z"})
 
 # MIME types that trigger OCR
 DOCUMENT_MIME_TYPES = frozenset({
@@ -124,7 +132,7 @@ class DocumentPreprocessor:
         config: PreprocessingConfig | None = None,
         client: DocumentFormalizerClient | None = None,
         chunker: DocumentChunker | None = None,
-        figure_analyzer: Callable[[list[FigureRef]], list[FigureRef]] | None = None,
+        figure_analyzer: FigureAnalyzer | None = None,
     ):
         """Initialize the preprocessor.
 
@@ -132,13 +140,12 @@ class DocumentPreprocessor:
             config: Preprocessing configuration.
             client: OCR client. Uses singleton if None.
             chunker: Document chunker. Uses singleton if None.
-            figure_analyzer: Optional callable for analyzing figures.
-                            Takes list of FigureRef, returns list with descriptions.
+            figure_analyzer: Optional FigureAnalyzer instance. Uses singleton if None.
         """
         self.config = config or PreprocessingConfig()
         self.client = client or get_document_client()
         self.chunker = chunker or get_document_chunker()
-        self.figure_analyzer = figure_analyzer
+        self.figure_analyzer = figure_analyzer or get_figure_analyzer()
 
     def needs_preprocessing(self, task_ir: dict[str, Any]) -> bool:
         """Check if a TaskIR needs document preprocessing.
@@ -169,6 +176,11 @@ class DocumentPreprocessor:
                 ext = Path(value).suffix.lower()
                 if ext in DOCUMENT_EXTENSIONS:
                     return True
+                # Check for archives (compound extensions)
+                name = Path(value).name.lower()
+                for arch_ext in ARCHIVE_EXTENSIONS:
+                    if name.endswith(arch_ext):
+                        return True
 
             # Check MIME type
             content_type = inp.get("content_type", "")
@@ -227,6 +239,18 @@ class DocumentPreprocessor:
         if len(doc_paths) > 1:
             warnings.append(f"Multiple documents found, processing only: {doc_path}")
 
+        # Check if it's an archive
+        if self._is_archive(doc_path):
+            result = await self.preprocess_archive(doc_path)
+            if result.warnings:
+                warnings.extend(result.warnings)
+            return PreprocessingResult(
+                success=result.success,
+                document_result=result.document_result,
+                error=result.error,
+                warnings=warnings,
+            )
+
         try:
             # Build processing request
             request = DocumentProcessRequest(
@@ -265,9 +289,19 @@ class DocumentPreprocessor:
                 ),
             )
 
-            # Optionally analyze figures
-            if self.config.describe_figures and self.figure_analyzer:
-                document_result.figures = self.figure_analyzer(document_result.figures)
+            # Optionally analyze figures with vision model
+            if self.config.describe_figures and document_result.figures:
+                try:
+                    document_result.figures = await analyze_figures_async(
+                        pdf_path=str(doc_path),
+                        figures=document_result.figures,
+                    )
+                    logger.info(
+                        f"Analyzed {len(document_result.figures)} figures with vision model"
+                    )
+                except Exception as e:
+                    logger.warning(f"Figure analysis failed (continuing without): {e}")
+                    warnings.append(f"Figure analysis failed: {e}")
 
             return PreprocessingResult(
                 success=True,
@@ -314,8 +348,173 @@ class DocumentPreprocessor:
                 ext = path.suffix.lower()
                 if ext in DOCUMENT_EXTENSIONS:
                     paths.append(path)
+                # Also check for archives
+                elif self._is_archive(path):
+                    paths.append(path)
 
         return paths
+
+    def _is_archive(self, path: Path) -> bool:
+        """Check if a path is an archive file."""
+        name = path.name.lower()
+        for ext in ARCHIVE_EXTENSIONS:
+            if name.endswith(ext):
+                return True
+        return False
+
+    async def preprocess_archive(
+        self,
+        archive_path: Path,
+    ) -> PreprocessingResult:
+        """Preprocess documents from an archive file.
+
+        Extracts the archive, processes all document files found,
+        and returns a merged result.
+
+        Args:
+            archive_path: Path to the archive file.
+
+        Returns:
+            PreprocessingResult with merged document results.
+        """
+        from src.models.document import MultiDocumentResult
+        from src.services.archive_extractor import ArchiveExtractor
+
+        warnings: list[str] = []
+
+        try:
+            extractor = ArchiveExtractor()
+
+            # Validate archive
+            validation = extractor.validate(archive_path)
+            if not validation.is_safe:
+                return PreprocessingResult(
+                    success=False,
+                    error=f"Archive validation failed: {'; '.join(validation.issues)}",
+                )
+
+            # Get manifest
+            manifest = extractor.list_contents(archive_path)
+
+            # Find document files
+            doc_files = [
+                f.name for f in manifest.file_tree
+                if not f.is_dir and f.extension in DOCUMENT_EXTENSIONS
+            ]
+
+            if not doc_files:
+                return PreprocessingResult(
+                    success=True,
+                    document_result=None,
+                    warnings=["No document files found in archive"],
+                )
+
+            # Extract document files
+            result = extractor.extract_files(archive_path, doc_files)
+
+            if not result.extracted_files:
+                return PreprocessingResult(
+                    success=False,
+                    error="Failed to extract document files from archive",
+                    warnings=result.errors,
+                )
+
+            # Process each extracted document
+            documents: dict[str, DocumentPreprocessResult] = {}
+            text_files: dict[str, str] = {}
+            skipped: list[str] = []
+
+            for filename, file_path in result.extracted_files.items():
+                try:
+                    # Process the document
+                    doc_result = await self.preprocess_file(file_path)
+
+                    if doc_result.success and doc_result.document_result:
+                        documents[filename] = doc_result.document_result
+                    else:
+                        warnings.append(f"Failed to process {filename}: {doc_result.error}")
+                        skipped.append(filename)
+
+                except Exception as e:
+                    warnings.append(f"Error processing {filename}: {e}")
+                    skipped.append(filename)
+
+            if not documents:
+                return PreprocessingResult(
+                    success=False,
+                    error="No documents were successfully processed",
+                    warnings=warnings,
+                )
+
+            # Create merged result
+            multi_result = MultiDocumentResult(
+                source_archive=str(archive_path),
+                documents=documents,
+                text_files=text_files,
+                skipped_files=skipped,
+                processing_time=result.extraction_time,
+            )
+
+            # Convert to DocumentPreprocessResult for compatibility
+            # (merge all sections and figures)
+            merged_sections: list[Section] = []
+            merged_figures: list[FigureRef] = []
+            total_pages = 0
+
+            for filename, doc in documents.items():
+                # Prefix section and figure IDs with filename for uniqueness
+                for section in doc.sections:
+                    new_section = Section(
+                        id=f"{filename}:{section.id}",
+                        title=f"[{filename}] {section.title}",
+                        level=section.level,
+                        content=section.content,
+                        page_start=total_pages + section.page_start,
+                        page_end=total_pages + section.page_end,
+                        figure_ids=[f"{filename}:{fid}" for fid in section.figure_ids],
+                    )
+                    merged_sections.append(new_section)
+
+                for figure in doc.figures:
+                    new_figure = FigureRef(
+                        id=f"{filename}:{figure.id}",
+                        page=total_pages + figure.page,
+                        bbox=figure.bbox,
+                        description=figure.description,
+                        image_path=figure.image_path,
+                        section_id=f"{filename}:{figure.section_id}" if figure.section_id else None,
+                    )
+                    merged_figures.append(new_figure)
+
+                total_pages += doc.total_pages
+
+            merged_result = DocumentPreprocessResult(
+                original_path=str(archive_path),
+                sections=merged_sections,
+                figures=merged_figures,
+                total_pages=total_pages,
+                processing_time=multi_result.processing_time,
+                status=ProcessingStatus.COMPLETED,
+            )
+
+            return PreprocessingResult(
+                success=True,
+                document_result=merged_result,
+                warnings=warnings,
+            )
+
+        except ImportError:
+            return PreprocessingResult(
+                success=False,
+                error="Archive extractor not available",
+            )
+        except Exception as e:
+            logger.exception(f"Archive preprocessing failed: {e}")
+            return PreprocessingResult(
+                success=False,
+                error=f"Archive preprocessing failed: {e}",
+                warnings=warnings,
+            )
 
     async def preprocess_file(
         self,

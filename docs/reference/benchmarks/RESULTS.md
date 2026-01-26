@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-22 (Added MiniMax-M2.1-Q4/Q6 and GLM-4.7-Flash scores)
+**Last Updated:** 2026-01-26 (Added summarization model comparison)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -71,6 +71,31 @@ coder_primary (21 t/s) → coder_escalation (18 t/s) → architect_coding (7 t/s
 
 ---
 
+## Summarization Model Comparison (2026-01-26)
+
+**Task:** Executive summary of Twyne V1 Whitepaper (~10K chars context, 20 pages)
+
+| Model | Acceleration | Elapsed | Tokens | t/s | Summary Len | Quality |
+|-------|--------------|---------|--------|-----|-------------|---------|
+| Qwen2.5-Coder-32B | Spec K=24 | 63.1s | 355 | 5.63 | 1945 chars | Good |
+| Qwen3-32B | Spec K=8 | 62.3s | 349 | 5.60 | 2035 chars | Good |
+| **Qwen3-Next-80B-A3B** | **MoE4** | 73.8s | 464 | **6.29** | **2560 chars** | **Best** |
+
+**Key Findings:**
+- All three non-thinking models produce clean summaries (no `<think>` artifacts)
+- **Qwen3-Next-80B-A3B (MoE4) recommended for summarization tasks**:
+  - Most comprehensive output (32% more content)
+  - Highest detail coverage
+  - No speculation needed (SSM incompatible anyway)
+- Thinking models (Qwen3-*-Thinking) unusable: output reasoning even with `--reasoning-budget 0`
+
+**Summarization Role Assignment:**
+- `ingest_long_context` = Qwen3-Next-80B-A3B + MoE4 (best quality)
+- Fallback: Qwen3-32B + spec K=8 (dense, good quality)
+- Avoid: Thinking-variant models, coder-specialized models
+
+---
+
 ## Very Large Models (100B+)
 
 ### Baseline Performance
@@ -134,12 +159,14 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 | Configuration | Speed | vs Baseline | Quality |
 |---------------|-------|-------------|---------|
 | Baseline (10 experts) | 10.12 t/s | — | ✅ |
-| 4 experts | 11.49 t/s | +13.5% | ✅ Good |
-| **2 experts** | **11.55 t/s** | **+14%** | ✅ Good |
+| **4 experts** | **6.29 t/s** | — | **✅ Best for summarization** |
+| 2 experts | 11.55 t/s | +14% | ✅ Good (speed priority) |
 | Speculative decoding | ❌ FAILS | — | SSM incompatible |
 | Prompt lookup | ❌ FAILS | — | SSM incompatible |
 
-**Absolute performance limit: ~11.6 t/s** (2 experts)
+**Performance/Quality trade-off:**
+- MoE4: 6.29 t/s - **Recommended for summarization** (most comprehensive output)
+- MoE2: 11.55 t/s - Use when speed critical, quality acceptable
 
 **Key insight:** Unlike Qwen3-235B (which produces garbage at 2 experts), Qwen3-Next-80B maintains quality even at 2 experts. This is likely because:
 - 512 experts with 2 active still provides reasonable routing options

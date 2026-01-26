@@ -50,7 +50,17 @@ CLI_PATH = os.environ.get(
 NUM_WORKERS = int(os.environ.get("LIGHTONOCR_WORKERS", "8"))
 THREADS_PER_WORKER = int(os.environ.get("LIGHTONOCR_THREADS", "12"))
 MAX_TOKENS = int(os.environ.get("LIGHTONOCR_MAX_TOKENS", "2048"))
-TIMEOUT_SEC = int(os.environ.get("LIGHTONOCR_TIMEOUT", "120"))
+TIMEOUT_SEC = int(os.environ.get("LIGHTONOCR_TIMEOUT", "300"))  # 5 min for complex pages
+
+
+@dataclass
+class BoundingBox:
+    """Bounding box for an embedded figure/image."""
+    id: int  # image number (1, 2, 3...)
+    x1: int  # normalized 0-1000
+    y1: int
+    x2: int
+    y2: int
 
 
 @dataclass
@@ -61,6 +71,11 @@ class OCRResult:
     vision_ms: float = 0.0
     gen_tps: float = 0.0
     page: int = 0
+    bboxes: list = None  # List of BoundingBox objects
+
+    def __post_init__(self):
+        if self.bboxes is None:
+            self.bboxes = []
 
 
 class LlamaOCRWorker:
@@ -100,15 +115,17 @@ class LlamaOCRWorker:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
+                stderr=asyncio.subprocess.PIPE,  # Separate stderr from stdout
                 env={**os.environ, "OMP_NUM_THREADS": str(self.threads)},
             )
 
-            stdout, _ = await asyncio.wait_for(
+            stdout, stderr = await asyncio.wait_for(
                 proc.communicate(),
                 timeout=TIMEOUT_SEC
             )
-            output = stdout.decode("utf-8", errors="replace")
+            # OCR text is on stdout, timing stats are on stderr
+            text_output = stdout.decode("utf-8", errors="replace")
+            stats_output = stderr.decode("utf-8", errors="replace")
 
         except asyncio.TimeoutError:
             proc.kill()
@@ -118,27 +135,23 @@ class LlamaOCRWorker:
 
         elapsed = time.time() - start
 
-        # Parse output
-        text, stats = self._parse_output(output)
+        # Parse outputs: text from stdout, stats from stderr
+        text = text_output.strip()
+        stats = self._parse_stats(stats_output)
+        bboxes = self._parse_bboxes(text)
 
         return OCRResult(
             text=text,
             elapsed_sec=elapsed,
             vision_ms=stats.get("vision_ms", 0.0),
             gen_tps=stats.get("gen_tps", 0.0),
+            bboxes=bboxes,
         )
 
-    def _parse_output(self, output: str) -> tuple[str, dict]:
-        """Extract text and stats from llama-mtmd-cli output."""
-        # Text is everything before "build:" line
-        if "build:" in output:
-            text = output.split("build:")[0].strip()
-        else:
-            text = output.strip()
-
-        # Extract timing stats
+    def _parse_stats(self, stderr_output: str) -> dict:
+        """Extract timing stats from llama-mtmd-cli stderr."""
         stats = {}
-        for line in output.split("\n"):
+        for line in stderr_output.split("\n"):
             if "image slice encoded" in line:
                 match = re.search(r"(\d+)\s*ms", line)
                 if match:
@@ -147,8 +160,23 @@ class LlamaOCRWorker:
                 match = re.search(r"(\d+\.?\d*)\s+tokens per second", line)
                 if match:
                     stats["gen_tps"] = float(match.group(1))
+        return stats
 
-        return text, stats
+    def _parse_bboxes(self, text: str) -> list[BoundingBox]:
+        """Extract bounding boxes from LightOnOCR output.
+
+        Format: ![image](image_N.png)x1,y1,x2,y2
+        Coordinates are normalized to 0-1000 range.
+        """
+        bboxes = []
+        # Pattern: ![image](image_N.png) followed by coordinates
+        pattern = r'!\[image\]\(image_(\d+)\.png\)\s*(\d+),(\d+),(\d+),(\d+)'
+        for match in re.finditer(pattern, text):
+            img_id = int(match.group(1))
+            x1, y1, x2, y2 = int(match.group(2)), int(match.group(3)), \
+                             int(match.group(4)), int(match.group(5))
+            bboxes.append(BoundingBox(id=img_id, x1=x1, y1=y1, x2=x2, y2=y2))
+        return bboxes
 
 
 class WorkerPool:
@@ -263,6 +291,10 @@ async def ocr_endpoint(
         "elapsed_sec": result.elapsed_sec,
         "vision_ms": result.vision_ms,
         "gen_tps": result.gen_tps,
+        "bboxes": [
+            {"id": b.id, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
+            for b in result.bboxes
+        ],
     }
 
 
@@ -330,6 +362,10 @@ async def pdf_endpoint(
                 "elapsed_sec": r.elapsed_sec,
                 "vision_ms": r.vision_ms,
                 "gen_tps": r.gen_tps,
+                "bboxes": [
+                    {"id": b.id, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
+                    for b in r.bboxes
+                ],
             }
             for r in results
         ],

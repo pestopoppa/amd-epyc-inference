@@ -52,6 +52,8 @@ dev = [
 ]
 
 [project.scripts]
+orch = "src.cli_orch:main"
+orch-sessions = "src.cli_sessions:main"
 validate-ir = "orchestration.validate_ir:main"
 registry-loader = "src.registry_loader:main"
 orchestrator-ui = "src.gradio_ui:main"

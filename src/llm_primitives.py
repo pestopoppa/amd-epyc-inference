@@ -150,8 +150,16 @@ class LLMPrimitives:
     # Default server URLs for orchestrator roles
     DEFAULT_SERVER_URLS = {
         "frontdoor": "http://localhost:8080",
+        "coder_primary": "http://localhost:8080",
         "coder": "http://localhost:8081",
+        "coder_escalation": "http://localhost:8081",
         "worker": "http://localhost:8082",
+        "worker_general": "http://localhost:8082",
+        "worker_math": "http://localhost:8082",
+        "worker_vision": "http://localhost:8082",
+        "architect_general": "http://localhost:8083",
+        "architect_coding": "http://localhost:8084",
+        "ingest_long_context": "http://localhost:8085",
     }
 
     def __init__(

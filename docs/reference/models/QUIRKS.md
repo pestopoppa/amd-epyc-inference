@@ -108,6 +108,34 @@ llama-lookup -m gemma-3-27B.gguf -f prompt.txt --draft-max 4
 **Spec Decode Fixed**: 2026-01-09 (PR #18720)
 **Prompt Lookup**: Still broken as of 2026-01-10
 
+### llama-lookup Binary (Large Context)
+
+**Issue**: `llama-lookup` crashes with assertion failure on large context prompts
+
+**Symptoms**:
+```
+GGML_ASSERT(src/llama-context.cpp:1008: n_tokens <= n_batch) failed
+```
+
+**Conditions**: Occurs with prompts >10K characters (e.g., document summarization)
+
+**Workaround**: Use `llama-cli --lookup-ngram-min` instead of the dedicated binary:
+```bash
+# ✅ Works - llama-cli with lookup flag
+numactl --interleave=all llama-cli \
+    -m MODEL.gguf \
+    --lookup-ngram-min 3 \
+    -f large_prompt.txt \
+    -n 500 --temp 0
+
+# ❌ Crashes - llama-lookup binary
+llama-lookup -m MODEL.gguf -f large_prompt.txt --draft-max 4
+```
+
+**Expected Speedup**: 12.7x on summarization tasks (per RESULTS.md)
+
+**Discovered**: 2026-01-23
+
 ### Vision-Language (VL) Models
 
 **Issue**: `llama-speculative` doesn't support VL models with mmproj files
@@ -217,6 +245,48 @@ llama-cli ... 2>&1 | tee output.log
 | F16 | params × 2.0 GB |
 
 Example: 70B model at Q4_K_M ≈ 35GB
+
+## REPL Tool Compliance
+
+**Issue**: Models may use Python imports instead of REPL tools
+
+**Symptoms**:
+- `SecurityError: Dangerous operation not allowed: import os`
+- Code uses `os.listdir()`, `pathlib.Path()`, `open()` instead of REPL tools
+- Multiple failed turns before model adapts
+
+**Affected Models**:
+- Qwen3-Coder-30B-A3B (frontdoor) - Initially tried `pathlib` and `os.listdir`
+- Other models may vary in instruction-following capability
+
+**Workaround**: Add explicit NO IMPORTS warnings to system prompts:
+```
+## CRITICAL
+1. **NO IMPORTS** - import/from are BLOCKED. Use ONLY the tools above.
+2. **USE list_dir()** for files - NOT os.listdir or pathlib
+3. **ALWAYS call FINAL(answer)** to complete the task
+
+## Examples
+List files: `result = list_dir('/path'); FINAL(result)`
+Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
+```
+
+**Tool → Python Equivalent Mapping**:
+
+| REPL Tool | Forbidden Python Equivalent |
+|-----------|---------------------------|
+| `list_dir(path)` | `os.listdir()`, `pathlib.Path().iterdir()` |
+| `peek(n, file_path)` | `open().read()`, `pathlib.Path().read_text()` |
+| `grep(pattern)` | `re.findall()`, `grep` subprocess |
+| `file_info(path)` | `os.stat()`, `pathlib.Path().stat()` |
+| `run_shell(cmd)` | `subprocess.run()`, `os.system()` |
+| `web_fetch(url)` | `requests.get()`, `urllib` |
+
+**Testing**: Run `pytest tests/integration/test_model_tool_compliance.py -v`
+
+**Discovered**: 2026-01-24
+
+---
 
 ## Adding New Quirks
 
