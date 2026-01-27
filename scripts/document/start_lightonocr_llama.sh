@@ -17,25 +17,25 @@ PORT="${LIGHTONOCR_PORT:-9001}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        --workers)
-            WORKERS="$2"
-            shift 2
-            ;;
-        --threads)
-            THREADS="$2"
-            shift 2
-            ;;
-        --port)
-            PORT="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1"
-            echo "Usage: $0 [--workers N] [--threads N] [--port N]"
-            exit 1
-            ;;
-    esac
+  case $1 in
+    --workers)
+      WORKERS="$2"
+      shift 2
+      ;;
+    --threads)
+      THREADS="$2"
+      shift 2
+      ;;
+    --port)
+      PORT="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Usage: $0 [--workers N] [--threads N] [--port N]"
+      exit 1
+      ;;
+  esac
 done
 
 # Set environment
@@ -52,11 +52,11 @@ echo ""
 
 # Activate venv if available
 if [[ -f /mnt/raid0/llm/venv/bin/activate ]]; then
-    source /mnt/raid0/llm/venv/bin/activate
+  source /mnt/raid0/llm/venv/bin/activate
 fi
 
 # Start server
 exec python3 "${PROJECT_ROOT}/src/services/lightonocr_llama_server.py" \
-    --port "$PORT" \
-    --workers "$WORKERS" \
-    --threads "$THREADS"
+  --port "$PORT" \
+  --workers "$WORKERS" \
+  --threads "$THREADS"

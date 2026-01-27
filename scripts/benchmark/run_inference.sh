@@ -1,6 +1,6 @@
 #!/bin/bash
 # run_inference.sh — Optimized inference wrapper for EPYC 9655
-# Usage: 
+# Usage:
 #   ./run_inference.sh                    # Interactive mode with default model
 #   ./run_inference.sh "Your prompt"      # Single prompt
 #   ./run_inference.sh -m /path/model     # Specify model
@@ -11,15 +11,15 @@ set -euo pipefail
 # Source logging library (optional but recommended)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/agent_log.sh" ]]; then
-    source "$SCRIPT_DIR/agent_log.sh"
+  source "$SCRIPT_DIR/agent_log.sh"
 elif [[ -f "/mnt/raid0/llm/UTILS/agent_log.sh" ]]; then
-    source "/mnt/raid0/llm/UTILS/agent_log.sh"
+  source "/mnt/raid0/llm/UTILS/agent_log.sh"
 else
-    # No-op fallbacks
-    agent_task_start() { :; }
-    agent_task_end() { :; }
-    agent_observe() { :; }
-    agent_decision() { :; }
+  # No-op fallbacks
+  agent_task_start() { :; }
+  agent_task_end() { :; }
+  agent_observe() { :; }
+  agent_decision() { :; }
 fi
 
 # Default configuration
@@ -34,73 +34,73 @@ PROMPT=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        -m|--model)
-            MODEL_MAIN="$2"
-            shift 2
-            ;;
-        -d|--draft)
-            MODEL_DRAFT="$2"
-            shift 2
-            ;;
-        -t|--threads)
-            THREADS="$2"
-            shift 2
-            ;;
-        -c|--context)
-            CONTEXT="$2"
-            shift 2
-            ;;
-        --spec|--speculative)
-            SPECULATIVE=1
-            shift
-            ;;
-        --spec-tokens)
-            SPEC_TOKENS="$2"
-            SPECULATIVE=1
-            shift 2
-            ;;
-        -h|--help)
-            echo "Usage: $0 [options] [prompt]"
-            echo ""
-            echo "Options:"
-            echo "  -m, --model PATH       Main model path (default: DeepSeek-R1-32B)"
-            echo "  -d, --draft PATH       Draft model for speculation"
-            echo "  -t, --threads N        Thread count (default: 96)"
-            echo "  -c, --context N        Context size (default: 32768)"
-            echo "  --spec                 Enable speculative decoding"
-            echo "  --spec-tokens N        Speculative tokens (default: 8)"
-            echo "  -h, --help             Show this help"
-            echo ""
-            echo "Examples:"
-            echo "  $0 \"Explain quantum computing\""
-            echo "  $0 --spec \"Write a poem about AI\""
-            echo "  $0 -m /path/to/model.gguf -t 48"
-            exit 0
-            ;;
-        *)
-            PROMPT="$1"
-            shift
-            ;;
-    esac
+  case $1 in
+    -m | --model)
+      MODEL_MAIN="$2"
+      shift 2
+      ;;
+    -d | --draft)
+      MODEL_DRAFT="$2"
+      shift 2
+      ;;
+    -t | --threads)
+      THREADS="$2"
+      shift 2
+      ;;
+    -c | --context)
+      CONTEXT="$2"
+      shift 2
+      ;;
+    --spec | --speculative)
+      SPECULATIVE=1
+      shift
+      ;;
+    --spec-tokens)
+      SPEC_TOKENS="$2"
+      SPECULATIVE=1
+      shift 2
+      ;;
+    -h | --help)
+      echo "Usage: $0 [options] [prompt]"
+      echo ""
+      echo "Options:"
+      echo "  -m, --model PATH       Main model path (default: DeepSeek-R1-32B)"
+      echo "  -d, --draft PATH       Draft model for speculation"
+      echo "  -t, --threads N        Thread count (default: 96)"
+      echo "  -c, --context N        Context size (default: 32768)"
+      echo "  --spec                 Enable speculative decoding"
+      echo "  --spec-tokens N        Speculative tokens (default: 8)"
+      echo "  -h, --help             Show this help"
+      echo ""
+      echo "Examples:"
+      echo "  $0 \"Explain quantum computing\""
+      echo "  $0 --spec \"Write a poem about AI\""
+      echo "  $0 -m /path/to/model.gguf -t 48"
+      exit 0
+      ;;
+    *)
+      PROMPT="$1"
+      shift
+      ;;
+  esac
 done
 
 # Validate
 if [[ ! -f "$LLAMA_CLI" ]]; then
-    echo "ERROR: llama-cli not found at $LLAMA_CLI"
-    echo "Build llama.cpp first."
-    exit 1
+  echo "ERROR: llama-cli not found at $LLAMA_CLI"
+  echo "Build llama.cpp first."
+  exit 1
 fi
 
 if [[ ! -f "$MODEL_MAIN" ]]; then
-    echo "ERROR: Model not found at $MODEL_MAIN"
-    exit 1
+  echo "ERROR: Model not found at $MODEL_MAIN"
+  exit 1
 fi
 
 if [[ $SPECULATIVE -eq 1 && ! -f "$MODEL_DRAFT" ]]; then
-    echo "WARNING: Draft model not found at $MODEL_DRAFT"
-    echo "Falling back to standard inference."
-    SPECULATIVE=0
+  echo "WARNING: Draft model not found at $MODEL_DRAFT"
+  echo "Falling back to standard inference."
+  SPECULATIVE=0
 fi
 
 # Critical environment variables
@@ -116,11 +116,11 @@ CMD+=" --mlock"
 CMD+=" --color"
 
 if [[ $SPECULATIVE -eq 1 ]]; then
-    CMD+=" --draft $MODEL_DRAFT"
-    CMD+=" --speculative $SPEC_TOKENS"
-    echo "Mode: Speculative decoding (draft: $(basename $MODEL_DRAFT), tokens: $SPEC_TOKENS)"
+  CMD+=" --draft $MODEL_DRAFT"
+  CMD+=" --speculative $SPEC_TOKENS"
+  echo "Mode: Speculative decoding (draft: $(basename $MODEL_DRAFT), tokens: $SPEC_TOKENS)"
 else
-    echo "Mode: Standard inference"
+  echo "Mode: Standard inference"
 fi
 
 echo "Model: $(basename $MODEL_MAIN)"
@@ -135,17 +135,17 @@ agent_observe "threads" "$THREADS"
 agent_observe "context" "$CONTEXT"
 agent_observe "speculative" "$SPECULATIVE"
 if [[ $SPECULATIVE -eq 1 ]]; then
-    agent_observe "draft_model" "$MODEL_DRAFT"
-    agent_observe "spec_tokens" "$SPEC_TOKENS"
+  agent_observe "draft_model" "$MODEL_DRAFT"
+  agent_observe "spec_tokens" "$SPEC_TOKENS"
 fi
 
 # Run
 if [[ -n "$PROMPT" ]]; then
-    # Single prompt mode
-    agent_observe "mode" "single_prompt"
-    exec $CMD -p "$PROMPT" -n 512
+  # Single prompt mode
+  agent_observe "mode" "single_prompt"
+  exec $CMD -p "$PROMPT" -n 512
 else
-    # Interactive mode
-    agent_observe "mode" "interactive"
-    exec $CMD --interactive-first
+  # Interactive mode
+  agent_observe "mode" "interactive"
+  exec $CMD --interactive-first
 fi

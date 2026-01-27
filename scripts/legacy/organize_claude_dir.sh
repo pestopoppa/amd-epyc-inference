@@ -8,9 +8,9 @@ CLAUDE_DIR="/mnt/raid0/llm/claude"
 DRY_RUN=0
 
 if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=1
-    echo "🔍 DRY RUN MODE - No files will be moved"
-    echo ""
+  DRY_RUN=1
+  echo "🔍 DRY RUN MODE - No files will be moved"
+  echo ""
 fi
 
 cd "$CLAUDE_DIR"
@@ -22,45 +22,45 @@ echo ""
 
 # Create target directory structure
 DIRS=(
-    "agents"           # Agent definitions
-    "docs"             # Documentation and guides
-    "scripts/utils"    # Utility scripts
-    "scripts/benchmark"# Benchmarking scripts
-    "scripts/session"  # Session management
-    "reports"          # Research reports and findings
-    "backups"          # Old backups
-    "archive"          # Deprecated/old files
+  "agents"        # Agent definitions
+  "docs"          # Documentation and guides
+  "scripts/utils" # Utility scripts
+  "scripts/benchmark"# Benchmarking scripts
+  "scripts/session" # Session management
+  "reports"         # Research reports and findings
+  "backups"         # Old backups
+  "archive"         # Deprecated/old files
 )
 
 echo "Creating directory structure..."
 for dir in "${DIRS[@]}"; do
-    if [ $DRY_RUN -eq 0 ]; then
-        mkdir -p "$dir"
-    fi
-    echo "  ✓ $dir"
+  if [ $DRY_RUN -eq 0 ]; then
+    mkdir -p "$dir"
+  fi
+  echo "  ✓ $dir"
 done
 echo ""
 
 # Helper function to move files
 move_file() {
-    local src="$1"
-    local dest="$2"
-    
-    if [ ! -e "$src" ]; then
-        return
-    fi
-    
-    if [ $DRY_RUN -eq 1 ]; then
-        echo "  [DRY RUN] $src → $dest"
+  local src="$1"
+  local dest="$2"
+
+  if [ ! -e "$src" ]; then
+    return
+  fi
+
+  if [ $DRY_RUN -eq 1 ]; then
+    echo "  [DRY RUN] $src → $dest"
+  else
+    # Don't overwrite if destination exists
+    if [ -e "$dest" ]; then
+      echo "  ⚠️  SKIP: $src (destination exists)"
     else
-        # Don't overwrite if destination exists
-        if [ -e "$dest" ]; then
-            echo "  ⚠️  SKIP: $src (destination exists)"
-        else
-            mv "$src" "$dest"
-            echo "  ✓ $src → $dest"
-        fi
+      mv "$src" "$dest"
+      echo "  ✓ $src → $dest"
     fi
+  fi
 }
 
 echo "--- Organizing Agent Definitions ---"
@@ -116,47 +116,47 @@ echo ""
 echo "--- Moving Temporary/Cache Directories ---"
 # Only move if they're in the root of claude dir
 if [ -d "tmp" ] && [ $DRY_RUN -eq 0 ]; then
-    # Check if tmp has contents
-    if [ "$(ls -A tmp 2>/dev/null)" ]; then
-        echo "  ⚠️  SKIP: tmp/ (has contents - manually review)"
-    else
-        rmdir tmp
-        echo "  ✓ Removed empty tmp/"
-    fi
+  # Check if tmp has contents
+  if [ "$(ls -A tmp 2>/dev/null)" ]; then
+    echo "  ⚠️  SKIP: tmp/ (has contents - manually review)"
+  else
+    rmdir tmp
+    echo "  ✓ Removed empty tmp/"
+  fi
 elif [ -d "tmp" ]; then
-    echo "  [DRY RUN] Would check tmp/ for contents"
+  echo "  [DRY RUN] Would check tmp/ for contents"
 fi
 
 if [ -d "cache" ] && [ $DRY_RUN -eq 0 ]; then
-    if [ "$(ls -A cache 2>/dev/null)" ]; then
-        echo "  ⚠️  SKIP: cache/ (has contents - manually review)"
-    else
-        rmdir cache
-        echo "  ✓ Removed empty cache/"
-    fi
+  if [ "$(ls -A cache 2>/dev/null)" ]; then
+    echo "  ⚠️  SKIP: cache/ (has contents - manually review)"
+  else
+    rmdir cache
+    echo "  ✓ Removed empty cache/"
+  fi
 elif [ -d "cache" ]; then
-    echo "  [DRY RUN] Would check cache/ for contents"
+  echo "  [DRY RUN] Would check cache/ for contents"
 fi
 echo ""
 
 echo "--- Archive Old State/Config ---"
 # These might be from old Claude sessions
 if [ -d "state" ]; then
-    move_file "state" "archive/"
+  move_file "state" "archive/"
 fi
 if [ -d "config" ]; then
-    move_file "config" "archive/"
+  move_file "config" "archive/"
 fi
 if [ -d "share" ]; then
-    move_file "share" "archive/"
+  move_file "share" "archive/"
 fi
 if [ -d "logs" ]; then
-    # Only if it's different from /mnt/raid0/llm/LOGS
-    if [ $DRY_RUN -eq 1 ]; then
-        echo "  [DRY RUN] Would check if logs/ should be archived"
-    else
-        echo "  ⚠️  MANUAL: Review logs/ - may want to merge with /mnt/raid0/llm/LOGS"
-    fi
+  # Only if it's different from /mnt/raid0/llm/LOGS
+  if [ $DRY_RUN -eq 1 ]; then
+    echo "  [DRY RUN] Would check if logs/ should be archived"
+  else
+    echo "  ⚠️  MANUAL: Review logs/ - may want to merge with /mnt/raid0/llm/LOGS"
+  fi
 fi
 echo ""
 
@@ -166,27 +166,27 @@ echo "=============================================="
 echo ""
 
 if [ $DRY_RUN -eq 1 ]; then
-    echo "This was a DRY RUN. To actually perform the reorganization:"
-    echo "  bash organize_claude_dir.sh"
-    echo ""
+  echo "This was a DRY RUN. To actually perform the reorganization:"
+  echo "  bash organize_claude_dir.sh"
+  echo ""
 else
-    echo "Final directory structure:"
-    tree -L 2 -d "$CLAUDE_DIR" 2>/dev/null || find "$CLAUDE_DIR" -maxdepth 2 -type d | sort
-    echo ""
-    
-    echo "📋 Post-Organization Tasks:"
-    echo ""
-    echo "1. Update symlinks/references:"
-    echo "   - /mnt/raid0/llm/UTILS/agent_log.sh should point to scripts/utils/agent_log.sh"
-    echo "   - Update any scripts that source agent_log.sh"
-    echo ""
-    echo "2. Review these directories manually:"
-    echo "   - tmp/ - May have session data"
-    echo "   - cache/ - May have cached models/data"
-    echo "   - logs/ - Merge with /mnt/raid0/llm/LOGS if needed"
-    echo "   - archive/ - Delete if truly obsolete"
-    echo ""
-    echo "3. Update CLAUDE.md paths to reflect new structure"
-    echo ""
-    echo "4. Create README.md in each directory explaining its purpose"
+  echo "Final directory structure:"
+  tree -L 2 -d "$CLAUDE_DIR" 2>/dev/null || find "$CLAUDE_DIR" -maxdepth 2 -type d | sort
+  echo ""
+
+  echo "📋 Post-Organization Tasks:"
+  echo ""
+  echo "1. Update symlinks/references:"
+  echo "   - /mnt/raid0/llm/UTILS/agent_log.sh should point to scripts/utils/agent_log.sh"
+  echo "   - Update any scripts that source agent_log.sh"
+  echo ""
+  echo "2. Review these directories manually:"
+  echo "   - tmp/ - May have session data"
+  echo "   - cache/ - May have cached models/data"
+  echo "   - logs/ - Merge with /mnt/raid0/llm/LOGS if needed"
+  echo "   - archive/ - Delete if truly obsolete"
+  echo ""
+  echo "3. Update CLAUDE.md paths to reflect new structure"
+  echo ""
+  echo "4. Create README.md in each directory explaining its purpose"
 fi

@@ -48,59 +48,59 @@ DEFAULT_THREADS="${THREADS:-16}"
 # =============================================================================
 
 log_info() {
-    echo "[INFO] $*"
+  echo "[INFO] $*"
 }
 
 log_error() {
-    echo "[ERROR] $*" >&2
+  echo "[ERROR] $*" >&2
 }
 
 check_binary() {
-    local binary="$1"
-    if [[ ! -x "$binary" ]]; then
-        log_error "Binary not found or not executable: $binary"
-        log_error "Build llama.cpp first: cd /mnt/raid0/llm/llama.cpp && cmake -B build && cmake --build build -j"
-        exit 1
-    fi
+  local binary="$1"
+  if [[ ! -x "$binary" ]]; then
+    log_error "Binary not found or not executable: $binary"
+    log_error "Build llama.cpp first: cd /mnt/raid0/llm/llama.cpp && cmake -B build && cmake --build build -j"
+    exit 1
+  fi
 }
 
 check_model() {
-    local model="$1"
-    if [[ ! -f "$model" ]]; then
-        log_error "Model not found: $model"
-        exit 1
-    fi
+  local model="$1"
+  if [[ ! -f "$model" ]]; then
+    log_error "Model not found: $model"
+    exit 1
+  fi
 }
 
 kill_existing_server() {
-    local port="$1"
-    local pid
-    pid=$(lsof -t -i:"$port" 2>/dev/null || true)
-    if [[ -n "$pid" ]]; then
-        log_info "Killing existing process on port $port (PID: $pid)"
-        kill "$pid" 2>/dev/null || true
-        sleep 1
-    fi
+  local port="$1"
+  local pid
+  pid=$(lsof -t -i:"$port" 2>/dev/null || true)
+  if [[ -n "$pid" ]]; then
+    log_info "Killing existing process on port $port (PID: $pid)"
+    kill "$pid" 2>/dev/null || true
+    sleep 1
+  fi
 }
 
 wait_for_health() {
-    local url="$1"
-    local max_attempts="${2:-30}"
-    local attempt=0
+  local url="$1"
+  local max_attempts="${2:-30}"
+  local attempt=0
 
-    log_info "Waiting for server health at $url..."
+  log_info "Waiting for server health at $url..."
 
-    while [[ $attempt -lt $max_attempts ]]; do
-        if curl -s "$url/health" >/dev/null 2>&1; then
-            log_info "Server is healthy!"
-            return 0
-        fi
-        attempt=$((attempt + 1))
-        sleep 1
-    done
+  while [[ $attempt -lt $max_attempts ]]; do
+    if curl -s "$url/health" >/dev/null 2>&1; then
+      log_info "Server is healthy!"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
 
-    log_error "Server failed to become healthy after $max_attempts seconds"
-    return 1
+  log_error "Server failed to become healthy after $max_attempts seconds"
+  return 1
 }
 
 # =============================================================================
@@ -108,88 +108,88 @@ wait_for_health() {
 # =============================================================================
 
 main() {
-    local model="${1:-}"
-    local port="${2:-$DEFAULT_PORT}"
-    local slots="${3:-$DEFAULT_SLOTS}"
+  local model="${1:-}"
+  local port="${2:-$DEFAULT_PORT}"
+  local slots="${3:-$DEFAULT_SLOTS}"
 
-    # Determine model path
-    if [[ -z "$model" ]]; then
-        if [[ -f "$DEFAULT_MODEL" ]]; then
-            model="$DEFAULT_MODEL"
-        elif [[ -f "$ALT_MODEL_PATH" ]]; then
-            model="$ALT_MODEL_PATH"
-        else
-            log_error "No model specified and default model not found"
-            log_error "Expected: $DEFAULT_MODEL"
-            log_error "Or: $ALT_MODEL_PATH"
-            exit 1
-        fi
+  # Determine model path
+  if [[ -z "$model" ]]; then
+    if [[ -f "$DEFAULT_MODEL" ]]; then
+      model="$DEFAULT_MODEL"
+    elif [[ -f "$ALT_MODEL_PATH" ]]; then
+      model="$ALT_MODEL_PATH"
+    else
+      log_error "No model specified and default model not found"
+      log_error "Expected: $DEFAULT_MODEL"
+      log_error "Or: $ALT_MODEL_PATH"
+      exit 1
     fi
+  fi
 
-    local server_binary="$LLAMA_CPP_PATH/llama-server"
-    local log_file="$LOG_DIR/llama-server-$port.log"
+  local server_binary="$LLAMA_CPP_PATH/llama-server"
+  local log_file="$LOG_DIR/llama-server-$port.log"
 
-    # Validate paths
-    check_binary "$server_binary"
-    check_model "$model"
-    mkdir -p "$LOG_DIR"
+  # Validate paths
+  check_binary "$server_binary"
+  check_model "$model"
+  mkdir -p "$LOG_DIR"
 
-    # Kill any existing server on this port
-    kill_existing_server "$port"
+  # Kill any existing server on this port
+  kill_existing_server "$port"
 
-    log_info "Starting llama-server:"
-    log_info "  Model:   $model"
-    log_info "  Port:    $port"
-    log_info "  Slots:   $slots"
-    log_info "  Context: $DEFAULT_CONTEXT"
-    log_info "  Threads: $DEFAULT_THREADS"
-    log_info "  Log:     $log_file"
+  log_info "Starting llama-server:"
+  log_info "  Model:   $model"
+  log_info "  Port:    $port"
+  log_info "  Slots:   $slots"
+  log_info "  Context: $DEFAULT_CONTEXT"
+  log_info "  Threads: $DEFAULT_THREADS"
+  log_info "  Log:     $log_file"
 
-    # Start server with prefix caching enabled
-    # Key flags:
-    #   -np N       : Number of parallel slots (for concurrent requests)
-    #   -c N        : Context size per slot
-    #   --host      : Bind address
-    #   --port      : Listening port
-    #   -t N        : Number of threads
-    #
-    # Prefix caching is automatic in llama-server when using the /completion
-    # endpoint with cache_prompt=true in the request payload.
+  # Start server with prefix caching enabled
+  # Key flags:
+  #   -np N       : Number of parallel slots (for concurrent requests)
+  #   -c N        : Context size per slot
+  #   --host      : Bind address
+  #   --port      : Listening port
+  #   -t N        : Number of threads
+  #
+  # Prefix caching is automatic in llama-server when using the /completion
+  # endpoint with cache_prompt=true in the request payload.
 
-    env OMP_NUM_THREADS=1 \
+  env OMP_NUM_THREADS=1 \
     numactl --interleave=all \
     "$server_binary" \
-        -m "$model" \
-        --host 0.0.0.0 \
-        --port "$port" \
-        -np "$slots" \
-        -c "$DEFAULT_CONTEXT" \
-        -t "$DEFAULT_THREADS" \
-        > "$log_file" 2>&1 &
+    -m "$model" \
+    --host 0.0.0.0 \
+    --port "$port" \
+    -np "$slots" \
+    -c "$DEFAULT_CONTEXT" \
+    -t "$DEFAULT_THREADS" \
+    >"$log_file" 2>&1 &
 
-    local server_pid=$!
-    log_info "Server started with PID: $server_pid"
+  local server_pid=$!
+  log_info "Server started with PID: $server_pid"
 
-    # Wait for server to be ready
-    if wait_for_health "http://localhost:$port"; then
-        log_info "Server is ready for requests"
-        log_info ""
-        log_info "Test with:"
-        log_info "  curl http://localhost:$port/health"
-        log_info ""
-        log_info "Completion with caching:"
-        log_info "  curl http://localhost:$port/completion -d '{\"prompt\": \"Hello\", \"n_predict\": 10, \"cache_prompt\": true}'"
-        log_info ""
-        log_info "View logs:"
-        log_info "  tail -f $log_file"
-        log_info ""
-        log_info "Stop server:"
-        log_info "  kill $server_pid"
-    else
-        log_error "Server failed to start. Check logs: $log_file"
-        tail -20 "$log_file" 2>/dev/null || true
-        exit 1
-    fi
+  # Wait for server to be ready
+  if wait_for_health "http://localhost:$port"; then
+    log_info "Server is ready for requests"
+    log_info ""
+    log_info "Test with:"
+    log_info "  curl http://localhost:$port/health"
+    log_info ""
+    log_info "Completion with caching:"
+    log_info "  curl http://localhost:$port/completion -d '{\"prompt\": \"Hello\", \"n_predict\": 10, \"cache_prompt\": true}'"
+    log_info ""
+    log_info "View logs:"
+    log_info "  tail -f $log_file"
+    log_info ""
+    log_info "Stop server:"
+    log_info "  kill $server_pid"
+  else
+    log_error "Server failed to start. Check logs: $log_file"
+    tail -20 "$log_file" 2>/dev/null || true
+    exit 1
+  fi
 }
 
 # =============================================================================
@@ -197,42 +197,42 @@ main() {
 # =============================================================================
 
 case "${1:-}" in
-    --help|-h)
-        echo "Usage: $0 [model_path] [port] [slots]"
-        echo ""
-        echo "Start llama-server with prefix caching enabled."
-        echo ""
-        echo "Arguments:"
-        echo "  model_path  Path to GGUF model file (optional)"
-        echo "  port        Server port (default: 8080)"
-        echo "  slots       Number of parallel slots (default: 4)"
-        echo ""
-        echo "Environment variables:"
-        echo "  LLAMA_CPP_PATH  Path to llama.cpp build directory"
-        echo "  MODELS_PATH     Path to models directory"
-        echo "  LOG_DIR         Directory for server logs"
-        echo "  PORT            Default port"
-        echo "  SLOTS           Default number of slots"
-        echo "  CONTEXT         Context size per slot"
-        echo "  THREADS         Number of threads"
-        echo ""
-        echo "Commands:"
-        echo "  --help        Show this help"
-        echo "  --status      Show running servers"
-        echo "  --stop        Stop all llama-server processes"
-        exit 0
-        ;;
-    --status)
-        echo "Running llama-server processes:"
-        pgrep -a llama-server || echo "No servers running"
-        exit 0
-        ;;
-    --stop)
-        echo "Stopping all llama-server processes..."
-        pkill -f llama-server || echo "No servers to stop"
-        exit 0
-        ;;
-    *)
-        main "$@"
-        ;;
+  --help | -h)
+    echo "Usage: $0 [model_path] [port] [slots]"
+    echo ""
+    echo "Start llama-server with prefix caching enabled."
+    echo ""
+    echo "Arguments:"
+    echo "  model_path  Path to GGUF model file (optional)"
+    echo "  port        Server port (default: 8080)"
+    echo "  slots       Number of parallel slots (default: 4)"
+    echo ""
+    echo "Environment variables:"
+    echo "  LLAMA_CPP_PATH  Path to llama.cpp build directory"
+    echo "  MODELS_PATH     Path to models directory"
+    echo "  LOG_DIR         Directory for server logs"
+    echo "  PORT            Default port"
+    echo "  SLOTS           Default number of slots"
+    echo "  CONTEXT         Context size per slot"
+    echo "  THREADS         Number of threads"
+    echo ""
+    echo "Commands:"
+    echo "  --help        Show this help"
+    echo "  --status      Show running servers"
+    echo "  --stop        Stop all llama-server processes"
+    exit 0
+    ;;
+  --status)
+    echo "Running llama-server processes:"
+    pgrep -a llama-server || echo "No servers running"
+    exit 0
+    ;;
+  --stop)
+    echo "Stopping all llama-server processes..."
+    pkill -f llama-server || echo "No servers to stop"
+    exit 0
+    ;;
+  *)
+    main "$@"
+    ;;
 esac

@@ -6,7 +6,7 @@
 set -e
 
 # === CONFIGURATION ===
-LLAMA_DIR="${1:-$(pwd)/llama.cpp}"   # Pass path as first arg or default to ./llama.cpp
+LLAMA_DIR="${1:-$(pwd)/llama.cpp}" # Pass path as first arg or default to ./llama.cpp
 BUILD_DIR="$LLAMA_DIR/build"
 
 # === VALIDATION ===

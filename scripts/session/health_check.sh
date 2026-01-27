@@ -14,24 +14,24 @@ WARN=0
 FAIL=0
 
 check() {
-    local test_name="$1"
-    local condition="$2"
-    local fail_msg="${3:-}"
-    
-    if eval "$condition"; then
-        echo "âœ… PASS: $test_name"
-        ((PASS++))
-        return 0
+  local test_name="$1"
+  local condition="$2"
+  local fail_msg="${3:-}"
+
+  if eval "$condition"; then
+    echo "âœ… PASS: $test_name"
+    ((PASS++))
+    return 0
+  else
+    if [[ -n "$fail_msg" ]]; then
+      echo "❌ FAIL: $test_name - $fail_msg"
+      ((FAIL++))
     else
-        if [[ -n "$fail_msg" ]]; then
-            echo "❌ FAIL: $test_name - $fail_msg"
-            ((FAIL++))
-        else
-            echo "⚠️  WARN: $test_name"
-            ((WARN++))
-        fi
-        return 1
+      echo "⚠️  WARN: $test_name"
+      ((WARN++))
     fi
+    return 1
+  fi
 }
 
 # ============================================
@@ -61,13 +61,13 @@ echo "--- Environment Variables ---"
 check "TMPDIR set" "[ -n \"\${TMPDIR:-}\" ]" "Set via wrapper or export TMPDIR=/mnt/raid0/llm/tmp"
 
 if [ -n "${TMPDIR:-}" ]; then
-    check "TMPDIR on RAID0" "[[ \"$TMPDIR\" == /mnt/raid0/* ]]" "Currently: $TMPDIR"
+  check "TMPDIR on RAID0" "[[ \"$TMPDIR\" == /mnt/raid0/* ]]" "Currently: $TMPDIR"
 fi
 
 check "HF_HOME set" "[ -n \"\${HF_HOME:-}\" ]" "Set via wrapper or export HF_HOME=/mnt/raid0/llm/cache/huggingface"
 
 if [ -n "${HF_HOME:-}" ]; then
-    check "HF_HOME on RAID0" "[[ \"$HF_HOME\" == /mnt/raid0/* ]]" "Currently: $HF_HOME"
+  check "HF_HOME on RAID0" "[[ \"$HF_HOME\" == /mnt/raid0/* ]]" "Currently: $HF_HOME"
 fi
 
 echo ""
@@ -91,21 +91,21 @@ echo ""
 
 echo "--- Process Status ---"
 
-if pgrep -f "claude" > /dev/null; then
-    echo "⚠️  WARN: Claude process already running"
-    ps aux | grep -i claude | grep -v grep
-    ((WARN++))
+if pgrep -f "claude" >/dev/null; then
+  echo "⚠️  WARN: Claude process already running"
+  ps aux | grep -i claude | grep -v grep
+  ((WARN++))
 else
-    echo "âœ… PASS: No Claude processes running"
-    ((PASS++))
+  echo "âœ… PASS: No Claude processes running"
+  ((PASS++))
 fi
 
-if pgrep -f "monitor_storage" > /dev/null; then
-    echo "âœ… PASS: Storage monitor is running"
-    ((PASS++))
+if pgrep -f "monitor_storage" >/dev/null; then
+  echo "âœ… PASS: Storage monitor is running"
+  ((PASS++))
 else
-    echo "⚠️  WARN: Storage monitor not running - consider starting it"
-    ((WARN++))
+  echo "⚠️  WARN: Storage monitor not running - consider starting it"
+  ((WARN++))
 fi
 
 echo ""
@@ -137,34 +137,34 @@ echo "  Failed:   $FAIL ❌"
 echo ""
 
 if [ $FAIL -gt 0 ]; then
-    echo "🚨 CRITICAL ISSUES DETECTED"
-    echo ""
-    echo "Recommended actions:"
-    if [ $ROOT_USAGE -ge 70 ]; then
-        echo "  1. Run emergency_cleanup.sh to free root FS"
-    fi
-    if ! mountpoint -q /tmp/claude 2>/dev/null; then
-        echo "  2. Start Claude via: bash /mnt/raid0/llm/UTILS/claude_safe_start.sh"
-    fi
-    if [ "$CPU_GOVERNOR" != "performance" ]; then
-        echo "  3. Set CPU governor: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
-    fi
-    echo ""
-    exit 1
+  echo "🚨 CRITICAL ISSUES DETECTED"
+  echo ""
+  echo "Recommended actions:"
+  if [ $ROOT_USAGE -ge 70 ]; then
+    echo "  1. Run emergency_cleanup.sh to free root FS"
+  fi
+  if ! mountpoint -q /tmp/claude 2>/dev/null; then
+    echo "  2. Start Claude via: bash /mnt/raid0/llm/UTILS/claude_safe_start.sh"
+  fi
+  if [ "$CPU_GOVERNOR" != "performance" ]; then
+    echo "  3. Set CPU governor: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
+  fi
+  echo ""
+  exit 1
 elif [ $WARN -gt 0 ]; then
-    echo "⚠️  WARNINGS PRESENT - Review above"
-    echo ""
-    echo "Recommended actions:"
-    if ! pgrep -f "monitor_storage" > /dev/null; then
-        echo "  • Start monitor: bash /mnt/raid0/llm/UTILS/monitor_storage.sh &"
-    fi
-    echo ""
-    exit 0
+  echo "⚠️  WARNINGS PRESENT - Review above"
+  echo ""
+  echo "Recommended actions:"
+  if ! pgrep -f "monitor_storage" >/dev/null; then
+    echo "  • Start monitor: bash /mnt/raid0/llm/UTILS/monitor_storage.sh &"
+  fi
+  echo ""
+  exit 0
 else
-    echo "âœ… ALL CHECKS PASSED - System ready for Claude session"
-    echo ""
-    echo "Start Claude Code:"
-    echo "  bash /mnt/raid0/llm/UTILS/claude_safe_start.sh"
-    echo ""
-    exit 0
+  echo "âœ… ALL CHECKS PASSED - System ready for Claude session"
+  echo ""
+  echo "Start Claude Code:"
+  echo "  bash /mnt/raid0/llm/UTILS/claude_safe_start.sh"
+  echo ""
+  exit 0
 fi

@@ -45,27 +45,69 @@ echo "Results: $RESULTS_FILE"
 echo ""
 
 # Write CSV header
-echo "n_parallel,p_split,tokens_generated,time_sec,tokens_per_sec,accepted,drafted,acceptance_rate" > "$RESULTS_FILE"
+echo "n_parallel,p_split,tokens_generated,time_sec,tokens_per_sec,accepted,drafted,acceptance_rate" >"$RESULTS_FILE"
 
 # Baseline: no tree speculation (n_parallel=1)
 echo "=== Baseline (n_parallel=1, no tree splitting) ==="
 for p_split in "${P_SPLIT_VALUES[@]}"; do
+  echo -n "  p_split=$p_split: "
+
+  OUTPUT=$(OMP_NUM_THREADS=1 numactl --interleave=all \
+    "$LLAMA_BIN/llama-speculative" \
+    -m "$TARGET_MODEL" \
+    -md "$DRAFT_MODEL" \
+    --draft-max "$DRAFT_MAX" \
+    -np 1 \
+    --draft-p-split "$p_split" \
+    -t "$THREADS" \
+    -n "$N_PREDICT" \
+    -p "$PROMPT" \
+    --no-display-prompt \
+    2>&1)
+
+  # Parse output for metrics
+  TOKENS=$(echo "$OUTPUT" | grep -oP 'generated \K\d+(?= tokens)' || echo "0")
+  TIME=$(echo "$OUTPUT" | grep -oP '\d+\.\d+(?= seconds)' | tail -1 || echo "0")
+  TPS=$(echo "$OUTPUT" | grep -oP '\d+\.\d+(?= tokens per second)' || echo "0")
+  ACCEPTED=$(echo "$OUTPUT" | grep -oP 'accepted: \K\d+' || echo "0")
+  DRAFTED=$(echo "$OUTPUT" | grep -oP 'drafted: \K\d+' || echo "0")
+
+  if [ "$DRAFTED" != "0" ]; then
+    ACCEPT_RATE=$(echo "scale=4; $ACCEPTED / $DRAFTED" | bc)
+  else
+    ACCEPT_RATE="0"
+  fi
+
+  echo "$TPS t/s (accepted: $ACCEPTED/$DRAFTED = $ACCEPT_RATE)"
+  echo "1,$p_split,$TOKENS,$TIME,$TPS,$ACCEPTED,$DRAFTED,$ACCEPT_RATE" >>"$RESULTS_FILE"
+done
+
+echo ""
+
+# Tree speculation tests
+for n_parallel in "${N_PARALLEL_VALUES[@]}"; do
+  if [ "$n_parallel" -eq 1 ]; then
+    continue # Skip baseline, already done
+  fi
+
+  echo "=== Tree speculation (n_parallel=$n_parallel) ==="
+
+  for p_split in "${P_SPLIT_VALUES[@]}"; do
     echo -n "  p_split=$p_split: "
 
     OUTPUT=$(OMP_NUM_THREADS=1 numactl --interleave=all \
-        "$LLAMA_BIN/llama-speculative" \
-        -m "$TARGET_MODEL" \
-        -md "$DRAFT_MODEL" \
-        --draft-max "$DRAFT_MAX" \
-        -np 1 \
-        --draft-p-split "$p_split" \
-        -t "$THREADS" \
-        -n "$N_PREDICT" \
-        -p "$PROMPT" \
-        --no-display-prompt \
-        2>&1)
+      "$LLAMA_BIN/llama-speculative" \
+      -m "$TARGET_MODEL" \
+      -md "$DRAFT_MODEL" \
+      --draft-max "$DRAFT_MAX" \
+      -np "$n_parallel" \
+      --draft-p-split "$p_split" \
+      -t "$THREADS" \
+      -n "$N_PREDICT" \
+      -p "$PROMPT" \
+      --no-display-prompt \
+      2>&1)
 
-    # Parse output for metrics
     TOKENS=$(echo "$OUTPUT" | grep -oP 'generated \K\d+(?= tokens)' || echo "0")
     TIME=$(echo "$OUTPUT" | grep -oP '\d+\.\d+(?= seconds)' | tail -1 || echo "0")
     TPS=$(echo "$OUTPUT" | grep -oP '\d+\.\d+(?= tokens per second)' || echo "0")
@@ -73,57 +115,15 @@ for p_split in "${P_SPLIT_VALUES[@]}"; do
     DRAFTED=$(echo "$OUTPUT" | grep -oP 'drafted: \K\d+' || echo "0")
 
     if [ "$DRAFTED" != "0" ]; then
-        ACCEPT_RATE=$(echo "scale=4; $ACCEPTED / $DRAFTED" | bc)
+      ACCEPT_RATE=$(echo "scale=4; $ACCEPTED / $DRAFTED" | bc)
     else
-        ACCEPT_RATE="0"
+      ACCEPT_RATE="0"
     fi
 
     echo "$TPS t/s (accepted: $ACCEPTED/$DRAFTED = $ACCEPT_RATE)"
-    echo "1,$p_split,$TOKENS,$TIME,$TPS,$ACCEPTED,$DRAFTED,$ACCEPT_RATE" >> "$RESULTS_FILE"
-done
-
-echo ""
-
-# Tree speculation tests
-for n_parallel in "${N_PARALLEL_VALUES[@]}"; do
-    if [ "$n_parallel" -eq 1 ]; then
-        continue  # Skip baseline, already done
-    fi
-
-    echo "=== Tree speculation (n_parallel=$n_parallel) ==="
-
-    for p_split in "${P_SPLIT_VALUES[@]}"; do
-        echo -n "  p_split=$p_split: "
-
-        OUTPUT=$(OMP_NUM_THREADS=1 numactl --interleave=all \
-            "$LLAMA_BIN/llama-speculative" \
-            -m "$TARGET_MODEL" \
-            -md "$DRAFT_MODEL" \
-            --draft-max "$DRAFT_MAX" \
-            -np "$n_parallel" \
-            --draft-p-split "$p_split" \
-            -t "$THREADS" \
-            -n "$N_PREDICT" \
-            -p "$PROMPT" \
-            --no-display-prompt \
-            2>&1)
-
-        TOKENS=$(echo "$OUTPUT" | grep -oP 'generated \K\d+(?= tokens)' || echo "0")
-        TIME=$(echo "$OUTPUT" | grep -oP '\d+\.\d+(?= seconds)' | tail -1 || echo "0")
-        TPS=$(echo "$OUTPUT" | grep -oP '\d+\.\d+(?= tokens per second)' || echo "0")
-        ACCEPTED=$(echo "$OUTPUT" | grep -oP 'accepted: \K\d+' || echo "0")
-        DRAFTED=$(echo "$OUTPUT" | grep -oP 'drafted: \K\d+' || echo "0")
-
-        if [ "$DRAFTED" != "0" ]; then
-            ACCEPT_RATE=$(echo "scale=4; $ACCEPTED / $DRAFTED" | bc)
-        else
-            ACCEPT_RATE="0"
-        fi
-
-        echo "$TPS t/s (accepted: $ACCEPTED/$DRAFTED = $ACCEPT_RATE)"
-        echo "$n_parallel,$p_split,$TOKENS,$TIME,$TPS,$ACCEPTED,$DRAFTED,$ACCEPT_RATE" >> "$RESULTS_FILE"
-    done
-    echo ""
+    echo "$n_parallel,$p_split,$TOKENS,$TIME,$TPS,$ACCEPTED,$DRAFTED,$ACCEPT_RATE" >>"$RESULTS_FILE"
+  done
+  echo ""
 done
 
 echo "Results saved to: $RESULTS_FILE"

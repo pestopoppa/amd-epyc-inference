@@ -15,9 +15,9 @@ mkdir -p "$LOG_DIR"
 
 # Models to evaluate
 MODELS=(
-    "/mnt/raid0/llm/models/xLAM-2-1B-fc-r-Q4_K_M.gguf:xLAM-2-1B"
-    "/mnt/raid0/llm/models/xLAM-1b-fc-r.Q4_K_M.gguf:xLAM-1B"
-    "/mnt/raid0/llm/models/nexusraven-v2-13b.Q4_K_M.gguf:NexusRaven"
+  "/mnt/raid0/llm/models/xLAM-2-1B-fc-r-Q4_K_M.gguf:xLAM-2-1B"
+  "/mnt/raid0/llm/models/xLAM-1b-fc-r.Q4_K_M.gguf:xLAM-1B"
+  "/mnt/raid0/llm/models/nexusraven-v2-13b.Q4_K_M.gguf:NexusRaven"
 )
 
 echo "=== Formalizer Evaluation Suite ===" | tee "$LOG_DIR/run.log"
@@ -25,19 +25,19 @@ echo "Started: $(date)" | tee -a "$LOG_DIR/run.log"
 echo "" | tee -a "$LOG_DIR/run.log"
 
 for entry in "${MODELS[@]}"; do
-    model_path="${entry%%:*}"
-    model_name="${entry##*:}"
+  model_path="${entry%%:*}"
+  model_name="${entry##*:}"
 
-    echo "[$model_name] Starting evaluation..." | tee -a "$LOG_DIR/run.log"
+  echo "[$model_name] Starting evaluation..." | tee -a "$LOG_DIR/run.log"
 
-    "$SCRIPT_DIR/bench_formalizers.sh" \
-        --model "$model_path" \
-        --prompts "$PROMPTS_DIR" \
-        --output "$LOG_DIR/$model_name" \
-        2>&1 | tee -a "$LOG_DIR/run.log"
+  "$SCRIPT_DIR/bench_formalizers.sh" \
+    --model "$model_path" \
+    --prompts "$PROMPTS_DIR" \
+    --output "$LOG_DIR/$model_name" \
+    2>&1 | tee -a "$LOG_DIR/run.log"
 
-    echo "[$model_name] Complete!" | tee -a "$LOG_DIR/run.log"
-    echo "" | tee -a "$LOG_DIR/run.log"
+  echo "[$model_name] Complete!" | tee -a "$LOG_DIR/run.log"
+  echo "" | tee -a "$LOG_DIR/run.log"
 done
 
 echo "=== All Formalizers Complete ===" | tee -a "$LOG_DIR/run.log"
@@ -47,7 +47,7 @@ echo "Finished: $(date)" | tee -a "$LOG_DIR/run.log"
 echo "" | tee -a "$LOG_DIR/run.log"
 echo "=== Comparison Summary ===" | tee -a "$LOG_DIR/run.log"
 
-python3 << 'PYTHON' | tee -a "$LOG_DIR/run.log"
+python3 <<'PYTHON' | tee -a "$LOG_DIR/run.log"
 import csv
 import os
 import glob

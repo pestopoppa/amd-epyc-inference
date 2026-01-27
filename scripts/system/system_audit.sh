@@ -9,16 +9,16 @@ set -euo pipefail
 # Source logging library
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/agent_log.sh" ]]; then
-    source "$SCRIPT_DIR/agent_log.sh"
+  source "$SCRIPT_DIR/agent_log.sh"
 elif [[ -f "/mnt/raid0/llm/UTILS/agent_log.sh" ]]; then
-    source "/mnt/raid0/llm/UTILS/agent_log.sh"
+  source "/mnt/raid0/llm/UTILS/agent_log.sh"
 else
-    # Fallback: define no-op functions if logging not available
-    agent_session_start() { echo "Session: $1"; }
-    agent_task_start() { echo "Task: $1"; }
-    agent_task_end() { :; }
-    agent_observe() { :; }
-    agent_error() { echo "ERROR: $1" >&2; }
+  # Fallback: define no-op functions if logging not available
+  agent_session_start() { echo "Session: $1"; }
+  agent_task_start() { echo "Task: $1"; }
+  agent_task_end() { :; }
+  agent_observe() { :; }
+  agent_error() { echo "ERROR: $1" >&2; }
 fi
 
 agent_session_start "System audit for Zen 5 optimization baseline"
@@ -30,11 +30,11 @@ agent_task_start "Collect system state" "Capturing baseline before any optimizat
 
 # Header
 {
-    echo "=============================================="
-    echo "SYSTEM AUDIT: $(date)"
-    echo "Host: $(hostname)"
-    echo "User: $(whoami)"
-    echo "=============================================="
+  echo "=============================================="
+  echo "SYSTEM AUDIT: $(date)"
+  echo "Host: $(hostname)"
+  echo "User: $(whoami)"
+  echo "=============================================="
 } | tee "$LOG_FILE"
 
 # 1. Hardware Verification
@@ -69,8 +69,8 @@ cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null | tee -a "
 
 echo -e "\nCurrent Frequencies (sample of 4 cores):" | tee -a "$LOG_FILE"
 for cpu in 0 24 48 72; do
-    freq=$(cat /sys/devices/system/cpu/cpu${cpu}/cpufreq/scaling_cur_freq 2>/dev/null || echo "N/A")
-    echo "  CPU $cpu: $freq kHz" | tee -a "$LOG_FILE"
+  freq=$(cat /sys/devices/system/cpu/cpu${cpu}/cpufreq/scaling_cur_freq 2>/dev/null || echo "N/A")
+  echo "  CPU $cpu: $freq kHz" | tee -a "$LOG_FILE"
 done
 
 # 5. Compiler & Library Status
@@ -108,13 +108,13 @@ conda env list 2>/dev/null | tee -a "$LOG_FILE" || echo "Conda not available" | 
 echo -e "\n--- llama.cpp Build Status ---" | tee -a "$LOG_FILE"
 LLAMA_BUILD_DIR="/mnt/raid0/llm/llama.cpp/build"
 if [ -f "$LLAMA_BUILD_DIR/CMakeCache.txt" ]; then
-    echo "CMakeCache.txt found. Key flags:" | tee -a "$LOG_FILE"
-    grep -E "LLAMA_AVX512|LLAMA_BLAS|LLAMA_NATIVE|CMAKE_C_FLAGS|CMAKE_CXX_FLAGS" "$LLAMA_BUILD_DIR/CMakeCache.txt" 2>/dev/null | tee -a "$LOG_FILE"
-    
-    echo -e "\nBuild binaries:" | tee -a "$LOG_FILE"
-    ls -la "$LLAMA_BUILD_DIR/bin/" 2>/dev/null | head -n 10 | tee -a "$LOG_FILE" || echo "No bin directory" | tee -a "$LOG_FILE"
+  echo "CMakeCache.txt found. Key flags:" | tee -a "$LOG_FILE"
+  grep -E "LLAMA_AVX512|LLAMA_BLAS|LLAMA_NATIVE|CMAKE_C_FLAGS|CMAKE_CXX_FLAGS" "$LLAMA_BUILD_DIR/CMakeCache.txt" 2>/dev/null | tee -a "$LOG_FILE"
+
+  echo -e "\nBuild binaries:" | tee -a "$LOG_FILE"
+  ls -la "$LLAMA_BUILD_DIR/bin/" 2>/dev/null | head -n 10 | tee -a "$LOG_FILE" || echo "No bin directory" | tee -a "$LOG_FILE"
 else
-    echo "No CMakeCache.txt found in $LLAMA_BUILD_DIR" | tee -a "$LOG_FILE"
+  echo "No CMakeCache.txt found in $LLAMA_BUILD_DIR" | tee -a "$LOG_FILE"
 fi
 
 # 9. Model Inventory
@@ -149,25 +149,25 @@ echo -e "\n--- Quick Recommendations ---"
 # Check GCC version
 GCC_VER=$(gcc -dumpversion 2>/dev/null || echo "0")
 if [[ "${GCC_VER%%.*}" -lt 13 ]]; then
-    echo "⚠️  GCC $GCC_VER detected. GCC 13+ recommended for Zen 5 optimization."
+  echo "⚠️  GCC $GCC_VER detected. GCC 13+ recommended for Zen 5 optimization."
 fi
 
 # Check governor
 GOV=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo "unknown")
 if [[ "$GOV" != "performance" ]]; then
-    echo "⚠️  CPU governor is '$GOV'. Set to 'performance' for benchmarking."
+  echo "⚠️  CPU governor is '$GOV'. Set to 'performance' for benchmarking."
 fi
 
 # Check THP
 THP=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null | grep -o '\[.*\]' | tr -d '[]')
 if [[ "$THP" != "always" ]]; then
-    echo "⚠️  THP is '$THP'. Consider 'always' for inference workloads."
+  echo "⚠️  THP is '$THP'. Consider 'always' for inference workloads."
 fi
 
 # Check for GGUF models
 GGUF_COUNT=$(find /mnt/raid0/llm/models -name "*.gguf" 2>/dev/null | wc -l)
 if [[ "$GGUF_COUNT" -eq 0 ]]; then
-    echo "⚠️  No GGUF models in /mnt/raid0/llm/models/. Run model conversion."
+  echo "⚠️  No GGUF models in /mnt/raid0/llm/models/. Run model conversion."
 fi
 
 echo -e "\nDone."

@@ -21,20 +21,41 @@ ACCEPTANCE=""
 CONFIG=""
 
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        --model) MODEL_PATH="$2"; shift 2 ;;
-        --method) METHOD="$2"; shift 2 ;;
-        --result) RESULT="$2"; shift 2 ;;
-        --notes) NOTES="$2"; shift 2 ;;
-        --acceptance) ACCEPTANCE="$2"; shift 2 ;;
-        --config) CONFIG="$2"; shift 2 ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
-    esac
+  case $1 in
+    --model)
+      MODEL_PATH="$2"
+      shift 2
+      ;;
+    --method)
+      METHOD="$2"
+      shift 2
+      ;;
+    --result)
+      RESULT="$2"
+      shift 2
+      ;;
+    --notes)
+      NOTES="$2"
+      shift 2
+      ;;
+    --acceptance)
+      ACCEPTANCE="$2"
+      shift 2
+      ;;
+    --config)
+      CONFIG="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
 done
 
 if [ -z "$MODEL_PATH" ] || [ -z "$METHOD" ] || [ -z "$RESULT" ]; then
-    echo "Usage: $0 --model PATH --method METHOD --result 't/s' [--notes '...'] [--acceptance '%'] [--config '...']"
-    exit 1
+  echo "Usage: $0 --model PATH --method METHOD --result 't/s' [--notes '...'] [--acceptance '%'] [--config '...']"
+  exit 1
 fi
 
 TIMESTAMP=$(date -Iseconds)
@@ -49,21 +70,21 @@ agent_task_start "Record test result" "Model: $MODEL_NAME, Result: $RESULT t/s"
 
 # Initialize if doesn't exist
 if [ ! -f "$TESTED_FILE" ]; then
-    echo '{"tested": []}' > "$TESTED_FILE"
+  echo '{"tested": []}' >"$TESTED_FILE"
 fi
 
 # Add new test record
 TEMP_FILE=$(mktemp)
 jq --arg path "$MODEL_PATH" \
-   --arg name "$MODEL_NAME" \
-   --arg method "$METHOD" \
-   --arg result "$RESULT" \
-   --arg date "$DATE" \
-   --arg ts "$TIMESTAMP" \
-   --arg notes "$NOTES" \
-   --arg acceptance "$ACCEPTANCE" \
-   --arg config "$CONFIG" \
-   '.tested += [{
+  --arg name "$MODEL_NAME" \
+  --arg method "$METHOD" \
+  --arg result "$RESULT" \
+  --arg date "$DATE" \
+  --arg ts "$TIMESTAMP" \
+  --arg notes "$NOTES" \
+  --arg acceptance "$ACCEPTANCE" \
+  --arg config "$CONFIG" \
+  '.tested += [{
      "path": $path,
      "name": $name,
      "method": $method,
@@ -73,7 +94,7 @@ jq --arg path "$MODEL_PATH" \
      "notes": $notes,
      "acceptance": $acceptance,
      "config": $config
-   }]' "$TESTED_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$TESTED_FILE"
+   }]' "$TESTED_FILE" >"$TEMP_FILE" && mv "$TEMP_FILE" "$TESTED_FILE"
 
 echo "✓ Recorded test in $TESTED_FILE"
 agent_observe "tested_model" "$MODEL_PATH"
@@ -85,12 +106,12 @@ agent_observe "test_result" "$RESULT t/s ($METHOD)"
 
 # Initialize report from template if doesn't exist
 if [ ! -f "$RESEARCH_REPORT" ]; then
-    if [ -f "$TEMPLATE" ]; then
-        cp "$TEMPLATE" "$RESEARCH_REPORT"
-        echo "✓ Initialized research report from template"
-    else
-        echo "WARNING: No template found, creating minimal report"
-        cat > "$RESEARCH_REPORT" << 'EOF'
+  if [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$RESEARCH_REPORT"
+    echo "✓ Initialized research report from template"
+  else
+    echo "WARNING: No template found, creating minimal report"
+    cat >"$RESEARCH_REPORT" <<'EOF'
 # LLM Inference Optimization Research Report
 
 ## Executive Summary
@@ -104,7 +125,7 @@ Research in progress.
 ## Findings
 (To be updated)
 EOF
-    fi
+  fi
 fi
 
 # Update timestamp in report
@@ -112,9 +133,9 @@ sed -i "s/\*\*Last Updated:\*\* .*/\*\*Last Updated:\*\* $TIMESTAMP/" "$RESEARCH
 
 # Determine format from path
 if [[ "$MODEL_PATH" == *.gguf ]]; then
-    FORMAT="GGUF"
+  FORMAT="GGUF"
 else
-    FORMAT="HF"
+  FORMAT="HF"
 fi
 
 # Add result to Tested Models table
@@ -123,14 +144,14 @@ NEW_ROW="| $MODEL_NAME | $FORMAT | $METHOD | $RESULT | ${ACCEPTANCE:-N/A} | $DAT
 
 # Insert after table header (look for the header row pattern)
 if grep -q "^| Model | Format |" "$RESEARCH_REPORT"; then
-    # Find line number of divider after header
-    LINE_NUM=$(grep -n "^|----" "$RESEARCH_REPORT" | head -1 | cut -d: -f1)
-    if [ -n "$LINE_NUM" ]; then
-        sed -i "${LINE_NUM}a\\${NEW_ROW}" "$RESEARCH_REPORT"
-        echo "✓ Added result to research report table"
-    fi
+  # Find line number of divider after header
+  LINE_NUM=$(grep -n "^|----" "$RESEARCH_REPORT" | head -1 | cut -d: -f1)
+  if [ -n "$LINE_NUM" ]; then
+    sed -i "${LINE_NUM}a\\${NEW_ROW}" "$RESEARCH_REPORT"
+    echo "✓ Added result to research report table"
+  fi
 else
-    echo "WARNING: Could not find results table in research report"
+  echo "WARNING: Could not find results table in research report"
 fi
 
 # ============================================

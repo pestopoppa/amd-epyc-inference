@@ -26,40 +26,40 @@ PROMPTS_DIR=""
 OUTPUT_DIR=""
 
 while [[ $# -gt 0 ]]; do
-    case $1 in
-        --model)
-            MODEL="$2"
-            shift 2
-            ;;
-        --prompts)
-            PROMPTS_DIR="$2"
-            shift 2
-            ;;
-        --output)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1"
-            exit 1
-            ;;
-    esac
+  case $1 in
+    --model)
+      MODEL="$2"
+      shift 2
+      ;;
+    --prompts)
+      PROMPTS_DIR="$2"
+      shift 2
+      ;;
+    --output)
+      OUTPUT_DIR="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
 done
 
 # Validate arguments
 if [[ -z "$MODEL" ]]; then
-    echo "Error: --model is required"
-    exit 1
+  echo "Error: --model is required"
+  exit 1
 fi
 
 if [[ -z "$PROMPTS_DIR" ]]; then
-    echo "Error: --prompts is required"
-    exit 1
+  echo "Error: --prompts is required"
+  exit 1
 fi
 
 if [[ -z "$OUTPUT_DIR" ]]; then
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    OUTPUT_DIR="${LOG_DIR}/run_${TIMESTAMP}"
+  TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+  OUTPUT_DIR="${LOG_DIR}/run_${TIMESTAMP}"
 fi
 
 mkdir -p "$OUTPUT_DIR"
@@ -92,25 +92,26 @@ Output ONLY valid JSON, no explanations.'
 
 # Results tracking
 RESULTS_CSV="${OUTPUT_DIR}/results.csv"
-echo "test_case,category,parsable,completeness,schema_valid,time_sec,tokens_per_sec" > "$RESULTS_CSV"
+echo "test_case,category,parsable,completeness,schema_valid,time_sec,tokens_per_sec" >"$RESULTS_CSV"
 
 # Function to evaluate a single prompt
 evaluate_prompt() {
-    local prompt_file="$1"
-    local ground_truth_file="$2"
-    local category="$3"
-    local test_name=$(basename "$prompt_file" .txt)
+  local prompt_file="$1"
+  local ground_truth_file="$2"
+  local category="$3"
+  local test_name
+  test_name=$(basename "$prompt_file" .txt)
 
-    echo -n "  Evaluating $test_name..."
+  echo -n "  Evaluating $test_name..."
 
-    local prompt_content
-    prompt_content=$(cat "$prompt_file")
+  local prompt_content
+  prompt_content=$(cat "$prompt_file")
 
-    local output_file="${OUTPUT_DIR}/${category}_${test_name}_output.json"
-    local temp_prompt="${OUTPUT_DIR}/temp_prompt.txt"
+  local output_file="${OUTPUT_DIR}/${category}_${test_name}_output.json"
+  local temp_prompt="${OUTPUT_DIR}/temp_prompt.txt"
 
-    # Create prompt with system instruction
-    cat > "$temp_prompt" << EOF
+  # Create prompt with system instruction
+  cat >"$temp_prompt" <<EOF
 $SYSTEM_PROMPT
 
 Task to formalize:
@@ -119,43 +120,43 @@ $prompt_content
 FormalizationIR JSON:
 EOF
 
-    # Run inference
-    local start_time
-    start_time=$(date +%s.%N)
+  # Run inference
+  local start_time
+  start_time=$(date +%s.%N)
 
-    if ! "$LLAMA_BIN/llama-cli" \
-        -m "$MODEL" \
-        -t "$THREADS" \
-        -n 2048 \
-        --temp 0 \
-        -f "$temp_prompt" \
-        --no-display-prompt \
-        --simple-io \
-        2>/dev/null > "$output_file"; then
-        echo " INFERENCE FAILED"
-        echo "$test_name,$category,0,0,0,0,0" >> "$RESULTS_CSV"
-        return
-    fi
+  if ! "$LLAMA_BIN/llama-cli" \
+    -m "$MODEL" \
+    -t "$THREADS" \
+    -n 2048 \
+    --temp 0 \
+    -f "$temp_prompt" \
+    --no-display-prompt \
+    --simple-io \
+    2>/dev/null >"$output_file"; then
+    echo " INFERENCE FAILED"
+    echo "$test_name,$category,0,0,0,0,0" >>"$RESULTS_CSV"
+    return
+  fi
 
-    local end_time
-    end_time=$(date +%s.%N)
-    local duration
-    duration=$(echo "$end_time - $start_time" | bc)
+  local end_time
+  end_time=$(date +%s.%N)
+  local duration
+  duration=$(echo "$end_time - $start_time" | bc)
 
-    # Extract JSON from output (may contain extra text)
-    local json_output
-    json_output=$(grep -oP '\{.*\}' "$output_file" | head -1 || echo "")
+  # Extract JSON from output (may contain extra text)
+  local json_output
+  json_output=$(grep -oP '\{.*\}' "$output_file" | head -1 || echo "")
 
-    # Score: Parsability (0 or 1)
-    local parsable=0
-    if python3 -c "import json; json.loads('$json_output')" 2>/dev/null; then
-        parsable=1
-    fi
+  # Score: Parsability (0 or 1)
+  local parsable=0
+  if python3 -c "import json; json.loads('$json_output')" 2>/dev/null; then
+    parsable=1
+  fi
 
-    # Score: Schema validity (0 or 1)
-    local schema_valid=0
-    if [[ $parsable -eq 1 ]]; then
-        if python3 -c "
+  # Score: Schema validity (0 or 1)
+  local schema_valid=0
+  if [[ $parsable -eq 1 ]]; then
+    if python3 -c "
 import json
 import jsonschema
 schema = json.load(open('$SCHEMA_PATH'))
@@ -166,14 +167,15 @@ try:
 except:
     pass
 " 2>/dev/null | grep -q "valid"; then
-            schema_valid=1
-        fi
+      schema_valid=1
     fi
+  fi
 
-    # Score: Completeness (0.0 - 1.0)
-    local completeness=0
-    if [[ $parsable -eq 1 ]] && [[ -f "$ground_truth_file" ]]; then
-        completeness=$(python3 << 'PYTHON'
+  # Score: Completeness (0.0 - 1.0)
+  local completeness=0
+  if [[ $parsable -eq 1 ]] && [[ -f "$ground_truth_file" ]]; then
+    completeness=$(
+      python3 <<'PYTHON'
 import json
 import sys
 
@@ -202,29 +204,29 @@ try:
 except Exception as e:
     print("0.00")
 PYTHON
-)
-    fi
+    )
+  fi
 
-    # Calculate tokens/sec (approximate)
-    local token_count
-    token_count=$(wc -w < "$output_file")
-    local tps
-    tps=$(echo "scale=2; $token_count / $duration" | bc)
+  # Calculate tokens/sec (approximate)
+  local token_count
+  token_count=$(wc -w <"$output_file")
+  local tps
+  tps=$(echo "scale=2; $token_count / $duration" | bc)
 
-    echo " parsable=$parsable complete=$completeness valid=$schema_valid ${tps}t/s"
-    echo "$test_name,$category,$parsable,$completeness,$schema_valid,$duration,$tps" >> "$RESULTS_CSV"
+  echo " parsable=$parsable complete=$completeness valid=$schema_valid ${tps}t/s"
+  echo "$test_name,$category,$parsable,$completeness,$schema_valid,$duration,$tps" >>"$RESULTS_CSV"
 
-    rm -f "$temp_prompt"
+  rm -f "$temp_prompt"
 }
 
 # Evaluate tool formalization prompts
 echo "Tool Formalization Tests:"
 for prompt in "$PROMPTS_DIR/tool_formalization/"*.txt; do
-    if [[ -f "$prompt" ]]; then
-        test_name=$(basename "$prompt" .txt)
-        ground_truth="$PROMPTS_DIR/ground_truth/${test_name}.json"
-        evaluate_prompt "$prompt" "$ground_truth" "tool"
-    fi
+  if [[ -f "$prompt" ]]; then
+    test_name=$(basename "$prompt" .txt)
+    ground_truth="$PROMPTS_DIR/ground_truth/${test_name}.json"
+    evaluate_prompt "$prompt" "$ground_truth" "tool"
+  fi
 done
 
 echo ""
@@ -232,11 +234,11 @@ echo ""
 # Evaluate architecture formalization prompts
 echo "Architecture Formalization Tests:"
 for prompt in "$PROMPTS_DIR/architecture_formalization/"*.txt; do
-    if [[ -f "$prompt" ]]; then
-        test_name=$(basename "$prompt" .txt)
-        ground_truth="$PROMPTS_DIR/ground_truth/arch_${test_name}.json"
-        evaluate_prompt "$prompt" "$ground_truth" "arch"
-    fi
+  if [[ -f "$prompt" ]]; then
+    test_name=$(basename "$prompt" .txt)
+    ground_truth="$PROMPTS_DIR/ground_truth/arch_${test_name}.json"
+    evaluate_prompt "$prompt" "$ground_truth" "arch"
+  fi
 done
 
 echo ""
@@ -244,11 +246,11 @@ echo ""
 # Evaluate verification formalization prompts
 echo "Verification Formalization Tests:"
 for prompt in "$PROMPTS_DIR/verification_formalization/"*.txt; do
-    if [[ -f "$prompt" ]]; then
-        test_name=$(basename "$prompt" .txt)
-        ground_truth="$PROMPTS_DIR/ground_truth/verif_${test_name}.json"
-        evaluate_prompt "$prompt" "$ground_truth" "verif"
-    fi
+  if [[ -f "$prompt" ]]; then
+    test_name=$(basename "$prompt" .txt)
+    ground_truth="$PROMPTS_DIR/ground_truth/verif_${test_name}.json"
+    evaluate_prompt "$prompt" "$ground_truth" "verif"
+  fi
 done
 
 echo ""
@@ -257,7 +259,7 @@ echo "Results Summary"
 echo "===================="
 
 # Calculate summary statistics
-python3 << PYTHON
+python3 <<PYTHON
 import csv
 import sys
 

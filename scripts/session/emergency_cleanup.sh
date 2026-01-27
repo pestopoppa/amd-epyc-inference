@@ -19,14 +19,14 @@ echo ""
 # ============================================
 
 echo "Checking for running Claude processes..."
-if pgrep -f claude > /dev/null; then
-    echo "⚠️  Found running Claude processes. Kill them? (y/n)"
-    read -r response
-    if [[ "$response" == "y" ]]; then
-        sudo pkill -f claude || true
-        sleep 2
-        echo "✓ Processes stopped"
-    fi
+if pgrep -f claude >/dev/null; then
+  echo "⚠️  Found running Claude processes. Kill them? (y/n)"
+  read -r response
+  if [[ "$response" == "y" ]]; then
+    sudo pkill -f claude || true
+    sleep 2
+    echo "✓ Processes stopped"
+  fi
 fi
 
 # ============================================
@@ -34,9 +34,9 @@ fi
 # ============================================
 
 if mountpoint -q /tmp/claude 2>/dev/null; then
-    echo "Unmounting /tmp/claude bind mount..."
-    sudo umount /tmp/claude
-    echo "✓ Unmounted"
+  echo "Unmounting /tmp/claude bind mount..."
+  sudo umount /tmp/claude
+  echo "✓ Unmounted"
 fi
 
 # ============================================
@@ -44,23 +44,23 @@ fi
 # ============================================
 
 if [ -d /tmp/claude ]; then
-    echo ""
-    echo "Analyzing /tmp/claude contents..."
-    du -sh /tmp/claude 2>/dev/null || echo "  (cannot access)"
-    du -sh /tmp/claude/* 2>/dev/null | head -10 || true
-    echo ""
-    
-    echo "⚠️  This will DELETE /tmp/claude and ALL contents."
-    echo "Continue? (y/n)"
-    read -r response
-    if [[ "$response" == "y" ]]; then
-        echo "Removing /tmp/claude..."
-        sudo rm -rf /tmp/claude
-        echo "✓ Removed"
-    else
-        echo "Aborted. /tmp/claude preserved."
-        exit 0
-    fi
+  echo ""
+  echo "Analyzing /tmp/claude contents..."
+  du -sh /tmp/claude 2>/dev/null || echo "  (cannot access)"
+  du -sh /tmp/claude/* 2>/dev/null | head -10 || true
+  echo ""
+
+  echo "⚠️  This will DELETE /tmp/claude and ALL contents."
+  echo "Continue? (y/n)"
+  read -r response
+  if [[ "$response" == "y" ]]; then
+    echo "Removing /tmp/claude..."
+    sudo rm -rf /tmp/claude
+    echo "✓ Removed"
+  else
+    echo "Aborted. /tmp/claude preserved."
+    exit 0
+  fi
 fi
 
 # ============================================
@@ -93,9 +93,9 @@ echo ""
 
 # Verify /tmp/claude is gone
 if [ -d /tmp/claude ]; then
-    echo "⚠️  WARNING: /tmp/claude still exists!"
+  echo "⚠️  WARNING: /tmp/claude still exists!"
 else
-    echo "✓ /tmp/claude successfully removed"
+  echo "✓ /tmp/claude successfully removed"
 fi
 
 echo ""

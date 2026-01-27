@@ -9,7 +9,7 @@ set -euo pipefail
 
 DEV_MODE=false
 if [[ "${1:-}" == "--dev-mode" ]]; then
-    DEV_MODE=true
+  DEV_MODE=true
 fi
 
 echo "=== Orchestrator Test Stack Startup ==="
@@ -18,18 +18,18 @@ echo ""
 
 # Check RAID
 if [[ ! -d /mnt/raid0/llm/models ]]; then
-    echo "ERROR: /mnt/raid0/llm/models not found."
-    echo "Is this the Beelzebub host with RAID mounted?"
-    exit 1
+  echo "ERROR: /mnt/raid0/llm/models not found."
+  echo "Is this the Beelzebub host with RAID mounted?"
+  exit 1
 fi
 echo "[✓] RAID mounted"
 
 # Check llama.cpp binary
 LLAMA_SERVER="/mnt/raid0/llm/llama.cpp/build/bin/llama-server"
 if [[ ! -x "$LLAMA_SERVER" ]]; then
-    echo "ERROR: llama-server not found at $LLAMA_SERVER"
-    echo "Build llama.cpp first: cd /mnt/raid0/llm/llama.cpp && make -j"
-    exit 1
+  echo "ERROR: llama-server not found at $LLAMA_SERVER"
+  echo "Build llama.cpp first: cd /mnt/raid0/llm/llama.cpp && make -j"
+  exit 1
 fi
 echo "[✓] llama-server binary found"
 
@@ -37,30 +37,30 @@ echo "[✓] llama-server binary found"
 FREE_GB=$(free -g | awk '/^Mem:/{print $4}')
 echo "[i] Free memory: ${FREE_GB}GB"
 if [[ $FREE_GB -lt 100 ]]; then
-    echo "WARNING: Only ${FREE_GB}GB free. Recommend >100GB for safety."
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo
-    [[ $REPLY =~ ^[Yy]$ ]] || exit 1
+  echo "WARNING: Only ${FREE_GB}GB free. Recommend >100GB for safety."
+  read -p "Continue anyway? (y/N) " -n 1 -r
+  echo
+  [[ $REPLY =~ ^[Yy]$ ]] || exit 1
 fi
 
 # Select model
 if [ "$DEV_MODE" = true ]; then
-    MODEL_PATH="/mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
-    THREADS=8
-    PARALLEL=2
-    CTX_SIZE=4096
+  MODEL_PATH="/mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
+  THREADS=8
+  PARALLEL=2
+  CTX_SIZE=4096
 else
-    MODEL_PATH="/mnt/raid0/llm/models/Qwen3-Coder-30B-A3B-Q4_K_M.gguf"
-    THREADS=48
-    PARALLEL=4
-    CTX_SIZE=8192
+  MODEL_PATH="/mnt/raid0/llm/models/Qwen3-Coder-30B-A3B-Q4_K_M.gguf"
+  THREADS=48
+  PARALLEL=4
+  CTX_SIZE=8192
 fi
 
 if [[ ! -f "$MODEL_PATH" ]]; then
-    echo "ERROR: Model not found: $MODEL_PATH"
-    echo "Available models:"
-    ls -lh /mnt/raid0/llm/models/*.gguf | head -10
-    exit 1
+  echo "ERROR: Model not found: $MODEL_PATH"
+  echo "Available models:"
+  ls -lh /mnt/raid0/llm/models/*.gguf | head -10
+  exit 1
 fi
 echo "[✓] Model found: $(basename $MODEL_PATH)"
 
@@ -73,12 +73,12 @@ sleep 3
 
 # Check ports
 for port in 8000 8080; do
-    if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
-        echo "ERROR: Port $port still in use after cleanup"
-        netstat -tlnp 2>/dev/null | grep ":$port "
-        echo "Wait 60s for TIME_WAIT or kill the process manually"
-        exit 1
-    fi
+  if netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+    echo "ERROR: Port $port still in use after cleanup"
+    netstat -tlnp 2>/dev/null | grep ":$port "
+    echo "Wait 60s for TIME_WAIT or kill the process manually"
+    exit 1
+  fi
 done
 echo "[✓] Ports 8000 and 8080 available"
 
@@ -100,35 +100,35 @@ echo "  Threads: $THREADS"
 echo "  Context: $CTX_SIZE"
 
 $LLAMA_SERVER \
-    --model "$MODEL_PATH" \
-    --host 0.0.0.0 \
-    --port 8080 \
-    --ctx-size $CTX_SIZE \
-    --parallel $PARALLEL \
-    --threads $THREADS \
-    > /tmp/llama-server-8080.log 2>&1 &
+  --model "$MODEL_PATH" \
+  --host 0.0.0.0 \
+  --port 8080 \
+  --ctx-size $CTX_SIZE \
+  --parallel $PARALLEL \
+  --threads $THREADS \
+  >/tmp/llama-server-8080.log 2>&1 &
 LLAMA_PID=$!
 echo "  PID: $LLAMA_PID"
 
 # Wait for llama-server to be ready
 echo "  Waiting for startup..."
 for i in {1..60}; do
-    if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-        echo "  [✓] llama-server ready"
-        break
-    fi
-    if ! kill -0 $LLAMA_PID 2>/dev/null; then
-        echo "  [✗] llama-server crashed!"
-        tail -30 /tmp/llama-server-8080.log
-        exit 1
-    fi
-    sleep 1
-done
-
-if ! curl -s http://localhost:8080/health > /dev/null 2>&1; then
-    echo "  [✗] llama-server failed to start (timeout)"
+  if curl -s http://localhost:8080/health >/dev/null 2>&1; then
+    echo "  [✓] llama-server ready"
+    break
+  fi
+  if ! kill -0 $LLAMA_PID 2>/dev/null; then
+    echo "  [✗] llama-server crashed!"
     tail -30 /tmp/llama-server-8080.log
     exit 1
+  fi
+  sleep 1
+done
+
+if ! curl -s http://localhost:8080/health >/dev/null 2>&1; then
+  echo "  [✗] llama-server failed to start (timeout)"
+  tail -30 /tmp/llama-server-8080.log
+  exit 1
 fi
 
 # Start orchestrator API
@@ -138,10 +138,10 @@ cd /mnt/raid0/llm/claude
 
 # Try to activate pace-env if it exists
 if [[ -f /mnt/raid0/llm/pace-env/bin/activate ]]; then
-    source /mnt/raid0/llm/pace-env/bin/activate
+  source /mnt/raid0/llm/pace-env/bin/activate
 fi
 
-python3 -m uvicorn src.api:app --host 0.0.0.0 --port 8000 > /tmp/orchestrator.log 2>&1 &
+python3 -m uvicorn src.api:app --host 0.0.0.0 --port 8000 >/tmp/orchestrator.log 2>&1 &
 ORCH_PID=$!
 echo "  PID: $ORCH_PID"
 
@@ -149,22 +149,22 @@ echo "  PID: $ORCH_PID"
 echo "  Waiting for startup..."
 sleep 5
 for i in {1..30}; do
-    if curl -s http://localhost:8000/health > /dev/null 2>&1; then
-        echo "  [✓] Orchestrator ready"
-        break
-    fi
-    if ! kill -0 $ORCH_PID 2>/dev/null; then
-        echo "  [✗] Orchestrator crashed!"
-        tail -30 /tmp/orchestrator.log
-        exit 1
-    fi
-    sleep 1
-done
-
-if ! curl -s http://localhost:8000/health > /dev/null 2>&1; then
-    echo "  [✗] Orchestrator failed to start"
+  if curl -s http://localhost:8000/health >/dev/null 2>&1; then
+    echo "  [✓] Orchestrator ready"
+    break
+  fi
+  if ! kill -0 $ORCH_PID 2>/dev/null; then
+    echo "  [✗] Orchestrator crashed!"
     tail -30 /tmp/orchestrator.log
     exit 1
+  fi
+  sleep 1
+done
+
+if ! curl -s http://localhost:8000/health >/dev/null 2>&1; then
+  echo "  [✗] Orchestrator failed to start"
+  tail -30 /tmp/orchestrator.log
+  exit 1
 fi
 
 # Final status

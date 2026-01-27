@@ -60,8 +60,8 @@ echo ""
 
 ROOT_USAGE=$(df / | awk 'NR==2 {print $5}' | sed 's/%//')
 if [ "$ROOT_USAGE" -gt 80 ]; then
-    echo "⚠️  WARNING: Root filesystem is ${ROOT_USAGE}% full"
-    echo "   Continuing, but monitoring required."
+  echo "⚠️  WARNING: Root filesystem is ${ROOT_USAGE}% full"
+  echo "   Continuing, but monitoring required."
 fi
 
 echo "Root filesystem usage: ${ROOT_USAGE}%"
@@ -74,17 +74,17 @@ echo ""
 
 # This forces ANY writes to /tmp/claude to actually go to /mnt/raid0/
 if [ ! -d /tmp/claude ]; then
-    sudo mkdir -p /tmp/claude
+  sudo mkdir -p /tmp/claude
 fi
 
 # Check if already mounted
 if ! mountpoint -q /tmp/claude 2>/dev/null; then
-    echo "Creating bind mount: /tmp/claude -> /mnt/raid0/llm/tmp/claude"
-    sudo mkdir -p /mnt/raid0/llm/tmp/claude
-    sudo mount --bind /mnt/raid0/llm/tmp/claude /tmp/claude
-    echo "✓ Bind mount active"
+  echo "Creating bind mount: /tmp/claude -> /mnt/raid0/llm/tmp/claude"
+  sudo mkdir -p /mnt/raid0/llm/tmp/claude
+  sudo mount --bind /mnt/raid0/llm/tmp/claude /tmp/claude
+  echo "✓ Bind mount active"
 else
-    echo "✓ /tmp/claude already bind-mounted"
+  echo "✓ /tmp/claude already bind-mounted"
 fi
 
 echo ""
