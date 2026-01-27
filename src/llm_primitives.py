@@ -153,13 +153,32 @@ class LLMPrimitives:
         "coder_primary": "http://localhost:8080",
         "coder": "http://localhost:8081",
         "coder_escalation": "http://localhost:8081",
+        # Worker pool servers (heterogeneous)
         "worker": "http://localhost:8082",
         "worker_general": "http://localhost:8082",
+        "worker_explore": "http://localhost:8082",
         "worker_math": "http://localhost:8082",
         "worker_vision": "http://localhost:8082",
+        "worker_code": "http://localhost:8092",
+        "worker_fast": "http://localhost:8102",
+        # Architects
         "architect_general": "http://localhost:8083",
         "architect_coding": "http://localhost:8084",
         "ingest_long_context": "http://localhost:8085",
+    }
+
+    # Task type to worker role mapping (for pool routing)
+    WORKER_TASK_ROUTING = {
+        "explore": "worker_explore",
+        "summarize": "worker_explore",
+        "understand": "worker_explore",
+        "code": "worker_code",
+        "code_impl": "worker_code",
+        "refactor": "worker_code",
+        "test_gen": "worker_code",
+        "fast": "worker_fast",
+        "boilerplate": "worker_fast",
+        "transform": "worker_fast",
     }
 
     def __init__(
@@ -171,6 +190,8 @@ class LLMPrimitives:
         server_urls: dict[str, str] | None = None,
         num_slots: int = 4,
         registry: Any | None = None,
+        worker_pool: Any | None = None,
+        use_worker_pool: bool = False,
     ):
         """Initialize LLM primitives.
 
@@ -183,6 +204,8 @@ class LLMPrimitives:
                         If provided and not mock_mode, uses CachingBackend.
             num_slots: Number of slots per server for prefix caching.
             registry: Optional RegistryLoader for role-based generation defaults.
+            worker_pool: Optional WorkerPoolManager for worker role routing.
+            use_worker_pool: If True and worker_pool provided, route worker calls through pool.
         """
         self.model_server = model_server
         self.mock_mode = mock_mode
@@ -191,6 +214,8 @@ class LLMPrimitives:
         self.server_urls = server_urls
         self.num_slots = num_slots
         self.registry = registry
+        self.worker_pool = worker_pool
+        self.use_worker_pool = use_worker_pool and worker_pool is not None
 
         # CachingBackend instances per role (RadixAttention)
         self._backends: dict[str, Any] = {}
@@ -918,6 +943,10 @@ class LLMPrimitives:
         Returns:
             List of model responses in order.
         """
+        # Use worker pool for worker roles if configured
+        if self.use_worker_pool and role.startswith("worker"):
+            return self._worker_pool_batch(prompts, role)
+
         # Check if we have a backend for this role
         backend = self._backends.get(role)
         if backend is None and self.model_server is None:
@@ -936,6 +965,72 @@ class LLMPrimitives:
             }
 
             # Collect results in order
+            for future in as_completed(future_to_idx):
+                idx = future_to_idx[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    results[idx] = f"[ERROR: {e}]"
+
+        return [r if r is not None else "" for r in results]
+
+    def _worker_pool_batch(self, prompts: list[str], role: str) -> list[str]:
+        """Execute batch using the heterogeneous worker pool.
+
+        Routes to appropriate worker type based on role.
+
+        Args:
+            prompts: List of prompts.
+            role: Worker role (determines task type routing).
+
+        Returns:
+            List of model responses in order.
+        """
+        import asyncio
+
+        # Determine task type from role
+        # worker_explore -> explore, worker_code -> code, etc.
+        task_type = "explore"  # default
+        if "_" in role:
+            suffix = role.split("_", 1)[1]
+            task_type = self.WORKER_TASK_ROUTING.get(suffix, suffix)
+
+        try:
+            # Run async batch in sync context
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're already in an async context, create a new task
+                import nest_asyncio
+                nest_asyncio.apply()
+                results = loop.run_until_complete(
+                    self.worker_pool.batch(prompts, task_type=task_type)
+                )
+            else:
+                results = asyncio.run(
+                    self.worker_pool.batch(prompts, task_type=task_type)
+                )
+            return results
+        except Exception as e:
+            # Fall back to standard batch if worker pool fails
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Worker pool batch failed, falling back to standard: {e}"
+            )
+            return self._fallback_batch(prompts, role)
+
+    def _fallback_batch(self, prompts: list[str], role: str) -> list[str]:
+        """Fallback batch implementation using ThreadPoolExecutor.
+
+        Used when worker pool is unavailable or fails.
+        """
+        results: list[str | None] = [None] * len(prompts)
+
+        with ThreadPoolExecutor(max_workers=self.config.batch_parallelism) as executor:
+            future_to_idx = {
+                executor.submit(self._real_call, prompt, role): i
+                for i, prompt in enumerate(prompts)
+            }
+
             for future in as_completed(future_to_idx):
                 idx = future_to_idx[future]
                 try:

@@ -58,30 +58,57 @@ PORT_MAP = {
     "frontdoor": 8080,
     "coder_primary": 8080,  # Shares with frontdoor (same model)
     "coder_escalation": 8081,
-    "worker_general": 8082,
-    "worker_math": 8082,  # Shares with worker_general
-    "worker_vision": 8082,  # Shares with worker_general
+    # Worker pool ports (heterogeneous)
+    "worker_general": 8082,  # Legacy alias -> worker_explore
+    "worker_explore": 8082,  # Explore worker (7B)
+    "worker_math": 8082,     # Shares with explore
+    "worker_vision": 8082,   # Shares with explore
+    "worker_code": 8092,     # Code worker (7B)
+    "worker_fast_1": 8102,   # Fast worker 1 (1.5B, WARM)
+    "worker_fast_2": 8112,   # Fast worker 2 (1.5B, WARM)
+    # Specialists
     "architect_general": 8083,
     "architect_coding": 8084,
     "ingest_long_context": 8085,
+    "embedder": 8090,  # Embedding server for episodic memory
     "orchestrator": 8000,
     "document_formalizer": 9001,
 }
 
 # HOT roles (always started)
-HOT_ROLES = {"frontdoor", "coder_escalation", "worker_general"}
+HOT_ROLES = {"frontdoor", "coder_escalation", "worker_explore", "worker_code", "embedder"}
 
 # Servers to start (unique ports only)
 HOT_SERVERS = [
     {"port": 8080, "roles": ["frontdoor", "coder_primary"]},
     {"port": 8081, "roles": ["coder_escalation"]},
-    {"port": 8082, "roles": ["worker_general", "worker_math", "worker_vision"]},
+    # Worker pool HOT tier
+    {"port": 8082, "roles": ["worker_explore", "worker_general", "worker_math", "worker_vision"],
+     "worker_pool": True, "worker_type": "explore"},
+    {"port": 8092, "roles": ["worker_code"],
+     "worker_pool": True, "worker_type": "code"},
+    {"port": 8090, "roles": ["embedder"], "embedding": True},  # Embedding server
 ]
+
+# Embedding model (lightweight, always loaded)
+EMBEDDING_MODEL_PATH = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+
+# Worker pool models
+WORKER_POOL_MODELS = {
+    "explore": "/mnt/raid0/llm/lmstudio/models/Qwen/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+    "code": "/mnt/raid0/llm/lmstudio/models/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+    "fast": "/mnt/raid0/llm/lmstudio/models/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
+}
 
 WARM_SERVERS = [
     {"port": 8083, "roles": ["architect_general"]},
     {"port": 8084, "roles": ["architect_coding"]},
     {"port": 8085, "roles": ["ingest_long_context"]},
+    # Worker pool WARM tier (fast workers for burst capacity)
+    {"port": 8102, "roles": ["worker_fast_1"],
+     "worker_pool": True, "worker_type": "fast"},
+    {"port": 8112, "roles": ["worker_fast_2"],
+     "worker_pool": True, "worker_type": "fast"},
 ]
 
 DEV_MODEL = "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
@@ -192,8 +219,59 @@ def build_server_command(
     role_config: Any,
     port: int,
     dev_mode: bool = False,
+    embedding_mode: bool = False,
+    worker_pool_mode: bool = False,
+    worker_type: str = None,
 ) -> list[str]:
     """Build llama-server command from role config."""
+    # Embedding server mode - lightweight, dedicated to embeddings
+    if embedding_mode:
+        return [
+            str(LLAMA_SERVER),
+            "-m", EMBEDDING_MODEL_PATH,
+            "--host", "0.0.0.0",
+            "--port", str(port),
+            "-np", "4",  # 4 parallel slots for embedding requests
+            "-c", "4096",  # Small context (embeddings don't need long context)
+            "-t", "8",  # 8 threads sufficient for small model
+            "--embeddings",  # Enable embedding endpoint
+            "--flash-attn", "on",
+        ]
+
+    # Worker pool mode - heterogeneous workers with specific configs
+    if worker_pool_mode and worker_type:
+        model_path = WORKER_POOL_MODELS.get(worker_type)
+        if not model_path:
+            raise ValueError(f"Unknown worker type: {worker_type}")
+
+        # Worker-type specific configuration
+        if worker_type == "fast":
+            # Fast workers: 1.5B model, fewer threads, smaller context
+            return [
+                str(LLAMA_SERVER),
+                "-m", model_path,
+                "--host", "0.0.0.0",
+                "--port", str(port),
+                "-np", "2",  # 2 parallel slots
+                "-c", "8192",  # 4K per slot
+                "-t", "12",  # 12 threads for small model
+                "--flash-attn", "on",
+                "--lookup-ngram-min", "3",  # Prompt lookup
+            ]
+        else:
+            # explore/code workers: 7B model, more threads
+            return [
+                str(LLAMA_SERVER),
+                "-m", model_path,
+                "--host", "0.0.0.0",
+                "--port", str(port),
+                "-np", "2",  # 2 parallel slots
+                "-c", "8192",  # 4K per slot
+                "-t", "24",  # 24 threads for 7B model
+                "--flash-attn", "on",
+                "--lookup-ngram-min", "3",  # Prompt lookup
+            ]
+
     if dev_mode:
         return [
             str(LLAMA_SERVER),
@@ -244,8 +322,102 @@ def start_server(
     roles: list[str],
     registry: RegistryLoader,
     dev_mode: bool = False,
+    embedding_mode: bool = False,
+    worker_pool_mode: bool = False,
+    worker_type: str = None,
 ) -> ProcessInfo | None:
     """Start a llama-server for the given roles."""
+    # Embedding mode uses dedicated config, no registry lookup needed
+    if embedding_mode:
+        log_file = LOG_DIR / f"llama-server-{port}.log"
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        cmd = build_server_command(None, port, dev_mode=False, embedding_mode=True)
+        model_name = "Qwen2.5-Coder-0.5B (embeddings)"
+
+        print(f"  Starting port {port}: {model_name}")
+        print(f"    Roles: {', '.join(roles)}")
+        print(f"    Command: {' '.join(cmd[:5])}...")
+
+        with open(log_file, "w") as log:
+            env = os.environ.copy()
+            env["OMP_NUM_THREADS"] = "1"
+            proc = subprocess.Popen(
+                ["numactl", "--interleave=all"] + cmd,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
+
+        print(f"    PID: {proc.pid}")
+        print(f"    Waiting for health...")
+
+        if wait_for_health(port, timeout=60):  # Faster timeout for small model
+            print(f"    [OK] Embedding server ready")
+            return ProcessInfo(
+                role="embedder",
+                pid=proc.pid,
+                port=port,
+                started_at=datetime.now().isoformat(),
+                model_path=EMBEDDING_MODEL_PATH,
+                log_file=str(log_file),
+            )
+        else:
+            print(f"    [FAIL] Embedding server did not become healthy")
+            print(f"    Check log: {log_file}")
+            kill_process(proc.pid)
+            return None
+
+    # Worker pool mode - heterogeneous workers
+    if worker_pool_mode and worker_type:
+        log_file = LOG_DIR / f"worker-{worker_type}-{port}.log"
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        model_path = WORKER_POOL_MODELS.get(worker_type)
+        if not model_path:
+            print(f"  [!] Unknown worker type: {worker_type}")
+            return None
+
+        cmd = build_server_command(
+            None, port, worker_pool_mode=True, worker_type=worker_type
+        )
+        model_name = Path(model_path).stem
+
+        print(f"  Starting worker pool [{worker_type}] on port {port}: {model_name}")
+        print(f"    Roles: {', '.join(roles)}")
+        print(f"    Command: {' '.join(cmd[:6])}...")
+
+        with open(log_file, "w") as log:
+            env = os.environ.copy()
+            env["OMP_NUM_THREADS"] = "1"
+            proc = subprocess.Popen(
+                ["numactl", "--interleave=all"] + cmd,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
+
+        print(f"    PID: {proc.pid}")
+        print(f"    Waiting for health...")
+
+        # Faster timeout for smaller models
+        timeout = 60 if worker_type == "fast" else 90
+        if wait_for_health(port, timeout=timeout):
+            print(f"    [OK] Worker {worker_type} ready")
+            return ProcessInfo(
+                role=f"worker_{worker_type}",
+                pid=proc.pid,
+                port=port,
+                started_at=datetime.now().isoformat(),
+                model_path=model_path,
+                log_file=str(log_file),
+            )
+        else:
+            print(f"    [FAIL] Worker {worker_type} did not become healthy")
+            print(f"    Check log: {log_file}")
+            kill_process(proc.pid)
+            return None
+
     # Use first role's config for the server
     primary_role = roles[0]
     role_config = registry.get_role(primary_role)
@@ -462,8 +634,16 @@ def cmd_start(args: argparse.Namespace) -> int:
     for i, server in enumerate(servers_to_start):
         port = server["port"]
         roles = server["roles"]
+        embedding_mode = server.get("embedding", False)
+        worker_pool_mode = server.get("worker_pool", False)
+        worker_type = server.get("worker_type")
 
-        info = start_server(port, roles, registry, args.dev)
+        info = start_server(
+            port, roles, registry, args.dev,
+            embedding_mode=embedding_mode,
+            worker_pool_mode=worker_pool_mode,
+            worker_type=worker_type,
+        )
         if info:
             state[f"server_{port}"] = info
             # Also map all roles to this server
@@ -472,12 +652,14 @@ def cmd_start(args: argparse.Namespace) -> int:
                     state[role] = info
         else:
             print(f"  [!] Failed to start server on port {port}")
-            if not args.dev:
-                # In production, this is fatal
+            # Embedding/worker_pool server failure is non-fatal (fallback available)
+            is_optional = embedding_mode or worker_pool_mode
+            if not args.dev and not is_optional:
                 return 1
 
-        # Cooldown between large models
-        if i < len(servers_to_start) - 1 and not args.dev:
+        # Cooldown between large models (skip for small models)
+        is_small_model = embedding_mode or (worker_pool_mode and worker_type == "fast")
+        if i < len(servers_to_start) - 1 and not args.dev and not is_small_model:
             print("  Cooldown (30s) for tensor repack...")
             time.sleep(30)
 
@@ -578,11 +760,18 @@ def cmd_reload(args: argparse.Namespace) -> int:
             port = PORT_MAP[component]
             key = f"server_{port}"
 
-            # Find roles for this port
+            # Find roles and config for this port
             roles = [component]
+            worker_pool_mode = False
+            worker_type = None
+            embedding_mode = False
+
             for server in HOT_SERVERS + WARM_SERVERS:
                 if server["port"] == port:
                     roles = server["roles"]
+                    worker_pool_mode = server.get("worker_pool", False)
+                    worker_type = server.get("worker_type")
+                    embedding_mode = server.get("embedding", False)
                     break
 
             # Stop existing
@@ -591,7 +780,12 @@ def cmd_reload(args: argparse.Namespace) -> int:
                 time.sleep(2)
 
             # Start new
-            info = start_server(port, roles, registry, dev_mode=False)
+            info = start_server(
+                port, roles, registry, dev_mode=False,
+                embedding_mode=embedding_mode,
+                worker_pool_mode=worker_pool_mode,
+                worker_type=worker_type,
+            )
             if info:
                 state[key] = info
                 for role in roles:
