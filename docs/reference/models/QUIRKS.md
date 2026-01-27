@@ -138,29 +138,98 @@ llama-lookup -m MODEL.gguf -f large_prompt.txt --draft-max 4
 
 ### Vision-Language (VL) Models
 
+**Critical MTMD Fixes Required**: VL models crash in `llama_context::decode()` via `mtmd_helper_decode_image_chunk()` without these upstream commits:
+- e047f9ee9: `mtmd: fix use_non_causal being reported incorrectly` (#18793)
+- d98b54812: `Restore clip's cb() to its rightful glory` (#17914)
+- c945aaaef: `mtmd: Fix ASR for LFM2.5-Audio-1.5B` (#18876)
+
+**Cherry-picked**: 2026-01-27 to production-consolidated branch (commit 93eb39f39)
+
 **Issue**: `llama-speculative` doesn't support VL models with mmproj files
 
 **Symptoms**: Timeout or crash when running spec decode on Qwen2.5-VL, Qwen3-VL, or similar models
 
 **Root Cause**: VL models require the mmproj (multimodal projector) file for vision processing. The `llama-speculative` binary doesn't support loading mmproj files, only the main model weights.
 
-**Workaround**: Use baseline mode or MoE expert reduction (for MoE-VL models):
+**Workaround**: Use `llama-mtmd-cli` for VL inference, or MoE expert reduction for MoE-VL models:
 
 ```bash
-# ✅ Safe - baseline mode
-llama-cli -m Qwen2.5-VL-7B.gguf --mmproj mmproj-model-f16.gguf -p "prompt"
+# ✅ Safe - llama-mtmd-cli for VL inference
+llama-mtmd-cli -m Qwen2.5-VL-7B.gguf --mmproj mmproj-model-f16.gguf \
+    --image image.png -p "prompt" -n 256
 
 # ✅ Safe - MoE reduction for VL-MoE models
-llama-cli -m Qwen3-VL-30B-A3B.gguf --mmproj mmproj.gguf \
-    --override-kv qwen3vlmoe.expert_used_count=int:4
+llama-mtmd-cli -m Qwen3-VL-30B-A3B.gguf --mmproj mmproj.gguf \
+    --override-kv qwen3vlmoe.expert_used_count=int:4 \
+    --image image.png -p "prompt"
 
-# ❌ Broken - spec decode not supported
+# ❌ Broken - spec decode not supported for VL
 llama-speculative -m Qwen2.5-VL-7B.gguf -md draft.gguf  # Times out
 ```
 
-**Note**: Manual testing achieved 57.1 t/s with `--temp 0.7` using a special llama-cli workaround, but this is not automated.
+**Image Token Minimum**: Qwen-VL models require at minimum 1024 image tokens for grounding tasks. If accuracy issues occur, add `--image-min-tokens 1024`.
+
+**Verified mmproj Paths** (2026-01-27):
+
+| Model | Architecture | Model Path | mmproj Path |
+|-------|--------------|------------|-------------|
+| Qwen2.5-VL-7B | Dense | lmstudio-community/.../Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf | mmproj-model-f16.gguf |
+| Qwen3-VL-4B | Dense | lmstudio-community/.../Qwen3-VL-4B-Instruct-Q4_K_M.gguf | mmproj-Qwen3-VL-4B-Instruct-F16.gguf |
+| Qwen3-VL-8B | Dense | lmstudio-community/.../Qwen3-VL-8B-Instruct-Q4_K_M.gguf | mmproj-Qwen3-VL-8B-Instruct-F16.gguf |
+| Qwen3-VL-30B-A3B | MoE | lmstudio-community/.../Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf | mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf |
+| Qwen3-VL-235B-A22B | MoE | lmstudio-community/.../Qwen3-VL-235B-A22B-Instruct-Q4_K_M-*.gguf | mmproj-Qwen3-VL-235B-A22B-Instruct-F16.gguf |
+
+**Performance Benchmarks** (2026-01-27, Twyne cover page):
+
+| Model | Type | Prompt t/s | Gen t/s |
+|-------|------|------------|---------|
+| Qwen3-VL-4B | Dense | 104 | 14.8 |
+| Qwen2.5-VL-7B | Dense | 97 | 10 |
+| Qwen3-VL-30B-A3B (MoE4) | MoE | 29.6 | 5.3 |
 
 **Discovered**: 2026-01-09
+**MTMD fixes cherry-picked**: 2026-01-27
+
+### VL Model Selection for Document Analysis (2026-01-28)
+
+**Research Summary**: Comprehensive VL benchmark (12 questions) + Twyne whitepaper figure analysis
+
+**Key Finding**: Smaller models outperform larger models on VL tasks.
+
+| Model | VL Score | Speed | Recommendation |
+|-------|----------|-------|----------------|
+| **Qwen3-VL-4B** | **94%** | 18 t/s | ✅ **BEST for document figures** |
+| Qwen3-VL-8B | 86% | 15 t/s | Good alternative |
+| Qwen2.5-VL-7B | 81% | 17 t/s | ⚠️ Only option for agentic vision |
+| Qwen3-VL-30B-A3B | 75% | 27 t/s | ❌ OCR errors ("Centric" instead of "Centre") |
+| Qwen3-VL-235B | 56% | 4.6 t/s | ❌ Timeout truncation, slow |
+
+**Why 4B beats 30B/235B:**
+1. No timeout truncation (completes within limits)
+2. Accurate OCR - correctly reads chart labels and axis values
+3. Chart legend interpretation is accurate
+4. Smaller context = faster processing
+
+**Document Context Matters:**
+- Without context: VL describes figures in isolation
+- With summary (~8K chars): 2x quality improvement, figure descriptions tied to document meaning
+- Full OCR (34K chars): Marginal improvement over summary, 2x slower
+
+**Pipeline Integration** (implemented 2026-01-28):
+- `DocumentPreprocessor._extract_summary_context()` extracts ~8K char summary
+- Priority sections: abstract, summary, executive, introduction, overview
+- `FigureAnalyzer` receives summary in `vl_prompt` parameter
+- Logs: "Using {N} char summary context for figure analysis"
+
+**Role Assignments:**
+
+| Role | Model | Use Case |
+|------|-------|----------|
+| `worker_vision` (doc figures) | Qwen3-VL-4B | Document figure analysis (default) |
+| `worker_vision` (agentic) | Qwen2.5-VL-7B | Tool-using vision tasks |
+| `vision_escalation` | Qwen3-VL-30B-A3B | Manual request only (NOT auto-wired) |
+
+**Agentic Warning**: All Qwen3-VL models score 0% on agentic tasks (empty tool calls). Use Qwen2.5-VL-7B for vision tasks requiring tool coordination.
 
 ## Benchmarking Quirks
 

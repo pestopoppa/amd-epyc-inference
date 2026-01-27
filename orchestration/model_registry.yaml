@@ -967,7 +967,7 @@ roles:
       Output final answer on last line.
   worker_vision:
     tier: C
-    description: Screenshot/UI extraction - outputs component trees + structured notes
+    description: "Agentic vision tasks - USE Qwen3-VL-4B for document figure analysis instead"
     model:
       name: Qwen2.5-VL-7B-Instruct
       path: lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf
@@ -977,6 +977,7 @@ roles:
       architecture: dense
     candidate_roles:
     - vision
+    - agentic_vision  # Only model that supports tool calls
     acceleration:
       type: baseline
       disallowed:
@@ -988,12 +989,18 @@ roles:
       baseline_tps: 15.28
       optimized_tps: 20.0
       speedup: 1.3x
+      vl_score: "29/36 (81%)"
+      benchmark_date: 2026-01-27
     memory:
       residency: warm
       pinned: false
+    notes: |
+      Only VL model that supports tool calls (agentic tasks).
+      For document figure analysis, use vision_qwen3_vl_4b (94% vs 81%).
+      Keep for: screenshot analysis, UI automation, tool-using vision tasks.
   vision_escalation:
     tier: B
-    description: Complex vision tasks - math in images, long video, complex diagrams
+    description: "Complex vision - manual escalation only (NOT auto-wired)"
     model:
       name: Qwen3-VL-30B-A3B-Instruct
       path: lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf
@@ -1008,14 +1015,17 @@ roles:
       experts: 4
       override_key: qwen3vlmoe.expert_used_count
     performance:
-      baseline_tps: 25.0
-      optimized_tps: 35.0
-      speedup: 1.4x
+      baseline_tps: 19.0
+      optimized_tps: 27.6
+      speedup: 1.45x
+      vl_score: "27/36 (75%)"
+      benchmark_date: 2026-01-27
     memory:
       residency: cold
       pinned: false
     escalation:
       from: worker_vision
+      auto_wired: false  # NOT currently auto-triggered - request manually
       triggers:
       - math or equations in image
       - complex multi-step diagram
@@ -1026,7 +1036,12 @@ roles:
       recommended: true
       block_size: 64
       reason: "30B VL MoE benefits from paged attention for image-heavy workloads"
-    notes: Qwen3-VL MoE outperforms Qwen2.5-VL-72B dense on reasoning tasks
+    notes: |
+      75% accuracy - LOWER than 4B (94%) due to OCR issues ("Centric" error).
+      Faster than 4B (27.6 t/s vs 18 t/s) but less accurate.
+      Consider vision_qwen3_vl_8b (86%) as alternative escalation target.
+      Good for: extended reasoning on complex diagrams, multi-image comparison.
+      WARNING: 0% agentic - cannot do tool calls.
   worker_summarize:
     tier: C
     description: Document summarization (96% quality) - fastest with spec decode or
@@ -1869,7 +1884,7 @@ roles:
       reason: "235B VL MoE benefits from paged attention"
   vision_qwen3_vl_4b:
     tier: C
-    description: Vision model - Qwen3-VL-4B-Instruct-Q4_K_M
+    description: "RECOMMENDED for document figure analysis - Qwen3-VL-4B-Instruct"
     model:
       name: Qwen3-VL-4B-Instruct-Q4_K_M
       path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf
@@ -1879,17 +1894,27 @@ roles:
       architecture: qwen3vl
     candidate_roles:
     - vision
+    - figure_analysis  # Best for document figure description
     constraints:
       forbid:
       - speculative_decoding
       - prompt_lookup
       reason: VL model - no compatible text-only drafts
+    performance:
+      baseline_tps: 18.0
+      vl_score: "34/36 (94%)"
+      benchmark_date: 2026-01-27
     memory:
-      residency: cold
+      residency: warm  # Small enough for WARM tier (2.3GB)
       pinned: false
+    notes: |
+      Best VL model for document figure analysis (94% accuracy).
+      Outperforms larger 30B/235B models on OCR and chart reading.
+      Use with document summary context (~8K chars) for optimal results.
+      WARNING: 0% agentic - cannot do tool calls. Use Qwen2.5-VL-7B for agentic vision.
   vision_qwen3_vl_8b:
     tier: C
-    description: Vision model - Qwen3-VL-8B-Instruct-Q4_K_M
+    description: "Vision model - Qwen3-VL-8B-Instruct - Good balance of quality/speed"
     model:
       name: Qwen3-VL-8B-Instruct-Q4_K_M
       path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-Q4_K_M.gguf
@@ -1899,14 +1924,23 @@ roles:
       architecture: qwen3vl
     candidate_roles:
     - vision
+    - vision_escalation  # Better quality than 30B for complex figures
     constraints:
       forbid:
       - speculative_decoding
       - prompt_lookup
       reason: VL model - no compatible text-only drafts
+    performance:
+      baseline_tps: 15.4
+      vl_score: "31/36 (86%)"
+      benchmark_date: 2026-01-27
     memory:
       residency: cold
       pinned: false
+    notes: |
+      Good balance of quality (86%) and speed.
+      Better than 30B-A3B on chart interpretation despite smaller size.
+      WARNING: 0% agentic - cannot do tool calls.
   draft_co_rewarding_ii_qwen3_1_7b_base_math_q8_0:
     tier: D
     deprecated: true

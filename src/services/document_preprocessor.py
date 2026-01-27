@@ -76,6 +76,23 @@ OCR_TRIGGER_PHRASES = frozenset({
     "pdf text",
 })
 
+# Maximum characters for document summary context passed to VL model
+MAX_SUMMARY_CONTEXT_CHARS = 8000
+
+# Figure analysis prompt template with document context
+FIGURE_PROMPT_WITH_CONTEXT = """You are analyzing a figure from a technical document. Below is a summary of the document for context.
+
+=== DOCUMENT SUMMARY ===
+{summary}
+=== END SUMMARY ===
+
+Now analyze this figure:
+1. What type of visualization is this? (chart, diagram, graph, plot, table, etc.)
+2. What parameters, data, or concepts are shown?
+3. What is the main insight or finding illustrated?
+
+Be concise but informative. Focus on the specific content visible in the figure."""
+
 
 @dataclass
 class PreprocessingConfig:
@@ -146,6 +163,75 @@ class DocumentPreprocessor:
         self.client = client or get_document_client()
         self.chunker = chunker or get_document_chunker()
         self.figure_analyzer = figure_analyzer or get_figure_analyzer()
+
+    def _extract_summary_context(
+        self,
+        document_result: DocumentPreprocessResult,
+        max_chars: int = MAX_SUMMARY_CONTEXT_CHARS,
+    ) -> str:
+        """Extract a summary from document sections for figure analysis context.
+
+        Prioritizes:
+        1. Abstract/Summary/Introduction sections
+        2. First few sections if no priority sections found
+        3. Truncates to max_chars to keep VL model fast
+
+        Args:
+            document_result: The processed document with sections.
+            max_chars: Maximum characters for the summary.
+
+        Returns:
+            Summary text for figure analysis context.
+        """
+        if not document_result.sections:
+            return ""
+
+        # Priority section titles (case-insensitive partial match)
+        priority_keywords = [
+            "abstract", "summary", "executive", "introduction",
+            "overview", "background", "main thesis", "key"
+        ]
+
+        priority_sections: list[Section] = []
+        other_sections: list[Section] = []
+
+        for section in document_result.sections:
+            title_lower = section.title.lower()
+            if any(kw in title_lower for kw in priority_keywords):
+                priority_sections.append(section)
+            else:
+                other_sections.append(section)
+
+        # Build summary from priority sections first, then others
+        summary_parts: list[str] = []
+        total_chars = 0
+
+        for section in priority_sections + other_sections:
+            section_text = f"## {section.title}\n{section.content}\n"
+            if total_chars + len(section_text) > max_chars:
+                # Add truncated remainder
+                remaining = max_chars - total_chars
+                if remaining > 100:  # Only add if meaningful space left
+                    summary_parts.append(section_text[:remaining] + "...")
+                break
+            summary_parts.append(section_text)
+            total_chars += len(section_text)
+
+        return "\n".join(summary_parts)
+
+    def _build_figure_prompt(self, summary: str) -> str | None:
+        """Build a figure analysis prompt with document context.
+
+        Args:
+            summary: Document summary text.
+
+        Returns:
+            Prompt string for the VL model, or None to use default.
+        """
+        if not summary:
+            # Fall back to default prompt if no summary
+            return None
+        return FIGURE_PROMPT_WITH_CONTEXT.format(summary=summary)
 
     def needs_preprocessing(self, task_ir: dict[str, Any]) -> bool:
         """Check if a TaskIR needs document preprocessing.
@@ -292,9 +378,19 @@ class DocumentPreprocessor:
             # Optionally analyze figures with vision model
             if self.config.describe_figures and document_result.figures:
                 try:
+                    # Extract summary context for better figure understanding
+                    summary = self._extract_summary_context(document_result)
+                    vl_prompt = self._build_figure_prompt(summary)
+
+                    if summary:
+                        logger.info(
+                            f"Using {len(summary)} char summary context for figure analysis"
+                        )
+
                     document_result.figures = await analyze_figures_async(
                         pdf_path=str(doc_path),
                         figures=document_result.figures,
+                        vl_prompt=vl_prompt,
                     )
                     logger.info(
                         f"Analyzed {len(document_result.figures)} figures with vision model"

@@ -1,6 +1,6 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-26 (Added summarization model comparison)
+**Last Updated:** 2026-01-27 (Added valid VL benchmark results - 4B beats 235B on OCR!)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
 
 ---
@@ -12,7 +12,8 @@
 | Prompt Lookup (summarization) | 95.18 t/s | 12.7x | — | Document QA with source |
 | **Qwen2.5-7B + spec (K=24)** | **46.6 t/s** | **2.5x** | 90% | Fast general tasks |
 | Qwen3-Coder-30B-A3B + MoE4 + spec (K=8) | 31.9 t/s | +45% | **100%** | Code generation |
-| Qwen3-VL-30B-A3B + MoE4 | 27.6 t/s | +111% | **100%** | Vision tasks |
+| **Qwen3-VL-4B Q4_K_M** | **18.0 t/s** | — | **94%** | Vision tasks (best quality) |
+| Qwen3-VL-30B-A3B + MoE4 | 27.6 t/s | +111% | 75% | Vision tasks (faster, lower quality) |
 | Prompt Lookup (code editing) | 25.82 t/s | 8.6x | — | Refactoring, code review |
 | **Qwen3-4B-Thinking + spec (K=4)** | **24.2 t/s** | **2.1x** | 88% | Fast thinking |
 | Qwen3-Coder-30B-A3B + MoE4 | 22.0 t/s | +83% | **100%** | Code (no spec) |
@@ -885,7 +886,59 @@ Complete production model lineup with relative scoring validation.
 | Qwen3-VL-* (all sizes) | 0% agentic - empty tool calls |
 | MathSmith-Hard-Problem-Synthesizer | 5x slower than expected |
 
-⚠️ **VL BENCHMARK INVALIDATION (2025-01-06):** ALL vision-language benchmark scores in this file are INVALID. The benchmark system was not passing images to VL models - they were run as text-only models. VL scores in the tables below measure hallucination confidence, not actual vision capability. Results deleted, fix implemented. Re-benchmarking required.
+⚠️ **VL BENCHMARK INVALIDATION (2025-01-06):** Previous VL scores were INVALID. **FIXED 2026-01-27:** VL benchmark re-run with proper image passing using `llama-mtmd-cli`. See valid results below.
+
+---
+
+## ✅ VL Benchmark Results (2026-01-27) - VALID
+
+**Benchmark:** Hardened VL suite with 12 questions (2x T1, 5x T2, 5x T3) using OCRBench, DocVQA, ChartQA, and Twyne whitepaper images.
+
+**Key Findings:**
+1. All models 4B-8B got basic OCR correct ("Centre")
+2. 235B models had OCR regression ("Centie") AND timeout truncation
+3. Score differences between 4B/7B/8B are marginal and may reflect chart interpretation rather than capability
+
+### Raw Scores (Timeout-Penalized)
+
+| Model | VL Score | Pct | Avg t/s | Notes |
+|-------|----------|-----|---------|-------|
+| **Qwen3-VL-4B Q4_K_M** | **34/36** | **94%** | 18.0 | ✅ Best raw score, accurate bar identification |
+| **Qwen3-VL-4B Q8_0** | **34/36** | **94%** | 14.8 | ✅ Same quality as Q4_K_M |
+| Qwen3-VL-8B Q4_K_M | 31/36 | 86% | 15.4 | ✅ Good quality, minor chart ID differences |
+| Qwen3-VL-8B Q8_0 | 31/36 | 86% | 9.5 | ✅ Same quality, slower |
+| Qwen2.5-VL-7B | 29/36 | 81% | 17.2 | ✅ Good general VL performance |
+| Qwen3-VL-30B-A3B | 27/36 | 75% | 19.0 | ⚠️ "Centric" OCR error |
+| Qwen3-VL-30B-A3B MoE4 | 27/36 | 75% | 27.6 | ⚠️ Same quality, +45% faster |
+| Qwen3-VL-235B-A22B | 20/36 | 56% | 4.6 | ⚠️ "Centie" OCR + timeout truncation |
+| Qwen3-VL-235B-A22B MoE4 | 19/36 | 53% | 6.7 | ⚠️ Timeout truncation |
+
+### Quality-Adjusted Scores (Partial Output Assessment)
+
+The 235B models were truncated by timeout, but their **partial output quality was HIGH**:
+- t3_q1: "0.57" correct + excellent chart critique methodology
+- t3_q3: Comprehensive DeFi security audit with 5/10 rating justification
+- t3_q4: Detailed Nash equilibrium analysis, game theory, bank run scenarios
+
+| Model | Quality-Adj Score | Pct | Notes |
+|-------|-------------------|-----|-------|
+| **Qwen3-VL-4B** | 34/36 | 94% | No truncation, accurate readings |
+| **Qwen3-VL-8B** | 31/36 | 86% | No truncation, minor chart ID diff |
+| **Qwen3-VL-235B** | ~30/36 | ~83% | Partial outputs HIGH quality, penalized by timeout |
+| Qwen3-VL-30B-A3B | 27/36 | 75% | OCR error on basic text ("Centric") |
+
+**VL Role Recommendations:**
+- `worker_vision` = **Qwen3-VL-4B Q4_K_M** (94%, 18 t/s) - Best quality/speed ratio
+- `vision_escalation` = **Qwen3-VL-8B Q4_K_M** (86%, 15.4 t/s) - Good balance
+- For complex analysis: **Qwen3-VL-235B** with extended timeouts (excellent reasoning quality)
+
+**Analysis Notes:**
+1. **4B vs 7B/8B margin is narrow**: Difference is in chart legend interpretation, not core VL capability
+2. **235B timeout issue**: With longer timeouts, 235B would likely score 83%+ (quality of partial outputs is excellent)
+3. **30B OCR regression**: "Centric" instead of "Centre" - genuine model issue, not timeout
+4. **Basic OCR**: All 4B/7B/8B models read "Centre" correctly; 30B+ had errors
+
+---
 
 ⚠️ **Qwen3-VL Warning:** All Qwen3-VL models (2B/4B/8B) score 0% on agentic tasks - all tool-call prompts return empty. Use Qwen2.5-VL for vision tasks requiring tool coordination.
 
