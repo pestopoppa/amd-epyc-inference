@@ -240,9 +240,28 @@ The `repl_memory/` directory contains the MemRL episodic memory system for learn
 |------|---------|
 | `repl_memory/seed_examples.json` | 56 canonical REPL tool usage examples |
 | `repl_memory/seed_loader.py` | Script to load seeds into episodic memory |
-| `repl_memory/episodic_store.py` | SQLite + numpy memory storage |
+| `repl_memory/episodic_store.py` | SQLite + FAISS/numpy memory storage |
+| `repl_memory/faiss_store.py` | FAISS embedding store + NumPy fallback |
 | `repl_memory/embedder.py` | Task embedding via Qwen2.5-0.5B |
 | `repl_memory/retriever.py` | Two-phase retrieval + hybrid router |
+
+### Embedding Backend
+
+**FAISS (default)**: O(log n) search using `IndexFlatIP` with L2 normalization
+- Storage: `embeddings.faiss` + `id_map.npy`
+- Performance: ~2ms for 500K entries
+
+**NumPy (fallback)**: O(n) brute-force search for migration/rollback
+- Storage: `embeddings.npy` (memory-mapped)
+- Performance: ~70ms for 500K entries
+
+```python
+# FAISS backend (default)
+store = EpisodicStore(db_path="/path/to/data", use_faiss=True)
+
+# NumPy backend (fallback)
+store = EpisodicStore(db_path="/path/to/data", use_faiss=False)
+```
 
 ### Seeding Episodic Memory
 
@@ -277,6 +296,91 @@ python orchestration/repl_memory/seed_loader.py --force
 ```bash
 python3 -c "from orchestration.repl_memory import EpisodicStore; print(EpisodicStore().get_stats())"
 ```
+
+---
+
+## Document Preprocessing Services
+
+### PDF Router
+
+The PDF Router (`src/services/pdf_router.py`) intelligently routes PDF processing between fast text extraction and OCR:
+
+```
+PDF Input
+    ↓
+[pdftotext probe] → Quick text extraction (~100ms)
+    ↓
+[Quality check] → Entropy, garbage ratio, word length
+    │
+    ├─ HIGH quality (born-digital) → pdftotext + PyMuPDF figures
+    └─ LOW quality (scanned) → LightOnOCR (OCR fallback)
+```
+
+**Usage:**
+
+```python
+from src.services.pdf_router import extract_pdf
+
+result = extract_pdf("/path/to/document.pdf", extract_figures=True)
+print(f"Method: {result.method}")  # "pdftotext" or "lightonocr"
+print(f"Text: {len(result.text)} chars")
+print(f"Figures: {len(result.figures)} with bounding boxes")
+print(f"Quality: {result.quality_score:.2f}")
+```
+
+**Quality Assessment Thresholds:**
+- `MIN_ENTROPY = 3.5` - Shannon entropy for readable text
+- `MAX_GARBAGE_RATIO = 0.15` - Non-printable character ratio
+- `MIN_WORD_LENGTH_AVG = 2.5` - Average word length
+
+### Prompt Compression (DISABLED)
+
+LLMLingua-2 extractive compression was tested but **disabled due to quality regression**.
+
+**Findings (2026-01-27):**
+- Extractive compression produces choppy, fragmentary text
+- Downstream LLMs hallucinate to fill semantic gaps
+- 140s vs 74s (slower, not faster)
+- Prompt leakage, fake citations, typos in output
+
+**Recommendation:** Wait for Cmprsr (abstractive compression) weights.
+
+See `handoffs/active/cmprsr_prompt_compression.md` for details.
+
+### TOON Format Encoding (Opt-in)
+
+TOON (Token-Oriented Object Notation) provides 55% token reduction for structured tool outputs.
+
+**Findings (2026-01-27):**
+
+| Use Case | Token Reduction | Status |
+|----------|----------------|--------|
+| File listings | **64.6%** | ADOPT |
+| OCR sections | **55.3%** | ADOPT |
+| Escalation context | **42.3%** | ADOPT |
+| Grep hits | -18.6% (worse) | REJECT |
+
+**Key insight:** TOON excels for uniform arrays (file listings) but fails for grouped data (grep hits) where Markdown is more compact.
+
+**Usage:**
+
+```python
+from src.repl_environment import REPLEnvironment, REPLConfig
+
+config = REPLConfig(use_toon_encoding=True)  # Opt-in
+repl = REPLEnvironment(context="...", config=config)
+# _list_dir() now returns TOON for 3+ file directories
+```
+
+**Install:**
+
+```bash
+uv pip install "hierarchical-orchestrator[toon]"
+```
+
+See `research/TOON_EVALUATION.md` for full evaluation report.
+
+---
 
 ## Dependencies
 

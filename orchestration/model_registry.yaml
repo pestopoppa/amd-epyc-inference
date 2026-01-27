@@ -63,8 +63,10 @@ runtime_defaults:
     description: "MemRL-inspired episodic memory for learned orchestration"
     enabled: true
     database:
-      path: /mnt/raid0/llm/claude/orchestration/repl_memory/episodic.db
-      embeddings_path: /mnt/raid0/llm/claude/orchestration/repl_memory/embeddings.npy
+      # FAISS backend (default): stores episodic.db + embeddings.faiss + id_map.npy
+      # NumPy backend (fallback): stores episodic.db + embeddings.npy
+      path: /mnt/raid0/llm/claude/orchestration/repl_memory/sessions
+      use_faiss: true  # O(log n) search; set to false for O(n) NumPy fallback
     embedding:
       model_path: /mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf
       dim: 896
@@ -95,27 +97,50 @@ runtime_defaults:
       enabled: false
       model_path: null
       judge_binary: null
-  two_stage_summarization:
-    description: "Two-stage pipeline: fast draft from frontdoor + quality review from large model"
+  three_stage_summarization:
+    description: "Two-stage pipeline (Stage 0 compression DISABLED due to quality regression)"
     enabled: true
     threshold_tokens: 5000         # Minimum tokens to trigger (estimated from chars/4)
     multi_doc_discount: 0.7        # Lower threshold for multi-document tasks
     context_reduction_target: 0.15 # Stage 2 receives ~15% of original context
     stage1_role: frontdoor         # Fast draft generation
     stage2_role: ingest_long_context  # Quality review with large model
+    compression:  # Stage 0: LLMLingua-2 extractive compression
+      enabled: false               # DISABLED - causes quality regression
+      model: microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank
+      device: cpu
+      min_chars: 30000
+      target_ratio: 0.5
+      stage1_context_limit: 20000
+      cache_model: true
+      expected_latency_ms: 50
+      quality_regression_notes: |
+        DISABLED 2026-01-27: LLMLingua-2 extractive compression causes:
+        - Prompt leakage in output
+        - Hallucinated citations [1], [2]
+        - Typos ("tokenizeize", "cUSTODY")
+        - 140s vs 74s (slower, not faster)
+        Root cause: Extractive compression produces choppy text that confuses LLM.
+        RECOMMENDATION: Wait for Cmprsr (abstractive) weights to become available.
     cache:
       enabled: true
       ttl_hours: 24
       dir: /mnt/raid0/llm/cache/drafts
     expected_speedup:
-      10k_tokens: "2.1x"
-      20k_tokens: "2.3x"
-      50k_tokens: "2.3x"
+      10k_tokens: "1.4x"           # Modest speedup at lower sizes
+      20k_tokens: "1.5x"
+      50k_tokens: "1.6x"           # Prefill savings accumulate
       multi_doc_5x10k: "3.9x"
     notes: |
+      Three-stage pipeline: Stage 0 (compress) → Stage 1 (draft) → Stage 2 (review)
+      Stage 0 benefit: quality improvement from representative sampling vs truncation.
       Breakeven at ~5K tokens. Below this threshold, overhead dominates.
       Stage 1 captures grep hits during exploration for Stage 2 context.
       Caching enables instant Stage 2 for repeated documents.
+  # Backwards compatibility alias
+  two_stage_summarization:
+    description: "Alias for three_stage_summarization (deprecated)"
+    redirect_to: three_stage_summarization
 server_mode:
   # Production topology - orchestrator_stack.py launcher
   # Port 8000: Orchestrator API (uvicorn)
@@ -888,6 +913,10 @@ roles:
       - video longer than 10 minutes
       - GUI automation failure
       - cross-reference multiple image regions
+    paged_attention:
+      recommended: true
+      block_size: 64
+      reason: "30B VL MoE benefits from paged attention for image-heavy workloads"
     notes: Qwen3-VL MoE outperforms Qwen2.5-VL-72B dense on reasoning tasks
   worker_summarize:
     tier: C
@@ -1679,6 +1708,7 @@ roles:
     model:
       name: Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
       path: unsloth/Qwen3-VL-235B-A22B-Thinking-GGUF/Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003.gguf
+      mmproj_path: unsloth/Qwen3-VL-235B-A22B-Thinking-GGUF/mmproj-F32.gguf
       quant: Q4_K_S
       size_gb: 46.2
       architecture: qwen3vlmoe
@@ -1700,34 +1730,44 @@ roles:
       recommended: true
       block_size: 64
       reason: "235B VL model is memory-bound, benefits from block prefetching"
-  vision_qwen3_vl_2b_q4_k_m:
-    tier: C
-    description: Vision model - Qwen3_VL_2B.Q4_K_M
+  vision_qwen3_vl_235b:
+    tier: B
+    description: Vision model - Qwen3-VL-235B-A22B-Instruct (largest non-thinking VL)
     model:
-      name: Qwen3_VL_2B.Q4_K_M
-      path: mradermacher/Qwen3_VL_2B-GGUF/Qwen3_VL_2B.Q4_K_M.gguf
+      name: Qwen3-VL-235B-A22B-Instruct
+      path: lmstudio-community/Qwen3-VL-235B-A22B-Instruct-GGUF/Qwen3-VL-235B-A22B-Instruct-Q4_K_M-00001-of-00004.gguf
+      mmproj_path: lmstudio-community/Qwen3-VL-235B-A22B-Instruct-GGUF/mmproj-Qwen3-VL-235B-A22B-Instruct-F16.gguf
       quant: Q4_K_M
-      size_gb: 1.0
-      architecture: dense
+      size_gb: 133
+      architecture: qwen3vlmoe
     candidate_roles:
     - vision
+    acceleration:
+      type: moe_expert_reduction
+      experts: 4
+      override_key: qwen3vlmoe.expert_used_count
     constraints:
       forbid:
       - speculative_decoding
       - prompt_lookup
-      reason: VL model - no compatible text-only drafts
+      reason: VL model + MoE - use expert reduction only
     memory:
       residency: cold
       pinned: false
+    paged_attention:
+      recommended: true
+      block_size: 64
+      reason: "235B VL MoE benefits from paged attention"
   vision_qwen3_vl_4b:
     tier: C
     description: Vision model - Qwen3-VL-4B-Instruct-Q4_K_M
     model:
       name: Qwen3-VL-4B-Instruct-Q4_K_M
       path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf
+      mmproj_path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/mmproj-Qwen3-VL-4B-Instruct-F16.gguf
       quant: Q4_K_M
       size_gb: 2.3
-      architecture: dense
+      architecture: qwen3vl
     candidate_roles:
     - vision
     constraints:
@@ -1744,9 +1784,10 @@ roles:
     model:
       name: Qwen3-VL-8B-Instruct-Q4_K_M
       path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-Q4_K_M.gguf
+      mmproj_path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/mmproj-Qwen3-VL-8B-Instruct-F16.gguf
       quant: Q4_K_M
       size_gb: 4.7
-      architecture: dense
+      architecture: qwen3vl
     candidate_roles:
     - vision
     constraints:
@@ -2185,9 +2226,10 @@ roles:
     model:
       name: Qwen3-VL-4B-Instruct-Q8_0
       path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q8_0.gguf
+      mmproj_path: lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/mmproj-Qwen3-VL-4B-Instruct-F16.gguf
       quant: Q8_0
       size_gb: 4.0
-      architecture: dense
+      architecture: qwen3vl
     candidate_roles:
     - vision
     constraints:
@@ -2204,9 +2246,10 @@ roles:
     model:
       name: Qwen3-VL-8B-Instruct-Q8_0
       path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/Qwen3-VL-8B-Instruct-Q8_0.gguf
+      mmproj_path: lmstudio-community/Qwen3-VL-8B-Instruct-GGUF/mmproj-Qwen3-VL-8B-Instruct-F16.gguf
       quant: Q8_0
       size_gb: 8.1
-      architecture: dense
+      architecture: qwen3vl
     candidate_roles:
     - vision
     constraints:

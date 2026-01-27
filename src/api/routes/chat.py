@@ -21,6 +21,7 @@ from src.api.services.orchestrator import (
 )
 from src.prompt_builders import build_stage2_review_prompt
 from src.services.draft_cache import get_draft_cache, CachedDraft
+from src.services.prompt_compressor import PromptCompressor
 from src.api.services.memrl import (
     ensure_memrl_initialized,
     score_completed_task,
@@ -47,14 +48,27 @@ from src.sse_utils import (
     done_event,
 )
 
-# Two-stage summarization configuration
-TWO_STAGE_CONFIG = {
+# Three-stage summarization configuration (Stage 0: compression, Stage 1: draft, Stage 2: review)
+THREE_STAGE_CONFIG = {
     "enabled": True,
-    "threshold_tokens": 5000,  # ~20K chars
+    "threshold_tokens": 5000,  # ~20K chars triggers Stage 1+2
     "multi_doc_discount": 0.7,  # Lower threshold for multiple documents
     "stage1_role": Role.FRONTDOOR,
     "stage2_role": Role.INGEST_LONG_CONTEXT,
+    # Stage 0: Compression settings (LLMLingua-2)
+    # DISABLED: Extractive compression causes quality regression (hallucinations, typos)
+    # See handoffs/active/cmprsr_prompt_compression.md for details
+    # Re-enable when Cmprsr (abstractive) weights become available
+    "compression": {
+        "enabled": False,  # Disabled due to quality issues with LLMLingua-2
+        "min_chars": 30000,
+        "target_ratio": 0.5,
+        "stage1_context_limit": 20000,
+    },
 }
+
+# Backwards compatibility alias
+TWO_STAGE_CONFIG = THREE_STAGE_CONFIG
 
 
 def _estimate_tokens(text: str) -> int:
@@ -141,10 +155,13 @@ async def _run_two_stage_summarization(
     import time
 
     stats = {
-        "pipeline": "two_stage",
+        "pipeline": "three_stage",
+        "stage0_time_ms": 0,  # Compression time
         "stage1_time_ms": 0,
         "stage2_time_ms": 0,
         "context_tokens": _estimate_tokens(context),
+        "compressed_tokens": 0,
+        "compression_ratio": 1.0,
         "cache_hit": False,
     }
 
@@ -159,15 +176,46 @@ async def _run_two_stage_summarization(
         grep_hits = cached.grep_hits
         figures = cached.figures
     else:
-        # Stage 1: Run frontdoor to generate draft summary directly
-        # Simpler approach: no REPL code generation, just direct summarization
+        # Stage 0: Compress context if above threshold (LLMLingua-2)
+        compression_config = THREE_STAGE_CONFIG["compression"]
+        context_for_stage1 = context
+
+        if compression_config["enabled"] and len(context) > compression_config["min_chars"]:
+            import logging
+            logging.info(f"Stage 0: Compressing {len(context)} chars with LLMLingua-2")
+
+            stage0_start = time.perf_counter()
+            try:
+                compressor = PromptCompressor.get_instance()
+                compression_result = compressor.compress(
+                    context,
+                    target_ratio=compression_config["target_ratio"],
+                )
+                context_for_stage1 = compression_result.compressed_text
+                stats["stage0_time_ms"] = int(compression_result.latency_ms)
+                stats["compressed_tokens"] = compression_result.compressed_tokens
+                stats["compression_ratio"] = compression_result.actual_ratio
+
+                logging.info(
+                    f"Stage 0 complete: {compression_result.original_chars} → "
+                    f"{compression_result.compressed_chars} chars "
+                    f"({compression_result.actual_ratio:.1%}) in {compression_result.latency_ms:.1f}ms"
+                )
+            except Exception as e:
+                # Fall back to truncation if compression fails
+                logging.warning(f"Stage 0 compression failed: {e}, falling back to truncation")
+                stats["stage0_time_ms"] = int((time.perf_counter() - stage0_start) * 1000)
+
+        # Stage 1: Run frontdoor to generate draft summary
         stage1_start = time.perf_counter()
 
-        # Truncate context for Stage 1 (frontdoor reads beginning + key sections)
-        # Use first 20K chars to fit within frontdoor's context window
-        context_preview = context[:20000]
-        if len(context) > 20000:
-            context_preview += f"\n\n[... {len(context) - 20000} more chars truncated for draft ...]"
+        # Apply context limit for Stage 1 (in case compression didn't reduce enough)
+        context_limit = compression_config["stage1_context_limit"]
+        if len(context_for_stage1) > context_limit:
+            context_preview = context_for_stage1[:context_limit]
+            context_preview += f"\n\n[... {len(context_for_stage1) - context_limit} more chars available in full document ...]"
+        else:
+            context_preview = context_for_stage1
 
         # Build Stage 1 prompt - direct summarization request
         stage1_prompt = f"""You are summarizing a technical document. Write a draft executive summary.
@@ -240,12 +288,18 @@ Draft Summary:"""
         original_task=prompt,
     )
 
-    # Call Stage 2 model
-    final_summary = primitives.llm_call(
-        stage2_prompt,
-        role=TWO_STAGE_CONFIG["stage2_role"],
-        n_tokens=1024,
-    )
+    # Call Stage 2 model with extended timeout (large model is slower)
+    # Temporarily increase timeout for Stage 2 inference
+    original_timeout = primitives.config.call_timeout
+    primitives.config.call_timeout = 300  # 5 minute timeout for Stage 2
+    try:
+        final_summary = primitives.llm_call(
+            stage2_prompt,
+            role=TWO_STAGE_CONFIG["stage2_role"],
+            n_tokens=1024,
+        )
+    finally:
+        primitives.config.call_timeout = original_timeout
 
     stage2_time = time.perf_counter() - stage2_start
     stats["stage2_time_ms"] = int(stage2_time * 1000)
@@ -456,7 +510,9 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
             )
         except Exception as e:
             # Fall back to standard orchestration on two-stage failure
-            pass  # Continue to normal loop below
+            import logging
+            logging.warning(f"Two-stage summarization failed: {type(e).__name__}: {e}")
+            # Continue to normal loop below
 
     # Run Root LM orchestration loop with escalation support
     turns = 0
