@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-01-27
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -34,23 +34,27 @@
 | Orchestrator integration | — | HIGH | `handoffs/active/orchestration-integration.md` | ✅ VERIFIED (12/12 tests) |
 | MathSmith re-conversion | — | LOW | `handoffs/active/mathsmith-reconversion.md` | ✅ COMPLETE |
 | Orchestrator real mode | — | LOW | `handoffs/active/orchestrator.md` | ✅ READY (see startup commands below) |
-| Kernel development | — | — | `handoffs/active/kernel-development.md` | ✅ COMPLETE (no PR - gains too small) |
+| Kernel development | — | — | See "AVX-512 VNNI Q8_0" section below | ✅ COMPLETE (no PR - gains too small) |
 | Frontend Architecture | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
 | CLI Parity Features | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
-| AMD PACE Testing | — | — | `handoffs/active/amd-pace-testing.md` | ✅ COMPLETE (not adopting) |
+| AMD PACE Testing | — | — | — | ✅ COMPLETE (not adopting) |
 | **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
-| **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-3 COMPLETE |
+| **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-7 COMPLETE (FAISS done) |
 | **Tool/Script Registry Wiring** | — | **MEDIUM** | `progress/2026-01/2026-01-15.md` | ✅ COMPLETE (27 tools wired) |
 | **Native Computational Tools** | — | **HIGH** | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-4 COMPLETE (integration pending) |
 | **Role Mapping Bug** | — | — | `progress/2026-01/2026-01-15.md` | ✅ FIXED (str(Role.X) now returns value) |
 | **Orchestrator Multi-Model Live Test** | — | — | `progress/2026-01/2026-01-15.md` | ✅ VERIFIED (5 models, 459GB) |
-| **Model REPL Tool Compliance** | — | **MEDIUM** | `handoffs/active/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests, 9 benchmark prompts) |
+| **Model REPL Tool Compliance** | — | **MEDIUM** | `handoffs/completed/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests, 9 benchmark prompts) |
 | **Orchestrator Self-Management** | — | **HIGH** | `handoffs/active/orchestrator_self_management.md` | ✅ PHASES 1-8 COMPLETE (Phase 9 optional) |
 | **Session Persistence Layer** | — | **HIGH** | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
 | **Cmprsr Prompt Compression** | — | **HIGH** | `handoffs/active/cmprsr_prompt_compression.md` | 📋 NEW (weights availability TBD) |
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
+| **TOON Format Integration** | A/B testing | **MEDIUM** | `handoffs/active/toon_format_integration.md` | ✅ PHASES 1-3.1 COMPLETE (55% token reduction) |
+| **VL Suite Assignment Fix** | — | **LOW** | `progress/2026-01/2026-01-27.md` | ✅ FIXED (VL models now only run `vl` suite) |
+| **Graphiti MemRL Enhancement** | — | **MEDIUM** | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests, perf optimized) |
+| **SWA Prompt Lookup Fix** | — | **LOW** | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |
 
 ---
 
@@ -68,8 +72,9 @@
 | 4 | Escalation Learning | ✅ COMPLETE | Phase 3 |
 | 4b | Memory Seeding (~5K) | ✅ COMPLETE | Phase 4 |
 | 4c | REPL Tool Seeding (48) | ✅ COMPLETE | Phase 4 |
-| 5 | REPL Exploration Learning | READY | Phase 3 |
+| 5 | REPL Exploration Learning | ✅ COMPLETE | Phase 3 |
 | 6 | Claude-as-Judge | OPTIONAL | Phase 3 |
+| 7 | FAISS Migration | ✅ COMPLETE | Phase 1 |
 
 ### Memory Seeding Complete (2026-01-14)
 
@@ -91,6 +96,74 @@ Seeding scripts: `scripts/seed_*.py`
 - search/vision/web/artifacts/memory/escalation/parallel (20)
 
 Seeding scripts: `orchestration/repl_memory/seed_loader.py`
+
+### FAISS Migration Complete (2026-01-27)
+
+Replaced O(n) NumPy mmap with O(log n) FAISS for embedding search:
+- **Performance**: ~35x speedup at 500K entries (70ms → 2ms)
+- **Backend selection**: `EpisodicStore(use_faiss=True)` (default)
+- **Fallback**: `use_faiss=False` for legacy NumPy backend
+- **Migration**: `python scripts/migrate_to_faiss.py --db-path PATH`
+- **Tests**: 24 unit tests passing
+
+Files created:
+- `orchestration/repl_memory/faiss_store.py` - FAISS + NumPy backends
+- `scripts/migrate_to_faiss.py` - Migration script
+- `tests/unit/test_faiss_store.py` - Unit tests
+
+---
+
+## TOON Format Integration (Token Optimization)
+
+**Master Handoff**: `handoffs/active/toon_format_integration.md`
+**Evaluation**: `research/TOON_EVALUATION.md`
+
+### Status: Phases 1-3.1 Complete (2026-01-27)
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1.1 | Install toon library | ✅ COMPLETE |
+| 1.2 | Round-trip tests | ✅ COMPLETE (100% pass) |
+| 1.3 | LLM generation test | SKIPPED (input-only focus) |
+| 2.1 | Token counting | ✅ COMPLETE (55% reduction) |
+| 2.2 | TTFT benchmark | 📋 PENDING (needs production) |
+| 3.1 | Tool output prototype | ✅ COMPLETE |
+| 3.2 | A/B testing | 📋 PENDING |
+
+### Results
+
+| Use Case | JSON tokens | TOON tokens | Reduction |
+|----------|-------------|-------------|-----------|
+| File listings | 302 | 107 | **64.6%** |
+| OCR sections | 521 | 233 | **55.3%** |
+| Escalation context | 196 | 113 | **42.3%** |
+| Grep hits | — | — | **REJECTED** (Markdown better) |
+
+### Key Files
+
+- `src/services/toon_encoder.py` - TOON encoding utilities (7 functions)
+- `tests/unit/test_toon_encoder.py` - 17 unit tests
+- `src/repl_environment.py` - `use_toon_encoding` config flag
+- `pyproject.toml` - `[toon]` optional dependency
+
+### Integrated REPL Tools
+
+| Tool | TOON Benefit | Status |
+|------|--------------|--------|
+| `_list_dir()` | **64.6%** | ✅ Integrated |
+| `_list_procedures()` | ~55% | ✅ Integrated |
+| `_recall()` | ~55% | ✅ Integrated |
+| `_file_info()` | Minimal (single object) | Not integrated |
+| `_grep()` | **-18%** (worse) | Rejected |
+
+### Usage
+
+```python
+config = REPLConfig(use_toon_encoding=True)  # Opt-in
+repl = REPLEnvironment(context="...", config=config)
+```
+
+---
 
 ### Phase 1: Core Implementation (COMPLETE)
 - [x] `episodic_store.py` - SQLite + numpy memory storage

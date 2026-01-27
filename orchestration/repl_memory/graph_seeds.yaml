@@ -1,0 +1,252 @@
+# Graph Seeds for MemRL Enhancement
+# Source: docs/reference/models/QUIRKS.md and benchmarks/results/reviews/summary.csv
+# Created: 2026-01-27
+
+failure_modes:
+  # Critical Quirks
+  - id: qwen3_next_ssm
+    description: "Qwen3-Next state corruption with speculation"
+    severity: 5  # Critical - model becomes unusable
+    symptoms:
+      - "garbage output"
+      - "repetitive loops"
+      - "model hangs"
+      - "ssm state corruption"
+    mitigations:
+      - action: "use expert reduction only"
+        workaround: "--override-kv qwen3next.expert_used_count=int:3"
+        success_rate: 1.0
+
+  - id: qwen3_coder_480b_bos
+    description: "Qwen3-Coder-480B BOS token is comma, breaks speculation"
+    severity: 4  # High - 0% acceptance
+    symptoms:
+      - "0% acceptance rate"
+      - "draft model incompatible"
+      - "bos token mismatch"
+    mitigations:
+      - action: "use expert reduction only, no speculation"
+        workaround: "--override-kv qwen3moe.expert_used_count=int:4"
+        success_rate: 1.0
+
+  - id: deepseek_r1_vocab
+    description: "DeepSeek-R1-Distill vocab size mismatch (152064 vs 151936)"
+    severity: 3  # Medium - spec decode unusable but baseline works
+    symptoms:
+      - "token mismatch error"
+      - "vocab size mismatch"
+      - "speculation failure"
+    mitigations:
+      - action: "use baseline without speculation"
+        workaround: "No speculation available"
+        success_rate: 1.0
+
+  - id: qwen3_thinking_missing_bos
+    description: "Qwen3-Thinking-2507 missing BOS token metadata in GGUF"
+    severity: 4  # High - spec decode fails
+    symptoms:
+      - "special tokens must match target model"
+      - "bos token mismatch"
+      - "draft model special tokens error"
+    mitigations:
+      - action: "use MoE expert reduction only"
+        workaround: "--override-kv qwen3moe.expert_used_count=int:4"
+        success_rate: 1.0
+
+  - id: llama_lookup_large_context
+    description: "llama-lookup crashes on prompts >10K chars"
+    severity: 3  # Medium - workaround available
+    symptoms:
+      - "assertion failed n_tokens <= n_batch"
+      - "llama-context crash"
+      - "large prompt crash"
+    mitigations:
+      - action: "use llama-cli --lookup-ngram-min instead"
+        workaround: "llama-cli --lookup-ngram-min 3 -f prompt.txt"
+        success_rate: 1.0
+
+  - id: vl_models_speculation
+    description: "VL models timeout/crash with speculative decoding"
+    severity: 4  # High - spec decode not supported
+    symptoms:
+      - "timeout with speculation"
+      - "vl model crash"
+      - "mmproj not loaded"
+    mitigations:
+      - action: "use llama-mtmd-cli for VL inference"
+        workaround: "llama-mtmd-cli -m model.gguf --mmproj mmproj.gguf"
+        success_rate: 1.0
+      - action: "use MoE reduction for VL-MoE models"
+        workaround: "--override-kv qwen3vlmoe.expert_used_count=int:4"
+        success_rate: 0.9
+
+  - id: interactive_mode_hang
+    description: "llama-cli hangs waiting for input in benchmarks"
+    severity: 2  # Low - easy fix
+    symptoms:
+      - "benchmark hangs"
+      - "waiting for input"
+      - "script timeout"
+    mitigations:
+      - action: "add non-interactive flags"
+        workaround: "--no-display-prompt --simple-io --no-warmup"
+        success_rate: 1.0
+
+  - id: moe_under_4_experts
+    description: "MoE models crash or garbage output with <4 experts"
+    severity: 5  # Critical - SIGSEGV possible
+    symptoms:
+      - "sigsegv"
+      - "garbage output"
+      - "utf-8 decode error"
+      - "moe instability"
+    mitigations:
+      - action: "use minimum 4 experts"
+        workaround: "--override-kv MODEL.expert_used_count=int:4"
+        success_rate: 1.0
+
+  - id: temperature_low_acceptance
+    description: "Low spec decode acceptance at temp=0 for some models"
+    severity: 2  # Low - performance issue, not crash
+    symptoms:
+      - "low acceptance rate"
+      - "speculation ineffective"
+      - "temp=0 slow"
+    mitigations:
+      - action: "increase temperature to 0.3-0.7"
+        workaround: "--temp 0.5 or --temp 0.7"
+        success_rate: 0.7
+
+  - id: repl_tool_noncompliance
+    description: "Models use Python imports instead of REPL tools"
+    severity: 3  # Medium - recoverable but wastes turns
+    symptoms:
+      - "security error dangerous operation"
+      - "import os blocked"
+      - "pathlib not allowed"
+    mitigations:
+      - action: "add explicit NO IMPORTS warning to system prompt"
+        workaround: "Add: NO IMPORTS - use ONLY the tools above"
+        success_rate: 0.8
+
+  - id: think_tag_token_inflation
+    description: "Thinking models inflate token counts with <think> tags"
+    severity: 1  # Minimal - metric parsing issue
+    symptoms:
+      - "think tags in output"
+      - "inflated token count"
+      - "thinking tokens included"
+    mitigations:
+      - action: "parse output to separate thinking from response"
+        workaround: "Split on </think> tag"
+        success_rate: 1.0
+
+  - id: gemma3_swa_fixed
+    description: "Gemma-3 SWA incompatibility with spec decode (FIXED)"
+    severity: 1  # Now fixed
+    symptoms:
+      - "kv cache allocation failed"
+      - "swa memory explosion"
+      - "sliding window error"
+    mitigations:
+      - action: "upgrade to PR #18720 or newer llama.cpp"
+        workaround: "Use production-consolidated branch"
+        success_rate: 1.0
+
+  - id: vl_mtmd_crash
+    description: "VL models crash without MTMD fixes"
+    severity: 4  # High - model unusable
+    symptoms:
+      - "mtmd helper decode crash"
+      - "vl decode failure"
+      - "llama context decode crash"
+    mitigations:
+      - action: "cherry-pick MTMD fixes"
+        workaround: "Commits e047f9ee9, d98b54812, c945aaaef"
+        success_rate: 1.0
+
+  - id: json_parse_failure
+    description: "Model output not valid JSON for structured tasks"
+    severity: 3  # Medium - retryable
+    symptoms:
+      - "json parse error"
+      - "invalid json"
+      - "malformed response"
+    mitigations:
+      - action: "add JSON output instructions"
+        workaround: "Add: Output ONLY valid JSON, no explanation"
+        success_rate: 0.7
+
+  - id: connection_refused
+    description: "llama.cpp server not responding"
+    severity: 4  # High - blocking
+    symptoms:
+      - "connection refused"
+      - "econnrefused"
+      - "cannot connect to server"
+    mitigations:
+      - action: "restart server, check port"
+        workaround: "Verify server running on expected port"
+        success_rate: 0.9
+
+hypotheses:
+  # From RESULTS.md benchmarks - action|task_type combinations
+  - claim: "speculative_decode|code_generation"
+    initial_confidence: 0.85
+    rationale: "Qwen2.5-Coder-32B + 0.5B = 11x speedup, 67% acceptance"
+
+  - claim: "prompt_lookup|summarization"
+    initial_confidence: 0.82
+    rationale: "95.18 t/s on document QA, 12.7x speedup"
+
+  - claim: "prompt_lookup|code_editing"
+    initial_confidence: 0.78
+    rationale: "25.82 t/s on refactoring, 8.6x speedup"
+
+  - claim: "expert_reduction_4|moe_reasoning"
+    initial_confidence: 0.75
+    rationale: "Qwen3-235B at 6.75 t/s with quality preservation"
+
+  - claim: "expert_reduction_4|moe_code"
+    initial_confidence: 0.72
+    rationale: "Qwen3-Coder-480B at 10.3 t/s with quality"
+
+  - claim: "no_speculation|ssm_models"
+    initial_confidence: 0.95
+    rationale: "Qwen3-Next MUST use expert reduction only"
+
+  - claim: "no_speculation|480b_models"
+    initial_confidence: 0.95
+    rationale: "Qwen3-Coder-480B BOS mismatch breaks all draft"
+
+  - claim: "temperature_0.7|vision_tasks"
+    initial_confidence: 0.70
+    rationale: "Qwen2.5-VL-7B: 28.3 → 57.1 t/s at temp=0.7"
+
+  - claim: "temperature_0.5|math_tasks"
+    initial_confidence: 0.65
+    rationale: "Qwen2.5-Math-72B: 6.0 → 7.5 t/s at temp=0.5"
+
+  - claim: "temperature_0|code_tasks"
+    initial_confidence: 0.80
+    rationale: "Qwen2.5-Coder-32B performs best at temp=0"
+
+  - claim: "mtmd_cli|vl_inference"
+    initial_confidence: 0.90
+    rationale: "Only llama-mtmd-cli supports mmproj loading"
+
+  - claim: "baseline|deepseek_r1"
+    initial_confidence: 0.88
+    rationale: "No compatible draft model, but baseline quality is excellent"
+
+  - claim: "ngram_lookup|long_context"
+    initial_confidence: 0.75
+    rationale: "llama-cli --lookup-ngram-min works where llama-lookup crashes"
+
+  - claim: "non_interactive_flags|benchmarking"
+    initial_confidence: 0.95
+    rationale: "--no-display-prompt --simple-io prevents hangs"
+
+  - claim: "explicit_tool_instructions|repl_compliance"
+    initial_confidence: 0.72
+    rationale: "Models need explicit NO IMPORTS warning"

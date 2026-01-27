@@ -263,6 +263,54 @@ store = EpisodicStore(db_path="/path/to/data", use_faiss=True)
 store = EpisodicStore(db_path="/path/to/data", use_faiss=False)
 ```
 
+### Performance Optimizations (2026-01-27)
+
+The episodic memory system has been optimized for low-latency operation:
+
+| Component | Before | After | Improvement |
+|-----------|--------|-------|-------------|
+| Embedding generation | 50-200ms | 2-5ms | **40x faster** |
+| Storage (FAISS persist) | 10-50ms blocking | ~0ms (async) | Non-blocking |
+| Graph penalty lookup | 5-20ms | <1ms | TTL cache |
+| id_map lookup | O(n) | O(1) | Dict-based |
+
+**Embedding Server (HOT Tier)**
+
+The embedding server runs on port 8090 as part of the HOT tier:
+
+```bash
+# Start orchestrator stack (includes embedding server)
+python scripts/server/orchestrator_stack.py start --hot-only
+```
+
+Fallback chain: HTTP server (2-5ms) → subprocess (50-200ms) → hash fallback (<1ms)
+
+**Write-Behind Persistence**
+
+FAISS index persists asynchronously every 10 seconds:
+
+```python
+# Standard use (non-blocking, batched writes)
+store = EpisodicStore(flush_interval=10.0)
+store.store(embedding, action, action_type, context)
+
+# ACID-critical use (synchronous flush)
+store.store_immediate(embedding, action, action_type, context)
+```
+
+**Graph Penalty Caching**
+
+Graph lookups for failure penalties and hypothesis confidence use TTL caching:
+
+```python
+from orchestration.repl_memory import GraphEnhancedRetriever
+
+retriever = GraphEnhancedRetriever(
+    cache_ttl=60,       # 60 second TTL
+    cache_maxsize=500   # Max 500 cached entries
+)
+```
+
 ### Seeding Episodic Memory
 
 ```bash

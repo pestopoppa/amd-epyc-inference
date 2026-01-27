@@ -1,25 +1,35 @@
 """
 TaskEmbedder: Generate embeddings for TaskIR and related content.
 
-Uses Qwen2.5-Coder-0.5B via llama-embedding for efficient embedding generation.
+Uses Qwen2.5-Coder-0.5B via llama-server /embedding endpoint for efficient embedding.
+Falls back to subprocess (llama-embedding) if server unavailable.
 Falls back to hash-based pseudo-embeddings if model is unavailable.
+
+Performance:
+- HTTP server: 2-5ms per embedding (40x faster)
+- Subprocess: 50-200ms per embedding
+- Hash fallback: <1ms but no semantic similarity
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
 # Default model path (Qwen2.5-Coder-0.5B for embeddings)
 # Use lmstudio path structure per model_registry.yaml (model_base_path + relative path)
 DEFAULT_MODEL_PATH = Path("/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
 DEFAULT_EMBEDDING_BINARY = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-embedding")
+DEFAULT_SERVER_URL = "http://127.0.0.1:8090"
 
 
 @dataclass
@@ -32,16 +42,18 @@ class EmbeddingConfig:
     threads: int = 8  # Use fewer threads for embedding (fast operation)
     timeout: int = 30  # Seconds
     use_fallback: bool = True  # Fall back to hash-based if model unavailable
+    server_url: str = DEFAULT_SERVER_URL  # Embedding server URL
+    use_server: bool = True  # Try HTTP server first (40x faster)
 
 
 class TaskEmbedder:
     """
     Generate embeddings for TaskIR and other orchestration content.
 
-    Embedding strategy:
-    1. Serialize content to structured text
-    2. Generate embedding via llama-embedding
-    3. Normalize to unit vector
+    Embedding strategy (in priority order):
+    1. HTTP server (http://127.0.0.1:8090/embedding) - 2-5ms
+    2. Subprocess (llama-embedding binary) - 50-200ms
+    3. Hash-based pseudo-embeddings - fallback
 
     Fallback:
     - If model unavailable, use hash-based pseudo-embeddings
@@ -52,6 +64,8 @@ class TaskEmbedder:
     def __init__(self, config: Optional[EmbeddingConfig] = None):
         self.config = config or EmbeddingConfig()
         self._model_available = self._check_model()
+        self._server_available: Optional[bool] = None  # Lazy check
+        self._http_client = None  # Lazy httpx client
 
     def _check_model(self) -> bool:
         """Check if embedding model and binary are available."""
@@ -59,6 +73,71 @@ class TaskEmbedder:
             self.config.model_path.exists()
             and self.config.embedding_binary.exists()
         )
+
+    def _check_server(self) -> bool:
+        """Check if embedding server is available (lazy, cached)."""
+        if self._server_available is not None:
+            return self._server_available
+
+        if not self.config.use_server:
+            self._server_available = False
+            return False
+
+        try:
+            import httpx
+            with httpx.Client(timeout=2.0) as client:
+                resp = client.get(f"{self.config.server_url}/health")
+                self._server_available = resp.status_code == 200
+        except Exception:
+            self._server_available = False
+
+        if self._server_available:
+            logger.debug("Embedding server available at %s", self.config.server_url)
+        else:
+            logger.debug("Embedding server not available, falling back to subprocess")
+
+        return self._server_available
+
+    def _get_http_client(self):
+        """Get or create httpx client (lazy initialization)."""
+        if self._http_client is None:
+            import httpx
+            self._http_client = httpx.Client(timeout=10.0)
+        return self._http_client
+
+    def _generate_embedding_http(self, text: str) -> np.ndarray:
+        """Generate embedding using HTTP server (2-5ms)."""
+        client = self._get_http_client()
+
+        # llama-server /embedding endpoint format
+        resp = client.post(
+            f"{self.config.server_url}/embedding",
+            json={"content": text},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        # llama-server returns: {"embedding": [[...]], ...}
+        # or {"data": [{"embedding": [...]}], ...}
+        if "embedding" in data:
+            # Direct embedding format
+            embedding_data = data["embedding"]
+            if isinstance(embedding_data[0], list):
+                embedding = np.array(embedding_data[0], dtype=np.float32)
+            else:
+                embedding = np.array(embedding_data, dtype=np.float32)
+        elif "data" in data and len(data["data"]) > 0:
+            # OpenAI-compatible format
+            embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
+        else:
+            raise ValueError(f"Unexpected embedding response format: {list(data.keys())}")
+
+        # Normalize to unit vector
+        norm = np.linalg.norm(embedding)
+        if norm > 0:
+            embedding = embedding / norm
+
+        return embedding
 
     def _serialize_task_ir(self, task_ir: Dict[str, Any]) -> str:
         """
@@ -251,17 +330,27 @@ class TaskEmbedder:
         return self._generate_embedding(text)
 
     def _generate_embedding(self, text: str) -> np.ndarray:
-        """Generate embedding using available method."""
+        """Generate embedding using available method (HTTP > subprocess > hash)."""
+        # Try HTTP server first (2-5ms)
+        if self._check_server():
+            try:
+                return self._generate_embedding_http(text)
+            except Exception as e:
+                logger.warning("Embedding server failed (%s), falling back to subprocess", e)
+                self._server_available = False  # Reset to retry later
+
+        # Try subprocess (50-200ms)
         if self._model_available:
             try:
                 return self._generate_embedding_llama(text)
             except Exception as e:
                 if self.config.use_fallback:
-                    # Log warning and fall back
-                    print(f"Warning: llama-embedding failed ({e}), using fallback")
+                    logger.warning("llama-embedding failed (%s), using hash fallback", e)
                     return self._generate_embedding_fallback(text)
                 raise
-        elif self.config.use_fallback:
+
+        # Hash fallback
+        if self.config.use_fallback:
             return self._generate_embedding_fallback(text)
         else:
             raise RuntimeError("Embedding model not available and fallback disabled")
@@ -290,3 +379,14 @@ class TaskEmbedder:
     def is_model_available(self) -> bool:
         """Check if the neural embedding model is available."""
         return self._model_available
+
+    @property
+    def is_server_available(self) -> bool:
+        """Check if the embedding server is available."""
+        return self._check_server()
+
+    def close(self) -> None:
+        """Close HTTP client connection."""
+        if self._http_client is not None:
+            self._http_client.close()
+            self._http_client = None

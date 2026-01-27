@@ -3,29 +3,41 @@ TwoPhaseRetriever: MemRL-style two-phase retrieval for episodic memory.
 
 Phase 1: Semantic filtering - retrieve k candidates by embedding similarity
 Phase 2: Q-value ranking - rank candidates by learned utility
+Phase 3 (optional): Graph-enhanced scoring with failure penalties and hypothesis confidence
 
 This separates "what's similar" from "what's useful" - the key insight from MemRL.
+Enhanced with failure anti-memory and hypothesis tracking from Graphiti-inspired design.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from .embedder import TaskEmbedder
 from .episodic_store import EpisodicStore, MemoryEntry
 
+if TYPE_CHECKING:
+    from .failure_graph import FailureGraph
+    from .hypothesis_graph import HypothesisGraph
+
 
 @dataclass
 class RetrievalResult:
-    """Result of a two-phase retrieval."""
+    """Result of a two-phase (or three-phase) retrieval."""
 
     memory: MemoryEntry
     similarity: float  # Cosine similarity (0-1)
     q_value: float  # Learned utility (0-1)
     combined_score: float  # Weighted combination
+
+    # Graph-enhanced fields (optional)
+    failure_penalty: float = 0.0  # Risk score from failure graph (0-1)
+    hypothesis_confidence: float = 1.0  # Confidence from hypothesis graph (0-1)
+    adjusted_score: float = 0.0  # Final score after graph adjustments
+    warnings: List[str] = field(default_factory=list)  # Low-confidence warnings
 
 
 @dataclass
@@ -370,3 +382,226 @@ class RuleBasedRouter:
             if any(kw in objective for kw in ["math", "calculate", "prove", "theorem"]):
                 return True
         return False
+
+
+class GraphEnhancedRetriever(TwoPhaseRetriever):
+    """
+    Graph-enhanced retriever with failure anti-memory and hypothesis tracking.
+
+    Extends TwoPhaseRetriever with:
+    - Failure graph penalty: Penalize actions linked to past failures
+    - Hypothesis confidence: Warn on low-confidence action-task combinations
+    - TTL caching: Graph lookups cached for 60s (80%+ cache hit rate expected)
+
+    Scoring formula:
+        adjusted_score = similarity × Q_value × (1 - failure_penalty) × hypothesis_confidence
+    """
+
+    def __init__(
+        self,
+        store: EpisodicStore,
+        embedder: TaskEmbedder,
+        failure_graph: Optional["FailureGraph"] = None,
+        hypothesis_graph: Optional["HypothesisGraph"] = None,
+        config: Optional[RetrievalConfig] = None,
+        cache_ttl: int = 60,  # Cache TTL in seconds
+        cache_maxsize: int = 500,  # Max cached items
+    ):
+        super().__init__(store, embedder, config)
+        self.failure_graph = failure_graph
+        self.hypothesis_graph = hypothesis_graph
+
+        # TTL caches for graph lookups (5-20ms -> <1ms for cache hits)
+        try:
+            from cachetools import TTLCache
+            self._failure_cache: Optional[TTLCache] = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+            self._confidence_cache: Optional[TTLCache] = TTLCache(maxsize=cache_maxsize, ttl=cache_ttl)
+        except ImportError:
+            # cachetools not installed - fall back to no caching
+            self._failure_cache = None
+            self._confidence_cache = None
+
+    def _get_failure_penalty(self, action: str) -> float:
+        """Get failure penalty with caching (5-20ms -> <1ms for cache hits)."""
+        if self.failure_graph is None:
+            return 0.0
+
+        # Check cache first
+        if self._failure_cache is not None:
+            if action in self._failure_cache:
+                return self._failure_cache[action]
+
+        # Cache miss - fetch from graph
+        try:
+            penalty = self.failure_graph.get_failure_risk(action)
+            if self._failure_cache is not None:
+                self._failure_cache[action] = penalty
+            return penalty
+        except Exception:
+            return 0.0  # Graceful degradation
+
+    def _get_hypothesis_confidence(self, action: str, task_type: str) -> float:
+        """Get hypothesis confidence with caching (5-20ms -> <1ms for cache hits)."""
+        if self.hypothesis_graph is None or not task_type:
+            return 1.0
+
+        # Check cache first (key is action|task_type)
+        cache_key = f"{action}|{task_type}"
+        if self._confidence_cache is not None:
+            if cache_key in self._confidence_cache:
+                return self._confidence_cache[cache_key]
+
+        # Cache miss - fetch from graph
+        try:
+            confidence = self.hypothesis_graph.get_confidence(action, task_type)
+            if self._confidence_cache is not None:
+                self._confidence_cache[cache_key] = confidence
+            return confidence
+        except Exception:
+            return 1.0  # Graceful degradation
+
+    def _retrieve(
+        self,
+        embedding: np.ndarray,
+        action_type: Optional[str] = None,
+        task_type: Optional[str] = None,
+    ) -> List[RetrievalResult]:
+        """
+        Execute three-phase retrieval with graph enhancement.
+
+        Args:
+            embedding: Query embedding
+            action_type: Optional filter by action type
+            task_type: Task type for hypothesis lookup
+
+        Returns:
+            List of RetrievalResult sorted by adjusted score
+        """
+        # Phase 1 & 2: Standard retrieval
+        candidates = self.store.retrieve_by_similarity(
+            embedding,
+            k=self.config.semantic_k,
+            action_type=action_type,
+            min_q_value=self.config.min_q_value,
+        )
+
+        if not candidates:
+            return []
+
+        # Compute similarities for candidates
+        query_norm = embedding / (np.linalg.norm(embedding) + 1e-8)
+        results = []
+
+        for memory in candidates:
+            # Handle case where embedding might be None (FAISS optimization)
+            if memory.embedding is None:
+                similarity = memory.similarity_score  # Use pre-computed from FAISS
+            else:
+                mem_norm = memory.embedding / (np.linalg.norm(memory.embedding) + 1e-8)
+                similarity = float(np.dot(query_norm, mem_norm))
+
+            # Skip if below similarity threshold
+            if similarity < self.config.min_similarity:
+                continue
+
+            # Phase 2: Combine similarity and Q-value
+            combined = (
+                self.config.q_weight * memory.q_value
+                + (1 - self.config.q_weight) * similarity
+            )
+
+            # Phase 3: Graph-enhanced scoring (with caching)
+            warnings = []
+
+            # Get failure penalty with caching
+            failure_penalty = self._get_failure_penalty(memory.action)
+
+            # Get hypothesis confidence with caching
+            hypothesis_confidence = self._get_hypothesis_confidence(
+                memory.action, task_type or ""
+            )
+
+            # Add warnings for low confidence (not cached - rare case)
+            if hypothesis_confidence < 0.2 and self.hypothesis_graph is not None and task_type:
+                try:
+                    graph_warnings = self.hypothesis_graph.get_low_confidence_warnings(
+                        memory.action, task_type
+                    )
+                    warnings.extend(graph_warnings)
+                except Exception:
+                    pass  # Graceful degradation
+
+            # Calculate adjusted score
+            adjusted_score = combined * (1 - failure_penalty) * hypothesis_confidence
+
+            results.append(
+                RetrievalResult(
+                    memory=memory,
+                    similarity=similarity,
+                    q_value=memory.q_value,
+                    combined_score=combined,
+                    failure_penalty=failure_penalty,
+                    hypothesis_confidence=hypothesis_confidence,
+                    adjusted_score=adjusted_score,
+                    warnings=warnings,
+                )
+            )
+
+        # Sort by adjusted score (descending)
+        results.sort(key=lambda r: r.adjusted_score, reverse=True)
+
+        # Return top-n
+        return results[: self.config.top_n]
+
+    def retrieve_for_routing(
+        self,
+        task_ir: Dict[str, Any],
+    ) -> List[RetrievalResult]:
+        """Retrieve with graph enhancement for routing."""
+        embedding = self.embedder.embed_task_ir(task_ir)
+        task_type = task_ir.get("task_type", "general")
+        return self._retrieve(embedding, action_type="routing", task_type=task_type)
+
+    def retrieve_for_escalation(
+        self,
+        failure_context: Dict[str, Any],
+    ) -> List[RetrievalResult]:
+        """Retrieve with graph enhancement for escalation."""
+        embedding = self.embedder.embed_failure_context(failure_context)
+        task_type = failure_context.get("task_type", "escalation")
+        return self._retrieve(embedding, action_type="escalation", task_type=task_type)
+
+    def retrieve_for_exploration(
+        self,
+        query: str,
+        context_preview: str,
+        task_type: str = "exploration",
+    ) -> List[RetrievalResult]:
+        """Retrieve with graph enhancement for exploration."""
+        embedding = self.embedder.embed_exploration(query, context_preview)
+        return self._retrieve(embedding, action_type="exploration", task_type=task_type)
+
+    def get_best_action(
+        self,
+        results: List[RetrievalResult],
+    ) -> Optional[Tuple[str, float, List[str]]]:
+        """
+        Get the best action with warnings.
+
+        Args:
+            results: Retrieval results
+
+        Returns:
+            (action, confidence, warnings) tuple or None if not confident
+        """
+        if not results:
+            return None
+
+        best = results[0]
+        # Use adjusted_score for graph-enhanced, fall back to combined_score
+        score = best.adjusted_score if best.adjusted_score > 0 else best.combined_score
+
+        if score >= self.config.confidence_threshold:
+            return (best.memory.action, score, best.warnings)
+
+        return None
