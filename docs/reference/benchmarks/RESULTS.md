@@ -687,7 +687,7 @@ A 0.5B model and a 235B model both scoring "100%" meant we couldn't differentiat
 | **Agentic** | Qwen3-4B-Thinking | 98/100 | 11.5 t/s | Best tool calling |
 | **Coder** | Qwen3-235B-A22B | 94/100 | 5.8 t/s | Best code generation |
 | **General** | MathSmith-Qwen3-8B | 95/100 | 16.2 t/s | Best general tasks |
-| **Vision** | Qwen3-VL-8B | 80/100 | 63.4 t/s | Best VL model |
+| **Vision** | Qwen3-VL-4B | 94% (34/36) | 18 t/s | Best VL model (2026-01-27 valid benchmark) |
 | **Fast Draft** | Qwen2.5-0.5B.Q8_0 | 65% | 157 t/s | Speed optimized |
 | **Quality Draft** | Qwen3-1.7B-Q8_0 | 82% | 36 t/s | Quality optimized |
 
