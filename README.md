@@ -28,12 +28,12 @@ LLM inference optimization research and production orchestration system on AMD E
          MoE6, 18 t/s          FAISS + Q-scoring
               |                       |
     +---------+---------+    Learned Routing
-    |         |         |         |
- [Coder]  [Architect] [Ingest]   |
- 32B+0.5B  235B-A22B  80B-A3B   |
- 33 t/s    6.75 t/s   6.3 t/s   |
-    |         |         |         |
-    +----+----+---------+---------+
+    |         |         |             |
+ [Coder]  [Architect] [Ingest]        |
+ 32B+0.5B  235B-A22B  80B-A3B         |
+ 33 t/s    6.75 t/s   6.3 t/s         |
+    |         |         |             |
+    +----+----+---------+-------------+
          |
     [Workers]  [Vision]  [Document OCR]
     7B models   VL-7B    LightOnOCR-2-1B
