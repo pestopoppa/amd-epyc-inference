@@ -721,17 +721,21 @@ Complete production model lineup with relative scoring validation.
 | **architect_general** | Qwen3-235B-A22B | 94.0% | 6.75 t/s | MoE4 experts | 133GB |
 | **architect_coding** | Qwen3-Coder-480B | 88.5% | 10.3 t/s | MoE3 experts | 271GB |
 | **ingest_long_context** | Qwen3-Next-80B-A3B | 77.0% | 8 t/s | MoE2 (SSM, NO SPEC!) | 46GB |
-| **worker_vision** | Qwen2.5-VL-7B-Instruct | 46%/92 VL | 20 t/s | mmproj required | 4.4GB |
+| **vision_qwen3_vl_4b** | Qwen3-VL-4B-Instruct | **94% VL** | 18 t/s | mmproj required | 2.3GB |
 
-#### Vision Models
+#### Vision Models (Valid 2026-01-27 Benchmark)
 
-| Role | Model | General | VL Score | Tier |
-|------|-------|---------|----------|------|
-| **worker_vision** | Qwen2.5-VL-7B | 8% | **92/100** | WARM |
-| **vision_escalation** | Qwen3-VL-30B-A3B | 8% | **92/100** | COLD |
-| vision_qwen3_vl_8b | Qwen3-VL-8B | 79% | 80/100 | COLD |
+| Role | Model | VL Score | Speed | Tier | Use Case |
+|------|-------|----------|-------|------|----------|
+| **vision_qwen3_vl_4b** | Qwen3-VL-4B | **94% (34/36)** | 18 t/s | **HOT** | Document figures (RECOMMENDED) |
+| worker_vision_agentic | Qwen2.5-VL-7B | 81% (29/36) | 17 t/s | WARM | Tool-using vision (only agentic VL) |
+| vision_qwen3_vl_8b | Qwen3-VL-8B | 86% (31/36) | 15 t/s | WARM | Alternative escalation |
+| **vision_escalation** | Qwen3-VL-30B-A3B | 75% (27/36) | 27 t/s | COLD | Manual request only |
 
-**Note:** VL models score low on text-only benchmarks (8%) but excel at vision tasks (92/100).
+**Key Findings:**
+- 4B outperforms 30B/235B due to no timeout truncation and accurate OCR
+- Qwen3-VL = 0% agentic (no tool calls) - use Qwen2.5-VL-7B for agentic vision
+- Use document summary context (~8K chars) for optimal figure analysis
 
 #### Formalizers
 
