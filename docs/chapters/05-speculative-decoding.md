@@ -1,4 +1,4 @@
-# Chapter 02: Speculative Decoding (Track 1)
+# Chapter 05: Speculative Decoding (Track 1)
 
 ## Introduction
 
@@ -119,7 +119,7 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 
 **Root Cause**: SSM architectures maintain recurrent state that cannot be rolled back like KV cache. When draft tokens are rejected, the state is corrupted.
 
-**Solution**: Use expert reduction only for SSM models. See [Chapter 03: MoE Optimization](03-moe-optimization.md).
+**Solution**: Use expert reduction only for SSM models. See [Chapter 06: MoE Optimization](06-moe-optimization.md).
 
 ## References
 
@@ -153,5 +153,4 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 
 ---
 
-*Previous: [Chapter 01: Hardware System](01-hardware-system.md)*
-*Next: [Chapter 03: MoE Optimization](03-moe-optimization.md)*
+*Previous: [Chapter 04: Storage & Safety](04-storage-and-safety.md)* | *Next: [Chapter 06: MoE Optimization](06-moe-optimization.md)*

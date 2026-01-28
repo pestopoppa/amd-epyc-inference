@@ -1,4 +1,4 @@
-# Chapter 04: Prompt Lookup (Track 8)
+# Chapter 07: Prompt Lookup (Track 8)
 
 ## Introduction
 
@@ -90,7 +90,7 @@ def get_draft_tokens(context, prompt):
 
 **CRITICAL**: Do not use prompt lookup with Qwen3-Next (SSM) models.
 
-The SSM architecture requires consecutive token positions. Draft token rejection corrupts the recurrent state. See [Chapter 03: MoE Optimization](03-moe-optimization.md) for SSM-safe alternatives.
+The SSM architecture requires consecutive token positions. Draft token rejection corrupts the recurrent state. See [Chapter 06: MoE Optimization](06-moe-optimization.md) for SSM-safe alternatives.
 
 ## Implementation Notes
 
@@ -148,5 +148,4 @@ If speedup is <1.3x, prompt lookup isn't worth enabling for that task type.
 
 ---
 
-*Previous: [Chapter 03: MoE Optimization](03-moe-optimization.md)*
-*Next: [Chapter 05: Benchmarking Framework](05-benchmarking-framework.md)*
+*Previous: [Chapter 06: MoE Optimization](06-moe-optimization.md)* | *Next: [Chapter 08: RadixAttention](08-radix-attention.md)*

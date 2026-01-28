@@ -1,4 +1,4 @@
-# Chapter 06: Orchestration Architecture
+# Chapter 10: Orchestration Architecture
 
 ## Introduction
 
@@ -326,5 +326,4 @@ The orchestration layer is implemented in:
 
 ---
 
-*Previous: [Chapter 05: Benchmarking Framework](05-benchmarking-framework.md)*
-*Next: [Chapter 07: RadixAttention](07-radix-attention.md)*
+*Previous: [Chapter 09: Deprecated Approaches](09-deprecated-approaches.md)* | *Next: [Chapter 11: REPL Environment](11-repl-environment.md)*

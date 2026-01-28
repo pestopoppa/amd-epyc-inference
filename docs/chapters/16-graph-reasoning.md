@@ -1,0 +1,260 @@
+# Chapter 16: Graph-Based Reasoning
+
+## Introduction
+
+The orchestration system uses two Kuzu graph databases to track failure patterns and hypothesis confidence. This provides "anti-memory" (learning what NOT to do) and confidence-based warnings for action-task combinations.
+
+**Key insight:** Current Q-learning optimizes for repeating success. But in debugging and optimization, avoiding known failure modes is often more valuable than finding the optimal success path.
+
+The graph-based reasoning layer consists of:
+- **Failure Graph** (~14MB): Tracks failure modes, symptoms, and mitigations
+- **Hypothesis Graph** (~4.6MB): Tracks action→task confidence with asymptotic learning
+
+Both graphs use Kuzu 0.11+ for native graph queries and integrate with the episodic memory store via memory link nodes.
+
+## Failure Graph Architecture
+
+### Schema
+
+The Failure Graph tracks three node types and five relationship types:
+
+| Node Type | Primary Key | Properties |
+|-----------|-------------|------------|
+| `FailureMode` | id (STRING) | description, severity (1-5), first_seen, last_seen |
+| `Symptom` | id (STRING) | pattern (regex/keyword), detection_method |
+| `Mitigation` | id (STRING) | action, success_rate (0.0-1.0), attempt_count, success_count |
+| `MemoryLink` | id (STRING) | memory_id (episodic store reference) |
+
+| Relationship | From → To | Meaning |
+|--------------|-----------|---------|
+| `HAS_SYMPTOM` | FailureMode → Symptom | Observable pattern indicating failure |
+| `MITIGATED_BY` | FailureMode → Mitigation | Action that resolved failure |
+| `PRECEDED_BY` | FailureMode → FailureMode | Causal failure chain |
+| `RECURRED_AFTER` | FailureMode → Mitigation | Mitigation didn't work |
+| `TRIGGERED_FROM` | MemoryLink → FailureMode | Links to episodic memory |
+
+### Core Operations
+
+**Recording a Failure:**
+
+```python
+from orchestration.repl_memory.failure_graph import FailureGraph
+
+graph = FailureGraph()
+
+# Detect symptoms from error logs
+symptoms = [
+    "garbage output",
+    "ssm state corruption",
+    "model hangs"
+]
+
+# Record failure with severity 5 (critical)
+failure_id = graph.record_failure(
+    memory_id="episode_uuid",
+    symptoms=symptoms,
+    description="Qwen3-Next state corruption with speculation",
+    severity=5,
+    previous_failure_id=None  # Optional for causal chains
+)
+```
+
+**Recording a Mitigation:**
+
+```python
+# Try a mitigation
+action = "use expert reduction only, no speculation"
+
+# Record outcome
+mitigation_id = graph.record_mitigation(
+    failure_id=failure_id,
+    action=action,
+    worked=True  # Success or failure
+)
+# Updates success_rate automatically based on attempt history
+```
+
+**Finding Matching Failures:**
+
+```python
+# Current task is failing - find similar failures
+current_symptoms = ["garbage output", "repetitive loops"]
+
+failures = graph.find_matching_failures(current_symptoms)
+# Returns List[FailureMode] sorted by symptom overlap
+
+if failures:
+    # Get effective mitigations
+    mitigations = graph.get_effective_mitigations(current_symptoms)
+    # Returns [{"action": str, "success_rate": float}]
+
+    best_mitigation = mitigations[0]["action"]
+    print(f"Suggested fix: {best_mitigation}")
+```
+
+**Failure Risk Assessment:**
+
+```python
+# Before executing an action, check failure risk
+action = "use speculative decoding with SSM model"
+risk = graph.get_failure_risk(action)
+
+if risk > 0.5:
+    print(f"WARNING: High failure risk ({risk:.2f}) for this action")
+```
+
+### Seeded Failure Modes
+
+The system is pre-seeded with 14 known failure modes from `orchestration/repl_memory/graph_seeds.yaml`:
+
+| Failure ID | Description | Severity | Symptoms |
+|------------|-------------|----------|----------|
+| `qwen3_next_ssm` | SSM state corruption with speculation | 5 | garbage output, repetitive loops |
+| `qwen3_coder_480b_bos` | BOS token mismatch breaks speculation | 4 | 0% acceptance rate |
+| `deepseek_r1_vocab` | Vocab size mismatch (152064 vs 151936) | 3 | token mismatch error |
+| `llama_lookup_large_context` | llama-lookup crashes on prompts >10K | 3 | assertion failed n_tokens <= n_batch |
+| `vl_models_speculation` | VL models timeout with spec decode | 4 | timeout, mmproj not loaded |
+| `interactive_mode_hang` | llama-cli hangs waiting for input | 2 | benchmark hangs |
+| `moe_under_4_experts` | MoE models crash with <4 experts | 5 | SIGSEGV, garbage output |
+| `repl_tool_noncompliance` | Models use Python imports instead of tools | 3 | security error, import blocked |
+
+## Hypothesis Graph Architecture
+
+### Confidence Tracking
+
+The Hypothesis Graph tracks confidence in action-task combinations using asymptotic Bayesian updates:
+
+```python
+# Learning rate for confidence updates
+LEARNING_RATE = 0.1
+
+# On success:
+new_confidence = old_confidence + LEARNING_RATE * (1.0 - old_confidence)
+
+# On failure:
+new_confidence = old_confidence - LEARNING_RATE * old_confidence
+```
+
+This formula ensures confidence asymptotically approaches 1.0 on repeated success and 0.0 on repeated failure.
+
+### Schema
+
+| Node Type | Properties |
+|-----------|------------|
+| `Hypothesis` | id, claim (action\|task_type), confidence (0.0-1.0), created_at, tested |
+| `HypothesisEvidence` | id, evidence_type (supports/contradicts), source, timestamp |
+| `HypothesisMemoryLink` | id, memory_id (episodic store reference) |
+
+| Relationship | Meaning |
+|--------------|---------|
+| `SUPPORTS` | Evidence → Hypothesis (successful outcome) |
+| `CONTRADICTS` | Evidence → Hypothesis (failed outcome) |
+| `GENERATED_FROM` | Hypothesis → MemoryLink (created from episode) |
+
+### Usage Patterns
+
+**Creating Hypotheses:**
+
+```python
+from orchestration.repl_memory.hypothesis_graph import HypothesisGraph
+
+graph = HypothesisGraph()
+
+# Create hypothesis for action-task combination
+hypothesis_id = graph.get_or_create_hypothesis(
+    action="speculative_decode",
+    task_type="code_generation",
+    memory_id="episode_uuid"
+)
+```
+
+**Adding Evidence:**
+
+```python
+# After executing the action
+new_confidence = graph.add_evidence(
+    hypothesis_id=hypothesis_id,
+    outcome="success",  # or "failure"
+    source="benchmark_run_uuid"
+)
+# Returns updated confidence score
+```
+
+**Pre-execution Warnings:**
+
+```python
+# Before suggesting an action
+confidence = graph.get_confidence(
+    action="speculative_decode",
+    task_type="vision_tasks"
+)
+
+if confidence < 0.3:
+    warnings = graph.get_low_confidence_warnings(
+        action="speculative_decode",
+        task_type="vision_tasks",
+        threshold=0.3
+    )
+    print("\n".join(warnings))
+    # "Low confidence (0.15) for 'speculative_decode' on 'vision_tasks'.
+    #  Evidence: benchmark_xyz, episode_abc"
+```
+
+### Seeded Hypotheses
+
+The system is pre-seeded with 15 high-confidence hypotheses from successful benchmarks:
+
+| Hypothesis | Confidence | Rationale |
+|------------|------------|-----------|
+| `speculative_decode\|code_generation` | 0.85 | Qwen2.5-Coder-32B + 0.5B = 11x speedup |
+| `prompt_lookup\|summarization` | 0.82 | 95.18 t/s, 12.7x speedup |
+| `expert_reduction_4\|moe_reasoning` | 0.75 | Qwen3-235B at 6.75 t/s with quality |
+| `no_speculation\|ssm_models` | 0.95 | Qwen3-Next MUST use expert reduction only |
+| `temperature_0.7\|vision_tasks` | 0.70 | Qwen2.5-VL-7B: 28.3 → 57.1 t/s |
+
+## Query Patterns
+
+**Get Causal Failure Chain:**
+
+```cypher
+MATCH path = (f1:FailureMode {id: $id})-[:PRECEDED_BY*1..5]->(f2:FailureMode)
+RETURN f2.id, f2.description, f2.severity
+ORDER BY f2.first_seen ASC
+```
+
+**Find Untested High-Confidence Hypotheses:**
+
+```cypher
+MATCH (h:Hypothesis)
+WHERE h.tested = false AND h.confidence >= 0.7
+RETURN h.id, h.claim, h.confidence
+ORDER BY h.confidence DESC
+```
+
+**Get Supporting Evidence for Hypothesis:**
+
+```cypher
+MATCH (e:HypothesisEvidence)-[:SUPPORTS]->(h:Hypothesis {id: $id})
+RETURN e.id, e.source, e.timestamp
+ORDER BY e.timestamp DESC
+```
+
+## Storage and Performance
+
+| Metric | Failure Graph | Hypothesis Graph |
+|--------|---------------|------------------|
+| Database size | ~14MB | ~4.6MB |
+| Node count | 13 failures + 45 symptoms + 16 mitigations | 15 hypotheses + evidence |
+| Storage location | `/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db/failure_graph/` | `.../hypothesis_graph/` |
+| Backend | Kuzu 0.11+ | Kuzu 0.11+ |
+
+## References
+
+- **Source**: `orchestration/repl_memory/failure_graph.py`, `hypothesis_graph.py`
+- **Seeds**: `orchestration/repl_memory/graph_seeds.yaml`
+- **Model quirks**: Extracted from `docs/reference/models/QUIRKS.md`
+- **Benchmark evidence**: Extracted from `benchmarks/results/reviews/summary.csv`
+
+---
+
+*Previous: [Chapter 15: MemRL System](15-memrl-system.md)* | *Next: [Chapter 17: Memory Seeding](17-memory-seeding.md)*

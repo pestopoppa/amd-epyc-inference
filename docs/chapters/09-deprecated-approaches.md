@@ -1,4 +1,4 @@
-# Chapter 08: Deprecated Approaches
+# Chapter 09: Deprecated Approaches
 
 ## Introduction
 
@@ -225,5 +225,4 @@ Trains a small adapter network that predicts when the draft model will be accept
 
 ---
 
-*Previous: [Chapter 07: RadixAttention](07-radix-attention.md)*
-*Back to: [Index](INDEX.md)*
+*Previous: [Chapter 08: RadixAttention](08-radix-attention.md)* | *Next: [Chapter 10: Orchestration Architecture](10-orchestration-architecture.md)*

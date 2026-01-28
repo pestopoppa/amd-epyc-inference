@@ -28,7 +28,7 @@ We optimize LLM inference on CPU using three main techniques:
 ## First Steps
 
 1. **Read the hardware overview**: [Chapter 01](../chapters/01-hardware-system.md)
-2. **Understand the techniques**: [Chapter 02](../chapters/02-speculative-decoding.md)
+2. **Understand the techniques**: [Chapter 05](../chapters/05-speculative-decoding.md)
 3. **Try a command**: See [Quick Reference](../reference/commands/QUICK_REFERENCE.md)
 
 ## Key Constraints

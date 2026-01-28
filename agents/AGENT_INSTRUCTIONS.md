@@ -237,7 +237,7 @@ role = Role.CODER_PRIMARY  # IDE catches typos
 | REPL sandbox | `src/repl_environment.py` |
 | Model registry | `orchestration/model_registry.yaml` |
 | Architecture docs | `docs/ARCHITECTURE.md` |
-| Open source recommendations | `docs/OPEN_SOURCE_RECOMMENDATIONS.md` |
+| Open source recommendations | `docs/reference/OPEN_SOURCE_RECOMMENDATIONS.md` |
 
 ### Where to Put New Things
 

@@ -1,47 +1,95 @@
 # Research Chapters Index
 
-Completed research findings for AMD EPYC 9655 inference optimization.
+23 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
 
-## Reading Order
+## Reading Paths
 
-For newcomers, read chapters in order for the research journey narrative. For reference, jump directly to topics of interest.
+### For Contributors (New to the project)
 
-## Chapter List
+1. [Ch01](01-hardware-system.md) Hardware -> [Ch05](05-speculative-decoding.md) Spec Decode -> [Ch06](06-moe-optimization.md) MoE -> [Ch07](07-prompt-lookup.md) Prompt Lookup
+2. [Ch03](03-llama-cpp-toolchain.md) Toolchain -> [Ch09](09-deprecated-approaches.md) Dead Ends -> [Ch21](21-benchmarking-framework.md) Benchmarking
+3. [Ch10](10-orchestration-architecture.md) Architecture -> [Ch12](12-production-server-stack.md) Server Stack -> [Ch22](22-tool-registry.md) Tools
 
-| # | Title | Summary | Key Result |
-|---|-------|---------|------------|
-| 01 | [Hardware System](01-hardware-system.md) | AMD EPYC 9655 specs, baseline performance | ~460 GB/s bandwidth |
-| 02 | [Speculative Decoding](02-speculative-decoding.md) | External draft model approach | **11x speedup** on code |
-| 03 | [MoE Optimization](03-moe-optimization.md) | Expert reduction technique | **+52%** on 30B MoE |
-| 04 | [Prompt Lookup](04-prompt-lookup.md) | N-gram matching for grounded tasks | **12.7x** on summarization |
-| 05 | [Benchmarking Framework](05-benchmarking-framework.md) | 8-suite methodology, Claude-as-Judge | 61 models evaluated |
-| 06 | [Orchestration Architecture](06-orchestration-architecture.md) | Hierarchical agent design | TaskIR, escalation chains |
-| 07 | [RadixAttention](07-radix-attention.md) | Prefix caching for orchestrator | >50% cache hit target |
-| 08 | [Deprecated Approaches](08-deprecated-approaches.md) | EAGLE-1, CAS-Spec failures | Documented dead ends |
+### For Agents / Daily Reference
 
----
+| Task | Start Here |
+|------|-----------|
+| Which model for X? | [Ch10](10-orchestration-architecture.md) + [MODELS.md](../reference/models/MODELS.md) |
+| Debugging escalation | [Ch18](18-escalation-and-routing.md) + [Ch16](16-graph-reasoning.md) |
+| Server won't start | [Ch12](12-production-server-stack.md) + [Ch04](04-storage-and-safety.md) |
+| Adding a tool | [Ch22](22-tool-registry.md) + [Ch11](11-repl-environment.md) |
+| Benchmarking a model | [Ch21](21-benchmarking-framework.md) + [Ch19](19-procedure-registry.md) |
+| Memory/learning system | [Ch15](15-memrl-system.md) + [Ch16](16-graph-reasoning.md) + [Ch17](17-memory-seeding.md) |
 
-## By Topic
+### For Researchers / Public Showcase
 
-### Inference Optimization
-- Chapter 02: Speculative Decoding (Track 1)
-- Chapter 03: MoE Optimization (Track 2)
-- Chapter 04: Prompt Lookup (Track 8)
+Novel contributions (recommended reading order):
 
-### Infrastructure
-- Chapter 01: Hardware System
-- Chapter 05: Benchmarking Framework
-
-### Orchestration
-- Chapter 06: Orchestration Architecture
-- Chapter 07: RadixAttention
-
-### Historical
-- Chapter 08: Deprecated Approaches
+1. [Ch05](05-speculative-decoding.md) 11x CPU speedup via speculative decoding
+2. [Ch06](06-moe-optimization.md) Quality-preserving expert reduction
+3. [Ch15](15-memrl-system.md) MemRL: reinforcement learning for model routing
+4. [Ch16](16-graph-reasoning.md) Graph-based failure and hypothesis reasoning
+5. [Ch10](10-orchestration-architecture.md) Hierarchical 4-tier agent architecture
+6. [Ch21](21-benchmarking-framework.md) 8-suite framework with Claude-as-Judge
 
 ---
 
-## Navigation
+## Complete Chapter List
 
-- **[Master Benchmark Results](../reference/benchmarks/RESULTS.md)** — All model scores and speeds
+### Part I: Foundation
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 01 | [Hardware System](01-hardware-system.md) | ~460 GB/s bandwidth, 1.13TB RAM |
+| 02 | [Runtime Environment](02-runtime-environment.md) | 10 feature flags, centralized config |
+| 03 | [llama.cpp Toolchain](03-llama-cpp-toolchain.md) | 3 upstream PRs, production branch safety |
+| 04 | [Storage & Safety](04-storage-and-safety.md) | RAID0 rules, 192-thread memory safety |
+
+### Part II: Inference Optimization
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 05 | [Speculative Decoding](05-speculative-decoding.md) | **11x** speedup on code generation |
+| 06 | [MoE Expert Reduction](06-moe-optimization.md) | **+52%** on 30B MoE models |
+| 07 | [Prompt Lookup](07-prompt-lookup.md) | **12.7x** on summarization tasks |
+| 08 | [RadixAttention](08-radix-attention.md) | >50% cache hit on orchestrator |
+| 09 | [Deprecated Approaches](09-deprecated-approaches.md) | EAGLE-1, CAS-Spec lessons |
+
+### Part III: System Architecture
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 10 | [Orchestration Architecture](10-orchestration-architecture.md) | 4-tier agents, TaskIR, escalation |
+| 11 | [REPL Environment](11-repl-environment.md) | 106KB sandbox, AST security |
+| 12 | [Production Server Stack](12-production-server-stack.md) | 9 servers, ~535GB HOT tier |
+| 13 | [Data Processing Pipelines](13-data-processing-pipelines.md) | 19x OCR speedup, vision batch |
+| 14 | [TOON Encoding](14-toon-encoding.md) | 55% token compression |
+
+### Part IV: Intelligence & Learning
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 15 | [MemRL System](15-memrl-system.md) | 2714 memories, FAISS, Q-scoring |
+| 16 | [Graph-Based Reasoning](16-graph-reasoning.md) | 13 failure modes, Kuzu backend |
+| 17 | [Memory Seeding](17-memory-seeding.md) | 56 seeds, 8 strategies |
+| 18 | [Escalation & Routing](18-escalation-and-routing.md) | Learned + rule-based routing |
+| 19 | [Procedure Registry](19-procedure-registry.md) | 11 procedures, ~350 tokens/op |
+| 20 | [Session Persistence](20-session-persistence.md) | 7-phase checkpoint/resume |
+
+### Part V: Operations & Quality
+
+| # | Title | Key Result |
+|---|-------|------------|
+| 21 | [Benchmarking Framework](21-benchmarking-framework.md) | 8 suites, 77 models scored |
+| 22 | [Tool Registry & Agent Roles](22-tool-registry.md) | 40+ tools, 8 agent roles |
+| 23 | [Security & Monitoring](23-security-and-monitoring.md) | AST sandbox, entropy detection |
+
+---
+
+## Cross-Reference
+
+- **Living Technical Reference**: [ARCHITECTURE.md](../ARCHITECTURE.md) (updated continuously)
+- **Benchmark Data**: [RESULTS.md](../reference/benchmarks/RESULTS.md)
+- **Model Registry**: [model_registry.yaml](../../orchestration/model_registry.yaml)
+- **Model Quirks**: [QUIRKS.md](../reference/models/QUIRKS.md)
 - [Back to README](../../README.md)

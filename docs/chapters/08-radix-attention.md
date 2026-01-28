@@ -1,4 +1,4 @@
-# Chapter 07: RadixAttention Prefix Caching
+# Chapter 08: RadixAttention Prefix Caching
 
 ## Introduction
 
@@ -179,5 +179,4 @@ python -m pytest tests/unit/test_prefix_cache.py -v
 
 ---
 
-*Previous: [Chapter 06: Orchestration Architecture](06-orchestration-architecture.md)*
-*Next: [Chapter 08: Deprecated Approaches](08-deprecated-approaches.md)*
+*Previous: [Chapter 07: Prompt Lookup](07-prompt-lookup.md)* | *Next: [Chapter 09: Deprecated Approaches](09-deprecated-approaches.md)*

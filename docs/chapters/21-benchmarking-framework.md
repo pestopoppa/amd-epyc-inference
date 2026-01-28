@@ -1,4 +1,4 @@
-# Chapter 05: Benchmarking Framework
+# Chapter 21: Benchmarking Framework
 
 ## Introduction
 
@@ -181,5 +181,4 @@ This is important because:
 
 ---
 
-*Previous: [Chapter 04: Prompt Lookup](04-prompt-lookup.md)*
-*Next: [Chapter 06: Orchestration Architecture](06-orchestration-architecture.md)*
+*Previous: [Chapter 20: Session Persistence](20-session-persistence.md)* | *Next: [Chapter 22: Tool Registry & Agent Roles](22-tool-registry.md)*

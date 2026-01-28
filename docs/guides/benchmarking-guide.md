@@ -108,4 +108,4 @@ benchmarks/
 
 ---
 
-*See [Chapter 05](../chapters/05-benchmarking-framework.md) for methodology details.*
+*See [Chapter 21](../chapters/21-benchmarking-framework.md) for methodology details.*

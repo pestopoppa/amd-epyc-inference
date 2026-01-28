@@ -100,4 +100,4 @@ The system uses a split storage design:
 
 ---
 
-*Next: [Chapter 02: Speculative Decoding](02-speculative-decoding.md)*
+*Next: [Chapter 02: Runtime Environment](02-runtime-environment.md)*
