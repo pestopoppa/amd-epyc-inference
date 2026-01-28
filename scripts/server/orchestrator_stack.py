@@ -63,7 +63,7 @@ PORT_MAP = {
     "worker_explore": 8082,  # Explore worker (7B)
     "worker_math": 8082,     # Shares with explore
     "worker_vision": 8082,   # Shares with explore
-    "worker_code": 8092,     # Code worker (7B)
+    # worker_code REMOVED - route to coder_escalation (32B, faster + better quality)
     "worker_fast_1": 8102,   # Fast worker 1 (1.5B, WARM)
     "worker_fast_2": 8112,   # Fast worker 2 (1.5B, WARM)
     # Specialists
@@ -75,30 +75,40 @@ PORT_MAP = {
     "document_formalizer": 9001,
 }
 
-# HOT roles (always started)
-HOT_ROLES = {"frontdoor", "coder_escalation", "worker_explore", "worker_code", "embedder"}
+# HOT roles (always started) - includes architects in HOT tier (510GB total, 45% of 1130GB RAM)
+HOT_ROLES = {
+    "frontdoor", "coder_escalation", "worker_explore", "embedder",
+    "architect_general", "architect_coding", "ingest_long_context"
+}
 
 # Servers to start (unique ports only)
+# HOT tier uses ~510GB total (45% of 1130GB RAM), leaving 620GB for KV cache
 HOT_SERVERS = [
     {"port": 8080, "roles": ["frontdoor", "coder_primary"]},
-    {"port": 8081, "roles": ["coder_escalation"]},
+    {"port": 8081, "roles": ["coder_escalation", "worker_summarize"]},  # Added worker_summarize
     # Worker pool HOT tier
     {"port": 8082, "roles": ["worker_explore", "worker_general", "worker_math", "worker_vision"],
      "worker_pool": True, "worker_type": "explore"},
-    {"port": 8092, "roles": ["worker_code"],
-     "worker_pool": True, "worker_type": "code"},
+    # worker_code REMOVED - route to coder_escalation (32B is faster + better quality)
     {"port": 8090, "roles": ["embedder"], "embedding": True},  # Embedding server
+    # Architects in HOT tier (always resident)
+    {"port": 8083, "roles": ["architect_general"]},
+    {"port": 8084, "roles": ["architect_coding"]},
+    {"port": 8085, "roles": ["ingest_long_context"]},
 ]
 
 # Embedding model (lightweight, always loaded)
 EMBEDDING_MODEL_PATH = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
 
-# Worker pool models
+# Worker pool models (FIXED paths to existing files)
+# NOTE: worker_code removed - route all code tasks to coder_escalation (32B, faster + better quality)
 WORKER_POOL_MODELS = {
-    "explore": "/mnt/raid0/llm/lmstudio/models/Qwen/Qwen2.5-7B-Instruct-GGUF/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-    "code": "/mnt/raid0/llm/lmstudio/models/Qwen/Qwen2.5-Coder-7B-Instruct-GGUF/Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
-    "fast": "/mnt/raid0/llm/lmstudio/models/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
+    "explore": "/mnt/raid0/llm/models/Qwen2.5-7B-Instruct-f16.gguf",
+    "fast": "/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q4_K_M.gguf",
 }
+
+# Draft model for speculative decoding on explore worker
+EXPLORE_DRAFT_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
 
 WARM_SERVERS = [
     {"port": 8083, "roles": ["architect_general"]},
@@ -113,6 +123,61 @@ WARM_SERVERS = [
 
 DEV_MODEL = "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
 DEV_MODEL_PATH = "/mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
+
+
+# =============================================================================
+# Model Path Validation
+# =============================================================================
+
+
+def validate_model_paths() -> list[str]:
+    """Validate all model paths exist. Returns list of errors.
+
+    This prevents hallucinations about missing models by failing fast
+    with clear error messages showing exactly what's missing.
+    """
+    errors = []
+
+    # HOT tier models
+    if not Path(EMBEDDING_MODEL_PATH).exists():
+        errors.append(f"[HOT] Embedding: {EMBEDDING_MODEL_PATH}")
+
+    for worker_type, path in WORKER_POOL_MODELS.items():
+        if not Path(path).exists():
+            errors.append(f"[HOT] Worker '{worker_type}': {path}")
+
+    # Draft model for explore worker spec decode
+    if not Path(EXPLORE_DRAFT_MODEL).exists():
+        errors.append(f"[HOT] Explore draft: {EXPLORE_DRAFT_MODEL}")
+
+    # Architect models (now in HOT tier)
+    architect_models = [
+        ("architect_general", "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-235B-A22B-GGUF/"),
+        ("architect_coding", "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/"),
+        ("ingest_long_context", "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/"),
+    ]
+    for role, path in architect_models:
+        if not Path(path).exists():
+            errors.append(f"[HOT] {role}: {path}")
+
+    # Auxiliary services
+    formalizer = "/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf"
+    if not Path(formalizer).exists():
+        errors.append(f"[AUX] document_formalizer: {formalizer}")
+
+    # Tool registry (required for deterministic tools)
+    tool_registry = Path("/mnt/raid0/llm/claude/orchestration/tool_registry.yaml")
+    if not tool_registry.exists():
+        errors.append(f"[TOOL] tool_registry.yaml: {tool_registry}")
+
+    # C++ math tools (optional - warn but don't fail)
+    cpp_math_tools = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-math-tools")
+    if not cpp_math_tools.exists():
+        # This is a warning, not an error - append with different prefix
+        pass  # Will be checked separately in init_memrl_and_tools
+
+    return errors
+
 
 # =============================================================================
 # State Management
@@ -229,7 +294,7 @@ def build_server_command(
         return [
             str(LLAMA_SERVER),
             "-m", EMBEDDING_MODEL_PATH,
-            "--host", "0.0.0.0",
+            "--host", "127.0.0.1",
             "--port", str(port),
             "-np", "4",  # 4 parallel slots for embedding requests
             "-c", "4096",  # Small context (embeddings don't need long context)
@@ -250,33 +315,35 @@ def build_server_command(
             return [
                 str(LLAMA_SERVER),
                 "-m", model_path,
-                "--host", "0.0.0.0",
+                "--host", "127.0.0.1",
                 "--port", str(port),
                 "-np", "2",  # 2 parallel slots
                 "-c", "8192",  # 4K per slot
                 "-t", "12",  # 12 threads for small model
                 "--flash-attn", "on",
-                "--lookup-ngram-min", "3",  # Prompt lookup
+                # NOTE: --lookup-ngram-min is llama-cli only, not supported by llama-server
             ]
         else:
-            # explore/code workers: 7B model, more threads
+            # explore workers: 7B model with speculative decoding for 46 t/s
+            # NOTE: Exploration only - summarization handled by worker_summarize (32B, 95 t/s)
             return [
                 str(LLAMA_SERVER),
                 "-m", model_path,
-                "--host", "0.0.0.0",
+                "-md", EXPLORE_DRAFT_MODEL,  # Spec decode with 0.5B draft
+                "--draft-max", "24",  # K=24 for optimal speedup
+                "--host", "127.0.0.1",
                 "--port", str(port),
                 "-np", "2",  # 2 parallel slots
                 "-c", "8192",  # 4K per slot
                 "-t", "24",  # 24 threads for 7B model
                 "--flash-attn", "on",
-                "--lookup-ngram-min", "3",  # Prompt lookup
             ]
 
     if dev_mode:
         return [
             str(LLAMA_SERVER),
             "-m", DEV_MODEL_PATH,
-            "--host", "0.0.0.0",
+            "--host", "127.0.0.1",
             "--port", str(port),
             "-np", "4",
             "-c", "4096",
@@ -290,7 +357,7 @@ def build_server_command(
     cmd = [
         str(LLAMA_SERVER),
         "-m", model_path,
-        "--host", "0.0.0.0",
+        "--host", "127.0.0.1",
         "--port", str(port),
         "-np", "2",  # Parallel slots (2 slots for larger context per slot)
         "-c", "32768",  # Context size (16K per slot with np=2)
@@ -313,6 +380,9 @@ def build_server_command(
                 "-md", draft_config.model.full_path,
                 "--draft-max", str(accel.k or 16),
             ])
+
+    # NOTE: Prompt lookup (--lookup-ngram-min) is llama-cli only, not supported by llama-server
+    # For summarization speedup, use spec decode instead (already configured above)
 
     return cmd
 
@@ -341,7 +411,7 @@ def start_server(
 
         with open(log_file, "w") as log:
             env = os.environ.copy()
-            env["OMP_NUM_THREADS"] = "1"
+            # NOTE: Do NOT set OMP_NUM_THREADS=1 - it disables parallel tensor repack (2.2x slower loading)
             proc = subprocess.Popen(
                 ["numactl", "--interleave=all"] + cmd,
                 stdout=log,
@@ -389,7 +459,7 @@ def start_server(
 
         with open(log_file, "w") as log:
             env = os.environ.copy()
-            env["OMP_NUM_THREADS"] = "1"
+            # NOTE: Do NOT set OMP_NUM_THREADS=1 - it disables parallel tensor repack (2.2x slower loading)
             proc = subprocess.Popen(
                 ["numactl", "--interleave=all"] + cmd,
                 stdout=log,
@@ -441,7 +511,7 @@ def start_server(
     # Start process
     with open(log_file, "w") as log:
         env = os.environ.copy()
-        env["OMP_NUM_THREADS"] = "1"
+        # NOTE: Do NOT set OMP_NUM_THREADS=1 - it disables parallel tensor repack (2.2x slower loading)
         proc = subprocess.Popen(
             ["numactl", "--interleave=all"] + cmd,
             stdout=log,
@@ -486,7 +556,7 @@ def start_orchestrator() -> ProcessInfo | None:
             [
                 sys.executable, "-m", "uvicorn",
                 "src.api:app",
-                "--host", "0.0.0.0",
+                "--host", "127.0.0.1",
                 "--port", "8000",
             ],
             cwd="/mnt/raid0/llm/claude",
@@ -587,6 +657,20 @@ def cmd_start(args: argparse.Namespace) -> int:
     registry = RegistryLoader()
     state: dict[str, ProcessInfo] = {}
 
+    # Validate model paths (prevents hallucinations about missing models)
+    if not args.dev:
+        print("[0.5] Validating model paths...")
+        errors = validate_model_paths()
+        if errors:
+            print("[!] MODEL VALIDATION FAILED:")
+            for err in errors:
+                print(f"    - {err}")
+            print("\nFix missing models or update paths in orchestrator_stack.py")
+            print("Check /mnt/raid0/llm/models/ and /mnt/raid0/llm/lmstudio/models/")
+            return 1
+        print("  [OK] All model paths validated")
+        print()
+
     # Kill existing processes on target ports
     print("[1] Cleaning up existing processes...")
     for server in HOT_SERVERS + WARM_SERVERS:
@@ -657,11 +741,12 @@ def cmd_start(args: argparse.Namespace) -> int:
             if not args.dev and not is_optional:
                 return 1
 
-        # Cooldown between large models (skip for small models)
+        # Brief cooldown between large models to allow mmap settling
+        # With parallel tensor repack enabled, 5s is sufficient
         is_small_model = embedding_mode or (worker_pool_mode and worker_type == "fast")
         if i < len(servers_to_start) - 1 and not args.dev and not is_small_model:
-            print("  Cooldown (30s) for tensor repack...")
-            time.sleep(30)
+            print("  Cooldown (5s)...")
+            time.sleep(5)
 
     print()
 
@@ -684,6 +769,11 @@ def cmd_start(args: argparse.Namespace) -> int:
             state["document_formalizer"] = info
         else:
             print("  [!] Document formalizer failed (non-fatal, continuing)")
+
+        print()
+
+        # Initialize MemRL databases and tool registry
+        init_memrl_and_tools()
 
         print()
 
@@ -839,6 +929,93 @@ def cmd_status(args: argparse.Namespace) -> int:
     print()
     print(f"State file: {STATE_FILE}")
     return 0
+
+
+# =============================================================================
+# MemRL and Tool Registry Initialization
+# =============================================================================
+
+
+def init_memrl_and_tools() -> bool:
+    """Initialize MemRL databases and tool registry for the session.
+
+    This ensures all deterministic tools (41 total) are ready and
+    the REPL memory system is initialized with seed examples.
+    """
+    success = True
+
+    # [6] REPL Memory Initialization
+    print("[6] Initializing MemRL databases...")
+
+    # Initialize REPL seed examples
+    seed_loader_path = Path("/mnt/raid0/llm/claude/orchestration/repl_memory/seed_loader.py")
+    if seed_loader_path.exists():
+        result = subprocess.run(
+            [sys.executable, str(seed_loader_path), "--init"],
+            capture_output=True,
+            text=True,
+            cwd="/mnt/raid0/llm/claude",
+        )
+        if result.returncode == 0:
+            print("  [OK] REPL seed examples loaded")
+        else:
+            print(f"  [WARN] Seed loader failed: {result.stderr[:100] if result.stderr else 'no output'}")
+
+    # Warm up embedding model with test query
+    try:
+        import urllib.request
+        import urllib.error
+
+        test_payload = json.dumps({"content": "test embedding warmup"}).encode()
+        req = urllib.request.Request(
+            "http://localhost:8090/embedding",
+            data=test_payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status == 200:
+                print("  [OK] Embedding model warmed up")
+    except Exception as e:
+        print(f"  [WARN] Embedding warmup failed: {e}")
+
+    # [7] Tool Registry Initialization
+    print("[7] Initializing deterministic tool registry...")
+
+    # Validate tool registry exists
+    tool_registry_path = Path("/mnt/raid0/llm/claude/orchestration/tool_registry.yaml")
+    if not tool_registry_path.exists():
+        print(f"  [!] Tool registry not found: {tool_registry_path}")
+        success = False
+    else:
+        # Load and validate tool executor
+        try:
+            # Add src to path for imports
+            import sys as _sys
+            _sys.path.insert(0, "/mnt/raid0/llm/claude")
+            from orchestration.tools.executor import get_executor
+            executor = get_executor()
+            tools = executor.list_tools()
+            print(f"  [OK] Tool registry loaded: {len(tools)} tools")
+
+            # Categorize tools
+            categories: dict[str, int] = {}
+            for t in tools:
+                cat = t.get("category", "other")
+                categories[cat] = categories.get(cat, 0) + 1
+            for cat, count in sorted(categories.items()):
+                print(f"      {cat}: {count}")
+        except Exception as e:
+            print(f"  [WARN] Tool executor init failed: {e}")
+
+    # Verify C++ math tools binary
+    cpp_binary = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-math-tools")
+    if cpp_binary.exists():
+        print("  [OK] C++ math tools binary found")
+    else:
+        print(f"  [WARN] C++ math tools not built: {cpp_binary}")
+        print("        Run: cd /mnt/raid0/llm/llama.cpp && make llama-math-tools")
+
+    return success
 
 
 # =============================================================================
