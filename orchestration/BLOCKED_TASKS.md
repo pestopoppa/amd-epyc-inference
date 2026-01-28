@@ -16,7 +16,7 @@
 | **Figure Analysis Missing** | — | **HIGH** | `handoffs/completed/figure_analysis_missing.md` | ✅ RESOLVED |
 | **Document Pipeline Tests** | pytest-asyncio install | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY |
 | **Prompt Lookup Integration** | Workflow reconstruction | **MEDIUM** | `handoffs/active/prompt_lookup_integration.md` | 🔄 BLOCKED |
-| **Security Audit: GGUF Vulns** | — | **CRITICAL** | `handoffs/active/security_audit_orchestration_stack.md` | 📋 READY |
+| **Security Audit: GGUF Vulns** | CVE verification on prod | **CRITICAL** | `handoffs/active/security_audit_orchestration_stack.md` | ✅ PARTIAL (P0 fixed: localhost binding) |
 | **Claude-as-Judge BLIND Re-Scoring** | YOLO Agent | **HIGH** | `handoffs/active/claude_as_judge_consistency_review.md` | 📋 READY |
 | **Model Registry: Paged Attention Flag** | Benchmark script running | **LOW** | See below | 🔄 BLOCKED |
 | **Paged Attention CoW** | Paged attention PR review | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
@@ -41,7 +41,7 @@
 | **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
 | **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-7 COMPLETE (FAISS done) |
 | **Tool/Script Registry Wiring** | — | **MEDIUM** | `progress/2026-01/2026-01-15.md` | ✅ COMPLETE (27 tools wired) |
-| **Native Computational Tools** | — | **HIGH** | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-4 COMPLETE (integration pending) |
+| **Native Computational Tools** | SymEngine install on prod | **HIGH** | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-5 COMPLETE (integrate + symbolic) |
 | **Role Mapping Bug** | — | — | `progress/2026-01/2026-01-15.md` | ✅ FIXED (str(Role.X) now returns value) |
 | **Orchestrator Multi-Model Live Test** | — | — | `progress/2026-01/2026-01-15.md` | ✅ VERIFIED (5 models, 459GB) |
 | **Model REPL Tool Compliance** | — | **MEDIUM** | `handoffs/completed/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests, 9 benchmark prompts) |
@@ -51,7 +51,7 @@
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
-| **TOON Format Integration** | A/B testing | **MEDIUM** | `handoffs/active/toon_format_integration.md` | ✅ PHASES 1-3.1 COMPLETE (55% token reduction) |
+| **TOON Format Integration** | TTFT benchmark on prod | **MEDIUM** | `handoffs/active/toon_format_integration.md` | ✅ PHASES 1-3.1 COMPLETE + A/B harness (55% token reduction) |
 | **VL Suite Assignment Fix** | — | **LOW** | `progress/2026-01/2026-01-27.md` | ✅ FIXED (VL models now only run `vl` suite) |
 | **Graphiti MemRL Enhancement** | — | **MEDIUM** | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests, perf optimized) |
 | **SWA Prompt Lookup Fix** | — | **LOW** | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |

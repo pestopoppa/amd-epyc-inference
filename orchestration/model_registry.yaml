@@ -1828,6 +1828,8 @@ roles:
       tool sequences. Generates explanations (can disable to save tokens).
   vision_qwen3_vl_235b_a22b_thinking:
     tier: C
+    deprecated: true
+    deprecation_reason: "56% VL score due to timeout truncation. 4B (94%) is faster and better."
     description: Vision model - Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
     model:
       name: Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003
@@ -1856,6 +1858,8 @@ roles:
       reason: "235B VL model is memory-bound, benefits from block prefetching"
   vision_qwen3_vl_235b:
     tier: B
+    deprecated: true
+    deprecation_reason: "133GB for minimal benefit. 4B (94%) outperforms on document figures."
     description: Vision model - Qwen3-VL-235B-A22B-Instruct (largest non-thinking VL)
     model:
       name: Qwen3-VL-235B-A22B-Instruct
