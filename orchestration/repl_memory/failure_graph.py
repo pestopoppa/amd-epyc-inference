@@ -23,7 +23,8 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 # Default path (on RAID array per CLAUDE.md requirements)
-DEFAULT_KUZU_PATH = Path("/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db")
+# Note: Each graph needs its own Kuzu database directory to avoid collisions
+DEFAULT_KUZU_PATH = Path("/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db/failure_graph")
 
 
 @dataclass

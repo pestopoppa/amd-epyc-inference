@@ -1,648 +1,401 @@
 version: 1
 domain: vl
-description: "Vision-language understanding benchmark - hardened for expert-level visual reasoning"
+description: "Hardened VL benchmark - OCRBench, DocVQA, ChartQA + Twyne expert analysis"
 created: "2025-12-16"
-updated: "2025-12-18"
-note: "VL prompts include image_path references - tests require corresponding images"
+updated: "2026-01-27"
+note: "T1=warmup OCR, T2=multi-step reasoning, T3=expert synthesis/critique. Ground truth from datasets where available."
 
 prompts:
-  # ============== TIER 1: Medium (was T2) ==============
-  t1_q1_chart:
+  # ============== TIER 1: Basic OCR (Warmup) ==============
+  t1_q1_scene_text:
     tier: 1
-    name: "Chart Reading"
-    image_description: "Bar chart with data"
-    image_path: "/tmp/claude/test_images/chart_bar.png"
-    prompt: "Look at this bar chart. Which category has the highest value? What is the approximate value?"
-    expected: "Correct category and approximate value"
+    name: "Scene Text OCR"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/ocrbench/sample_000.png"
+    prompt: "What is written in the image?"
+    expected: "Accurate transcription of visible text"
     reference_answer: |
-      **Image contents:**
-      Bar chart titled "Quarterly Sales 2024" with 4 bars:
-      - Q1: ~45 units
-      - Q2: ~72 units
-      - Q3: ~58 units
-      - Q4: ~89 units (highest)
+      **Ground truth:** CENTRE
 
-      **Correct answer:**
-      - Highest category: Q4 (fourth quarter)
-      - Approximate value: 89 (acceptable range: 85-92)
-
-      **Key observations for scoring:**
-      - Must identify Q4/fourth quarter as highest
-      - Value estimate should be within ~5% of 89
-      - Should not confuse bar heights or misread axis labels
-
-      **Common failures:**
-      - Misreading Q3 as highest (second tallest)
-      - Giving a value wildly off (e.g., "about 50")
-      - Failing to read the chart at all
+      The image shows the word "CENTRE" (British spelling of "center").
+      Accept: "CENTRE", "Centre", "centre"
+      Reject: "CENTER" (wrong spelling), partial text, hallucinated text
     scoring:
-      - criterion: "Correct category"
-        weight: 40
-      - criterion: "Reasonable value estimate"
-        weight: 40
-      - criterion: "No misread data"
-        weight: 20
+      - criterion: "Text correctly identified"
+        weight: 100
 
-  t1_q2_invoice:
+  t1_q2_sign_reading:
     tier: 1
-    name: "Document Understanding"
-    image_description: "Simple invoice with line items"
-    image_path: "/tmp/claude/test_images/doc_invoice.png"
-    prompt: "Extract the total amount and list all line items from this invoice."
-    expected: "Correct total and line items"
+    name: "Sign Text Extraction"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/ocrbench/sample_300.png"
+    prompt: "What is the Mosman Manly exit going to? Read all text on the sign."
+    expected: "Complete sign text extraction"
     reference_answer: |
-      **Image contents:**
-      Invoice #INV-2024-001 from "Acme Services LLC"
-      Dated: March 15, 2024
+      **Ground truth:** Chatswood, Epping
 
-      Line items:
-      1. Consulting Services (8 hours @ $150/hr) = $1,200.00
-      2. Software License (Annual) = $499.00
-      3. Technical Support (Monthly) = $75.00
-      4. Equipment Rental = $250.00
-
-      Subtotal: $2,024.00
-      Tax (8%): $161.92
-      **Total: $2,185.92**
-
-      **Correct answer:**
-      - Total amount: $2,185.92
-      - Line items:
-        * Consulting Services: $1,200.00
-        * Software License: $499.00
-        * Technical Support: $75.00
-        * Equipment Rental: $250.00
-
-      **Acceptable variations:**
-      - Currency symbol placement variations ($2185.92 vs 2,185.92 USD)
-      - Listing with or without subtotal/tax breakdown
-
-      **Common failures:**
-      - Giving subtotal instead of total
-      - Missing one or more line items
-      - Misreading amounts (e.g., $499 as $449)
+      This is a highway sign in Australia showing the Mosman Manly exit leads to Chatswood and Epping.
+      Accept: "Chatswood Epping", "Chatswood, Epping", "Chatswood and Epping"
+      Partial credit: Getting one destination correct
+      Reject: Wrong destinations, hallucinated text
     scoring:
-      - criterion: "Correct total"
+      - criterion: "Primary destination correct"
+        weight: 60
+      - criterion: "All sign text extracted"
         weight: 40
-      - criterion: "All line items found"
-        weight: 40
-      - criterion: "Correct amounts"
-        weight: 20
 
-  t1_q3_code:
-    tier: 1
-    name: "Code Screenshot"
-    image_description: "Screenshot of Python code"
-    image_path: "/tmp/claude/test_images/code_python.png"
-    prompt: "What does this code do? Identify any bugs."
-    expected: "Correct explanation and bug identification"
-    reference_answer: |
-      **Image contents:**
-      Python code screenshot showing:
-      ```python
-      def calculate_average(numbers):
-          total = 0
-          for num in numbers:
-              total += num
-          return total / len(numbers)  # Bug: no check for empty list
-
-      def find_max(numbers):
-          max_val = numbers[0]  # Bug: IndexError if empty
-          for num in numbers:
-              if num > max_val:
-                  max_val = num
-          return max_val
-
-      # Main
-      data = [23, 45, 12, 67, 34]
-      print(f"Average: {calculate_average(data)}")
-      print(f"Maximum: {find_max(data)}")
-      ```
-
-      **What the code does:**
-      - Defines a function to calculate the average of a list of numbers
-      - Defines a function to find the maximum value in a list
-      - Tests both functions with sample data [23, 45, 12, 67, 34]
-
-      **Bugs identified:**
-      1. `calculate_average`: Division by zero if `numbers` is empty
-      2. `find_max`: IndexError accessing `numbers[0]` if list is empty
-
-      **Expected output with sample data:**
-      - Average: 36.2
-      - Maximum: 67
-
-      **Common failures:**
-      - Failing to identify the empty list bugs
-      - Misreading the code syntax
-      - Incorrect description of functionality
-    scoring:
-      - criterion: "Correct functionality description"
-        weight: 40
-      - criterion: "Bug identified (if any)"
-        weight: 40
-      - criterion: "Accurate code reading"
-        weight: 20
-
-  # ============== TIER 2: Hard (was T3) ==============
-  t2_q1_math:
+  # ============== TIER 2: Multi-Step Reasoning ==============
+  t2_q1_calculation:
     tier: 2
-    name: "Handwritten Math"
-    image_description: "Handwritten mathematical equation"
-    image_path: "/tmp/claude/test_images/math_equation.png"
-    prompt: "Read this handwritten equation and solve it. Show your work."
-    expected: "Correct transcription and solution"
+    name: "Financial Calculation"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/ocrbench_hard/sample_500.png"
+    prompt: "What is the total intrinsic value of options exercised in 2008? Show your work by listing each value you read."
+    expected: "Correct total with itemized values"
     reference_answer: |
-      **Image contents:**
-      Handwritten equation showing:
-      3x² + 12x - 15 = 0
+      **Ground truth:** $506 million
 
-      **Transcription:**
-      3x² + 12x - 15 = 0
-
-      **Solution:**
-      Step 1: Factor out common factor
-      3(x² + 4x - 5) = 0
-
-      Step 2: Factor the quadratic
-      3(x + 5)(x - 1) = 0
-
-      Step 3: Apply zero product property
-      x + 5 = 0  →  x = -5
-      x - 1 = 0  →  x = 1
-
-      **Solutions: x = -5 or x = 1**
-
-      **Verification:**
-      - For x = -5: 3(25) + 12(-5) - 15 = 75 - 60 - 15 = 0 ✓
-      - For x = 1: 3(1) + 12(1) - 15 = 3 + 12 - 15 = 0 ✓
-
-      **Alternative method (Quadratic formula):**
-      x = (-12 ± √(144 + 180)) / 6 = (-12 ± √324) / 6 = (-12 ± 18) / 6
-      x = 6/6 = 1 or x = -30/6 = -5
-
-      **Common failures:**
-      - Misreading coefficients (e.g., 12 as 2)
-      - Sign errors in transcription
-      - Arithmetic errors in solution
+      The answer should be $506 million (or equivalent: $506M, 506 million dollars).
+      Full credit: Correct total with work shown
+      Partial credit: Correct total without work, or work shown with minor calculation error
+      Reject: Wrong total, no attempt to show work
     scoring:
-      - criterion: "Correct transcription"
+      - criterion: "Values correctly read"
         weight: 40
-      - criterion: "Correct solution"
+      - criterion: "Calculation correct"
         weight: 40
-      - criterion: "Clear work shown"
+      - criterion: "Work shown"
         weight: 20
 
-  t2_q2_flowchart:
+  t2_q2_comparison:
     tier: 2
-    name: "Flowchart Analysis"
-    image_description: "Technical flowchart"
-    image_path: "/tmp/claude/test_images/diagram_flowchart.png"
-    prompt: "Describe the process shown in this flowchart. What are the decision points and outcomes?"
-    expected: "Accurate process description with decision points"
+    name: "Chart Value Comparison"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/chartqa_hard/sample_0005.png"
+    prompt: "What is the difference between the highest and lowest green bar? State both values and compute the difference."
+    expected: "Both values identified, difference calculated"
     reference_answer: |
-      **Image contents:**
-      Flowchart depicting a user authentication process:
+      **Ground truth:** 6
 
-      Start → Enter Credentials → [Valid Format?]
-                                      ↓ No → Show Error → Enter Credentials
-                                      ↓ Yes
-                                  [User Exists?]
-                                      ↓ No → [Create Account?]
-                                                  ↓ No → End
-                                                  ↓ Yes → Create User → Login Success
-                                      ↓ Yes
-                                  [Password Match?]
-                                      ↓ No → [Attempts < 3?]
-                                                  ↓ Yes → Enter Credentials
-                                                  ↓ No → Lock Account → End
-                                      ↓ Yes → Login Success → End
-
-      **Process description:**
-      This flowchart shows a user login/authentication flow with credential
-      validation, account creation option, and security lockout after failed attempts.
-
-      **Decision points:**
-      1. Valid Format? - Checks if credentials meet format requirements
-      2. User Exists? - Checks if username is in the database
-      3. Create Account? - Offers new user registration
-      4. Password Match? - Validates password against stored hash
-      5. Attempts < 3? - Security check for brute force prevention
-
-      **Outcomes:**
-      1. Login Success - User authenticated and granted access
-      2. Account Locked - After 3 failed password attempts
-      3. End (without login) - User declined to create account
-
-      **Common failures:**
-      - Missing one or more decision points
-      - Incorrect flow direction
-      - Not identifying the security lockout mechanism
+      The difference between highest and lowest green bar is 6.
+      Full credit: States both values AND computes difference = 6
+      Partial credit: Correct difference without showing both values
+      Reject: Wrong difference, identifies wrong bars
     scoring:
-      - criterion: "Correct flow understanding"
-        weight: 40
-      - criterion: "Decision points identified"
+      - criterion: "Highest value correct"
         weight: 30
-      - criterion: "Outcomes described"
+      - criterion: "Lowest value correct"
         weight: 30
+      - criterion: "Difference correct"
+        weight: 40
 
-  t2_q3_diff:
+  t2_q3_trend_analysis:
     tier: 2
-    name: "Visual Difference"
-    image_description: "Two similar images side by side"
-    image_path: "/tmp/claude/test_images/diff_images.png"
-    prompt: "Compare these two images. List all differences you can find."
-    expected: "Comprehensive list of differences"
+    name: "Trend Identification"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/chartqa_hard/sample_0017.png"
+    prompt: "When does the line have the sharpest increase? Identify the time period and estimate the rate of change."
+    expected: "Time period identified with rate estimate"
     reference_answer: |
-      **Image contents:**
-      Two side-by-side images of a simple room scene with deliberate differences.
+      **Ground truth:** 2011
 
-      **Left image (original):**
-      - Clock showing 3:00
-      - Blue vase on table
-      - 3 books on shelf
-      - Window with curtains open
-      - Cat sitting on floor
-
-      **Right image (modified):**
-      - Clock showing 6:00
-      - Red vase on table
-      - 4 books on shelf
-      - Window with curtains closed
-      - Cat missing
-
-      **List of differences (5 total):**
-      1. Clock time changed from 3:00 to 6:00
-      2. Vase color changed from blue to red
-      3. Number of books increased from 3 to 4
-      4. Curtains changed from open to closed
-      5. Cat removed from the scene
-
-      **Scoring guidance:**
-      - Finding all 5 differences: Full credit
-      - Finding 4 differences: 80% credit
-      - Finding 3 differences: 60% credit
-      - False positives (claiming non-existent differences): Deduction
-
-      **Common failures:**
-      - Missing subtle differences (book count, clock time)
-      - Claiming differences that don't exist
-      - Vague descriptions ("something changed")
+      The sharpest increase occurs in 2011 (or around 2011, 2010-2011 period).
+      Full credit: Identifies 2011 AND provides reasonable rate estimate
+      Partial credit: Correct year without rate estimate
+      Reject: Wrong year, no reasoning provided
     scoring:
-      - criterion: "Differences found"
+      - criterion: "Time period correct"
         weight: 50
-      - criterion: "No false positives"
+      - criterion: "Rate estimate reasonable"
         weight: 30
-      - criterion: "Specific descriptions"
+      - criterion: "Reasoning explained"
         weight: 20
 
-  t2_q4_puzzle:
+  t2_q4_ratio_calculation:
     tier: 2
-    name: "Visual Reasoning"
-    image_description: "Pattern completion puzzle"
-    image_path: "/tmp/claude/test_images/puzzle_grid.png"
-    prompt: "What shape/pattern should go in the empty box? Explain your reasoning."
-    expected: "Correct pattern with reasoning"
+    name: "Ratio Calculation"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/chartqa_hard/sample_0023.png"
+    prompt: "What's the ratio of the lowest value of green bars to the lowest value of blue bars? Show the values and calculation."
+    expected: "Both lowest values and correct ratio"
     reference_answer: |
-      **Image contents:**
-      3x3 grid pattern puzzle:
+      **Ground truth:** 1.22 (or 1.216666667)
 
-      Row 1: Circle (red) | Square (blue) | Triangle (green)
-      Row 2: Square (blue) | Triangle (green) | Circle (red)
-      Row 3: Triangle (green) | Circle (red) | ? (empty)
-
-      **Correct answer: Square (blue)**
-
-      **Reasoning:**
-      This is a Latin square puzzle where each shape and color appears
-      exactly once in each row and column.
-
-      Column 3 analysis:
-      - Row 1: Triangle (green)
-      - Row 2: Circle (red)
-      - Row 3: Missing = Square (blue) ← only remaining option
-
-      Row 3 analysis:
-      - Column 1: Triangle (green)
-      - Column 2: Circle (red)
-      - Column 3: Missing = Square (blue) ← confirms the answer
-
-      Both row and column constraints lead to the same answer: **Blue Square**
-
-      **Pattern identification:**
-      - Latin square constraint (no repeats in rows or columns)
-      - Shape progression: Circle → Square → Triangle cycles
-      - Color follows shape consistently
-
-      **Common failures:**
-      - Identifying shape correctly but wrong color
-      - Ignoring the column constraint
-      - Not explaining the reasoning
+      The ratio of lowest green to lowest blue is approximately 1.22.
+      Full credit: Both values stated, ratio ~1.22 (accept 1.2-1.25)
+      Partial credit: Correct ratio without showing work
+      Reject: Wrong ratio, inverted ratio (blue/green instead of green/blue)
     scoring:
-      - criterion: "Correct answer"
-        weight: 40
-      - criterion: "Valid reasoning"
-        weight: 40
-      - criterion: "Pattern identification"
-        weight: 20
-
-  # ============== TIER 3: Expert Visual Understanding (NEW) ==============
-  t3_q1_scientific_diagram:
-    tier: 3
-    name: "Scientific Diagram Interpretation"
-    image_description: "Complex scientific figure with multiple panels, error bars, and annotations"
-    image_path: "/tmp/claude/test_images/scientific_figure.png"
-    prompt: |
-      Analyze this scientific figure from a research paper:
-      1. What type of experiment/analysis does each panel represent?
-      2. What are the key findings indicated by the data?
-      3. Are there any statistical concerns you notice (missing error bars, cherry-picked scales, etc.)?
-      4. What controls would you expect to see that might be missing?
-
-      Be specific about what the data shows versus what the authors might be claiming.
-    expected: "Panel-by-panel analysis with statistical critique and identification of methodological concerns"
-    reference_answer: |
-      **Image contents:**
-      Multi-panel scientific figure (2x2 layout):
-
-      **Panel A: Bar graph with error bars**
-      - Title: "Gene Expression Levels"
-      - 4 conditions: Control, Treatment A, Treatment B, Combined
-      - Y-axis: Relative expression (0-10)
-      - Control: ~2.0 ± 0.5
-      - Treatment A: ~4.5 ± 0.8
-      - Treatment B: ~3.8 ± 0.6
-      - Combined: ~8.5 ± 1.2 (marked with ** for p<0.01)
-
-      **Panel B: Line graph (time series)**
-      - Title: "Cell Viability Over Time"
-      - X-axis: Time (0-72 hours)
-      - Y-axis: % Viability (0-100%)
-      - 3 lines: Control (stable ~90%), Treatment (declining to ~40%)
-      - Error bars only at select time points (0, 24, 72h)
-
-      **Panel C: Western blot**
-      - 4 lanes matching Panel A conditions
-      - Protein bands showing increasing intensity
-      - β-actin loading control at bottom
-      - Note: Band intensities qualitatively match bar graph
-
-      **Panel D: Scatter plot**
-      - X-axis: Treatment concentration
-      - Y-axis: Response measure
-      - Shows dose-response relationship
-      - R² = 0.89 indicated
-      - Note: Y-axis starts at 50, not 0 (truncated)
-
-      **Question 1 - Panel interpretations:**
-      - Panel A: qPCR or RT-PCR gene expression quantification
-      - Panel B: MTT or similar cell viability assay over time
-      - Panel C: Western blot for protein expression validation
-      - Panel D: Dose-response curve for EC50/IC50 determination
-
-      **Question 2 - Key findings:**
-      - Combined treatment shows synergistic effect (~8.5 vs expected additive ~6.3)
-      - Treatment reduces cell viability over time
-      - Protein expression correlates with mRNA levels
-      - Clear dose-dependent relationship (R²=0.89)
-
-      **Question 3 - Statistical concerns:**
-      1. Panel B: Error bars missing at 12, 36, 48, 60 hour timepoints
-      2. Panel D: Y-axis truncated (starts at 50) - exaggerates effect size
-      3. Sample sizes (n) not indicated anywhere
-      4. Only one significance marker shown - other comparisons may be cherry-picked
-      5. Western blot quantification not shown numerically
-
-      **Question 4 - Missing controls:**
-      1. Vehicle control (DMSO or equivalent) not shown separately
-      2. Negative control for Western blot not visible
-      3. No scrambled/non-targeting control for gene expression
-      4. Dose-response lacks vehicle-only data points at each concentration
-      5. Time course missing untreated time-matched controls at each point
-
-      **Common failures:**
-      - Not identifying truncated axis in Panel D
-      - Missing the selective error bar placement
-      - Not questioning the synergy claim quantitatively
-      - Failing to note missing sample size information
-    scoring:
-      - criterion: "Correct panel interpretation"
-        weight: 25
-      - criterion: "Key findings identified"
-        weight: 25
-      - criterion: "Statistical concerns noted"
-        weight: 25
-      - criterion: "Missing controls identified"
-        weight: 25
-
-  t3_q2_architectural_blueprint:
-    tier: 3
-    name: "Technical Blueprint Analysis"
-    image_description: "Architectural floor plan with electrical/plumbing overlays"
-    image_path: "/tmp/claude/test_images/blueprint.png"
-    prompt: |
-      Analyze this architectural blueprint:
-      1. Identify any building code violations you can spot (egress, electrical, plumbing)
-      2. What is the approximate square footage of the livable space?
-      3. Identify potential issues with the HVAC layout based on room positions
-      4. If a fire started in the kitchen, what would be the evacuation challenges?
-
-      Reference specific locations using room labels or coordinates.
-    expected: "Code violation identification, spatial reasoning, safety analysis with specific references"
-    reference_answer: |
-      **Image contents:**
-      Residential floor plan (~1,800 sq ft) with overlay layers:
-
-      **Room Layout:**
-      - Living Room (18' x 14') - northwest corner
-      - Kitchen (12' x 10') - center-north, open to dining
-      - Dining Area (10' x 10') - adjacent to kitchen
-      - Master Bedroom (14' x 12') - southeast corner
-      - Bedroom 2 (11' x 10') - northeast corner
-      - Bedroom 3 (10' x 10') - east side
-      - Master Bath (8' x 6') - attached to master
-      - Full Bath (6' x 8') - hall access
-      - Laundry (6' x 5') - near kitchen
-      - Front Entry with small foyer
-
-      **Overlays:**
-      - Electrical (red): outlets, switches, panel location
-      - Plumbing (blue): water supply, drain lines, fixtures
-      - HVAC (green): duct runs, vents, return air
-
-      **Question 1 - Code violations identified:**
-      1. **Egress:** Bedroom 3 window appears undersized for egress (needs 5.7 sq ft min)
-      2. **Electrical:** Kitchen lacks GFCI outlets near sink (within 6' of water)
-      3. **Electrical:** Only 2 outlets visible in Living Room (needs more for wall spacing)
-      4. **Plumbing:** Laundry drain appears to lack proper vent stack
-      5. **Egress:** No secondary exit visible from master bedroom wing
-
-      **Question 2 - Square footage calculation:**
-      - Living Room: 18 × 14 = 252 sq ft
-      - Kitchen: 12 × 10 = 120 sq ft
-      - Dining: 10 × 10 = 100 sq ft
-      - Master BR: 14 × 12 = 168 sq ft
-      - Bedroom 2: 11 × 10 = 110 sq ft
-      - Bedroom 3: 10 × 10 = 100 sq ft
-      - Master Bath: 8 × 6 = 48 sq ft
-      - Full Bath: 6 × 8 = 48 sq ft
-      - Laundry: 6 × 5 = 30 sq ft
-      - Hallways/foyer: ~100 sq ft (estimated)
-
-      **Total livable space: ~1,076 sq ft** (excluding garage if present)
-
-      **Question 3 - HVAC issues:**
-      1. Single return air vent in hallway - bedrooms will have poor air circulation
-      2. No duct run visible to Bedroom 3 - may be undersized or missing
-      3. Kitchen vent near stove but no makeup air provision shown
-      4. Master bedroom on opposite end from air handler - longest duct run
-      5. No zoning shown - temperature differential issues likely
-
-      **Question 4 - Fire evacuation from kitchen:**
-      1. Kitchen fire blocks access to front door (primary exit)
-      2. Bedrooms 2 and 3 must egress through windows (verify sizing)
-      3. Master bedroom has longest path to any exit
-      4. Smoke would quickly spread to open dining/living area
-      5. No fire separation between kitchen and bedroom hallway
-      6. Single hallway creates chokepoint for evacuation
-
-      **Recommendations:**
-      - Add smoke detectors interconnected
-      - Ensure bedroom windows meet egress codes
-      - Consider adding sliding door to living room for secondary exit
-
-      **Common failures:**
-      - Not calculating square footage at all
-      - Missing electrical code issues
-      - Not analyzing the single-point-of-failure hallway design
-      - Ignoring HVAC distribution problems
-    scoring:
-      - criterion: "Code violations identified"
+      - criterion: "Green lowest correct"
         weight: 30
-      - criterion: "Accurate spatial calculation"
-        weight: 20
-      - criterion: "HVAC analysis quality"
-        weight: 25
-      - criterion: "Evacuation analysis"
-        weight: 25
-
-  t3_q3_multi_image_temporal:
-    tier: 3
-    name: "Temporal Sequence Analysis"
-    image_description: "Series of 6 satellite images of same location over time"
-    image_path: "/tmp/claude/test_images/satellite_sequence.png"
-    prompt: |
-      These 6 satellite images show the same geographic location over a 10-year period:
-      1. Describe what changed between each consecutive pair of images
-      2. What natural or human-driven process explains these changes?
-      3. Predict what the area will look like in 5 more years if the trend continues
-      4. What environmental concerns does this progression raise?
-
-      Be specific about which changes occurred when and their causal relationships.
-    expected: "Accurate temporal tracking, causal reasoning, trend extrapolation, environmental analysis"
-    reference_answer: |
-      **Image contents:**
-      6 satellite images in 2x3 grid showing urban expansion over 10 years:
-
-      **Image 1 (Year 0):**
-      - Mostly agricultural land (light green/tan)
-      - Small town center (gray cluster, ~500 buildings)
-      - River running north-south on east side
-      - Forest patch in northwest corner
-      - Main road running east-west through center
-
-      **Image 2 (Year 2):**
-      - New housing subdivision appears south of town
-      - Road extended to connect new development
-      - ~100 new structures visible
-      - Agricultural land reduced by ~5%
-
-      **Image 3 (Year 4):**
-      - Second subdivision on east side near river
-      - Commercial strip developing along main road
-      - Parking lots visible (gray rectangles)
-      - Forest edge shows thinning
-      - Total structures ~800
-
-      **Image 4 (Year 6):**
-      - Large warehouse/industrial area appears northwest
-      - Town center densifying (infill development)
-      - River area shows developed recreation area
-      - Agricultural land reduced by ~25% total
-      - New road connecting industrial to highway
-
-      **Image 5 (Year 8):**
-      - Subdivisions expanding to meet each other
-      - Strip mall expansion visible
-      - Forest significantly reduced (~50% of original)
-      - Impervious surface area dramatically increased
-      - Population estimated ~3x original
-
-      **Image 6 (Year 10):**
-      - Nearly continuous development
-      - Agricultural land ~30% of original
-      - Forest reduced to small isolated patches
-      - New school/large building visible
-      - Infrastructure (roads, utilities) densely connected
-
-      **Question 1 - Changes between consecutive pairs:**
-      - 1→2: Initial suburban expansion (residential)
-      - 2→3: Commercial development follows residential
-      - 3→4: Industrial/warehouse development begins
-      - 4→5: Rapid infill connecting developments
-      - 5→6: Maturation and densification
-
-      **Question 2 - Process explanation:**
-      Human-driven suburban sprawl following classic pattern:
-      1. Residential development seeking affordable land
-      2. Commercial follows to serve new residents
-      3. Industrial attracted by labor pool and land costs
-      4. Infrastructure connects disparate developments
-      5. Agricultural land converted due to higher development value
-
-      Contributing factors:
-      - Proximity to urban center (likely within commuting distance)
-      - Available water (river access)
-      - Relatively flat terrain suitable for development
-      - Road access enabling commuter growth
-
-      **Question 3 - 5-year prediction:**
-      If trend continues:
-      - Remaining agricultural land (~30%) will be largely developed
-      - Forest patches will be reduced to <10% of original
-      - Development will reach carrying capacity of infrastructure
-      - Traffic congestion will require road expansion
-      - Multi-story buildings may begin appearing (densification)
-      - River corridor may see high-density development
-      - Possible annexation into adjacent municipality
-
-      **Question 4 - Environmental concerns:**
-      1. **Habitat fragmentation:** Forest reduction isolates wildlife populations
-      2. **Water quality:** Increased impervious surface causes runoff, pollution into river
-      3. **Heat island effect:** Loss of vegetation increases local temperatures
-      4. **Flood risk:** Reduced absorption capacity, channelized water flow
-      5. **Loss of agricultural land:** Reduces local food production capacity
-      6. **Air quality:** Increased traffic and development emissions
-      7. **Biodiversity loss:** Conversion of natural areas eliminates species
-      8. **Watershed impact:** Development affects river ecosystem downstream
-
-      **Common failures:**
-      - Not tracking changes chronologically (lumping all changes together)
-      - Missing the suburban sprawl pattern recognition
-      - Not identifying specific environmental impacts
-      - Prediction not based on observed trends
-      - Failing to note the river as a significant feature
-    scoring:
-      - criterion: "Changes correctly identified per period"
+      - criterion: "Blue lowest correct"
         weight: 30
-      - criterion: "Causal explanation valid"
+      - criterion: "Ratio correct"
+        weight: 40
+
+  t2_q5_document_synthesis:
+    tier: 2
+    name: "Document Multi-field Extraction"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/docvqa/sample_000.png"
+    prompt: "What is the dividend payout in 2012? Also find the 2011 value and calculate the year-over-year change."
+    expected: "Both years' values and calculated change"
+    reference_answer: |
+      **Scoring guidance:** No ground truth available (DocVQA test set).
+
+      Score based on:
+      - Locates dividend section in document
+      - Extracts a plausible 2012 value
+      - Extracts a plausible 2011 value
+      - Calculates YoY change correctly from extracted values
+
+      Full credit: All three components present and mathematically consistent
+      Partial credit: Some values found, calculation attempted
+      Reject: No values extracted, calculation doesn't match stated values
+    scoring:
+      - criterion: "2012 value correct"
+        weight: 35
+      - criterion: "2011 value correct"
+        weight: 35
+      - criterion: "YoY change correct"
+        weight: 30
+
+  # ============== TIER 3: Expert Analysis ==============
+  t3_q1_chart_critique:
+    tier: 3
+    name: "Statistical Visualization Critique"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/chartqa_hard/sample_0001.png"
+    prompt: |
+      Analyze this chart critically:
+      1. What is the difference in value between Lamb and Corn?
+      2. Is this an appropriate visualization for this data? Why or why not?
+      3. What misleading impressions could this chart create?
+      4. Suggest a better visualization approach.
+    expected: "Value extraction + visualization critique + improvement suggestion"
+    reference_answer: |
+      **Ground truth for Q1:** 0.57
+
+      **Q1 - Value difference:**
+      The difference between Lamb and Corn is 0.57. Accept 0.5-0.6 range.
+
+      **Q2 - Appropriateness:**
+      Good answers discuss whether bar chart is suitable for the data type (categorical comparison).
+      Consider: scale appropriateness, ordering, baseline issues.
+
+      **Q3 - Misleading aspects:**
+      Good answers identify potential issues like:
+      - Truncated y-axis (if present)
+      - 3D effects distorting perception
+      - Inappropriate scale
+      - Missing context/units
+
+      **Q4 - Better visualization:**
+      Good answers suggest alternatives with reasoning:
+      - Sorted bar chart
+      - Horizontal bars for readability
+      - Add data labels
+      - Start axis at zero
+
+      Full credit: Correct value (0.57) + substantive critique + specific improvement
+      Partial credit: Some components addressed
+      Reject: Wrong value, no critique attempted
+    scoring:
+      - criterion: "Value difference correct"
         weight: 25
-      - criterion: "Prediction logically follows"
+      - criterion: "Visualization appropriateness assessed"
+        weight: 25
+      - criterion: "Misleading aspects identified"
+        weight: 25
+      - criterion: "Alternative suggested with reasoning"
+        weight: 25
+
+  t3_q2_multi_chart_synthesis:
+    tier: 3
+    name: "Multi-Element Chart Synthesis"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/chartqa_hard/sample_0011.png"
+    prompt: |
+      Perform a comprehensive analysis:
+      1. Calculate the difference between Green and Orange bars
+      2. What percentage of the total does each color represent?
+      3. If this trend continued for 3 more periods, project the values
+      4. What external factors might explain the difference?
+    expected: "Calculations + percentages + projections + contextual analysis"
+    reference_answer: |
+      **Ground truth for Q1:** 0.08
+
+      **Q1 - Difference:**
+      The difference between Green and Orange is 0.08. Accept 0.07-0.09.
+
+      **Q2 - Percentages:**
+      Must calculate each color as percentage of total. Check math consistency.
+
+      **Q3 - Projections:**
+      Reasonable extrapolation based on visible trend. Should show methodology.
+      Accept linear, exponential, or other justified approaches.
+
+      **Q4 - External factors:**
+      Plausible contextual explanations (market conditions, seasonality, policy changes, etc.)
+      Should relate to the apparent domain of the chart.
+
+      Full credit: Correct difference + consistent percentages + reasoned projection + relevant factors
+      Partial credit: Some components correct
+      Reject: Wrong difference, no analysis beyond extraction
+    scoring:
+      - criterion: "Difference calculated"
+        weight: 25
+      - criterion: "Percentages correct"
+        weight: 25
+      - criterion: "Projection reasonable"
+        weight: 25
+      - criterion: "External factors plausible"
+        weight: 25
+
+  t3_q3_twyne_security:
+    tier: 3
+    name: "DeFi Protocol Security Analysis"
+    image_path: "/mnt/raid0/llm/claude/tmp/twyne_pages/page_003.png"
+    prompt: |
+      Analyze this DeFi protocol architecture as a security auditor:
+      1. Identify all trust assumptions in the design
+      2. What are the potential attack vectors? (oracle manipulation, flash loans, reentrancy, etc.)
+      3. Where are the single points of failure?
+      4. What invariants must hold for the system to be secure?
+      5. Rate the overall security posture (1-10) with justification.
+    expected: "Trust assumptions, attack vectors, SPOFs, invariants, security rating"
+    reference_answer: |
+      **Scoring guidance:** Open-ended expert analysis (no single correct answer).
+
+      **Q1 - Trust assumptions:**
+      Good answers identify: oracle reliability, admin key security, smart contract correctness,
+      external protocol dependencies, governance assumptions.
+
+      **Q2 - Attack vectors:**
+      Good answers mention relevant DeFi attacks:
+      - Oracle manipulation (price feed attacks)
+      - Flash loan exploits
+      - Reentrancy
+      - Governance attacks
+      - Front-running/MEV
+      - Economic attacks (insolvency scenarios)
+
+      **Q3 - Single points of failure:**
+      Admin keys, oracle contracts, critical external dependencies, upgrade mechanisms.
+
+      **Q4 - Invariants:**
+      Collateralization ratios, liquidity requirements, access control, state consistency.
+
+      **Q5 - Security rating:**
+      Must be justified based on preceding analysis. Higher scores need strong reasoning.
+
+      Full credit: Addresses all 5 questions with domain-appropriate analysis
+      Partial credit: Some questions addressed well
+      Reject: Generic responses not specific to the diagram, no security domain knowledge
+    scoring:
+      - criterion: "Trust assumptions identified"
         weight: 20
-      - criterion: "Environmental concerns substantive"
-        weight: 25
+      - criterion: "Attack vectors plausible"
+        weight: 20
+      - criterion: "SPOFs identified"
+        weight: 20
+      - criterion: "Invariants stated"
+        weight: 20
+      - criterion: "Rating justified"
+        weight: 20
+
+  t3_q4_twyne_economic:
+    tier: 3
+    name: "DeFi Economic Model Analysis"
+    image_path: "/mnt/raid0/llm/claude/tmp/twyne_pages/page_006.png"
+    prompt: |
+      Analyze the economic model and incentive structure:
+      1. What are the participant roles and their incentives?
+      2. Is there a Nash equilibrium? Describe it.
+      3. How could rational actors game this system?
+      4. What happens during extreme market conditions (bank run scenario)?
+      5. Compare to existing DeFi protocols (Aave, Compound, MakerDAO).
+    expected: "Game theory analysis with equilibrium, attack vectors, stress scenarios, comparisons"
+    reference_answer: |
+      **Scoring guidance:** Open-ended expert analysis (no single correct answer).
+
+      **Q1 - Participant roles:**
+      Good answers identify roles like: lenders, borrowers, liquidators, governance token holders,
+      protocol operators. Each should have stated incentive.
+
+      **Q2 - Nash equilibrium:**
+      Must demonstrate understanding of game theory. Identify stable states where no
+      participant benefits from unilateral deviation.
+
+      **Q3 - Gaming strategies:**
+      Good answers include: yield farming exploits, liquidation hunting, governance attacks,
+      collateral manipulation, interest rate arbitrage.
+
+      **Q4 - Bank run scenario:**
+      Should analyze: liquidity crunch, cascade liquidations, oracle lag issues,
+      insolvency spiral, emergency measures.
+
+      **Q5 - Protocol comparison:**
+      Specific comparisons to Aave (flash loans, rate model), Compound (cTokens, COMP),
+      MakerDAO (CDP, DAI stability). Not just name-dropping.
+
+      Full credit: All 5 questions with substantive game-theoretic analysis
+      Partial credit: Some questions addressed, basic understanding shown
+      Reject: No economic/game theory content, generic DeFi buzzwords without analysis
+    scoring:
+      - criterion: "Roles and incentives correct"
+        weight: 20
+      - criterion: "Equilibrium analysis valid"
+        weight: 20
+      - criterion: "Gaming strategies identified"
+        weight: 20
+      - criterion: "Stress scenario analyzed"
+        weight: 20
+      - criterion: "Comparisons accurate"
+        weight: 20
+
+  t3_q5_document_forensics:
+    tier: 3
+    name: "Document Forensic Analysis"
+    image_path: "/mnt/raid0/llm/claude/benchmarks/images/vl/docvqa/sample_300.png"
+    prompt: |
+      Analyze this business document forensically:
+      1. Extract all named entities (people, companies, locations, dates)
+      2. What is the business relationship implied?
+      3. Identify any inconsistencies or red flags
+      4. What additional documents would you request to verify claims?
+      5. Assess document authenticity indicators (letterhead, signatures, formatting)
+    expected: "Entity extraction + relationship analysis + red flags + verification needs + authenticity assessment"
+    reference_answer: |
+      **Scoring guidance:** Open-ended forensic analysis (no single correct answer).
+
+      **Q1 - Named entities:**
+      Full extraction of: person names, company names, addresses, dates, phone numbers,
+      reference numbers. Check completeness against visible text.
+
+      **Q2 - Business relationship:**
+      Infer relationship type: vendor/client, employer/employee, partnership, etc.
+      Should be supported by document evidence.
+
+      **Q3 - Inconsistencies/red flags:**
+      Good answers note: date inconsistencies, formatting anomalies, unusual terms,
+      missing standard elements, suspicious patterns.
+
+      **Q4 - Verification documents:**
+      Relevant requests: incorporation records, contracts, financial statements,
+      correspondence, third-party confirmations.
+
+      **Q5 - Authenticity indicators:**
+      Assess: letterhead quality, signature presence, formatting consistency,
+      document age indicators, print quality.
+
+      Full credit: Comprehensive extraction + insightful analysis across all questions
+      Partial credit: Good extraction but shallow analysis
+      Reject: Minimal extraction, no forensic reasoning
+    scoring:
+      - criterion: "Entities extracted"
+        weight: 20
+      - criterion: "Relationship understood"
+        weight: 20
+      - criterion: "Inconsistencies noted"
+        weight: 20
+      - criterion: "Verification needs identified"
+        weight: 20
+      - criterion: "Authenticity assessed"
+        weight: 20
 
 inference_params:
   temperature: 0.2
-  max_tokens: 1024
-  timeout: 180
+  max_tokens: 1500
+  timeout: 240

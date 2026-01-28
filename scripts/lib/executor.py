@@ -158,6 +158,7 @@ class ServerManager:
         self.process: Optional[subprocess.Popen] = None
         self.model_path: Optional[str] = None
         self.draft_model_path: Optional[str] = None
+        self.mmproj_path: Optional[str] = None
 
     def start(
         self,
@@ -169,6 +170,7 @@ class ServerManager:
         role: Optional[str] = None,
         draft_model_path: Optional[str] = None,
         draft_max: Optional[int] = None,
+        mmproj_path: Optional[str] = None,
     ) -> None:
         """Start llama-server with model loaded.
 
@@ -181,12 +183,14 @@ class ServerManager:
             role: Optional role name to look up model-specific max_context.
             draft_model_path: Optional path to draft model for speculative decoding.
             draft_max: Optional default K value for speculation (can be overridden per-request).
+            mmproj_path: Optional path to multimodal projector for VL models.
         """
         if self.process is not None:
             self.stop()
 
         self.model_path = model_path
         self.draft_model_path = draft_model_path
+        self.mmproj_path = mmproj_path
         binary = get_binary("server", registry)
 
         # Determine context length: explicit > role-based > default
@@ -222,6 +226,8 @@ class ServerManager:
             cmd.extend(["-md", draft_model_path])
             if draft_max:
                 cmd.extend(["--draft-max", str(draft_max)])
+        if mmproj_path:
+            cmd.extend(["--mmproj", mmproj_path])
 
         # Start server in background
         # Capture stderr to temp file for debugging if server fails
@@ -233,6 +239,8 @@ class ServerManager:
             print(f"      [DEBUG] Server cmd includes: --override-kv {moe_override}", flush=True)
         if draft_model_path:
             print(f"      [DEBUG] Server cmd includes: -md {draft_model_path}", flush=True)
+        if mmproj_path:
+            print(f"      [DEBUG] Server cmd includes: --mmproj {mmproj_path}", flush=True)
         print(f"      [DEBUG] Server log: {self._stderr_file.name}", flush=True)
 
         self.process = subprocess.Popen(
@@ -309,6 +317,7 @@ class ServerManager:
                 self.process.wait()
             self.process = None
             self.model_path = None
+            self.mmproj_path = None
 
     def run_inference(
         self,
@@ -317,6 +326,7 @@ class ServerManager:
         temperature: float = DEFAULT_TEMPERATURE,
         timeout: int = DEFAULT_TIMEOUT,
         speculative_n_max: Optional[int] = None,
+        image_path: Optional[str] = None,
     ) -> "InferenceResult":
         """Run inference via HTTP API with streaming to capture partial output.
 
@@ -326,11 +336,22 @@ class ServerManager:
             temperature: Sampling temperature.
             timeout: Request timeout in seconds.
             speculative_n_max: Optional K value for speculative decoding (overrides startup default).
+            image_path: Optional path to image file for VL models.
 
         Returns:
             InferenceResult with response content and timing.
             On timeout, returns partial output collected so far.
         """
+        # VL mode: use /v1/chat/completions with OpenAI multimodal format
+        if self.mmproj_path is not None:
+            return self._run_vl_inference(
+                prompt=prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+                image_path=image_path,
+            )
+
         url = f"http://127.0.0.1:{self.port}/completion"
         collected_content = ""
         timed_out = False
@@ -409,6 +430,115 @@ class ServerManager:
             tokens_per_second=tokens_per_second if tokens_per_second else None,
             timed_out=timed_out,
         )
+
+    def _run_vl_inference(
+        self,
+        prompt: str,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = DEFAULT_TEMPERATURE,
+        timeout: int = DEFAULT_TIMEOUT,
+        image_path: Optional[str] = None,
+    ) -> "InferenceResult":
+        """Run VL inference via /v1/chat/completions with multimodal payload.
+
+        When the server was started with --mmproj, use the OpenAI-compatible
+        endpoint which accepts base64-encoded images.
+        """
+        import base64 as b64mod
+
+        url = f"http://127.0.0.1:{self.port}/v1/chat/completions"
+
+        # Build message content
+        content_parts = [{"type": "text", "text": prompt}]
+
+        if image_path and os.path.exists(image_path):
+            with open(image_path, "rb") as img_file:
+                img_data = b64mod.b64encode(img_file.read()).decode("utf-8")
+
+            ext = os.path.splitext(image_path)[1].lower()
+            mime_map = {
+                ".png": "image/png", ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg", ".gif": "image/gif",
+                ".webp": "image/webp",
+            }
+            mime_type = mime_map.get(ext, "image/png")
+
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{img_data}"}
+            })
+
+        payload = {
+            "messages": [{"role": "user", "content": content_parts}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": False,
+        }
+
+        start_time = time.time()
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                timeout=(30, timeout),
+            )
+
+            elapsed_s = time.time() - start_time
+
+            if response.status_code != 200:
+                return InferenceResult(
+                    raw_output=f"HTTP {response.status_code}: {response.text}",
+                    exit_code=1,
+                    command=f"POST {url}",
+                )
+
+            data = response.json()
+
+            # Extract response content
+            content = ""
+            if "choices" in data and len(data["choices"]) > 0:
+                msg = data["choices"][0].get("message", {})
+                content = msg.get("content", "")
+
+            # Extract timing — llama-server may include timings in response
+            usage = data.get("usage", {})
+            prompt_tokens = usage.get("prompt_tokens", 0)
+            completion_tokens = usage.get("completion_tokens", 0)
+
+            timings = data.get("timings", {})
+            tokens_per_second = timings.get("predicted_per_second", 0)
+            predicted_ms = timings.get("predicted_ms", 0)
+
+            # Client-side TPS fallback if server doesn't include timings
+            if not tokens_per_second and completion_tokens > 0 and elapsed_s > 0:
+                tokens_per_second = completion_tokens / elapsed_s
+
+            # Build output compatible with output_parser
+            raw_output = f"{content}\n\n"
+            if tokens_per_second:
+                raw_output += f"llama_perf_context: prompt eval: {prompt_tokens} tokens\n"
+                raw_output += f"llama_perf_context: eval time = {predicted_ms:.2f}ms / {completion_tokens} tokens ({tokens_per_second:.2f} tokens per second)\n"
+
+            return InferenceResult(
+                raw_output=raw_output,
+                exit_code=0,
+                command=f"POST {url}",
+                tokens_per_second=tokens_per_second if tokens_per_second else None,
+            )
+
+        except requests.exceptions.Timeout:
+            return InferenceResult(
+                raw_output="[VL inference timed out]",
+                exit_code=-1,
+                command=f"POST {url}",
+                timed_out=True,
+            )
+        except requests.exceptions.RequestException as e:
+            return InferenceResult(
+                raw_output=str(e),
+                exit_code=1,
+                command=f"POST {url}",
+            )
 
 
 @dataclass

@@ -250,6 +250,8 @@ class REPLConfig:
     # Default False for backwards compatibility - enable for production use
     require_exploration_before_final: bool = False
     min_exploration_calls: int = 1  # Minimum peek/grep/llm_call before FINAL
+    # TOON encoding for tool outputs (reduces tokens by ~55% on structured data)
+    use_toon_encoding: bool = True  # Enabled after TTFT benchmark: 55.6% token reduction, 41.8% latency improvement
     allowed_builtins: frozenset[str] = field(
         default_factory=lambda: frozenset(
             {
@@ -721,6 +723,11 @@ class REPLEnvironment:
             }
 
             self._exploration_log.add_event("list_dir", {"path": path}, result)
+
+            # Use TOON encoding for token efficiency if enabled
+            if self.config.use_toon_encoding:
+                from src.services.toon_encoder import encode_list_dir
+                return encode_list_dir(path, entries[:100], len(entries))
             return json.dumps(result, indent=2)
 
         except FileNotFoundError:
@@ -1325,6 +1332,11 @@ class REPLEnvironment:
 
             result = {"results": results}
             self._exploration_log.add_event("recall", {"query": query}, result)
+
+            # Use TOON encoding for token efficiency if enabled
+            if self.config.use_toon_encoding and len(results) >= 3:
+                from src.services.toon_encoder import encode
+                return encode(result)
             return json.dumps(result, indent=2)
 
         except Exception as e:
@@ -1503,6 +1515,11 @@ class REPLEnvironment:
             procedures = registry.list_procedures(category=category, role=self.role)
 
             self._exploration_log.add_event("list_procedures", {"category": category}, procedures)
+
+            # Use TOON encoding for token efficiency if enabled
+            if self.config.use_toon_encoding and len(procedures) >= 3:
+                from src.services.toon_encoder import encode
+                return encode({"procedures": procedures})
             return json.dumps(procedures, indent=2)
 
         except Exception as e:

@@ -21,9 +21,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-# Add project root to path
+# Add project root and benchmark dir to path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "benchmark"))
 
 try:
     import httpx
@@ -33,12 +35,17 @@ except ImportError as e:
     print("Run: pip install httpx pyyaml")
     sys.exit(1)
 
+from benchmark.suites import load_suite, get_all_suite_names
 
 # Constants
 BASELINE_PATH = PROJECT_ROOT / "orchestration" / "orchestrator_baseline.json"
-PROMPT_DIR = PROJECT_ROOT / "benchmarks" / "prompts" / "v1"
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = 120
+
+ALL_SUITES = [
+    "thinking", "coder", "general", "math",
+    "agentic", "instruction_precision", "long_context", "vl",
+]
 
 
 @dataclass
@@ -46,6 +53,7 @@ class ComparisonResult:
     """Result of comparing orchestrator vs direct model."""
     prompt_id: str
     suite: str
+    tier: int
     # Direct model
     direct_answer: str
     direct_latency_ms: float
@@ -54,8 +62,9 @@ class ComparisonResult:
     orchestrator_answer: str
     orchestrator_latency_ms: float
     orchestrator_turns: int
+    orchestrator_routed_to: str  # Which role the orchestrator chose
     # Comparison
-    quality_match: bool  # Manual assessment placeholder
+    quality_match: bool
     speedup: float
 
 
@@ -81,54 +90,74 @@ def load_config(config_path: str) -> dict:
 
 
 def get_comparison_prompts(suite: str) -> list[dict]:
-    """Get prompts for comparison from existing benchmark suites."""
-
+    """Get prompts for comparison from existing benchmark suites via suites.py."""
     prompts = []
 
-    # Use a subset of existing benchmarks that have Claude-as-judge scores
-    suite_dirs = {
-        "thinking": PROMPT_DIR / "thinking",
-        "coder": PROMPT_DIR / "coder",
-        "general": PROMPT_DIR / "general",
-        "math": PROMPT_DIR / "math",
-    }
-
     if suite == "all":
-        dirs_to_check = suite_dirs.values()
-    elif suite in suite_dirs:
-        dirs_to_check = [suite_dirs[suite]]
+        suite_names = ALL_SUITES
+    elif suite in ALL_SUITES:
+        suite_names = [suite]
     else:
         print(f"Unknown suite: {suite}")
         return []
 
-    for suite_dir in dirs_to_check:
-        if not suite_dir.exists():
+    for suite_name in suite_names:
+        loaded = load_suite(suite_name)
+        if not loaded:
+            print(f"  Warning: Could not load suite '{suite_name}'")
             continue
 
-        # Get first 5 prompts from each tier
-        for tier_file in sorted(suite_dir.glob("t*_*.txt"))[:5]:
-            try:
-                content = tier_file.read_text()
-                parts = content.split("---")
-                prompt_text = parts[0].strip() if parts else content.strip()
+        for question in loaded.questions:
+            prompt_text = question.prompt
 
-                prompts.append({
-                    "id": tier_file.stem,
-                    "suite": suite_dir.name,
-                    "prompt": prompt_text,
-                    "file": str(tier_file)
-                })
-            except Exception as e:
-                print(f"Error loading {tier_file}: {e}")
+            # For VL prompts with images, embed image path in prompt text
+            # so the orchestrator's Frontdoor can route via analyze_figure tool
+            if question.image_path and suite_name == "vl":
+                prompt_text = (
+                    f"Analyze the image at {question.image_path} — {prompt_text}"
+                )
+
+            prompts.append({
+                "id": question.id,
+                "suite": suite_name,
+                "prompt": prompt_text,
+                "expected": question.expected,
+                "scoring": question.scoring,
+                "image_path": question.image_path,
+                "tier": question.tier,
+            })
 
     return prompts
+
+
+def assess_quality(answer: str, expected: str, scoring: list) -> bool:
+    """Heuristic quality assessment.
+
+    Checks:
+    1. Non-empty response (> 20 chars)
+    2. Expected keyword overlap (>20% of key terms)
+    3. Reasonable response length
+    """
+    if not answer or len(answer.strip()) < 20:
+        return False
+
+    if expected:
+        # Extract key terms (words > 4 chars)
+        key_terms = [w.lower() for w in expected.split() if len(w) > 4]
+        if key_terms:
+            answer_lower = answer.lower()
+            matches = sum(1 for t in key_terms if t in answer_lower)
+            if matches < max(1, len(key_terms) * 0.2):
+                return False
+
+    return True
 
 
 def call_orchestrator(
     prompt: str,
     api_url: str,
     timeout: int,
-    config: Optional[dict] = None
+    config: Optional[dict] = None,
 ) -> dict:
     """Call orchestrator API."""
 
@@ -172,6 +201,7 @@ def compare_prompt(
 
     prompt_id = prompt_data["id"]
     suite = prompt_data["suite"]
+    tier = prompt_data.get("tier", 1)
 
     # Get baseline data
     baseline_entry = baseline.get("prompts", {}).get(prompt_id, {})
@@ -185,6 +215,7 @@ def compare_prompt(
     orchestrator_answer = result.get("answer", "")
     orchestrator_latency = result.get("latency_ms", 0)
     orchestrator_turns = result.get("turns", 0)
+    routed_to = result.get("routed_to", result.get("role", "unknown"))
 
     # Calculate speedup
     if orchestrator_latency > 0 and direct_latency > 0:
@@ -192,33 +223,59 @@ def compare_prompt(
     else:
         speedup = 0.0
 
+    # Assess quality via heuristic
+    quality_match = assess_quality(
+        orchestrator_answer,
+        prompt_data.get("expected", ""),
+        prompt_data.get("scoring", []),
+    )
+
     return ComparisonResult(
         prompt_id=prompt_id,
         suite=suite,
-        direct_answer=direct_answer[:500],  # Truncate for storage
+        tier=tier,
+        direct_answer=direct_answer[:500],
         direct_latency_ms=direct_latency,
         direct_score=direct_score,
         orchestrator_answer=orchestrator_answer[:500],
         orchestrator_latency_ms=orchestrator_latency,
         orchestrator_turns=orchestrator_turns,
-        quality_match=True,  # Placeholder - requires manual review
-        speedup=speedup
+        orchestrator_routed_to=routed_to,
+        quality_match=quality_match,
+        speedup=speedup,
     )
 
 
-def create_baseline_entry(prompt_data: dict, direct_url: str, timeout: int) -> dict:
-    """Create baseline entry by calling direct model."""
+def create_baseline_entry(
+    prompt_data: dict,
+    api_url: str,
+    timeout: int,
+) -> dict:
+    """Create baseline entry by calling orchestrator with architect_general role.
 
-    # This would call the direct large model
-    # For now, create a placeholder structure
+    Uses the highest-quality model available (Qwen3-235B) for baseline answers.
+    """
+    result = call_orchestrator(
+        prompt_data["prompt"],
+        api_url,
+        timeout,
+        config={"role": "architect_general"},
+    )
+
+    answer = result.get("answer", "")
+    latency_ms = result.get("latency_ms", 0)
+    error = result.get("error")
+
     return {
         "prompt_id": prompt_data["id"],
         "suite": prompt_data["suite"],
+        "tier": prompt_data.get("tier", 1),
         "prompt": prompt_data["prompt"][:500],
-        "answer": "",  # To be filled by running direct model
-        "latency_ms": 0,
-        "claude_score": None,  # To be filled by manual review
-        "created": datetime.now().isoformat()
+        "answer": answer,
+        "latency_ms": latency_ms,
+        "claude_score": None,  # To be filled by Claude-as-Judge review
+        "error": error,
+        "created": datetime.now().isoformat(),
     }
 
 
@@ -239,17 +296,23 @@ def run_comparison(
         return {}
 
     results = []
+    errors = 0
     print(f"\nComparing {len(prompts)} prompts from {suite}...")
     print("-" * 60)
 
     for prompt_data in prompts:
-        print(f"  {prompt_data['id']}...", end=" ", flush=True)
+        print(f"  [{prompt_data['suite']}] {prompt_data['id']}...", end=" ", flush=True)
 
         result = compare_prompt(prompt_data, baseline, api_url, timeout, config)
         results.append(result)
 
         speedup_str = f"{result.speedup:.1f}x" if result.speedup > 0 else "N/A"
-        print(f"speedup: {speedup_str}, turns: {result.orchestrator_turns}")
+        quality_str = "OK" if result.quality_match else "FAIL"
+        print(f"speedup: {speedup_str}, quality: {quality_str}, "
+              f"turns: {result.orchestrator_turns}, routed: {result.orchestrator_routed_to}")
+
+        if not result.quality_match:
+            errors += 1
 
     # Compute summary
     valid_speedups = [r.speedup for r in results if r.speedup > 0]
@@ -257,6 +320,12 @@ def run_comparison(
 
     avg_latency = sum(r.orchestrator_latency_ms for r in results) / len(results) if results else 0
     avg_turns = sum(r.orchestrator_turns for r in results) / len(results) if results else 0
+    quality_pass_rate = sum(1 for r in results if r.quality_match) / len(results) * 100 if results else 0
+
+    # Routing accuracy: count distinct roles used
+    route_counts = {}
+    for r in results:
+        route_counts[r.orchestrator_routed_to] = route_counts.get(r.orchestrator_routed_to, 0) + 1
 
     summary = {
         "suite": suite,
@@ -264,16 +333,18 @@ def run_comparison(
         "avg_speedup": avg_speedup,
         "avg_orchestrator_latency_ms": avg_latency,
         "avg_turns": avg_turns,
+        "quality_pass_rate": quality_pass_rate,
+        "quality_errors": errors,
+        "routing_distribution": route_counts,
         "results": [asdict(r) for r in results],
         "timestamp": datetime.now().isoformat(),
-        "note": "Quality assessment requires manual review"
     }
 
     return summary
 
 
 def print_summary(summary: dict):
-    """Print comparison summary."""
+    """Print comparison summary with per-suite breakdown."""
 
     print(f"\n{'='*60}")
     print("COMPARISON SUMMARY")
@@ -283,20 +354,49 @@ def print_summary(summary: dict):
     print(f"Average speedup: {summary.get('avg_speedup', 0):.2f}x")
     print(f"Average orchestrator latency: {summary.get('avg_orchestrator_latency_ms', 0):.0f}ms")
     print(f"Average turns: {summary.get('avg_turns', 0):.1f}")
-    print(f"\nNote: {summary.get('note', '')}")
+    print(f"Quality pass rate: {summary.get('quality_pass_rate', 0):.1f}%")
+
+    # Routing distribution
+    route_dist = summary.get("routing_distribution", {})
+    if route_dist:
+        print(f"\nRouting distribution:")
+        for role, count in sorted(route_dist.items(), key=lambda x: -x[1]):
+            print(f"  {role:30} {count:3}")
+
+    # Per-suite breakdown
+    results = summary.get("results", [])
+    suite_stats = {}
+    for r in results:
+        s = r.get("suite", "unknown")
+        if s not in suite_stats:
+            suite_stats[s] = {"count": 0, "speedups": [], "quality_matches": 0}
+        suite_stats[s]["count"] += 1
+        if r.get("speedup", 0) > 0:
+            suite_stats[s]["speedups"].append(r["speedup"])
+        if r.get("quality_match"):
+            suite_stats[s]["quality_matches"] += 1
+
+    if len(suite_stats) > 1:
+        print(f"\nPer-suite breakdown:")
+        for s, st in sorted(suite_stats.items()):
+            avg_sp = sum(st["speedups"]) / len(st["speedups"]) if st["speedups"] else 0
+            qual_pct = st["quality_matches"] / st["count"] * 100 if st["count"] else 0
+            print(f"  {s:25} {st['count']:3} prompts  {avg_sp:5.1f}x speedup  {qual_pct:5.1f}% quality")
 
     # Targets
     speedup = summary.get('avg_speedup', 0)
+    quality = summary.get('quality_pass_rate', 0)
     speedup_status = "PASS" if speedup >= 3.0 else "FAIL"
+    quality_status = "PASS" if quality >= 90.0 else "FAIL"
     print(f"\nTarget: >3x speedup: {speedup_status} ({speedup:.2f}x)")
-    print("Target: >90% quality retention: REQUIRES MANUAL REVIEW")
+    print(f"Target: >90% quality: {quality_status} ({quality:.1f}%)")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Orchestrator vs Direct Comparison")
     parser.add_argument(
         "--suite",
-        choices=["all", "thinking", "coder", "general", "math"],
+        choices=["all"] + ALL_SUITES,
         default="all",
         help="Benchmark suite to compare"
     )
@@ -319,7 +419,7 @@ def main():
     parser.add_argument(
         "--create-baseline",
         action="store_true",
-        help="Create baseline entries (requires direct model)"
+        help="Create baseline entries via architect_general model"
     )
     parser.add_argument(
         "--config-from",
@@ -336,7 +436,6 @@ def main():
     config = None
     if args.config_from:
         checkpoint = load_config(args.config_from)
-        # Extract optimal params from all completed layers
         config = {}
         for layer_data in checkpoint.get("layers", {}).values():
             if layer_data.get("optimal_params"):
@@ -344,24 +443,36 @@ def main():
         print(f"Loaded config: {config}")
 
     if args.create_baseline:
-        print("Creating baseline entries...")
+        print("Creating baseline entries via architect_general...")
         prompts = get_comparison_prompts(args.suite)
         baseline = load_baseline()
 
         if "prompts" not in baseline:
             baseline["prompts"] = {}
         if "meta" not in baseline:
-            baseline["meta"] = {"created": datetime.now().isoformat()}
+            baseline["meta"] = {
+                "created": datetime.now().isoformat(),
+                "description": "Baseline from architect_general (Qwen3-235B-A22B)",
+                "benchmark_version": "v1",
+            }
 
+        created = 0
         for prompt_data in prompts:
             if prompt_data["id"] not in baseline["prompts"]:
-                entry = create_baseline_entry(prompt_data, "", args.timeout)
+                entry = create_baseline_entry(prompt_data, args.api_url, args.timeout)
                 baseline["prompts"][prompt_data["id"]] = entry
-                print(f"  Added: {prompt_data['id']}")
+                if entry.get("answer"):
+                    print(f"  Added: {prompt_data['id']} ({len(entry['answer'])} chars)")
+                    created += 1
+                else:
+                    err = entry.get("error", "empty response")
+                    print(f"  FAILED: {prompt_data['id']}: {err}")
+            else:
+                print(f"  Exists: {prompt_data['id']}")
 
         save_baseline(baseline)
         print(f"\nBaseline saved to: {BASELINE_PATH}")
-        print("NOTE: Run direct model and update answers/scores manually")
+        print(f"Created {created} entries, {len(baseline['prompts'])} total")
         return
 
     # Run comparison

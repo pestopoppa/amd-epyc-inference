@@ -55,9 +55,18 @@ def seed_memory(force: bool = False) -> dict:
 
     if force and current_count > 0:
         print(f"Clearing {current_count} existing memories...")
-        # Clear by recreating the store files
-        store.db_path.unlink(missing_ok=True)
-        store.embeddings_path.unlink(missing_ok=True)
+        # Clear by removing the SQLite database and FAISS files
+        # FAISS backend uses storage_dir/episodic.db and storage_dir/embeddings.faiss
+        sqlite_path = store.sqlite_path
+        faiss_path = store.storage_dir / "embeddings.faiss"
+        id_map_path = store.storage_dir / "id_map.npy"
+
+        store.close()  # Close before deleting
+
+        sqlite_path.unlink(missing_ok=True)
+        faiss_path.unlink(missing_ok=True)
+        id_map_path.unlink(missing_ok=True)
+
         store = EpisodicStore()  # Reinitialize
 
     # Load and embed seed examples
@@ -107,6 +116,10 @@ def seed_memory(force: bool = False) -> dict:
             print(f"  Failed to load '{task[:50]}...': {e}")
             stats["failed"] += 1
 
+    # Flush FAISS index to disk before reporting stats
+    store.flush()
+    store._embedding_store.save()
+
     print(f"\nSeeding complete!")
     print(f"  Loaded: {stats['loaded']}")
     print(f"  Failed: {stats['failed']}")
@@ -116,6 +129,7 @@ def seed_memory(force: bool = False) -> dict:
     final_stats = store.get_stats()
     print(f"\nMemory stats:")
     print(f"  Total memories: {final_stats['total_memories']}")
+    print(f"  FAISS embeddings: {store._embedding_store.count}")
     print(f"  Average Q-value: {final_stats['overall_avg_q']:.2f}")
 
     return stats

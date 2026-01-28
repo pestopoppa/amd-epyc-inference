@@ -34,7 +34,7 @@ echo ""
 
 case "$MODE" in
     --full)
-        echo "Mode: FULL production stack (~510GB)"
+        echo "Mode: FULL production stack (~535GB)"
         echo ""
         echo "Components:"
         echo "  - frontdoor (8080): Qwen3-Coder-30B-A3B, MoE6, 18 t/s"
@@ -43,6 +43,8 @@ case "$MODE" in
         echo "  - architect_general (8083): Qwen3-235B-A22B, MoE4, 6.75 t/s"
         echo "  - architect_coding (8084): Qwen3-Coder-480B-A35B, MoE3, 10.3 t/s"
         echo "  - ingest_long_context (8085): Qwen3-Next-80B-A3B, MoE4, 6.3 t/s"
+        echo "  - worker_vision (8086): Qwen2.5-VL-7B + mmproj, ~15 t/s"
+        echo "  - vision_escalation (8087): Qwen3-VL-30B-A3B + mmproj, MoE4, ~10 t/s"
         echo "  - embedder (8090): Qwen2.5-Coder-0.5B"
         echo "  - orchestrator (8000): uvicorn API"
         echo "  - document_formalizer (9001): LightOnOCR-2-1B"
@@ -94,7 +96,7 @@ case "$MODE" in
         echo "Usage: $0 [--full | --minimal | --with-burst | --dev | --status | --stop]"
         echo ""
         echo "Modes:"
-        echo "  --full (default)  Full HOT tier + architects (~510GB, 45% RAM)"
+        echo "  --full (default)  Full HOT tier + architects (~535GB, 47% RAM)"
         echo "  --minimal         Core tier only, no architects (~45GB)"
         echo "  --with-burst      Full + fast workers for burst capacity (~515GB)"
         echo "  --dev             Single 0.5B model for testing"
@@ -108,7 +110,9 @@ case "$MODE" in
         echo "  - architect_general (235B): ~140GB"
         echo "  - architect_coding (480B): ~280GB"
         echo "  - ingest_long_context (80B): ~45GB"
-        echo "  - Total: ~510GB (45% of 1130GB)"
+        echo "  - worker_vision (7B VL): ~6GB"
+        echo "  - vision_escalation (30B VL MoE): ~19GB"
+        echo "  - Total: ~535GB (47% of 1130GB)"
         exit 0
         ;;
     *)

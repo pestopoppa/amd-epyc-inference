@@ -51,7 +51,7 @@
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
-| **TOON Format Integration** | TTFT benchmark on prod | **MEDIUM** | `handoffs/active/toon_format_integration.md` | ✅ PHASES 1-3.1 COMPLETE + A/B harness (55% token reduction) |
+| **TOON Format Integration** | — | ~~MEDIUM~~ | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE - INTEGRATED (55.6% tokens, 41.8% TTFT) |
 | **VL Suite Assignment Fix** | — | **LOW** | `progress/2026-01/2026-01-27.md` | ✅ FIXED (VL models now only run `vl` suite) |
 | **Graphiti MemRL Enhancement** | — | **MEDIUM** | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests, perf optimized) |
 | **SWA Prompt Lookup Fix** | — | **LOW** | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |

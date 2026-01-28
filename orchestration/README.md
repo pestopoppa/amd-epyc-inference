@@ -108,6 +108,78 @@ roles:
 
 The dispatcher should read this file and **never improvise** model selection.
 
+## Production Server Topology (Updated 2026-01-28)
+
+Launch the production stack using the deterministic launcher:
+
+```bash
+# Full production stack (~510GB, 45% of 1130GB RAM)
+./scripts/server/launch_production.sh --full
+
+# Minimal stack for testing (~45GB)
+./scripts/server/launch_production.sh --minimal
+
+# Check status
+./scripts/server/launch_production.sh --status
+
+# Stop all
+./scripts/server/launch_production.sh --stop
+```
+
+### HOT Tier (Always Resident, ~510GB)
+
+| Port | Role | Model | Acceleration | Speed |
+|------|------|-------|--------------|-------|
+| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B-Q4_K_M | MoE6 | 18 t/s |
+| 8081 | coder_escalation, worker_summarize | Qwen2.5-Coder-32B-Q4_K_M + 0.5B draft | spec K=24 + lookup | 33-95 t/s |
+| 8082 | worker_explore, worker_vision, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 | 46 t/s |
+| 8083 | architect_general | Qwen3-235B-A22B-Q4_K_M (4 files, ~140GB) | MoE4 | 6.75 t/s |
+| 8084 | architect_coding | Qwen3-Coder-480B-A35B-Q4_K_M (8 files, ~280GB) | MoE3 | 10.3 t/s |
+| 8085 | ingest_long_context | Qwen3-Next-80B-A3B-Q4_K_M (~45GB) | MoE4 (NO SPEC!) | 6.3 t/s |
+| 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | — | — |
+
+### WARM Tier (Burst Capacity, ~5GB)
+
+| Port | Role | Model | Acceleration | Speed |
+|------|------|-------|--------------|-------|
+| 8102 | worker_fast_1 | Qwen2.5-Coder-1.5B-Q4_K_M | lookup | 60 t/s |
+| 8112 | worker_fast_2 | Qwen2.5-Coder-1.5B-Q4_K_M | lookup | 60 t/s |
+
+### Services
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 8000 | orchestrator API (uvicorn) | FastAPI entrypoint |
+| 9001 | document_formalizer (LightOnOCR-2-1B) | PDF OCR, figure extraction |
+
+### CLI Tools (On-Demand, No Port)
+
+| Tool | Model | Purpose |
+|------|-------|---------|
+| tool_formalizer | xLAM-2-1B-Q4_K_M | Tool call formalization |
+| math_formalizer | MathSmith-8B-Q4_K_M | Math problem formalization |
+| pdf_router | pdftotext + PyMuPDF | Fast-path PDF extraction |
+
+### Escalation Chains
+
+```
+Code: coder_primary (30B) → coder_escalation (32B) → architect_coding (480B)
+General: frontdoor (30B) → architect_general (235B)
+Vision: worker_vision (7B) → vision_escalation (30B, manual)
+```
+
+### Split Pipeline (Exploration → Summarization)
+
+```
+worker_explore (7B, 46 t/s)          worker_summarize (32B, 95 t/s)
+┌─────────────────────────┐         ┌─────────────────────────────┐
+│ • Crawl directories     │         │ • Synthesize findings       │
+│ • Grep for patterns     │ ──────► │ • Create executive summary  │
+│ • Extract code snippets │  TOON   │ • Answer comprehension Qs   │
+│ • Collect raw results   │ encoded │ • Document understanding    │
+└─────────────────────────┘         └─────────────────────────────┘
+```
+
 ## Files to Gitignore
 
 Add to your `.gitignore`:

@@ -62,7 +62,8 @@ PORT_MAP = {
     "worker_general": 8082,  # Legacy alias -> worker_explore
     "worker_explore": 8082,  # Explore worker (7B)
     "worker_math": 8082,     # Shares with explore
-    "worker_vision": 8082,   # Shares with explore
+    "worker_vision": 8086,   # Dedicated VL server
+    "vision_escalation": 8087,  # VL escalation (Qwen3-VL-30B MoE)
     # worker_code REMOVED - route to coder_escalation (32B, faster + better quality)
     "worker_fast_1": 8102,   # Fast worker 1 (1.5B, WARM)
     "worker_fast_2": 8112,   # Fast worker 2 (1.5B, WARM)
@@ -78,7 +79,8 @@ PORT_MAP = {
 # HOT roles (always started) - includes architects in HOT tier (510GB total, 45% of 1130GB RAM)
 HOT_ROLES = {
     "frontdoor", "coder_escalation", "worker_explore", "embedder",
-    "architect_general", "architect_coding", "ingest_long_context"
+    "architect_general", "architect_coding", "ingest_long_context",
+    "worker_vision", "vision_escalation",
 }
 
 # Servers to start (unique ports only)
@@ -87,8 +89,11 @@ HOT_SERVERS = [
     {"port": 8080, "roles": ["frontdoor", "coder_primary"]},
     {"port": 8081, "roles": ["coder_escalation", "worker_summarize"]},  # Added worker_summarize
     # Worker pool HOT tier
-    {"port": 8082, "roles": ["worker_explore", "worker_general", "worker_math", "worker_vision"],
+    {"port": 8082, "roles": ["worker_explore", "worker_general", "worker_math"],
      "worker_pool": True, "worker_type": "explore"},
+    # Vision servers (VL models with multimodal projector, NO spec decode)
+    {"port": 8086, "roles": ["worker_vision"], "vision": True, "vision_type": "worker"},
+    {"port": 8087, "roles": ["vision_escalation"], "vision": True, "vision_type": "escalation"},
     # worker_code REMOVED - route to coder_escalation (32B is faster + better quality)
     {"port": 8090, "roles": ["embedder"], "embedding": True},  # Embedding server
     # Architects in HOT tier (always resident)
@@ -109,6 +114,12 @@ WORKER_POOL_MODELS = {
 
 # Draft model for speculative decoding on explore worker
 EXPLORE_DRAFT_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+
+# Vision models (VL) with multimodal projector
+VISION_WORKER_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+VISION_WORKER_MMPROJ = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf"
+VISION_ESCALATION_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf"
+VISION_ESCALATION_MMPROJ = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf"
 
 WARM_SERVERS = [
     {"port": 8083, "roles": ["architect_general"]},
@@ -159,6 +170,16 @@ def validate_model_paths() -> list[str]:
     for role, path in architect_models:
         if not Path(path).exists():
             errors.append(f"[HOT] {role}: {path}")
+
+    # Vision models (VL with multimodal projector)
+    for label, path in [
+        ("worker_vision model", VISION_WORKER_MODEL),
+        ("worker_vision mmproj", VISION_WORKER_MMPROJ),
+        ("vision_escalation model", VISION_ESCALATION_MODEL),
+        ("vision_escalation mmproj", VISION_ESCALATION_MMPROJ),
+    ]:
+        if not Path(path).exists():
+            errors.append(f"[HOT] {label}: {path}")
 
     # Auxiliary services
     formalizer = "/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf"
@@ -287,8 +308,40 @@ def build_server_command(
     embedding_mode: bool = False,
     worker_pool_mode: bool = False,
     worker_type: str = None,
+    vision_mode: bool = False,
+    vision_type: str = None,
 ) -> list[str]:
     """Build llama-server command from role config."""
+    # Vision server mode - VL models with multimodal projector
+    if vision_mode:
+        if vision_type == "escalation":
+            # Qwen3-VL-30B MoE - larger model, expert reduction
+            return [
+                str(LLAMA_SERVER),
+                "-m", VISION_ESCALATION_MODEL,
+                "--mmproj", VISION_ESCALATION_MMPROJ,
+                "--override-kv", "qwen3vlmoe.expert_used_count=int:4",
+                "--host", "127.0.0.1",
+                "--port", str(port),
+                "-np", "2",
+                "-c", "16384",
+                "-t", "96",
+                "--flash-attn", "on",
+            ]
+        else:
+            # Qwen2.5-VL-7B - smaller worker model
+            return [
+                str(LLAMA_SERVER),
+                "-m", VISION_WORKER_MODEL,
+                "--mmproj", VISION_WORKER_MMPROJ,
+                "--host", "127.0.0.1",
+                "--port", str(port),
+                "-np", "2",
+                "-c", "8192",
+                "-t", "24",
+                "--flash-attn", "on",
+            ]
+
     # Embedding server mode - lightweight, dedicated to embeddings
     if embedding_mode:
         return [
@@ -398,8 +451,60 @@ def start_server(
     embedding_mode: bool = False,
     worker_pool_mode: bool = False,
     worker_type: str = None,
+    vision_mode: bool = False,
+    vision_type: str = None,
 ) -> ProcessInfo | None:
     """Start a llama-server for the given roles."""
+    # Vision mode - VL models with multimodal projector
+    if vision_mode:
+        log_file = LOG_DIR / f"vision-{vision_type or 'worker'}-{port}.log"
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        if vision_type == "escalation":
+            model_path = VISION_ESCALATION_MODEL
+            model_name = "Qwen3-VL-30B-A3B (vision escalation)"
+        else:
+            model_path = VISION_WORKER_MODEL
+            model_name = "Qwen2.5-VL-7B (vision worker)"
+
+        cmd = build_server_command(
+            None, port, vision_mode=True, vision_type=vision_type
+        )
+
+        print(f"  Starting vision server [{vision_type or 'worker'}] on port {port}: {model_name}")
+        print(f"    Roles: {', '.join(roles)}")
+        print(f"    Command: {' '.join(cmd[:6])}...")
+
+        with open(log_file, "w") as log:
+            env = os.environ.copy()
+            proc = subprocess.Popen(
+                ["numactl", "--interleave=all"] + cmd,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=env,
+            )
+
+        print(f"    PID: {proc.pid}")
+        print(f"    Waiting for health...")
+
+        # VL models take longer to load (mmproj + main model)
+        timeout = 120 if vision_type == "escalation" else 90
+        if wait_for_health(port, timeout=timeout):
+            print(f"    [OK] Vision server {vision_type or 'worker'} ready")
+            return ProcessInfo(
+                role=roles[0],
+                pid=proc.pid,
+                port=port,
+                started_at=datetime.now().isoformat(),
+                model_path=model_path,
+                log_file=str(log_file),
+            )
+        else:
+            print(f"    [FAIL] Vision server {vision_type or 'worker'} did not become healthy")
+            print(f"    Check log: {log_file}")
+            kill_process(proc.pid)
+            return None
+
     # Embedding mode uses dedicated config, no registry lookup needed
     if embedding_mode:
         log_file = LOG_DIR / f"llama-server-{port}.log"
@@ -724,12 +829,16 @@ def cmd_start(args: argparse.Namespace) -> int:
         embedding_mode = server.get("embedding", False)
         worker_pool_mode = server.get("worker_pool", False)
         worker_type = server.get("worker_type")
+        vision_mode = server.get("vision", False)
+        vision_type = server.get("vision_type")
 
         info = start_server(
             port, roles, registry, args.dev,
             embedding_mode=embedding_mode,
             worker_pool_mode=worker_pool_mode,
             worker_type=worker_type,
+            vision_mode=vision_mode,
+            vision_type=vision_type,
         )
         if info:
             state[f"server_{port}"] = info
@@ -739,14 +848,14 @@ def cmd_start(args: argparse.Namespace) -> int:
                     state[role] = info
         else:
             print(f"  [!] Failed to start server on port {port}")
-            # Embedding/worker_pool server failure is non-fatal (fallback available)
-            is_optional = embedding_mode or worker_pool_mode
+            # Embedding/worker_pool/vision server failure is non-fatal (fallback available)
+            is_optional = embedding_mode or worker_pool_mode or vision_mode
             if not args.dev and not is_optional:
                 return 1
 
         # Brief cooldown between large models to allow mmap settling
         # With parallel tensor repack enabled, 5s is sufficient
-        is_small_model = embedding_mode or (worker_pool_mode and worker_type == "fast")
+        is_small_model = embedding_mode or (worker_pool_mode and worker_type == "fast") or (vision_mode and vision_type != "escalation")
         if i < len(servers_to_start) - 1 and not args.dev and not is_small_model:
             print("  Cooldown (5s)...")
             time.sleep(5)
@@ -858,6 +967,8 @@ def cmd_reload(args: argparse.Namespace) -> int:
             worker_pool_mode = False
             worker_type = None
             embedding_mode = False
+            vision_mode = False
+            vision_type = None
 
             for server in HOT_SERVERS + WARM_SERVERS:
                 if server["port"] == port:
@@ -865,6 +976,8 @@ def cmd_reload(args: argparse.Namespace) -> int:
                     worker_pool_mode = server.get("worker_pool", False)
                     worker_type = server.get("worker_type")
                     embedding_mode = server.get("embedding", False)
+                    vision_mode = server.get("vision", False)
+                    vision_type = server.get("vision_type")
                     break
 
             # Stop existing
@@ -878,6 +991,8 @@ def cmd_reload(args: argparse.Namespace) -> int:
                 embedding_mode=embedding_mode,
                 worker_pool_mode=worker_pool_mode,
                 worker_type=worker_type,
+                vision_mode=vision_mode,
+                vision_type=vision_type,
             )
             if info:
                 state[key] = info

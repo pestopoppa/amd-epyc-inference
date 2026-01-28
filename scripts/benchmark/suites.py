@@ -212,8 +212,8 @@ ROLE_SUITE_MAP = {
     "coding": ["coder", "thinking", "general", "agentic", "instruction_precision"],
     "thinking": ["thinking", "general", "math", "agentic"],
     "reasoning": ["thinking", "general", "math", "agentic"],
-    "vision": ["vl", "general", "agentic"],
-    "vl": ["vl", "general", "agentic"],
+    "vision": ["vl"],  # VL models only run vision suite (text-only tasks are inefficient)
+    "vl": ["vl"],
     "math": ["math", "thinking", "general"],
 
     # Versatile roles - broad testing

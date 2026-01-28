@@ -15,6 +15,7 @@ Usage:
     ./run_benchmark.py --force            # Force re-run (don't skip)
     ./run_benchmark.py --model coder_primary  # Run specific model
     ./run_benchmark.py --suite thinking   # Run specific suite
+    ./run_benchmark.py --vision-only      # Only VL models (with mmproj)
     ./run_benchmark.py --dry-run          # Show what would run
     ./run_benchmark.py --process-queue    # Process queued models
 """
@@ -328,6 +329,7 @@ def run_benchmark(
     server_mode: bool = False,
     no_mmap: bool = False,
     skip_long_context: bool = False,
+    vision_only: bool = False,
 ) -> dict:
     """Run the benchmark with nested progress bars.
 
@@ -340,6 +342,9 @@ def run_benchmark(
     roles = registry.get_all_roles(include_deprecated=False)
     if model_filter:
         roles = [r for r in roles if r == model_filter]
+    if vision_only:
+        # Filter to only VL models (those with mmproj_path configured)
+        roles = [r for r in roles if registry.get_mmproj_path(r) is not None]
 
     # Group roles by model path to avoid duplicate display
     model_to_roles: dict[str, list[str]] = {}
@@ -484,7 +489,7 @@ def run_benchmark(
                     # Server will be restarted with specific expert counts when needed
                     print(f"    [SERVER] Starting llama-server (model will stay in RAM)...", flush=True)
                     active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=None, registry=registry, no_mmap=no_mmap, role=role)
+                    active_server.start(model_path, moe_override=None, registry=registry, no_mmap=no_mmap, role=role, mmproj_path=mmproj_path)
 
                     # Dynamic timeout: 3s per GB + 2 min buffer, minimum 600s
                     server_timeout = max(600, int(size_gb * 3) + 120)
@@ -523,7 +528,7 @@ def run_benchmark(
 
                     active_server.stop()
                     active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=moe_override, registry=registry, no_mmap=no_mmap, role=role)
+                    active_server.start(model_path, moe_override=moe_override, registry=registry, no_mmap=no_mmap, role=role, mmproj_path=mmproj_path)
 
                     server_timeout = max(600, int(size_gb * 3) + 120)
                     if not active_server.wait_ready(timeout=server_timeout):
@@ -561,6 +566,7 @@ def run_benchmark(
                             role=role,
                             draft_model_path=required_draft,
                             draft_max=config.spec_k,  # Use this K as default
+                            mmproj_path=mmproj_path,
                         )
 
                         server_timeout = max(600, int(size_gb * 3) + 120)
@@ -730,12 +736,11 @@ def run_benchmark(
                     try:
                         # Use server for all supported config types (model stays in RAM)
                         # Server supports: baseline, MoE, spec decode (K is per-request)
-                        # VL models MUST use subprocess (server doesn't support vision)
+                        # VL models can use server via /v1/chat/completions with mmproj
                         use_server = (
                             active_server is not None
                             and active_server.is_running()
                             and config.config_type in ("baseline", "moe", "spec", "moe_spec")
-                            and mmproj_path is None  # VL models can't use server
                         )
 
                         if use_server:
@@ -747,6 +752,7 @@ def run_benchmark(
                                 temperature=params["temperature"],
                                 timeout=params["timeout"],
                                 speculative_n_max=spec_k,
+                                image_path=question.image_path,
                             )
                         else:
                             result = executor.run_inference(
@@ -889,6 +895,8 @@ Examples:
   ./run_benchmark.py                     # Run all benchmarks
   ./run_benchmark.py --force             # Force re-run
   ./run_benchmark.py --model coder_primary --suite thinking
+  ./run_benchmark.py --vision-only       # Only VL models (with mmproj)
+  ./run_benchmark.py --vision-only --suite vl  # VL models, VL suite only
   ./run_benchmark.py --dry-run           # Preview what would run
   ./run_benchmark.py --process-queue     # Run queued models
         """,
@@ -904,6 +912,7 @@ Examples:
     parser.add_argument("--list-models", action="store_true", help="List available models")
     parser.add_argument("--list-suites", action="store_true", help="List available suites")
     parser.add_argument("--skip-long-context", action="store_true", help="Skip long_context suite (saves time on quick runs)")
+    parser.add_argument("--vision-only", action="store_true", help="Only benchmark vision-language models (models with mmproj_path)")
 
     args = parser.parse_args()
 
@@ -975,6 +984,7 @@ Examples:
             server_mode=args.server_mode,
             no_mmap=args.no_mmap,
             skip_long_context=args.skip_long_context,
+            vision_only=args.vision_only,
         )
     finally:
         if lock_fd is not None:

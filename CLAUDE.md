@@ -348,16 +348,18 @@ python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py status
 python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py stop --all
 ```
 
-**Server Topology (HOT Tier ~510GB = 45% of 1130GB RAM):**
+**Server Topology (HOT Tier ~535GB = 47% of 1130GB RAM):**
 
 | Port | Role | Model | Accel | Speed |
 |------|------|-------|-------|-------|
 | 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B-Q4_K_M | MoE6 | 18 t/s |
 | 8081 | coder_escalation, worker_summarize | Qwen2.5-Coder-32B-Q4_K_M + 0.5B draft | spec K=24 + lookup | 39 t/s |
-| 8082 | worker_explore, worker_vision, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 + lookup | 44 t/s |
+| 8082 | worker_explore, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 + lookup | 44 t/s |
 | 8083 | architect_general | Qwen3-235B-A22B-Q4_K_M (~140GB) | MoE4 | 6.75 t/s |
 | 8084 | architect_coding | Qwen3-Coder-480B-A35B-Q4_K_M (~280GB) | MoE3 | 10.3 t/s |
 | 8085 | ingest_long_context | Qwen3-Next-80B-A3B-Q4_K_M (~45GB) | MoE4 (NO SPEC!) | 6.3 t/s |
+| 8086 | worker_vision | Qwen2.5-VL-7B-Q4_K_M + mmproj | None (VL) | ~15 t/s |
+| 8087 | vision_escalation | Qwen3-VL-30B-A3B-Q4_K_M + mmproj | MoE4 | ~10 t/s |
 | 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | — | — |
 
 **Services:**
