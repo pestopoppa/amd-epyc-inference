@@ -194,7 +194,7 @@ server_mode:
     port: 8081
     slots: 4
     model_role: coder_escalation
-    description: Escalation code generation with spec decode
+    description: Escalation code generation with spec decode + prompt lookup fallback
     model: Qwen2.5-Coder-32B-Q4_K_M.gguf
     draft_model: Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf
     memory_gb: 20
@@ -202,7 +202,8 @@ server_mode:
     acceleration:
       type: speculative_decoding
       draft_max: 24
-    throughput: 33.0  # t/s, 11x speedup
+      lookup: true  # Prompt n-gram lookup as fallback (--lookup flag, commit 8e35dbc01)
+    throughput: 39.44  # t/s combined spec+lookup (5.4x), was 33 spec-only (5.2x)
 
   worker:
     url: http://localhost:8082
@@ -211,14 +212,15 @@ server_mode:
     model_role: worker_general
     shared_with: [worker_math, worker_summarize, toolrunner]
     description: Parallel workers for file-level tasks
-    model: Qwen2.5-7B-Instruct-Q4_K_M.gguf
-    draft_model: Qwen2.5-0.5B-Instruct-Q8_0.gguf
-    memory_gb: 5
+    model: Qwen2.5-7B-Instruct-f16.gguf
+    draft_model: Qwen2.5-Coder-0.5B-Q8_0.gguf
+    memory_gb: 16
     tier: hot
     acceleration:
       type: speculative_decoding
-      draft_max: 16
-    throughput: 50.0  # t/s estimated
+      draft_max: 24
+      lookup: true  # Prompt n-gram lookup as fallback (--lookup flag)
+    throughput: 43.9  # t/s measured with spec decode (2026-01-28)
 
   # WARM tier - mmap preloaded, loaded on demand (~430GB total)
   architect_general:
@@ -509,7 +511,7 @@ roles:
       Include minimal inline comments.
   coder_escalation:
     tier: B
-    description: Coding escalation target - dense coder with spec decode
+    description: Coding escalation target - dense coder with spec decode + prompt lookup
     model:
       name: Qwen2.5-Coder-32B-Instruct
       path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
@@ -523,10 +525,13 @@ roles:
       type: speculative_decoding
       draft_role: draft_qwen2_5_coder_0_5b
       k: 24
+      lookup: true  # Prompt n-gram lookup fallback (production-consolidated 8e35dbc01)
     performance:
-      baseline_tps: 3.0
-      optimized_tps: 21.3
-      speedup: 6.3x
+      baseline_tps: 7.28  # No spec, no lookup
+      spec_only_tps: 37.84  # Spec decode only (5.2x)
+      combined_tps: 39.44  # Spec + lookup fallback (5.4x)
+      lookup_only_tps: 10.75  # Lookup only, no draft (1.48x)
+      speedup: 5.4x  # Combined mode vs baseline
     memory:
       residency: warm
       pinned: false
@@ -2198,11 +2203,11 @@ roles:
     memory:
       residency: cold
       pinned: false
-    compatible_targets:
-    - qwen3_coder_30b
-    - qwen3_coder_53b
-    - qwen3_coder_480b
-    notes: Specifically designed by jukofyork for Qwen3-Coder-480B with vocabulary transplant to fix BOS token mismatch. VERIFIED compatible with all Qwen3-Coder targets (30B, 53B, 480B) on 2026-01-09.
+    compatible_targets: []  # NONE - all tested pairings fail
+    # REMOVED: qwen3_coder_30b - 15% accept, counterproductive (2026-01-28)
+    # REMOVED: qwen3_coder_480b - 8.65% accept, counterproductive (2026-01-28)
+    # UNTESTED: qwen3_coder_53b - likely same issue
+    notes: DEPRECATED (2026-01-28) - Spec decode FAILS with ALL Qwen3-Coder targets. 30B-A3B=15% accept (0.5x), 480B=8.65% accept (0.5x). Use MoE reduction instead (MoE3 for 480B gives 2.1x speedup).
   draft_qwen3_1_7b_q8_0:
     tier: D
     description: Draft model - Qwen3-1.7B-Q8_0 (higher quality for spec decode)
@@ -2222,7 +2227,7 @@ roles:
     - qwen3-235b
     - qwen3-4b
     # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
+    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch). BENCHMARKED (2026-01-28) Qwen3-1.7B→Qwen3-32B=31% accept (2.4x speedup). Qwen3-1.7B→235B-A22B=21% accept (SLOWER than baseline, use MoE4 instead).
   draft_qwen3_0_6b_q8_0:
     tier: D
     description: Draft model - Qwen3-0.6B-Q8_0 (higher quality for spec decode)

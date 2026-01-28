@@ -348,17 +348,29 @@ python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py status
 python3 /mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py stop --all
 ```
 
-**Server Topology:**
+**Server Topology (HOT Tier ~510GB = 45% of 1130GB RAM):**
 
-| Port | Role | Model | Tier |
-|------|------|-------|------|
-| 8000 | Orchestrator API | uvicorn | - |
-| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B | HOT |
-| 8081 | coder_escalation | Qwen2.5-Coder-32B + draft | HOT |
-| 8082 | worker_* | Qwen2.5-7B + draft | HOT |
-| 8083 | architect_general | Qwen3-235B-A22B | WARM |
-| 8084 | architect_coding | Qwen3-Coder-480B-A35B | WARM |
-| 8085 | ingest_long_context | Qwen3-Next-80B-A3B | WARM |
+| Port | Role | Model | Accel | Speed |
+|------|------|-------|-------|-------|
+| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B-Q4_K_M | MoE6 | 18 t/s |
+| 8081 | coder_escalation, worker_summarize | Qwen2.5-Coder-32B-Q4_K_M + 0.5B draft | spec K=24 + lookup | 39 t/s |
+| 8082 | worker_explore, worker_vision, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 + lookup | 44 t/s |
+| 8083 | architect_general | Qwen3-235B-A22B-Q4_K_M (~140GB) | MoE4 | 6.75 t/s |
+| 8084 | architect_coding | Qwen3-Coder-480B-A35B-Q4_K_M (~280GB) | MoE3 | 10.3 t/s |
+| 8085 | ingest_long_context | Qwen3-Next-80B-A3B-Q4_K_M (~45GB) | MoE4 (NO SPEC!) | 6.3 t/s |
+| 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | — | — |
+
+**Services:**
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 8000 | orchestrator API (uvicorn) | FastAPI entrypoint |
+| 9001 | document_formalizer (LightOnOCR-2-1B) | PDF OCR, figure extraction |
+
+**CLI Tools (On-Demand):**
+- `tool_formalizer` (xLAM-2-1B): Tool call formalization
+- `math_formalizer` (MathSmith-8B): Math problem formalization
+- `pdf_router` (pdftotext + PyMuPDF): Fast-path PDF extraction
 
 ### 5. Run Gates (After Any Work)
 ```bash

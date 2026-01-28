@@ -321,16 +321,17 @@ def build_server_command(
                 "-c", "8192",  # 4K per slot
                 "-t", "12",  # 12 threads for small model
                 "--flash-attn", "on",
-                # NOTE: --lookup-ngram-min is llama-cli only, not supported by llama-server
+                # No --lookup here: fast workers have no spec decode or draft model
             ]
         else:
             # explore workers: 7B model with speculative decoding for 46 t/s
-            # NOTE: Exploration only - summarization handled by worker_summarize (32B, 95 t/s)
+            # Summarization handled by worker_summarize (32B) on port 8081
             return [
                 str(LLAMA_SERVER),
                 "-m", model_path,
                 "-md", EXPLORE_DRAFT_MODEL,  # Spec decode with 0.5B draft
                 "--draft-max", "24",  # K=24 for optimal speedup
+                "--lookup",  # Prompt n-gram lookup as fallback when spec insufficient
                 "--host", "127.0.0.1",
                 "--port", str(port),
                 "-np", "2",  # 2 parallel slots
@@ -381,8 +382,10 @@ def build_server_command(
                 "--draft-max", str(accel.k or 16),
             ])
 
-    # NOTE: Prompt lookup (--lookup-ngram-min) is llama-cli only, not supported by llama-server
-    # For summarization speedup, use spec decode instead (already configured above)
+    # Add prompt n-gram lookup (spec-first, lookup-fallback) for servers with spec decode
+    # Combined mode: 5.4x vs 5.2x spec-only (production-consolidated commit 8e35dbc01)
+    if accel.type == "speculative_decoding":
+        cmd.append("--lookup")
 
     return cmd
 
