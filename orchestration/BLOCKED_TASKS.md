@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-27
+**Last Updated**: 2026-01-29
 **Blocking Resource**: PR #15225 (MTP loader)
 
 ---
@@ -39,7 +39,7 @@
 | CLI Parity Features | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
 | AMD PACE Testing | — | — | — | ✅ COMPLETE (not adopting) |
 | **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
-| **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-7 COMPLETE (FAISS done) |
+| **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-8 COMPLETE (model self-routing) |
 | **Tool/Script Registry Wiring** | — | **MEDIUM** | `progress/2026-01/2026-01-15.md` | ✅ COMPLETE (27 tools wired) |
 | **Native Computational Tools** | SymEngine install on prod | **HIGH** | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-5 COMPLETE (integrate + symbolic) |
 | **Role Mapping Bug** | — | — | `progress/2026-01/2026-01-15.md` | ✅ FIXED (str(Role.X) now returns value) |
@@ -75,6 +75,18 @@
 | 5 | REPL Exploration Learning | ✅ COMPLETE | Phase 3 |
 | 6 | Claude-as-Judge | OPTIONAL | Phase 3 |
 | 7 | FAISS Migration | ✅ COMPLETE | Phase 1 |
+| 8 | Model Self-Routing | ✅ COMPLETE | Phase 3 |
+
+### Model Self-Routing Complete (2026-01-29)
+
+Models now have agency in routing decisions via 5 REPL functions:
+- `my_role()`, `route_advice()`, `delegate()`, `escalate()`, `recall()` (fixed)
+- chat.py checks routing artifacts after every `execute()`
+- MemRL Q-values injected on turn 0 as routing context
+- Streaming endpoint has full routing parity
+- Tier C workers blocked from delegation (deterministic tools only)
+
+Files modified: `repl_environment.py`, `escalation.py`, `prompt_builders.py`, `chat.py`
 
 ### Memory Seeding Complete (2026-01-14)
 
@@ -200,8 +212,8 @@ repl = REPLEnvironment(context="...", config=config)
 
 ### Phase 5: REPL Exploration Learning
 - [x] File access in peek()/grep() — `file_path` parameter added (2026-01-24)
-- [ ] Log exploration strategies in REPLEnvironment
-- [ ] Implement `EpisodicREPL.suggest_exploration()`
+- [x] Log exploration strategies in REPLEnvironment — delegation outcomes logged (2026-01-29)
+- [x] Implement `EpisodicREPL.suggest_exploration()` — `route_advice()` provides MemRL recommendations (2026-01-29)
 - [ ] Track token efficiency metrics
 
 ### Phase 6: Claude-as-Judge (Optional)

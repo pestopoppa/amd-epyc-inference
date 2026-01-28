@@ -168,6 +168,51 @@ General: frontdoor (30B) → architect_general (235B)
 Vision: worker_vision (7B) → vision_escalation (30B, manual)
 ```
 
+### Model Self-Routing (2026-01-29)
+
+Models can now make informed routing decisions using MemRL intelligence. This supplements the Python control flow escalation with model-initiated routing.
+
+**Available Routing Tools (REPL):**
+
+| Tool | Purpose |
+|------|---------|
+| `my_role()` | Self-awareness: role, tier, capabilities, delegation targets |
+| `route_advice(task)` | MemRL recommendation: Q-values, similar tasks, confidence |
+| `delegate(prompt, role, reason)` | Tracked delegation with outcome logging |
+| `escalate(reason, target_role)` | Request escalation (specific target or next-in-chain) |
+| `recall(query)` | Episodic memory search with Q-values |
+
+**How It Works:**
+
+1. **Turn 0**: Routing context injected into prompt (MemRL Q-values for similar tasks)
+2. **During execution**: Model calls `route_advice()` / `my_role()` to assess
+3. **Model decision**: Calls `escalate()` or `delegate()` → sets artifacts
+4. **After execute**: `chat.py` checks artifacts → honors routing request
+5. **Learning**: Delegation outcomes logged to MemRL → Q-values updated
+
+**Tier Guard:**
+- Tier A (frontdoor): Can delegate to workers + coder_primary
+- Tier B (specialists): Can delegate to workers
+- Tier C (workers): **Cannot delegate** — use deterministic tools only
+
+**Artifact Protocol:**
+
+```python
+# Model calls escalate() → sets artifacts
+repl.artifacts["_escalation_requested"] = True
+repl.artifacts["_escalation_target"] = "coder_primary"  # optional
+repl.artifacts["_escalation_reason"] = "Task requires code generation"
+
+# Model calls delegate() → records in artifacts
+repl.artifacts["_delegations"] = [{
+    "from_role": "frontdoor",
+    "to_role": "worker_general",
+    "reason": "File-level task",
+    "success": True,
+    "elapsed_sec": 2.3,
+}]
+```
+
 ### Split Pipeline (Exploration → Summarization)
 
 ```

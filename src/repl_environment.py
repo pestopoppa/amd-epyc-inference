@@ -364,6 +364,9 @@ class REPLEnvironment:
         role: str | None = None,  # Role for permission checking
         progress_logger: ProgressLogger | None = None,  # For exploration logging
         task_id: str | None = None,  # Task ID for progress logging
+        # MemRL components for routing-aware REPL
+        retriever: Any | None = None,  # TwoPhaseRetriever for recall/route_advice
+        hybrid_router: Any | None = None,  # HybridRouter for route_advice
     ):
         """Initialize the REPL environment.
 
@@ -387,6 +390,10 @@ class REPLEnvironment:
         self.tool_registry = tool_registry
         self.script_registry = script_registry
         self.role = role or "worker_general"  # Default to restricted role
+
+        # MemRL components for routing-aware functions (recall, route_advice)
+        self._retriever = retriever
+        self._hybrid_router = hybrid_router
 
         # Execution state
         self._final_answer: str | None = None
@@ -451,8 +458,11 @@ class REPLEnvironment:
             # Session persistence tools
             "mark_finding": self._mark_finding,
             "list_findings": self._list_findings,
-            # Orchestration tools
+            # Routing & self-assessment tools
             "escalate": self._escalate,
+            "my_role": self._my_role,
+            "route_advice": self._route_advice,
+            "delegate": self._delegate,
             # Shell tools (sandboxed)
             "run_shell": self._run_shell,
             # Self-management procedure tools
@@ -468,6 +478,10 @@ class REPLEnvironment:
             "gate_run": self._gate_run,
             "log_append": self._log_append,
             "file_write_safe": self._file_write_safe,
+            # Long context exploration tools
+            "chunk_context": self._chunk_context,
+            "summarize_chunks": self._summarize_chunks,
+            "context_len": self._context_len,
         }
 
         # Add LLM primitives if available (wrapped for exploration tracking)
@@ -612,13 +626,41 @@ class REPLEnvironment:
             }
 
             self._exploration_log.add_event("ocr_document", {"path": path}, result)
+
+            # Log formalizer usage to progress logger
+            if self.progress_logger is not None:
+                self.progress_logger.log_formalizer_invocation(
+                    task_id=self.task_id,
+                    service="document_formalizer",
+                    endpoint="/v1/document/pdf",
+                    pages=data.get("total_pages", 0),
+                    elapsed_sec=data.get("elapsed_sec", 0),
+                    success=True,
+                )
+
             return json.dumps(result, indent=2)
 
         except requests.exceptions.ConnectionError:
+            if self.progress_logger is not None:
+                self.progress_logger.log_formalizer_invocation(
+                    task_id=self.task_id,
+                    service="document_formalizer",
+                    endpoint="/v1/document/pdf",
+                    success=False,
+                    error="server not running",
+                )
             return "[ERROR: LightOnOCR server not running on port 9001. Start with: python src/services/lightonocr_llama_server.py]"
         except FileNotFoundError:
             return f"[ERROR: File not found: {path}]"
         except Exception as e:
+            if self.progress_logger is not None:
+                self.progress_logger.log_formalizer_invocation(
+                    task_id=self.task_id,
+                    service="document_formalizer",
+                    endpoint="/v1/document/pdf",
+                    success=False,
+                    error=str(e),
+                )
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _analyze_figure(self, image_path: str, prompt: str = "Describe this figure in detail") -> str:
@@ -1274,46 +1316,107 @@ class REPLEnvironment:
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _recall(self, query: str, limit: int = 5) -> str:
-        """Search episodic memory for similar past tasks.
+        """Search episodic memory for similar past tasks with Q-values.
 
-        Retrieves relevant past task executions that may help with the current task.
-        Returns task descriptions, outcomes, and what strategies worked.
+        Retrieves relevant past task executions including learned Q-values
+        and routing recommendations from MemRL.
 
         Args:
             query: Natural language description of what you're looking for.
             limit: Maximum number of results to return (default 5).
 
         Returns:
-            JSON string with similar past tasks:
+            JSON string with similar past tasks and routing advice:
             {
                 "results": [
                     {
                         "task": "description",
                         "outcome": "success"|"failure",
-                        "strategy": "what approach was used",
-                        "similarity": 0.85
+                        "action": "routing decision used",
+                        "q_value": 0.85,
+                        "similarity": 0.92,
+                        "combined_score": 0.88,
+                        "role_used": "coder_primary"
                     }
-                ]
+                ],
+                "best_action": "coder_primary",
+                "confidence": 0.88
             }
         """
         self._exploration_calls += 1
         import json
 
-        # Check if episodic memory is available
+        # Use retriever if available (reuses shared MemRL components)
+        if self._retriever is not None:
+            return self._recall_via_retriever(query, limit)
+
+        # Legacy fallback: create fresh instances
+        return self._recall_legacy(query, limit)
+
+    def _recall_via_retriever(self, query: str, limit: int = 5) -> str:
+        """Recall using shared TwoPhaseRetriever (fast, Q-value aware)."""
+        import json
+
+        try:
+            results_raw = self._retriever.retrieve_for_exploration(
+                query=query,
+                context_preview=self.context[:500] if self.context else "",
+            )
+
+            results = []
+            for r in results_raw[:limit]:
+                ctx = r.memory.context or {}
+                results.append({
+                    "task": ctx.get("objective", r.memory.action)[:200],
+                    "outcome": r.memory.outcome or "pending",
+                    "action": r.memory.action[:100],
+                    "q_value": round(r.q_value, 3),
+                    "similarity": round(r.similarity, 3),
+                    "combined_score": round(r.combined_score, 3),
+                    "role_used": ctx.get("role", "unknown"),
+                })
+
+            # Get best action recommendation
+            best = self._retriever.get_best_action(results_raw)
+            # Handle both base (action, conf) and graph-enhanced (action, conf, warnings)
+            if best is not None:
+                best_action = best[0]
+                best_conf = round(best[1], 3)
+            else:
+                best_action = None
+                best_conf = None
+
+            response = {
+                "results": results,
+                "best_action": best_action,
+                "confidence": best_conf,
+            }
+
+            self._exploration_log.add_event("recall", {"query": query}, response)
+
+            if self.config.use_toon_encoding and len(results) >= 3:
+                from src.services.toon_encoder import encode
+                return encode(response)
+            return json.dumps(response, indent=2)
+
+        except Exception as e:
+            return json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+
+    def _recall_legacy(self, query: str, limit: int = 5) -> str:
+        """Legacy recall using fresh EpisodicStore + TaskEmbedder."""
+        import json
+
         try:
             from orchestration.repl_memory.episodic_store import EpisodicStore
             from orchestration.repl_memory.embedder import TaskEmbedder
         except ImportError:
-            return json.dumps({"results": [], "error": "Episodic memory not available"})
+            return json.dumps({"results": [], "best_action": None, "confidence": None, "error": "Episodic memory not available"})
 
         try:
             store = EpisodicStore()
             embedder = TaskEmbedder()
 
-            # Embed the query
             query_embedding = embedder.embed(query)
-
-            # Search for similar tasks
             memories = store.search_similar(
                 embedding=query_embedding,
                 limit=limit,
@@ -1325,25 +1428,26 @@ class REPLEnvironment:
                 results.append({
                     "task": mem.task_description[:200] if mem.task_description else "",
                     "outcome": mem.outcome,
-                    "strategy": mem.context.get("exploration_strategy", {}).get("strategy_type", "unknown")
-                              if mem.context else "unknown",
+                    "action": mem.action[:100] if hasattr(mem, "action") else "unknown",
+                    "q_value": round(mem.q_value, 3) if hasattr(mem, "q_value") else 0.5,
                     "similarity": round(mem.similarity, 3) if hasattr(mem, "similarity") else 0.0,
+                    "combined_score": 0.0,
+                    "role_used": mem.context.get("role", "unknown") if mem.context else "unknown",
                 })
 
-            result = {"results": results}
-            self._exploration_log.add_event("recall", {"query": query}, result)
+            response = {"results": results, "best_action": None, "confidence": None}
+            self._exploration_log.add_event("recall", {"query": query}, response)
 
-            # Use TOON encoding for token efficiency if enabled
             if self.config.use_toon_encoding and len(results) >= 3:
                 from src.services.toon_encoder import encode
-                return encode(result)
-            return json.dumps(result, indent=2)
+                return encode(response)
+            return json.dumps(response, indent=2)
 
         except Exception as e:
-            return json.dumps({"results": [], "error": str(e)})
+            return json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
 
-    def _escalate(self, reason: str) -> str:
-        """Request escalation to a higher-tier model.
+    def _escalate(self, reason: str, target_role: str | None = None) -> str:
+        """Request escalation to a higher-tier or specific model.
 
         Call this when the current task is too complex or requires
         capabilities beyond the current role. The orchestrator will
@@ -1351,16 +1455,261 @@ class REPLEnvironment:
 
         Args:
             reason: Why escalation is needed (be specific).
+            target_role: Optional specific role to escalate to
+                         (e.g., "architect_general", "coder_primary").
+                         If None, orchestrator picks next in chain.
 
         Returns:
             Acknowledgment message. The actual escalation happens
             after this REPL turn completes.
         """
-        # Store escalation request in artifacts for the orchestrator to handle
         self.artifacts["_escalation_requested"] = True
         self.artifacts["_escalation_reason"] = reason
+        if target_role:
+            self.artifacts["_escalation_target"] = target_role
 
-        return f"[ESCALATION REQUESTED: {reason}] - The orchestrator will route to a higher-tier model after this turn."
+        target_desc = target_role or "next-tier"
+        return f"[ESCALATION REQUESTED → {target_desc}]: {reason}"
+
+    def _my_role(self) -> str:
+        """Get information about the current model's role and capabilities.
+
+        Returns:
+            JSON string with role metadata:
+            {
+                "role": "frontdoor",
+                "tier": "A",
+                "capabilities": ["chat", "routing", "delegation"],
+                "escalates_to": "coder_primary",
+                "can_delegate_to": ["worker_general", "worker_math", ...]
+            }
+        """
+        import json
+        from src.roles import Role, Tier, get_tier, get_escalation_chain
+
+        role_enum = Role.from_string(self.role)
+        try:
+            tier = get_tier(self.role)
+            tier_val = tier.value
+        except Exception:
+            tier_val = "C"
+
+        TIER_CAPABILITIES = {
+            "A": ["chat", "routing", "intent_classification", "delegation"],
+            "B": ["specialized_execution", "complex_reasoning", "delegation"],
+            "C": ["parallel_execution", "file_level_tasks"],
+            "D": ["draft_speculation"],
+        }
+
+        # Workers that Tier A/B can delegate to
+        WORKER_ROLES = [
+            "worker_general", "worker_math",
+            "worker_summarize", "worker_vision",
+        ]
+
+        delegate_targets: list[str] = []
+        if tier_val in ("A", "B"):
+            delegate_targets = list(WORKER_ROLES)
+            # Tier A can also delegate to coder
+            if tier_val == "A":
+                delegate_targets.append("coder_primary")
+
+        # Get escalation target
+        chain = get_escalation_chain(self.role)
+        escalation_target = str(chain[1]) if len(chain) > 1 else None
+
+        result = {
+            "role": self.role,
+            "tier": tier_val,
+            "capabilities": TIER_CAPABILITIES.get(tier_val, []),
+            "escalates_to": escalation_target,
+            "can_delegate_to": delegate_targets,
+        }
+
+        if self.config.use_toon_encoding:
+            from src.services.toon_encoder import encode
+            return encode(result)
+        return json.dumps(result, indent=2)
+
+    def _route_advice(self, task_description: str) -> str:
+        """Get MemRL-informed routing advice for a task.
+
+        Queries episodic memory for similar past tasks and returns
+        which roles handled them best, with Q-values.
+
+        Args:
+            task_description: Description of the task to route.
+
+        Returns:
+            JSON string with routing recommendation:
+            {
+                "recommended_role": "coder_primary",
+                "confidence": 0.85,
+                "strategy": "learned",
+                "similar_tasks": [
+                    {"role": "coder_primary", "q_value": 0.9, "count": 5}
+                ],
+                "warnings": []
+            }
+        """
+        self._exploration_calls += 1
+        import json
+
+        if self._hybrid_router is None:
+            return json.dumps({
+                "recommended_role": None,
+                "confidence": 0.0,
+                "strategy": "unavailable",
+                "similar_tasks": [],
+                "warnings": ["MemRL routing not initialized"],
+            })
+
+        try:
+            task_ir = {
+                "task_type": "chat",
+                "objective": task_description[:200],
+                "priority": "interactive",
+            }
+            routing_decision, strategy = self._hybrid_router.route(task_ir)
+
+            # Get raw retrieval results for transparency
+            results = self._hybrid_router.retriever.retrieve_for_routing(task_ir)
+
+            # Aggregate results by role
+            role_stats: dict[str, dict] = {}
+            for r in results:
+                ctx = r.memory.context or {}
+                role = ctx.get("role", r.memory.action)
+                if role not in role_stats:
+                    role_stats[role] = {"q_sum": 0.0, "count": 0}
+                role_stats[role]["q_sum"] += r.q_value
+                role_stats[role]["count"] += 1
+
+            similar_tasks = []
+            for role, stats in sorted(
+                role_stats.items(),
+                key=lambda x: x[1]["q_sum"] / max(x[1]["count"], 1),
+                reverse=True,
+            ):
+                similar_tasks.append({
+                    "role": role,
+                    "q_value": round(stats["q_sum"] / max(stats["count"], 1), 3),
+                    "count": stats["count"],
+                })
+
+            # Collect warnings from graph-enhanced results
+            all_warnings: list[str] = []
+            for r in results:
+                if hasattr(r, "warnings") and r.warnings:
+                    all_warnings.extend(r.warnings)
+
+            # Confidence from best result
+            confidence = round(results[0].combined_score, 3) if results else 0.0
+
+            response = {
+                "recommended_role": routing_decision[0] if routing_decision else None,
+                "confidence": confidence,
+                "strategy": strategy,
+                "similar_tasks": similar_tasks[:5],
+                "warnings": list(set(all_warnings))[:3],
+            }
+
+            self._exploration_log.add_event(
+                "route_advice", {"task": task_description[:100]}, response,
+            )
+
+            if self.config.use_toon_encoding:
+                from src.services.toon_encoder import encode
+                return encode(response)
+            return json.dumps(response, indent=2)
+
+        except Exception as e:
+            return json.dumps({
+                "recommended_role": None,
+                "confidence": 0.0,
+                "strategy": "error",
+                "similar_tasks": [],
+                "warnings": [str(e)],
+            })
+
+    def _delegate(
+        self,
+        prompt: str,
+        target_role: str = "worker_general",
+        reason: str = "",
+    ) -> str:
+        """Delegate a subtask to a specific role with outcome tracking.
+
+        Unlike llm_call(), this records the delegation in MemRL for
+        future routing decisions. Use this when you're making a conscious
+        routing choice based on route_advice() or my_role().
+
+        Workers (Tier C) cannot delegate — use TOOL() for deterministic
+        tools or FINAL() to return results.
+
+        Args:
+            prompt: The task to delegate.
+            target_role: Role to delegate to (e.g., "coder_primary", "worker_math").
+            reason: Why this role was chosen (helps MemRL learn).
+
+        Returns:
+            The delegated model's response, or error message.
+        """
+        self._exploration_calls += 1
+        import json
+
+        # Tier guard: workers cannot delegate to other models
+        from src.roles import get_tier, Tier
+        try:
+            tier = get_tier(self.role)
+            if tier == Tier.C:
+                return "[ERROR: Workers (Tier C) cannot delegate to other models. Use TOOL() for deterministic tools or FINAL() to return results.]"
+        except Exception:
+            pass  # Unknown role — allow delegation
+
+        if self.llm_primitives is None:
+            return "[ERROR: No LLM primitives available for delegation]"
+
+        import time
+        start = time.perf_counter()
+
+        # Initialize delegation tracking list in artifacts
+        if "_delegations" not in self.artifacts:
+            self.artifacts["_delegations"] = []
+
+        delegation_record: dict = {
+            "from_role": self.role,
+            "to_role": target_role,
+            "reason": reason,
+            "prompt_preview": prompt[:100],
+            "timestamp": time.time(),
+        }
+
+        try:
+            result = self.llm_primitives.llm_call(prompt, role=target_role)
+            elapsed = time.perf_counter() - start
+
+            delegation_record["success"] = True
+            delegation_record["elapsed_sec"] = round(elapsed, 3)
+            delegation_record["result_len"] = len(result)
+            self.artifacts["_delegations"].append(delegation_record)
+
+            self._exploration_log.add_event(
+                "delegate",
+                {"target_role": target_role, "reason": reason},
+                f"[{len(result)} chars in {elapsed:.1f}s]",
+            )
+
+            return result
+
+        except Exception as e:
+            elapsed = time.perf_counter() - start
+            delegation_record["success"] = False
+            delegation_record["error"] = str(e)
+            delegation_record["elapsed_sec"] = round(elapsed, 3)
+            self.artifacts["_delegations"].append(delegation_record)
+
+            return f"[DELEGATION FAILED: {target_role} → {e}]"
 
     def _run_shell(self, cmd: str, timeout: int = 30) -> str:
         """Run a sandboxed shell command (read-only operations only).
@@ -2132,6 +2481,136 @@ class REPLEnvironment:
         self._exploration_log.add_event("llm_batch", {"args": args, "kwargs": kwargs}, result)
         return result
 
+    # ------------------------------------------------------------------
+    # Long context exploration tools
+    # ------------------------------------------------------------------
+
+    def _context_len(self) -> int:
+        """Return the character length of the context.
+
+        Returns:
+            Number of characters in the context string.
+        """
+        return len(self.context)
+
+    def _chunk_context(self, n_chunks: int = 4, overlap: int = 200) -> list[dict]:
+        """Split context into roughly equal chunks with metadata.
+
+        Each chunk contains the text slice plus position info so workers
+        can orient themselves within the larger document.
+
+        Args:
+            n_chunks: Number of chunks to split into (default 4).
+            overlap: Characters of overlap between chunks (default 200).
+
+        Returns:
+            List of dicts: [{"index": 0, "start": 0, "end": N,
+                            "text": "...", "char_count": N}]
+        """
+        self._exploration_calls += 1
+        text = self.context
+        total = len(text)
+        if total == 0:
+            return []
+
+        n_chunks = max(1, min(n_chunks, 20))  # Cap at 20
+        chunk_size = total // n_chunks
+        chunks = []
+
+        for i in range(n_chunks):
+            start = max(0, i * chunk_size - (overlap if i > 0 else 0))
+            end = min(total, (i + 1) * chunk_size + (overlap if i < n_chunks - 1 else 0))
+            # Avoid splitting mid-word: extend to next whitespace
+            if end < total:
+                ws = text.find("\n", end)
+                if ws != -1 and ws - end < 200:
+                    end = ws
+
+            chunk_text = text[start:end]
+            chunks.append({
+                "index": i,
+                "start": start,
+                "end": end,
+                "text": chunk_text,
+                "char_count": len(chunk_text),
+            })
+
+        self._exploration_log.add_event(
+            "chunk_context",
+            {"n_chunks": n_chunks, "overlap": overlap, "total_chars": total},
+            f"{len(chunks)} chunks",
+        )
+        return chunks
+
+    def _summarize_chunks(
+        self,
+        task: str = "Summarize the key content",
+        n_chunks: int = 4,
+        role: str = "worker_general",
+    ) -> list[dict]:
+        """Chunk context and summarize each chunk in parallel using workers.
+
+        This is the primary tool for REPL-based long context processing.
+        Splits the context into chunks, dispatches each to a worker LLM
+        for summarization/analysis, then returns all results.
+
+        Args:
+            task: The task/question to apply to each chunk.
+            n_chunks: Number of chunks (default 4).
+            role: Worker role to use (default "worker_general").
+
+        Returns:
+            List of dicts: [{"index": 0, "chunk_start": 0,
+                            "chunk_chars": N, "summary": "..."}]
+        """
+        self._exploration_calls += 1
+
+        if self.llm_primitives is None:
+            return [{"error": "LLM primitives not available"}]
+
+        chunks = self._chunk_context(n_chunks)
+        if not chunks:
+            return [{"error": "Empty context"}]
+
+        # Build prompts for each chunk
+        prompts = []
+        for chunk in chunks:
+            prompt = (
+                f"You are analyzing section {chunk['index'] + 1} of {len(chunks)} "
+                f"from a larger document (chars {chunk['start']}-{chunk['end']}).\n\n"
+                f"## Task\n{task}\n\n"
+                f"## Section Content\n{chunk['text'][:15000]}\n\n"  # Cap per-chunk
+                f"## Instructions\nAnalyze this section for the task above. "
+                f"Be specific about what you find. Note any references to other "
+                f"sections or information that may require cross-referencing."
+            )
+            prompts.append(prompt)
+
+        # Dispatch to workers in batch
+        try:
+            summaries = self.llm_primitives.llm_batch(
+                prompts, role=role, n_tokens=512,
+            )
+        except Exception as e:
+            return [{"error": f"Batch call failed: {e}"}]
+
+        results = []
+        for i, (chunk, summary) in enumerate(zip(chunks, summaries)):
+            results.append({
+                "index": i,
+                "chunk_start": chunk["start"],
+                "chunk_end": chunk["end"],
+                "chunk_chars": chunk["char_count"],
+                "summary": summary,
+            })
+
+        self._exploration_log.add_event(
+            "summarize_chunks",
+            {"task": task[:100], "n_chunks": n_chunks, "role": role},
+            f"{len(results)} summaries",
+        )
+        return results
+
     def _final(self, answer: str) -> None:
         """Signal completion with final answer.
 
@@ -2557,6 +3036,7 @@ class REPLEnvironment:
                 strategy_used=strategy.get("strategy_type", "unknown"),
                 tokens_spent=strategy.get("total_tokens", 0),
                 success=success,
+                function_counts=strategy.get("function_counts"),
             )
 
         return exploration_data

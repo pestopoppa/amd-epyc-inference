@@ -63,8 +63,10 @@ class EscalationAction(str, Enum):
 
     RETRY = "retry"      # Retry with same role
     ESCALATE = "escalate"  # Escalate to next tier
+    DELEGATE = "delegate"  # Route DOWN to a specific lower-tier role
     FAIL = "fail"        # Terminal failure
     SKIP = "skip"        # Skip the gate/step (for optional gates)
+    EXPLORE = "explore"  # Fall back to REPL exploration (for terminal roles)
 
 
 @dataclass
@@ -88,6 +90,8 @@ class EscalationContext:
     gate_name: str = ""
     task_id: str = ""
     escalation_count: int = 0
+    # Model-initiated routing fields
+    target_role_requested: str = ""  # Specific role requested by model
 
     def __post_init__(self) -> None:
         """Normalize types."""
@@ -132,6 +136,11 @@ class EscalationDecision:
     def should_retry(self) -> bool:
         """Check if decision is to retry."""
         return self.action == EscalationAction.RETRY
+
+    @property
+    def should_delegate(self) -> bool:
+        """Check if decision is to delegate downward."""
+        return self.action == EscalationAction.DELEGATE
 
     @property
     def is_terminal(self) -> bool:
@@ -266,9 +275,13 @@ class EscalationPolicy:
 
         # Retries exhausted - try to escalate
         if target is None:
+            # Terminal role (architect) — fall back to REPL exploration
+            # instead of hard failure. The chat handler will switch to
+            # exploration mode with chunk_and_summarize.
             return EscalationDecision(
-                action=EscalationAction.FAIL,
-                reason=f"No escalation possible from {context.current_role}",
+                action=EscalationAction.EXPLORE,
+                target_role=context.current_role,  # Stay at current role
+                reason=f"Terminal role {context.current_role}: falling back to REPL exploration",
             )
 
         if context.escalation_count >= self.config.max_escalations:

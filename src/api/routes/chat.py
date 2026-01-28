@@ -19,7 +19,11 @@ from src.api.services.orchestrator import (
     classify_error,
     build_escalation_prompt,
 )
-from src.prompt_builders import build_stage2_review_prompt
+from src.prompt_builders import (
+    build_stage2_review_prompt,
+    build_long_context_exploration_prompt,
+    build_routing_context,
+)
 from src.services.draft_cache import get_draft_cache, CachedDraft
 from src.services.prompt_compressor import PromptCompressor
 from src.api.services.memrl import (
@@ -69,6 +73,15 @@ THREE_STAGE_CONFIG = {
 
 # Backwards compatibility alias
 TWO_STAGE_CONFIG = THREE_STAGE_CONFIG
+
+# Long context exploration configuration
+# When context exceeds this threshold, use REPL-based chunked exploration
+# instead of dumping the full context into a single model's window
+LONG_CONTEXT_CONFIG = {
+    "enabled": True,
+    "threshold_chars": 20000,  # ~5K tokens triggers exploration mode
+    "max_turns": 8,  # Allow more turns for multi-step exploration
+}
 
 
 def _estimate_tokens(text: str) -> int:
@@ -318,6 +331,62 @@ Draft Summary:"""
     return final_summary, stats
 
 
+async def _handle_vision_request(
+    request: "ChatRequest",
+    primitives: "LLMPrimitives",
+    state: "AppState",
+    task_id: str,
+) -> str:
+    """Route a vision request to VL workers (ports 8086/8087).
+
+    Calls the vision API internally using the analyze endpoint,
+    then returns the VL model's description as the answer.
+
+    Args:
+        request: Chat request with image_path or image_base64.
+        primitives: LLMPrimitives (unused, for interface compat).
+        state: Application state.
+        task_id: Task ID for logging.
+
+    Returns:
+        Answer string from the vision model.
+    """
+    import httpx
+
+    # Build vision analyze request
+    vision_payload: dict = {
+        "vl_prompt": request.prompt,
+        "analyzers": ["vl"],  # Use VL analyzer for question answering
+        "store_results": False,
+    }
+    if request.image_path:
+        vision_payload["image_path"] = request.image_path
+    elif request.image_base64:
+        vision_payload["image_base64"] = request.image_base64
+
+    # Call vision endpoint on the same API server
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            "http://localhost:8000/vision/analyze",
+            json=vision_payload,
+        )
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Vision API returned {resp.status_code}: {resp.text[:200]}")
+
+    data = resp.json()
+
+    # Extract VL description from the response
+    vl_results = data.get("vl", {})
+    description = vl_results.get("description", "")
+
+    if not description:
+        # Fall back to general description
+        description = data.get("description", "[Vision model returned no description]")
+
+    return description
+
+
 router = APIRouter()
 
 
@@ -454,6 +523,36 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 detail="Real inference not available: no model server configured",
             )
 
+    # Vision routing: when image data is present, route through vision pipeline
+    # instead of standard text-only orchestration
+    if request.real_mode and (request.image_path or request.image_base64):
+        try:
+            answer = await _handle_vision_request(request, primitives, state, task_id)
+            elapsed = time.perf_counter() - start_time
+            state.increment_request(mock_mode=False, turns=1)
+
+            if state.progress_logger:
+                state.progress_logger.log_task_completed(
+                    task_id=task_id,
+                    success=True,
+                    details=f"Vision pipeline, {elapsed:.3f}s",
+                )
+                score_completed_task(state, task_id)
+
+            return ChatResponse(
+                answer=answer,
+                turns=1,
+                tokens_used=0,
+                elapsed_seconds=elapsed,
+                mock_mode=False,
+                real_mode=True,
+                cache_stats=None,
+            )
+        except Exception as e:
+            import logging
+            logging.warning(f"Vision pipeline failed: {type(e).__name__}: {e}")
+            # Fall through to standard orchestration
+
     # Create REPL environment
     combined_context = request.prompt
     if request.context:
@@ -468,6 +567,11 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         tool_registry=state.tool_registry,
         script_registry=state.script_registry,
         role=initial_role,
+        progress_logger=state.progress_logger,
+        task_id=task_id,
+        # MemRL components for model self-routing
+        retriever=state.hybrid_router.retriever if state.hybrid_router else None,
+        hybrid_router=state.hybrid_router,
     )
 
     # Check for two-stage summarization opportunity
@@ -514,6 +618,23 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
             logging.warning(f"Two-stage summarization failed: {type(e).__name__}: {e}")
             # Continue to normal loop below
 
+    # Detect long context → use REPL-based exploration strategy
+    # Instead of dumping full context into one model, the frontdoor uses
+    # peek/grep/summarize_chunks to explore and synthesize.
+    context_chars = len(combined_context)
+    use_long_context_exploration = (
+        LONG_CONTEXT_CONFIG["enabled"]
+        and request.real_mode
+        and context_chars > LONG_CONTEXT_CONFIG["threshold_chars"]
+    )
+
+    if use_long_context_exploration:
+        import logging
+        logging.info(
+            f"Long context detected ({context_chars:,} chars). "
+            f"Using REPL exploration strategy."
+        )
+
     # Run Root LM orchestration loop with escalation support
     turns = 0
     answer = ""
@@ -526,7 +647,14 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
     role_history = [current_role]
     escalation_prompt = ""  # Set when escalating
 
-    for turn in range(request.max_turns):
+    # Long context exploration allows more turns
+    max_turns = (
+        LONG_CONTEXT_CONFIG["max_turns"]
+        if use_long_context_exploration
+        else request.max_turns
+    )
+
+    for turn in range(max_turns):
         turns += 1
 
         # 1. Get current REPL state
@@ -536,13 +664,29 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         if escalation_prompt:
             root_prompt = escalation_prompt
             escalation_prompt = ""  # Clear after use
+        elif use_long_context_exploration and turn == 0:
+            # First turn with long context: use exploration-aware prompt
+            root_prompt = build_long_context_exploration_prompt(
+                original_prompt=request.prompt,
+                context_chars=context_chars,
+                state=repl_state,
+            )
         else:
+            # Inject routing context on turn 0 (MemRL intelligence)
+            routing_ctx = ""
+            if turn == 0 and state.hybrid_router:
+                routing_ctx = build_routing_context(
+                    role=current_role,
+                    hybrid_router=state.hybrid_router,
+                    task_description=request.prompt,
+                )
             root_prompt = build_root_lm_prompt(
                 state=repl_state,
                 original_prompt=request.prompt,
                 last_output=last_output,
                 last_error=last_error,
                 turn=turn,
+                routing_context=routing_ctx,
             )
 
         # 3. Call Root LM (current role) to generate Python code
@@ -621,6 +765,71 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         # 4. Execute code in REPL
         result = repl.execute(code)
 
+        # 4a. Check model-initiated routing (escalation/delegation artifacts)
+        if repl.artifacts.get("_escalation_requested"):
+            target = repl.artifacts.pop("_escalation_target", None)
+            reason = repl.artifacts.pop("_escalation_reason", "Model requested")
+            repl.artifacts.pop("_escalation_requested", None)
+
+            new_role = None
+            if target:
+                resolved = Role.from_string(target)
+                if resolved:
+                    new_role = str(resolved)
+            else:
+                # No specific target — use standard escalation chain
+                esc_ctx = EscalationContext(
+                    current_role=current_role,
+                    error_category="early_abort",
+                    error_message=reason,
+                    failure_count=1,
+                    task_id=task_id,
+                )
+                esc_decision = EscalationPolicy().decide(esc_ctx)
+                if esc_decision.should_escalate and esc_decision.target_role:
+                    new_role = str(esc_decision.target_role)
+
+            if new_role and new_role != current_role:
+                current_role = new_role
+                role_history.append(current_role)
+                consecutive_failures = 0
+                escalation_prompt = build_escalation_prompt(
+                    original_prompt=request.prompt,
+                    state=repl_state,
+                    failure_context=EscalationContext(
+                        current_role=role_history[-2],
+                        error_message=reason,
+                        error_category="early_abort",
+                        task_id=task_id,
+                    ),
+                    decision=EscalationPolicy().decide(EscalationContext(
+                        current_role=role_history[-2],
+                        error_category="early_abort",
+                        error_message=reason,
+                        task_id=task_id,
+                    )),
+                )
+                if state.progress_logger:
+                    state.progress_logger.log_escalation(
+                        task_id=task_id,
+                        from_tier=role_history[-2],
+                        to_tier=current_role,
+                        reason=f"Model-initiated: {reason}",
+                    )
+                continue  # Next turn with new role
+
+        # 4b. Log delegation outcomes (MemRL learning)
+        if repl.artifacts.get("_delegations"):
+            for deleg in repl.artifacts["_delegations"]:
+                if state.progress_logger:
+                    state.progress_logger.log_exploration(
+                        task_id=task_id,
+                        query=deleg.get("prompt_preview", ""),
+                        strategy_used=f"delegate:{deleg.get('to_role', 'unknown')}",
+                        success=deleg.get("success", False),
+                    )
+            repl.artifacts["_delegations"] = []  # Clear after logging
+
         # 5. Check for FINAL() completion
         if result.is_final:
             answer = result.final_answer or ""
@@ -667,6 +876,23 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                     failure_context=escalation_ctx,
                     decision=decision,
                 )
+            elif decision.action == EscalationAction.EXPLORE:
+                # Terminal role — fall back to REPL exploration
+                # Switch to exploration prompt so the model uses
+                # peek/grep/summarize_chunks instead of raw LLM calls
+                consecutive_failures = 0
+                escalation_prompt = build_long_context_exploration_prompt(
+                    original_prompt=request.prompt,
+                    context_chars=len(repl.context),
+                    state=repl_state,
+                )
+                if state.progress_logger:
+                    state.progress_logger.log_escalation(
+                        task_id=task_id,
+                        from_tier=current_role,
+                        to_tier=f"{current_role}+explore",
+                        reason="Terminal role: switching to REPL exploration",
+                    )
             elif decision.action == EscalationAction.FAIL:
                 # Max retries/escalations reached - stop with error
                 answer = f"[FAILED: {decision.reason}]"
@@ -679,7 +905,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
 
     # If max turns reached without FINAL()
     if not answer:
-        answer = f"[Max turns ({request.max_turns}) reached without FINAL()]"
+        answer = f"[Max turns ({max_turns}) reached without FINAL()]"
         if last_output:
             answer += f"\n\nLast output:\n{last_output}"
 
@@ -691,8 +917,11 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
     if request.real_mode and primitives._backends:
         cache_stats = primitives.get_cache_stats()
 
-    # Log task completion (MemRL integration)
+    # Log exploration telemetry (tool usage, function counts)
     success = not answer.startswith("[ERROR") and not answer.startswith("[Max turns")
+    repl.log_exploration_completed(success=success, result=answer)
+
+    # Log task completion (MemRL integration)
     if state.progress_logger:
         # Include role history if escalation occurred
         role_info = f", roles: {' -> '.join(role_history)}" if len(role_history) > 1 else ""
@@ -830,32 +1059,54 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             tool_registry=state.tool_registry,
             script_registry=state.script_registry,
             role=request.role or Role.FRONTDOOR,
+            # MemRL components for model self-routing
+            retriever=state.hybrid_router.retriever if state.hybrid_router else None,
+            hybrid_router=state.hybrid_router,
         )
 
-        # Root LM loop with streaming
+        # Root LM loop with streaming + escalation support
         last_output = ""
         last_error = ""
         result = None
 
+        # Escalation tracking (parity with main endpoint)
+        current_role = request.role or Role.FRONTDOOR
+        consecutive_failures = 0
+        role_history = [current_role]
+        escalation_prompt = ""
+
         for turn in range(request.max_turns):
             turn_start_time_inner = time.perf_counter()
 
-            # Emit turn start
-            yield turn_start_event(turn=turn + 1, role=str(Role.FRONTDOOR))
+            # Emit turn start with current role
+            yield turn_start_event(turn=turn + 1, role=str(current_role))
 
             # Get state and build prompt
             repl_state = repl.get_state()
-            root_prompt = build_root_lm_prompt(
-                state=repl_state,
-                original_prompt=request.prompt,
-                last_output=last_output,
-                last_error=last_error,
-                turn=turn,
-            )
+            if escalation_prompt:
+                root_prompt = escalation_prompt
+                escalation_prompt = ""
+            else:
+                # Inject routing context on turn 0
+                routing_ctx = ""
+                if turn == 0 and state.hybrid_router:
+                    routing_ctx = build_routing_context(
+                        role=current_role,
+                        hybrid_router=state.hybrid_router,
+                        task_description=request.prompt,
+                    )
+                root_prompt = build_root_lm_prompt(
+                    state=repl_state,
+                    original_prompt=request.prompt,
+                    last_output=last_output,
+                    last_error=last_error,
+                    turn=turn,
+                    routing_context=routing_ctx,
+                )
 
-            # Call Root LM
+            # Call Root LM with current role
             try:
-                code = primitives.llm_call(root_prompt, role=Role.FRONTDOOR, n_tokens=1024)
+                code = primitives.llm_call(root_prompt, role=current_role, n_tokens=1024)
             except Exception as e:
                 # Log failure (MemRL)
                 if state.progress_logger:
@@ -875,6 +1126,74 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
             # Execute in REPL
             result = repl.execute(code)
 
+            # Check model-initiated routing artifacts
+            if repl.artifacts.get("_escalation_requested"):
+                target = repl.artifacts.pop("_escalation_target", None)
+                reason = repl.artifacts.pop("_escalation_reason", "Model requested")
+                repl.artifacts.pop("_escalation_requested", None)
+
+                new_role = None
+                if target:
+                    resolved = Role.from_string(target)
+                    if resolved:
+                        new_role = str(resolved)
+                else:
+                    esc_ctx = EscalationContext(
+                        current_role=current_role,
+                        error_category="early_abort",
+                        error_message=reason,
+                        failure_count=1,
+                        task_id=task_id,
+                    )
+                    esc_decision = EscalationPolicy().decide(esc_ctx)
+                    if esc_decision.should_escalate and esc_decision.target_role:
+                        new_role = str(esc_decision.target_role)
+
+                if new_role and new_role != current_role:
+                    # Emit turn end before role switch
+                    turn_elapsed_ms = int((time.perf_counter() - turn_start_time_inner) * 1000)
+                    yield turn_end_event(tokens=len(code), elapsed_ms=turn_elapsed_ms)
+
+                    current_role = new_role
+                    role_history.append(current_role)
+                    consecutive_failures = 0
+                    escalation_prompt = build_escalation_prompt(
+                        original_prompt=request.prompt,
+                        state=repl_state,
+                        failure_context=EscalationContext(
+                            current_role=role_history[-2],
+                            error_message=reason,
+                            error_category="early_abort",
+                            task_id=task_id,
+                        ),
+                        decision=EscalationPolicy().decide(EscalationContext(
+                            current_role=role_history[-2],
+                            error_category="early_abort",
+                            error_message=reason,
+                            task_id=task_id,
+                        )),
+                    )
+                    if state.progress_logger:
+                        state.progress_logger.log_escalation(
+                            task_id=task_id,
+                            from_tier=role_history[-2],
+                            to_tier=current_role,
+                            reason=f"Model-initiated: {reason}",
+                        )
+                    continue  # Next turn with new role
+
+            # Log delegation outcomes
+            if repl.artifacts.get("_delegations"):
+                for deleg in repl.artifacts["_delegations"]:
+                    if state.progress_logger:
+                        state.progress_logger.log_exploration(
+                            task_id=task_id,
+                            query=deleg.get("prompt_preview", ""),
+                            strategy_used=f"delegate:{deleg.get('to_role', 'unknown')}",
+                            success=deleg.get("success", False),
+                        )
+                repl.artifacts["_delegations"] = []
+
             # Emit turn end
             turn_elapsed_ms = int((time.perf_counter() - turn_start_time_inner) * 1000)
             yield turn_end_event(tokens=len(code), elapsed_ms=turn_elapsed_ms)
@@ -884,18 +1203,55 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
                 yield final_event(result.final_answer or "")
                 break
 
-            # Update state for next turn
+            # Handle errors with escalation policy
             if result.error:
+                consecutive_failures += 1
                 last_error = result.error
                 last_output = result.output
+
+                error_category = classify_error(result.error)
+                esc_ctx = EscalationContext(
+                    current_role=current_role,
+                    error_message=result.error,
+                    error_category=error_category.value,
+                    failure_count=consecutive_failures,
+                    task_id=task_id,
+                )
+                decision = EscalationPolicy().decide(esc_ctx)
+
+                if decision.should_escalate and decision.target_role:
+                    current_role = str(decision.target_role)
+                    role_history.append(current_role)
+                    consecutive_failures = 0
+                    escalation_prompt = build_escalation_prompt(
+                        original_prompt=request.prompt,
+                        state=repl_state,
+                        failure_context=esc_ctx,
+                        decision=decision,
+                    )
+                    if state.progress_logger:
+                        state.progress_logger.log_escalation(
+                            task_id=task_id,
+                            from_tier=role_history[-2],
+                            to_tier=current_role,
+                            reason=f"{decision.reason} (failures: {consecutive_failures})",
+                        )
+                elif decision.action == EscalationAction.FAIL:
+                    yield error_event(f"[FAILED: {decision.reason}]")
+                    break
             else:
+                consecutive_failures = 0
                 last_error = ""
                 last_output = result.output
 
         # Log completion (MemRL) - success if we got a final answer
         if state.progress_logger:
             success = result is not None and result.is_final
-            state.progress_logger.log_task_completed(task_id, success=success, details="Stream complete")
+            role_info = f", roles: {' -> '.join(str(r) for r in role_history)}" if len(role_history) > 1 else ""
+            state.progress_logger.log_task_completed(
+                task_id, success=success,
+                details=f"Stream complete{role_info}",
+            )
             score_completed_task(state, task_id)
         yield done_event()
 

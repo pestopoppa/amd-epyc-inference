@@ -207,11 +207,21 @@ DEFAULT_ROOT_LM_TOOLS = """### Context & Files
 - `web_fetch(url)`: Fetch web content
 - `run_shell(cmd)`: Run sandboxed shell command (ls, grep, git status only)
 
-### LLM Delegation
-- `llm_call(prompt, role='worker')`: Call a sub-LM for a task
-- `llm_batch(prompts, role='worker')`: Parallel sub-LM calls
-- `escalate(reason)`: Request escalation to higher-tier model
-- `recall(query)`: Search episodic memory for similar past tasks
+### Routing & Self-Assessment
+- `my_role()`: Get your current role, tier, capabilities, and what you can delegate to
+- `route_advice(task_description)`: Get MemRL routing recommendation with Q-values
+- `delegate(prompt, target_role, reason)`: Delegate to a specific role with outcome tracking
+- `escalate(reason, target_role=None)`: Request escalation (up-chain or to specific role)
+- `recall(query)`: Search episodic memory — returns Q-values and past routing outcomes
+
+### LLM Delegation (low-level, no tracking)
+- `llm_call(prompt, role='worker')`: Raw sub-LM call
+- `llm_batch(prompts, role='worker')`: Parallel raw sub-LM calls
+
+### Long Context Exploration
+- `context_len()`: Return character count of context
+- `chunk_context(n_chunks=4, overlap=200)`: Split context into N chunks with metadata
+- `summarize_chunks(task, n_chunks=4, role='worker_general')`: Chunk + parallel worker summaries
 
 ### Completion
 - `FINAL(answer)`: Signal completion with the final answer (REQUIRED)"""
@@ -227,9 +237,16 @@ List files: `result = list_dir('/path'); FINAL(result)`
 Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); summary = llm_call(f"Summarize: {doc['full_text'][:6000]}", role='worker'); FINAL(summary)`
 
+## Routing
+4. Check `my_role()` if unsure about your capabilities
+5. Use `route_advice(task)` before delegating complex subtasks
+6. Use `delegate()` over `llm_call()` when making a conscious routing choice
+7. Call `escalate(reason)` if the task exceeds your tier — don't guess
+8. Simple tasks: just do the work directly — don't over-route
+
 ## Other Rules
-4. NEVER send full context to llm_call - use peek() or grep() first
-5. Output only valid Python code - no markdown, no explanations"""
+9. NEVER send full context to llm_call - use peek() or grep() first
+10. Output only valid Python code - no markdown, no explanations"""
 
 
 class PromptBuilder:
@@ -275,6 +292,7 @@ class PromptBuilder:
         last_output: str = "",
         last_error: str = "",
         turn: int = 0,
+        routing_context: str = "",
         *,
         as_structured: bool = False,
     ) -> str | RootLMPrompt:
@@ -326,6 +344,9 @@ class PromptBuilder:
                 output_preview,
                 "```",
             ])
+
+        if routing_context:
+            context_parts.append(f"## Routing Intelligence\n{routing_context}")
 
         if context_parts:
             prompt.context = "\n".join(context_parts)
@@ -641,6 +662,7 @@ def build_root_lm_prompt(
     last_output: str = "",
     last_error: str = "",
     turn: int = 0,
+    routing_context: str = "",
 ) -> str:
     """Build the prompt for the Root LM (frontdoor).
 
@@ -653,6 +675,7 @@ def build_root_lm_prompt(
         last_output=last_output,
         last_error=last_error,
         turn=turn,
+        routing_context=routing_context,
     )
     return result if isinstance(result, str) else result.to_string()
 
@@ -715,6 +738,112 @@ def build_stage2_review_prompt(
         figures=figures,
         original_task=original_task,
     )
+
+
+def build_routing_context(
+    role: str,
+    hybrid_router: Any,
+    task_description: str,
+    max_chars: int = 300,
+) -> str:
+    """Build compact routing context for injection into Root LM prompt.
+
+    Called on turn 0 only to give the model initial routing intelligence
+    from MemRL. Kept very compact to minimize token overhead (~75 tokens).
+
+    Args:
+        role: Current model's role.
+        hybrid_router: HybridRouter instance (may be None).
+        task_description: The user's task.
+        max_chars: Maximum characters for routing context.
+
+    Returns:
+        Compact routing context string, or "" if unavailable.
+    """
+    if hybrid_router is None:
+        return ""
+
+    from src.roles import get_tier
+
+    try:
+        task_ir = {
+            "task_type": "chat",
+            "objective": task_description[:200],
+        }
+        results = hybrid_router.retriever.retrieve_for_routing(task_ir)
+
+        tier = get_tier(role)
+        lines = [f"Role: {role} (Tier {tier.value})"]
+
+        if not results:
+            lines.append("No similar past tasks found.")
+            return "\n".join(lines)[:max_chars]
+
+        # Top 3 similar task outcomes
+        for r in results[:3]:
+            ctx = r.memory.context or {}
+            role_used = ctx.get("role", r.memory.action)
+            outcome = r.memory.outcome or "?"
+            lines.append(
+                f"  Similar → {role_used}: Q={r.q_value:.2f} ({outcome})"
+            )
+
+        best = hybrid_router.retriever.get_best_action(results)
+        if best:
+            lines.append(f"Suggested: {best[0]} (conf={best[1]:.2f})")
+
+        return "\n".join(lines)[:max_chars]
+
+    except Exception:
+        return ""
+
+
+def build_long_context_exploration_prompt(
+    original_prompt: str,
+    context_chars: int,
+    state: str = "",
+) -> str:
+    """Build a prompt that instructs the model to explore large context via REPL tools.
+
+    Instead of dumping the full context into the LLM's input window, this prompt
+    tells the model to use REPL exploration tools (peek, grep, chunk_context,
+    summarize_chunks) to process it piece by piece.
+
+    Args:
+        original_prompt: The user's original task/question.
+        context_chars: Character count of the full context.
+        state: Current REPL state.
+
+    Returns:
+        Prompt string for the Root LM.
+    """
+    est_tokens = context_chars // 4
+    n_chunks = max(2, min(8, est_tokens // 4000))  # ~4K tokens per chunk
+
+    return f"""You are an orchestrator processing a large document ({context_chars:,} chars, ~{est_tokens:,} tokens).
+
+## Available Tools
+{DEFAULT_ROOT_LM_TOOLS}
+
+## Task
+{original_prompt}
+
+## Strategy
+The document is too large for a single LLM call. Use this approach:
+1. `peek(2000)` — scan the beginning to understand structure
+2. `grep(pattern)` — search for specific terms related to the task
+3. `summarize_chunks(task="{original_prompt[:100]}", n_chunks={n_chunks})` — dispatch {n_chunks} parallel workers to analyze sections
+4. Synthesize worker results and `FINAL(answer)`
+
+{f'## Current State{chr(10)}{state}' if state else ''}
+
+## Rules
+- NEVER send full context to llm_call() (too large)
+- Use grep() to find specific needles, summarize_chunks() for broad analysis
+- Workers return section summaries — you synthesize the final answer
+- Output only valid Python code
+
+Code:"""
 
 
 # Code extraction utilities (moved from orchestrator.py)
