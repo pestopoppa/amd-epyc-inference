@@ -1,61 +1,27 @@
 # Blocked Tasks
 
 **Last Updated**: 2026-01-29
-**Blocking Resource**: PR #15225 (MTP loader)
+**Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
 
-## Quick Status
+## Active Tasks
 
 | Task | Blocked On | Priority | Handoff | Status |
 |------|------------|----------|---------|--------|
-| **Orchestrator Document Pipeline** | — | **CRITICAL** | `handoffs/completed/orchestrator_document_pipeline.md` | ✅ RESOLVED |
-| **Orchestrator API Dependencies** | — | **HIGH** | `handoffs/active/orchestrator_deps.md` | ✅ RESOLVED |
-| **REPL File Access** | — | **MEDIUM** | `handoffs/active/repl_file_access.md` | ✅ RESOLVED |
-| **LightOnOCR 3.4x Slowdown** | — | **MEDIUM** | `handoffs/completed/lightonocr_slowdown.md` | ✅ RESOLVED (use server-side PDF processing + 300s timeout) |
-| **Figure Analysis Missing** | — | **HIGH** | `handoffs/completed/figure_analysis_missing.md` | ✅ RESOLVED |
-| **Document Pipeline Tests** | pytest-asyncio install | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY |
-| **Prompt Lookup Integration** | Workflow reconstruction | **MEDIUM** | `handoffs/active/prompt_lookup_integration.md` | 🔄 BLOCKED |
 | **Security Audit: GGUF Vulns** | CVE verification on prod | **CRITICAL** | `handoffs/active/security_audit_orchestration_stack.md` | ✅ PARTIAL (P0 fixed: localhost binding) |
-| **Claude-as-Judge BLIND Re-Scoring** | YOLO Agent | **HIGH** | `handoffs/active/claude_as_judge_consistency_review.md` | 📋 READY |
-| **Model Registry: Paged Attention Flag** | Benchmark script running | **LOW** | See below | 🔄 BLOCKED |
-| **Paged Attention CoW** | Paged attention PR review | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
-| **MTP ISWA Fix** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
-| **Gemma-3 SWA Spec Decode** | — | **HIGH** | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
-| **Prompt Lookup/Lookahead Bugs** | — | **LOW** | `handoffs/blocked/swa_prompt_lookup.md` | ✅ PRs #18729 + #18730 SUBMITTED (cherry-picked locally) |
-| **Qwen3-A3B MoE Instability** | — | — | — | ✅ RESOLVED (was stale build issue) |
-| **Hybrid Lookup+Spec Decode** | Implementation needed | **MEDIUM** | `handoffs/active/hybrid-lookup-spec-decode.md` | 📋 PROPOSAL (no upstream work exists) |
-| AVX-512 VNNI Q8_0 | — | — | — | ❌ NOT SUBMITTING (8% speedup) |
-| Draft model benchmarks | — | HIGH | `handoffs/active/draft-benchmark.md` | ✅ READY (registry verified) |
-| Formalizer eval | — | HIGH | `handoffs/active/formalizer-evaluation.md` | ✅ READY (`nohup ./scripts/benchmark/run_all_formalizers.sh &`) |
-| Tree speculation | — | MEDIUM | `handoffs/active/cpu-optimization.md` | ✅ COMPLETE (K=24 optimal) |
-| RadixAttention | — | — | `handoffs/active/radix-attention.md` | ✅ VERIFIED (80% hit rate) |
-| Orchestrator integration | — | HIGH | `handoffs/active/orchestration-integration.md` | ✅ VERIFIED (12/12 tests) |
-| MathSmith re-conversion | — | LOW | `handoffs/active/mathsmith-reconversion.md` | ✅ COMPLETE |
-| Orchestrator real mode | — | LOW | `handoffs/active/orchestrator.md` | ✅ READY (see startup commands below) |
-| Kernel development | — | — | See "AVX-512 VNNI Q8_0" section below | ✅ COMPLETE (no PR - gains too small) |
-| Frontend Architecture | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
-| CLI Parity Features | — | — | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
-| AMD PACE Testing | — | — | — | ✅ COMPLETE (not adopting) |
-| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 NEW (8 phases documented) |
-| **MemRL Episodic Memory** | — | **HIGH** | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-8 COMPLETE (model self-routing) |
-| **Tool/Script Registry Wiring** | — | **MEDIUM** | `progress/2026-01/2026-01-15.md` | ✅ COMPLETE (27 tools wired) |
-| **Native Computational Tools** | SymEngine install on prod | **HIGH** | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-5 COMPLETE (integrate + symbolic) |
-| **Role Mapping Bug** | — | — | `progress/2026-01/2026-01-15.md` | ✅ FIXED (str(Role.X) now returns value) |
-| **Orchestrator Multi-Model Live Test** | — | — | `progress/2026-01/2026-01-15.md` | ✅ VERIFIED (5 models, 459GB) |
-| **Model REPL Tool Compliance** | — | **MEDIUM** | `handoffs/completed/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests, 9 benchmark prompts) |
-| **Orchestrator Self-Management** | — | **HIGH** | `handoffs/active/orchestrator_self_management.md` | ✅ PHASES 1-8 COMPLETE (Phase 9 optional) |
-| **Session Persistence Layer** | — | **HIGH** | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
-| **Cmprsr Prompt Compression** | — | **HIGH** | `handoffs/active/cmprsr_prompt_compression.md` | 📋 NEW (weights availability TBD) |
+| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 Phases 1-3 done, 4-8 pending |
+| **Cmprsr Prompt Compression** | Cmprsr weights release | **HIGH** | `handoffs/active/cmprsr_prompt_compression.md` | 📋 NEW (weights unavailable) |
+| **Draft model benchmarks** | — | **HIGH** | `handoffs/active/draft-benchmark.md` | 📋 PARTIAL (Gemma-3 + Qwen3-1.7B→32B done, 5 combos remaining) |
+| **Formalizer eval** | — | **HIGH** | `handoffs/active/formalizer-evaluation.md` | 📋 READY (not yet executed) |
+| **Paged Attention CoW** | PR #18747 reviewer response | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
+| **Prompt Lookup Integration** | — | **MEDIUM** | `handoffs/active/prompt_lookup_integration.md` | ✅ PARTIAL (combined spec+lookup works in production; standalone `--lookup-ngram-min` flag unavailable) |
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
-| **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling) |
+| **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
-| **TOON Format Integration** | — | ~~MEDIUM~~ | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE - INTEGRATED (55.6% tokens, 41.8% TTFT) |
-| **VL Suite Assignment Fix** | — | **LOW** | `progress/2026-01/2026-01-27.md` | ✅ FIXED (VL models now only run `vl` suite) |
-| **Orchestrator Benchmark Fixes** | — | **CRITICAL** | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 steps: output capture, routing telemetry, VL URL, LC two-stage, role aliases, MemRL review gate, speed metrics) |
-| **Graphiti MemRL Enhancement** | — | **MEDIUM** | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests, perf optimized) |
-| **SWA Prompt Lookup Fix** | — | **LOW** | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |
+| **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
+| **Orchestrator real mode** | — | **LOW** | `handoffs/active/orchestrator.md` | 📋 READY (stack infrastructure complete, live verification pending) |
 
 ---
 
@@ -252,7 +218,7 @@ print(scorer.score_pending_tasks())
 | 2 | RLM Enhancements | ✅ COMPLETE | Phase 1 |
 | 3 | Escalation Integration | ✅ COMPLETE | Phase 1 |
 | 4 | Formalizer Integration | READY | Phase 3 |
-| 5 | Tool/Script Completion | READY | None |
+| 5 | Tool/Script Completion | ✅ PARTIAL (41 tools wired, MCP/scripts pending) | None |
 | 6 | Early Failure Detection | READY | Phase 3 |
 | 7 | Hyperparameter Tuning | BLOCKED | Benchmarks |
 | 8 | Trajectory Visualization | LOW | Phase 2 |
@@ -298,11 +264,12 @@ To test: `llama-server -m MODEL.gguf --host 0.0.0.0 --port 8080` then call API w
 - [ ] Create formalizer module (`src/formalizer.py`)
 - [ ] IR → REPL context injection (`src/api.py`)
 
-### Phase 5: Tool/Script Completion
+### Phase 5: Tool/Script Completion (PARTIAL - 2026-01-15)
+- [x] Tool registry wired (41 deterministic tools: math, symbolic, numerical, format, etc.)
+- [x] Tool result capture (`src/repl_environment.py`) — integrated via REPL tools
 - [ ] MCP client implementation (`src/tool_registry.py`)
 - [ ] Script `invoke()` method (`src/script_registry.py`)
 - [ ] Script `find_scripts()` method (`src/script_registry.py`)
-- [ ] Tool result capture (`src/repl_environment.py`)
 
 ### Phase 6: Early Failure Detection
 - [ ] Wire GenerationMonitor (`src/llm_primitives.py`)
@@ -577,27 +544,14 @@ export PATH="/mnt/raid0/llm/npm-global/bin:/mnt/raid0/llm/tools/devc/bin:$PATH"
 # Launch devcontainer
 devc /mnt/raid0/llm/claude
 
-# HIGH PRIORITY: Claude-as-Judge BLIND Re-Scoring (after benchmarks complete)
-# NOTE: reviews/*.csv files have been chmod 000 to enforce blindness
-# Backup exists at: benchmarks/results/reviews/backup_20260116/
-claude --dangerously-skip-permissions -p \
-  "Read handoffs/active/claude_as_judge_consistency_review.md. \
-   Score ALL model benchmark responses from scratch using prompt YAML \
-   reference answers as ground truth. Output scores to \
-   benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md"
+# ✅ DONE: Claude-as-Judge BLIND Re-Scoring (77 models, 2026-01-16)
+# Results: benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md
 
-# AFTER agent completes - restore permissions and compare:
-# chmod 644 /mnt/raid0/llm/claude/benchmarks/results/reviews/*.csv
-# Then diff backup vs new scores
-
-# Inside container - Orchestrator Integration (CODE COMPLETE - TEST ONLY):
+# Orchestrator Integration (CODE COMPLETE - LIVE VERIFICATION PENDING):
 claude --dangerously-skip-permissions -p \
   "Read research/orchestration_integration_handoff.md. All code is written. \
    Your job is to: 1) Start llama-server instances, 2) Run tests, \
    3) Fix any failures, 4) Run benchmarks until >50% cache hit rate."
-
-# MathSmith Re-conversion: ✅ COMPLETE - Q4_K_M downloaded from mradermacher
-# Path: /mnt/raid0/llm/models/MathSmith-Hard-Problem-Synthesizer-Qwen3-8B.Q4_K_M.gguf
 ```
 
 ### When Model Servers Running
@@ -638,7 +592,7 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
 ### Draft Model Benchmarks (Speed Tests)
 - [x] Gemma-3-1B → Gemma-3-12B-IT (K=8,16,24) — WORKS (upstream b7684+)
 - [x] Gemma-3-1B → Gemma-3-27B-IT-QAT (K=8,16,24) — WORKS (42-81% acceptance, PR #18720)
-- [ ] Qwen3-1.7B → Qwen3-32B (K=8,16,24)
+- [x] Qwen3-1.7B → Qwen3-32B (K=8,16,24) — 31% accept, 2.4x speedup (benchmarked 2026-01-28)
 - [ ] Qwen3-0.6B → Qwen3-32B (K=8,16,24)
 - [ ] Qwen3-1.7B → Qwen3-235B-A22B + MoE4 (K=8,16)
 - [ ] jukofyork-0.75B → Qwen3-Coder-30B + MoE6 (K=8,16,24)
@@ -654,11 +608,11 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
 - [ ] Best model added to `model_registry.yaml`
 - [ ] `research/formalizer_evaluation.md` written
 
-### Tree Speculation
-- [ ] Benchmark complete (`n_parallel` × `p_split` sweep)
-- [ ] Optimal parameters identified
-- [ ] Results added to `RESULTS_SUMMARY.md`
-- [ ] `model_registry.yaml` updated with tree params
+### Tree Speculation — ✅ COMPLETE (K=24 optimal)
+- [x] Benchmark complete — K=24 identified as optimal draft depth
+- [x] Optimal parameters identified — `--draft-max 24` used in production (orchestrator_stack.py)
+- [x] Results in RESULTS.md (33 t/s coder, 39 t/s with lookup)
+- [x] `model_registry.yaml` updated with K=24 for spec decode roles
 
 ### RadixAttention (YOLO Agent) — ✅ COMPLETE (2026-01-07)
 - [x] Phase A: Persistent server mode (`src/backends/llama_server.py`)
@@ -690,10 +644,10 @@ numactl --interleave=all /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
 - [ ] Update model registry
 
 ### Orchestrator Real Mode
-- [ ] Model servers started (ports 8080-8088)
-- [ ] `llm_call()` verified with real inference
-- [ ] `llm_batch()` verified with parallel calls
-- [ ] End-to-end TaskIR → execution tested
+- [x] Model servers defined (ports 8080-8090, orchestrator_stack.py)
+- [x] `llm_call()` implementation complete (src/llm_primitives.py)
+- [x] `llm_batch()` implementation complete (src/llm_primitives.py)
+- [ ] End-to-end live inference verification (requires all servers running)
 
 ### GLM-4.6 MTP Testing (Blocked on PR #15225)
 - [ ] llama.cpp PR #15225 merged
@@ -736,3 +690,46 @@ cat handoffs/active/paged-attention.md  # Section 9 has full plan
 - **Tree speculation**: Script at `scripts/benchmark/bench_tree_speculation.sh`
 - **RadixAttention**: Full implementation plan in `research/radix_attention_handoff.md`
 - **MTP for GLM-4.6**: Self-speculative decoding using built-in heads. See `research/mtp_investigation.md`
+
+---
+
+## Archived / Completed
+
+Items moved from Active table on 2026-01-29. Kept for historical reference.
+
+| Task | Handoff | Status |
+|------|---------|--------|
+| Orchestrator Document Pipeline | `handoffs/completed/orchestrator_document_pipeline.md` | ✅ RESOLVED |
+| Orchestrator API Dependencies | `handoffs/active/orchestrator_deps.md` | ✅ RESOLVED |
+| REPL File Access | `handoffs/active/repl_file_access.md` | ✅ RESOLVED |
+| LightOnOCR 3.4x Slowdown | `handoffs/completed/lightonocr_slowdown.md` | ✅ RESOLVED (server-side PDF + 300s timeout) |
+| Figure Analysis Missing | `handoffs/completed/figure_analysis_missing.md` | ✅ RESOLVED |
+| Claude-as-Judge BLIND Re-Scoring | `benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md` | ✅ COMPLETE (77 models scored) |
+| Model Registry: Paged Attention Flag | `orchestration/model_registry.yaml` | ✅ COMPLETE (flag in 13 model entries) |
+| MTP ISWA Fix | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
+| Gemma-3 SWA Spec Decode | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
+| Prompt Lookup/Lookahead Bugs | `handoffs/completed/swa_prompt_lookup.md` | ✅ PRs #18729 + #18730 SUBMITTED |
+| Qwen3-A3B MoE Instability | — | ✅ RESOLVED (stale build issue) |
+| Hybrid Lookup+Spec Decode | `handoffs/active/hybrid-lookup-spec-decode.md` | ✅ COMPLETE (production: `--lookup` + spec K=24 on ports 8081/8082) |
+| AVX-512 VNNI Q8_0 | See section below | ❌ NOT SUBMITTING (8% speedup) |
+| Tree speculation | `handoffs/active/cpu-optimization.md` | ✅ COMPLETE (K=24 optimal, in production) |
+| RadixAttention | `handoffs/active/radix-attention.md` | ✅ VERIFIED (80% hit rate) |
+| Orchestrator integration | `handoffs/active/orchestration-integration.md` | ✅ VERIFIED (12/12 tests) |
+| MathSmith re-conversion | `handoffs/active/mathsmith-reconversion.md` | ✅ COMPLETE |
+| Kernel development | See AVX-512 section | ✅ COMPLETE (no PR — gains too small) |
+| Frontend Architecture | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
+| CLI Parity Features | `handoffs/active/orchestrator.md` | ✅ COMPLETE |
+| AMD PACE Testing | — | ✅ COMPLETE (not adopting) |
+| MemRL Episodic Memory | `handoffs/active/memrl-episodic-memory.md` | ✅ PHASES 1-8 COMPLETE (model self-routing) |
+| Tool/Script Registry Wiring | `progress/2026-01/2026-01-15.md` | ✅ COMPLETE (41 tools wired) |
+| Native Computational Tools | `handoffs/active/native-computational-tools.md` | ✅ PHASES 1-5 COMPLETE |
+| Role Mapping Bug | `progress/2026-01/2026-01-15.md` | ✅ FIXED (str(Role.X) returns value) |
+| Orchestrator Multi-Model Live Test | `progress/2026-01/2026-01-15.md` | ✅ VERIFIED (5 models, 459GB) |
+| Model REPL Tool Compliance | `handoffs/completed/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests) |
+| Orchestrator Self-Management | `handoffs/active/orchestrator_self_management.md` | ✅ PHASES 1-8 COMPLETE |
+| Session Persistence Layer | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
+| TOON Format Integration | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE (55.6% token reduction) |
+| VL Suite Assignment Fix | `progress/2026-01/2026-01-27.md` | ✅ FIXED |
+| Orchestrator Benchmark Fixes | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 fixes) |
+| Graphiti MemRL Enhancement | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests) |
+| SWA Prompt Lookup Fix | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |
