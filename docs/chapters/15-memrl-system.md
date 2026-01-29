@@ -235,12 +235,47 @@ Keeps Q-updates off the critical inference path. Runs periodically via cron or o
 | 1 | Manual routing via `model_registry.yaml` | Production |
 | 2 | Episodic store with embeddings | Production (2714 memories) |
 | 3 | Two-phase retrieval (semantic + Q-value) | Production |
-| 4 | Learned routing (HybridRouter) | Integration testing |
-| 5 | Proactive delegation (complexity-aware) | Integration testing |
-| 6 | Graph-enhanced retrieval (failure anti-memory) | Development |
-| 7 | Self-modifying procedures | Design phase |
+| 4 | Learned routing (HybridRouter) | Production |
+| 5 | Proactive delegation (complexity-aware) | Production |
+| 6 | Graph-enhanced retrieval (failure anti-memory) | Production |
+| 7 | FAISS migration (O(log n) embedding search) | Production |
+| 8 | Model self-routing (REPL tools + routing context) | Production |
 
-**Current Focus**: Transitioning Phase 4 (learned routing) to production. HybridRouter queries episodic memory before making routing decisions, falling back to rules when not confident.
+**Current Focus**: Phase 8 (model self-routing) is production-ready. Models can query MemRL Q-values directly via REPL tools and make informed escalation/delegation decisions.
+
+## MemRL Quality Review Gate
+
+A two-phase quality review triggered when the MemRL Q-value for a role+task combination falls below 0.6:
+
+**Phase 1 — Architect Verdict** (6.75 t/s, ~40 tokens, ~6s):
+- Receives question + answer (TOON-encoded if worker digests available)
+- Outputs: `OK` (return unchanged) or `WRONG: <concise corrections>` (trigger Phase 2)
+
+**Phase 2 — Worker Revision** (44 t/s, ~500 tokens, ~11s, only on WRONG):
+- Receives: question + original answer + architect corrections
+- Outputs: revised answer incorporating corrections
+
+**Performance Impact**:
+- Trigger rate: ~20% of requests (Q < 0.6)
+- WRONG rate: ~30% of reviews
+- Net: ~1.9s average added latency (20% × (6s + 30% × 11s))
+- This is 3x more efficient than full architect review (~6s avg vs ~18s)
+
+**Implementation**: `src/api/routes/chat.py` (`_should_review`, `_architect_verdict`, `_fast_revise`)
+
+## Model Self-Routing (Phase 8)
+
+Models now have agency in routing decisions via 5 REPL functions:
+
+| Function | Purpose |
+|----------|---------|
+| `my_role()` | Self-awareness: role, tier, capabilities |
+| `route_advice(task)` | MemRL Q-values + recommended role |
+| `delegate(prompt, role, reason)` | Tracked delegation with outcome logging |
+| `escalate(reason, target_role)` | Request escalation to specific target |
+| `recall(query)` | Episodic memory search with Q-values |
+
+**Routing context** injected on turn 0: compact MemRL Q-values for similar tasks (TOON-encoded when ≥2 results). Models use this to make informed routing decisions without explicit REPL calls.
 
 ## Performance Metrics
 

@@ -281,6 +281,28 @@ Deterministic, minimal routing:
 | Architectural ambiguity | Tier B3 |
 | Two gate failures | Escalate |
 
+## Two-Stage Long Context Pipeline
+
+All requests with context >20K characters use a two-stage pipeline instead of REPL exploration:
+
+1. **Worker Parallel Digest** (7B at 44 t/s): Context split into N chunks (~4K tokens), each sent to a worker in parallel. Workers produce structured digests with key facts and task-relevant findings.
+2. **Frontdoor Synthesis** (30B at 18 t/s): Receives all worker digests + original question, synthesizes final answer. No REPL code generation — text-in, text-out.
+
+This replaced the REPL exploration approach (which scored 0/9 on long-context benchmarks because the model generated standalone Python instead of calling built-in `peek()`/`grep()` functions).
+
+## Role Aliases
+
+Models sometimes generate natural-language role names in `delegate()` and `escalate()` calls. These are resolved automatically:
+
+| Model Generates | Maps To |
+|----------------|---------|
+| `researcher_agent` | `worker_explore` |
+| `coder_agent` | `coder_primary` |
+| `reviewer_agent` | `architect_general` |
+| `math_agent` | `worker_math` |
+| `vision_agent` | `worker_vision` |
+| `summarizer_agent` | `worker_summarize` |
+
 ## Key Design Principles
 
 1. **Artifacts over prose**: Agents emit IR, code, tests, or diffs - not discussion

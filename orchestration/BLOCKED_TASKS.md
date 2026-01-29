@@ -730,6 +730,6 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 | Session Persistence Layer | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
 | TOON Format Integration | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE (55.6% token reduction) |
 | VL Suite Assignment Fix | `progress/2026-01/2026-01-27.md` | ✅ FIXED |
-| Orchestrator Benchmark Fixes | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 fixes) |
+| Orchestrator Benchmark Fixes | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 fixes + import bug fix + CLI metrics + 11 safety tests) |
 | Graphiti MemRL Enhancement | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests) |
 | SWA Prompt Lookup Fix | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |

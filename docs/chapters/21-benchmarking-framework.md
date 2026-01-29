@@ -121,6 +121,64 @@ Benchmarks capture both quality scores AND speed per question. This enables trad
 
 **Key Insight**: Speculative decoding preserves quality (same model). MoE reduction trades quality for speed.
 
+## Orchestrator Benchmarks
+
+The orchestrator benchmark pipeline compares orchestrated responses against direct large-model baselines, measuring quality retention and speed.
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/benchmark/run_orchestrator_benchmark.py` | Full 4-phase benchmark runner (smoke, compare, optimize, verify) |
+| `scripts/benchmark/compare_orchestrator_direct.py` | Per-suite orchestrator vs baseline comparison |
+
+### CLI Options
+
+```bash
+# Run Phase 2 (comparison) with API restart
+./run_orchestrator_benchmark.py --phase 2 --restart-api
+
+# Compare single suite
+./compare_orchestrator_direct.py --suite thinking --use-baseline
+
+# Create baseline from architect model
+./compare_orchestrator_direct.py --create-baseline --suite all
+```
+
+The `--restart-api` flag restarts only the uvicorn API (port 8000), not the llama-server backends (8080-8090). Use after Python code changes.
+
+### Output Format
+
+Per-prompt line includes latency and tokens/sec:
+```
+  [thinking] t3_q1...   3042ms   16.3 t/s  speedup: 2.1x, quality: OK, turns: 1, routed: frontdoor
+```
+
+Per-suite mini-summary (in `run_orchestrator_benchmark.py`):
+```
+    thinking                10 prompts  ✓  92.0% quality   3042ms avg  16.3 t/s
+```
+
+Phase 2 aggregate:
+```
+  Phase 2 totals: 80 prompts across 8 suites in 342s
+    Quality: ✓ 91.2% avg
+    Speed:   19.4 t/s avg
+    Latency: 4120ms avg
+```
+
+### Routing Telemetry
+
+Each response includes `routed_to`, `role_history`, `routing_strategy`, and `tokens_generated` fields for debugging routing decisions.
+
+### Results Location
+
+```
+benchmarks/results/orchestrator/
+├── comparison_{suite}_{timestamp}.json  # Per-suite comparison
+├── run_{timestamp}.json                 # Full run metadata
+```
+
 ## Comparing Models
 
 ```bash
