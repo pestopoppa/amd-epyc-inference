@@ -268,6 +268,23 @@ Models may generate natural-language role names. These are resolved automaticall
 | `vision_agent` | `worker_vision` |
 | `summarizer_agent` | `worker_summarize` |
 
+### Benchmark CLI Metrics (2026-01-29)
+
+Both benchmark scripts now print per-prompt and per-suite metrics inline:
+
+- **`compare_orchestrator_direct.py`**: Each prompt line shows latency (ms), tokens/sec, speedup, quality, turns, routed role
+- **`run_orchestrator_benchmark.py`**: Per-suite mini-summary after each suite (quality %, avg latency, avg t/s) + aggregate Phase 2 totals
+
+Both scripts support `--restart-api` to restart the uvicorn API (port 8000) before running. This does NOT restart the llama-server backends (8080-8090).
+
+### API Import Safety Tests (2026-01-29)
+
+11 tests in `tests/unit/test_api_imports.py` guard against import/signature mismatches between the canonical `src.prompt_builders` and the deprecated `src.api.services.orchestrator` wrapper. Run after any changes to prompt builder function signatures:
+
+```bash
+pytest tests/unit/test_api_imports.py -v
+```
+
 ## Files to Gitignore
 
 Add to your `.gitignore`:
