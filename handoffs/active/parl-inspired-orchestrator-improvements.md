@@ -151,31 +151,44 @@ class ParallelStepExecutor:
         return self.step_results
 ```
 
-**2. Integration with Root LM Loop** (`src/api.py`)
+**2. Dual execution paths** (`src/api.py`)
 
-Currently the Root LM loop generates Python code per turn. For multi-step TaskIR plans, add a fast path:
+Two paths coexist, routed by whether the TaskIR has explicit parallelism:
 
 ```python
 # In the Root LM loop (api.py):
 if task_ir and task_ir.get("plan", {}).get("parallelism"):
-    # Fast path: execute via ParallelStepExecutor
+    # Path A: Structured parallel execution via ParallelStepExecutor
+    # For tasks with explicit parallel_group / depends_on in TaskIR
     executor = ParallelStepExecutor(worker_pool, max_concurrent=4)
     results = await executor.execute_plan(task_ir["plan"])
 else:
-    # Normal path: REPL code generation
+    # Path B: REPL code generation (existing behavior)
+    # Frontdoor can still use llm_batch() in generated code for ad-hoc parallelism
     ...
 ```
 
+**When to use which**:
+- **Path A (executor)**: TaskIR has `parallelism` hints — multi-step plans with clear dependency structure (e.g., "explore 5 files then summarize")
+- **Path B (REPL)**: Freeform tasks, single-step tasks, or tasks where the frontdoor uses `llm_batch()` directly in generated code
+
+Both paths feed into Phase 2's critical path metric.
+
 **3. Frontdoor parallel_group assignment**
 
-Teach the frontdoor system prompt to assign `parallel_group` and `depends_on` when emitting TaskIR. Add to `src/prompt_builders.py` system prompt:
+Teach the frontdoor system prompt to assign `parallel_group` and `depends_on` when emitting TaskIR. For REPL-native parallelism, also teach it to generate `llm_batch()` calls when appropriate. Add to `src/prompt_builders.py` system prompt:
 
 ```
-When emitting TaskIR, identify steps that can run concurrently:
-- Steps that read different files → same parallel_group
+When emitting TaskIR with multi-step plans:
+- Steps that read different files → same parallel_group, no depends_on overlap
 - Steps that write different outputs with no shared inputs → same parallel_group
 - Steps that depend on a prior step's output → add depends_on: ["S1"]
+- If parallelism is identified, add plan.parallelism.max_concurrent_steps
 - Default: sequential (omit parallel_group)
+
+When generating REPL code for parallel work:
+- Use llm_batch([prompt1, prompt2, ...], role='worker') for parallel sub-calls
+- Use llm_call() for sequential single calls
 ```
 
 ### Files to Modify
@@ -283,7 +296,31 @@ def compute_critical_path(timings: list[StepTiming]) -> CriticalPathReport:
 
 ### Integration Points
 
-- `ParallelStepExecutor` (Phase 1) records `StepTiming` for each step
+**Path A (executor)**: `ParallelStepExecutor` records `StepTiming` per step natively.
+
+**Path B (REPL-native)**: Instrument `llm_batch()` in `src/llm_primitives.py` to record per-call timing:
+
+```python
+# In LLMPrimitives.llm_batch() (llm_primitives.py:479):
+def llm_batch(self, prompts, role="worker"):
+    start_time = time.perf_counter()
+    # ... existing batch logic ...
+    elapsed = time.perf_counter() - start_time
+
+    # Record batch timing for critical path analysis
+    self._batch_timings.append(BatchTiming(
+        n_prompts=len(prompts),
+        role=role,
+        wall_clock_seconds=elapsed,
+        per_prompt_seconds=[...],  # If available from worker pool
+        timestamp=time.time(),
+    ))
+    return results
+```
+
+This gives `_tracked_llm_batch` in the REPL visibility into parallel execution timing without changing the REPL wrapper (it already forwards via `**kwargs`).
+
+**Both paths**:
 - After task completion, compute `CriticalPathReport`
 - Log to `orchestration/progress/` or append to agent audit log
 - Over time, build dataset of (task_type → parallelism_ratio) to guide when to use parallel execution
@@ -293,13 +330,14 @@ def compute_critical_path(timings: list[StepTiming]) -> CriticalPathReport:
 | File | Change |
 |------|--------|
 | `src/parallel_executor.py` | Add timing collection + critical path computation |
-| `src/api.py` | Log CriticalPathReport after task completion |
+| `src/llm_primitives.py` | Add `_batch_timings` list, record timing in `llm_batch()` |
+| `src/api.py` | Log CriticalPathReport after task completion (both paths) |
 
 ### Files to Create
 
 | File | Purpose |
 |------|---------|
-| `src/metrics/critical_path.py` | CriticalPathReport, compute_critical_path() (~100 lines) |
+| `src/metrics/critical_path.py` | CriticalPathReport, compute_critical_path(), BatchTiming (~120 lines) |
 | `tests/unit/test_critical_path.py` | Tests for DAG critical path computation |
 
 ### Verification
@@ -307,8 +345,16 @@ def compute_critical_path(timings: list[StepTiming]) -> CriticalPathReport:
 ```bash
 pytest tests/unit/test_critical_path.py -v
 
-# After running a parallel task, check the report:
+# After running a parallel task (either path), check the report:
 # Expected output: parallelism_ratio > 1.0 means parallelism helped
+#
+# For Path B, verify llm_batch timing is recorded:
+# python3 -c "
+# from src.llm_primitives import LLMPrimitives
+# p = LLMPrimitives(mock_mode=True)
+# p.llm_batch(['test1', 'test2'], role='worker')
+# print(p._batch_timings)  # Should have 1 entry
+# "
 ```
 
 ---
@@ -470,6 +516,84 @@ personas:
     compatible_roles: [worker_explore, worker_general]
     output_format: structured_analysis
 
+  inference_specialist:
+    display_name: "Inference Optimization Specialist"
+    description: "LLM inference performance analysis and optimization"
+    system_prompt: |
+      You are an LLM inference optimization specialist. Analyze and advise on:
+      - Quantization tradeoffs (Q4_K_M vs Q8_0 vs FP16 — quality vs speed vs memory)
+      - Speculative decoding: draft-target compatibility, acceptance rates, K-value tuning
+      - MoE expert routing: expert reduction, load balancing, memory layout
+      - Memory bandwidth analysis: tokens/s vs theoretical bandwidth limits
+      - KV cache optimization: paged attention, prefix caching, radix trees
+      - Prompt lookup: n-gram matching effectiveness, when it helps vs hurts
+      - CPU-specific optimization: NUMA, thread pinning, AVX-512 utilization
+      - Batch size vs latency tradeoffs for concurrent serving
+
+      Always quantify: expected t/s, memory footprint, and quality impact.
+      Reference specific hardware constraints (EPYC 9655, DDR5-5600, 460 GB/s bandwidth).
+    compatible_roles: [coder_primary, coder_escalation, architect_general, worker_explore]
+    output_format: structured_findings
+
+  benchmark_analyst:
+    display_name: "Benchmark Analyst"
+    description: "Benchmark methodology, scoring, and model comparison"
+    system_prompt: |
+      You are a benchmark methodology specialist. When analyzing benchmarks:
+      - Check for ceiling/floor effects (>90% or <10% scores)
+      - Verify statistical significance (sample size, variance, confidence intervals)
+      - Identify confounds (prompt sensitivity, temperature effects, output length bias)
+      - Compare fairly: same prompts, same temperature, same max tokens
+      - Distinguish speed benchmarks from quality benchmarks — never conflate
+      - Watch for contamination: test data in training data
+      - Report both absolute scores and relative rankings
+      - Note when score differences are within noise margin
+
+      Output format:
+      1. METHODOLOGY: Was the benchmark setup fair?
+      2. FINDINGS: Key results with confidence
+      3. CAVEATS: What could invalidate these results
+      4. RECOMMENDATIONS: What to test next
+    compatible_roles: [worker_explore, worker_general, architect_general]
+    output_format: structured_analysis
+
+  computational_physicist:
+    display_name: "Computational Physicist"
+    description: "Physics-informed analysis of compute systems and numerical methods"
+    system_prompt: |
+      You are a computational physicist. Apply physics thinking to:
+      - Memory hierarchy as energy levels (L1/L2/L3/DRAM/NVMe bandwidth tiers)
+      - Roofline model analysis: compute-bound vs memory-bound regimes
+      - Amdahl's law for parallelization limits
+      - Queueing theory for request scheduling and batch sizing
+      - Information-theoretic analysis: bits per parameter, compression limits
+      - Dimensional analysis: verify units in throughput/latency calculations
+      - Scaling laws: how performance changes with model size, batch size, context length
+      - Thermal/power constraints on sustained vs burst performance
+
+      Think in first principles. Derive before measuring. Predict before benchmarking.
+      Express results with proper units and significant figures.
+    compatible_roles: [architect_general, worker_explore, coder_primary]
+    output_format: structured_analysis
+
+  ai_engineer:
+    display_name: "AI/ML Engineer"
+    description: "End-to-end ML systems engineering"
+    system_prompt: |
+      You are a senior AI/ML engineer. Focus on:
+      - Model architecture: attention mechanisms, MoE routing, SSM vs transformer tradeoffs
+      - Training pipeline: data quality, curriculum learning, RL fine-tuning
+      - Serving infrastructure: model sharding, pipeline parallelism, batching strategies
+      - Evaluation: benchmark design, human eval correlation, automated scoring
+      - MLOps: model versioning, A/B testing, rollback procedures
+      - Cost optimization: compute/quality Pareto frontier, model distillation
+      - Safety: alignment, output filtering, adversarial robustness
+
+      Balance theory with practical engineering constraints.
+      Prefer battle-tested solutions over novel approaches unless novelty is justified.
+    compatible_roles: [architect_general, architect_coding, coder_primary, worker_explore]
+    output_format: markdown
+
 # MemRL seed Q-values for persona selection
 # Format: (task_pattern, persona) → initial_q_value
 # Higher Q = stronger initial preference
@@ -492,6 +616,28 @@ memrl_seeds:
   - task_pattern: "benchmark|results|analysis|compare|statistics"
     persona: data_analyst
     initial_q: 0.80
+  - task_pattern: "inference|speed|throughput|latency|tokens per second|quantiz|spec.*decod|MoE|expert"
+    persona: inference_specialist
+    initial_q: 0.90
+  - task_pattern: "benchmark.*method|score.*valid|ceiling|statistical.*signif|rubric"
+    persona: benchmark_analyst
+    initial_q: 0.85
+  - task_pattern: "roofline|bandwidth|scaling law|Amdahl|memory.*bound|compute.*bound|thermal"
+    persona: computational_physicist
+    initial_q: 0.85
+  - task_pattern: "model.*arch|training.*pipeline|serving|MLOps|distill|alignment|fine.?tun"
+    persona: ai_engineer
+    initial_q: 0.80
+
+# Hybrid auto-selection behavior:
+# 1. If persona is explicitly specified in delegate() or TaskIR → use it
+# 2. If no persona specified → MemRL suggests highest-Q persona for task_type
+#    (only if Q > 0.6 and the persona is compatible with the assigned role)
+# 3. If no match or Q < 0.6 → no persona (current behavior, vanilla prompt)
+auto_selection:
+  enabled: true
+  min_q_threshold: 0.6   # Don't auto-suggest personas with Q below this
+  require_role_compat: true  # Only suggest personas compatible with assigned role
 ```
 
 ### Integration Changes
@@ -558,7 +704,48 @@ def _tracked_llm_call(self, *args, **kwargs) -> str:
 
 No change needed — `**kwargs` already passes `persona` through.
 
-**4. TaskIR persona_hint field** (`orchestration/task_ir.schema.json`)
+**4. Hybrid auto-selection** (new logic in `src/llm_primitives.py` or `src/persona_loader.py`)
+
+When no persona is explicitly specified, auto-suggest based on MemRL Q-values:
+
+```python
+def auto_select_persona(
+    task_description: str,
+    role: str,
+    persona_registry: PersonaRegistry,
+    q_values: dict,  # From MemRL
+    min_q: float = 0.6,
+) -> str | None:
+    """Auto-select best persona for a task based on MemRL Q-values.
+
+    Returns None if no persona exceeds min_q threshold or is compatible.
+    """
+    candidates = []
+    for persona_id, config in persona_registry.personas.items():
+        # Check role compatibility
+        if role not in config.get("compatible_roles", []):
+            continue
+        # Check Q-value
+        q = q_values.get((task_description_pattern, persona_id), 0.0)
+        if q >= min_q:
+            candidates.append((persona_id, q))
+
+    if not candidates:
+        return None
+
+    # Return highest-Q persona
+    return max(candidates, key=lambda x: x[1])[0]
+```
+
+Integration in `llm_call()`:
+```python
+# If no persona specified, try auto-selection
+if persona is None and self.persona_registry and self.auto_selection_enabled:
+    persona = auto_select_persona(prompt, role, self.persona_registry, self.q_values)
+    # persona may still be None if no match — that's fine, vanilla behavior
+```
+
+**5. TaskIR persona_hint field** (`orchestration/task_ir.schema.json`)
 
 Add to agents items:
 ```json
