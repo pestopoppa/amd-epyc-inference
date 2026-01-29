@@ -1,7 +1,7 @@
 # Orchestration System Architecture
 
-**Version**: 2.1 (Connection Pooling)
-**Last Updated**: 2026-01-15
+**Version**: 2.2 (Updated Tier Residency)
+**Last Updated**: 2026-01-29
 
 > **This is the living technical reference** — updated continuously as the system evolves.
 > For narrative explanations of each subsystem, see the [Research Chapters](chapters/INDEX.md).
@@ -67,10 +67,12 @@ The orchestration system implements a hierarchical local-agent workflow for prod
 
 | Tier | Role | Purpose | Memory Residency |
 |------|------|---------|------------------|
-| **A** | Frontdoor | Intent classification, routing | Always HOT |
-| **B** | Specialists | Domain processing (coder, ingest, architect) | WARM (on demand) |
-| **C** | Workers | Parallel file-level tasks | COLD (transient) |
-| **D** | Draft | Speculative decoding support | HOT (small models) |
+| **A** | Frontdoor + Coder Primary | Intent classification, routing, simple code | HOT (always resident) |
+| **B** | Specialists | Coder escalation, ingest, architects, vision escalation | HOT (always resident) |
+| **C** | Workers | Explore, summarize, vision, math, fast burst | HOT (explore, vision) / WARM (fast workers) |
+| **D** | Embedder + Draft | Embedding server, speculative decoding draft (co-loaded) | HOT |
+
+**Note**: As of 2026-01, all tiers except WARM fast workers (~1.5B) are always resident. The HOT tier uses ~535GB (47% of 1130GB RAM). See [Chapter 12](chapters/12-production-server-stack.md) for the full server topology.
 
 ---
 

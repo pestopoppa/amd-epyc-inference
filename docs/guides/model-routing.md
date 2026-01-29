@@ -6,26 +6,32 @@ How to choose the right model for your task.
 
 ```
 Is this code generation?
-├── Yes → Qwen2.5-Coder-32B + speculative (33 t/s)
+├── Yes → Qwen2.5-Coder-32B + spec K=24 + lookup (39 t/s, port 8081)
 └── No
     Is this long context (>32K tokens)?
-    ├── Yes → Qwen3-Next-80B + MoE reduction (SSM, no speculation!)
+    ├── Yes → Qwen3-Next-80B + MoE4 (SSM, no speculation! port 8085)
     └── No
-        Is this reasoning/thinking?
-        ├── Yes → Thinking model or escalate to architect
-        └── No → Worker model (Llama-3-8B, etc.)
+        Is this vision/image?
+        ├── Yes → Qwen2.5-VL-7B (port 8086) or Qwen3-VL-30B (port 8087)
+        └── No
+            Is this reasoning/architecture?
+            ├── Yes → Architect: Qwen3-235B (port 8083) or 480B (port 8084)
+            └── No → Explore worker: Qwen2.5-7B + spec (44 t/s, port 8082)
 ```
 
 ## By Task Type
 
-| Task | Model | Acceleration | Speed |
-|------|-------|--------------|-------|
-| Code generation | Qwen2.5-Coder-32B | Speculative K=24 | 33 t/s |
-| Code editing | Qwen2.5-Coder-32B | Prompt lookup | 25.8 t/s |
-| Summarization | Any + Prompt lookup | Prompt lookup | Up to 95 t/s |
-| Long context | Qwen3-Next-80B | MoE only | 9 t/s |
-| Math | Qwen2.5-Math-7B | Speculative K=8 | 28 t/s |
-| General | Meta-Llama-3-8B | Speculative | 25 t/s |
+| Task | Model | Port | Acceleration | Speed |
+|------|-------|------|--------------|-------|
+| Interactive chat | Qwen3-Coder-30B-A3B | 8080 | MoE6 | 18 t/s |
+| Code generation / escalation | Qwen2.5-Coder-32B | 8081 | Spec K=24 + lookup | 39 t/s |
+| Explore / summarize | Qwen2.5-7B-Instruct-f16 | 8082 | Spec K=24 + lookup | 44 t/s |
+| Long context | Qwen3-Next-80B-A3B | 8085 | MoE4 only | 6.3 t/s |
+| Architecture (general) | Qwen3-235B-A22B | 8083 | MoE4 | 6.75 t/s |
+| Architecture (coding) | Qwen3-Coder-480B-A35B | 8084 | MoE3 | 10.3 t/s |
+| Vision (worker) | Qwen2.5-VL-7B + mmproj | 8086 | None | ~15 t/s |
+| Vision (escalation) | Qwen3-VL-30B-A3B + mmproj | 8087 | MoE4 | ~10 t/s |
+| Fast burst tasks | Qwen2.5-Coder-1.5B | 8102/8112 | None (WARM) | ~60 t/s |
 
 ## SSM Model Warning
 

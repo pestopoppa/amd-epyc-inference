@@ -202,13 +202,16 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 | **B4: Architect (Coding)** | Ultimate code escalation | Qwen3-Coder-480B-A35B | MoE3 only → 10.3 t/s |
 
 #### Tier C — Workers (Parallel)
-- File-level implementation, tests, docs
-- **Models**: Meta-Llama-3-8B, Qwen2.5-Math-7B, Qwen2.5-VL-7B
+- File-level implementation, exploration, summarization, tests, docs
+- **HOT**: Qwen2.5-7B-Instruct-f16 (explore/math, port 8082), Qwen2.5-VL-7B (vision, port 8086)
+- **WARM**: Qwen2.5-Coder-1.5B Q4_K_M (fast burst workers, ports 8102/8112)
 - Stateless, cheap, many run concurrently
 
-#### Tier D — Draft
-- Speculative decoding draft models
-- **Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0 (85 t/s)
+#### Tier D — Draft / Embedder
+- Speculative decoding draft models (co-loaded with spec decode servers on ports 8081, 8082)
+- Embedding server for episodic memory (port 8090)
+- **Draft Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0
+- **Embedder**: Qwen2.5-Coder-0.5B Q8_0
 
 ### Critical Constraints
 
@@ -500,15 +503,17 @@ This section applies to Claude Code (Opus/Sonnet/Haiku) routing, not local infer
 
 ### Local Model Routing (Orchestrator)
 
-| Task Type | Model | Acceleration |
-|-----------|-------|--------------|
-| Interactive chat | Qwen3-Coder-30B-A3B | Expert reduction (4) |
-| Code generation | Qwen2.5-Coder-32B | Speculative (K=24) |
-| Long-context ingestion | Qwen3-Next-80B-A3B | Expert reduction (2), **NO SPEC** |
-| Architecture/escalation | Qwen3-235B-A22B | Expert reduction (4) |
-| Boilerplate/docs | Meta-Llama-3-8B | Prompt lookup |
-| Math/invariants | Qwen2.5-Math-7B | Speculative (K=8) |
-| Vision/UI | Qwen2.5-VL-7B | Speculative (K=8, temp=0.7) |
+| Task Type | Model | Port | Acceleration |
+|-----------|-------|------|--------------|
+| Interactive chat | Qwen3-Coder-30B-A3B | 8080 | MoE6 (18 t/s) |
+| Code generation / escalation | Qwen2.5-Coder-32B | 8081 | Spec K=24 + lookup (39 t/s) |
+| Explore / summarize | Qwen2.5-7B-Instruct-f16 | 8082 | Spec K=24 + lookup (44 t/s) |
+| Long-context ingestion | Qwen3-Next-80B-A3B | 8085 | MoE4, **NO SPEC** (6.3 t/s) |
+| Architecture (general) | Qwen3-235B-A22B | 8083 | MoE4 (6.75 t/s) |
+| Architecture (coding) | Qwen3-Coder-480B-A35B | 8084 | MoE3 (10.3 t/s) |
+| Vision (worker) | Qwen2.5-VL-7B + mmproj | 8086 | None (~15 t/s) |
+| Vision (escalation) | Qwen3-VL-30B-A3B + mmproj | 8087 | MoE4 (~10 t/s) |
+| Fast burst tasks | Qwen2.5-Coder-1.5B | 8102/8112 | None (WARM, on demand) |
 
 ---
 

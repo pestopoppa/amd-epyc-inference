@@ -84,31 +84,31 @@ User Request
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  CODER PRIMARY (B1)                                         │
+│  CODER PRIMARY (B1) — Port 8080                              │
 │  Model: Qwen3-Coder-30B-A3B + MoE6                          │
-│  Speed: 18.3 t/s | Quality: 90%                             │
+│  Speed: 18 t/s | Quality: 90%                               │
 │  Handles: Single-file changes, simple refactors             │
 └─────────────────────────────────────────────────────────────┘
      │ [failure OR multi-file OR review needed]
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  WORKER_SUMMARIZE                                           │
-│  Model: Qwen2.5-Coder-32B + spec K=8                        │
-│  Speed: 172.4 t/s | Quality: 96%                            │
-│  Handles: Code review, summarization, refactoring           │
+│  CODER ESCALATION / WORKER_SUMMARIZE — Port 8081             │
+│  Model: Qwen2.5-Coder-32B + spec K=24 + lookup              │
+│  Speed: 39 t/s | Quality: 96%                               │
+│  Handles: Code review, summarization, multi-file refactors  │
 └─────────────────────────────────────────────────────────────┘
      │ [architectural decision needed]
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  ARCHITECT_72B                                              │
-│  Model: Qwen2.5-72B + spec K=16                             │
-│  Speed: 147.8 t/s | Quality: 87%                            │
-│  Handles: Multi-module design, API contracts                │
+│  ARCHITECT_GENERAL (B3) — Port 8083                          │
+│  Model: Qwen3-235B-A22B + MoE4                              │
+│  Speed: 6.75 t/s | Quality: high                            │
+│  Handles: Multi-module design, API contracts, invariants    │
 └─────────────────────────────────────────────────────────────┘
      │ [ultimate escalation]
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  ARCHITECT_CODING (B4 - Ultimate)                           │
+│  ARCHITECT_CODING (B4) — Port 8084                           │
 │  Model: Qwen3-Coder-480B-A35B + MoE3                        │
 │  Speed: 10.3 t/s | Quality: 83%                             │
 │  Handles: Hardest architecture, novel algorithms            │
@@ -116,33 +116,36 @@ User Request
 └─────────────────────────────────────────────────────────────┘
 ```
 
-#### THINKING Escalation Path
+#### THINKING / INGESTION Escalation Path
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  THINKING_4B (Fast First Attempt)                           │
-│  Model: Qwen3-4B-Thinking                                   │
-│  Speed: 16.5 t/s | Quality: 89%                             │
+│  FRONTDOOR (Tier A) — Port 8080                              │
+│  Model: Qwen3-Coder-30B-A3B + MoE6                          │
+│  Speed: 18 t/s                                              │
 │  Handles: Quick reasoning, simple chain-of-thought          │
+│  (Qwen3 models have native <think> support)                 │
 └─────────────────────────────────────────────────────────────┘
-     │ [needs deeper reasoning]
+     │ [needs deeper reasoning OR large context]
      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  THINKING_32B                                               │
-│  Model: DeepSeek-R1-Distill-Qwen-32B + spec K=16            │
-│  Speed: 72.2 t/s | Quality: 81%                             │
-│  Handles: Multi-step reasoning, hypothesis generation       │
-└─────────────────────────────────────────────────────────────┘
-     │ [complex multi-step OR extended thinking]
-     ▼
-┌─────────────────────────────────────────────────────────────┐
-│  INGESTION (B2) / THINKING_80B (Ultimate)                   │
-│  Model: Qwen3-Next-80B-A3B + MoE2                           │
-│  Speed: 9.2 t/s | Quality: 92%                              │
-│  Handles: Hardest reasoning, 128K context                   │
+│  INGESTION (B2) — Port 8085                                  │
+│  Model: Qwen3-Next-80B-A3B + MoE4                           │
+│  Speed: 6.3 t/s | 128K context                              │
+│  Handles: Long-context synthesis, deep reasoning            │
 │  ⚠️  SSM architecture - NO speculation/prompt lookup!       │
 └─────────────────────────────────────────────────────────────┘
+     │ [architectural / system-level reasoning needed]
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  ARCHITECT_GENERAL (B3) — Port 8083                          │
+│  Model: Qwen3-235B-A22B + MoE4                              │
+│  Speed: 6.75 t/s                                            │
+│  Handles: System design, invariants, hardest reasoning      │
+└─────────────────────────────────────────────────────────────┘
 ```
+
+**Note**: Dedicated thinking models (Qwen3-4B-Thinking, DeepSeek-R1-Distill-Qwen-32B) were evaluated during benchmarking but are not deployed in the production stack. The Qwen3 family has native `<think>` tag support, so reasoning is handled by the existing frontdoor and specialist models.
 
 **Escalation Triggers**:
 - Gate failure (lint, typecheck, unit tests)
@@ -153,7 +156,7 @@ User Request
 
 ### Tier C - Workers (Parallel)
 
-- File-level implementation
+- File-level implementation, exploration, summarization
 - Test writing
 - Documentation
 - Math / edge-case reasoning
@@ -161,13 +164,21 @@ User Request
 
 Workers are **stateless** and cheap; many run concurrently.
 
-**Models**: Meta-Llama-3-8B, Qwen2.5-Math-7B, Qwen2.5-VL-7B
+| Worker | Model | Port | Tier | Acceleration |
+|--------|-------|------|------|--------------|
+| explore / math | Qwen2.5-7B-Instruct-f16 | 8082 | HOT | Spec K=24 + lookup (44 t/s) |
+| summarize | Qwen2.5-Coder-32B (shared with coder_escalation) | 8081 | HOT | Spec K=24 + lookup (39 t/s) |
+| vision | Qwen2.5-VL-7B Q4_K_M + mmproj | 8086 | HOT | None (VL model) |
+| fast_1, fast_2 | Qwen2.5-Coder-1.5B Q4_K_M | 8102, 8112 | WARM | None (burst capacity) |
 
-### Tier D - Draft
+**Note**: `worker_code` was removed — coder_escalation (32B) handles all code tasks with better quality and speed. Fast workers spin up on demand when concurrent load exceeds 4 tasks, and idle-shutdown after 5 minutes.
 
-- Tiny model for speculative decoding
-- One per active dense-model stream
-- **Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0 (85 t/s)
+### Tier D - Draft / Embedder
+
+- Tiny model for speculative decoding (co-loaded with spec decode servers)
+- Embedding server for episodic memory (MemRL)
+- **Draft Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0 (co-loaded on ports 8081, 8082)
+- **Embedder**: Qwen2.5-Coder-0.5B Q8_0 (port 8090, dedicated embedding endpoint)
 
 ### Formalizers (Preprocessing)
 
