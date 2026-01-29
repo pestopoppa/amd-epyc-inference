@@ -13,13 +13,13 @@ from fastapi.responses import StreamingResponse
 from src.api.models import ChatRequest, ChatResponse
 from src.api.state import get_state
 from src.api.services.orchestrator import (
-    build_root_lm_prompt,
     extract_code_from_response,
     auto_wrap_final,
     classify_error,
     build_escalation_prompt,
 )
 from src.prompt_builders import (
+    build_root_lm_prompt,
     build_stage2_review_prompt,
     build_long_context_exploration_prompt,
     build_routing_context,

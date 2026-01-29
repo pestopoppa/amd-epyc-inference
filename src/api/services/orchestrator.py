@@ -41,9 +41,10 @@ if TYPE_CHECKING:
 def build_root_lm_prompt(
     state: str,
     original_prompt: str,
-    last_output: str,
-    last_error: str,
-    turn: int,
+    last_output: str = "",
+    last_error: str = "",
+    turn: int = 0,
+    routing_context: str = "",
 ) -> str:
     """Build the prompt for the Root LM (frontdoor).
 
@@ -57,6 +58,7 @@ def build_root_lm_prompt(
         last_output=last_output,
         last_error=last_error,
         turn=turn,
+        routing_context=routing_context,
     )
 
 
