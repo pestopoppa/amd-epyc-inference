@@ -794,17 +794,52 @@ def phase2_orchestrator_benchmark(args) -> PhaseResult:
             "output_file": output_file,
         }
 
-        # Try to extract summary from output file
+        # Try to extract and display summary from output file
         if not args.dry_run and exit_code == 0 and Path(output_file).exists():
             try:
                 with open(output_file) as f:
                     data = json.load(f)
                 suite_results[suite]["quality_pass_rate"] = data.get("quality_pass_rate")
                 suite_results[suite]["avg_speedup"] = data.get("avg_speedup")
+                suite_results[suite]["avg_tps"] = data.get("avg_tps", 0)
+                suite_results[suite]["avg_latency_ms"] = data.get("avg_orchestrator_latency_ms", 0)
+                suite_results[suite]["prompts_compared"] = data.get("prompts_compared", 0)
+                # Print per-suite mini-summary
+                n = data.get("prompts_compared", 0)
+                q = data.get("quality_pass_rate", 0)
+                tps = data.get("avg_tps", 0)
+                lat = data.get("avg_orchestrator_latency_ms", 0)
+                q_icon = "✓" if q >= 90 else "✗"
+                tps_str = f"{tps:.1f} t/s" if tps > 0 else "—"
+                print(f"    {suite:25} {n:2} prompts  {q_icon} {q:5.1f}% quality  "
+                      f"{lat:7.0f}ms avg  {tps_str}")
             except (json.JSONDecodeError, KeyError):
                 pass
+        elif not args.dry_run and exit_code != 0:
+            print(f"    {suite:25} [FAILED] exit code {exit_code}")
 
     all_passed = all(r["exit_code"] == 0 for r in suite_results.values())
+
+    # Print aggregate summary across all suites
+    if not args.dry_run:
+        total_prompts = sum(r.get("prompts_compared", 0) for r in suite_results.values())
+        all_quality = [r["quality_pass_rate"] for r in suite_results.values() if "quality_pass_rate" in r and r["quality_pass_rate"] is not None]
+        all_tps = [r["avg_tps"] for r in suite_results.values() if r.get("avg_tps", 0) > 0]
+        all_latency = [r["avg_latency_ms"] for r in suite_results.values() if r.get("avg_latency_ms", 0) > 0]
+        avg_q = sum(all_quality) / len(all_quality) if all_quality else 0
+        avg_tps = sum(all_tps) / len(all_tps) if all_tps else 0
+        avg_lat = sum(all_latency) / len(all_latency) if all_latency else 0
+        phase_elapsed = time.monotonic() - start
+        print(f"\n  {'─' * 55}")
+        print(f"  Phase 2 totals: {total_prompts} prompts across {len(suites)} suites in {phase_elapsed:.0f}s")
+        if all_quality:
+            q_icon = "✓" if avg_q >= 90 else "✗"
+            print(f"    Quality: {q_icon} {avg_q:.1f}% avg")
+        if all_tps:
+            print(f"    Speed:   {avg_tps:.1f} t/s avg")
+        if all_latency:
+            print(f"    Latency: {avg_lat:.0f}ms avg")
+        print(f"  {'─' * 55}")
 
     # Step 3: Collect telemetry from progress logs
     telemetry = {}

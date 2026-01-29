@@ -336,7 +336,9 @@ def run_comparison(
 
         speedup_str = f"{result.speedup:.1f}x" if result.speedup > 0 else "N/A"
         quality_str = "OK" if result.quality_match else "FAIL"
-        print(f"speedup: {speedup_str}, quality: {quality_str}, "
+        latency_str = f"{result.orchestrator_latency_ms:.0f}ms"
+        tps_str = f"{result.avg_tps:.1f} t/s" if result.avg_tps > 0 else ""
+        print(f"{latency_str:>8}  {tps_str:>10}  speedup: {speedup_str}, quality: {quality_str}, "
               f"turns: {result.orchestrator_turns}, routed: {result.orchestrator_routed_to}")
 
         if not result.quality_match:
