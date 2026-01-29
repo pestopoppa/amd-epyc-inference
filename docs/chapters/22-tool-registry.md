@@ -1,10 +1,10 @@
-# Chapter 22: Tool Registry & Agent Roles
+# Chapter 22: Tool Registry & Permission Model
 
 ## Introduction
 
-The orchestration system defines **40+ callable tools** across 8 categories and **8 agent roles** with hierarchical permissions. Tools are declared in YAML (`orchestration/tool_registry.yaml`) and enforced at runtime by `src/tool_registry.py`. Agent roles range from the Lead Developer (strategic coordination) to specialized support agents (Build Engineer, Sysadmin), each with scoped tool access and model selection based on task complexity rather than role identity.
+The orchestration system defines **40+ callable tools** across 8 categories with role-scoped permissions. Tools are declared in YAML (`orchestration/tool_registry.yaml`) and enforced at runtime by `src/tool_registry.py`. Each local orchestrator role (frontdoor, coder, architect, worker, etc.) receives scoped tool access via allow/deny lists.
 
-This chapter covers the tool inventory, permission model, agent role definitions, and the coordination flow between agents.
+This chapter covers the tool inventory, permission model, and invocation patterns.
 
 ## Tool Registry
 
@@ -147,93 +147,7 @@ def _validate_file_path(path: str) -> bool:
 
 Uses `os.path.realpath()` to defeat symlink-based escape attempts.
 
-## Agent Role Definitions
-
-All 8 roles are defined in `/mnt/raid0/llm/claude/agents/`:
-
-### Primary Agents (4)
-
-| Role | File | Default Model | Responsibility |
-|------|------|---------------|----------------|
-| **Lead Developer** | `lead-developer.md` | Sonnet (Opus for novel) | Architecture, coordination, strategic decisions |
-| **Research Engineer** | `research-engineer.md` | Sonnet (Opus for novel) | C++ implementation, debugging, novel approaches |
-| **Research Writer** | `research-writer.md` | Sonnet (Opus for analysis) | Report synthesis, documentation, literature |
-| **Benchmark Analyst** | `benchmark-analyst.md` | Haiku | Benchmark execution, data collection, metrics |
-
-### Support Agents (4)
-
-| Role | File | Default Model | Responsibility |
-|------|------|---------------|----------------|
-| **Sysadmin** | `sysadmin.md` | Sonnet | System config, NUMA, CPU governor |
-| **Build Engineer** | `build-engineer.md` | Sonnet | CMake, compiler flags, build issues |
-| **Model Engineer** | `model-engineer.md` | Sonnet | GGUF conversion, quantization formats |
-| **Safety Reviewer** | `safety-reviewer.md` | Opus | Risk assessment, security review |
-
-### Task-Based Model Selection
-
-Model selection depends on **task complexity**, not agent identity:
-
-```
-NOVEL/COMPLEX (Opus 4.5)
-  Novel architecture, complex debugging, security assessment
-
-RESEARCH/SYNTHESIS (Sonnet 4.5)
-  Code implementation, report writing, comparison analysis
-
-ROUTINE/EXECUTION (Haiku 4.5)
-  Benchmark runs, CSV parsing, status checks, known commands
-```
-
-This means the Research Engineer might use Opus for a novel KV cache debugging session but Sonnet for routine code implementation.
-
-## Agent Coordination
-
-### Hierarchy
-
-```
-              Lead Developer
-              (coordinates)
-                    |
-    +---------------+---------------+
-    |               |               |
-Research       Benchmark        Research
-Engineer       Analyst           Writer
-(implements)   (measures)       (documents)
-    |               |               |
-    +---------------+---------------+
-                    |
-             Support Agents
-             (as needed)
-            +-- Sysadmin
-            +-- Build Engineer
-            +-- Model Engineer
-            +-- Safety Reviewer
-```
-
-### Decision Flow
-
-The Lead Developer makes routing decisions:
-
-1. **Novel/complex** task arrives -> escalate to Opus, assign Research Engineer
-2. **Benchmark needed** -> assign Benchmark Analyst (Haiku for speed)
-3. **Documentation** -> assign Research Writer
-4. **System tuning** -> delegate to Sysadmin
-5. **Build issue** -> delegate to Build Engineer
-6. **New model** -> delegate to Model Engineer
-7. **Risk detected** -> invoke Safety Reviewer (always Opus)
-
-### Critical Rules
-
-From `agents/AGENT_INSTRUCTIONS.md`:
-
-1. **Never write to root filesystem** — all paths must start with `/mnt/raid0/`
-2. **Never use `pytest -n auto`** — 192 threads would OOM
-3. **Always use feature flags** — `from src.features import features`
-4. **Always use Role enum** — `Role.CODER_PRIMARY`, not string `"coder_primary"`
-5. **Always log exceptions** — no bare `except: pass`
-6. **Max 3 retries** — then document blocker and stop
-
-### Tool Invocation Pattern
+## Tool Invocation Pattern
 
 ```python
 from src.tool_registry import ToolRegistry
@@ -251,9 +165,6 @@ if registry.can_use_tool("frontdoor", "fetch_docs"):
 
 - Tool definitions: `orchestration/tool_registry.yaml`
 - Python implementation: `src/tool_registry.py`
-- Agent overview: `agents/README.md`
-- Critical rules: `agents/AGENT_INSTRUCTIONS.md`
-- Role definitions: `agents/{lead-developer,research-engineer,research-writer,benchmark-analyst,sysadmin,build-engineer,model-engineer,safety-reviewer}.md`
 
 ### Related Chapters
 
