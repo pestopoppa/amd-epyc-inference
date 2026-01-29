@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from dataclasses import dataclass, asdict
@@ -425,6 +426,74 @@ def print_summary(summary: dict):
     print(f"Target: >90% quality: {quality_status} ({quality:.1f}%)")
 
 
+def _restart_orchestrator_api(api_url: str) -> None:
+    """Kill and restart the orchestrator API (uvicorn on port 8000).
+
+    Does NOT touch llama-server backends (ports 8080-8090) — those are
+    unchanged and take minutes to reload.
+    """
+    from urllib.parse import urlparse
+    port = urlparse(api_url).port or 8000
+
+    print(f"[restart] Stopping orchestrator API on port {port}...")
+    # Find and kill the uvicorn process on the target port
+    try:
+        result = subprocess.run(
+            ["lsof", "-t", f"-i:{port}"],
+            capture_output=True, text=True,
+        )
+        pids = result.stdout.strip().split("\n") if result.stdout.strip() else []
+        for pid_str in pids:
+            pid = int(pid_str)
+            os.kill(pid, 9)
+            print(f"  Killed PID {pid}")
+    except Exception as e:
+        print(f"  No process on port {port} ({e})")
+
+    time.sleep(1)
+
+    print(f"[restart] Starting orchestrator API...")
+    log_file = PROJECT_ROOT / "logs" / "orchestrator.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env["HF_HOME"] = "/mnt/raid0/llm/cache/huggingface"
+    env["TMPDIR"] = "/mnt/raid0/llm/tmp"
+
+    with open(log_file, "w") as log:
+        subprocess.Popen(
+            [
+                sys.executable, "-m", "uvicorn",
+                "src.api:app",
+                "--host", "127.0.0.1",
+                "--port", str(port),
+            ],
+            cwd=str(PROJECT_ROOT),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+
+    # Wait for health
+    print(f"  Waiting for health on port {port}...")
+    deadline = time.time() + 60
+    healthy = False
+    while time.time() < deadline:
+        try:
+            resp = httpx.get(f"http://localhost:{port}/health", timeout=3)
+            if resp.status_code == 200:
+                healthy = True
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+
+    if healthy:
+        print(f"  [OK] Orchestrator API ready on port {port}")
+    else:
+        print(f"  [FAIL] Orchestrator API did not start. Check {log_file}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Orchestrator vs Direct Comparison")
     parser.add_argument(
@@ -462,8 +531,18 @@ def main():
         "--output",
         help="Output file for results"
     )
+    parser.add_argument(
+        "--restart-api",
+        action="store_true",
+        help="Restart the orchestrator API (port 8000) before running. "
+             "Only restarts uvicorn, NOT the llama-server backends."
+    )
 
     args = parser.parse_args()
+
+    # Restart orchestrator API if requested
+    if args.restart_api:
+        _restart_orchestrator_api(args.api_url)
 
     # Load config if provided
     config = None
