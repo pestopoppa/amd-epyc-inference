@@ -213,6 +213,36 @@ repl.artifacts["_delegations"] = [{
 }]
 ```
 
+### Two-Stage Context Pipeline (2026-01-29)
+
+ALL long-context requests (>20K chars) now use a two-stage pipeline instead of REPL exploration:
+
+```
+Phase 1: Worker Parallel Digest           Phase 2: Frontdoor Synthesis
+worker_explore (7B, 44 t/s)               frontdoor (30B, 18 t/s)
+┌───────────────────────────┐            ┌─────────────────────────────┐
+│ Context → N chunks (~4K)  │            │ Worker digests + question   │
+│ Each chunk → worker       │  ───────►  │ Synthesize final answer     │
+│ Produces structured digest│   TOON     │ Report exact findings       │
+│ Parallel execution        │  encoded   │ No REPL code generation     │
+└───────────────────────────┘            └─────────────────────────────┘
+```
+
+### MemRL Quality Review Gate (2026-01-29)
+
+Two-phase review triggered when MemRL Q-value < 0.6 for role+task:
+
+```
+Phase 1: Architect Verdict (6.75 t/s, ~40 tokens → ~6s)
+  → "OK" (return answer unchanged)
+  → "WRONG: <concise corrections>" (trigger Phase 2)
+
+Phase 2: Worker Revision (44 t/s, ~500 tokens → ~11s, only on WRONG)
+  → Expand corrections into full revised answer
+```
+
+Net impact: ~1.9s average added latency (20% trigger rate × 30% revision rate).
+
 ### Split Pipeline (Exploration → Summarization)
 
 ```
@@ -224,6 +254,19 @@ worker_explore (7B, 46 t/s)          worker_summarize (32B, 95 t/s)
 │ • Collect raw results   │ encoded │ • Document understanding    │
 └─────────────────────────┘         └─────────────────────────────┘
 ```
+
+### Role Aliases (2026-01-29)
+
+Models may generate natural-language role names. These are resolved automatically:
+
+| Model generates | Maps to |
+|----------------|---------|
+| `researcher_agent` | `worker_explore` |
+| `coder_agent` | `coder_primary` |
+| `reviewer_agent` | `architect_general` |
+| `math_agent` | `worker_math` |
+| `vision_agent` | `worker_vision` |
+| `summarizer_agent` | `worker_summarize` |
 
 ## Files to Gitignore
 

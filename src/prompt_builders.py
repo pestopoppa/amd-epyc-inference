@@ -773,25 +773,42 @@ def build_routing_context(
         results = hybrid_router.retriever.retrieve_for_routing(task_ir)
 
         tier = get_tier(role)
-        lines = [f"Role: {role} (Tier {tier.value})"]
 
         if not results:
-            lines.append("No similar past tasks found.")
-            return "\n".join(lines)[:max_chars]
+            return f"Role: {role} (Tier {tier.value})\nNo similar past tasks found."[:max_chars]
 
-        # Top 3 similar task outcomes
+        # Build structured routing data for TOON encoding
+        similar = []
         for r in results[:3]:
             ctx = r.memory.context or {}
-            role_used = ctx.get("role", r.memory.action)
-            outcome = r.memory.outcome or "?"
-            lines.append(
-                f"  Similar → {role_used}: Q={r.q_value:.2f} ({outcome})"
-            )
+            similar.append({
+                "role": ctx.get("role", r.memory.action),
+                "Q": round(r.q_value, 2),
+                "outcome": r.memory.outcome or "?",
+            })
 
         best = hybrid_router.retriever.get_best_action(results)
+        routing_data = {
+            "self": {"role": role, "tier": tier.value},
+            "similar": similar,
+        }
+        if best:
+            routing_data["suggested"] = {"role": best[0], "conf": round(best[1], 2)}
+
+        # TOON encoding: ~50% reduction on uniform similar-tasks array
+        try:
+            from src.services.toon_encoder import is_available, encode
+            if is_available() and len(similar) >= 2:
+                return encode(routing_data)[:max_chars]
+        except Exception:
+            pass
+
+        # Fallback: compact text format
+        lines = [f"Role: {role} (Tier {tier.value})"]
+        for s in similar:
+            lines.append(f"  Similar → {s['role']}: Q={s['Q']:.2f} ({s['outcome']})")
         if best:
             lines.append(f"Suggested: {best[0]} (conf={best[1]:.2f})")
-
         return "\n".join(lines)[:max_chars]
 
     except Exception:
@@ -820,30 +837,133 @@ def build_long_context_exploration_prompt(
     est_tokens = context_chars // 4
     n_chunks = max(2, min(8, est_tokens // 4000))  # ~4K tokens per chunk
 
-    return f"""You are an orchestrator processing a large document ({context_chars:,} chars, ~{est_tokens:,} tokens).
+    # Detect search/needle tasks
+    search_keywords = ["find", "search", "locate", "identify", "extract", "detect", "where"]
+    is_search = any(kw in original_prompt.lower().split() for kw in search_keywords)
 
-## Available Tools
-{DEFAULT_ROOT_LM_TOOLS}
+    if is_search:
+        first_step = f"""# Step 1: Search for relevant items
+matches = grep(r"key|secret|password|token|credential|api_key")
+for m in matches:
+    print(f"Line {{m['line']}}: {{m['text']}}")"""
+    else:
+        first_step = f"""# Step 1: Inspect document structure
+header = peek(2000)
+print(header)"""
+
+    return f"""You are an orchestrator processing a large document ({context_chars:,} chars, ~{est_tokens:,} tokens).
 
 ## Task
 {original_prompt}
 
 ## Strategy
-The document is too large for a single LLM call. Use this approach:
-1. `peek(2000)` — scan the beginning to understand structure
-2. `grep(pattern)` — search for specific terms related to the task
-3. `summarize_chunks(task="{original_prompt[:100]}", n_chunks={n_chunks})` — dispatch {n_chunks} parallel workers to analyze sections
-4. Synthesize worker results and `FINAL(answer)`
+The full document is stored in the `context` variable.
+These functions are ALREADY AVAILABLE — call them directly:
+
+```python
+{first_step}
+
+# Step 2: Search for specific terms
+matches = grep(r"pattern_here")  # returns list of {{"line": int, "text": str, "position": int}}
+
+# Step 3: Parallel analysis (dispatches to workers)
+summaries = summarize_chunks(
+    task="{original_prompt[:80]}",
+    n_chunks={n_chunks}
+)  # returns list of {{"index": int, "summary": str}}
+
+# Step 4: Synthesize and return
+FINAL("your answer here")
+```
+
+**DO NOT** define your own functions. `peek`, `grep`, `summarize_chunks`, `FINAL` are built-ins.
+**DO NOT** try to read files from disk — the context is already loaded in memory.
 
 {f'## Current State{chr(10)}{state}' if state else ''}
 
 ## Rules
+- NEVER import anything — all tools are pre-loaded
 - NEVER send full context to llm_call() (too large)
 - Use grep() to find specific needles, summarize_chunks() for broad analysis
 - Workers return section summaries — you synthesize the final answer
-- Output only valid Python code
+- Output only valid Python code — no markdown, no explanations
 
 Code:"""
+
+
+# ─── Quality Review Prompts ──────────────────────────────────────────────────
+
+
+def build_review_verdict_prompt(
+    question: str,
+    answer: str,
+    context_digest: str = "",
+    worker_digests: list[dict] | None = None,
+) -> str:
+    """Build architect verdict prompt — forces hyper-concise output.
+
+    Uses TOON encoding for worker_digests (uniform array of section summaries)
+    to minimize tokens sent to architect. TOON achieves 40-65% reduction on
+    structured arrays vs JSON.
+
+    Args:
+        question: Original user question (truncated to 300 chars).
+        answer: The answer to review (truncated to 1500 chars).
+        context_digest: Optional compact text digest for context-dependent claims.
+        worker_digests: Optional list of worker digest dicts for TOON encoding.
+
+    Returns:
+        Prompt string for architect verdict.
+    """
+    digest_section = ""
+    if worker_digests:
+        # TOON-encode structured worker digests (uniform array → 40-65% savings)
+        try:
+            from src.services.toon_encoder import encode, is_available
+            if is_available():
+                digest_section = f"\nEvidence:\n{encode(worker_digests)}\n"
+            else:
+                import json
+                digest_section = f"\nEvidence:\n{json.dumps(worker_digests)}\n"
+        except Exception:
+            import json
+            digest_section = f"\nEvidence:\n{json.dumps(worker_digests)}\n"
+    elif context_digest:
+        digest_section = f"\nContext: {context_digest[:800]}\n"
+
+    return f"""Judge this answer. Respond with ONLY one line:
+- "OK" if correct and complete
+- "WRONG: <what to fix>" if incorrect (max 30 words)
+{digest_section}
+Q: {question[:300]}
+A: {answer[:1500]}
+
+Verdict:"""
+
+
+def build_revision_prompt(
+    question: str, original: str, corrections: str
+) -> str:
+    """Build fast model revision prompt — expands architect corrections.
+
+    Args:
+        question: Original user question.
+        original: The original answer to revise.
+        corrections: Architect's correction notes.
+
+    Returns:
+        Prompt string for the revision model.
+    """
+    return f"""Rewrite this answer applying the corrections below.
+Keep the same style and depth. Only change what the corrections require.
+
+Question: {question[:300]}
+
+Original answer: {original[:1500]}
+
+Corrections: {corrections}
+
+Revised answer:"""
 
 
 # Code extraction utilities (moved from orchestrator.py)

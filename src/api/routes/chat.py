@@ -23,6 +23,8 @@ from src.prompt_builders import (
     build_stage2_review_prompt,
     build_long_context_exploration_prompt,
     build_routing_context,
+    build_review_verdict_prompt,
+    build_revision_prompt,
 )
 from src.services.draft_cache import get_draft_cache, CachedDraft
 from src.services.prompt_compressor import PromptCompressor
@@ -112,7 +114,12 @@ def _should_use_two_stage(
     context: str | None,
     doc_count: int = 1,
 ) -> bool:
-    """Determine if two-stage summarization should be used.
+    """Determine if two-stage context processing should be used.
+
+    Triggers for ANY large context (not just summarization). The REPL
+    exploration approach scored 0/9 on long context benchmarks because
+    models generate standalone code instead of calling peek()/grep().
+    Two-stage worker digest → frontdoor synthesis is more reliable.
 
     Args:
         prompt: The user's prompt.
@@ -125,22 +132,18 @@ def _should_use_two_stage(
     if not TWO_STAGE_CONFIG["enabled"]:
         return False
 
-    if not _is_summarization_task(prompt):
-        return False
-
     if not context:
         return False
 
-    # Estimate total tokens
-    total_text = prompt + (context or "")
-    token_estimate = _estimate_tokens(total_text)
+    # Trigger for any context above threshold — not just summarization
+    context_chars = len(context)
+    threshold_chars = LONG_CONTEXT_CONFIG["threshold_chars"]  # 20K chars
 
     # Apply multi-doc discount
-    threshold = TWO_STAGE_CONFIG["threshold_tokens"]
     if doc_count > 1:
-        threshold = int(threshold * TWO_STAGE_CONFIG["multi_doc_discount"])
+        threshold_chars = int(threshold_chars * TWO_STAGE_CONFIG["multi_doc_discount"])
 
-    return token_estimate > threshold
+    return context_chars > threshold_chars
 
 
 async def _run_two_stage_summarization(
@@ -150,185 +153,143 @@ async def _run_two_stage_summarization(
     state: "AppState",
     task_id: str,
 ) -> tuple[str, dict]:
-    """Run two-stage summarization pipeline.
+    """Run two-stage context processing pipeline.
 
-    Stage 1: Fast draft from frontdoor + grep hits capture
-    Stage 2: Quality review from large model with reduced context
+    Generalized for ALL large-context tasks (not just summarization):
+    Stage 1: Workers digest chunks in parallel (44 t/s each)
+    Stage 2: Frontdoor synthesizes answer from digests (18 t/s)
+
+    For summarization tasks, falls through to the original
+    Stage 1 (draft) + Stage 2 (large model review) pipeline.
 
     Args:
-        prompt: The user's summarization prompt.
+        prompt: The user's prompt.
         context: The full document context.
         primitives: LLMPrimitives instance for LLM calls.
         state: Application state.
         task_id: Task ID for logging.
 
     Returns:
-        Tuple of (final_summary, stats_dict).
+        Tuple of (final_answer, stats_dict).
     """
     import time
 
+    is_summarization = _is_summarization_task(prompt)
+
     stats = {
-        "pipeline": "three_stage",
-        "stage0_time_ms": 0,  # Compression time
+        "pipeline": "two_stage_context",
         "stage1_time_ms": 0,
         "stage2_time_ms": 0,
         "context_tokens": _estimate_tokens(context),
-        "compressed_tokens": 0,
-        "compression_ratio": 1.0,
+        "chunks": 0,
         "cache_hit": False,
     }
 
-    # Check cache first
-    cache = get_draft_cache()
-    cache_key = cache.make_key(context)
+    # Determine chunking
+    n_chunks = max(2, min(8, len(context) // 16000))  # ~4K tokens per chunk
+    stats["chunks"] = n_chunks
 
-    cached = cache.get(cache_key)
-    if cached:
-        stats["cache_hit"] = True
-        draft_summary = cached.draft_summary
-        grep_hits = cached.grep_hits
-        figures = cached.figures
-    else:
-        # Stage 0: Compress context if above threshold (LLMLingua-2)
-        compression_config = THREE_STAGE_CONFIG["compression"]
-        context_for_stage1 = context
+    # Stage 1: Worker parallel digest
+    stage1_start = time.perf_counter()
 
-        if compression_config["enabled"] and len(context) > compression_config["min_chars"]:
-            import logging
-            logging.info(f"Stage 0: Compressing {len(context)} chars with LLMLingua-2")
+    chunk_size = len(context) // n_chunks
+    overlap = 200
+    chunks = []
+    for i in range(n_chunks):
+        start_idx = max(0, i * chunk_size - (overlap if i > 0 else 0))
+        end_idx = min(len(context), (i + 1) * chunk_size + (overlap if i < n_chunks - 1 else 0))
+        chunks.append({"index": i, "text": context[start_idx:end_idx]})
 
-            stage0_start = time.perf_counter()
-            try:
-                compressor = PromptCompressor.get_instance()
-                compression_result = compressor.compress(
-                    context,
-                    target_ratio=compression_config["target_ratio"],
-                )
-                context_for_stage1 = compression_result.compressed_text
-                stats["stage0_time_ms"] = int(compression_result.latency_ms)
-                stats["compressed_tokens"] = compression_result.compressed_tokens
-                stats["compression_ratio"] = compression_result.actual_ratio
-
-                logging.info(
-                    f"Stage 0 complete: {compression_result.original_chars} → "
-                    f"{compression_result.compressed_chars} chars "
-                    f"({compression_result.actual_ratio:.1%}) in {compression_result.latency_ms:.1f}ms"
-                )
-            except Exception as e:
-                # Fall back to truncation if compression fails
-                logging.warning(f"Stage 0 compression failed: {e}, falling back to truncation")
-                stats["stage0_time_ms"] = int((time.perf_counter() - stage0_start) * 1000)
-
-        # Stage 1: Run frontdoor to generate draft summary
-        stage1_start = time.perf_counter()
-
-        # Apply context limit for Stage 1 (in case compression didn't reduce enough)
-        context_limit = compression_config["stage1_context_limit"]
-        if len(context_for_stage1) > context_limit:
-            context_preview = context_for_stage1[:context_limit]
-            context_preview += f"\n\n[... {len(context_for_stage1) - context_limit} more chars available in full document ...]"
-        else:
-            context_preview = context_for_stage1
-
-        # Build Stage 1 prompt - direct summarization request
-        stage1_prompt = f"""You are summarizing a technical document. Write a draft executive summary.
-
-## Task
-{prompt}
-
-## Document Content (preview)
-{context_preview}
-
-## Instructions
-Write a draft summary covering:
-1. Main thesis and purpose
-2. Key innovations or contributions
-3. How it works (high-level mechanics)
-4. Benefits and target audience
-
-Be concise but comprehensive. This draft will be reviewed and refined.
-
-Draft Summary:"""
-
-        # Get Stage 1 response - direct LLM call, no REPL
-        draft_summary = primitives.llm_call(
-            stage1_prompt,
-            role=TWO_STAGE_CONFIG["stage1_role"],
-            n_tokens=800,
+    # Build worker prompts — task-specific instructions
+    worker_prompts = []
+    for chunk in chunks:
+        worker_prompt = (
+            f"Analyze this section ({chunk['index']+1}/{n_chunks}) of a larger document.\n"
+            f"Task context: {prompt[:200]}\n\n"
+            f"## Section Content\n{chunk['text'][:15000]}\n\n"
+            f"## Instructions\n"
+            f"Extract: key facts, relevant quotes, any findings related to the task.\n"
+            f"If the task asks to FIND something specific, look for it and report exact matches.\n"
+            f"Be concise. Output structured findings only."
         )
+        worker_prompts.append(worker_prompt)
 
-        # Extract key excerpts by pattern matching for Stage 2
-        # These serve as "grep hits" for verification
-        grep_hits = []
-        key_patterns = ["abstract", "introduction", "conclusion", "key", "innovation", "benefit"]
-        for pattern in key_patterns:
-            import re
-            matches = re.findall(
-                f"(.{{0,100}}{pattern}.{{0,200}})",
-                context,
-                re.IGNORECASE
-            )
-            if matches:
-                grep_hits.append({
-                    "pattern": pattern,
-                    "source": "context",
-                    "match_count": len(matches),
-                    "hits": [{"context": m[:500]} for m in matches[:3]],
-                })
+    # Dispatch to workers in parallel via llm_batch
+    try:
+        digests = primitives.llm_batch(worker_prompts, role="worker_explore", n_tokens=500)
+    except Exception:
+        # Fallback: sequential calls
+        digests = []
+        for wp in worker_prompts:
+            try:
+                d = primitives.llm_call(wp, role="worker_explore", n_tokens=500)
+                digests.append(d)
+            except Exception:
+                digests.append("[Worker failed to process this section]")
 
-        figures = []  # No figures in simple mode
+    stage1_time = time.perf_counter() - stage1_start
+    stats["stage1_time_ms"] = int(stage1_time * 1000)
 
-        stage1_time = time.perf_counter() - stage1_start
-        stats["stage1_time_ms"] = int(stage1_time * 1000)
-
-        # Cache the Stage 1 results
-        cache.set(cache_key, CachedDraft(
-            draft_summary=draft_summary,
-            grep_hits=grep_hits,
-            figures=figures,
-            timestamp=time.time(),
-            context_tokens=stats["context_tokens"],
-            processing_time_ms=stats["stage1_time_ms"],
-        ))
-
-    # Stage 2: Review with large model using reduced context
+    # Stage 2: Frontdoor synthesis from digests
     stage2_start = time.perf_counter()
 
-    stage2_prompt = build_stage2_review_prompt(
-        draft_summary=draft_summary,
-        grep_hits=grep_hits,
-        figures=figures,
-        original_task=prompt,
+    digest_text = "\n\n".join(
+        f"[Section {i+1}/{len(digests)}]\n{d}"
+        for i, d in enumerate(digests)
     )
 
-    # Call Stage 2 model with extended timeout (large model is slower)
-    # Temporarily increase timeout for Stage 2 inference
-    original_timeout = primitives.config.call_timeout
-    primitives.config.call_timeout = 300  # 5 minute timeout for Stage 2
-    try:
-        final_summary = primitives.llm_call(
-            stage2_prompt,
-            role=TWO_STAGE_CONFIG["stage2_role"],
-            n_tokens=1024,
+    if is_summarization:
+        synthesis_instruction = (
+            "Synthesize a comprehensive summary from the section findings above.\n"
+            "Cover: main thesis, key innovations, how it works, benefits and audience.\n"
+            "Be thorough and well-structured."
         )
-    finally:
-        primitives.config.call_timeout = original_timeout
+    else:
+        synthesis_instruction = (
+            "Synthesize a complete answer from the section findings above.\n"
+            "If searching for specific items, report exact values found.\n"
+            "If analyzing the document, provide a thorough answer.\n"
+            "Be precise and include specific details from the findings."
+        )
+
+    synthesis_prompt = (
+        f"You analyzed a large document in {n_chunks} sections. Here are the worker findings:\n\n"
+        f"{digest_text}\n\n"
+        f"## Original Question\n{prompt}\n\n"
+        f"## Instructions\n{synthesis_instruction}"
+    )
+
+    # Use frontdoor for synthesis (18 t/s) — much faster than architect
+    try:
+        answer = primitives.llm_call(
+            synthesis_prompt,
+            role=TWO_STAGE_CONFIG["stage1_role"],  # frontdoor
+            n_tokens=2000,
+        )
+    except Exception as e:
+        # Use digest text directly as fallback
+        answer = f"Worker findings:\n{digest_text}"
 
     stage2_time = time.perf_counter() - stage2_start
     stats["stage2_time_ms"] = int(stage2_time * 1000)
-    stats["stage2_context_tokens"] = _estimate_tokens(stage2_prompt)
 
     # Log to progress logger if available
     if state.progress_logger:
         state.progress_logger.log_exploration(
             task_id=task_id,
             query=prompt[:100],
-            strategy_used="two_stage_summarization",
-            tokens_spent=stats["stage2_context_tokens"],
+            strategy_used="two_stage_context",
+            tokens_spent=_estimate_tokens(synthesis_prompt),
             success=True,
         )
 
-    return final_summary, stats
+    # Store digests for potential review gate use (Step 6)
+    stats["worker_digests"] = [
+        {"section": i + 1, "summary": d[:500]}
+        for i, d in enumerate(digests)
+    ]
+
+    return answer.strip(), stats
 
 
 async def _handle_vision_request(
@@ -367,7 +328,7 @@ async def _handle_vision_request(
     # Call vision endpoint on the same API server
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
-            "http://localhost:8000/vision/analyze",
+            "http://localhost:8000/v1/vision/analyze",
             json=vision_payload,
         )
 
@@ -385,6 +346,156 @@ async def _handle_vision_request(
         description = data.get("description", "[Vision model returned no description]")
 
     return description
+
+
+_STUB_PATTERNS = {
+    "complete", "see above", "analysis complete", "estimation complete",
+    "done", "finished", "see results above", "see output above",
+    "see structured output above", "see integrated results above",
+    "see the structured output above",
+}
+
+
+def _is_stub_final(text: str) -> bool:
+    """Detect when FINAL() arg is a stub pointing to printed output.
+
+    Models often print their analysis via print(), then call
+    FINAL("Analysis complete. See above.") — the real content
+    is in result.output, not result.final_answer.
+    """
+    normalized = text.strip().rstrip(".").lower()
+    return any(p in normalized for p in _STUB_PATTERNS)
+
+
+def _resolve_answer(result: "ExecutionResult") -> str:
+    """Extract the best answer from an ExecutionResult.
+
+    Handles cases where the model prints content then uses a stub FINAL().
+    """
+    captured = result.output.strip() if result.output else ""
+    final = result.final_answer or ""
+
+    if captured and _is_stub_final(final):
+        return captured
+    elif captured and final and captured != final:
+        # Prepend captured output if FINAL() doesn't already contain it
+        if final not in captured:
+            return f"{captured}\n\n{final}"
+        return final
+    else:
+        return final
+
+
+def _should_review(state: "AppState", task_id: str, role: str, answer: str) -> bool:
+    """MemRL-conditional: review only when confidence < threshold.
+
+    Checks Q-values for the current role+task combination. If average
+    Q-value is below 0.6, the role historically struggles with this
+    task type and a brief architect review is warranted.
+
+    Args:
+        state: Application state with hybrid_router.
+        task_id: Current task ID.
+        role: The role that generated the answer.
+        answer: The answer to potentially review.
+
+    Returns:
+        True if architect review should be triggered.
+    """
+    if not state.hybrid_router:
+        return False
+    if "architect" in str(role):
+        return False  # Architects ARE the reviewer — don't self-review
+    if len(answer) < 50:
+        return False  # Trivial answers don't need review
+    try:
+        # Get Q-values for this role from MemRL
+        retriever = state.hybrid_router.retriever
+        task_ir = {"task_type": "chat", "objective": answer[:100]}
+        results = retriever.retrieve_for_routing(task_ir)
+        if not results:
+            return False
+        # Filter for current role
+        role_results = [r for r in results if r.memory.action == str(role)]
+        if not role_results:
+            return False
+        avg_q = sum(r.q_value for r in role_results) / len(role_results)
+        return avg_q < 0.6
+    except Exception:
+        return False
+
+
+def _architect_verdict(
+    question: str,
+    answer: str,
+    primitives: "LLMPrimitives",
+    worker_digests: list[dict] | None = None,
+    context_digest: str = "",
+) -> str | None:
+    """Get architect's hyper-concise verdict on an answer.
+
+    The architect emits ONLY a short verdict (~20-50 tokens at 6.75 t/s → ~6s).
+    Returns None if OK, or "WRONG: <corrections>" if incorrect.
+
+    Args:
+        question: Original user question.
+        answer: The answer to review.
+        primitives: LLM primitives for inference.
+        worker_digests: Optional TOON-encodable worker digests.
+        context_digest: Optional compact context summary.
+
+    Returns:
+        None if answer is OK, or "WRONG: ..." string if corrections needed.
+    """
+    prompt = build_review_verdict_prompt(
+        question, answer,
+        context_digest=context_digest,
+        worker_digests=worker_digests,
+    )
+    try:
+        result = primitives.llm_call(
+            prompt,
+            role="architect_general",
+            n_tokens=80,  # Hard cap — verdict only
+        )
+        text = result.strip()
+        if text.upper().startswith("OK"):
+            return None
+        return text  # "WRONG: <corrections>"
+    except Exception:
+        return None  # On error, don't block — return original answer
+
+
+def _fast_revise(
+    question: str,
+    original_answer: str,
+    corrections: str,
+    primitives: "LLMPrimitives",
+) -> str:
+    """Fast worker expands architect's corrections into full answer.
+
+    Uses worker_explore (port 8082, 44 t/s) — the fastest model in the stack.
+    7B is sufficient since the architect already specified exactly what to fix.
+
+    Args:
+        question: Original user question.
+        original_answer: The answer to revise.
+        corrections: Architect's correction notes.
+        primitives: LLM primitives for inference.
+
+    Returns:
+        Revised answer, or original if revision fails.
+    """
+    prompt = build_revision_prompt(question, original_answer, corrections)
+    try:
+        result = primitives.llm_call(
+            prompt,
+            role="worker_explore",
+            n_tokens=2000,
+        )
+        return result.strip() or original_answer
+    except Exception:
+        return original_answer  # Fallback to original on error
 
 
 router = APIRouter()
@@ -547,10 +658,19 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 mock_mode=False,
                 real_mode=True,
                 cache_stats=None,
+                routed_to="worker_vision",
+                role_history=["worker_vision"],
+                routing_strategy=routing_strategy,
             )
         except Exception as e:
             import logging
             logging.warning(f"Vision pipeline failed: {type(e).__name__}: {e}")
+            # Make image info available to REPL as fallback context
+            if request.image_path:
+                request.context = (request.context or "") + (
+                    f"\n\n[IMAGE: {request.image_path} — Vision pipeline unavailable. "
+                    f"Use image analysis tools if available, otherwise note the limitation.]"
+                )
             # Fall through to standard orchestration
 
     # Create REPL environment
@@ -611,6 +731,10 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 mock_mode=False,
                 real_mode=True,
                 cache_stats=cache_stats,
+                routed_to=str(initial_role),
+                role_history=[str(initial_role), str(TWO_STAGE_CONFIG["stage2_role"])],
+                routing_strategy=routing_strategy,
+                tokens_generated=primitives.total_tokens_generated,
             )
         except Exception as e:
             # Fall back to standard orchestration on two-stage failure
@@ -832,8 +956,30 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
 
         # 5. Check for FINAL() completion
         if result.is_final:
-            answer = result.final_answer or ""
+            answer = _resolve_answer(result)
             consecutive_failures = 0  # Success resets failure count
+
+            # MemRL-informed quality review gate (blocking)
+            if request.real_mode and _should_review(state, task_id, current_role, answer):
+                import logging
+                logging.info(f"Review gate triggered for {current_role} (task {task_id})")
+                verdict = _architect_verdict(
+                    question=request.prompt,
+                    answer=answer,
+                    primitives=primitives,
+                )
+                if verdict and verdict.upper().startswith("WRONG"):
+                    corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+                    logging.info(f"Review verdict: WRONG — revising ({corrections[:80]})")
+                    answer = _fast_revise(
+                        question=request.prompt,
+                        original_answer=answer,
+                        corrections=corrections,
+                        primitives=primitives,
+                    )
+                else:
+                    logging.info("Review verdict: OK")
+
             break
 
         # 6. Handle errors with EscalationPolicy for escalation decisions
@@ -940,6 +1086,10 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         mock_mode=False,
         real_mode=request.real_mode,
         cache_stats=cache_stats,
+        routed_to=str(current_role),
+        role_history=[str(r) for r in role_history],
+        routing_strategy=routing_strategy,
+        tokens_generated=primitives.total_tokens_generated,
     )
 
 
@@ -1200,7 +1350,25 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
 
             # Check for completion
             if result.is_final:
-                yield final_event(result.final_answer or "")
+                stream_answer = _resolve_answer(result)
+
+                # MemRL-informed quality review gate (blocking, streaming parity)
+                if _should_review(state, task_id, current_role, stream_answer):
+                    verdict = _architect_verdict(
+                        question=request.prompt,
+                        answer=stream_answer,
+                        primitives=primitives,
+                    )
+                    if verdict and verdict.upper().startswith("WRONG"):
+                        corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+                        stream_answer = _fast_revise(
+                            question=request.prompt,
+                            original_answer=stream_answer,
+                            corrections=corrections,
+                            primitives=primitives,
+                        )
+
+                yield final_event(stream_answer)
                 break
 
             # Handle errors with escalation policy

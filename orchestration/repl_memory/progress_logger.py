@@ -52,6 +52,9 @@ class EventType(str, Enum):
     EXPLORATION_STRATEGY = "exploration_strategy"
     EXPLORATION_COMPLETED = "exploration_completed"
 
+    # Formalizer events
+    FORMALIZER_INVOKED = "formalizer_invoked"
+
     # Q-scoring events (from Q-scorer agent)
     Q_VALUE_UPDATED = "q_value_updated"
     MEMORY_STORED = "memory_stored"
@@ -298,18 +301,48 @@ class ProgressLogger:
         strategy_used: str,
         tokens_spent: int,
         success: bool,
+        function_counts: Optional[Dict[str, int]] = None,
     ) -> None:
-        """Log REPL exploration event."""
+        """Log REPL exploration event with tool usage breakdown."""
+        data: Dict[str, Any] = {
+            "query": query[:200],
+            "strategy": strategy_used,
+            "tokens_spent": tokens_spent,
+        }
+        if function_counts:
+            data["function_counts"] = function_counts
         self.log(
             ProgressEntry(
                 event_type=EventType.EXPLORATION_COMPLETED,
                 task_id=task_id,
+                data=data,
+                outcome="success" if success else "failure",
+            )
+        )
+
+    def log_formalizer_invocation(
+        self,
+        task_id: str,
+        service: str,
+        endpoint: str,
+        pages: int = 0,
+        elapsed_sec: float = 0.0,
+        success: bool = True,
+        error: Optional[str] = None,
+    ) -> None:
+        """Log document formalizer / OCR service invocation."""
+        self.log(
+            ProgressEntry(
+                event_type=EventType.FORMALIZER_INVOKED,
+                task_id=task_id,
                 data={
-                    "query": query[:200],
-                    "strategy": strategy_used,
-                    "tokens_spent": tokens_spent,
+                    "service": service,
+                    "endpoint": endpoint,
+                    "pages": pages,
+                    "elapsed_sec": round(elapsed_sec, 2),
                 },
                 outcome="success" if success else "failure",
+                outcome_details=error,
             )
         )
 

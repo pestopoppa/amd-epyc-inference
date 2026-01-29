@@ -16,6 +16,15 @@ class ChatRequest(BaseModel):
         default=None,
         description="Server URLs for real mode (e.g., {'frontdoor': 'http://localhost:8080'})"
     )
+    # Vision support — when set, routes to VL workers (8086/8087)
+    image_path: str | None = Field(
+        default=None,
+        description="Path to image file for vision tasks (routes to VL worker)"
+    )
+    image_base64: str | None = Field(
+        default=None,
+        description="Base64-encoded image data for vision tasks"
+    )
     # Extended thinking support (Claude Code parity)
     thinking_budget: int = Field(
         default=0,

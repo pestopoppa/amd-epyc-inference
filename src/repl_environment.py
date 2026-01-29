@@ -1466,6 +1466,8 @@ class REPLEnvironment:
         self.artifacts["_escalation_requested"] = True
         self.artifacts["_escalation_reason"] = reason
         if target_role:
+            # Resolve role aliases (e.g., "reviewer_agent" → "architect_general")
+            target_role = self._resolve_role_alias(target_role)
             self.artifacts["_escalation_target"] = target_role
 
         target_desc = target_role or "next-tier"
@@ -1632,6 +1634,31 @@ class REPLEnvironment:
                 "warnings": [str(e)],
             })
 
+    # Role alias mapping: model-generated role names → actual backend roles
+    _ROLE_ALIASES: dict[str, str] = {
+        "researcher_agent": "worker_explore",
+        "researcher": "worker_explore",
+        "coder_agent": "coder_primary",
+        "reviewer_agent": "architect_general",
+        "reviewer": "architect_general",
+        "math_agent": "worker_math",
+        "vision_agent": "worker_vision",
+        "summarizer_agent": "worker_summarize",
+        "summarizer": "worker_summarize",
+        "worker_general": "worker_explore",
+    }
+
+    def _resolve_role_alias(self, role: str) -> str:
+        """Resolve a model-generated role alias to an actual backend role.
+
+        Args:
+            role: Role name (may be an alias like "researcher_agent").
+
+        Returns:
+            Resolved role name that exists in the backend config.
+        """
+        return self._ROLE_ALIASES.get(role, role)
+
     def _delegate(
         self,
         prompt: str,
@@ -1657,6 +1684,9 @@ class REPLEnvironment:
         """
         self._exploration_calls += 1
         import json
+
+        # Resolve role aliases (e.g., "researcher_agent" → "worker_explore")
+        target_role = self._resolve_role_alias(target_role)
 
         # Tier guard: workers cannot delegate to other models
         from src.roles import get_tier, Tier

@@ -64,6 +64,7 @@ class EscalationAction(str, Enum):
     RETRY = "retry"      # Retry with same role
     ESCALATE = "escalate"  # Escalate to next tier
     DELEGATE = "delegate"  # Route DOWN to a specific lower-tier role
+    REVIEW = "review"    # Quality check by higher-tier model
     FAIL = "fail"        # Terminal failure
     SKIP = "skip"        # Skip the gate/step (for optional gates)
     EXPLORE = "explore"  # Fall back to REPL exploration (for terminal roles)

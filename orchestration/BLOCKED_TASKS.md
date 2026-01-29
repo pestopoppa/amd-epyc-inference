@@ -53,6 +53,7 @@
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
 | **TOON Format Integration** | — | ~~MEDIUM~~ | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE - INTEGRATED (55.6% tokens, 41.8% TTFT) |
 | **VL Suite Assignment Fix** | — | **LOW** | `progress/2026-01/2026-01-27.md` | ✅ FIXED (VL models now only run `vl` suite) |
+| **Orchestrator Benchmark Fixes** | — | **CRITICAL** | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 steps: output capture, routing telemetry, VL URL, LC two-stage, role aliases, MemRL review gate, speed metrics) |
 | **Graphiti MemRL Enhancement** | — | **MEDIUM** | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests, perf optimized) |
 | **SWA Prompt Lookup Fix** | — | **LOW** | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |
 
