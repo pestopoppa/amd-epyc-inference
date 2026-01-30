@@ -11,6 +11,7 @@ metadata:
     - math       # numerical, symbolic, statistics
     - system     # files, processes, environment
     - llm        # embeddings, completions, classification
+    - vision     # OCR, image analysis
 
 tools:
   # ============ WEB TOOLS ============
@@ -723,6 +724,22 @@ tools:
       module: orchestration.tools.llm
       function: classify_text
     permissions: [compute]
+
+  # ============ VISION TOOLS ============
+  ocr_extract:
+    category: vision
+    description: "Extract text from the current image using OCR (LightOnOCR). Returns extracted text characters."
+    parameters:
+      image_base64: {type: string, required: true, description: "Base64-encoded image data"}
+    returns: {type: string, description: "Extracted text from the image"}
+    implementation:
+      type: http
+      endpoint: "http://localhost:9001/v1/document/ocr"
+      method: POST
+    permissions: [network]
+    examples:
+      - input: {image_base64: "<base64 encoded PNG>"}
+        description: "Extract text from a document image"
 
 # Permission definitions
 permissions:

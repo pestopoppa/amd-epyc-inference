@@ -311,3 +311,70 @@ Each adapter handles the source dataset's specific schema: MMLU 4-choice format,
 |------|--------|
 | `scripts/benchmark/dataset_adapters.py` | **NEW** — 6 adapters (MMLU, Math, Coder, Thinking, IFEval, VL) |
 | `scripts/benchmark/compare_orchestrator_direct.py` | Modified — unified `_load_from_dataset_adapter()` for all suites |
+
+---
+
+## Vision Specialist Integration into Phase 3 — 2026-01-30
+
+### Design Decisions
+
+- **Vision models = Specialists**. LLMs making judgments, routed via MemRL Q-learning.
+- **OCR pipeline = Tool/Service**. LightOnOCR on port 9001, deterministic text extraction.
+- **worker_vision** (Qwen2.5-VL-7B, port 8086): Supports `direct` + `react` modes (agentic).
+- **vision_escalation** (Qwen3-VL-30B-A3B, port 8087): `direct` only (0% agentic, no tool calls).
+- **VL baseline**: `frontdoor:direct` (text-only model → trivial +1.0 bootstraps vision Q-values fast).
+- **Feature flag**: Folded into `ORCHESTRATOR_SPECIALIST_ROUTING` (no separate flag).
+- **Escalation triggers**: MemRL-learned only (no keyword heuristics for vision routing).
+
+### Architecture
+
+```
+User prompt + image
+       │
+       ▼
+  ┌─────────────┐     force_role / MemRL Q-values
+  │  Routing     │────────────────────────────────┐
+  │  Decision    │                                │
+  └─────────────┘                                │
+       │                                          │
+       ▼                                          ▼
+  ┌──────────┐   force_mode="direct"    ┌──────────────────┐
+  │ frontdoor │   ───────────────────►  │ _handle_vision_  │
+  │ (text)    │                         │ request()        │
+  └──────────┘                          │ OCR pre-chain +  │
+                                        │ VL direct call   │
+                  force_mode="react"    └──────────────────┘
+                  ───────────────────►  ┌──────────────────┐
+                                        │ _vision_react_   │
+                                        │ mode_answer()    │
+                                        │ VL decides OCR   │
+                                        └──────────────────┘
+```
+
+### Smart Combo Filtering
+
+VL questions (with `image_path`) only test vision roles + frontdoor baseline. Text questions skip vision roles entirely. This avoids wasting inference on impossible pairings.
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `scripts/benchmark/seed_specialist_routing.py` | Vision roles, `image_path` forwarding, mode constraints, smart combo filtering |
+| `scripts/benchmark/run_phase3_validation.sh` | `vl` suite, vision roles, ports 8086/8087/9001 health check |
+| `scripts/benchmark/memrl_learning_loop.py` | `vl` suite, `image_path` forwarding in API calls |
+| `orchestration/tool_registry.yaml` | `ocr_extract` tool definition (vision category) |
+| `src/prompt_builders.py` | `VISION_REACT_TOOL_WHITELIST` constant |
+| `src/api/routes/chat.py` | `force_server` param, `_vision_react_mode_answer()`, `_execute_vision_tool()`, vision routing block |
+
+### New Functions in chat.py
+
+- **`_vision_react_mode_answer()`**: Vision ReAct loop using direct httpx to VL backend. Image in first message only. Dispatches tools via `_execute_vision_tool()`. Max 5 turns.
+- **`_execute_vision_tool()`**: Tool dispatch for vision ReAct. Routes `ocr_extract` to port 9001, `calculate`/date tools inline.
+- **`_handle_vision_request(force_server=)`**: Added server constraint param for forced routing to specific VL port.
+
+### Next Steps
+
+1. Run `run_phase3_validation.sh` with vision servers live to seed VL Q-values
+2. Verify vision ReAct loop produces OCR tool calls on text-heavy images
+3. Compare `worker_vision:direct` vs `worker_vision:react` accuracy on VL debug suite
+4. Monitor `vision_escalation:direct` quality vs `worker_vision` to validate MemRL escalation learning

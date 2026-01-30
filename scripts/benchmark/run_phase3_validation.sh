@@ -133,7 +133,7 @@ step0_health_check() {
   log "=========================================="
 
   local all_ok=true
-  for port in 8080 8081 8082 8083 8090; do
+  for port in 8080 8081 8082 8083 8086 8087 8090 9001; do
     if check_port "$port"; then
       log "  Port ${port}: OK"
     else
@@ -248,8 +248,8 @@ step2_seeding() {
 
   local output="${RESULTS_DIR}/seeding_live_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/seed_specialist_routing.py \
-    --suites thinking general math agentic coder instruction_precision \
-    --roles frontdoor coder_primary coder_escalation architect_general architect_coding \
+    --suites thinking general math agentic coder instruction_precision vl \
+    --roles frontdoor coder_primary coder_escalation architect_general architect_coding worker_vision vision_escalation \
     --sample-size 10 --seed 42 \
     --output ${output}"
 
@@ -345,7 +345,7 @@ step4_learning_loop() {
   local output="${RESULTS_DIR}/memrl_phase3_loop.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/memrl_learning_loop.py \
     --iterations 5 --sample-size 10 --seed 100 \
-    --suites thinking general math agentic coder instruction_precision \
+    --suites thinking general math agentic coder instruction_precision vl \
     --regression-check \
     --output ${output}"
 

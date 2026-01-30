@@ -22,7 +22,7 @@
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
 | **Orchestrator Quality Regression** | — | **HIGH** | `progress/2026-01/2026-01-29.md` | ✅ FIXES APPLIED (direct-answer mode, VL pipeline rewrite, port mapping fix). Re-run benchmark pending. |
 | **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 COMPLETE. Phase 3: specialist routing + architect plan review gated behind feature flags (`SPECIALIST_ROUTING`, `PLAN_REVIEW`), GraphEnhancedRetriever, failure veto, comparative seeding, regression gates. 893 tests pass. **Live validation pending** (seeding + learning loop + regression gate + plan review A/B). |
-| **PARL-Inspired Improvements** | — | **MEDIUM** | `handoffs/active/parl-inspired-orchestrator-improvements.md` | 📋 NEW (5 phases: parallel TaskIR, critical path, personas, staged Q, parallel gates) |
+| **Orchestration Architecture Roadmap** | — | **MEDIUM** | `handoffs/active/orchestration-architecture-roadmap.md` | 📋 ACTIVE (merged from refactoring + PARL: 7 items A-G remaining) |
 | **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
 | **Orchestrator real mode** | — | **LOW** | `handoffs/active/orchestrator.md` | 📋 READY (stack infrastructure complete, live verification pending) |
@@ -96,12 +96,12 @@ Files created:
 
 ---
 
-## TOON Format Integration (Token Optimization)
+## TOON Format Integration (Token Optimization) — COMPLETE
 
-**Master Handoff**: `handoffs/active/toon_format_integration.md`
 **Evaluation**: `research/TOON_EVALUATION.md`
+**Handoff**: Archived 2026-01-30 (findings in `research/TOON_EVALUATION.md`, code in `src/services/toon_encoder.py`)
 
-### Status: Phases 1-3.1 Complete (2026-01-27)
+### Status: COMPLETE (2026-01-28)
 
 | Phase | Description | Status |
 |-------|-------------|--------|
@@ -568,6 +568,7 @@ devc /mnt/raid0/llm/claude
 
 # ✅ DONE: Claude-as-Judge BLIND Re-Scoring (77 models, 2026-01-16)
 # Results: benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md
+# Handoff deprecated: docs/deprecated/claude_as_judge_consistency_review_2026-01-16.md
 
 # Orchestrator Integration (CODE COMPLETE - LIVE VERIFICATION PENDING):
 claude --dangerously-skip-permissions -p \
@@ -723,10 +724,10 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 |------|---------|--------|
 | Orchestrator Document Pipeline | `handoffs/completed/orchestrator_document_pipeline.md` | ✅ RESOLVED |
 | Orchestrator API Dependencies | `handoffs/active/orchestrator_deps.md` | ✅ RESOLVED |
-| REPL File Access | `handoffs/active/repl_file_access.md` | ✅ RESOLVED |
+| REPL File Access | (archived 2026-01-30, handoff deleted) | ✅ RESOLVED |
 | LightOnOCR 3.4x Slowdown | `handoffs/completed/lightonocr_slowdown.md` | ✅ RESOLVED (server-side PDF + 300s timeout) |
 | Figure Analysis Missing | `handoffs/completed/figure_analysis_missing.md` | ✅ RESOLVED |
-| Claude-as-Judge BLIND Re-Scoring | `benchmarks/results/reviews/BLIND_RESCORE_2026-01-16.md` | ✅ COMPLETE (77 models scored) |
+| Claude-as-Judge BLIND Re-Scoring | `docs/deprecated/claude_as_judge_consistency_review_2026-01-16.md` | ✅ COMPLETE (77 models scored, deprecated 2026-01-30) |
 | Model Registry: Paged Attention Flag | `orchestration/model_registry.yaml` | ✅ COMPLETE (flag in 13 model entries) |
 | MTP ISWA Fix | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
 | Gemma-3 SWA Spec Decode | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
@@ -750,7 +751,7 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 | Model REPL Tool Compliance | `handoffs/completed/model_repl_tool_compliance.md` | ✅ COMPLETE (34 tests) |
 | Orchestrator Self-Management | `handoffs/active/orchestrator_self_management.md` | ✅ PHASES 1-8 COMPLETE |
 | Session Persistence Layer | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
-| TOON Format Integration | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE (55.6% token reduction) |
+| TOON Format Integration | `research/TOON_EVALUATION.md` (handoff deleted 2026-01-30) | ✅ COMPLETE (55.6% token reduction) |
 | VL Suite Assignment Fix | `progress/2026-01/2026-01-27.md` | ✅ FIXED |
 | Orchestrator Benchmark Fixes | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 fixes + direct-answer mode + VL rewrite + port fix + CLI metrics + 11 safety tests) |
 | Graphiti MemRL Enhancement | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests) |

@@ -358,6 +358,7 @@ async def _handle_vision_request(
     primitives: "LLMPrimitives",
     state: "AppState",
     task_id: str,
+    force_server: str | None = None,
 ) -> str:
     """Route a vision request through OCR + VL pipeline.
 
@@ -378,6 +379,9 @@ async def _handle_vision_request(
         primitives: LLMPrimitives (unused, for interface compat).
         state: Application state.
         task_id: Task ID for logging.
+        force_server: Optional server constraint. "worker_vision" uses only
+            port 8086, "vision_escalation" uses only port 8087. None uses
+            the default fallback chain.
 
     Returns:
         Answer string from the vision model.
@@ -495,11 +499,16 @@ async def _handle_vision_request(
         "temperature": 0.0,
     }
 
-    # Try VL servers in order: worker (8086) → escalation (8087)
-    vl_servers = [
-        ("worker_vision", "http://localhost:8086"),
-        ("vision_escalation", "http://localhost:8087"),
-    ]
+    # Try VL servers — constrained if force_server is set
+    if force_server == "worker_vision":
+        vl_servers = [("worker_vision", "http://localhost:8086")]
+    elif force_server == "vision_escalation":
+        vl_servers = [("vision_escalation", "http://localhost:8087")]
+    else:
+        vl_servers = [
+            ("worker_vision", "http://localhost:8086"),
+            ("vision_escalation", "http://localhost:8087"),
+        ]
 
     last_error = None
     for server_name, server_url in vl_servers:
@@ -563,6 +572,279 @@ async def _handle_vision_request(
         logger.warning(f"Legacy vision pipeline also failed: {e}")
 
     raise RuntimeError(f"All vision paths failed. Last error: {last_error}")
+
+
+async def _execute_vision_tool(
+    action_str: str,
+    image_b64: str,
+) -> str:
+    """Execute a tool invoked from the vision ReAct loop.
+
+    Dispatches to:
+    - ocr_extract → POST to LightOnOCR port 9001
+    - calculate, get_current_date, etc. → standard Python eval
+
+    Args:
+        action_str: Parsed action string, e.g. 'ocr_extract(image_base64="...")'.
+        image_b64: The base64 image data (injected for ocr_extract).
+
+    Returns:
+        Observation string from tool execution.
+    """
+    import re as _re
+    import logging
+
+    log = logging.getLogger(__name__)
+
+    tool_match = _re.match(r"(\w+)\((.*)\)$", action_str, _re.DOTALL)
+    if not tool_match:
+        return f"[ERROR: Could not parse action: {action_str}]"
+
+    tool_name = tool_match.group(1)
+    args_str = tool_match.group(2)
+
+    if tool_name == "ocr_extract":
+        # Route to LightOnOCR on port 9001
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    "http://localhost:9001/v1/document/ocr",
+                    json={"image_base64": image_b64},
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                text = data.get("text", data.get("full_text", ""))
+                if text:
+                    return text[:4000]  # Cap observation length
+                return "[OCR returned empty text]"
+            return f"[OCR error: HTTP {resp.status_code}]"
+        except Exception as e:
+            log.warning(f"OCR tool execution failed: {e}")
+            return f"[OCR error: {type(e).__name__}: {e}]"
+
+    elif tool_name == "calculate":
+        # Safe math evaluation
+        try:
+            # Parse expression from args
+            expr_match = _re.search(r'expression\s*=\s*"([^"]*)"', args_str)
+            if not expr_match:
+                expr_match = _re.search(r'expression\s*=\s*\'([^\']*)\'', args_str)
+            if expr_match:
+                import ast
+                result = eval(compile(ast.parse(expr_match.group(1), mode='eval'), '<calc>', 'eval'))
+                return str(result)
+            return "[ERROR: Could not parse calculate expression]"
+        except Exception as e:
+            return f"[Calculate error: {e}]"
+
+    elif tool_name in ("get_current_date", "get_current_time"):
+        from datetime import datetime
+        now = datetime.utcnow()
+        if tool_name == "get_current_date":
+            return now.strftime("%Y-%m-%d (%A)")
+        return now.isoformat()
+
+    else:
+        return f"[Tool '{tool_name}' not available in vision ReAct mode]"
+
+
+async def _vision_react_mode_answer(
+    prompt: str,
+    image_b64: str,
+    mime_type: str,
+    context: str = "",
+    vl_port: int = 8086,
+    max_turns: int = 5,
+) -> tuple[str, int]:
+    """Vision-aware ReAct loop using direct VL backend calls.
+
+    Unlike _react_mode_answer() which uses primitives.llm_call() (text-only),
+    this sends multimodal messages directly to VL backend via httpx with
+    OpenAI /v1/chat/completions format.
+
+    The image is included in the first user message only. Subsequent turns
+    are text-only (tool observations). The VL model's context window carries
+    the image forward across turns.
+
+    Args:
+        prompt: The user's question.
+        image_b64: Base64-encoded image data.
+        mime_type: Image MIME type (e.g. "image/png").
+        context: Optional text context.
+        vl_port: VL backend port (8086=worker_vision, 8087=vision_escalation).
+        max_turns: Maximum Thought/Action/Observation cycles.
+
+    Returns:
+        Tuple of (final_answer, tools_used_count).
+    """
+    import httpx
+    import logging
+
+    log = logging.getLogger(__name__)
+    tools_used = 0
+
+    from src.prompt_builders import VISION_REACT_TOOL_WHITELIST
+
+    # Build tool descriptions for vision ReAct
+    tool_descriptions = [
+        "- ocr_extract(image_base64=\"...\"): Extract text from the image using OCR. "
+        "The image is already loaded — pass image_base64=\"current\" to use it.",
+        "- calculate(expression=\"...\"): Evaluate a math expression",
+        "- get_current_date(): Get today's date",
+        "- get_current_time(): Get current time",
+    ]
+
+    react_system = f"""You have access to the following tools:
+{chr(10).join(tool_descriptions)}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: reason about what to do next
+Action: tool_name(arg1="value1")
+Observation: the result of the action
+... (repeat Thought/Action/Observation as needed, up to {max_turns} times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original question
+
+Important rules:
+- Always start with a Thought before an Action
+- To use OCR on the image, call: Action: ocr_extract(image_base64="current")
+- After each Observation, decide if you have enough info for a Final Answer
+- If no tools are needed, skip directly to Final Answer
+- Be concise in your Final Answer — answer the question directly"""
+
+    # Build initial messages — image in first user message
+    context_prefix = f"Context:\n{context}\n\n" if context else ""
+    question_text = f"{react_system}\n\n{context_prefix}Question: {prompt}"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{image_b64}",
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": question_text,
+                },
+            ],
+        }
+    ]
+
+    vl_url = f"http://localhost:{vl_port}/v1/chat/completions"
+
+    for turn in range(max_turns):
+        # Call VL backend
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    vl_url,
+                    json={
+                        "messages": messages,
+                        "max_tokens": 2048,
+                        "temperature": 0.0,
+                    },
+                )
+
+            if resp.status_code != 200:
+                log.warning(f"Vision ReAct turn {turn}: HTTP {resp.status_code}")
+                break
+
+            data = resp.json()
+            choices = data.get("choices", [])
+            if not choices:
+                log.warning(f"Vision ReAct turn {turn}: no choices in response")
+                break
+
+            response_text = choices[0].get("message", {}).get("content", "").strip()
+            if not response_text:
+                log.warning(f"Vision ReAct turn {turn}: empty content")
+                break
+
+        except Exception as e:
+            log.warning(f"Vision ReAct turn {turn} failed: {e}")
+            break
+
+        # Append assistant response
+        messages.append({"role": "assistant", "content": response_text})
+
+        # Check for Final Answer
+        if "Final Answer:" in response_text:
+            idx = response_text.index("Final Answer:")
+            answer = response_text[idx + len("Final Answer:"):].strip()
+            log.info(f"Vision ReAct completed in {turn + 1} turns, {tools_used} tools")
+            return answer, tools_used
+
+        # Parse Action line
+        action_match = None
+        for line in response_text.split("\n"):
+            line = line.strip()
+            if line.startswith("Action:"):
+                action_match = line[len("Action:"):].strip()
+                break
+
+        if not action_match:
+            # No action and no final answer — treat response as answer
+            log.info(f"Vision ReAct turn {turn}: no Action, treating as answer")
+            # Strip Thought: prefix
+            lines = response_text.split("\n")
+            answer_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith("Thought:"):
+                    stripped = stripped[len("Thought:"):].strip()
+                answer_lines.append(stripped)
+            return "\n".join(answer_lines).strip(), tools_used
+
+        # Execute the tool
+        tools_used += 1
+        observation = await _execute_vision_tool(action_match, image_b64)
+        log.info(f"Vision ReAct turn {turn}: {action_match[:50]} → {len(observation)} chars")
+
+        # Append observation as user message (text-only — no image re-send)
+        messages.append({
+            "role": "user",
+            "content": f"Observation: {observation}",
+        })
+
+    # Max turns exhausted — synthesize from conversation
+    log.warning(f"Vision ReAct exhausted {max_turns} turns")
+    # Ask for final answer
+    messages.append({
+        "role": "user",
+        "content": "You have used all available turns. Please provide your Final Answer now.",
+    })
+
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                vl_url,
+                json={
+                    "messages": messages,
+                    "max_tokens": 2048,
+                    "temperature": 0.0,
+                },
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "").strip()
+                if "Final Answer:" in content:
+                    idx = content.index("Final Answer:")
+                    return content[idx + len("Final Answer:"):].strip(), tools_used
+                return content, tools_used
+    except Exception as e:
+        log.warning(f"Vision ReAct final synthesis failed: {e}")
+
+    return "[Vision ReAct: no answer produced]", tools_used
 
 
 async def _handle_multi_file_vision(
@@ -2225,23 +2507,86 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
             _store_plan_review_episode(state, task_id, task_ir, plan_review_result)
 
     # Vision routing: when image data or files are present, route through vision pipeline
-    # instead of standard text-only orchestration
+    # instead of standard text-only orchestration.
+    # Supports specialist routing: force_role selects VL server, force_mode selects
+    # direct (OCR pre-chaining + VL) vs react (VL model decides when to call OCR).
     has_vision_input = (request.image_path or request.image_base64 or request.files)
     if request.real_mode and has_vision_input:
+        import logging as _vl_log
+        _vl_logger = _vl_log.getLogger(__name__)
+
+        # Determine vision server and mode from routing decision
+        vision_roles = {"worker_vision", "vision_escalation"}
+        forced_role = request.force_role or ""
+        forced_mode = request.force_mode or ""
+        routed_to_vision = "worker_vision"  # default
+
+        # Map forced role to server constraint
+        force_server = None
+        if forced_role in vision_roles:
+            force_server = forced_role
+            routed_to_vision = forced_role
+
+        # Determine execution mode for vision
+        # worker_vision supports: direct, react
+        # vision_escalation supports: direct only (0% agentic)
+        vision_exec_mode = forced_mode if forced_mode in ("direct", "react") else "direct"
+        if forced_role == "vision_escalation" and vision_exec_mode == "react":
+            _vl_logger.warning("vision_escalation cannot do react mode, forcing direct")
+            vision_exec_mode = "direct"
+
         try:
-            # Multi-file/archive path vs single-image path
             if request.files and len(request.files) > 0:
                 answer = await _handle_multi_file_vision(request, primitives, state, task_id)
+            elif vision_exec_mode == "react" and force_server in (None, "worker_vision"):
+                # Vision ReAct: VL model decides when to invoke OCR
+                import base64 as _b64
+
+                image_b64 = request.image_base64
+                if not image_b64 and request.image_path:
+                    from pathlib import Path
+                    image_b64 = _b64.b64encode(Path(request.image_path).read_bytes()).decode("utf-8")
+
+                # Detect MIME type
+                mime_type = "image/jpeg"
+                try:
+                    raw = _b64.b64decode(image_b64[:32])
+                    if raw[:4] == b'\x89PNG':
+                        mime_type = "image/png"
+                    elif raw[:4] == b'RIFF':
+                        mime_type = "image/webp"
+                except Exception:
+                    pass
+
+                vl_port = 8086  # worker_vision
+                _vl_logger.info(f"Vision ReAct mode on port {vl_port}")
+                answer, tools_used = await _vision_react_mode_answer(
+                    prompt=request.prompt,
+                    image_b64=image_b64,
+                    mime_type=mime_type,
+                    context=request.context or "",
+                    vl_port=vl_port,
+                    max_turns=5,
+                )
+                routed_to_vision = "worker_vision"
             else:
-                answer = await _handle_vision_request(request, primitives, state, task_id)
+                # Direct mode: OCR pre-chaining + VL (existing path)
+                answer = await _handle_vision_request(
+                    request, primitives, state, task_id,
+                    force_server=force_server,
+                )
+                if force_server:
+                    routed_to_vision = force_server
+
             elapsed = time.perf_counter() - start_time
             state.increment_request(mock_mode=False, turns=1)
 
             if state.progress_logger:
+                mode_label = f"vision/{vision_exec_mode}"
                 state.progress_logger.log_task_completed(
                     task_id=task_id,
                     success=True,
-                    details=f"Vision pipeline, {elapsed:.3f}s",
+                    details=f"{mode_label} via {routed_to_vision}, {elapsed:.3f}s",
                 )
                 score_completed_task(state, task_id)
 
@@ -2253,8 +2598,8 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 mock_mode=False,
                 real_mode=True,
                 cache_stats=None,
-                routed_to="worker_vision",
-                role_history=["worker_vision"],
+                routed_to=routed_to_vision,
+                role_history=[routed_to_vision],
                 routing_strategy=routing_strategy,
             )
         except Exception as e:

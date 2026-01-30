@@ -61,15 +61,28 @@ DEFAULT_ORCHESTRATOR_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = 120
 DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
-    "coder", "instruction_precision",
+    "coder", "instruction_precision", "vl",
 ]
-DEFAULT_ROLES = ["frontdoor", "coder_primary", "coder_escalation", "architect_general", "architect_coding"]
+DEFAULT_ROLES = [
+    "frontdoor", "coder_primary", "coder_escalation",
+    "architect_general", "architect_coding",
+    "worker_vision", "vision_escalation",
+]
 DEFAULT_MODES = ["direct", "react", "repl"]
 
 # Architect roles delegate tool work to faster specialists.
 # They support direct (no tools) and delegated (multi-loop delegation) modes.
 ARCHITECT_ROLES = {"architect_general", "architect_coding"}
 ARCHITECT_MODES = {"direct", "delegated"}
+
+# Vision roles have model-specific mode constraints.
+# worker_vision (Qwen2.5-VL-7B) supports tool calls → direct + react.
+# vision_escalation (Qwen3-VL-30B-A3B) is 0% agentic → direct only.
+VISION_ROLES = {"worker_vision", "vision_escalation"}
+VISION_MODES: dict[str, set[str]] = {
+    "worker_vision": {"direct", "react"},
+    "vision_escalation": {"direct"},
+}
 
 # Legacy alias for backwards compatibility
 DIRECT_ONLY_ROLES = ARCHITECT_ROLES
@@ -105,6 +118,7 @@ def call_orchestrator_forced(
     force_mode: str = "direct",
     url: str = DEFAULT_ORCHESTRATOR_URL,
     timeout: int = DEFAULT_TIMEOUT,
+    image_path: str = "",
 ) -> dict[str, Any]:
     """Call orchestrator with forced role and mode routing.
 
@@ -114,21 +128,26 @@ def call_orchestrator_forced(
         force_mode: Execution mode to force ('direct', 'react', or 'repl').
         url: Orchestrator API URL.
         timeout: Request timeout in seconds.
+        image_path: Optional path to image for VL questions.
 
     Returns:
         Response dict.
     """
     import httpx
 
+    payload: dict[str, Any] = {
+        "prompt": prompt,
+        "real_mode": True,
+        "force_role": force_role,
+        "force_mode": force_mode,
+    }
+    if image_path:
+        payload["image_path"] = image_path
+
     try:
         response = httpx.post(
             f"{url}/chat",
-            json={
-                "prompt": prompt,
-                "real_mode": True,
-                "force_role": force_role,
-                "force_mode": force_mode,
-            },
+            json=payload,
             timeout=timeout,
         )
         response.raise_for_status()
@@ -214,10 +233,11 @@ def _build_role_mode_combos(
     roles: list[str],
     modes: list[str],
 ) -> list[tuple[str, str]]:
-    """Build (role, mode) combinations respecting architect role constraints.
+    """Build (role, mode) combinations respecting role-specific constraints.
 
-    Architect roles get ARCHITECT_MODES (direct + delegated) instead of
-    the standard modes list. All other roles get every mode in the modes list.
+    Architect roles get ARCHITECT_MODES (direct + delegated).
+    Vision roles get per-model modes from VISION_MODES.
+    All other roles get every mode in the modes list.
 
     Args:
         roles: List of role names.
@@ -230,6 +250,9 @@ def _build_role_mode_combos(
     for role in roles:
         if role in ARCHITECT_ROLES:
             for mode in ARCHITECT_MODES:
+                combos.append((role, mode))
+        elif role in VISION_ROLES:
+            for mode in VISION_MODES.get(role, {"direct"}):
                 combos.append((role, mode))
         else:
             for mode in modes:
@@ -302,11 +325,19 @@ def run_seeding(
                 "expected": q.get("expected", ""),
                 "scoring_method": q.get("scoring_method", "exact_match"),
                 "scoring_config": q.get("scoring_config", {}),
+                "image_path": q.get("image_path", ""),
             })
 
-    logger.info(f"Loaded {len(all_prompts)} questions across {len(suite_names)} suites")
+    vl_count = sum(1 for p in all_prompts if p.get("image_path"))
+    text_count = len(all_prompts) - vl_count
+    # VL questions test vision roles + frontdoor; text questions test text roles
+    vl_combos = [(r, m) for r, m in combos if r in VISION_ROLES or r == "frontdoor"]
+    text_combos = [(r, m) for r, m in combos if r not in VISION_ROLES]
+    total_calls = vl_count * len(vl_combos) + text_count * len(text_combos)
+
+    logger.info(f"Loaded {len(all_prompts)} questions across {len(suite_names)} suites ({vl_count} VL, {text_count} text)")
     logger.info(f"Testing {len(combos)} role×mode combos: {', '.join(combo_keys)}")
-    logger.info(f"Total API calls: {len(all_prompts) * len(combos)}")
+    logger.info(f"Total API calls: {total_calls} (VL: {vl_count}×{len(vl_combos)}, text: {text_count}×{len(text_combos)})")
 
     # Architect models are slower — give them more time
     SLOW_ROLES = {"architect_general", "architect_coding"}
@@ -319,16 +350,31 @@ def run_seeding(
         expected = prompt_info["expected"]
         scoring_method = prompt_info["scoring_method"]
         scoring_config = prompt_info["scoring_config"]
+        image_path = prompt_info.get("image_path", "")
 
-        logger.info(f"[{i+1}/{len(all_prompts)}] {suite}/{qid}")
+        # Smart combo filtering: VL questions → vision roles + frontdoor baseline;
+        # text questions → text roles only (skip vision).
+        is_vl = bool(image_path)
+        if is_vl:
+            active_combos = [
+                (r, m) for r, m in combos
+                if r in VISION_ROLES or r == "frontdoor"
+            ]
+        else:
+            active_combos = [
+                (r, m) for r, m in combos
+                if r not in VISION_ROLES
+            ]
+
+        logger.info(f"[{i+1}/{len(all_prompts)}] {suite}/{qid} ({'VL' if is_vl else 'text'}, {len(active_combos)} combos)")
 
         role_results: dict[str, RoleResult] = {}
 
-        for role, mode in combos:
+        for role, mode in active_combos:
             key = f"{role}:{mode}"
             role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else timeout
             q_start = time.perf_counter()
-            response = call_orchestrator_forced(prompt, role, mode, url, role_timeout)
+            response = call_orchestrator_forced(prompt, role, mode, url, role_timeout, image_path=image_path)
             q_elapsed = time.perf_counter() - q_start
 
             answer = response.get("answer", "")

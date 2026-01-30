@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # Default suites for learning loop
 DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
-    "coder", "instruction_precision",
+    "coder", "instruction_precision", "vl",
 ]
 
 # Orchestrator API
@@ -163,6 +163,7 @@ def load_debug_prompts(
                 "expected": q.get("expected", ""),
                 "scoring_method": q.get("scoring_method", "exact_match"),
                 "scoring_config": q.get("scoring_config", {}),
+                "image_path": q.get("image_path", ""),
             })
 
     return all_prompts
@@ -172,6 +173,7 @@ def call_orchestrator(
     prompt: str,
     url: str = DEFAULT_ORCHESTRATOR_URL,
     timeout: int = DEFAULT_TIMEOUT,
+    image_path: str = "",
 ) -> dict[str, Any]:
     """Call the orchestrator API.
 
@@ -179,19 +181,24 @@ def call_orchestrator(
         prompt: The question to send.
         url: Orchestrator API URL.
         timeout: Request timeout in seconds.
+        image_path: Optional path to image file for VL questions.
 
     Returns:
         Response dict with answer, routing_strategy, routed_to, etc.
     """
     import httpx
 
+    payload: dict[str, Any] = {
+        "prompt": prompt,
+        "real_mode": True,
+    }
+    if image_path:
+        payload["image_path"] = image_path
+
     try:
         response = httpx.post(
             f"{url}/chat",
-            json={
-                "prompt": prompt,
-                "real_mode": True,
-            },
+            json=payload,
             timeout=timeout,
         )
         response.raise_for_status()
@@ -253,13 +260,15 @@ def run_iteration(
         expected = prompt_info["expected"]
         scoring_method = prompt_info.get("scoring_method", "exact_match")
         scoring_config = prompt_info.get("scoring_config", {})
+        image_path = prompt_info.get("image_path", "")
 
         logger.info(
             f"  [{i+1}/{len(prompts)}] {suite}/{qid}"
+            + (" [VL]" if image_path else "")
         )
 
         q_start = time.perf_counter()
-        response = call_orchestrator(prompt, url)
+        response = call_orchestrator(prompt, url, image_path=image_path)
         q_elapsed = time.perf_counter() - q_start
 
         answer = response.get("answer", "")

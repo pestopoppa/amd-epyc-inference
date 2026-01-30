@@ -277,6 +277,9 @@ REACT_TOOL_WHITELIST = frozenset({
     "list_directory",
 })
 
+# Vision-aware ReAct whitelist: standard tools + OCR extraction
+VISION_REACT_TOOL_WHITELIST = REACT_TOOL_WHITELIST | frozenset({"ocr_extract"})
+
 # ReAct format instructions
 REACT_FORMAT = """You have access to the following tools:
 {tool_descriptions}
