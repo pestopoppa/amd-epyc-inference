@@ -53,22 +53,64 @@ ALL_SUITES = [
 DEBUG_PROMPTS_DIR = PROJECT_ROOT / "benchmarks" / "prompts" / "debug"
 
 
+def _load_from_dataset_adapter(
+    suite_name: str,
+    sample_count: int,
+    seed: int,
+) -> list[dict]:
+    """Load questions on-the-fly from HuggingFace cached datasets.
+
+    Samples from the full dataset pool for the given suite.
+    Falls back to static YAML if the adapter or datasets library is unavailable.
+
+    Supported suites: general (MMLU 14K), math (GSM8K 1.3K + MATH-500),
+    coder (HumanEval 164 + MBPP 500), thinking (ARC 1.2K + HellaSwag 10K),
+    instruction_precision (IFEval 541), vl (OCRBench 1K + ChartQA 2.5K).
+    """
+    try:
+        from dataset_adapters import get_adapter, ADAPTER_SUITES
+    except ImportError:
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from dataset_adapters import get_adapter, ADAPTER_SUITES
+        except ImportError:
+            return []
+
+    if suite_name not in ADAPTER_SUITES:
+        return []
+
+    adapter = get_adapter(suite_name)
+    if adapter is None:
+        return []
+
+    prompts = adapter.sample(n=sample_count, seed=seed)
+    if prompts:
+        print(f"  [debug] {suite_name}: sampled {len(prompts)} from "
+              f"{adapter.total_available} dataset questions (seed={seed})")
+    return prompts
+
+
 def load_debug_prompts(
     suite: str,
     sample_per_suite: int = 10,
     seed: int | None = None,
     partition: tuple[int, int] | None = None,
 ) -> list[dict]:
-    """Load debug benchmark prompts with random sampling or partitioning.
+    """Load debug benchmark prompts from HuggingFace datasets or static YAML.
 
-    Loads questions from benchmarks/prompts/debug/*.yaml. Two modes:
+    For suites with dataset adapters (general, math, coder, thinking,
+    instruction_precision, vl), questions are sampled on-the-fly from
+    the full public benchmark pools (thousands of questions). Falls back
+    to static YAML if the datasets library is unavailable.
 
+    For YAML-only suites (agentic, long_context), loads from
+    benchmarks/prompts/debug/*.yaml.
+
+    Two sampling modes:
     1. **Sampling** (partition=None): Randomly samples `sample_per_suite`
-       questions per suite. Each run uses a different sample.
+       questions per suite. Each seed gives different questions.
     2. **Partition** (partition=(chunk_index, total_chunks)): Shuffles all
-       questions with `seed`, splits into `total_chunks` non-overlapping
-       chunks, and returns only the `chunk_index`-th chunk. This ensures
-       zero redundancy across iterations of a learning loop.
+       questions with `seed`, splits into non-overlapping chunks.
 
     Args:
         suite: Suite name or "all".
@@ -94,6 +136,15 @@ def load_debug_prompts(
     all_prompts: list[dict] = []
 
     for suite_name in suite_names:
+        # Try on-the-fly dataset adapter first
+        adapter_prompts = _load_from_dataset_adapter(
+            suite_name, sample_per_suite, seed=seed
+        )
+        if adapter_prompts:
+            all_prompts.extend(adapter_prompts)
+            continue
+
+        # Fall back to static YAML
         yaml_path = DEBUG_PROMPTS_DIR / f"{suite_name}.yaml"
         if not yaml_path.exists():
             print(f"  [debug] No debug suite for '{suite_name}' at {yaml_path}")
@@ -135,7 +186,7 @@ def load_debug_prompts(
                 "context": "",
                 "expected": q.get("expected", ""),
                 "scoring": [],
-                "image_path": "",
+                "image_path": q.get("image_path", ""),
                 "tier": q.get("tier", 1),
                 # Debug-specific fields
                 "scoring_method": q.get("scoring_method", "exact_match"),
@@ -166,6 +217,8 @@ class ComparisonResult:
     tokens_generated: int = 0
     server_elapsed_s: float = 0.0
     avg_tps: float = 0.0  # tokens_generated / server_elapsed_s
+    # Tool usage count
+    tools_used: int = 0
     # Debug scorer result (only populated with --debug flag)
     debug_score: Optional[bool] = None
 
@@ -336,6 +389,7 @@ def compare_prompt(
     tokens_generated = result.get("tokens_generated", result.get("tokens_used", 0))
     server_elapsed = result.get("elapsed_seconds", 0)
     avg_tps = tokens_generated / server_elapsed if server_elapsed > 0 else 0
+    tools_used = result.get("tools_used", 0)
 
     # Calculate speedup
     if orchestrator_latency > 0 and direct_latency > 0:
@@ -358,6 +412,7 @@ def compare_prompt(
         tokens_generated=tokens_generated,
         server_elapsed_s=server_elapsed,
         avg_tps=avg_tps,
+        tools_used=tools_used,
     )
 
 
@@ -504,8 +559,9 @@ def run_comparison(
         debug_str = ""
         if result.debug_score is not None:
             debug_str = f", score: {'PASS' if result.debug_score else 'FAIL'}"
+        tools_str = f", tools: {result.tools_used}" if result.tools_used > 0 else ""
         print(f"{latency_str:>8}  {tps_str:>10}  speedup: {speedup_str}, {answer_str}{debug_str}, "
-              f"turns: {result.orchestrator_turns}, routed: {result.orchestrator_routed_to}")
+              f"turns: {result.orchestrator_turns}{tools_str}, routed: {result.orchestrator_routed_to}")
 
         if not has_answer:
             errors += 1
@@ -516,6 +572,7 @@ def run_comparison(
 
     avg_latency = sum(r.orchestrator_latency_ms for r in results) / len(results) if results else 0
     avg_turns = sum(r.orchestrator_turns for r in results) / len(results) if results else 0
+    total_tools = sum(r.tools_used for r in results)
 
     # Routing accuracy: count distinct roles used
     route_counts = {}
@@ -538,6 +595,7 @@ def run_comparison(
         "avg_speedup": avg_speedup,
         "avg_orchestrator_latency_ms": avg_latency,
         "avg_turns": avg_turns,
+        "total_tools_used": total_tools,
         "empty_answers": errors,
         "avg_tps": avg_tps,
         "debug_accuracy": debug_accuracy,
@@ -560,6 +618,7 @@ def print_summary(summary: dict):
     print(f"Average speedup: {summary.get('avg_speedup', 0):.2f}x")
     print(f"Average orchestrator latency: {summary.get('avg_orchestrator_latency_ms', 0):.0f}ms")
     print(f"Average turns: {summary.get('avg_turns', 0):.1f}")
+    print(f"Total tool invocations: {summary.get('total_tools_used', 0)}")
     print(f"Average tokens/sec: {summary.get('avg_tps', 0):.1f}")
     print(f"Empty answers: {summary.get('empty_answers', 0)}")
     debug_acc = summary.get('debug_accuracy')

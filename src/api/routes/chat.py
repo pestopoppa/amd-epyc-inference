@@ -1120,11 +1120,13 @@ def _architect_delegated_answer(
     )
 
     log = logging.getLogger(__name__)
+    total_tools = 0
     stats: dict = {
         "loops": 0,
         "phases": [],
         "specialist_output": "",
         "needs_input": False,
+        "tools_used": 0,
     }
 
     # Optional TOON encoding for context
@@ -1193,6 +1195,7 @@ def _architect_delegated_answer(
             ):
                 answer = stats["specialist_output"]
             stats["loops"] = loop
+            stats["tools_used"] = total_tools
             return answer, stats
 
         # ── Phase B: Specialist execution ──
@@ -1210,7 +1213,7 @@ def _architect_delegated_answer(
         if delegate_mode == "react":
             # ReAct investigation loop
             try:
-                report = _react_mode_answer(
+                report, phase_tools = _react_mode_answer(
                     prompt=brief,
                     context=context,
                     primitives=primitives,
@@ -1218,12 +1221,13 @@ def _architect_delegated_answer(
                     tool_registry=tool_registry,
                     max_turns=8,
                 )
+                total_tools += phase_tools
             except Exception as e:
                 report = f"[Investigation failed: {e}]"
         else:
             # REPL mode for drafting — use REPL environment
             try:
-                repl = REPLEnvironment(
+                deleg_repl = REPLEnvironment(
                     context=f"{brief}\n\nContext:\n{context}" if context else brief,
                     llm_primitives=primitives,
                     tool_registry=tool_registry,
@@ -1232,16 +1236,17 @@ def _architect_delegated_answer(
                 # Run REPL for up to 10 turns
                 for _turn in range(10):
                     code = primitives.llm_call(
-                        repl.get_prompt(question=brief),
+                        deleg_repl.get_prompt(question=brief),
                         role=delegate_to,
                         n_tokens=2048,
                     )
-                    result = repl.execute(code)
+                    result = deleg_repl.execute(code)
                     if result.get("final"):
                         report = result["final"]
                         break
                 else:
-                    report = repl.get_state()
+                    report = deleg_repl.get_state()
+                total_tools += deleg_repl._tool_invocations
             except Exception as e:
                 report = f"[REPL delegation failed: {e}]"
 
@@ -1263,6 +1268,7 @@ def _architect_delegated_answer(
 
     # ── Cap reached ──
     stats["loops"] = max_loops
+    stats["tools_used"] = total_tools
 
     if force_response_on_cap:
         # Force architect to synthesize with whatever we have
@@ -1735,7 +1741,7 @@ def _react_mode_answer(
     tool_registry: "Any | None" = None,
     max_turns: int = 5,
     tool_whitelist: "frozenset[str] | None" = None,
-) -> str:
+) -> "tuple[str, int]":
     """Execute a ReAct-style tool loop for direct-mode prompts needing tools.
 
     Builds a ReAct prompt, then loops: LLM generates Thought/Action,
@@ -1753,13 +1759,14 @@ def _react_mode_answer(
             If None, uses the module-level default.
 
     Returns:
-        The final answer string.
+        Tuple of (final_answer, tools_used_count).
     """
     import logging
     from src.prompt_builders import build_react_prompt, REACT_TOOL_WHITELIST
 
     log = logging.getLogger(__name__)
     active_whitelist = tool_whitelist if tool_whitelist is not None else REACT_TOOL_WHITELIST
+    tools_used = 0
 
     react_prompt = build_react_prompt(
         prompt=prompt,
@@ -1793,8 +1800,8 @@ def _react_mode_answer(
             # Extract everything after "Final Answer:"
             idx = response.index("Final Answer:")
             answer = response[idx + len("Final Answer:"):].strip()
-            log.info(f"ReAct completed in {turn + 1} turns")
-            return answer
+            log.info(f"ReAct completed in {turn + 1} turns, {tools_used} tools used")
+            return answer, tools_used
 
         # Parse Action line
         action_match = None
@@ -1815,7 +1822,7 @@ def _react_mode_answer(
                 if stripped.startswith("Thought:"):
                     stripped = stripped[len("Thought:"):].strip()
                 answer_lines.append(stripped)
-            return "\n".join(answer_lines).strip()
+            return "\n".join(answer_lines).strip(), tools_used
 
         # Parse tool name and args: "tool_name(arg1="val1", arg2=val2)"
         import re as _re
@@ -1835,6 +1842,7 @@ def _react_mode_answer(
                 try:
                     args = _parse_react_args(args_str)
                     result = tool_registry.invoke(tool_name, "frontdoor", **args)
+                    tools_used += 1
                     # Truncate large results
                     result_str = str(result)
                     if len(result_str) > 2000:
@@ -1846,7 +1854,7 @@ def _react_mode_answer(
         conversation += f"\nObservation: {observation}\n"
 
     # Max turns reached — extract best answer from conversation
-    log.warning(f"ReAct reached max turns ({max_turns})")
+    log.warning(f"ReAct reached max turns ({max_turns}), {tools_used} tools used")
     # Look for last Thought that contains useful info
     last_thought = ""
     for line in conversation.split("\n"):
@@ -1854,8 +1862,8 @@ def _react_mode_answer(
             last_thought = line.strip()[len("Thought:"):].strip()
 
     if last_thought:
-        return f"[ReAct max turns reached]\n{last_thought}"
-    return f"[ReAct: Could not determine answer after {max_turns} turns]"
+        return f"[ReAct max turns reached]\n{last_thought}", tools_used
+    return f"[ReAct: Could not determine answer after {max_turns} turns]", tools_used
 
 
 def _should_use_direct_mode(prompt: str, context: str = "") -> bool:
@@ -2344,6 +2352,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 routing_strategy="delegated",
                 tokens_generated=primitives.total_tokens_generated,
                 formalization_applied=formalization_applied,
+                tools_used=delegation_stats.get("tools_used", 0),
             )
 
     # ── ReAct tool loop mode ───────────────────────────────────────────
@@ -2355,8 +2364,9 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
             f"ReAct mode for {initial_role} (prompt: {len(request.prompt)} chars)"
         )
 
+        react_tools_used = 0
         try:
-            answer = _react_mode_answer(
+            answer, react_tools_used = _react_mode_answer(
                 prompt=request.prompt,
                 context=request.context or "",
                 primitives=primitives,
@@ -2414,6 +2424,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 routing_strategy="react",
                 tokens_generated=primitives.total_tokens_generated,
                 formalization_applied=formalization_applied,
+                tools_used=react_tools_used,
             )
 
     if execution_mode == "direct" and request.real_mode:
@@ -2994,6 +3005,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         routing_strategy=routing_strategy,
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=formalization_applied,
+        tools_used=repl._tool_invocations,
     )
 
 

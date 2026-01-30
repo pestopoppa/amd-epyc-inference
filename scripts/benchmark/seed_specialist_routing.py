@@ -63,7 +63,7 @@ DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
     "coder", "instruction_precision",
 ]
-DEFAULT_ROLES = ["frontdoor", "coder_primary", "coder_escalation", "architect_general"]
+DEFAULT_ROLES = ["frontdoor", "coder_primary", "coder_escalation", "architect_general", "architect_coding"]
 DEFAULT_MODES = ["direct", "react", "repl"]
 
 # Architect roles delegate tool work to faster specialists.

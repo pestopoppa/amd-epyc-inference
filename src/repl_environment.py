@@ -417,6 +417,7 @@ class REPLEnvironment:
         # Execution state
         self._final_answer: str | None = None
         self._execution_count = 0
+        self._tool_invocations = 0  # Count of TOOL()/CALL() invocations
 
         # Exploration tracking (for forced exploration validation)
         self._exploration_calls = 0  # Count of peek/grep/llm_call calls
@@ -2838,6 +2839,7 @@ class REPLEnvironment:
         if self.tool_registry is None:
             raise RuntimeError("No tool registry configured")
 
+        self._tool_invocations += 1
         return self.tool_registry.invoke(tool_name, self.role, **kwargs)
 
     def _call_tool(self, tool_name: str, **kwargs) -> str:

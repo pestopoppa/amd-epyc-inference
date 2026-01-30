@@ -163,7 +163,7 @@ class TestArchitectDelegatedAnswer:
         # Mock _react_mode_answer to avoid needing real ReAct loop
         with patch(
             "src.api.routes.chat._react_mode_answer",
-            return_value="File contents: error handling at line 42",
+            return_value=("File contents: error handling at line 42", 2),
         ):
             answer, stats = _architect_delegated_answer(
                 question="Where is error handling?",
@@ -194,7 +194,7 @@ class TestArchitectDelegatedAnswer:
 
         with patch(
             "src.api.routes.chat._react_mode_answer",
-            side_effect=["Report from A", "Report from B"],
+            side_effect=[("Report from A", 1), ("Report from B", 3)],
         ):
             answer, stats = _architect_delegated_answer(
                 question="Compare A and B",
@@ -227,7 +227,7 @@ class TestArchitectDelegatedAnswer:
 
         with patch(
             "src.api.routes.chat._react_mode_answer",
-            side_effect=["Report X", "Report Y", "Report Z"],
+            side_effect=[("Report X", 1), ("Report Y", 1), ("Report Z", 1)],
         ):
             answer, stats = _architect_delegated_answer(
                 question="Complex question",

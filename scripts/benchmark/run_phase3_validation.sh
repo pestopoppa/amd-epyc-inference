@@ -249,7 +249,7 @@ step2_seeding() {
   local output="${RESULTS_DIR}/seeding_live_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/seed_specialist_routing.py \
     --suites thinking general math agentic coder instruction_precision \
-    --roles frontdoor coder_primary coder_escalation architect_general \
+    --roles frontdoor coder_primary coder_escalation architect_general architect_coding \
     --sample-size 10 --seed 42 \
     --output ${output}"
 
