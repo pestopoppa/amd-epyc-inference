@@ -86,7 +86,9 @@ Top models no longer hit 90%+ ceiling.
 
 ```
 benchmarks/
-├── prompts/v1/          # Test cases by suite
+├── prompts/
+│   ├── v1/              # Rubric-scored (Claude-as-Judge)
+│   └── debug/           # Deterministic scoring (see Ch24)
 ├── results/
 │   ├── runs/            # Raw benchmark outputs
 │   ├── reviews/         # Claude-as-Judge scores
@@ -94,6 +96,8 @@ benchmarks/
 │   │   └── summary.csv
 │   └── index.jsonl      # Benchmark index for comparison
 ```
+
+**Note:** Benchmark prompts are gitignored — they are reconstructible from public sources. See [Chapter 24: Benchmark Suite Construction](24-benchmark-suite-construction.md) for the construction methodology and reconstruction instructions.
 
 ## Instruction Precision Suite
 

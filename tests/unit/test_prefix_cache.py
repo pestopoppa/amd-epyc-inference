@@ -497,10 +497,11 @@ class TestCachingBackend:
 
         caching.infer(mock_role_config, request)
 
-        # Check that the request prompt was canonicalized
-        # The canonicalized prompt should be passed to backend
+        # Canonicalization is ONLY used for cache key routing (get_slot_for_prompt),
+        # NOT for mutating the prompt sent to the backend. The original prompt
+        # must be preserved to avoid [DATE]/[TIMESTAMP] contamination in output.
         call_args = mock_backend.infer.call_args
-        assert "[TIMESTAMP]" in call_args[0][1].prompt
+        assert call_args[0][1].prompt == "Time: 2024-01-15T10:00:00Z"
 
     def test_get_hit_rate(self):
         """Should return correct hit rate."""

@@ -223,6 +223,12 @@ DEFAULT_ROOT_LM_TOOLS = """### Context & Files
 - `chunk_context(n_chunks=4, overlap=200)`: Split context into N chunks with metadata
 - `summarize_chunks(task, n_chunks=4, role='worker_general')`: Chunk + parallel worker summaries
 
+### Tool Invocation
+- `TOOL(tool_name, **kwargs)`: Invoke a registered tool, returns raw Python object
+- `CALL(tool_name, **kwargs)`: Invoke a registered tool, returns JSON string (simpler)
+  Example: `result = CALL("search_arxiv", query="transformers"); data = json.loads(result)`
+- `list_tools()`: List available tools for your role
+
 ### Completion
 - `FINAL(answer)`: Signal completion with the final answer (REQUIRED)"""
 
@@ -230,23 +236,122 @@ DEFAULT_ROOT_LM_TOOLS = """### Context & Files
 DEFAULT_ROOT_LM_RULES = """## CRITICAL
 1. **NO IMPORTS** - import/from are BLOCKED. The `json` module is pre-loaded, just use `json.loads()` directly.
 2. **USE list_dir()** for files - NOT os.listdir or pathlib
-3. **ALWAYS call FINAL(answer)** to complete the task
+3. **ALWAYS call FINAL(answer)** when you have your answer — this is REQUIRED to complete the task.
+   Do NOT keep calling tools after you have enough information.
 
 ## Examples
 List files: `result = list_dir('/path'); FINAL(result)`
 Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); summary = llm_call(f"Summarize: {doc['full_text'][:6000]}", role='worker'); FINAL(summary)`
 
-## Routing
-4. Check `my_role()` if unsure about your capabilities
-5. Use `route_advice(task)` before delegating complex subtasks
-6. Use `delegate()` over `llm_call()` when making a conscious routing choice
-7. Call `escalate(reason)` if the task exceeds your tier — don't guess
-8. Simple tasks: just do the work directly — don't over-route
+## Routing (OPTIONAL — only for complex multi-model tasks)
+4. Simple tasks: just answer directly — do NOT call my_role() or route_advice() first
+5. Only call my_role() if genuinely unsure about your capabilities
+6. Only call route_advice() before delegating complex subtasks to specialists
+7. Use `delegate()` over `llm_call()` when making a conscious routing choice
+8. Call `escalate(reason)` if the task exceeds your tier — don't guess
 
 ## Other Rules
 9. NEVER send full context to llm_call - use peek() or grep() first
 10. Output only valid Python code - no markdown, no explanations"""
+
+
+# ── ReAct Tool Loop Constants ──────────────────────────────────────────────
+
+# Read-only tools safe for ReAct mode (no shell, no filesystem writes)
+REACT_TOOL_WHITELIST = frozenset({
+    "web_search",
+    "search_arxiv",
+    "search_papers",
+    "search_wikipedia",
+    "get_wikipedia_article",
+    "search_books",
+    "calculate",
+    "python_eval",
+    "get_current_date",
+    "get_current_time",
+    "json_query",
+    "fetch_wikipedia",
+})
+
+# ReAct format instructions
+REACT_FORMAT = """You have access to the following tools:
+{tool_descriptions}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: reason about what to do next
+Action: tool_name(arg1="value1", arg2="value2")
+Observation: the result of the action
+... (repeat Thought/Action/Observation as needed, up to {max_turns} times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original question
+
+Important rules:
+- Always start with a Thought before an Action
+- Action arguments use keyword=value syntax (strings in quotes, numbers bare)
+- After each Observation, decide if you have enough info for a Final Answer
+- If no tools are needed, skip directly to Final Answer
+- Be concise in your Final Answer — answer the question directly"""
+
+
+def build_react_prompt(
+    prompt: str,
+    context: str = "",
+    tool_registry: "Any | None" = None,
+    max_turns: int = 5,
+) -> str:
+    """Build a ReAct-style prompt with tool descriptions.
+
+    Args:
+        prompt: The user's question.
+        context: Optional context text.
+        tool_registry: Optional tool registry for dynamic tool descriptions.
+        max_turns: Maximum number of Thought/Action/Observation cycles.
+
+    Returns:
+        Formatted ReAct prompt string.
+    """
+    # Build tool descriptions from whitelist
+    tool_descriptions = []
+    if tool_registry is not None:
+        for tool_info in tool_registry.list_tools():
+            name = tool_info.get("name", "")
+            if name in REACT_TOOL_WHITELIST:
+                desc = tool_info.get("description", "No description")
+                params = tool_info.get("parameters", {})
+                param_strs = []
+                for pname, pinfo in params.items():
+                    ptype = pinfo.get("type", "string")
+                    required = pinfo.get("required", False)
+                    req_mark = " (required)" if required else ""
+                    param_strs.append(f"  {pname}: {ptype}{req_mark}")
+                param_block = "\n".join(param_strs) if param_strs else "  (no parameters)"
+                tool_descriptions.append(f"- {name}: {desc}\n{param_block}")
+    else:
+        # Static fallback descriptions for common tools
+        tool_descriptions = [
+            "- calculate(expression=\"...\"): Evaluate a math expression",
+            "- get_current_date(): Get today's date",
+            "- get_current_time(): Get current time",
+            "- web_search(query=\"...\"): Search the web",
+            "- search_arxiv(query=\"...\", max_results=5): Search arXiv papers",
+            "- search_wikipedia(query=\"...\"): Search Wikipedia articles",
+            "- get_wikipedia_article(title=\"...\"): Get full Wikipedia article",
+            "- python_eval(code=\"...\"): Evaluate Python expression safely",
+            "- json_query(data=\"...\", query=\"...\"): Query JSON data with JMESPath",
+        ]
+
+    tool_desc_str = "\n".join(tool_descriptions)
+    react_prompt = REACT_FORMAT.format(
+        tool_descriptions=tool_desc_str,
+        max_turns=max_turns,
+    )
+
+    if context:
+        return f"{react_prompt}\n\nContext:\n{context}\n\nQuestion: {prompt}"
+    return f"{react_prompt}\n\nQuestion: {prompt}"
 
 
 class PromptBuilder:
@@ -1150,3 +1255,120 @@ def classify_error(error_message: str, gate_name: str = "") -> ErrorCategory:
         return ErrorCategory.EARLY_ABORT
 
     return ErrorCategory.UNKNOWN
+
+
+# ── Plan Review Prompts ───────────────────────────────────────────────────
+
+
+def build_plan_review_prompt(
+    objective: str,
+    task_type: str,
+    plan_steps: list[dict[str, Any]],
+) -> str:
+    """Build architect plan review prompt — forces hyper-concise JSON output.
+
+    The architect reviews the frontdoor's tentative plan and can confirm,
+    reroute steps, reorder, drop, or add missing steps.
+
+    Args:
+        objective: Task objective (truncated to 200 chars).
+        task_type: Task type (e.g., "code", "chat").
+        plan_steps: List of plan step dicts with id, actor/role, action, deps.
+
+    Returns:
+        Prompt string for architect plan review (~100-120 tokens input).
+    """
+    # Format steps compactly: S1:coder:Implement handler->output.py
+    step_lines = []
+    for step in plan_steps[:8]:  # Cap at 8 steps
+        step_id = step.get("id", "S?")
+        actor = step.get("actor", step.get("role", "worker"))
+        action = step.get("action", "")[:50]
+        outputs = step.get("outputs", step.get("out", []))
+        out_str = ",".join(str(o) for o in outputs[:2]) if outputs else ""
+        deps = step.get("deps", step.get("inputs", []))
+        dep_str = f"({','.join(str(d) for d in deps[:2])})" if deps else ""
+
+        line = f"{step_id}:{actor}:{action}"
+        if out_str:
+            line += f"->{out_str}"
+        if dep_str:
+            line += dep_str
+        step_lines.append(line)
+
+    steps_block = "\n".join(step_lines)
+
+    return f"""Review plan. Reply JSON ONLY:
+{{"d":"ok|reorder|drop|add|reroute","s":0.0-1.0,"f":"<15 words","p":[]}}
+
+d=decision, s=confidence, f=feedback, p=patches (optional)
+Patch format: {{"step":"S1","op":"reroute|drop|add|reorder","v":"new_value"}}
+
+Task: {objective[:200]}
+Type: {task_type}
+Plan:
+{steps_block}
+
+Verdict:"""
+
+
+# ── Output Formalizer ──────────────────────────────────────────────────────
+
+# Patterns that indicate format constraints in a prompt
+_FORMAT_CONSTRAINT_PATTERNS = [
+    (r"exactly\s+(\d+)\s+words?", "exactly {0} words"),
+    (r"in\s+(\d+)\s+words?\s+or\s+(fewer|less)", "at most {0} words"),
+    (r"no\s+more\s+than\s+(\d+)\s+words?", "at most {0} words"),
+    (r"(?:in|as)\s+JSON(?:\s+format)?", "JSON format"),
+    (r"(?:as\s+a?\s*)?numbered\s+list", "numbered list"),
+    (r"(?:as\s+a?\s*)?bullet(?:ed)?\s+list", "bullet list"),
+    (r"comma[- ]separated", "comma-separated list"),
+    (r"(?:all\s+)?(?:in\s+)?(?:upper|UPPER)\s*case", "uppercase"),
+    (r"(?:all\s+)?(?:in\s+)?(?:lower)\s*case", "lowercase"),
+    (r"one\s+(?:single\s+)?sentence", "one sentence"),
+    (r"single\s+paragraph", "single paragraph"),
+    (r"(?:as\s+a?\s*)?(?:markdown\s+)?table", "table format"),
+    (r"(?:as\s+a?\s*)?(?:YAML|yaml)\s+(?:format)?", "YAML format"),
+    (r"(?:as\s+a?\s*)?(?:XML|xml)\s+(?:format)?", "XML format"),
+]
+
+
+def detect_format_constraints(prompt: str) -> list[str]:
+    """Detect format constraints in a prompt.
+
+    Args:
+        prompt: The user's prompt text.
+
+    Returns:
+        List of detected format constraint descriptions (empty if none).
+    """
+    constraints = []
+    for pattern, template in _FORMAT_CONSTRAINT_PATTERNS:
+        match = re.search(pattern, prompt, re.IGNORECASE)
+        if match:
+            # Substitute captured groups into template
+            try:
+                desc = template.format(*match.groups())
+            except (IndexError, KeyError):
+                desc = template
+            constraints.append(desc)
+    return constraints
+
+
+def build_formalizer_prompt(answer: str, prompt: str, format_spec: str) -> str:
+    """Build a prompt for the output formalizer.
+
+    Args:
+        answer: The original answer to reformat.
+        prompt: The original user prompt (for context).
+        format_spec: Description of the format constraint to satisfy.
+
+    Returns:
+        Formatted formalizer prompt string.
+    """
+    return (
+        f"Reformat the following answer to strictly satisfy this format constraint: {format_spec}\n\n"
+        f"Original question: {prompt[:500]}\n\n"
+        f"Original answer:\n{answer}\n\n"
+        f"Output ONLY the reformatted answer. Do not add explanations or preamble."
+    )

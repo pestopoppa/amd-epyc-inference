@@ -76,6 +76,85 @@ tools:
       function: fetch_wikipedia
     permissions: [network]
 
+  # --- Knowledge retrieval tools (free APIs, no keys) ---
+
+  search_arxiv:
+    category: web
+    description: "Search arXiv for academic papers by keyword, author, or topic"
+    parameters:
+      query: {type: string, required: true, description: "Search query (supports arXiv syntax)"}
+      max_results: {type: integer, required: false, default: 10}
+    returns: {type: array, items: {type: object, fields: [title, authors, abstract, arxiv_id, published, pdf_url, categories]}}
+    implementation:
+      type: python
+      module: src.tools.knowledge
+      function: search_arxiv
+    permissions: [network]
+    examples:
+      - input: {query: "transformer attention mechanism", max_results: 5}
+        description: "Search for papers on transformer attention"
+
+  search_papers:
+    category: web
+    description: "Search Semantic Scholar for academic papers with citation data"
+    parameters:
+      query: {type: string, required: true, description: "Search query"}
+      max_results: {type: integer, required: false, default: 10}
+      year_range: {type: string, required: false, description: "Year range filter (e.g. 2020-2025)"}
+    returns: {type: array, items: {type: object, fields: [title, authors, abstract, citation_count, year, doi, venue]}}
+    implementation:
+      type: python
+      module: src.tools.knowledge
+      function: search_papers
+    permissions: [network]
+    examples:
+      - input: {query: "speculative decoding LLM", year_range: "2023-2026"}
+        description: "Search for recent speculative decoding papers"
+
+  search_wikipedia:
+    category: web
+    description: "Search Wikipedia for articles matching a query (returns summaries)"
+    parameters:
+      query: {type: string, required: true, description: "Search query"}
+      max_results: {type: integer, required: false, default: 5}
+      language: {type: string, required: false, default: "en", description: "Wikipedia language code"}
+    returns: {type: array, items: {type: object, fields: [title, summary, url, page_id]}}
+    implementation:
+      type: python
+      module: src.tools.knowledge
+      function: search_wikipedia
+    permissions: [network]
+
+  get_wikipedia_article:
+    category: web
+    description: "Fetch the full text of a Wikipedia article by title"
+    parameters:
+      title: {type: string, required: true, description: "Exact article title"}
+      language: {type: string, required: false, default: "en", description: "Wikipedia language code"}
+    returns: {type: object, fields: [title, full_text, url, categories, sections]}
+    implementation:
+      type: python
+      module: src.tools.knowledge
+      function: get_wikipedia_article
+    permissions: [network]
+
+  search_books:
+    category: web
+    description: "Search Google Books for publications"
+    parameters:
+      query: {type: string, required: true, description: "Search query"}
+      max_results: {type: integer, required: false, default: 10}
+      filter: {type: string, required: false, description: "Filter: ebooks, free-ebooks, paid-ebooks, partial, full"}
+    returns: {type: array, items: {type: object, fields: [title, authors, publisher, published_date, description, isbn, preview_link]}}
+    implementation:
+      type: python
+      module: src.tools.knowledge
+      function: search_books
+    permissions: [network]
+    examples:
+      - input: {query: "machine learning optimization", filter: "ebooks"}
+        description: "Search for ML optimization ebooks"
+
   # ============ DATA TOOLS ============
   json_query:
     category: data
@@ -519,6 +598,28 @@ tools:
       module: orchestration.tools.system
       function: list_directory
     permissions: [filesystem]
+
+  get_current_date:
+    category: system
+    description: "Get current date in ISO format with weekday"
+    parameters: {}
+    returns: {type: object, fields: [date, weekday, year, month, day]}
+    implementation:
+      type: python
+      module: orchestration.tools.system
+      function: get_current_date
+    permissions: []
+
+  get_current_time:
+    category: system
+    description: "Get current date, time, and UTC timestamp"
+    parameters: {}
+    returns: {type: object, fields: [datetime, date, time, utc, timestamp]}
+    implementation:
+      type: python
+      module: orchestration.tools.system
+      function: get_current_time
+    permissions: []
 
   # ============ ARCHIVE TOOLS ============
   archive_open:

@@ -55,6 +55,9 @@ class EventType(str, Enum):
     # Formalizer events
     FORMALIZER_INVOKED = "formalizer_invoked"
 
+    # Plan review events (architect-in-the-loop)
+    PLAN_REVIEWED = "plan_reviewed"
+
     # Q-scoring events (from Q-scorer agent)
     Q_VALUE_UPDATED = "q_value_updated"
     MEMORY_STORED = "memory_stored"

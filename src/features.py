@@ -122,11 +122,29 @@ class Features:
     repl: bool = True
     caching: bool = True
 
+    # Phase 2: Structured Delimiters for tool output isolation
+    structured_delimiters: bool = True  # Wrap tool outputs with <<<TOOL_OUTPUT>>> delimiters
+
+    # Phase 2: ReAct-style tool loop (direct mode with tool access)
+    react_mode: bool = False  # Enable ReAct tool loop for direct-mode prompts
+
+    # Phase 2: Output formalizer (format constraint enforcement)
+    output_formalizer: bool = False  # Post-process answers to satisfy format constraints
+
     # Security Features
     restricted_python: bool = False  # Use RestrictedPython for REPL (requires library)
 
+    # Phase 3: Specialist routing (MemRL-driven intelligent orchestration)
+    specialist_routing: bool = False  # Enable specialist routing (coder, architect) via Q-values
+
+    # Phase 3: Architect plan review (pre-execution plan vetting)
+    plan_review: bool = False  # Enable architect review of frontdoor plans before execution
+
+    # Phase 4: Input formalizer (extract formal specs before specialist execution)
+    input_formalizer: bool = False  # Preprocess complex prompts via MathSmith-8B
+
     # Generation Monitoring (Phase 6)
-    generation_monitor: bool = False  # Enable early failure detection
+    generation_monitor: bool = True  # Enable early failure detection (post-hoc quality check)
 
     # Debug/Development
     mock_mode: bool = True  # Default to mock mode for safety
@@ -169,7 +187,13 @@ class Features:
             "openai_compat": self.openai_compat,
             "repl": self.repl,
             "caching": self.caching,
+            "structured_delimiters": self.structured_delimiters,
+            "react_mode": self.react_mode,
+            "output_formalizer": self.output_formalizer,
             "restricted_python": self.restricted_python,
+            "specialist_routing": self.specialist_routing,
+            "plan_review": self.plan_review,
+            "input_formalizer": self.input_formalizer,
             "generation_monitor": self.generation_monitor,
             "mock_mode": self.mock_mode,
         }
@@ -247,7 +271,13 @@ def get_features(
             "openai_compat": True,
             "repl": True,
             "caching": True,
+            "structured_delimiters": True,  # Low risk, always on
+            "react_mode": False,  # Enable after regression testing
+            "output_formalizer": False,  # Enable after regression testing
             "restricted_python": True,  # Use safer sandbox in production
+            "specialist_routing": False,  # Enable after comparative seeding proves benefit
+            "plan_review": False,  # Enable after Phase A validation
+            "input_formalizer": False,  # Enable after regression testing
             "generation_monitor": True,  # Early failure detection in production
             "mock_mode": False,  # Real mode in production
         }
@@ -260,7 +290,13 @@ def get_features(
             "openai_compat": False,
             "repl": True,  # REPL is core functionality
             "caching": False,
+            "structured_delimiters": True,  # Low risk, always on
+            "react_mode": False,
+            "output_formalizer": False,
             "restricted_python": False,  # Use custom sandbox in tests
+            "specialist_routing": False,  # Disabled in tests by default
+            "plan_review": False,  # Disabled in tests by default
+            "input_formalizer": False,  # Disabled in tests by default
             "generation_monitor": False,  # Disabled in tests by default
             "mock_mode": True,  # Mock mode in tests
         }
@@ -274,7 +310,13 @@ def get_features(
         "openai_compat": _env_bool("OPENAI_COMPAT", defaults["openai_compat"]),
         "repl": _env_bool("REPL", defaults["repl"]),
         "caching": _env_bool("CACHING", defaults["caching"]),
+        "structured_delimiters": _env_bool("STRUCTURED_DELIMITERS", defaults["structured_delimiters"]),
+        "react_mode": _env_bool("REACT_MODE", defaults["react_mode"]),
+        "output_formalizer": _env_bool("OUTPUT_FORMALIZER", defaults["output_formalizer"]),
         "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
+        "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
+        "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),
+        "input_formalizer": _env_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
         "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
         "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),
     }

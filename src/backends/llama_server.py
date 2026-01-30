@@ -389,6 +389,11 @@ class LlamaServerBackend(ModelBackend):
         payload["top_p"] = 0.95
         payload["repeat_penalty"] = 1.1
 
+        # Forward stop sequences to llama-server
+        stop_seqs = getattr(request, "stop_sequences", None)
+        if stop_seqs:
+            payload["stop"] = stop_seqs
+
         return payload
 
     def get_slots(self) -> list[SlotInfo]:

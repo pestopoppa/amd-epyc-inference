@@ -131,6 +131,7 @@ class ScriptRegistry:
         self._scripts: dict[str, Script] = {}
         self._by_category: dict[str, list[str]] = {}  # category -> [script_ids]
         self._by_tag: dict[str, list[str]] = {}  # tag -> [script_ids]
+        self._mcp_configs: dict | None = None
 
     def register_script(self, script: Script) -> None:
         """Register a script in the registry.
@@ -402,13 +403,26 @@ class ScriptRegistry:
             args: Merged arguments.
 
         Returns:
-            MCP tool result.
+            MCP tool result as text string.
+
+        Raises:
+            RuntimeError: If server is unknown or tool call fails.
         """
-        # Placeholder for MCP integration
-        raise NotImplementedError(
-            f"MCP execution not yet implemented "
-            f"(server={script.mcp_server}, tool={script.mcp_tool})"
-        )
+        from src.mcp_client import call_mcp_tool, load_server_configs
+
+        if self._mcp_configs is None:
+            config_path = Path(__file__).parent.parent / "orchestration" / "mcp_servers.yaml"
+            self._mcp_configs = load_server_configs(config_path)
+
+        server_id = script.mcp_server
+        if server_id not in self._mcp_configs:
+            raise RuntimeError(
+                f"Unknown MCP server: {server_id}. "
+                f"Configure in orchestration/mcp_servers.yaml"
+            )
+
+        tool_name = script.mcp_tool or script.id
+        return call_mcp_tool(self._mcp_configs[server_id], tool_name, args)
 
     def _execute_command(self, script: Script, args: dict[str, Any]) -> Any:
         """Execute a shell command template.

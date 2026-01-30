@@ -1,6 +1,6 @@
 # Research Chapters Index
 
-23 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
+24 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
 
 ## Reading Paths
 
@@ -18,7 +18,7 @@
 | Debugging escalation | [Ch18](18-escalation-and-routing.md) + [Ch16](16-graph-reasoning.md) |
 | Server won't start | [Ch12](12-production-server-stack.md) + [Ch04](04-storage-and-safety.md) |
 | Adding a tool | [Ch22](22-tool-registry.md) + [Ch11](11-repl-environment.md) |
-| Benchmarking a model | [Ch21](21-benchmarking-framework.md) + [Ch19](19-procedure-registry.md) |
+| Benchmarking a model | [Ch21](21-benchmarking-framework.md) + [Ch24](24-benchmark-suite-construction.md) |
 | Memory/learning system | [Ch15](15-memrl-system.md) + [Ch16](16-graph-reasoning.md) + [Ch17](17-memory-seeding.md) |
 
 ### For Researchers / Public Showcase
@@ -83,6 +83,7 @@ Novel contributions (recommended reading order):
 | 21 | [Benchmarking Framework](21-benchmarking-framework.md) | 8 suites, 77 models scored |
 | 22 | [Tool Registry & Agent Roles](22-tool-registry.md) | 40+ tools, 8 agent roles |
 | 23 | [Security & Monitoring](23-security-and-monitoring.md) | AST sandbox, entropy detection |
+| 24 | [Benchmark Suite Construction](24-benchmark-suite-construction.md) | 325 questions, 5 scoring methods |
 
 ---
 

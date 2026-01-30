@@ -15,16 +15,16 @@ MODEL_ARCH="${3:-dense}"
 CONFIG_PARAM="${4:-}"
 OUTPUT_DIR="/mnt/raid0/llm/tmp/long_context_rubric_results"
 LLAMA_COMPLETION="/mnt/raid0/llm/llama.cpp/build/bin/llama-completion"
-TIMEOUT=300  # Long context needs more time
+TIMEOUT=300 # Long context needs more time
 
 # Source shared libraries
 if [[ -f "$SCRIPT_DIR/lib/optimization_configs.sh" ]]; then
-    source "$SCRIPT_DIR/lib/optimization_configs.sh"
+  source "$SCRIPT_DIR/lib/optimization_configs.sh"
 fi
 
 if [[ -z "$MODEL" ]]; then
-    echo "Usage: $0 <model.gguf> <model_name> [arch] [config]"
-    exit 1
+  echo "Usage: $0 <model.gguf> <model_name> [arch] [config]"
+  exit 1
 fi
 
 mkdir -p "$OUTPUT_DIR"
@@ -32,21 +32,21 @@ mkdir -p "$OUTPUT_DIR"
 # Determine configurations
 declare -a CONFIGS
 if [[ -n "$CONFIG_PARAM" ]]; then
-    CONFIGS=("$CONFIG_PARAM")
-    echo "[SINGLE CONFIG MODE] Running only: $CONFIG_PARAM"
+  CONFIGS=("$CONFIG_PARAM")
+  echo "[SINGLE CONFIG MODE] Running only: $CONFIG_PARAM"
 else
-    if type setup_configs &>/dev/null; then
-        setup_configs "$MODEL_NAME" "$MODEL_ARCH"
-    else
-        CONFIGS=("baseline")
-        case "$MODEL_ARCH" in
-            qwen3moe|qwen3next)
-                for exp in 2 4 6 8; do
-                    CONFIGS+=("moe${exp}")
-                done
-                ;;
-        esac
-    fi
+  if type setup_configs &>/dev/null; then
+    setup_configs "$MODEL_NAME" "$MODEL_ARCH"
+  else
+    CONFIGS=("baseline")
+    case "$MODEL_ARCH" in
+      qwen3moe | qwen3next)
+        for exp in 2 4 6 8; do
+          CONFIGS+=("moe${exp}")
+        done
+        ;;
+    esac
+  fi
 fi
 
 echo "=============================================="
@@ -56,60 +56,61 @@ echo "Architecture: $MODEL_ARCH"
 echo "Date: $(date)"
 echo "=============================================="
 
-
 # Generate filler content (technical documentation style)
 generate_filler() {
-    local tokens="$1"
-    local lines=$((tokens / 10))  # ~10 tokens per line
+  local tokens="$1"
+  local lines=$((tokens / 10)) # ~10 tokens per line
 
-    for i in $(seq 1 $lines); do
-        case $((i % 5)) in
-            0) echo "The system processes requests through the main handler which validates input parameters." ;;
-            1) echo "Configuration options include timeout settings, retry policies, and connection pooling." ;;
-            2) echo "Error handling follows the standard pattern with graceful degradation enabled." ;;
-            3) echo "Logging is configured at DEBUG level for development and INFO for production." ;;
-            4) echo "Performance metrics are collected every 30 seconds and aggregated hourly." ;;
-        esac
-    done
+  for i in $(seq 1 $lines); do
+    case $((i % 5)) in
+      0) echo "The system processes requests through the main handler which validates input parameters." ;;
+      1) echo "Configuration options include timeout settings, retry policies, and connection pooling." ;;
+      2) echo "Error handling follows the standard pattern with graceful degradation enabled." ;;
+      3) echo "Logging is configured at DEBUG level for development and INFO for production." ;;
+      4) echo "Performance metrics are collected every 30 seconds and aggregated hourly." ;;
+    esac
+  done
 }
 
 # Generate context with needle
 generate_context_with_needle() {
-    local total_tokens="$1"
-    local needle="$2"
-    local position="$3"  # early, middle, deep, very_deep
+  local total_tokens="$1"
+  local needle="$2"
+  local position="$3" # early, middle, deep, very_deep
 
-    local needle_line
-    case "$position" in
-        early) needle_line=$((total_tokens / 10 / 10)) ;;
-        middle) needle_line=$((total_tokens / 10 / 2)) ;;
-        deep) needle_line=$((total_tokens * 75 / 100 / 10)) ;;
-        very_deep) needle_line=$((total_tokens * 85 / 100 / 10)) ;;
-        *) needle_line=$((total_tokens / 10 / 2)) ;;
-    esac
+  local needle_line
+  case "$position" in
+    early) needle_line=$((total_tokens / 10 / 10)) ;;
+    middle) needle_line=$((total_tokens / 10 / 2)) ;;
+    deep) needle_line=$((total_tokens * 75 / 100 / 10)) ;;
+    very_deep) needle_line=$((total_tokens * 85 / 100 / 10)) ;;
+    *) needle_line=$((total_tokens / 10 / 2)) ;;
+  esac
 
-    local total_lines=$((total_tokens / 10))
+  local total_lines
 
-    for i in $(seq 1 $total_lines); do
-        if [[ $i -eq $needle_line ]]; then
-            echo "$needle"
-        else
-            case $((i % 7)) in
-                0) echo "Section $((i/50 + 1)): The application layer handles all business logic processing." ;;
-                1) echo "Database connections are managed through a connection pool with max size 100." ;;
-                2) echo "API endpoints follow RESTful conventions with JSON request/response bodies." ;;
-                3) echo "Authentication uses JWT tokens with 24-hour expiration and refresh capability." ;;
-                4) echo "Caching is implemented at multiple layers including CDN, application, and database." ;;
-                5) echo "Monitoring alerts are configured for error rates exceeding 1% threshold." ;;
-                6) echo "Deployment follows blue-green strategy with automated rollback on failures." ;;
-            esac
-        fi
-    done
+  total_lines=$((total_tokens / 10))
+
+  for i in $(seq 1 $total_lines); do
+    if [[ $i -eq $needle_line ]]; then
+      echo "$needle"
+    else
+      case $((i % 7)) in
+        0) echo "Section $((i / 50 + 1)): The application layer handles all business logic processing." ;;
+        1) echo "Database connections are managed through a connection pool with max size 100." ;;
+        2) echo "API endpoints follow RESTful conventions with JSON request/response bodies." ;;
+        3) echo "Authentication uses JWT tokens with 24-hour expiration and refresh capability." ;;
+        4) echo "Caching is implemented at multiple layers including CDN, application, and database." ;;
+        5) echo "Monitoring alerts are configured for error rates exceeding 1% threshold." ;;
+        6) echo "Deployment follows blue-green strategy with automated rollback on failures." ;;
+      esac
+    fi
+  done
 }
 
 # Generate meeting notes content
 generate_meeting_notes() {
-    cat << 'MEETING_EOF'
+  cat <<'MEETING_EOF'
 # Team Meeting Notes - Q4 Planning
 Date: 2024-03-15
 Attendees: Alice, Bob, Carol, Dave, Eve
@@ -166,7 +167,7 @@ MEETING_EOF
 
 # Generate Python project content
 generate_python_project() {
-    cat << 'PROJECT_EOF'
+  cat <<'PROJECT_EOF'
 # ===== FILE: config.py =====
 """Configuration management module."""
 
@@ -313,80 +314,82 @@ PROJECT_EOF
 
 # Run test function
 run_test() {
-    local test_name="$1"
-    local prompt="$2"
-    local config="$3"
-    local output_file="$OUTPUT_DIR/${MODEL_NAME}_${config}_${test_name}.txt"
+  local test_name="$1"
+  local prompt="$2"
+  local config="$3"
+  local output_file="$OUTPUT_DIR/${MODEL_NAME}_${config}_${test_name}.txt"
 
-    echo ""
-    echo "--- Running $test_name ($config) ---"
+  echo ""
+  echo "--- Running $test_name ($config) ---"
 
-    # DRY RUN: Skip actual model invocation but iterate through all tests
-    if [[ "${BENCHMARK_DRY_RUN:-false}" == "true" ]]; then
-        echo "[DRY RUN] Would run: $MODEL_NAME | $config | $test_name"
-        cat > "$output_file" << 'DRYRUN'
+  # DRY RUN: Skip actual model invocation but iterate through all tests
+  if [[ "${BENCHMARK_DRY_RUN:-false}" == "true" ]]; then
+    echo "[DRY RUN] Would run: $MODEL_NAME | $config | $test_name"
+    cat >"$output_file" <<'DRYRUN'
 DRY_RUN: test placeholder
 llama_print_timings:        eval time =    1000.00 ms /   100 tokens (   10.00 ms per token,   0.00 tokens per second)
 DRYRUN
-        echo "Speed: 0.00 tokens per second (dry run)"
-        return 0
+    echo "Speed: 0.00 tokens per second (dry run)"
+    return 0
+  fi
+
+  # Compute MoE override if needed
+  local moe_override=""
+  if [[ "$config" =~ ^moe([0-9]+) ]]; then
+    if type get_moe_override &>/dev/null; then
+      moe_override=$(get_moe_override "$config" "$MODEL_ARCH")
+    else
+      local exp="${BASH_REMATCH[1]}"
+      case "$MODEL_ARCH" in
+        qwen3moe | qwen3next) moe_override="--override-kv qwen3moe.expert_used_count=int:$exp" ;;
+      esac
     fi
+  fi
 
-    # Compute MoE override if needed
-    local moe_override=""
-    if [[ "$config" =~ ^moe([0-9]+) ]]; then
-        if type get_moe_override &>/dev/null; then
-            moe_override=$(get_moe_override "$config" "$MODEL_ARCH")
-        else
-            local exp="${BASH_REMATCH[1]}"
-            case "$MODEL_ARCH" in
-                qwen3moe|qwen3next) moe_override="--override-kv qwen3moe.expert_used_count=int:$exp" ;;
-            esac
-        fi
-    fi
+  echo "$prompt" >"/mnt/raid0/llm/tmp/long_context_prompt.txt"
 
-    echo "$prompt" > "/mnt/raid0/llm/tmp/long_context_prompt.txt"
+  timeout "$TIMEOUT" OMP_NUM_THREADS=1 numactl --interleave=all \
+    "$LLAMA_COMPLETION" \
+    -m "$MODEL" \
+    -t 96 -n 1024 --temp 0.2 \
+    $moe_override \
+    -f "/mnt/raid0/llm/tmp/long_context_prompt.txt" \
+    >"$output_file" 2>&1 || true
 
-    timeout "$TIMEOUT" OMP_NUM_THREADS=1 numactl --interleave=all \
-        "$LLAMA_COMPLETION" \
-        -m "$MODEL" \
-        -t 96 -n 1024 --temp 0.2 \
-        $moe_override \
-        -f "/mnt/raid0/llm/tmp/long_context_prompt.txt" \
-        > "$output_file" 2>&1 || true
+  local speed
 
-    local speed=$(grep "eval time" "$output_file" | grep -oP '\d+\.\d+ tokens per second' | tail -1 || echo "N/A")
-    echo "Speed: $speed"
+  speed=$(grep "eval time" "$output_file" | grep -oP '\d+\.\d+ tokens per second' | tail -1 || echo "N/A")
+  echo "Speed: $speed"
 
-    echo "--- Answer ---"
-    grep -v "^llama\|^load\|^print_info\|^common\|^sampler\|^generate\|^system_info\|^main:" "$output_file" | tail -20 | head -15
+  echo "--- Answer ---"
+  grep -v "^llama\|^load\|^print_info\|^common\|^sampler\|^generate\|^system_info\|^main:" "$output_file" | tail -20 | head -15
 }
 
 # Run tests for each configuration
 for CONFIG in "${CONFIGS[@]}"; do
-    echo ""
-    echo "##############################################"
-    echo "# Configuration: $CONFIG"
-    if [[ "$CONFIG" =~ ^moe ]] && type get_moe_override &>/dev/null; then
-        echo "# Override: $(get_moe_override "$CONFIG" "$MODEL_ARCH")"
-    fi
-    echo "##############################################"
+  echo ""
+  echo "##############################################"
+  echo "# Configuration: $CONFIG"
+  if [[ "$CONFIG" =~ ^moe ]] && type get_moe_override &>/dev/null; then
+    echo "# Override: $(get_moe_override "$CONFIG" "$MODEL_ARCH")"
+  fi
+  echo "##############################################"
 
-    # T1: Short Context (4K)
-    echo ""
-    echo "========== TIER 1 (4K Context) =========="
+  # T1: Short Context (4K)
+  echo ""
+  echo "========== TIER 1 (4K Context) =========="
 
-    # T1-Q1: Information Retrieval
-    CONTEXT=$(generate_context_with_needle 4000 "The maximum concurrent connections allowed is 2847." "middle")
-    run_test "t1_q1_retrieval" "$CONTEXT
+  # T1-Q1: Information Retrieval
+  CONTEXT=$(generate_context_with_needle 4000 "The maximum concurrent connections allowed is 2847." "middle")
+  run_test "t1_q1_retrieval" "$CONTEXT
 
 Based on the documentation above, what is the exact maximum number of concurrent connections allowed?
 
 Answer with just the number." "$CONFIG"
 
-    # T1-Q2: Summary
-    CONTEXT=$(generate_meeting_notes)
-    run_test "t1_q2_summary" "$CONTEXT
+  # T1-Q2: Summary
+  CONTEXT=$(generate_meeting_notes)
+  run_test "t1_q2_summary" "$CONTEXT
 
 Based on the meeting notes above:
 1. List all decisions made
@@ -394,20 +397,20 @@ Based on the meeting notes above:
 
 Be comprehensive." "$CONFIG"
 
-    # T2: Medium Context (8-16K)
-    echo ""
-    echo "========== TIER 2 (8-16K Context) =========="
+  # T2: Medium Context (8-16K)
+  echo ""
+  echo "========== TIER 2 (8-16K Context) =========="
 
-    # T2-Q1: Needle in Haystack
-    CONTEXT=$(generate_context_with_needle 12000 "# CRITICAL_CONFIG: api_key = 'sk-proj-7x9mK2nP4qR8sT1uV3wY5zA'" "deep")
-    run_test "t2_q1_needle" "$CONTEXT
+  # T2-Q1: Needle in Haystack
+  CONTEXT=$(generate_context_with_needle 12000 "# CRITICAL_CONFIG: api_key = 'sk-proj-7x9mK2nP4qR8sT1uV3wY5zA'" "deep")
+  run_test "t2_q1_needle" "$CONTEXT
 
 Review the content above and find any hardcoded API keys, secrets, or credentials.
 List exactly what you find with the exact values." "$CONFIG"
 
-    # T2-Q2: Multi-File Analysis
-    CONTEXT=$(generate_python_project)
-    run_test "t2_q2_multi_file" "$CONTEXT
+  # T2-Q2: Multi-File Analysis
+  CONTEXT=$(generate_python_project)
+  run_test "t2_q2_multi_file" "$CONTEXT
 
 Analyze the Python project above:
 1. Trace the data flow from config loading in config.py through to main.py
@@ -415,41 +418,41 @@ Analyze the Python project above:
 
 Be specific about file names and function names." "$CONFIG"
 
-    # T3: Long Context (32K+) - Only if model likely supports it
-    echo ""
-    echo "========== TIER 3 (32K+ Context) =========="
-    echo "Note: T3 tests require large context window support"
+  # T3: Long Context (32K+) - Only if model likely supports it
+  echo ""
+  echo "========== TIER 3 (32K+ Context) =========="
+  echo "Note: T3 tests require large context window support"
 
-    # T3-Q1: Deep Needle
-    CONTEXT=$(generate_context_with_needle 35000 "[2024-03-15 03:47:22] CRITICAL: Server node-7 experienced fatal memory corruption" "very_deep")
-    run_test "t3_q1_deep_needle" "$CONTEXT
+  # T3-Q1: Deep Needle
+  CONTEXT=$(generate_context_with_needle 35000 "[2024-03-15 03:47:22] CRITICAL: Server node-7 experienced fatal memory corruption" "very_deep")
+  run_test "t3_q1_deep_needle" "$CONTEXT
 
 Review the logs above. Find the CRITICAL error.
 What server was affected and at what exact time?" "$CONFIG"
 
-    # Summary
-    echo ""
-    echo "=============================================="
-    echo "CONFIG $CONFIG COMPLETE"
-    echo "=============================================="
+  # Summary
+  echo ""
+  echo "=============================================="
+  echo "CONFIG $CONFIG COMPLETE"
+  echo "=============================================="
 
-    max_speed=0 q_count=0
-    for f in "$OUTPUT_DIR"/${MODEL_NAME}_${CONFIG}_*.txt; do
-        if [[ -f "$f" ]]; then
-            ((q_count++)) || true
-            speed=$(grep "eval time" "$f" 2>/dev/null | grep -oP '\d+\.\d+(?= tokens per second)' | tail -1 || echo "0")
-            [[ -n "$speed" ]] && (( $(echo "$speed > $max_speed" | bc -l 2>/dev/null || echo 0) )) && max_speed="$speed"
-        fi
-    done
-
-    # Add discovery info for spec_k configs: draft_model,K=N,T=X
-    discovery_info="-"
-    if [[ "$CONFIG" =~ ^spec_k([0-9]+) ]]; then
-        k_val="${BASH_REMATCH[1]}"
-        draft_name=$(basename "${DRAFT_MODEL_PATH:-unknown}" .gguf | cut -c1-15)
-        discovery_info="${draft_name},K=${k_val},T=0.2"
+  max_speed=0 q_count=0
+  for f in "$OUTPUT_DIR"/${MODEL_NAME}_${CONFIG}_*.txt; do
+    if [[ -f "$f" ]]; then
+      ((q_count++)) || true
+      speed=$(grep "eval time" "$f" 2>/dev/null | grep -oP '\d+\.\d+(?= tokens per second)' | tail -1 || echo "0")
+      [[ -n "$speed" ]] && (($(echo "$speed > $max_speed" | bc -l 2>/dev/null || echo 0))) && max_speed="$speed"
     fi
-    printf "%-10s %-20s %-8s %2d %8s %-30s\n" "longctx" "${MODEL_NAME:0:20}" "$CONFIG" "$q_count" "${max_speed}" "$discovery_info" >> /mnt/raid0/llm/tmp/benchmark_completions.log
+  done
+
+  # Add discovery info for spec_k configs: draft_model,K=N,T=X
+  discovery_info="-"
+  if [[ "$CONFIG" =~ ^spec_k([0-9]+) ]]; then
+    k_val="${BASH_REMATCH[1]}"
+    draft_name=$(basename "${DRAFT_MODEL_PATH:-unknown}" .gguf | cut -c1-15)
+    discovery_info="${draft_name},K=${k_val},T=0.2"
+  fi
+  printf "%-10s %-20s %-8s %2d %8s %-30s\n" "longctx" "${MODEL_NAME:0:20}" "$CONFIG" "$q_count" "${max_speed}" "$discovery_info" >>/mnt/raid0/llm/tmp/benchmark_completions.log
 done
 
 echo ""

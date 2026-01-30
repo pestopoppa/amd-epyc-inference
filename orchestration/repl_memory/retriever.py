@@ -298,10 +298,75 @@ class HybridRouter:
         routing = self.rule_based.route(task_ir)
         return (routing, "rules")
 
+    def route_with_mode(
+        self, task_ir: Dict[str, Any]
+    ) -> Tuple[List[str], str, str]:
+        """Route a task with mode selection (direct/react/repl).
+
+        Extends route() to also return the recommended execution mode.
+        Mode is parsed from action strings in format "role:mode" (colon-separated).
+        Falls back to rule-based mode selection if no mode annotation found.
+
+        Args:
+            task_ir: TaskIR dictionary
+
+        Returns:
+            (routing_decision, strategy_used, mode) tuple
+            mode is "direct", "react", or "repl"
+        """
+        # Try learned routing first
+        results = self.retriever.retrieve_for_routing(task_ir)
+
+        if self.retriever.should_use_learned(results):
+            best_action = self.retriever.get_best_action(results)
+            if best_action:
+                action, confidence = best_action
+                routing, mode = self._parse_routing_action_with_mode(action)
+                return (routing, "learned", mode)
+
+        # Fall back to rule-based routing (with mode)
+        routing, mode = self.rule_based.route_with_mode(task_ir)
+        return (routing, "rules", mode)
+
     def _parse_routing_action(self, action: str) -> List[str]:
         """Parse stored action string to routing list."""
         # Actions are stored as comma-separated role names
-        return [r.strip() for r in action.split(",")]
+        # Also handle "role:mode" format by stripping mode suffix
+        roles = []
+        for r in action.split(","):
+            r = r.strip()
+            if ":" in r:
+                r = r.split(":")[0]  # Strip mode suffix
+            roles.append(r)
+        return roles
+
+    def _parse_routing_action_with_mode(
+        self, action: str
+    ) -> Tuple[List[str], str]:
+        """Parse stored action string to routing list and mode.
+
+        Action format: "role1:mode,role2" — colon separates role from mode.
+        Only the first role's mode is used. If no mode annotation, defaults
+        to "direct".
+
+        Args:
+            action: Action string from episodic memory.
+
+        Returns:
+            (routing_list, mode) tuple.
+        """
+        roles = []
+        mode = "direct"  # Default mode
+        for i, r in enumerate(action.split(",")):
+            r = r.strip()
+            if ":" in r:
+                role_part, mode_part = r.split(":", 1)
+                roles.append(role_part)
+                if i == 0:  # Mode from first role
+                    mode = mode_part if mode_part in ("direct", "react", "repl") else "direct"
+            else:
+                roles.append(r)
+        return roles, mode
 
 
 class RuleBasedRouter:
@@ -352,6 +417,53 @@ class RuleBasedRouter:
 
         # Default routing
         return ["frontdoor"]
+
+    def route_with_mode(
+        self, task_ir: Dict[str, Any]
+    ) -> Tuple[List[str], str]:
+        """Route using rule-based hints with mode selection.
+
+        Mode is selected based on task characteristics:
+        - Large context → "repl" (needs peek/grep/summarize_chunks)
+        - Tool-needing keywords → "react" (search, calculate, date)
+        - Everything else → "direct" (best instruction-following quality)
+
+        Args:
+            task_ir: TaskIR dictionary
+
+        Returns:
+            (routing_list, mode) tuple
+        """
+        routing = self.route(task_ir)
+
+        # Determine mode from task characteristics
+        objective = task_ir.get("objective", "").lower()
+        context_len = task_ir.get("context_length", 0)
+        task_type = task_ir.get("task_type", "chat")
+
+        # Large context → REPL for chunked exploration
+        if context_len > 20000 or task_type == "ingest":
+            return routing, "repl"
+
+        # File operations → REPL
+        file_indicators = [
+            "read file", "list files", "explore", "scan",
+            "write to", "save to", "open the file",
+        ]
+        if any(ind in objective for ind in file_indicators):
+            return routing, "repl"
+
+        # Tool-needing queries → ReAct
+        react_indicators = [
+            "search", "look up", "find information",
+            "current date", "current time", "calculate",
+            "search arxiv", "search papers", "wikipedia",
+        ]
+        if any(ind in objective for ind in react_indicators):
+            return routing, "react"
+
+        # Default → direct (best quality for instruction following)
+        return routing, "direct"
 
     def _evaluate_condition(
         self,

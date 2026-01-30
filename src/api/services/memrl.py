@@ -131,6 +131,82 @@ def score_completed_task(state: "AppState", task_id: str) -> None:
         logger.warning(f"Q-scoring failed for task {task_id}: {e}", exc_info=True)
 
 
+def score_completed_task_with_mode(
+    state: "AppState",
+    task_id: str,
+    mode: str = "direct",
+) -> None:
+    """Score a completed task with execution mode context.
+
+    Extended version of score_completed_task() that includes the execution
+    mode (direct/react/repl) in the memory context for MemRL learning.
+
+    Args:
+        state: Application state containing Q-scorer.
+        task_id: The task ID to score.
+        mode: Execution mode used ("direct", "react", or "repl").
+    """
+    if not state.q_scorer or not state.q_scorer_enabled:
+        return
+
+    try:
+        state.q_scorer._score_task(task_id, mode_context=mode)
+        if state.progress_logger:
+            state.progress_logger.flush()
+    except Exception as e:
+        logger.warning(f"Q-scoring (with mode) failed for task {task_id}: {e}", exc_info=True)
+        # Fall back to basic scoring
+        try:
+            state.q_scorer._score_task(task_id)
+            if state.progress_logger:
+                state.progress_logger.flush()
+        except Exception:
+            pass
+
+
+def store_external_reward(
+    state: "AppState",
+    task_description: str,
+    action: str,
+    reward: float,
+    context: dict | None = None,
+) -> bool:
+    """Store an externally-computed reward in MemRL.
+
+    Public API for external reward injection (e.g., from the MemRL learning loop).
+    Bypasses progress log reader and directly updates episodic memory.
+
+    Args:
+        state: Application state with Q-scorer and episodic store.
+        task_description: Description of the task that was scored.
+        action: The action taken (e.g., "frontdoor:direct").
+        reward: Pre-computed reward value (-1.0 to 1.0).
+        context: Optional additional context to store with the memory.
+
+    Returns:
+        True if reward was stored, False otherwise.
+    """
+    if not features().memrl:
+        return False
+
+    if not state.q_scorer or not state.episodic_store:
+        return False
+
+    try:
+        result = state.q_scorer.score_external_result(
+            task_description=task_description,
+            action=action,
+            reward=reward,
+            context=context or {},
+        )
+        if state.progress_logger:
+            state.progress_logger.flush()
+        return result.get("memories_created", 0) > 0 or result.get("memories_updated", 0) > 0
+    except Exception as e:
+        logger.warning(f"External reward storage failed: {e}", exc_info=True)
+        return False
+
+
 async def background_cleanup(state: "AppState") -> None:
     """Background task for opportunistic cleanup when idle.
 
@@ -218,11 +294,43 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
             q_weight=0.7,
             confidence_threshold=0.6,
         )
-        retriever = TwoPhaseRetriever(
-            store=state.episodic_store,
-            embedder=embedder,
-            config=retrieval_config,
-        )
+
+        # Phase 3: Use GraphEnhancedRetriever when specialist routing is enabled
+        if features().specialist_routing:
+            try:
+                from orchestration.repl_memory.failure_graph import FailureGraph
+                from orchestration.repl_memory.hypothesis_graph import HypothesisGraph
+                from orchestration.repl_memory.retriever import GraphEnhancedRetriever
+
+                failure_graph = FailureGraph()
+                hypothesis_graph = HypothesisGraph()
+                retriever = GraphEnhancedRetriever(
+                    store=state.episodic_store,
+                    embedder=embedder,
+                    failure_graph=failure_graph,
+                    hypothesis_graph=hypothesis_graph,
+                    config=retrieval_config,
+                )
+                state.failure_graph = failure_graph
+                state.hypothesis_graph = hypothesis_graph
+                logger.info("MemRL initialized with GraphEnhancedRetriever (specialist routing)")
+            except Exception as e:
+                logger.warning(
+                    f"GraphEnhancedRetriever init failed, falling back to TwoPhaseRetriever: {e}",
+                    exc_info=True,
+                )
+                retriever = TwoPhaseRetriever(
+                    store=state.episodic_store,
+                    embedder=embedder,
+                    config=retrieval_config,
+                )
+        else:
+            retriever = TwoPhaseRetriever(
+                store=state.episodic_store,
+                embedder=embedder,
+                config=retrieval_config,
+            )
+
         # Load routing hints from registry for rule-based fallback
         # Reuse existing registry if loaded at startup, otherwise load it
         if state.registry is None:

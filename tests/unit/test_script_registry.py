@@ -269,6 +269,61 @@ class TestScriptRegistry:
         assert "code" in categories
 
 
+class TestScriptRegistryMCP:
+    """Tests for MCP integration in ScriptRegistry."""
+
+    def test_invoke_mcp_script(self):
+        """_execute_mcp should delegate to call_mcp_tool."""
+        from unittest.mock import patch
+        from src.mcp_client import MCPServerConfig
+
+        registry = ScriptRegistry()
+        registry._mcp_configs = {
+            "@anthropic/fetch": MCPServerConfig(
+                name="@anthropic/fetch", command="npx", timeout=10,
+            )
+        }
+
+        script = Script(
+            id="fetch_docs",
+            description="Fetch docs",
+            category="web",
+            tags=[],
+            parameters={"url": {"type": "string", "required": True}},
+            mcp_server="@anthropic/fetch",
+            mcp_tool="fetch",
+        )
+        registry.register_script(script)
+
+        with patch("src.mcp_client.call_mcp_tool", return_value="fetched content") as mock_call:
+            result = registry.invoke("fetch_docs", url="https://example.com")
+
+        assert result == "fetched content"
+        mock_call.assert_called_once_with(
+            registry._mcp_configs["@anthropic/fetch"],
+            "fetch",
+            {"url": "https://example.com"},
+        )
+
+    def test_invoke_mcp_unknown_server(self):
+        """_execute_mcp with unknown server should raise RuntimeError."""
+        registry = ScriptRegistry()
+        registry._mcp_configs = {}  # No servers
+
+        script = Script(
+            id="bad_script",
+            description="Bad",
+            category="web",
+            tags=[],
+            parameters={},
+            mcp_server="nonexistent-server",
+        )
+        registry.register_script(script)
+
+        with pytest.raises(RuntimeError, match="Unknown MCP server"):
+            registry.invoke("bad_script")
+
+
 class TestGlobalRegistry:
     """Tests for global registry functions."""
 

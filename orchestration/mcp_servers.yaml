@@ -1,0 +1,21 @@
+# MCP Server Configuration
+# Maps symbolic server identifiers (used in script JSON "mcp_server" fields)
+# to actual launch commands. Decouples script definitions from package names.
+
+servers:
+  "@anthropic/fetch":
+    command: "npx"
+    args: ["-y", "@anthropic/mcp-server-fetch"]
+    timeout: 30
+
+  "@community/arxiv-search":
+    command: "npx"
+    args: ["-y", "@anthropic/mcp-server-fetch"]  # fallback until dedicated arxiv server exists
+    timeout: 30
+
+  "orchestrator":
+    command: "python3"
+    args: ["/mnt/raid0/llm/claude/src/mcp_server.py"]
+    env:
+      PYTHONPATH: "/mnt/raid0/llm/claude"
+    timeout: 10

@@ -31,6 +31,57 @@ def load_seeds() -> list[dict]:
         return json.load(f)
 
 
+def _get_routing_seeds() -> list[dict]:
+    """Return mode-annotated routing seed examples.
+
+    These teach MemRL which execution mode (direct/react/repl) works
+    best for which task types, bootstrapping the mode selection before
+    enough real task outcomes accumulate.
+
+    Returns:
+        List of routing seed dictionaries.
+    """
+    return [
+        # Direct mode seeds — instruction following, reasoning, formatting
+        {"task": "Solve this logic puzzle about truth-tellers and liars",
+         "task_type": "reasoning", "action": "frontdoor:direct", "mode": "direct", "outcome": "success"},
+        {"task": "Reformat this text as a numbered list with exactly 5 items",
+         "task_type": "formatting", "action": "frontdoor:direct", "mode": "direct", "outcome": "success"},
+        {"task": "Write a haiku about autumn",
+         "task_type": "creative", "action": "frontdoor:direct", "mode": "direct", "outcome": "success"},
+        {"task": "Explain the difference between TCP and UDP",
+         "task_type": "knowledge", "action": "frontdoor:direct", "mode": "direct", "outcome": "success"},
+        {"task": "Prove that the square root of 2 is irrational",
+         "task_type": "math", "action": "frontdoor:direct", "mode": "direct", "outcome": "success"},
+        {"task": "Generate JSON output with user name and age fields",
+         "task_type": "formatting", "action": "frontdoor:direct", "mode": "direct", "outcome": "success"},
+        # React mode seeds — tool-needing queries
+        {"task": "Search for recent papers on transformer architectures",
+         "task_type": "research", "action": "frontdoor:react", "mode": "react", "outcome": "success"},
+        {"task": "What is today's date?",
+         "task_type": "factual", "action": "frontdoor:react", "mode": "react", "outcome": "success"},
+        {"task": "Calculate the compound interest on $10000 at 5% for 10 years",
+         "task_type": "math", "action": "frontdoor:react", "mode": "react", "outcome": "success"},
+        {"task": "Look up the Wikipedia article about quantum entanglement",
+         "task_type": "research", "action": "frontdoor:react", "mode": "react", "outcome": "success"},
+        {"task": "Search arXiv for papers about reinforcement learning from human feedback",
+         "task_type": "research", "action": "frontdoor:react", "mode": "react", "outcome": "success"},
+        # REPL mode seeds — file exploration, large context, code execution
+        {"task": "Read the configuration file and summarize its settings",
+         "task_type": "file_exploration", "action": "frontdoor:repl", "mode": "repl", "outcome": "success"},
+        {"task": "List all Python files in the source directory",
+         "task_type": "file_exploration", "action": "frontdoor:repl", "mode": "repl", "outcome": "success"},
+        {"task": "Summarize this 50-page document about climate change",
+         "task_type": "ingest", "action": "frontdoor:repl", "mode": "repl", "outcome": "success"},
+        {"task": "Find all functions that handle error cases in the codebase",
+         "task_type": "code_exploration", "action": "frontdoor:repl", "mode": "repl", "outcome": "success"},
+        {"task": "Execute the benchmark script and report the results",
+         "task_type": "execution", "action": "frontdoor:repl", "mode": "repl", "outcome": "success"},
+        {"task": "Grep for all TODO comments in the project",
+         "task_type": "code_exploration", "action": "frontdoor:repl", "mode": "repl", "outcome": "success"},
+    ]
+
+
 def seed_memory(force: bool = False) -> dict:
     """
     Load seed examples into episodic memory.
@@ -114,6 +165,32 @@ def seed_memory(force: bool = False) -> dict:
 
         except Exception as e:
             print(f"  Failed to load '{task[:50]}...': {e}")
+            stats["failed"] += 1
+
+    # Load mode-annotated routing seeds
+    routing_seeds = _get_routing_seeds()
+    for rseed in routing_seeds:
+        try:
+            embedding = embedder.embed_text(rseed["task"])
+            context = {
+                "task_description": rseed["task"],
+                "task_type": rseed["task_type"],
+                "category": "routing",
+                "mode": rseed["mode"],
+                "is_seed": True,
+            }
+            store.store(
+                embedding=embedding,
+                action=rseed["action"],
+                action_type="routing",
+                context=context,
+                outcome=rseed.get("outcome", "success"),
+                initial_q=0.85,
+            )
+            stats["loaded"] += 1
+            stats["by_category"]["routing"] = stats["by_category"].get("routing", 0) + 1
+        except Exception as e:
+            print(f"  Failed to load routing seed '{rseed['task'][:50]}...': {e}")
             stats["failed"] += 1
 
     # Flush FAISS index to disk before reporting stats

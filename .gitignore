@@ -72,3 +72,7 @@ benchmarks/results/runs/
 benchmarks/evidence/
 benchmarks/results/reviews/*.csv
 !benchmarks/results/reviews/summary.csv
+benchmarks/results/orchestrator/
+
+# Benchmark question pools (reconstructible from public sources — see Ch24)
+benchmarks/prompts/

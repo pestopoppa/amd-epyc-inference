@@ -603,6 +603,39 @@ class EpisodicStore:
 
         return results
 
+    def get_action_q_summary(self) -> Dict[str, tuple]:
+        """Get Q-value statistics grouped by action.
+
+        Returns:
+            Dict mapping action -> (count, mean_q, std_q).
+            Useful for understanding learned routing preferences.
+        """
+        with sqlite3.connect(self.sqlite_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT action,
+                       COUNT(*) as n,
+                       AVG(q_value) as mean_q,
+                       -- SQLite doesn't have STDDEV, compute manually
+                       CASE
+                           WHEN COUNT(*) <= 1 THEN 0.0
+                           ELSE SQRT(
+                               SUM((q_value - sub.avg) * (q_value - sub.avg)) / (COUNT(*) - 1)
+                           )
+                       END as std_q
+                FROM memories
+                JOIN (SELECT action as a, AVG(q_value) as avg FROM memories GROUP BY action) sub
+                  ON memories.action = sub.a
+                GROUP BY action
+                ORDER BY mean_q DESC
+                """,
+            ).fetchall()
+
+        return {
+            row[0]: (row[1], row[2], row[3])
+            for row in rows
+        }
+
 
 # Symptom patterns for failure detection
 SYMPTOM_PATTERNS: Dict[str, str] = {

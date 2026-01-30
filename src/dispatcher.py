@@ -107,6 +107,9 @@ class Dispatcher:
         "document": "document_formalizer",
         "document_formalizer": "document_formalizer",
         "ocr": "document_formalizer",
+        # Input formalizer (MathSmith-8B)
+        "formalizer": "formalizer",
+        "formalize": "formalizer",
     }
 
     def __init__(

@@ -132,10 +132,12 @@ Launch the production stack using the deterministic launcher:
 |------|------|-------|--------------|-------|
 | 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B-Q4_K_M | MoE6 | 18 t/s |
 | 8081 | coder_escalation, worker_summarize | Qwen2.5-Coder-32B-Q4_K_M + 0.5B draft | spec K=24 + lookup | 33-95 t/s |
-| 8082 | worker_explore, worker_vision, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 | 46 t/s |
+| 8082 | worker_explore, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 | 46 t/s |
 | 8083 | architect_general | Qwen3-235B-A22B-Q4_K_M (4 files, ~140GB) | MoE4 | 6.75 t/s |
 | 8084 | architect_coding | Qwen3-Coder-480B-A35B-Q4_K_M (8 files, ~280GB) | MoE3 | 10.3 t/s |
 | 8085 | ingest_long_context | Qwen3-Next-80B-A3B-Q4_K_M (~45GB) | MoE4 (NO SPEC!) | 6.3 t/s |
+| 8086 | worker_vision | Qwen2.5-VL-7B-Q4_K_M + mmproj | None (VL) | ~15 t/s |
+| 8087 | vision_escalation | Qwen3-VL-30B-A3B-Q4_K_M + mmproj | MoE4 | ~10 t/s |
 | 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | — | — |
 
 ### WARM Tier (Burst Capacity, ~5GB)
@@ -165,8 +167,51 @@ Launch the production stack using the deterministic launcher:
 ```
 Code: coder_primary (30B) → coder_escalation (32B) → architect_coding (480B)
 General: frontdoor (30B) → architect_general (235B)
-Vision: worker_vision (7B) → vision_escalation (30B, manual)
+Vision: worker_vision (7B, port 8086) → vision_escalation (30B, port 8087)
 ```
+
+### Direct-Answer Mode (2026-01-29)
+
+Short, simple prompts bypass the REPL Python-code wrapper entirely. The REPL adds ~900 tokens of overhead and forces the model to generate Python code + call `FINAL(answer)`, which destroys quality on instruction-precision tasks (same model: 11/11 without REPL, 2/11 through REPL).
+
+**When direct mode activates:**
+- Prompt has no file/tool operation keywords (`read the file`, `list files`, `grep for`, etc.)
+- Context is < 20K characters (no long-context pipeline needed)
+
+**What happens in direct mode:**
+1. User prompt (+ optional context) sent directly to model via `primitives.llm_call()`
+2. No REPL wrapper, no tool environment, no FINAL() requirement
+3. MemRL quality review gate still applies (architect verdict if Q < 0.6)
+4. Response returned as `ChatResponse` with `turns=1`
+
+**Implementation**: `_should_use_direct_mode()` in `src/api/routes/chat.py`
+
+### Vision Pipeline (2026-01-29)
+
+Vision requests are routed directly to VL servers using multimodal chat completions:
+
+```
+Image + Prompt
+     │
+     ▼
+┌──────────────────────────────────────┐
+│  worker_vision (port 8086)            │
+│  Qwen2.5-VL-7B, ~15 t/s              │
+│  /v1/chat/completions + image_url     │
+└──────────────────────────────────────┘
+     │ [failure]
+     ▼
+┌──────────────────────────────────────┐
+│  vision_escalation (port 8087)        │
+│  Qwen3-VL-30B-A3B, ~10 t/s           │
+│  /v1/chat/completions + image_url     │
+└──────────────────────────────────────┘
+     │ [failure]
+     ▼
+  Legacy vision pipeline (last resort)
+```
+
+Images are sent as base64 data URIs in the multimodal payload format. MIME type auto-detected from header bytes (JPEG/PNG/WebP).
 
 ### Model Self-Routing (2026-01-29)
 

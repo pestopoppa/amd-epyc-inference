@@ -241,6 +241,39 @@ class TestToolRegistry:
             registry.invoke("test", "worker")
 
 
+class TestToolRegistryMCP:
+    """Tests for MCP integration in ToolRegistry."""
+
+    def test_invoke_mcp_tool(self):
+        """_invoke_mcp should delegate to call_mcp_tool."""
+        from unittest.mock import patch, MagicMock
+        from src.mcp_client import MCPServerConfig
+
+        registry = ToolRegistry()
+        # Pre-load a config so it doesn't hit disk
+        registry._mcp_configs = {
+            "test-server": MCPServerConfig(
+                name="test-server", command="echo", timeout=5,
+            )
+        }
+
+        with patch("src.mcp_client.call_mcp_tool", return_value="mcp result") as mock_call:
+            result = registry._invoke_mcp("test-server", "my_tool", {"key": "val"})
+
+        assert result == "mcp result"
+        mock_call.assert_called_once_with(
+            registry._mcp_configs["test-server"], "my_tool", {"key": "val"}
+        )
+
+    def test_invoke_mcp_unknown_server(self):
+        """_invoke_mcp with unknown server should raise RuntimeError."""
+        registry = ToolRegistry()
+        registry._mcp_configs = {}  # No servers configured
+
+        with pytest.raises(RuntimeError, match="Unknown MCP server"):
+            registry._invoke_mcp("nonexistent", "tool", {})
+
+
 class TestGlobalRegistry:
     """Tests for global registry functions."""
 

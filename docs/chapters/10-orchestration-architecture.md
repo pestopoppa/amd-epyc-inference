@@ -168,7 +168,8 @@ Workers are **stateless** and cheap; many run concurrently.
 |--------|-------|------|------|--------------|
 | explore / math | Qwen2.5-7B-Instruct-f16 | 8082 | HOT | Spec K=24 + lookup (44 t/s) |
 | summarize | Qwen2.5-Coder-32B (shared with coder_escalation) | 8081 | HOT | Spec K=24 + lookup (39 t/s) |
-| vision | Qwen2.5-VL-7B Q4_K_M + mmproj | 8086 | HOT | None (VL model) |
+| vision | Qwen2.5-VL-7B Q4_K_M + mmproj | 8086 | HOT | None (VL model, ~15 t/s) |
+| vision_escalation | Qwen3-VL-30B-A3B Q4_K_M + mmproj | 8087 | HOT | MoE4 (~10 t/s) |
 | fast_1, fast_2 | Qwen2.5-Coder-1.5B Q4_K_M | 8102, 8112 | WARM | None (burst capacity) |
 
 **Note**: `worker_code` was removed — coder_escalation (32B) handles all code tasks with better quality and speed. Fast workers spin up on demand when concurrent load exceeds 4 tasks, and idle-shutdown after 5 minutes.
@@ -275,11 +276,21 @@ Deterministic, minimal routing:
 
 | Condition | Route |
 |-----------|-------|
+| Short prompt, no tools needed | **Direct-answer mode** (bypass REPL) |
 | Short interactive query | Tier A only |
 | Code generation | Tier B1 + workers |
-| Large context (>N tokens) | Tier B2 first |
+| Large context (>20K chars) | Two-stage pipeline (B2 digest → A synthesis) |
+| Vision / image analysis | VL worker (8086) → VL escalation (8087) |
 | Architectural ambiguity | Tier B3 |
 | Two gate failures | Escalate |
+
+### Direct-Answer Mode
+
+Short, simple prompts bypass the REPL Python-code wrapper entirely. The REPL forces the model to generate Python code + call `FINAL(answer)`, adding ~900 tokens of overhead. This destroys quality on instruction-precision tasks (same model: 11/11 without REPL, 2/11 through REPL).
+
+Direct mode activates when the prompt has no file/tool operation keywords and context < 20K characters. The user prompt is sent directly to the model via `primitives.llm_call()` with no REPL wrapper. MemRL quality review gate still applies.
+
+Implementation: `_should_use_direct_mode()` in `src/api/routes/chat.py`.
 
 ## Two-Stage Long Context Pipeline
 

@@ -380,13 +380,11 @@ class CachingBackend:
         # For now, we rely on llama-server's automatic slot management
         # The routing helps track which prompts should hit which slots
 
-        # Canonicalize prompt if enabled
-        if self.canonicalize and request.prompt:
-            from dataclasses import replace
-
-            request = replace(request, prompt=canonicalize_prompt(request.prompt))
-
         # Forward to backend
+        # NOTE: Canonicalization is intentionally NOT applied to the actual prompt.
+        # It is only used for cache key computation in get_slot_for_prompt() above.
+        # Applying it here was a bug — it replaced ISO dates with "[DATE]" in the
+        # prompt sent to the model, contaminating inference output.
         return self.backend.infer(role_config, request)
 
     def get_hit_rate(self) -> float:

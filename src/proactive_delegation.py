@@ -321,6 +321,39 @@ class AggregationService:
         return json.dumps(structured, indent=2)
 
 
+@dataclass
+class PlanReviewResult:
+    """Result of architect reviewing a plan before execution.
+
+    Attributes:
+        decision: ok, reorder, drop, add, or reroute
+        score: Architect's confidence 0.0-1.0
+        feedback: Brief feedback string (<15 words)
+        patches: List of step-level patches to apply
+        raw_response: Raw architect JSON response for debugging
+    """
+
+    decision: str = "ok"
+    score: float = 1.0
+    feedback: str = ""
+    patches: list[dict[str, Any]] = field(default_factory=list)
+    raw_response: str = ""
+
+    @property
+    def is_ok(self) -> bool:
+        """True if architect approved the plan without changes."""
+        return self.decision == "ok"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "decision": self.decision,
+            "score": self.score,
+            "feedback": self.feedback,
+            "patches": self.patches,
+        }
+
+
 class ArchitectReviewService:
     """Service for architect to review specialist outputs.
 
@@ -456,6 +489,62 @@ Rules:
                 feedback=f"Review failed: {e}",
                 score=0.3,
             )
+
+    # Max tokens for plan review responses
+    MAX_PLAN_REVIEW_TOKENS = 128
+
+    def review_plan(
+        self,
+        objective: str,
+        task_type: str,
+        plan_steps: list[dict[str, Any]],
+        timeout_seconds: float = 15.0,
+    ) -> PlanReviewResult | None:
+        """Have architect review a plan before specialist execution.
+
+        Returns PlanReviewResult on success, None on timeout/error.
+        Non-blocking: never prevents request completion.
+
+        Args:
+            objective: Task objective.
+            task_type: Task type (code, chat, etc.).
+            plan_steps: Plan steps from TaskIR.
+            timeout_seconds: Max time for review (default 15s).
+
+        Returns:
+            PlanReviewResult or None on failure.
+        """
+        from src.prompt_builders import build_plan_review_prompt
+
+        prompt = build_plan_review_prompt(objective, task_type, plan_steps)
+
+        try:
+            response = self.primitives.llm_call(
+                prompt,
+                role=self.architect_role,
+                n_tokens=self.MAX_PLAN_REVIEW_TOKENS,
+            )
+
+            # Parse abbreviated JSON response
+            review_data = self._parse_review_response(response)
+
+            decision = review_data.get("d", review_data.get("decision", "ok"))
+            # Normalize valid decisions
+            valid_decisions = {"ok", "reorder", "drop", "add", "reroute"}
+            if decision not in valid_decisions:
+                decision = "ok"
+
+            return PlanReviewResult(
+                decision=decision,
+                score=float(review_data.get("s", review_data.get("score", 0.5))),
+                feedback=review_data.get("f", review_data.get("feedback", "")),
+                patches=review_data.get("p", review_data.get("patches", [])),
+                raw_response=response[:200],
+            )
+
+        except Exception as e:
+            logger.warning(f"Plan review failed: {e}", exc_info=True)
+            return None  # Non-blocking — proceed without review
 
     def generate_taskir(self, objective: str) -> dict[str, Any]:
         """Have architect generate minimal TaskIR for an objective.

@@ -82,6 +82,7 @@ class InferenceRequest:
     temperature: float = 0.0
     context_length: int = 8192
     timeout: int = 300  # seconds
+    stop_sequences: list[str] | None = None
 
 
 @dataclass

@@ -1,5 +1,6 @@
-"""System tools - file operations, processes, environment."""
+"""System tools - file operations, processes, environment, date/time."""
 
+import datetime
 import os
 import subprocess
 import time
@@ -102,6 +103,31 @@ def list_directory(path: str, pattern: str = "*", recursive: bool = False) -> li
 def get_env(name: str, default: str | None = None) -> str | None:
     """Get environment variable."""
     return os.environ.get(name, default)
+
+
+def get_current_date() -> dict:
+    """Get current date in ISO format (YYYY-MM-DD)."""
+    now = datetime.datetime.now()
+    return {
+        "date": now.date().isoformat(),
+        "weekday": now.strftime("%A"),
+        "year": now.year,
+        "month": now.month,
+        "day": now.day,
+    }
+
+
+def get_current_time() -> dict:
+    """Get current date and time with timezone info."""
+    now = datetime.datetime.now()
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    return {
+        "datetime": now.isoformat(),
+        "date": now.date().isoformat(),
+        "time": now.strftime("%H:%M:%S"),
+        "utc": utc_now.isoformat(),
+        "timestamp": int(now.timestamp()),
+    }
 
 
 def disk_usage(path: str = "/mnt/raid0") -> dict:

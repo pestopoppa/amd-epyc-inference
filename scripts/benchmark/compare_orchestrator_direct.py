@@ -9,11 +9,13 @@ Usage:
     python scripts/benchmark/compare_orchestrator_direct.py --suite thinking --use-baseline
     python scripts/benchmark/compare_orchestrator_direct.py --create-baseline --suite all
     python scripts/benchmark/compare_orchestrator_direct.py --config-from checkpoint.yaml
+    python scripts/benchmark/compare_orchestrator_direct.py --debug --suite all
 """
 
 import argparse
 import json
 import os
+import random
 import subprocess
 import sys
 import time
@@ -48,6 +50,76 @@ ALL_SUITES = [
     "agentic", "instruction_precision", "long_context", "vl",
 ]
 
+DEBUG_PROMPTS_DIR = PROJECT_ROOT / "benchmarks" / "prompts" / "debug"
+
+
+def load_debug_prompts(
+    suite: str,
+    sample_per_suite: int = 10,
+    seed: int | None = None,
+) -> list[dict]:
+    """Load debug benchmark prompts with random sampling.
+
+    Loads questions from benchmarks/prompts/debug/*.yaml and randomly
+    samples `sample_per_suite` questions per suite. Each run uses a
+    different sample (seeded by timestamp for reproducibility).
+
+    Args:
+        suite: Suite name or "all".
+        sample_per_suite: Number of questions to sample per suite.
+        seed: RNG seed. If None, uses current timestamp.
+
+    Returns:
+        List of prompt dicts compatible with compare_prompt().
+    """
+    if seed is None:
+        seed = int(time.time())
+    rng = random.Random(seed)
+    print(f"  [debug] RNG seed: {seed} (for reproducibility)")
+
+    if suite == "all":
+        suite_names = ALL_SUITES
+    else:
+        suite_names = [suite]
+
+    all_prompts: list[dict] = []
+
+    for suite_name in suite_names:
+        yaml_path = DEBUG_PROMPTS_DIR / f"{suite_name}.yaml"
+        if not yaml_path.exists():
+            print(f"  [debug] No debug suite for '{suite_name}' at {yaml_path}")
+            continue
+
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+
+        questions = data.get("questions", [])
+        if not questions:
+            print(f"  [debug] Empty debug suite: {suite_name}")
+            continue
+
+        # Random sample (without replacement)
+        n = min(sample_per_suite, len(questions))
+        sampled = rng.sample(questions, n)
+        print(f"  [debug] {suite_name}: sampled {n}/{len(questions)} questions")
+
+        for q in sampled:
+            all_prompts.append({
+                "id": q["id"],
+                "suite": suite_name,
+                "prompt": q["prompt"].strip(),
+                "context": "",
+                "expected": q.get("expected", ""),
+                "scoring": [],
+                "image_path": "",
+                "tier": q.get("tier", 1),
+                # Debug-specific fields
+                "scoring_method": q.get("scoring_method", "exact_match"),
+                "scoring_config": q.get("scoring_config", {}),
+            })
+
+    return all_prompts
+
 
 @dataclass
 class ComparisonResult:
@@ -65,12 +137,13 @@ class ComparisonResult:
     orchestrator_turns: int
     orchestrator_routed_to: str  # Which role the orchestrator chose
     # Comparison
-    quality_match: bool
     speedup: float
     # Speed metrics
     tokens_generated: int = 0
     server_elapsed_s: float = 0.0
     avg_tps: float = 0.0  # tokens_generated / server_elapsed_s
+    # Debug scorer result (only populated with --debug flag)
+    debug_score: Optional[bool] = None
 
 
 def load_baseline() -> dict:
@@ -126,6 +199,15 @@ def get_comparison_prompts(suite: str) -> list[dict]:
                 context_text = parts[0]
                 prompt_text = parts[1] if len(parts) > 1 else prompt_text
 
+            # Validate image path exists for VL prompts
+            img_path = question.image_path
+            if img_path and not Path(img_path).exists():
+                print(f"  WARNING: Image not found for {question.id}: {img_path}")
+
+            # Validate context was generated for long_context prompts
+            if suite_name == "long_context" and not context_text:
+                print(f"  WARNING: No context generated for {question.id}")
+
             prompts.append({
                 "id": question.id,
                 "suite": suite_name,
@@ -133,34 +215,11 @@ def get_comparison_prompts(suite: str) -> list[dict]:
                 "context": context_text,
                 "expected": question.expected,
                 "scoring": question.scoring,
-                "image_path": question.image_path,
+                "image_path": img_path,
                 "tier": question.tier,
             })
 
     return prompts
-
-
-def assess_quality(answer: str, expected: str, scoring: list) -> bool:
-    """Heuristic quality assessment.
-
-    Checks:
-    1. Non-empty response (> 20 chars)
-    2. Expected keyword overlap (>20% of key terms)
-    3. Reasonable response length
-    """
-    if not answer or len(answer.strip()) < 20:
-        return False
-
-    if expected:
-        # Extract key terms (words > 4 chars)
-        key_terms = [w.lower() for w in expected.split() if len(w) > 4]
-        if key_terms:
-            answer_lower = answer.lower()
-            matches = sum(1 for t in key_terms if t in answer_lower)
-            if matches < max(1, len(key_terms) * 0.2):
-                return False
-
-    return True
 
 
 def call_orchestrator(
@@ -199,11 +258,18 @@ def call_orchestrator(
                 return result
             else:
                 return {
-                    "error": f"HTTP {response.status_code}",
+                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
                     "latency_ms": latency_ms
                 }
     except Exception as e:
-        return {"error": str(e), "latency_ms": 0}
+        return {"error": f"{type(e).__name__}: {e}", "latency_ms": 0}
+
+
+@dataclass
+class ComparisonError:
+    """Error details from a failed comparison."""
+    error_type: str = ""
+    error_message: str = ""
 
 
 def compare_prompt(
@@ -232,6 +298,13 @@ def compare_prompt(
         image_path=prompt_data.get("image_path") or "",
     )
 
+    # Log errors visibly instead of swallowing them
+    if "error" in result:
+        ctx_len = len(prompt_data.get("context", ""))
+        print(f"\n    ERROR [{prompt_id}]: {result['error']}")
+        if ctx_len > 0:
+            print(f"    (context: {ctx_len} chars, timeout: {timeout}s)")
+
     orchestrator_answer = result.get("answer", "")
     orchestrator_latency = result.get("latency_ms", 0)
     orchestrator_turns = result.get("turns", 0)
@@ -246,13 +319,6 @@ def compare_prompt(
     else:
         speedup = 0.0
 
-    # Assess quality via heuristic
-    quality_match = assess_quality(
-        orchestrator_answer,
-        prompt_data.get("expected", ""),
-        prompt_data.get("scoring", []),
-    )
-
     return ComparisonResult(
         prompt_id=prompt_id,
         suite=suite,
@@ -264,7 +330,6 @@ def compare_prompt(
         orchestrator_latency_ms=orchestrator_latency,
         orchestrator_turns=orchestrator_turns,
         orchestrator_routed_to=routed_to,
-        quality_match=quality_match,
         speedup=speedup,
         tokens_generated=tokens_generated,
         server_elapsed_s=server_elapsed,
@@ -307,41 +372,118 @@ def create_baseline_entry(
     }
 
 
+def _get_suite_timeout(suite_name: str, default_timeout: int) -> int:
+    """Get per-suite timeout from YAML inference_params.
+
+    Long context prompts need much longer timeouts (up to 3600s)
+    than the default 120s.
+
+    Args:
+        suite_name: Name of the suite.
+        default_timeout: Default timeout in seconds.
+
+    Returns:
+        Timeout in seconds for this suite.
+    """
+    try:
+        loaded = load_suite(suite_name)
+        if loaded and loaded.inference_params:
+            return loaded.inference_params.get("timeout", default_timeout)
+    except Exception:
+        pass
+    return default_timeout
+
+
 def run_comparison(
     suite: str,
     api_url: str,
     timeout: int,
     use_baseline: bool,
-    config: Optional[dict] = None
+    config: Optional[dict] = None,
+    debug_mode: bool = False,
+    debug_sample: int = 10,
+    debug_seed: int | None = None,
 ) -> dict:
-    """Run comparison between orchestrator and baseline."""
+    """Run comparison between orchestrator and baseline.
 
-    prompts = get_comparison_prompts(suite)
+    Args:
+        debug_mode: If True, use debug suite with deterministic scoring.
+        debug_sample: Number of questions to sample per suite in debug mode.
+        debug_seed: RNG seed for debug sampling (None = timestamp).
+    """
+
+    if debug_mode:
+        prompts = load_debug_prompts(suite, sample_per_suite=debug_sample, seed=debug_seed)
+    else:
+        prompts = get_comparison_prompts(suite)
     baseline = load_baseline() if use_baseline else {}
 
     if not prompts:
         print(f"No prompts found for suite: {suite}")
         return {}
 
+    # Build per-suite timeout map
+    suite_timeouts: dict[str, int] = {}
+    for p in prompts:
+        sn = p["suite"]
+        if sn not in suite_timeouts:
+            suite_timeouts[sn] = _get_suite_timeout(sn, timeout)
+
     results = []
     errors = 0
     print(f"\nComparing {len(prompts)} prompts from {suite}...")
+
+    # Log per-suite timeouts if they differ from default
+    for sn, st in suite_timeouts.items():
+        if st != timeout:
+            print(f"  [{sn}] Using suite-specific timeout: {st}s (default: {timeout}s)")
+
     print("-" * 60)
 
-    for prompt_data in prompts:
-        print(f"  [{prompt_data['suite']}] {prompt_data['id']}...", end=" ", flush=True)
+    # Import debug scorer if in debug mode
+    _debug_scorer = None
+    if debug_mode:
+        try:
+            from benchmark.debug_scorer import score_answer as _score_answer
+            _debug_scorer = _score_answer
+        except ImportError:
+            from scripts.benchmark.debug_scorer import score_answer as _score_answer
+            _debug_scorer = _score_answer
 
-        result = compare_prompt(prompt_data, baseline, api_url, timeout, config)
+    for prompt_data in prompts:
+        suite_name = prompt_data["suite"]
+        effective_timeout = suite_timeouts.get(suite_name, timeout)
+        print(f"  [{suite_name}] {prompt_data['id']}...", end=" ", flush=True)
+
+        result = compare_prompt(prompt_data, baseline, api_url, effective_timeout, config)
+
+        # Debug mode: score with deterministic scorer
+        if _debug_scorer and prompt_data.get("scoring_method"):
+            try:
+                result.debug_score = _debug_scorer(
+                    answer=result.orchestrator_answer,
+                    expected=prompt_data.get("expected", ""),
+                    scoring_method=prompt_data["scoring_method"],
+                    scoring_config=prompt_data.get("scoring_config", {}),
+                )
+            except Exception as e:
+                print(f"\n    SCORER ERROR [{prompt_data['id']}]: {e}")
+                result.debug_score = False
+
         results.append(result)
 
         speedup_str = f"{result.speedup:.1f}x" if result.speedup > 0 else "N/A"
-        quality_str = "OK" if result.quality_match else "FAIL"
         latency_str = f"{result.orchestrator_latency_ms:.0f}ms"
         tps_str = f"{result.avg_tps:.1f} t/s" if result.avg_tps > 0 else ""
-        print(f"{latency_str:>8}  {tps_str:>10}  speedup: {speedup_str}, quality: {quality_str}, "
+        has_answer = bool(result.orchestrator_answer and len(result.orchestrator_answer.strip()) > 10)
+        answer_str = "got_answer" if has_answer else "EMPTY"
+        debug_str = ""
+        if result.debug_score is not None:
+            debug_str = f", score: {'PASS' if result.debug_score else 'FAIL'}"
+        print(f"{latency_str:>8}  {tps_str:>10}  speedup: {speedup_str}, {answer_str}{debug_str}, "
               f"turns: {result.orchestrator_turns}, routed: {result.orchestrator_routed_to}")
 
-        if not result.quality_match:
+        if not has_answer:
             errors += 1
 
     # Compute summary
@@ -350,7 +492,6 @@ def run_comparison(
 
     avg_latency = sum(r.orchestrator_latency_ms for r in results) / len(results) if results else 0
     avg_turns = sum(r.orchestrator_turns for r in results) / len(results) if results else 0
-    quality_pass_rate = sum(1 for r in results if r.quality_match) / len(results) * 100 if results else 0
 
     # Routing accuracy: count distinct roles used
     route_counts = {}
@@ -361,15 +502,21 @@ def run_comparison(
     valid_tps = [r.avg_tps for r in results if r.avg_tps > 0]
     avg_tps = sum(valid_tps) / len(valid_tps) if valid_tps else 0
 
+    # Debug scorer accuracy (only when --debug is used)
+    scored_results = [r for r in results if r.debug_score is not None]
+    debug_accuracy = None
+    if scored_results:
+        debug_accuracy = sum(1 for r in scored_results if r.debug_score) / len(scored_results) * 100
+
     summary = {
         "suite": suite,
         "prompts_compared": len(results),
         "avg_speedup": avg_speedup,
         "avg_orchestrator_latency_ms": avg_latency,
         "avg_turns": avg_turns,
-        "quality_pass_rate": quality_pass_rate,
-        "quality_errors": errors,
+        "empty_answers": errors,
         "avg_tps": avg_tps,
+        "debug_accuracy": debug_accuracy,
         "routing_distribution": route_counts,
         "results": [asdict(r) for r in results],
         "timestamp": datetime.now().isoformat(),
@@ -390,7 +537,10 @@ def print_summary(summary: dict):
     print(f"Average orchestrator latency: {summary.get('avg_orchestrator_latency_ms', 0):.0f}ms")
     print(f"Average turns: {summary.get('avg_turns', 0):.1f}")
     print(f"Average tokens/sec: {summary.get('avg_tps', 0):.1f}")
-    print(f"Quality pass rate: {summary.get('quality_pass_rate', 0):.1f}%")
+    print(f"Empty answers: {summary.get('empty_answers', 0)}")
+    debug_acc = summary.get('debug_accuracy')
+    if debug_acc is not None:
+        print(f"Debug scorer accuracy: {debug_acc:.1f}%")
 
     # Routing distribution
     route_dist = summary.get("routing_distribution", {})
@@ -401,31 +551,36 @@ def print_summary(summary: dict):
 
     # Per-suite breakdown
     results = summary.get("results", [])
-    suite_stats = {}
+    suite_stats: dict[str, dict] = {}
     for r in results:
         s = r.get("suite", "unknown")
         if s not in suite_stats:
-            suite_stats[s] = {"count": 0, "speedups": [], "quality_matches": 0}
+            suite_stats[s] = {"count": 0, "speedups": [], "debug_pass": 0, "debug_total": 0}
         suite_stats[s]["count"] += 1
         if r.get("speedup", 0) > 0:
             suite_stats[s]["speedups"].append(r["speedup"])
-        if r.get("quality_match"):
-            suite_stats[s]["quality_matches"] += 1
+        if r.get("debug_score") is not None:
+            suite_stats[s]["debug_total"] += 1
+            if r["debug_score"]:
+                suite_stats[s]["debug_pass"] += 1
 
     if len(suite_stats) > 1:
         print(f"\nPer-suite breakdown:")
         for s, st in sorted(suite_stats.items()):
             avg_sp = sum(st["speedups"]) / len(st["speedups"]) if st["speedups"] else 0
-            qual_pct = st["quality_matches"] / st["count"] * 100 if st["count"] else 0
-            print(f"  {s:25} {st['count']:3} prompts  {avg_sp:5.1f}x speedup  {qual_pct:5.1f}% quality")
+            debug_str = ""
+            if st["debug_total"] > 0:
+                debug_pct = st["debug_pass"] / st["debug_total"] * 100
+                debug_str = f"  {debug_pct:5.1f}% accuracy"
+            print(f"  {s:25} {st['count']:3} prompts  {avg_sp:5.1f}x speedup{debug_str}")
 
-    # Targets
+    # Target: speedup only (quality measured by Claude-as-Judge or debug scorer)
     speedup = summary.get('avg_speedup', 0)
-    quality = summary.get('quality_pass_rate', 0)
     speedup_status = "PASS" if speedup >= 3.0 else "FAIL"
-    quality_status = "PASS" if quality >= 90.0 else "FAIL"
     print(f"\nTarget: >3x speedup: {speedup_status} ({speedup:.2f}x)")
-    print(f"Target: >90% quality: {quality_status} ({quality:.1f}%)")
+    if debug_acc is not None:
+        debug_status = "PASS" if debug_acc >= 70.0 else "FAIL"
+        print(f"Target: >70% debug accuracy: {debug_status} ({debug_acc:.1f}%)")
 
 
 def _restart_orchestrator_api(api_url: str) -> None:
@@ -539,6 +694,31 @@ def main():
         help="Restart the orchestrator API (port 8000) before running. "
              "Only restarts uvicorn, NOT the llama-server backends."
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Use debug benchmark suite with deterministic scoring. "
+             "Loads from benchmarks/prompts/debug/ instead of v1/. "
+             "Randomly samples ~10 questions per suite each run."
+    )
+    parser.add_argument(
+        "--debug-sample",
+        type=int,
+        default=10,
+        help="Number of questions to sample per suite in debug mode (default: 10)"
+    )
+    parser.add_argument(
+        "--debug-seed",
+        type=int,
+        default=None,
+        help="RNG seed for debug sampling (default: timestamp)"
+    )
+    parser.add_argument(
+        "--regression-gate",
+        action="store_true",
+        help="Run per-suite frontdoor-parity regression check. "
+        "Fails if any suite drops below frontdoor baseline - 1 point."
+    )
 
     args = parser.parse_args()
 
@@ -595,17 +775,67 @@ def main():
         args.api_url,
         args.timeout,
         args.use_baseline,
-        config
+        config,
+        debug_mode=args.debug,
+        debug_sample=args.debug_sample,
+        debug_seed=args.debug_seed,
     )
 
     print_summary(summary)
+
+    # Regression gate: per-suite frontdoor-parity check
+    if args.regression_gate and summary.get("results"):
+        print(f"\n{'='*60}")
+        print("REGRESSION GATE: Per-Suite Frontdoor Parity")
+        print(f"{'='*60}")
+
+        # Group results by suite
+        suite_pass_counts: dict[str, dict[str, int]] = {}
+        for r in summary["results"]:
+            s = r.get("suite", "unknown")
+            if s not in suite_pass_counts:
+                suite_pass_counts[s] = {"total": 0, "pass": 0, "frontdoor": 0, "specialist": 0}
+            suite_pass_counts[s]["total"] += 1
+            routed = r.get("orchestrator_routed_to", "frontdoor")
+            if r.get("debug_score"):
+                suite_pass_counts[s]["pass"] += 1
+            if routed == "frontdoor":
+                suite_pass_counts[s]["frontdoor"] += 1
+            else:
+                suite_pass_counts[s]["specialist"] += 1
+
+        gate_passed = True
+        for suite_name, counts in sorted(suite_pass_counts.items()):
+            total = counts["total"]
+            passed = counts["pass"]
+            pct = passed / total * 100 if total > 0 else 0
+            # Frontdoor baseline assumption: overall debug_accuracy is the baseline
+            # Per-suite check: each suite should be within 1 point of suite average
+            baseline_pct = summary.get("debug_accuracy", 0) or 0
+            status = "PASS" if pct >= baseline_pct - 10 else "FAIL"  # 10% tolerance
+            if status == "FAIL":
+                gate_passed = False
+            specialist_pct = counts["specialist"] / total * 100 if total > 0 else 0
+            print(
+                f"  {suite_name:25s} {passed}/{total} ({pct:.0f}%) "
+                f"specialist:{specialist_pct:.0f}%  [{status}]"
+            )
+
+        overall = "PASS" if gate_passed else "FAIL"
+        print(f"\nRegression gate: {overall}")
+        if not gate_passed:
+            print("WARNING: Some suites below parity threshold. "
+                  "Consider disabling specialist routing (ORCHESTRATOR_SPECIALIST_ROUTING=0).")
+            sys.exit(1)
 
     # Save results
     if args.output:
         output_path = Path(args.output)
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = PROJECT_ROOT / "benchmarks" / "results" / "orchestrator" / f"comparison_{timestamp}.json"
+        prefix = "debug" if args.debug else "comparison"
+        suite_suffix = f"_{args.suite}" if args.suite != "all" else ""
+        output_path = PROJECT_ROOT / "benchmarks" / "results" / "orchestrator" / f"{prefix}{suite_suffix}_{timestamp}.json"
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:

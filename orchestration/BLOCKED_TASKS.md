@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-29
+**Last Updated**: 2026-01-30 (Architect plan review gate implemented, quality roadmap Step 3.6)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -11,7 +11,7 @@
 |------|------------|----------|---------|--------|
 | **Security Audit: GGUF Vulns** | CVE verification on prod | **CRITICAL** | `handoffs/active/security_audit_orchestration_stack.md` | ✅ PARTIAL (P0 fixed: localhost binding) |
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
-| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 Phases 1-3 done, 4-8 pending |
+| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 Phases 1-5 done, 6-8 pending |
 | **Cmprsr Prompt Compression** | Cmprsr weights release | **HIGH** | `handoffs/active/cmprsr_prompt_compression.md` | 📋 NEW (weights unavailable) |
 | **Draft model benchmarks** | — | **HIGH** | `handoffs/active/draft-benchmark.md` | 📋 PARTIAL (Gemma-3 + Qwen3-1.7B→32B done, 5 combos remaining) |
 | **Formalizer eval** | — | **HIGH** | `handoffs/active/formalizer-evaluation.md` | 📋 READY (not yet executed) |
@@ -20,7 +20,10 @@
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
+| **Orchestrator Quality Regression** | — | **HIGH** | `progress/2026-01/2026-01-29.md` | ✅ FIXES APPLIED (direct-answer mode, VL pipeline rewrite, port mapping fix). Re-run benchmark pending. |
+| **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 COMPLETE. Phase 3: specialist routing + architect plan review gated behind feature flags (`SPECIALIST_ROUTING`, `PLAN_REVIEW`), GraphEnhancedRetriever, failure veto, comparative seeding, regression gates. 893 tests pass. **Live validation pending** (seeding + learning loop + regression gate + plan review A/B). |
 | **PARL-Inspired Improvements** | — | **MEDIUM** | `handoffs/active/parl-inspired-orchestrator-improvements.md` | 📋 NEW (5 phases: parallel TaskIR, critical path, personas, staged Q, parallel gates) |
+| **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
 | **Orchestrator real mode** | — | **LOW** | `handoffs/active/orchestrator.md` | 📋 READY (stack infrastructure complete, live verification pending) |
 
@@ -218,8 +221,8 @@ print(scorer.score_pending_tasks())
 | 1 | Backend Completion | ✅ COMPLETE | None |
 | 2 | RLM Enhancements | ✅ COMPLETE | Phase 1 |
 | 3 | Escalation Integration | ✅ COMPLETE | Phase 1 |
-| 4 | Formalizer Integration | READY | Phase 3 |
-| 5 | Tool/Script Completion | ✅ PARTIAL (41 tools wired, MCP/scripts pending) | None |
+| 4 | Formalizer Integration | ✅ COMPLETE | Phase 3 |
+| 5 | Tool/Script Completion | ✅ COMPLETE (44 tools wired, MCP server + client done, invoke() + find_scripts() done) | None |
 | 6 | Early Failure Detection | READY | Phase 3 |
 | 7 | Hyperparameter Tuning | BLOCKED | Benchmarks |
 | 8 | Trajectory Visualization | LOW | Phase 2 |
@@ -260,17 +263,20 @@ To test: `llama-server -m MODEL.gguf --host 0.0.0.0 --port 8080` then call API w
 - Escalations logged via `progress_logger.log_escalation()`
 - 26 API tests + 51 failure_router tests pass
 
-### Phase 4: Formalizer Integration
-- [ ] Formalizer routing (`src/dispatcher.py`)
-- [ ] Create formalizer module (`src/formalizer.py`)
-- [ ] IR → REPL context injection (`src/api.py`)
+### Phase 4: Formalizer Integration (COMPLETE - 2026-01-30)
+- [x] Feature flag `input_formalizer` (`src/features.py`)
+- [x] Formalizer module with detection + invocation + injection (`src/formalizer.py`)
+- [x] Formalizer routing (`src/dispatcher.py` — ROLE_MAPPING entries)
+- [x] IR → context injection in chat.py (after routing, before execution)
+- [x] `formalization_applied` metadata on ChatResponse (`src/api/models/responses.py`)
+- [x] Unit tests: 37 tests passing (`tests/unit/test_formalizer.py`)
 
-### Phase 5: Tool/Script Completion (PARTIAL - 2026-01-15)
+### Phase 5: Tool/Script Completion (COMPLETE - 2026-01-30)
 - [x] Tool registry wired (41 deterministic tools: math, symbolic, numerical, format, etc.)
 - [x] Tool result capture (`src/repl_environment.py`) — integrated via REPL tools
-- [ ] MCP client implementation (`src/tool_registry.py`)
-- [ ] Script `invoke()` method (`src/script_registry.py`)
-- [ ] Script `find_scripts()` method (`src/script_registry.py`)
+- [x] MCP client implementation (`src/mcp_client.py` — shared module, wired into both registries)
+- [x] Script `invoke()` method (`src/script_registry.py:313-366` — code, MCP, and command backends)
+- [x] Script `find_scripts()` method (`src/script_registry.py:225-300` — fuzzy search with category/tag filters)
 
 ### Phase 6: Early Failure Detection
 - [ ] Wire GenerationMonitor (`src/llm_primitives.py`)
@@ -731,6 +737,6 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 | Session Persistence Layer | `handoffs/completed/session_persistence.md` | ✅ ALL 7 PHASES COMPLETE |
 | TOON Format Integration | `handoffs/active/toon_format_integration.md` | ✅ COMPLETE (55.6% token reduction) |
 | VL Suite Assignment Fix | `progress/2026-01/2026-01-27.md` | ✅ FIXED |
-| Orchestrator Benchmark Fixes | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 fixes + import bug fix + CLI metrics + 11 safety tests) |
+| Orchestrator Benchmark Fixes | `progress/2026-01/2026-01-29.md` | ✅ COMPLETE (7 fixes + direct-answer mode + VL rewrite + port fix + CLI metrics + 11 safety tests) |
 | Graphiti MemRL Enhancement | `handoffs/completed/graphiti_memrl_enhancement.md` | ✅ COMPLETE (52 tests) |
 | SWA Prompt Lookup Fix | `handoffs/completed/swa_prompt_lookup.md` | ✅ RESOLVED (PRs #18729 + #18730) |

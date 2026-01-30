@@ -58,12 +58,25 @@ class AppState:
     # Hybrid routing (learned + rule-based)
     hybrid_router: Any | None = None  # HybridRouter type
 
+    # Graph-enhanced memory (Phase 3: specialist routing)
+    failure_graph: Any | None = None  # FailureGraph type
+    hypothesis_graph: Any | None = None  # HypothesisGraph type
+
     # Tool and script registries for REPL
     tool_registry: Any | None = None  # ToolRegistry type
     script_registry: Any | None = None  # ScriptRegistry type
 
     # Registry loader (for role defaults)
     registry: Any = None  # RegistryLoader, typed as Any to avoid import cycle
+
+    # Plan review state (architect-in-the-loop)
+    plan_review_phase: str = "A"  # "A" (bootstrap), "B" (supervised fade), "C" (spot-check)
+    _plan_review_stats: dict = field(default_factory=lambda: {
+        "total_reviews": 0,
+        "approved": 0,
+        "corrected": 0,
+        "task_class_q_values": {},
+    })
 
     # Stats tracking (protected by _stats_lock)
     total_requests: int = 0

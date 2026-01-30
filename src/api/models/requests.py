@@ -11,7 +11,12 @@ class ChatRequest(BaseModel):
     mock_mode: bool = Field(default=True, description="Use mock responses instead of real inference")
     real_mode: bool = Field(default=False, description="Enable real inference with RadixAttention caching")
     max_turns: int = Field(default=10, ge=1, le=50, description="Maximum orchestration turns")
-    role: str = Field(default="frontdoor", description="Initial role to use")
+    role: str = Field(default="", description="Initial role to use (empty = auto-route via _classify_and_route)")
+    force_role: str | None = Field(
+        default=None,
+        description="Force routing to a specific role, bypassing all routing logic. "
+        "Used by comparative seeding to test specialist quality."
+    )
     server_urls: dict[str, str] | None = Field(
         default=None,
         description="Server URLs for real mode (e.g., {'frontdoor': 'http://localhost:8080'})"
@@ -24,6 +29,10 @@ class ChatRequest(BaseModel):
     image_base64: str | None = Field(
         default=None,
         description="Base64-encoded image data for vision tasks"
+    )
+    files: list[str] | None = Field(
+        default=None,
+        description="List of file paths for multi-file vision/document tasks (archives auto-extracted)"
     )
     # Extended thinking support (Claude Code parity)
     thinking_budget: int = Field(

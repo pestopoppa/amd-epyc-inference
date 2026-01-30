@@ -153,6 +153,7 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._permissions: dict[str, ToolPermissions] = {}
         self._invocation_log: list[ToolInvocation] = []
+        self._mcp_configs: dict[str, Any] | None = None
 
     def register_tool(self, tool: Tool, update: bool = False) -> None:
         """Register a tool in the registry.
@@ -368,13 +369,24 @@ class ToolRegistry:
             args: Tool arguments.
 
         Returns:
-            MCP tool result.
+            MCP tool result as text string.
+
+        Raises:
+            RuntimeError: If server is unknown or tool call fails.
         """
-        # Placeholder for MCP integration
-        # Will be implemented when MCP client is available
-        raise NotImplementedError(
-            f"MCP invocation not yet implemented (server={server}, tool={tool_name})"
-        )
+        from src.mcp_client import call_mcp_tool, load_server_configs
+
+        if self._mcp_configs is None:
+            config_path = Path(__file__).parent.parent / "orchestration" / "mcp_servers.yaml"
+            self._mcp_configs = load_server_configs(config_path)
+
+        if server not in self._mcp_configs:
+            raise RuntimeError(
+                f"Unknown MCP server: {server}. "
+                f"Configure in orchestration/mcp_servers.yaml"
+            )
+
+        return call_mcp_tool(self._mcp_configs[server], tool_name, args)
 
     def list_tools(self, role: str | None = None) -> list[dict[str, Any]]:
         """List available tools, optionally filtered by role permissions.
@@ -503,6 +515,7 @@ def load_from_yaml(
                 category=category,
                 parameters=params,
                 handler=handler,
+                mcp_server=tool_spec.get("mcp_server"),
             )
 
             registry.register_tool(tool)

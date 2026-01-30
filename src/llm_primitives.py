@@ -158,9 +158,12 @@ class LLMPrimitives:
         "worker_general": "http://localhost:8082",
         "worker_explore": "http://localhost:8082",
         "worker_math": "http://localhost:8082",
-        "worker_vision": "http://localhost:8082",
+        "worker_vision": "http://localhost:8086",
+        "vision_escalation": "http://localhost:8087",
         "worker_code": "http://localhost:8092",
         "worker_fast": "http://localhost:8102",
+        "worker_fast_1": "http://localhost:8102",
+        "worker_fast_2": "http://localhost:8112",
         # Architects
         "architect_general": "http://localhost:8083",
         "architect_coding": "http://localhost:8084",
@@ -375,6 +378,8 @@ class LLMPrimitives:
         context_slice: str = "",
         role: str = "worker",
         n_tokens: int | None = None,
+        skip_suffix: bool = False,
+        stop_sequences: list[str] | None = None,
     ) -> str:
         """Call a sub-LM with optional context slice.
 
@@ -383,6 +388,10 @@ class LLMPrimitives:
             context_slice: Optional context to include (appended to prompt).
             role: Role determining which model to use (e.g., "worker", "coder").
             n_tokens: Max tokens to generate. If None, uses role default from registry.
+            skip_suffix: If True, skip the registry system_prompt_suffix for this role.
+                Used in direct-answer mode where any suffix (like "Elaborate on
+                specialist outputs") degrades instruction precision quality.
+            stop_sequences: Optional list of stop sequences to halt generation early.
 
         Returns:
             Sub-LM response (capped at output_cap chars).
@@ -401,7 +410,7 @@ class LLMPrimitives:
         self._max_recursion_depth_reached = max(self._max_recursion_depth_reached, self._recursion_depth)
 
         try:
-            return self._llm_call_impl(prompt, context_slice, role, n_tokens)
+            return self._llm_call_impl(prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences)
         finally:
             self._recursion_depth -= 1
 
@@ -411,6 +420,8 @@ class LLMPrimitives:
         context_slice: str = "",
         role: str = "worker",
         n_tokens: int | None = None,
+        skip_suffix: bool = False,
+        stop_sequences: list[str] | None = None,
     ) -> str:
         """Internal implementation of llm_call (after recursion check)."""
         start_time = time.perf_counter()
@@ -418,8 +429,13 @@ class LLMPrimitives:
 
         # Get role defaults from registry if available
         system_prompt_suffix = None
-        if self.registry:
+        if self.registry and not skip_suffix:
             default_n, _default_temp, system_prompt_suffix = self.registry.get_role_defaults(role)
+            if n_tokens is None:
+                n_tokens = default_n
+        elif self.registry:
+            # Still get default n_tokens even when skipping suffix
+            default_n, _default_temp, _ = self.registry.get_role_defaults(role)
             if n_tokens is None:
                 n_tokens = default_n
         if n_tokens is None:
@@ -448,7 +464,7 @@ class LLMPrimitives:
             if self.mock_mode:
                 result = self._mock_call(full_prompt, role)
             else:
-                result = self._real_call(full_prompt, role, n_tokens)
+                result = self._real_call(full_prompt, role, n_tokens, stop_sequences)
 
             # Cap output
             if len(result) > self.config.output_cap:
@@ -842,13 +858,17 @@ class LLMPrimitives:
             for i, p in enumerate(prompts)
         ]
 
-    def _real_call(self, prompt: str, role: str, n_tokens: int = 512) -> str:
+    def _real_call(
+        self, prompt: str, role: str, n_tokens: int = 512,
+        stop_sequences: list[str] | None = None,
+    ) -> str:
         """Make a real inference call via CachingBackend or legacy ModelServer.
 
         Args:
             prompt: The full prompt.
             role: The role determining which model to use.
             n_tokens: Maximum tokens to generate.
+            stop_sequences: Optional stop sequences to halt generation.
 
         Returns:
             Model response.
@@ -859,7 +879,7 @@ class LLMPrimitives:
         # Try CachingBackend first (RadixAttention)
         backend = self._backends.get(role)
         if backend is not None:
-            return self._call_caching_backend(backend, prompt, role, n_tokens)
+            return self._call_caching_backend(backend, prompt, role, n_tokens, stop_sequences)
 
         # Fall back to legacy ModelServer
         if self.model_server is None:
@@ -875,13 +895,17 @@ class LLMPrimitives:
             prompt=prompt,
             n_tokens=n_tokens,
             timeout=self.config.call_timeout,
+            stop_sequences=stop_sequences,
         )
         result = self.model_server.infer(role, request)
 
         self.total_tokens_generated += result.tokens_generated
         return result.output
 
-    def _call_caching_backend(self, backend: Any, prompt: str, role: str, n_tokens: int = 512) -> str:
+    def _call_caching_backend(
+        self, backend: Any, prompt: str, role: str, n_tokens: int = 512,
+        stop_sequences: list[str] | None = None,
+    ) -> str:
         """Call a CachingBackend with RadixAttention prefix caching.
 
         Args:
@@ -889,6 +913,7 @@ class LLMPrimitives:
             prompt: The full prompt.
             role: The role name.
             n_tokens: Maximum tokens to generate.
+            stop_sequences: Optional stop sequences to halt generation.
 
         Returns:
             Model response.
@@ -923,6 +948,7 @@ class LLMPrimitives:
             prompt=prompt,
             n_tokens=n_tokens,
             timeout=self.config.call_timeout,
+            stop_sequences=stop_sequences,
         )
 
         result = backend.infer(role_config, request)
@@ -932,6 +958,10 @@ class LLMPrimitives:
 
         self.total_tokens_generated += result.tokens_generated
         return result.output
+
+    # Pool of fast worker roles for round-robin dispatch
+    WORKER_FAST_POOL = ["worker_fast_1", "worker_fast_2"]
+    _worker_fast_counter: int = 0
 
     def _real_batch(self, prompts: list[str], role: str) -> list[str]:
         """Make real inference calls in parallel.
@@ -957,12 +987,23 @@ class LLMPrimitives:
 
         results: list[str | None] = [None] * len(prompts)
 
+        # Round-robin dispatch for worker_fast across 8102+8112 pool
+        use_fast_pool = (role == "worker_fast" and
+                         any(self._backends.get(r) for r in self.WORKER_FAST_POOL))
+
         with ThreadPoolExecutor(max_workers=self.config.batch_parallelism) as executor:
-            # Submit all calls
-            future_to_idx = {
-                executor.submit(self._real_call, prompt, role): i
-                for i, prompt in enumerate(prompts)
-            }
+            future_to_idx = {}
+            for i, prompt in enumerate(prompts):
+                if use_fast_pool:
+                    # Distribute across fast worker pool (round-robin)
+                    pool_role = self.WORKER_FAST_POOL[
+                        LLMPrimitives._worker_fast_counter % len(self.WORKER_FAST_POOL)
+                    ]
+                    LLMPrimitives._worker_fast_counter += 1
+                    future = executor.submit(self._real_call, prompt, pool_role)
+                else:
+                    future = executor.submit(self._real_call, prompt, role)
+                future_to_idx[future] = i
 
             # Collect results in order
             for future in as_completed(future_to_idx):

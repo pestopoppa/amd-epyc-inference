@@ -144,6 +144,7 @@ class QScorer:
         task_outcome = None
         gate_results = []
         escalations = []
+        plan_reviews = []
 
         for entry in trajectory:
             if entry.event_type == EventType.TASK_STARTED:
@@ -156,12 +157,14 @@ class QScorer:
                 gate_results.append(entry)
             elif entry.event_type == EventType.ESCALATION_TRIGGERED:
                 escalations.append(entry)
+            elif entry.event_type == EventType.PLAN_REVIEWED:
+                plan_reviews.append(entry)
 
         if not task_outcome:
             return {"error": "Task not completed yet"}
 
         # Compute reward
-        reward = self._compute_reward(task_outcome, gate_results, escalations)
+        reward = self._compute_reward(task_outcome, gate_results, escalations, plan_reviews)
 
         result = {
             "memories_updated": 0,
@@ -192,6 +195,7 @@ class QScorer:
         task_outcome: ProgressEntry,
         gate_results: List[ProgressEntry],
         escalations: List[ProgressEntry],
+        plan_reviews: List[ProgressEntry] | None = None,
     ) -> float:
         """
         Compute reward from task outcome.
@@ -200,6 +204,7 @@ class QScorer:
         - Base: success=1.0, failure=-0.5
         - Penalty for gate failures: -0.1 per failure
         - Penalty for escalations: -0.15 per escalation
+        - Plan review bonus: +0.1 if approved, -0.2 if corrected
         """
         if task_outcome.outcome == "success":
             base_reward = self.config.success_reward
@@ -215,8 +220,18 @@ class QScorer:
         # Escalation penalties (unnecessary escalations are wasteful)
         escalation_penalty = len(escalations) * 0.15
 
+        # Plan review adjustments (architect-in-the-loop)
+        plan_review_adj = 0.0
+        if plan_reviews:
+            for pr in plan_reviews:
+                decision = pr.data.get("decision", "")
+                if decision == "ok":
+                    plan_review_adj += 0.1  # Approved — routing was correct
+                else:
+                    plan_review_adj -= 0.2  # Corrected — routing needed fixing
+
         # Final reward (clamped to [-1, 1])
-        reward = base_reward - gate_penalty - escalation_penalty
+        reward = base_reward - gate_penalty - escalation_penalty + plan_review_adj
         return max(-1.0, min(1.0, reward))
 
     def _update_routing_memory(
@@ -331,6 +346,96 @@ class QScorer:
                     task_id=task_id,
                     memory_id=memory_id,
                     data={"action_type": "escalation", "initial_q": initial_q},
+                )
+            )
+            result["memories_created"] = 1
+
+        return result
+
+    def score_external_result(
+        self,
+        task_description: str,
+        action: str,
+        reward: float,
+        context: Dict[str, Any] | None = None,
+    ) -> Dict[str, Any]:
+        """Score an externally-evaluated result.
+
+        Accepts pre-computed rewards from external scoring (e.g., the MemRL
+        learning loop or debug scorer). Bypasses progress log reader and
+        directly creates/updates episodic memory.
+
+        Args:
+            task_description: Description of the task.
+            action: The action taken (e.g., "frontdoor:direct").
+            reward: Pre-computed reward (-1.0 to 1.0).
+            context: Additional context to store with the memory.
+
+        Returns:
+            Dict with memories_created and memories_updated counts.
+        """
+        result = {"memories_updated": 0, "memories_created": 0}
+        context = context or {}
+
+        # Clamp reward to valid range
+        reward = max(-1.0, min(1.0, reward))
+
+        # Check if similar memory exists
+        task_ir = {
+            "task_type": context.get("task_type", "chat"),
+            "objective": task_description[:200],
+        }
+        embedding = self.embedder.embed_task_ir(task_ir)
+
+        # Search for existing similar memory with same action
+        similar = self.store.search_similar(
+            embedding=embedding,
+            limit=5,
+            min_similarity=0.85,
+        )
+
+        # Update existing memory if action matches closely
+        updated = False
+        for mem in similar:
+            if mem.action == action or (
+                hasattr(mem, "action") and mem.action.startswith(action.split(":")[0])
+            ):
+                old_q = mem.q_value
+                new_q = self.store.update_q_value(
+                    mem.id, reward, self.config.learning_rate
+                )
+                self.logger.log_memory_update(
+                    mem.id, old_q, new_q, reward, "external"
+                )
+                result["memories_updated"] += 1
+                updated = True
+                break
+
+        # Create new memory if no similar one found
+        if not updated:
+            initial_q = 0.5 + (reward * 0.5)
+            context["task_description"] = task_description
+            context["source"] = "external"
+
+            memory_id = self.store.store(
+                embedding=embedding,
+                action=action,
+                action_type="routing",
+                context=context,
+                outcome="success" if reward > 0 else "failure",
+                initial_q=initial_q,
+            )
+
+            self.logger.log(
+                ProgressEntry(
+                    event_type=EventType.MEMORY_STORED,
+                    task_id="external",
+                    memory_id=memory_id,
+                    data={
+                        "action_type": "routing",
+                        "initial_q": initial_q,
+                        "source": "external_score",
+                    },
                 )
             )
             result["memories_created"] = 1

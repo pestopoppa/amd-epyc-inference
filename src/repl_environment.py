@@ -32,6 +32,25 @@ if TYPE_CHECKING:
     from orchestration.repl_memory.retriever import TwoPhaseRetriever
 
 
+# Structured delimiters for tool output isolation.
+# These wrap stdout from tool functions (my_role, route_advice, list_dir, recall, _invoke_tool)
+# so _strip_tool_outputs() can use regex instead of fragile exact-string matching.
+TOOL_OUTPUT_START = "<<<TOOL_OUTPUT>>>"
+TOOL_OUTPUT_END = "<<<END_TOOL_OUTPUT>>>"
+
+
+def wrap_tool_output(output: str) -> str:
+    """Wrap a tool output string with structured delimiters.
+
+    Args:
+        output: The raw tool output string.
+
+    Returns:
+        Delimited output string for reliable stripping.
+    """
+    return f"{TOOL_OUTPUT_START}{output}{TOOL_OUTPUT_END}"
+
+
 class REPLError(Exception):
     """Error during REPL execution."""
 
@@ -492,6 +511,7 @@ class REPLEnvironment:
         # Add tool registry functions if available
         if self.tool_registry is not None:
             globals_dict["TOOL"] = self._invoke_tool
+            globals_dict["CALL"] = self._call_tool
             globals_dict["list_tools"] = self._list_tools
 
         # Add script registry functions if available
@@ -769,8 +789,11 @@ class REPLEnvironment:
             # Use TOON encoding for token efficiency if enabled
             if self.config.use_toon_encoding:
                 from src.services.toon_encoder import encode_list_dir
-                return encode_list_dir(path, entries[:100], len(entries))
-            return json.dumps(result, indent=2)
+                output = encode_list_dir(path, entries[:100], len(entries))
+            else:
+                output = json.dumps(result, indent=2)
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
         except FileNotFoundError:
             return f"[ERROR: Directory not found: {path}]"
@@ -1396,11 +1419,16 @@ class REPLEnvironment:
 
             if self.config.use_toon_encoding and len(results) >= 3:
                 from src.services.toon_encoder import encode
-                return encode(response)
-            return json.dumps(response, indent=2)
+                output = encode(response)
+            else:
+                output = json.dumps(response, indent=2)
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
         except Exception as e:
-            return json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+            output = json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
     def _recall_legacy(self, query: str, limit: int = 5) -> str:
         """Legacy recall using fresh EpisodicStore + TaskEmbedder."""
@@ -1440,11 +1468,16 @@ class REPLEnvironment:
 
             if self.config.use_toon_encoding and len(results) >= 3:
                 from src.services.toon_encoder import encode
-                return encode(response)
-            return json.dumps(response, indent=2)
+                output = encode(response)
+            else:
+                output = json.dumps(response, indent=2)
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
         except Exception as e:
-            return json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+            output = json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
     def _escalate(self, reason: str, target_role: str | None = None) -> str:
         """Request escalation to a higher-tier or specific model.
@@ -1530,8 +1563,13 @@ class REPLEnvironment:
 
         if self.config.use_toon_encoding:
             from src.services.toon_encoder import encode
-            return encode(result)
-        return json.dumps(result, indent=2)
+            output = encode(result)
+        else:
+            output = json.dumps(result, indent=2)
+
+        # Track tool output so it can be stripped from answer
+        self.artifacts.setdefault("_tool_outputs", []).append(output)
+        return wrap_tool_output(output)
 
     def _route_advice(self, task_description: str) -> str:
         """Get MemRL-informed routing advice for a task.
@@ -1558,13 +1596,15 @@ class REPLEnvironment:
         import json
 
         if self._hybrid_router is None:
-            return json.dumps({
+            output = json.dumps({
                 "recommended_role": None,
                 "confidence": 0.0,
                 "strategy": "unavailable",
                 "similar_tasks": [],
                 "warnings": ["MemRL routing not initialized"],
             })
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
         try:
             task_ir = {
@@ -1622,17 +1662,22 @@ class REPLEnvironment:
 
             if self.config.use_toon_encoding:
                 from src.services.toon_encoder import encode
-                return encode(response)
-            return json.dumps(response, indent=2)
+                output = encode(response)
+            else:
+                output = json.dumps(response, indent=2)
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
         except Exception as e:
-            return json.dumps({
+            output = json.dumps({
                 "recommended_role": None,
                 "confidence": 0.0,
                 "strategy": "error",
                 "similar_tasks": [],
                 "warnings": [str(e)],
             })
+            self.artifacts.setdefault("_tool_outputs", []).append(output)
+            return wrap_tool_output(output)
 
     # Role alias mapping: model-generated role names → actual backend roles
     _ROLE_ALIASES: dict[str, str] = {
@@ -2794,6 +2839,36 @@ class REPLEnvironment:
             raise RuntimeError("No tool registry configured")
 
         return self.tool_registry.invoke(tool_name, self.role, **kwargs)
+
+    def _call_tool(self, tool_name: str, **kwargs) -> str:
+        """Invoke a registered tool and return JSON-serialized result.
+
+        Simpler alternative to TOOL() that always returns a JSON string.
+        Useful when the model needs the result as a formatted string
+        rather than a raw Python object.
+
+        Example:
+            result = CALL("search_arxiv", query="transformer attention")
+            data = json.loads(result)
+
+        Args:
+            tool_name: Name of the tool to invoke.
+            **kwargs: Tool arguments.
+
+        Returns:
+            JSON-serialized string of the tool result.
+
+        Raises:
+            RuntimeError: If no tool registry is configured.
+            ValueError: If tool doesn't exist.
+            PermissionError: If role cannot use this tool.
+        """
+        import json as _json
+        result = self._invoke_tool(tool_name, **kwargs)
+        try:
+            return _json.dumps(result, indent=2, default=str)
+        except (TypeError, ValueError):
+            return str(result)
 
     def _list_tools(self) -> list[dict[str, Any]]:
         """List available tools for the current role.
