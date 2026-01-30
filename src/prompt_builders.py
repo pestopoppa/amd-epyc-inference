@@ -272,6 +272,9 @@ REACT_TOOL_WHITELIST = frozenset({
     "get_current_time",
     "json_query",
     "fetch_wikipedia",
+    # File tools — read-only access for investigation
+    "read_file",
+    "list_directory",
 })
 
 # ReAct format instructions
@@ -301,6 +304,7 @@ def build_react_prompt(
     context: str = "",
     tool_registry: "Any | None" = None,
     max_turns: int = 5,
+    tool_whitelist: frozenset[str] | None = None,
 ) -> str:
     """Build a ReAct-style prompt with tool descriptions.
 
@@ -309,16 +313,20 @@ def build_react_prompt(
         context: Optional context text.
         tool_registry: Optional tool registry for dynamic tool descriptions.
         max_turns: Maximum number of Thought/Action/Observation cycles.
+        tool_whitelist: Optional override for REACT_TOOL_WHITELIST.
+            If None, uses the module-level default.
 
     Returns:
         Formatted ReAct prompt string.
     """
+    whitelist = tool_whitelist if tool_whitelist is not None else REACT_TOOL_WHITELIST
+
     # Build tool descriptions from whitelist
     tool_descriptions = []
     if tool_registry is not None:
         for tool_info in tool_registry.list_tools():
             name = tool_info.get("name", "")
-            if name in REACT_TOOL_WHITELIST:
+            if name in whitelist:
                 desc = tool_info.get("description", "No description")
                 params = tool_info.get("parameters", {})
                 param_strs = []
@@ -341,6 +349,8 @@ def build_react_prompt(
             "- get_wikipedia_article(title=\"...\"): Get full Wikipedia article",
             "- python_eval(code=\"...\"): Evaluate Python expression safely",
             "- json_query(data=\"...\", query=\"...\"): Query JSON data with JMESPath",
+            "- read_file(path=\"...\"): Read file contents (text files only)",
+            "- list_directory(path=\"...\"): List directory contents",
         ]
 
     tool_desc_str = "\n".join(tool_descriptions)
@@ -1372,3 +1382,98 @@ def build_formalizer_prompt(answer: str, prompt: str, format_spec: str) -> str:
         f"Original answer:\n{answer}\n\n"
         f"Output ONLY the reformatted answer. Do not add explanations or preamble."
     )
+
+
+# ── Architect Delegation Prompts ─────────────────────────────────────────
+
+
+def build_architect_investigate_prompt(
+    question: str,
+    context: str = "",
+) -> str:
+    """Build prompt asking architect to decide: answer directly or delegate investigation.
+
+    The architect emits TOON-encoded decisions:
+    - Direct: ``D|<answer>``
+    - Investigate (ReAct): ``I|brief:<text>|to:<role>``
+    - Investigate (REPL/draft): ``I|brief:<text>|to:<role>|mode:repl``
+    Falls back to JSON if architect ignores TOON instruction.
+
+    Args:
+        question: The user's question.
+        context: Optional TOON-encoded or plain-text context.
+
+    Returns:
+        Prompt string for architect.
+    """
+    context_section = ""
+    if context:
+        context_section = f"\nContext (TOON-encoded for efficiency):\n{context[:3000]}\n"
+
+    return f"""You are an architect deciding how to answer a question.
+
+If you can answer completely and confidently, respond with:
+D|<your answer>
+
+If you need investigation (search, read files, verify facts), respond with:
+I|brief:<detailed investigation request>|to:coder_primary
+
+If you need a document drafted (code, report, design doc), respond with:
+I|brief:<detailed drafting request>|to:coder_primary|mode:repl
+
+Rules:
+- List ALL information you need in the brief — you get one report per loop
+- Be specific: file paths, search terms, exact questions to answer
+- Only delegate if you genuinely cannot answer from your training
+- "to:" must be a valid role: coder_primary, coder_escalation, worker_explore
+{context_section}
+Question: {question[:2000]}
+
+Decision:"""
+
+
+def build_architect_synthesis_prompt(
+    question: str,
+    report: str,
+    loop_num: int,
+    max_loops: int,
+) -> str:
+    """Build prompt for architect to synthesize from investigation report.
+
+    The architect reviews the specialist's report and either:
+    - Emits a final answer: ``D|<answer>``
+    - Requests another investigation: ``I|brief:...|to:<role>``
+
+    Args:
+        question: The original user question.
+        report: The specialist's investigation report.
+        loop_num: Current loop number (1-indexed).
+        max_loops: Maximum allowed loops.
+
+    Returns:
+        Prompt string for architect synthesis.
+    """
+    can_investigate = loop_num < max_loops
+    investigate_option = ""
+    if can_investigate:
+        investigate_option = (
+            f"\nIf you need MORE investigation (loop {loop_num}/{max_loops}), respond with:\n"
+            "I|brief:<what else to investigate>|to:coder_primary\n"
+        )
+
+    return f"""You are an architect synthesizing an answer from an investigation report.
+
+Review the report below and provide a final answer.
+
+Respond with:
+D|<your final answer>
+{investigate_option}
+If the specialist produced a complete document/code and it looks correct, respond with:
+D|Approved
+
+Question: {question[:2000]}
+
+Investigation Report:
+{report[:6000]}
+
+Decision:"""

@@ -140,6 +140,9 @@ class Features:
     # Phase 3: Architect plan review (pre-execution plan vetting)
     plan_review: bool = False  # Enable architect review of frontdoor plans before execution
 
+    # Phase 5: Architect delegation (investigate via specialist tools)
+    architect_delegation: bool = False  # Architect delegates tool work to faster specialists
+
     # Phase 4: Input formalizer (extract formal specs before specialist execution)
     input_formalizer: bool = False  # Preprocess complex prompts via MathSmith-8B
 
@@ -193,6 +196,7 @@ class Features:
             "restricted_python": self.restricted_python,
             "specialist_routing": self.specialist_routing,
             "plan_review": self.plan_review,
+            "architect_delegation": self.architect_delegation,
             "input_formalizer": self.input_formalizer,
             "generation_monitor": self.generation_monitor,
             "mock_mode": self.mock_mode,
@@ -277,6 +281,7 @@ def get_features(
             "restricted_python": True,  # Use safer sandbox in production
             "specialist_routing": False,  # Enable after comparative seeding proves benefit
             "plan_review": False,  # Enable after Phase A validation
+            "architect_delegation": False,  # Enable after delegation regression testing
             "input_formalizer": False,  # Enable after regression testing
             "generation_monitor": True,  # Early failure detection in production
             "mock_mode": False,  # Real mode in production
@@ -296,6 +301,7 @@ def get_features(
             "restricted_python": False,  # Use custom sandbox in tests
             "specialist_routing": False,  # Disabled in tests by default
             "plan_review": False,  # Disabled in tests by default
+            "architect_delegation": False,  # Disabled in tests by default
             "input_formalizer": False,  # Disabled in tests by default
             "generation_monitor": False,  # Disabled in tests by default
             "mock_mode": True,  # Mock mode in tests
@@ -316,6 +322,7 @@ def get_features(
         "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
         "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
         "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),
+        "architect_delegation": _env_bool("ARCHITECT_DELEGATION", defaults["architect_delegation"]),
         "input_formalizer": _env_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
         "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
         "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),

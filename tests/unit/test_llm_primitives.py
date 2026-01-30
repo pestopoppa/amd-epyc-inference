@@ -232,7 +232,7 @@ class TestConfig:
 
         assert primitives.config.output_cap == 8192
         assert primitives.config.batch_parallelism == 4
-        assert primitives.config.call_timeout == 120
+        assert primitives.config.call_timeout == 300
 
     def test_custom_config(self):
         """Test custom configuration."""

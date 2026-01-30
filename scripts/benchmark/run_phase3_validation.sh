@@ -149,7 +149,7 @@ step0_health_check() {
   # Check API
   if ! check_port 8000; then
     log "  API port 8000 not running, starting..."
-    restart_api "SPECIALIST_ROUTING=0 MEMRL=0"
+    restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_MEMRL=0"
   fi
 
   # Smoke test
@@ -182,7 +182,7 @@ step1_baseline() {
   log "STEP 1: Reproducible Baseline (seed=42)"
   log "=========================================="
 
-  restart_api "SPECIALIST_ROUTING=0 MEMRL=0"
+  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_MEMRL=0"
 
   local output="${RESULTS_DIR}/phase3_baseline_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
@@ -244,7 +244,7 @@ step2_seeding() {
   log "STEP 2: Comparative Specialist Seeding"
   log "=========================================="
 
-  restart_api "SPECIALIST_ROUTING=1 MEMRL=1"
+  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
 
   local output="${RESULTS_DIR}/seeding_live_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/seed_specialist_routing.py \
@@ -339,8 +339,8 @@ step4_learning_loop() {
   log "STEP 4: Learning Loop (5 iterations)"
   log "=========================================="
 
-  # Ensure API has specialist routing ON
-  restart_api "SPECIALIST_ROUTING=1 MEMRL=1"
+  # Ensure API has specialist routing + architect delegation ON
+  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
 
   local output="${RESULTS_DIR}/memrl_phase3_loop.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/memrl_learning_loop.py \
@@ -386,7 +386,7 @@ step5_regression_gate() {
   log "STEP 5: Final Regression Gate"
   log "=========================================="
 
-  restart_api "SPECIALIST_ROUTING=1 MEMRL=1"
+  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
 
   local output="${RESULTS_DIR}/phase3_specialist_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
@@ -491,7 +491,7 @@ step5b_plan_review() {
 
   # Same seed=42 suite but with PLAN_REVIEW enabled alongside SPECIALIST_ROUTING.
   # Compares: accuracy delta vs step 5, correction rate, convergence signal.
-  restart_api "SPECIALIST_ROUTING=1 PLAN_REVIEW=1 MEMRL=1"
+  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_PLAN_REVIEW=1 ORCHESTRATOR_MEMRL=1"
 
   local output="${RESULTS_DIR}/phase3_plan_review_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
@@ -609,7 +609,7 @@ step6_kill_switch() {
   log "STEP 6: Kill Switch Test"
   log "=========================================="
 
-  restart_api "SPECIALIST_ROUTING=0 MEMRL=1"
+  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_ARCHITECT_DELEGATION=0 ORCHESTRATOR_MEMRL=1"
 
   local output="${RESULTS_DIR}/phase3_killswitch_seed42.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \

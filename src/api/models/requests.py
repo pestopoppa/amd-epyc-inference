@@ -17,6 +17,12 @@ class ChatRequest(BaseModel):
         description="Force routing to a specific role, bypassing all routing logic. "
         "Used by comparative seeding to test specialist quality."
     )
+    force_mode: str | None = Field(
+        default=None,
+        description="Force execution mode ('direct', 'react', 'repl', or 'delegated'), "
+        "bypassing _select_mode heuristics. 'delegated' enables architect delegation "
+        "where the architect formulates investigation briefs for faster specialists."
+    )
     server_urls: dict[str, str] | None = Field(
         default=None,
         description="Server URLs for real mode (e.g., {'frontdoor': 'http://localhost:8080'})"

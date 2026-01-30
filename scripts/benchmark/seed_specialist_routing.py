@@ -17,12 +17,18 @@ Usage:
     # Dry run (score without reward injection)
     python scripts/benchmark/seed_specialist_routing.py --dry-run --suites thinking coder
 
-    # Full seeding run
+    # Full seeding run (all roles × all modes)
     ORCHESTRATOR_SPECIALIST_ROUTING=1 \\
       python scripts/benchmark/seed_specialist_routing.py --suites all --sample-size 10
 
     # Specific roles only
     python scripts/benchmark/seed_specialist_routing.py --roles frontdoor coder_primary architect_general
+
+    # Direct mode only (legacy behavior)
+    python scripts/benchmark/seed_specialist_routing.py --modes direct
+
+    # Test specific modes
+    python scripts/benchmark/seed_specialist_routing.py --modes direct react repl
 """
 
 from __future__ import annotations
@@ -58,13 +64,23 @@ DEFAULT_SUITES = [
     "coder", "instruction_precision",
 ]
 DEFAULT_ROLES = ["frontdoor", "coder_primary", "coder_escalation", "architect_general"]
+DEFAULT_MODES = ["direct", "react", "repl"]
+
+# Architect roles delegate tool work to faster specialists.
+# They support direct (no tools) and delegated (multi-loop delegation) modes.
+ARCHITECT_ROLES = {"architect_general", "architect_coding"}
+ARCHITECT_MODES = {"direct", "delegated"}
+
+# Legacy alias for backwards compatibility
+DIRECT_ONLY_ROLES = ARCHITECT_ROLES
 
 
 @dataclass
 class RoleResult:
-    """Result of running a question through a specific role."""
+    """Result of running a question through a specific role+mode."""
 
     role: str
+    mode: str
     answer: str
     passed: bool
     elapsed_seconds: float
@@ -86,14 +102,16 @@ class ComparativeResult:
 def call_orchestrator_forced(
     prompt: str,
     force_role: str,
+    force_mode: str = "direct",
     url: str = DEFAULT_ORCHESTRATOR_URL,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
-    """Call orchestrator with forced role routing.
+    """Call orchestrator with forced role and mode routing.
 
     Args:
         prompt: The question to send.
         force_role: Role to force (bypasses routing).
+        force_mode: Execution mode to force ('direct', 'react', or 'repl').
         url: Orchestrator API URL.
         timeout: Request timeout in seconds.
 
@@ -109,6 +127,7 @@ def call_orchestrator_forced(
                 "prompt": prompt,
                 "real_mode": True,
                 "force_role": force_role,
+                "force_mode": force_mode,
             },
             timeout=timeout,
         )
@@ -142,9 +161,11 @@ def score_answer_deterministic(
 
 def compute_comparative_rewards(
     role_results: dict[str, RoleResult],
-    baseline_role: str = "frontdoor",
+    baseline_key: str = "frontdoor:direct",
 ) -> dict[str, float]:
-    """Compute comparative rewards relative to the baseline (frontdoor).
+    """Compute comparative rewards relative to the baseline.
+
+    Keys are 'role:mode' (e.g. 'frontdoor:direct', 'coder_primary:react').
 
     Reward scheme:
       specialist correct & baseline wrong → +1.0
@@ -153,56 +174,85 @@ def compute_comparative_rewards(
       both wrong                          → -0.3
 
     Args:
-        role_results: Results per role.
-        baseline_role: The baseline to compare against.
+        role_results: Results per role:mode key.
+        baseline_key: The baseline key to compare against.
 
     Returns:
-        Dict of role -> reward.
+        Dict of role:mode -> reward.
     """
     rewards = {}
-    baseline = role_results.get(baseline_role)
+    baseline = role_results.get(baseline_key)
     if baseline is None:
         # No baseline — use absolute scoring
-        for role, result in role_results.items():
-            rewards[role] = 1.0 if result.passed else -0.5
+        for key, result in role_results.items():
+            rewards[key] = 1.0 if result.passed else -0.5
         return rewards
 
     baseline_passed = baseline.passed
 
-    for role, result in role_results.items():
-        if role == baseline_role:
+    for key, result in role_results.items():
+        if key == baseline_key:
             # Baseline always gets absolute reward
-            rewards[role] = 1.0 if result.passed else -0.5
+            rewards[key] = 1.0 if result.passed else -0.5
         elif result.passed and not baseline_passed:
             # Specialist correct, baseline wrong — strong positive
-            rewards[role] = 1.0
+            rewards[key] = 1.0
         elif not result.passed and baseline_passed:
             # Specialist wrong, baseline correct — negative
-            rewards[role] = -0.5
+            rewards[key] = -0.5
         elif result.passed and baseline_passed:
             # Both correct — mild positive (speed parity)
-            rewards[role] = 0.3
+            rewards[key] = 0.3
         else:
             # Both wrong — mild negative
-            rewards[role] = -0.3
+            rewards[key] = -0.3
 
     return rewards
+
+
+def _build_role_mode_combos(
+    roles: list[str],
+    modes: list[str],
+) -> list[tuple[str, str]]:
+    """Build (role, mode) combinations respecting architect role constraints.
+
+    Architect roles get ARCHITECT_MODES (direct + delegated) instead of
+    the standard modes list. All other roles get every mode in the modes list.
+
+    Args:
+        roles: List of role names.
+        modes: List of mode names.
+
+    Returns:
+        List of (role, mode) tuples.
+    """
+    combos = []
+    for role in roles:
+        if role in ARCHITECT_ROLES:
+            for mode in ARCHITECT_MODES:
+                combos.append((role, mode))
+        else:
+            for mode in modes:
+                combos.append((role, mode))
+    return combos
 
 
 def run_seeding(
     suites: list[str],
     roles: list[str],
+    modes: list[str],
     sample_per_suite: int,
     seed: int,
     url: str,
     timeout: int,
     dry_run: bool = False,
 ) -> list[ComparativeResult]:
-    """Run comparative seeding across all suites and roles.
+    """Run comparative seeding across all suites, roles, and modes.
 
     Args:
         suites: Suites to run.
         roles: Roles to compare.
+        modes: Execution modes to test per role.
         sample_per_suite: Questions per suite.
         seed: RNG seed.
         url: Orchestrator URL.
@@ -218,6 +268,10 @@ def run_seeding(
 
     rng = random.Random(seed)
     all_results: list[ComparativeResult] = []
+
+    # Build (role, mode) combos — architects get direct only
+    combos = _build_role_mode_combos(roles, modes)
+    combo_keys = [f"{r}:{m}" for r, m in combos]
 
     # Load prompts from debug suite (deterministic scoring)
     all_prompts: list[dict[str, Any]] = []
@@ -251,8 +305,8 @@ def run_seeding(
             })
 
     logger.info(f"Loaded {len(all_prompts)} questions across {len(suite_names)} suites")
-    logger.info(f"Testing {len(roles)} roles: {', '.join(roles)}")
-    logger.info(f"Total API calls: {len(all_prompts) * len(roles)}")
+    logger.info(f"Testing {len(combos)} role×mode combos: {', '.join(combo_keys)}")
+    logger.info(f"Total API calls: {len(all_prompts) * len(combos)}")
 
     # Architect models are slower — give them more time
     SLOW_ROLES = {"architect_general", "architect_coding"}
@@ -270,10 +324,11 @@ def run_seeding(
 
         role_results: dict[str, RoleResult] = {}
 
-        for role in roles:
+        for role, mode in combos:
+            key = f"{role}:{mode}"
             role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else timeout
             q_start = time.perf_counter()
-            response = call_orchestrator_forced(prompt, role, url, role_timeout)
+            response = call_orchestrator_forced(prompt, role, mode, url, role_timeout)
             q_elapsed = time.perf_counter() - q_start
 
             answer = response.get("answer", "")
@@ -284,8 +339,9 @@ def run_seeding(
             else:
                 passed = score_answer_deterministic(answer, expected, scoring_method, scoring_config)
 
-            role_results[role] = RoleResult(
+            role_results[key] = RoleResult(
                 role=role,
+                mode=mode,
                 answer=answer[:500] if answer else "",
                 passed=passed,
                 elapsed_seconds=q_elapsed,
@@ -293,10 +349,10 @@ def run_seeding(
             )
 
             status = "PASS" if passed else ("ERROR" if error else "FAIL")
-            logger.info(f"  {role:25s} → {status} ({q_elapsed:.1f}s)")
+            logger.info(f"  {key:30s} → {status} ({q_elapsed:.1f}s)")
 
-        # Compute comparative rewards
-        rewards = compute_comparative_rewards(role_results)
+        # Compute comparative rewards (baseline is frontdoor:direct)
+        rewards = compute_comparative_rewards(role_results, baseline_key="frontdoor:direct")
 
         comp = ComparativeResult(
             suite=suite,
@@ -309,8 +365,8 @@ def run_seeding(
         all_results.append(comp)
 
         # Log comparative rewards
-        for role, reward in sorted(rewards.items()):
-            logger.info(f"    reward[{role}] = {reward:+.1f}")
+        for key, reward in sorted(rewards.items()):
+            logger.info(f"    reward[{key}] = {reward:+.1f}")
 
     # Inject rewards into MemRL
     if not dry_run:
@@ -344,8 +400,8 @@ def _inject_comparative_rewards(
         state = get_state()
 
         for comp in results:
-            for role, reward in comp.rewards.items():
-                action = f"{role}:direct"
+            for action_key, reward in comp.rewards.items():
+                # action_key is already 'role:mode' (e.g. 'frontdoor:direct')
                 context = {
                     "task_type": comp.suite,
                     "source": "comparative_seeding",
@@ -355,7 +411,7 @@ def _inject_comparative_rewards(
                 success = store_external_reward(
                     state=state,
                     task_description=comp.prompt[:200],
-                    action=action,
+                    action=action_key,
                     reward=reward,
                     context=context,
                 )
@@ -370,14 +426,13 @@ def _inject_comparative_rewards(
         import httpx
 
         for comp in results:
-            for role, reward in comp.rewards.items():
-                action = f"{role}:direct"
+            for action_key, reward in comp.rewards.items():
                 try:
                     resp = httpx.post(
                         f"{url}/memrl/reward",
                         json={
                             "task_description": comp.prompt[:200],
-                            "action": action,
+                            "action": action_key,
                             "reward": reward,
                             "context": {
                                 "task_type": comp.suite,
@@ -397,70 +452,80 @@ def _inject_comparative_rewards(
     return injected
 
 
-def print_seeding_summary(results: list[ComparativeResult], roles: list[str]) -> None:
+def print_seeding_summary(
+    results: list[ComparativeResult],
+    roles: list[str],
+    modes: list[str],
+) -> None:
     """Print summary of seeding results."""
-    # Per-role accuracy
-    role_stats: dict[str, dict[str, int]] = {r: {"pass": 0, "fail": 0, "error": 0} for r in roles}
+    # Build combo keys for display
+    combos = _build_role_mode_combos(roles, modes)
+    combo_keys = [f"{r}:{m}" for r, m in combos]
+
+    # Per-combo accuracy
+    key_stats: dict[str, dict[str, int]] = {
+        k: {"pass": 0, "fail": 0, "error": 0} for k in combo_keys
+    }
     suite_stats: dict[str, dict[str, dict[str, int]]] = {}
 
     for comp in results:
         suite = comp.suite
         if suite not in suite_stats:
-            suite_stats[suite] = {r: {"pass": 0, "fail": 0} for r in roles}
+            suite_stats[suite] = {k: {"pass": 0, "fail": 0} for k in combo_keys}
 
-        for role, rr in comp.role_results.items():
-            if role not in role_stats:
+        for key, rr in comp.role_results.items():
+            if key not in key_stats:
                 continue
             if rr.error:
-                role_stats[role]["error"] += 1
+                key_stats[key]["error"] += 1
             elif rr.passed:
-                role_stats[role]["pass"] += 1
-                suite_stats.get(suite, {}).get(role, {})["pass"] = \
-                    suite_stats.get(suite, {}).get(role, {}).get("pass", 0) + 1
+                key_stats[key]["pass"] += 1
+                suite_stats.get(suite, {}).get(key, {})["pass"] = \
+                    suite_stats.get(suite, {}).get(key, {}).get("pass", 0) + 1
             else:
-                role_stats[role]["fail"] += 1
-                suite_stats.get(suite, {}).get(role, {})["fail"] = \
-                    suite_stats.get(suite, {}).get(role, {}).get("fail", 0) + 1
+                key_stats[key]["fail"] += 1
+                suite_stats.get(suite, {}).get(key, {})["fail"] = \
+                    suite_stats.get(suite, {}).get(key, {}).get("fail", 0) + 1
 
-    print(f"\n{'='*70}")
-    print("COMPARATIVE SEEDING SUMMARY")
-    print(f"{'='*70}")
+    print(f"\n{'='*80}")
+    print("COMPARATIVE SEEDING SUMMARY (role×mode)")
+    print(f"{'='*80}")
     print(f"Questions: {len(results)}")
-    print(f"Roles tested: {', '.join(roles)}")
+    print(f"Combos tested: {', '.join(combo_keys)}")
 
-    print(f"\n{'Role':25s} {'Pass':>6s} {'Fail':>6s} {'Error':>6s} {'Accuracy':>10s}")
-    print("-" * 55)
-    for role in roles:
-        s = role_stats[role]
+    print(f"\n{'Role:Mode':30s} {'Pass':>6s} {'Fail':>6s} {'Error':>6s} {'Accuracy':>10s}")
+    print("-" * 60)
+    for key in combo_keys:
+        s = key_stats[key]
         total = s["pass"] + s["fail"]
         acc = s["pass"] / total * 100 if total > 0 else 0
-        print(f"{role:25s} {s['pass']:6d} {s['fail']:6d} {s['error']:6d} {acc:9.1f}%")
+        print(f"{key:30s} {s['pass']:6d} {s['fail']:6d} {s['error']:6d} {acc:9.1f}%")
 
     # Per-suite breakdown
     if len(suite_stats) > 1:
         print(f"\nPer-suite breakdown (accuracy %):")
-        header = f"{'Suite':20s}" + "".join(f" {r:>15s}" for r in roles)
+        header = f"{'Suite':20s}" + "".join(f" {k:>20s}" for k in combo_keys)
         print(header)
         print("-" * len(header))
         for suite in sorted(suite_stats.keys()):
             row = f"{suite:20s}"
-            for role in roles:
-                rs = suite_stats[suite].get(role, {"pass": 0, "fail": 0})
+            for key in combo_keys:
+                rs = suite_stats[suite].get(key, {"pass": 0, "fail": 0})
                 total = rs["pass"] + rs["fail"]
                 acc = rs["pass"] / total * 100 if total > 0 else 0
-                row += f" {acc:14.1f}%"
+                row += f" {acc:19.1f}%"
             print(row)
 
     # Reward distribution
-    reward_totals: dict[str, float] = {r: 0.0 for r in roles}
+    reward_totals: dict[str, float] = {k: 0.0 for k in combo_keys}
     for comp in results:
-        for role, reward in comp.rewards.items():
-            if role in reward_totals:
-                reward_totals[role] += reward
+        for key, reward in comp.rewards.items():
+            if key in reward_totals:
+                reward_totals[key] += reward
 
     print(f"\nCumulative rewards:")
-    for role in roles:
-        print(f"  {role:25s} {reward_totals[role]:+.1f}")
+    for key in combo_keys:
+        print(f"  {key:30s} {reward_totals[key]:+.1f}")
 
 
 def main():
@@ -475,6 +540,11 @@ def main():
     parser.add_argument(
         "--roles", nargs="+", default=DEFAULT_ROLES,
         help=f"Roles to compare (default: {' '.join(DEFAULT_ROLES)})",
+    )
+    parser.add_argument(
+        "--modes", nargs="+", default=DEFAULT_MODES,
+        help=f"Execution modes to test (default: {' '.join(DEFAULT_MODES)}). "
+        "Architect roles always use direct only.",
     )
     parser.add_argument(
         "--sample-size", type=int, default=10,
@@ -503,10 +573,13 @@ def main():
 
     args = parser.parse_args()
 
+    combos = _build_role_mode_combos(args.roles, args.modes)
     logger.info("=" * 60)
-    logger.info("Comparative Specialist Seeding")
+    logger.info("Comparative Specialist Seeding (role×mode)")
     logger.info(f"  Suites: {args.suites}")
     logger.info(f"  Roles: {args.roles}")
+    logger.info(f"  Modes: {args.modes}")
+    logger.info(f"  Combos: {len(combos)} ({', '.join(f'{r}:{m}' for r, m in combos)})")
     logger.info(f"  Sample size: {args.sample_size}/suite")
     logger.info(f"  Seed: {args.seed}")
     logger.info(f"  Dry run: {args.dry_run}")
@@ -515,6 +588,7 @@ def main():
     results = run_seeding(
         suites=args.suites,
         roles=args.roles,
+        modes=args.modes,
         sample_per_suite=args.sample_size,
         seed=args.seed,
         url=args.url,
@@ -522,7 +596,7 @@ def main():
         dry_run=args.dry_run,
     )
 
-    print_seeding_summary(results, args.roles)
+    print_seeding_summary(results, args.roles, args.modes)
 
     # Save results
     output_path = args.output
@@ -537,6 +611,8 @@ def main():
         "config": {
             "suites": args.suites,
             "roles": args.roles,
+            "modes": args.modes,
+            "combos": [f"{r}:{m}" for r, m in combos],
             "sample_size": args.sample_size,
             "seed": args.seed,
             "dry_run": args.dry_run,

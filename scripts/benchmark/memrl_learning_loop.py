@@ -92,13 +92,26 @@ def load_debug_prompts(
     suites: list[str],
     sample_per_suite: int,
     seed: int,
+    partition: tuple[int, int] | None = None,
 ) -> list[dict[str, Any]]:
     """Load and sample debug benchmark prompts (deterministic scoring).
+
+    Two modes:
+
+    1. **Sampling** (partition=None): Randomly samples `sample_per_suite`
+       questions per suite.
+    2. **Partition** (partition=(chunk_index, total_chunks)): Shuffles all
+       questions per suite with `seed`, splits into non-overlapping chunks,
+       returns only the chunk_index-th chunk. Zero redundancy across
+       iterations.
 
     Args:
         suites: List of suite names to load.
         sample_per_suite: Number of questions to sample per suite.
+            Ignored when partition is set.
         seed: Random seed for reproducibility.
+        partition: Optional (chunk_index, total_chunks) for non-overlapping
+            partitioning. chunk_index is 0-based.
 
     Returns:
         List of prompt dicts with suite, id, prompt, expected, scoring info.
@@ -124,8 +137,23 @@ def load_debug_prompts(
             logger.warning(f"Empty debug suite: {suite_name}")
             continue
 
-        if len(questions) > sample_per_suite:
-            questions = rng.sample(questions, sample_per_suite)
+        if partition is not None:
+            chunk_idx, total_chunks = partition
+            # Shuffle deterministically with base seed, then select one chunk
+            rng_part = random.Random(seed)
+            shuffled = list(questions)
+            rng_part.shuffle(shuffled)
+            chunk_size = len(shuffled) // total_chunks
+            remainder = len(shuffled) % total_chunks
+            # First `remainder` chunks get +1 question
+            start = chunk_idx * chunk_size + min(chunk_idx, remainder)
+            end = start + chunk_size + (1 if chunk_idx < remainder else 0)
+            questions = shuffled[start:end]
+            logger.info(f"  {suite_name}: partition {chunk_idx}/{total_chunks} → "
+                        f"{len(questions)}/{len(shuffled)} questions")
+        else:
+            if len(questions) > sample_per_suite:
+                questions = rng.sample(questions, sample_per_suite)
 
         for q in questions:
             all_prompts.append({
@@ -449,16 +477,19 @@ def main():
     all_results: list[IterationResult] = []
 
     for iteration in range(1, args.iterations + 1):
-        # Use different seed per iteration for variety, but deterministic
-        iter_seed = args.seed + iteration * 1000
         logger.info(f"\n{'='*40}")
-        logger.info(f"Iteration {iteration}/{args.iterations} (seed={iter_seed})")
+        if args.iterations > 1:
+            logger.info(f"Iteration {iteration}/{args.iterations} "
+                        f"(partition {iteration-1}/{args.iterations})")
+        else:
+            logger.info(f"Iteration {iteration}/{args.iterations}")
         logger.info(f"{'='*40}")
 
         prompts = load_debug_prompts(
             suites=args.suites,
             sample_per_suite=args.sample_size,
-            seed=iter_seed,
+            seed=args.seed,
+            partition=(iteration - 1, args.iterations) if args.iterations > 1 else None,
         )
 
         if not prompts:

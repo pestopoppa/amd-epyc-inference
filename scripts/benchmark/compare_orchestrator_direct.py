@@ -57,17 +57,26 @@ def load_debug_prompts(
     suite: str,
     sample_per_suite: int = 10,
     seed: int | None = None,
+    partition: tuple[int, int] | None = None,
 ) -> list[dict]:
-    """Load debug benchmark prompts with random sampling.
+    """Load debug benchmark prompts with random sampling or partitioning.
 
-    Loads questions from benchmarks/prompts/debug/*.yaml and randomly
-    samples `sample_per_suite` questions per suite. Each run uses a
-    different sample (seeded by timestamp for reproducibility).
+    Loads questions from benchmarks/prompts/debug/*.yaml. Two modes:
+
+    1. **Sampling** (partition=None): Randomly samples `sample_per_suite`
+       questions per suite. Each run uses a different sample.
+    2. **Partition** (partition=(chunk_index, total_chunks)): Shuffles all
+       questions with `seed`, splits into `total_chunks` non-overlapping
+       chunks, and returns only the `chunk_index`-th chunk. This ensures
+       zero redundancy across iterations of a learning loop.
 
     Args:
         suite: Suite name or "all".
         sample_per_suite: Number of questions to sample per suite.
+            Ignored when partition is set.
         seed: RNG seed. If None, uses current timestamp.
+        partition: Optional (chunk_index, total_chunks) for non-overlapping
+            partitioning. chunk_index is 0-based.
 
     Returns:
         List of prompt dicts compatible with compare_prompt().
@@ -98,10 +107,25 @@ def load_debug_prompts(
             print(f"  [debug] Empty debug suite: {suite_name}")
             continue
 
-        # Random sample (without replacement)
-        n = min(sample_per_suite, len(questions))
-        sampled = rng.sample(questions, n)
-        print(f"  [debug] {suite_name}: sampled {n}/{len(questions)} questions")
+        if partition is not None:
+            chunk_idx, total_chunks = partition
+            # Shuffle deterministically, then select one chunk
+            rng_part = random.Random(seed)
+            shuffled = list(questions)
+            rng_part.shuffle(shuffled)
+            chunk_size = len(shuffled) // total_chunks
+            remainder = len(shuffled) % total_chunks
+            # First `remainder` chunks get +1 question
+            start = chunk_idx * chunk_size + min(chunk_idx, remainder)
+            end = start + chunk_size + (1 if chunk_idx < remainder else 0)
+            sampled = shuffled[start:end]
+            print(f"  [debug] {suite_name}: partition {chunk_idx}/{total_chunks} → "
+                  f"{len(sampled)}/{len(questions)} questions")
+        else:
+            # Random sample (without replacement)
+            n = min(sample_per_suite, len(questions))
+            sampled = rng.sample(questions, n)
+            print(f"  [debug] {suite_name}: sampled {n}/{len(questions)} questions")
 
         for q in sampled:
             all_prompts.append({

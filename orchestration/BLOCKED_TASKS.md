@@ -187,6 +187,21 @@ repl = REPLEnvironment(context="...", config=config)
 - [x] Implement `EpisodicREPL.suggest_exploration()` — `route_advice()` provides MemRL recommendations (2026-01-29)
 - [ ] Track token efficiency metrics
 
+### Architect Delegation (2026-01-30) — COMPLETE
+- [x] `read_file` + `list_directory` in REACT_TOOL_WHITELIST
+- [x] `build_architect_investigate_prompt()` + `build_architect_synthesis_prompt()` with TOON support
+- [x] `_parse_architect_decision()` — TOON/JSON/bare-text parser
+- [x] `_architect_delegated_answer()` — multi-loop delegation (max_loops=3)
+- [x] `architect_delegation` feature flag + env var `ORCHESTRATOR_ARCHITECT_DELEGATION`
+- [x] `"delegated"` in `force_mode` valid set
+- [x] Wired into `_handle_chat()` direct-mode block
+- [x] Seeding script: `ARCHITECT_MODES = {"direct", "delegated"}`
+- [x] 27 unit tests, 884 total tests pass
+- [x] Validation script env var prefix bug fixed (bare `SPECIALIST_ROUTING` → `ORCHESTRATOR_SPECIALIST_ROUTING`)
+- [x] `ORCHESTRATOR_ARCHITECT_DELEGATION=1` wired into validation steps 2-5b
+- [ ] Live validation: `bash scripts/benchmark/run_phase3_validation.sh`
+- [ ] Comparative seeding results: `delegated` vs `direct` for architect roles
+
 ### Phase 6: Claude-as-Judge (Optional)
 - [ ] Run orchestrator_planning.yaml benchmark
 - [ ] Evaluate baseline scores

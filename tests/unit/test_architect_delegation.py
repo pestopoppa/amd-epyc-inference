@@ -1,0 +1,429 @@
+#!/usr/bin/env python3
+"""Tests for architect delegation (investigate via specialist tools).
+
+Tests the TOON/JSON parser, multi-loop delegation, feature flag gating,
+and specialist document passthrough.
+"""
+
+import json
+import sys
+import time
+from pathlib import Path
+from unittest.mock import MagicMock, patch, call
+
+import pytest
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+
+# ── Parser Tests ──────────────────────────────────────────────────────────
+
+
+class TestParseArchitectDecision:
+    """Tests for _parse_architect_decision()."""
+
+    def test_toon_direct(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision("D|The answer is 42")
+        assert result["mode"] == "direct"
+        assert result["answer"] == "The answer is 42"
+        assert result["brief"] == ""
+
+    def test_toon_investigate(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision(
+            "I|brief:Check src/api.py for error handling|to:coder_primary"
+        )
+        assert result["mode"] == "investigate"
+        assert "Check src/api.py" in result["brief"]
+        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_mode"] == "react"
+
+    def test_toon_investigate_repl_mode(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision(
+            "I|brief:Draft implementation doc|to:coder_primary|mode:repl"
+        )
+        assert result["mode"] == "investigate"
+        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_mode"] == "repl"
+
+    def test_json_direct(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        payload = json.dumps({"mode": "direct", "answer": "The answer is 42"})
+        result = _parse_architect_decision(payload)
+        assert result["mode"] == "direct"
+        assert result["answer"] == "The answer is 42"
+
+    def test_json_investigate(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        payload = json.dumps({
+            "mode": "investigate",
+            "brief": "Search for X",
+            "to": "worker_explore",
+        })
+        result = _parse_architect_decision(payload)
+        assert result["mode"] == "investigate"
+        assert result["brief"] == "Search for X"
+        assert result["delegate_to"] == "worker_explore"
+
+    def test_markdown_wrapped_json(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        wrapped = '```json\n{"mode": "direct", "answer": "hello"}\n```'
+        result = _parse_architect_decision(wrapped)
+        assert result["mode"] == "direct"
+        assert result["answer"] == "hello"
+
+    def test_fallback_bare_text(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision("Just a plain text answer with no format")
+        assert result["mode"] == "direct"
+        assert result["answer"] == "Just a plain text answer with no format"
+
+    def test_invalid_role_clamped(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision(
+            "I|brief:Check something|to:nonexistent_role"
+        )
+        assert result["mode"] == "investigate"
+        assert result["delegate_to"] == "coder_primary"
+
+    def test_invalid_mode_clamped(self):
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision(
+            "I|brief:Check something|to:coder_primary|mode:invalid"
+        )
+        assert result["delegate_mode"] == "react"
+
+
+# ── Delegation Flow Tests ─────────────────────────────────────────────────
+
+
+class TestArchitectDelegatedAnswer:
+    """Tests for _architect_delegated_answer()."""
+
+    def _mock_primitives(self, responses):
+        """Create mock LLMPrimitives that returns responses in sequence."""
+        primitives = MagicMock()
+        primitives.llm_call = MagicMock(side_effect=responses)
+        primitives._backends = {"test": True}
+        primitives.total_tokens_generated = 100
+        primitives.get_cache_stats.return_value = None
+        return primitives
+
+    def _mock_state(self):
+        """Create mock AppState."""
+        state = MagicMock()
+        state.tool_registry = None
+        return state
+
+    def test_direct_answer_no_loops(self):
+        """Architect answers directly — no delegation loops."""
+        from src.api.routes.chat import _architect_delegated_answer
+
+        primitives = self._mock_primitives(["D|The answer is 42"])
+        state = self._mock_state()
+
+        answer, stats = _architect_delegated_answer(
+            question="What is 6*7?",
+            context="",
+            primitives=primitives,
+            state=state,
+        )
+
+        assert answer == "The answer is 42"
+        assert stats["loops"] == 0
+        assert primitives.llm_call.call_count == 1
+
+    def test_one_investigation_loop(self):
+        """Architect investigates once, then synthesizes."""
+        from src.api.routes.chat import _architect_delegated_answer
+
+        responses = [
+            # Loop 0 Phase A: architect decides to investigate
+            "I|brief:Check the file src/api.py|to:coder_primary",
+            # Loop 0 Phase B: specialist ReAct (mocked via _react_mode_answer)
+            # Loop 1 Phase A: architect synthesizes
+            "D|Based on the investigation, the answer is X",
+        ]
+
+        primitives = self._mock_primitives(responses)
+        state = self._mock_state()
+
+        # Mock _react_mode_answer to avoid needing real ReAct loop
+        with patch(
+            "src.api.routes.chat._react_mode_answer",
+            return_value="File contents: error handling at line 42",
+        ):
+            answer, stats = _architect_delegated_answer(
+                question="Where is error handling?",
+                context="",
+                primitives=primitives,
+                state=state,
+            )
+
+        assert "answer is X" in answer
+        assert stats["loops"] == 1
+        assert len(stats["phases"]) >= 2
+
+    def test_multi_loop_investigation(self):
+        """Architect requests two investigations before answering."""
+        from src.api.routes.chat import _architect_delegated_answer
+
+        responses = [
+            # Loop 0 Phase A: first investigation request
+            "I|brief:Check file A|to:coder_primary",
+            # Loop 1 Phase A: second investigation request
+            "I|brief:Check file B|to:worker_explore",
+            # Loop 2 Phase A: final answer
+            "D|After investigating A and B, the answer is Z",
+        ]
+
+        primitives = self._mock_primitives(responses)
+        state = self._mock_state()
+
+        with patch(
+            "src.api.routes.chat._react_mode_answer",
+            side_effect=["Report from A", "Report from B"],
+        ):
+            answer, stats = _architect_delegated_answer(
+                question="Compare A and B",
+                context="",
+                primitives=primitives,
+                state=state,
+                max_loops=3,
+            )
+
+        assert "answer is Z" in answer
+        assert stats["loops"] == 2
+
+    def test_max_loops_cap_forces_response(self):
+        """When architect keeps investigating past max_loops, force synthesis."""
+        from src.api.routes.chat import _architect_delegated_answer
+
+        responses = [
+            # Loop 0: investigate
+            "I|brief:Check X|to:coder_primary",
+            # Loop 1: investigate again
+            "I|brief:Check Y|to:coder_primary",
+            # Loop 2: investigate AGAIN (would exceed max_loops=2)
+            "I|brief:Check Z|to:coder_primary",
+            # Forced synthesis after cap
+            "Forced answer from all reports",
+        ]
+
+        primitives = self._mock_primitives(responses)
+        state = self._mock_state()
+
+        with patch(
+            "src.api.routes.chat._react_mode_answer",
+            side_effect=["Report X", "Report Y", "Report Z"],
+        ):
+            answer, stats = _architect_delegated_answer(
+                question="Complex question",
+                context="",
+                primitives=primitives,
+                state=state,
+                max_loops=2,
+                force_response_on_cap=True,
+            )
+
+        assert answer  # Should have a forced answer
+        assert stats["loops"] == 2
+
+    def test_specialist_document_passthrough(self):
+        """Specialist drafts document, architect says 'Approved' → document is answer."""
+        from src.api.routes.chat import _architect_delegated_answer
+
+        responses = [
+            # Loop 0: architect requests REPL drafting
+            "I|brief:Draft the implementation|to:coder_primary|mode:repl",
+            # Loop 1: architect approves
+            "D|Approved",
+        ]
+
+        primitives = self._mock_primitives(responses)
+        state = self._mock_state()
+
+        specialist_doc = "def hello():\n    return 'world'"
+
+        with patch(
+            "src.api.routes.chat.REPLEnvironment",
+        ) as mock_repl_cls:
+            # Mock REPL to produce a document
+            mock_repl = MagicMock()
+            mock_repl.get_prompt.return_value = "prompt"
+            mock_repl.execute.return_value = {"final": specialist_doc}
+            mock_repl.get_state.return_value = ""
+            mock_repl_cls.return_value = mock_repl
+
+            # Need to add the REPL primitives call
+            primitives.llm_call.side_effect = [
+                responses[0],  # architect decides to delegate
+                "code here",   # specialist REPL code
+                responses[1],  # architect approves
+            ]
+
+            answer, stats = _architect_delegated_answer(
+                question="Write a hello function",
+                context="",
+                primitives=primitives,
+                state=state,
+            )
+
+        # The specialist document should be the final answer
+        assert answer == specialist_doc
+
+    def test_delegate_role_validation(self):
+        """Invalid delegate role gets clamped to coder_primary."""
+        from src.api.routes.chat import _parse_architect_decision
+
+        result = _parse_architect_decision(
+            "I|brief:Do something|to:invalid_role_xyz"
+        )
+        assert result["delegate_to"] == "coder_primary"
+
+
+# ── Feature Flag Gating ──────────────────────────────────────────────────
+
+
+class TestFeatureFlagGating:
+    """Tests for architect_delegation feature flag."""
+
+    def test_feature_flag_exists(self):
+        """Feature flag is defined in Features dataclass."""
+        from src.features import Features
+
+        f = Features()
+        assert hasattr(f, "architect_delegation")
+        assert f.architect_delegation is False
+
+    def test_feature_flag_in_summary(self):
+        """Feature flag appears in summary dict."""
+        from src.features import Features
+
+        f = Features(architect_delegation=True)
+        summary = f.summary()
+        assert "architect_delegation" in summary
+        assert summary["architect_delegation"] is True
+
+    def test_env_var_enables_flag(self):
+        """ORCHESTRATOR_ARCHITECT_DELEGATION=1 enables the flag."""
+        import os
+        from src.features import get_features
+
+        os.environ["ORCHESTRATOR_ARCHITECT_DELEGATION"] = "1"
+        try:
+            f = get_features()
+            assert f.architect_delegation is True
+        finally:
+            del os.environ["ORCHESTRATOR_ARCHITECT_DELEGATION"]
+
+
+# ── Prompt Builder Tests ─────────────────────────────────────────────────
+
+
+class TestArchitectPromptBuilders:
+    """Tests for architect prompt template functions."""
+
+    def test_investigate_prompt_has_decision_instructions(self):
+        from src.prompt_builders import build_architect_investigate_prompt
+
+        prompt = build_architect_investigate_prompt("What is X?")
+        assert "D|" in prompt
+        assert "I|" in prompt
+        assert "brief:" in prompt
+        assert "Question:" in prompt
+
+    def test_investigate_prompt_includes_context(self):
+        from src.prompt_builders import build_architect_investigate_prompt
+
+        prompt = build_architect_investigate_prompt("What is X?", context="some ctx")
+        assert "some ctx" in prompt
+
+    def test_synthesis_prompt_includes_report(self):
+        from src.prompt_builders import build_architect_synthesis_prompt
+
+        prompt = build_architect_synthesis_prompt(
+            "What is X?", "Report: found Y", loop_num=1, max_loops=3,
+        )
+        assert "Report: found Y" in prompt
+        assert "Question:" in prompt
+
+    def test_synthesis_prompt_shows_loop_count(self):
+        from src.prompt_builders import build_architect_synthesis_prompt
+
+        prompt = build_architect_synthesis_prompt(
+            "Q", "R", loop_num=2, max_loops=3,
+        )
+        assert "2" in prompt
+        assert "3" in prompt
+
+
+# ── Whitelist Tests ──────────────────────────────────────────────────────
+
+
+class TestFileToolsWhitelist:
+    """Tests that file tools are in REACT_TOOL_WHITELIST."""
+
+    def test_read_file_in_whitelist(self):
+        from src.prompt_builders import REACT_TOOL_WHITELIST
+
+        assert "read_file" in REACT_TOOL_WHITELIST
+
+    def test_list_directory_in_whitelist(self):
+        from src.prompt_builders import REACT_TOOL_WHITELIST
+
+        assert "list_directory" in REACT_TOOL_WHITELIST
+
+    def test_original_tools_still_present(self):
+        from src.prompt_builders import REACT_TOOL_WHITELIST
+
+        assert "web_search" in REACT_TOOL_WHITELIST
+        assert "calculate" in REACT_TOOL_WHITELIST
+        assert "python_eval" in REACT_TOOL_WHITELIST
+
+
+# ── Seeding Script Tests ─────────────────────────────────────────────────
+
+
+class TestSeedingScriptArchitectModes:
+    """Tests for updated seeding script with architect delegation."""
+
+    def test_architect_roles_constant(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "benchmark"))
+        from seed_specialist_routing import ARCHITECT_ROLES, ARCHITECT_MODES
+
+        assert "architect_general" in ARCHITECT_ROLES
+        assert "architect_coding" in ARCHITECT_ROLES
+        assert "direct" in ARCHITECT_MODES
+        assert "delegated" in ARCHITECT_MODES
+
+    def test_build_combos_architect_gets_delegation(self):
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts"))
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "benchmark"))
+        from seed_specialist_routing import _build_role_mode_combos
+
+        combos = _build_role_mode_combos(
+            roles=["frontdoor", "architect_general"],
+            modes=["direct", "react", "repl"],
+        )
+
+        # Frontdoor gets all 3 modes
+        frontdoor_modes = [m for r, m in combos if r == "frontdoor"]
+        assert set(frontdoor_modes) == {"direct", "react", "repl"}
+
+        # Architect gets direct + delegated (not react/repl)
+        arch_modes = [m for r, m in combos if r == "architect_general"]
+        assert set(arch_modes) == {"direct", "delegated"}

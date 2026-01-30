@@ -131,7 +131,7 @@ class LLMPrimitivesConfig:
 
     output_cap: int = 8192  # Max chars per sub-LM output
     batch_parallelism: int = 4  # Max parallel calls in llm_batch
-    call_timeout: int = 120  # Timeout per call in seconds
+    call_timeout: int = 300  # Timeout per call in seconds (matches LlamaServerBackend)
     mock_response_prefix: str = "[MOCK]"  # Prefix for mock responses
     max_recursion_depth: int = 5  # Maximum nesting depth for sub-LM calls
     # Cost estimation rates (per 1M tokens)
