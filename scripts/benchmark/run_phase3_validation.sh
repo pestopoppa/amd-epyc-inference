@@ -28,23 +28,31 @@ PHASE3_LOG="${LOG_DIR}/phase3_${TIMESTAMP}.log"
 # Defaults
 START_STEP=0
 DRY_RUN=false
+PIPELINE_SEED=""
 
 # Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --step)  START_STEP="$2"; shift 2 ;;
+    --seed)  PIPELINE_SEED="$2"; shift 2 ;;
     --dry-run) DRY_RUN=true; shift ;;
     -h|--help)
-      echo "Usage: $0 [--step N] [--dry-run]"
+      echo "Usage: $0 [--step N] [--seed N] [--dry-run]"
       echo "  --step N    Resume from step N (0-7)"
       echo "              0=health, 1=baseline, 2=seeding, 3=policy, 4=learning,"
       echo "              5=regression, 5b/6=plan-review, 7=kill-switch"
+      echo "  --seed N    RNG seed (default: random, logged for reproducibility)"
       echo "  --dry-run   Print commands without executing"
       exit 0
       ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
+
+# Generate random seed if not specified, for question variety across runs
+if [[ -z "$PIPELINE_SEED" ]]; then
+  PIPELINE_SEED=$((RANDOM * RANDOM % 1000000))
+fi
 
 mkdir -p "${RESULTS_DIR}" "${LOG_DIR}"
 
@@ -174,20 +182,20 @@ step0_health_check() {
 }
 
 # =============================================================================
-# Step 1: Reproducible Baseline (seed=42, routing OFF)
+# Step 1: Reproducible Baseline (routing OFF)
 # =============================================================================
 
 step1_baseline() {
   log "=========================================="
-  log "STEP 1: Reproducible Baseline (seed=42)"
+  log "STEP 1: Reproducible Baseline (seed=${PIPELINE_SEED})"
   log "=========================================="
 
   restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_MEMRL=0"
 
-  local output="${RESULTS_DIR}/phase3_baseline_seed42.json"
+  local output="${RESULTS_DIR}/phase3_baseline_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
     --debug --suite all \
-    --debug-seed 42 --debug-sample 10 \
+    --debug-seed ${PIPELINE_SEED} --debug-sample 10 \
     --output ${output}"
 
   if $DRY_RUN; then
@@ -243,14 +251,18 @@ step2_seeding() {
   log "=========================================="
   log "STEP 2: Comparative Specialist Seeding"
   log "=========================================="
+  # NOTE: Roles sharing the same backend URL (e.g. frontdoor and coder_primary
+  # on localhost:8080) are automatically deduplicated by seed_specialist_routing.py.
+  # Rewards for the deduplicated role are cloned from the canonical role.
+  # Use --no-dedup to disable this behavior for debugging.
 
   restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
 
-  local output="${RESULTS_DIR}/seeding_live_seed42.json"
+  local output="${RESULTS_DIR}/seeding_live_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/seed_specialist_routing.py \
     --suites thinking general math agentic coder instruction_precision vl \
     --roles frontdoor coder_primary coder_escalation architect_general architect_coding worker_vision vision_escalation \
-    --sample-size 10 --seed 42 \
+    --sample-size 10 --seed ${PIPELINE_SEED} \
     --output ${output}"
 
   if $DRY_RUN; then
@@ -344,7 +356,7 @@ step4_learning_loop() {
 
   local output="${RESULTS_DIR}/memrl_phase3_loop.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/memrl_learning_loop.py \
-    --iterations 5 --sample-size 10 --seed 100 \
+    --iterations 5 --sample-size 10 --seed $((PIPELINE_SEED + 58)) \
     --suites thinking general math agentic coder instruction_precision vl \
     --regression-check \
     --output ${output}"
@@ -388,9 +400,9 @@ step5_regression_gate() {
 
   restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
 
-  local output="${RESULTS_DIR}/phase3_specialist_seed42.json"
+  local output="${RESULTS_DIR}/phase3_specialist_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
-    --debug --suite all --debug-seed 42 --debug-sample 10 \
+    --debug --suite all --debug-seed ${PIPELINE_SEED} --debug-sample 10 \
     --regression-gate \
     --output ${output}"
 
@@ -407,7 +419,7 @@ step5_regression_gate() {
   fi
 
   # Compare with baseline
-  local baseline="${RESULTS_DIR}/phase3_baseline_seed42.json"
+  local baseline="${RESULTS_DIR}/phase3_baseline_seed${PIPELINE_SEED}.json"
   if [[ -f "$output" ]] && [[ -f "$baseline" ]]; then
     ${PYTHON} -c "
 import json
@@ -489,13 +501,13 @@ step5b_plan_review() {
   log "STEP 5b: Plan Review A/B Test"
   log "=========================================="
 
-  # Same seed=42 suite but with PLAN_REVIEW enabled alongside SPECIALIST_ROUTING.
+  # Same seed suite but with PLAN_REVIEW enabled alongside SPECIALIST_ROUTING.
   # Compares: accuracy delta vs step 5, correction rate, convergence signal.
   restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_PLAN_REVIEW=1 ORCHESTRATOR_MEMRL=1"
 
-  local output="${RESULTS_DIR}/phase3_plan_review_seed42.json"
+  local output="${RESULTS_DIR}/phase3_plan_review_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
-    --debug --suite all --debug-seed 42 --debug-sample 10 \
+    --debug --suite all --debug-seed ${PIPELINE_SEED} --debug-sample 10 \
     --regression-gate \
     --output ${output}"
 
@@ -512,8 +524,8 @@ step5b_plan_review() {
   fi
 
   # Compare with step 5 (specialist-only) and step 1 (baseline)
-  local step5_output="${RESULTS_DIR}/phase3_specialist_seed42.json"
-  local baseline="${RESULTS_DIR}/phase3_baseline_seed42.json"
+  local step5_output="${RESULTS_DIR}/phase3_specialist_seed${PIPELINE_SEED}.json"
+  local baseline="${RESULTS_DIR}/phase3_baseline_seed${PIPELINE_SEED}.json"
   if [[ -f "$output" ]] && [[ -f "$baseline" ]]; then
     ${PYTHON} -c "
 import json
@@ -611,10 +623,10 @@ step6_kill_switch() {
 
   restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_ARCHITECT_DELEGATION=0 ORCHESTRATOR_MEMRL=1"
 
-  local output="${RESULTS_DIR}/phase3_killswitch_seed42.json"
+  local output="${RESULTS_DIR}/phase3_killswitch_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
     --debug --suite all \
-    --debug-seed 42 --debug-sample 10 \
+    --debug-seed ${PIPELINE_SEED} --debug-sample 10 \
     --output ${output}"
 
   if $DRY_RUN; then
@@ -643,7 +655,7 @@ print(non_fd)
   fi
 
   # Compare with Step 1 baseline
-  local baseline="${RESULTS_DIR}/phase3_baseline_seed42.json"
+  local baseline="${RESULTS_DIR}/phase3_baseline_seed${PIPELINE_SEED}.json"
   if [[ -f "$output" ]] && [[ -f "$baseline" ]]; then
     ${PYTHON} -c "
 import json
@@ -675,6 +687,7 @@ log "=========================================="
 log "PHASE 3 VALIDATION PIPELINE"
 log "=========================================="
 log "Start step: ${START_STEP}"
+log "Seed: ${PIPELINE_SEED}"
 log "Dry run: ${DRY_RUN}"
 log "Timestamp: ${TIMESTAMP}"
 log "Log: ${PHASE3_LOG}"

@@ -229,11 +229,13 @@ class LlamaServerBackend(ModelBackend):
         payload = self._build_payload(role_config, request)
 
         try:
+            http_start = time.perf_counter()
             response = self.client.post(
                 "/completion",
                 json=payload,
                 timeout=request.timeout or self.config.timeout,
             )
+            http_elapsed_ms = (time.perf_counter() - http_start) * 1000
             response.raise_for_status()
             result_data = response.json()
 
@@ -245,6 +247,24 @@ class LlamaServerBackend(ModelBackend):
             prompt_tokens = result_data.get("tokens_evaluated", 0)
             cached_tokens = result_data.get("tokens_cached", 0)
 
+            # Extract clean timing data from llama.cpp timings object
+            timings = result_data.get("timings", {})
+            prompt_eval_ms = timings.get("prompt_ms", 0.0)
+            generation_ms = timings.get("predicted_ms", 0.0)
+            predicted_per_second = timings.get("predicted_per_second", 0.0)
+
+            # Compute server-side overhead (HTTP round-trip minus reported inference)
+            inference_ms = prompt_eval_ms + generation_ms
+            http_overhead_ms = max(0.0, http_elapsed_ms - inference_ms)
+
+            # Log overhead when significant (> 5s)
+            if http_overhead_ms > 5000:
+                logger.warning(
+                    f"Server overhead: {http_overhead_ms:.0f}ms "
+                    f"(HTTP={http_elapsed_ms:.0f}ms, inference={inference_ms:.0f}ms) "
+                    f"for {role_config.name}"
+                )
+
             # Update cache stats
             self.cache_stats.total_prompt_tokens += prompt_tokens
             self.cache_stats.cached_prompt_tokens += cached_tokens
@@ -253,8 +273,10 @@ class LlamaServerBackend(ModelBackend):
             else:
                 self.cache_stats.cache_misses += 1
 
-            # Calculate speed
-            speed = tokens_generated / elapsed if elapsed > 0 else 0.0
+            # Use clean predicted_per_second if available, else fall back to elapsed
+            speed = predicted_per_second if predicted_per_second > 0 else (
+                tokens_generated / elapsed if elapsed > 0 else 0.0
+            )
 
             # Log cache performance
             if cached_tokens > 0:
@@ -270,6 +292,10 @@ class LlamaServerBackend(ModelBackend):
                 generation_speed=speed,
                 elapsed_time=elapsed,
                 success=True,
+                prompt_eval_ms=prompt_eval_ms,
+                generation_ms=generation_ms,
+                predicted_per_second=predicted_per_second,
+                http_overhead_ms=http_overhead_ms,
             )
 
         except httpx.TimeoutException:
@@ -372,10 +398,12 @@ class LlamaServerBackend(ModelBackend):
         Returns:
             Dictionary payload for POST request.
         """
+        # Honor per-request cache_prompt override; default to True
+        cache_prompt = request.cache_prompt if request.cache_prompt is not None else True
         payload: dict[str, Any] = {
             "prompt": request.prompt or "",
             "n_predict": request.n_tokens,
-            "cache_prompt": True,  # ENABLE PREFIX CACHING
+            "cache_prompt": cache_prompt,
         }
 
         # Temperature

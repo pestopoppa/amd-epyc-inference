@@ -96,6 +96,28 @@ class TestInferenceRequest:
         assert request.timeout == 300
 
 
+    def test_max_tokens_alias_sets_n_tokens(self):
+        """Test that max_tokens overrides n_tokens."""
+        request = InferenceRequest(role="test", prompt="Hi", max_tokens=256)
+
+        assert request.n_tokens == 256
+        assert request.max_tokens == 256
+
+    def test_max_tokens_default_syncs_from_n_tokens(self):
+        """Test that max_tokens mirrors n_tokens when not set."""
+        request = InferenceRequest(role="test", prompt="Hi", n_tokens=1024)
+
+        assert request.max_tokens == 1024
+        assert request.n_tokens == 1024
+
+    def test_max_tokens_explicit_overrides_n_tokens(self):
+        """Test that explicit max_tokens wins over explicit n_tokens."""
+        request = InferenceRequest(role="test", prompt="Hi", n_tokens=1024, max_tokens=256)
+
+        assert request.n_tokens == 256
+        assert request.max_tokens == 256
+
+
 class TestInferenceResult:
     """Tests for InferenceResult dataclass."""
 

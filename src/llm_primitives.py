@@ -234,14 +234,43 @@ class LLMPrimitives:
         self.total_calls = 0
         self.total_batch_calls = 0
         self.total_tokens_generated = 0
+        # Clean timing accumulators from llama.cpp timings
+        self.total_prompt_eval_ms = 0.0
+        self.total_generation_ms = 0.0
+        self._last_predicted_tps = 0.0  # Most recent call's clean t/s
 
         # Recursion depth tracking
         self._recursion_depth = 0
         self._max_recursion_depth_reached = 0
 
+        # HTTP overhead tracking (server-side overhead not captured in inference timings)
+        self.total_http_overhead_ms = 0.0
+
+        # Per-request cache_prompt override (None = backend default)
+        self.cache_prompt: bool | None = None
+
         # Per-query cost tracking
         self._current_query: QueryCost | None = None
         self._completed_queries: list[QueryCost] = []
+
+    def reset_counters(self) -> None:
+        """Reset per-request counters for reuse across requests.
+
+        Call this when reusing a shared LLMPrimitives instance across
+        multiple API requests to get accurate per-request metrics.
+        """
+        self.call_log.clear()
+        self.total_calls = 0
+        self.total_batch_calls = 0
+        self.total_tokens_generated = 0
+        self.total_prompt_eval_ms = 0.0
+        self.total_generation_ms = 0.0
+        self.total_http_overhead_ms = 0.0
+        self._last_predicted_tps = 0.0
+        self._recursion_depth = 0
+        self._max_recursion_depth_reached = 0
+        self._current_query = None
+        self._completed_queries.clear()
 
     def _init_caching_backends(self, server_urls: dict[str, str], num_slots: int) -> None:
         """Initialize CachingBackend instances for each role.
@@ -896,10 +925,15 @@ class LLMPrimitives:
             n_tokens=n_tokens,
             timeout=self.config.call_timeout,
             stop_sequences=stop_sequences,
+            cache_prompt=self.cache_prompt,
         )
         result = self.model_server.infer(role, request)
 
         self.total_tokens_generated += result.tokens_generated
+        self.total_prompt_eval_ms += result.prompt_eval_ms
+        self.total_generation_ms += result.generation_ms
+        if result.predicted_per_second > 0:
+            self._last_predicted_tps = result.predicted_per_second
         return result.output
 
     def _call_caching_backend(
@@ -949,6 +983,7 @@ class LLMPrimitives:
             n_tokens=n_tokens,
             timeout=self.config.call_timeout,
             stop_sequences=stop_sequences,
+            cache_prompt=self.cache_prompt,
         )
 
         result = backend.infer(role_config, request)
@@ -957,6 +992,11 @@ class LLMPrimitives:
             raise RuntimeError(f"Inference failed: {result.error_message}")
 
         self.total_tokens_generated += result.tokens_generated
+        self.total_prompt_eval_ms += result.prompt_eval_ms
+        self.total_generation_ms += result.generation_ms
+        self.total_http_overhead_ms += result.http_overhead_ms
+        if result.predicted_per_second > 0:
+            self._last_predicted_tps = result.predicted_per_second
         return result.output
 
     # Pool of fast worker roles for round-robin dispatch
@@ -1091,6 +1131,9 @@ class LLMPrimitives:
             "total_calls": self.total_calls,
             "total_batch_calls": self.total_batch_calls,
             "total_tokens_generated": self.total_tokens_generated,
+            "total_prompt_eval_ms": self.total_prompt_eval_ms,
+            "total_generation_ms": self.total_generation_ms,
+            "last_predicted_tps": self._last_predicted_tps,
             "call_log_size": len(self.call_log),
             "mock_mode": self.mock_mode,
             "max_recursion_depth_reached": self._max_recursion_depth_reached,
@@ -1133,6 +1176,9 @@ class LLMPrimitives:
         self.total_calls = 0
         self.total_batch_calls = 0
         self.total_tokens_generated = 0
+        self.total_prompt_eval_ms = 0.0
+        self.total_generation_ms = 0.0
+        self._last_predicted_tps = 0.0
         self.call_log.clear()
         self._max_recursion_depth_reached = 0
         # Note: _recursion_depth is not reset as it tracks current call stack

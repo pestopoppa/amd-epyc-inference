@@ -280,6 +280,25 @@ REACT_TOOL_WHITELIST = frozenset({
 # Vision-aware ReAct whitelist: standard tools + OCR extraction
 VISION_REACT_TOOL_WHITELIST = REACT_TOOL_WHITELIST | frozenset({"ocr_extract"})
 
+# Tools that _execute_vision_tool() actually handles — single source of truth
+VISION_REACT_EXECUTABLE_TOOLS: frozenset[str] = frozenset({
+    "ocr_extract",
+    "calculate",
+    "get_current_date",
+    "get_current_time",
+})
+
+# Tool descriptions for the vision ReAct system prompt
+VISION_TOOL_DESCRIPTIONS: dict[str, str] = {
+    "ocr_extract": (
+        'ocr_extract(image_base64="..."): Extract text from the image using OCR. '
+        'The image is already loaded — pass image_base64="current" to use it.'
+    ),
+    "calculate": 'calculate(expression="..."): Evaluate a math expression',
+    "get_current_date": "get_current_date(): Get today's date",
+    "get_current_time": "get_current_time(): Get current time",
+}
+
 # ReAct format instructions
 REACT_FORMAT = """You have access to the following tools:
 {tool_descriptions}

@@ -85,8 +85,9 @@ runtime_defaults:
     scoring:
       learning_rate: 0.1
       success_reward: 1.0
-      failure_reward: -0.5
+      failure_reward: 0.0  # xRouter-style: incorrect = zero reward (was -0.5)
       partial_reward: 0.3
+      cost_penalty_lambda: 0.15  # Cost weight for correctness-gated penalty
       min_interval_seconds: 300
       batch_size: 50
     persistence:

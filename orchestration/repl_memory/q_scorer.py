@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -37,10 +37,35 @@ class ScoringConfig:
     failure_reward: float = -0.5
     partial_reward: float = 0.3
 
+    # Temporal decay: Q-values decay toward neutral (0.5) over time.
+    # decay_rate ^ days_elapsed is applied before each TD update.
+    temporal_decay_rate: float = 0.99
+
     # Claude-as-Judge settings (optional)
     use_claude_judge: bool = False
     judge_model_path: Optional[Path] = None
     judge_binary: Optional[Path] = None
+
+    # Cost-aware reward (xRouter-style correctness-gated cost penalty).
+    # reward_final = quality_reward - lambda * max(0, cost_ratio - 1.0)
+    # where cost_ratio = actual_elapsed / expected_elapsed.
+    # Only applied when answer is correct (incorrect = 0.0, no cost term).
+    cost_penalty_lambda: float = 0.15
+
+    # Per-role optimized tokens/second from production benchmarks.
+    # Used to normalize cost: expected_elapsed = tokens_generated / baseline_tps.
+    baseline_tps_by_role: Dict[str, float] = field(default_factory=lambda: {
+        "frontdoor": 18.3,
+        "coder_primary": 18.3,
+        "coder_escalation": 39.44,
+        "architect_general": 6.75,
+        "architect_coding": 10.3,
+        "ingest_long_context": 6.29,
+        "worker_explore": 27.88,
+        "worker_math": 48.5,
+        "worker_vision": 15.28,
+        "vision_escalation": 27.6,
+    })
 
     # Scoring frequency
     min_score_interval_seconds: int = 300  # 5 minutes
@@ -196,15 +221,28 @@ class QScorer:
         gate_results: List[ProgressEntry],
         escalations: List[ProgressEntry],
         plan_reviews: List[ProgressEntry] | None = None,
+        cost_metrics: Optional[Dict[str, Any]] = None,
     ) -> float:
         """
-        Compute reward from task outcome.
+        Compute reward from task outcome with optional cost penalty.
 
-        Reward formula:
+        Quality reward formula:
         - Base: success=1.0, failure=-0.5
         - Penalty for gate failures: -0.1 per failure
         - Penalty for escalations: -0.15 per escalation
         - Plan review bonus: +0.1 if approved, -0.2 if corrected
+
+        Cost penalty (xRouter-style, correctness-gated):
+        - Only applied when quality reward > 0 (correct answers)
+        - cost_ratio = actual_elapsed / expected_elapsed
+        - penalty = lambda * max(0, cost_ratio - 1.0)
+        - No penalty if running at or above expected speed
+
+        Args:
+            cost_metrics: Optional dict with keys:
+                - tokens_generated (int): tokens produced
+                - elapsed_seconds (float): wall-clock time
+                - role (str): specialist role name for baseline lookup
         """
         if task_outcome.outcome == "success":
             base_reward = self.config.success_reward
@@ -230,8 +268,30 @@ class QScorer:
                 else:
                     plan_review_adj -= 0.2  # Corrected — routing needed fixing
 
-        # Final reward (clamped to [-1, 1])
         reward = base_reward - gate_penalty - escalation_penalty + plan_review_adj
+
+        # Cost penalty: only penalize correct answers that were slower than expected.
+        # Incorrect answers already receive low/zero reward — no cost signal needed.
+        if cost_metrics and reward > 0:
+            tokens_gen = cost_metrics.get("tokens_generated", 0)
+            role = cost_metrics.get("role", "")
+            baseline_tps = self.config.baseline_tps_by_role.get(role, 0)
+
+            # Prefer generation_ms (clean generation time excluding prompt eval)
+            # over elapsed_seconds (polluted by prompt processing time)
+            gen_ms = cost_metrics.get("generation_ms", 0)
+            if gen_ms > 0:
+                elapsed = gen_ms / 1000.0
+            else:
+                elapsed = cost_metrics.get("elapsed_seconds", 0)
+
+            if baseline_tps > 0 and tokens_gen > 0 and elapsed > 0:
+                expected_elapsed = tokens_gen / baseline_tps
+                cost_ratio = elapsed / expected_elapsed  # >1 = slower than expected
+                cost_penalty = self.config.cost_penalty_lambda * max(0.0, cost_ratio - 1.0)
+                reward -= cost_penalty
+
+        # Final reward (clamped to [-1, 1])
         return max(-1.0, min(1.0, reward))
 
     def _update_routing_memory(
@@ -253,7 +313,8 @@ class QScorer:
             if memory:
                 old_q = memory.q_value
                 new_q = self.store.update_q_value(
-                    memory_id, reward, self.config.learning_rate
+                    memory_id, reward, self.config.learning_rate,
+                    temporal_decay_rate=self.config.temporal_decay_rate,
                 )
                 self.logger.log_memory_update(memory_id, old_q, new_q, reward, task_id)
                 result["memories_updated"] = 1
@@ -314,7 +375,8 @@ class QScorer:
             if memory:
                 old_q = memory.q_value
                 new_q = self.store.update_q_value(
-                    memory_id, reward, self.config.learning_rate
+                    memory_id, reward, self.config.learning_rate,
+                    temporal_decay_rate=self.config.temporal_decay_rate,
                 )
                 self.logger.log_memory_update(memory_id, old_q, new_q, reward, task_id)
                 result["memories_updated"] = 1
@@ -402,7 +464,8 @@ class QScorer:
             ):
                 old_q = mem.q_value
                 new_q = self.store.update_q_value(
-                    mem.id, reward, self.config.learning_rate
+                    mem.id, reward, self.config.learning_rate,
+                    temporal_decay_rate=self.config.temporal_decay_rate,
                 )
                 self.logger.log_memory_update(
                     mem.id, old_q, new_q, reward, "external"

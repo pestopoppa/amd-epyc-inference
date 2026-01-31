@@ -83,6 +83,19 @@ class InferenceRequest:
     context_length: int = 8192
     timeout: int = 300  # seconds
     stop_sequences: list[str] | None = None
+    cache_prompt: bool | None = None  # Override cache_prompt for this request (None = use backend default)
+    max_tokens: int | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        """Sync max_tokens ↔ n_tokens bidirectionally.
+
+        If max_tokens is explicitly provided, it overrides n_tokens.
+        Otherwise max_tokens mirrors n_tokens for external callers.
+        """
+        if self.max_tokens is not None:
+            self.n_tokens = self.max_tokens
+        else:
+            self.max_tokens = self.n_tokens
 
 
 @dataclass
@@ -96,6 +109,11 @@ class InferenceResult:
     elapsed_time: float
     success: bool
     error_message: str | None = None
+    # Clean timing data from llama.cpp timings object
+    prompt_eval_ms: float = 0.0  # Prompt evaluation time
+    generation_ms: float = 0.0  # Token generation time (excludes prompt eval)
+    predicted_per_second: float = 0.0  # Clean generation-only t/s from llama.cpp
+    http_overhead_ms: float = 0.0  # HTTP round-trip minus inference time (server-side overhead)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -107,6 +125,10 @@ class InferenceResult:
             "elapsed_time": self.elapsed_time,
             "success": self.success,
             "error_message": self.error_message,
+            "prompt_eval_ms": self.prompt_eval_ms,
+            "generation_ms": self.generation_ms,
+            "predicted_per_second": self.predicted_per_second,
+            "http_overhead_ms": self.http_overhead_ms,
         }
 
 

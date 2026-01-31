@@ -429,33 +429,55 @@ class EpisodicStore:
         memory_id: str,
         reward: float,
         learning_rate: float = 0.1,
+        temporal_decay_rate: float | None = None,
     ) -> float:
         """
         Update Q-value for a memory using TD-learning style update.
 
-        Q(m) ← Q(m) + α(r - Q(m))
+        If temporal_decay_rate is provided, the stored Q-value is first decayed
+        toward neutral (0.5) based on elapsed days since last update:
+
+            Q_decayed = 0.5 + (Q_old - 0.5) * decay_rate ^ days_elapsed
+
+        Then the standard TD update is applied:
+
+            Q(m) ← Q_decayed + α(r - Q_decayed)
 
         Args:
             memory_id: Memory ID to update
             reward: Observed reward (0-1 scale)
             learning_rate: Learning rate α
+            temporal_decay_rate: Optional decay rate per day (e.g. 0.99).
+                None disables decay. Applied before TD update.
 
         Returns:
             New Q-value
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.utcnow()
+        now_iso = now.isoformat()
 
         with sqlite3.connect(self.sqlite_path) as conn:
-            # Get current Q-value
+            # Get current Q-value and updated_at for decay calculation
             row = conn.execute(
-                "SELECT q_value, update_count FROM memories WHERE id = ?",
+                "SELECT q_value, update_count, updated_at FROM memories WHERE id = ?",
                 (memory_id,),
             ).fetchone()
 
             if not row:
                 raise ValueError(f"Memory {memory_id} not found")
 
-            old_q, update_count = row
+            old_q, update_count, updated_at_str = row
+
+            # Apply temporal decay toward neutral (0.5) if configured
+            if temporal_decay_rate is not None and updated_at_str:
+                try:
+                    updated_at = datetime.fromisoformat(updated_at_str)
+                    days_elapsed = (now - updated_at).total_seconds() / 86400.0
+                    if days_elapsed > 0:
+                        decay_factor = temporal_decay_rate ** days_elapsed
+                        old_q = 0.5 + (old_q - 0.5) * decay_factor
+                except (ValueError, TypeError):
+                    pass  # Skip decay on unparseable timestamps
 
             # TD-style update
             new_q = old_q + learning_rate * (reward - old_q)
@@ -470,7 +492,7 @@ class EpisodicStore:
                 SET q_value = ?, updated_at = ?, update_count = ?
                 WHERE id = ?
             """,
-                (new_q, now, update_count + 1, memory_id),
+                (new_q, now_iso, update_count + 1, memory_id),
             )
             conn.commit()
 

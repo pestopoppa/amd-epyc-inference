@@ -201,8 +201,8 @@ ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_ARCHITECT_DELEGATION=0 ORCHESTRAT
 
 ## Unresolved Questions
 
-1. **`InferenceRequest` field naming**: `request.n_tokens` vs `max_tokens`. Legacy uses `n_tokens`, protocol uses `max_tokens`. Both coexist.
-2. **Chat template EOS**: Test adding `<|im_end|>` as stop sequence for Qwen models.
+1. ~~**`InferenceRequest` field naming**: `request.n_tokens` vs `max_tokens`.~~ **RESOLVED**: Added `max_tokens` alias with bidirectional `__post_init__` sync. Legacy callers use `n_tokens`, new callers use `max_tokens`. Both work.
+2. ~~**Chat template EOS**: Test adding `<|im_end|>` as stop sequence for Qwen models.~~ **RESOLVED**: Added `QWEN_STOP = "<|im_end|>"` constant. Appended to all 3 `stop_sequences=` lists and all 4 vision httpx JSON payloads.
 3. ~~**VL image datasets**: Need actual images for MMMU, ScienceQA, DocVQA, ChartQA.~~ **RESOLVED**: VL suite rebuilt from OCRBench (1,000) + ChartQA (2,500) via `extract_vl_debug_suite.py`. On-the-fly sampling from 3,500 pool. DocVQA test split has no ground truth — unusable.
 4. **lm-evaluation-harness**: Use directly (60+ benchmarks free) or extract scoring logic?
 5. **Formalizer model**: xLAM-2-1B, Qwen2.5-1.5B, or fine-tuned?
@@ -210,7 +210,7 @@ ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_ARCHITECT_DELEGATION=0 ORCHESTRAT
 7. ~~**Debug question volume**: Currently 111. Hundreds ideal for random sampling.~~ **RESOLVED**: Static suites expanded to 325 questions. VL suite uses on-the-fly sampling from 3,500-question pool.
 8. **Latency budget**: 235B architect at 6.75 t/s = 2.7x slower than frontdoor. Acceptable for hard tasks?
 9. **480B warm-up cost**: ~120s load time. Skip in seeding if not already warm?
-10. **Q-value decay**: Old Q-values go stale when models updated. Time-based decay (0.99/day)?
+10. ~~**Q-value decay**: Old Q-values go stale when models updated. Time-based decay (0.99/day)?~~ **RESOLVED**: Added `temporal_decay_rate: float = 0.99` to `ScoringConfig`. `update_q_value()` now reads `updated_at`, decays toward 0.5 by `decay_rate^days_elapsed` before TD update.
 11. ~~**Non-VL suite provenance**~~: **RESOLVED** — All 6 suites now sample on-the-fly from real benchmark datasets (31,820 total questions). Static YAML retained as fallback only.
 
 ---
@@ -378,3 +378,106 @@ VL questions (with `image_path`) only test vision roles + frontdoor baseline. Te
 2. Verify vision ReAct loop produces OCR tool calls on text-heavy images
 3. Compare `worker_vision:direct` vs `worker_vision:react` accuracy on VL debug suite
 4. Monitor `vision_escalation:direct` quality vs `worker_vision` to validate MemRL escalation learning
+
+---
+
+## Dev Tasks — COMPLETE (2026-01-30, Session 5)
+
+6 code-quality tasks completing the remaining items from the plan. 48 new tests, all passing.
+
+| Task | Files | What |
+|------|-------|------|
+| 1. `max_tokens` alias | `src/model_server.py`, `tests/unit/test_model_server.py` | Added `max_tokens` field + `__post_init__` bidirectional sync. 3 new tests. |
+| 2. Q-value temporal decay | `orchestration/repl_memory/q_scorer.py`, `orchestration/repl_memory/episodic_store.py` | `temporal_decay_rate=0.99` in ScoringConfig, decay toward 0.5 by `rate^days` before TD update. All 3 call sites updated. |
+| 3. Vision tool whitelist | `src/prompt_builders.py`, `src/api/routes/chat.py` | `VISION_REACT_EXECUTABLE_TOOLS` frozenset + `VISION_TOOL_DESCRIPTIONS` dict as single source of truth. Replaced hardcoded descriptions, improved error messages. |
+| 4. Qwen stop sequence | `src/api/routes/chat.py` | `QWEN_STOP = "<\|im_end\|>"` constant. Appended to 3 `stop_sequences=` lists + 4 httpx JSON payloads. |
+| 5. Dataset adapter tests | `tests/unit/test_dataset_adapters.py` (NEW) | 20 tests: get_adapter factory, MMLU/Math/IFEval/Base adapters. All mocked, no HF downloads. |
+| 6. Vision routing tests | `tests/unit/test_vision_routing.py` (NEW) | 11 tests: constant relationships, `_execute_vision_tool` dispatch (calculate, date, time, OCR, errors). |
+
+### Verification
+
+```bash
+# All 48 new tests pass
+.venv/bin/pytest tests/unit/test_model_server.py tests/unit/test_dataset_adapters.py tests/unit/test_vision_routing.py -v -q
+
+# Full related suite (85 tests pass)
+.venv/bin/pytest tests/unit/test_model_server.py tests/unit/test_dataset_adapters.py tests/unit/test_vision_routing.py tests/unit/test_react_mode.py tests/unit/test_plan_review.py tests/unit/test_architect_delegation.py -v -q
+```
+
+### Unresolved Questions Resolved
+
+- **#1** (field naming): `max_tokens` alias added
+- **#2** (chat template EOS): `QWEN_STOP` constant added to all generation paths
+- **#10** (Q-value decay): Temporal decay implemented with configurable rate
+
+---
+
+## Phase 3 Validation: Overhead Root-Cause + Mitigations — 2026-01-31
+
+### Problem
+
+Seeding script showed ~68s overhead on `direct`/`repl` modes but only ~6s on `react`. Investigation confirmed root cause is llama-server KV cache management (machine-wide memory pressure), NOT Python code.
+
+### Evidence
+
+After 2-token generation → ~6s overhead. After 72+ tokens → ~68s. Cross-server effect (port 8081 slow after 8080 request) proves machine-wide bottleneck.
+
+### Mitigations Implemented
+
+| Mitigation | File(s) | What |
+|------------|---------|------|
+| HTTP round-trip timing | `src/backends/llama_server.py`, `src/model_server.py` | Measure total HTTP time vs reported inference, expose `http_overhead_ms` |
+| http_overhead_ms in response | `src/llm_primitives.py`, `src/api/routes/chat.py` (6 sites) | Accumulate overhead, expose in ChatResponse |
+| cache_prompt parameter flow | `src/api/models/requests.py`, `src/llm_primitives.py`, chat.py | Per-request `cache_prompt` override flows through entire chain |
+| Health checks in seeding | `scripts/benchmark/seed_specialist_routing.py` | `_check_server_health()` before each combo, abort question on failure |
+| Cooldown between requests | `scripts/benchmark/seed_specialist_routing.py` | `--cooldown N` seconds between combos to reduce memory pressure |
+| Skip-cache option | `scripts/benchmark/seed_specialist_routing.py` | `--skip-cache` disables KV cache reuse (marginal benefit) |
+
+### Debug Suite Quality Issues Found
+
+**Thinking suite**: 6 corrupted prompts (arc_002-005, arc_008-009) with `__(` generation artifacts. All cleaned — content and answers preserved.
+
+**Coder suite** (not yet cleaned): 3 duplicate question pairs, extreme tier imbalance (50% T1), "T3" questions not genuinely hard.
+
+### Test Results
+
+483 unit tests pass, zero regressions.
+
+### Recommended Seeding Command
+
+```bash
+# With cooldown to mitigate server pressure (skip --skip-cache, marginal benefit)
+# Dedup is ON by default — coder_primary skipped (=frontdoor), saving ~6.4h per full run
+ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1 \
+  python scripts/benchmark/seed_specialist_routing.py --suites thinking coder --sample-size 10 --cooldown 2
+
+# To force testing both frontdoor and coder_primary independently:
+  python scripts/benchmark/seed_specialist_routing.py --no-dedup ...
+```
+
+---
+
+## Role Deduplication + Random Seeds — 2026-01-31
+
+### Problem
+
+`frontdoor` and `coder_primary` map to the same `localhost:8080` backend. With `skip_suffix=True` in all seeding paths, the HTTP payloads are identical. Testing both wastes 210 inference calls (~6.4 hours) per full seeding run.
+
+### Solution: URL-Based Dedup
+
+`_deduplicate_roles()` detects URL collisions in `LLMPrimitives.DEFAULT_SERVER_URLS`, tests each unique model once, and clones rewards + results to aliased roles.
+
+- **Enabled by default** — `--no-dedup` to opt out
+- **Currently deduplicates**: `coder_primary` → `frontdoor` (same `localhost:8080`)
+- **Future-safe**: If roles later get different system prompts (via `get_system_prompt()` being called), dedup would need to also check prompt identity. Currently URL-only is correct since `skip_suffix=True` everywhere.
+
+### Random Pipeline Seeds
+
+`run_phase3_validation.sh` now generates a random seed each run (via `$((RANDOM * RANDOM % 1000000))`), logged at pipeline start. Override with `--seed N` for reproducibility. All steps and output filenames use `PIPELINE_SEED`.
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `scripts/benchmark/seed_specialist_routing.py` | `_deduplicate_roles()`, `_modes_for_role()`, `--no-dedup`, alias annotations in summary, reward cloning |
+| `scripts/benchmark/run_phase3_validation.sh` | Random `PIPELINE_SEED`, `--seed N` flag, dedup comment, seed in all filenames |

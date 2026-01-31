@@ -29,6 +29,8 @@ from src.prompt_builders import (
     detect_format_constraints,
     build_architect_investigate_prompt,
     build_architect_synthesis_prompt,
+    VISION_REACT_EXECUTABLE_TOOLS,
+    VISION_TOOL_DESCRIPTIONS,
 )
 from src.services.draft_cache import get_draft_cache, CachedDraft
 from src.services.prompt_compressor import PromptCompressor
@@ -79,6 +81,9 @@ THREE_STAGE_CONFIG = {
 
 # Backwards compatibility alias
 TWO_STAGE_CONFIG = THREE_STAGE_CONFIG
+
+# Qwen chat-template stop token — prevents runaway generation past turn boundary
+QWEN_STOP = "<|im_end|>"
 
 # Long context exploration configuration
 # When context exceeds this threshold, use REPL-based chunked exploration
@@ -497,6 +502,7 @@ async def _handle_vision_request(
         ],
         "max_tokens": 2048,
         "temperature": 0.0,
+        "stop": [QWEN_STOP],
     }
 
     # Try VL servers — constrained if force_server is set
@@ -647,7 +653,8 @@ async def _execute_vision_tool(
         return now.isoformat()
 
     else:
-        return f"[Tool '{tool_name}' not available in vision ReAct mode]"
+        available = ", ".join(sorted(VISION_REACT_EXECUTABLE_TOOLS))
+        return f"[Tool '{tool_name}' not available in vision ReAct mode. Available: {available}]"
 
 
 async def _vision_react_mode_answer(
@@ -684,17 +691,10 @@ async def _vision_react_mode_answer(
 
     log = logging.getLogger(__name__)
     tools_used = 0
+    tools_called: list[str] = []
 
-    from src.prompt_builders import VISION_REACT_TOOL_WHITELIST
-
-    # Build tool descriptions for vision ReAct
-    tool_descriptions = [
-        "- ocr_extract(image_base64=\"...\"): Extract text from the image using OCR. "
-        "The image is already loaded — pass image_base64=\"current\" to use it.",
-        "- calculate(expression=\"...\"): Evaluate a math expression",
-        "- get_current_date(): Get today's date",
-        "- get_current_time(): Get current time",
-    ]
+    # Build tool descriptions from single source of truth
+    tool_descriptions = [f"- {desc}" for desc in VISION_TOOL_DESCRIPTIONS.values()]
 
     react_system = f"""You have access to the following tools:
 {chr(10).join(tool_descriptions)}
@@ -750,6 +750,7 @@ Important rules:
                         "messages": messages,
                         "max_tokens": 2048,
                         "temperature": 0.0,
+                        "stop": [QWEN_STOP],
                     },
                 )
 
@@ -780,7 +781,7 @@ Important rules:
             idx = response_text.index("Final Answer:")
             answer = response_text[idx + len("Final Answer:"):].strip()
             log.info(f"Vision ReAct completed in {turn + 1} turns, {tools_used} tools")
-            return answer, tools_used
+            return answer, tools_used, tools_called
 
         # Parse Action line
         action_match = None
@@ -801,10 +802,14 @@ Important rules:
                 if stripped.startswith("Thought:"):
                     stripped = stripped[len("Thought:"):].strip()
                 answer_lines.append(stripped)
-            return "\n".join(answer_lines).strip(), tools_used
+            return "\n".join(answer_lines).strip(), tools_used, tools_called
 
-        # Execute the tool
+        # Execute the tool — extract name for tracking
+        import re as _re_vt
+        _vt_match = _re_vt.match(r"(\w+)\(", action_match)
+        _vt_name = _vt_match.group(1) if _vt_match else action_match
         tools_used += 1
+        tools_called.append(_vt_name)
         observation = await _execute_vision_tool(action_match, image_b64)
         log.info(f"Vision ReAct turn {turn}: {action_match[:50]} → {len(observation)} chars")
 
@@ -830,6 +835,7 @@ Important rules:
                     "messages": messages,
                     "max_tokens": 2048,
                     "temperature": 0.0,
+                    "stop": [QWEN_STOP],
                 },
             )
         if resp.status_code == 200:
@@ -839,12 +845,12 @@ Important rules:
                 content = choices[0].get("message", {}).get("content", "").strip()
                 if "Final Answer:" in content:
                     idx = content.index("Final Answer:")
-                    return content[idx + len("Final Answer:"):].strip(), tools_used
-                return content, tools_used
+                    return content[idx + len("Final Answer:"):].strip(), tools_used, tools_called
+                return content, tools_used, tools_called
     except Exception as e:
         log.warning(f"Vision ReAct final synthesis failed: {e}")
 
-    return "[Vision ReAct: no answer produced]", tools_used
+    return "[Vision ReAct: no answer produced]", tools_used, tools_called
 
 
 async def _handle_multi_file_vision(
@@ -1403,6 +1409,7 @@ def _architect_delegated_answer(
 
     log = logging.getLogger(__name__)
     total_tools = 0
+    all_tools_called: list[str] = []
     stats: dict = {
         "loops": 0,
         "phases": [],
@@ -1478,6 +1485,7 @@ def _architect_delegated_answer(
                 answer = stats["specialist_output"]
             stats["loops"] = loop
             stats["tools_used"] = total_tools
+            stats["tools_called"] = all_tools_called
             return answer, stats
 
         # ── Phase B: Specialist execution ──
@@ -1495,7 +1503,7 @@ def _architect_delegated_answer(
         if delegate_mode == "react":
             # ReAct investigation loop
             try:
-                report, phase_tools = _react_mode_answer(
+                report, phase_tools, phase_tool_names = _react_mode_answer(
                     prompt=brief,
                     context=context,
                     primitives=primitives,
@@ -1504,6 +1512,7 @@ def _architect_delegated_answer(
                     max_turns=8,
                 )
                 total_tools += phase_tools
+                all_tools_called.extend(phase_tool_names)
             except Exception as e:
                 report = f"[Investigation failed: {e}]"
         else:
@@ -1529,6 +1538,10 @@ def _architect_delegated_answer(
                 else:
                     report = deleg_repl.get_state()
                 total_tools += deleg_repl._tool_invocations
+                if deleg_repl.tool_registry:
+                    all_tools_called.extend(
+                        inv.tool_name for inv in deleg_repl.tool_registry.get_invocation_log()
+                    )
             except Exception as e:
                 report = f"[REPL delegation failed: {e}]"
 
@@ -1551,6 +1564,7 @@ def _architect_delegated_answer(
     # ── Cap reached ──
     stats["loops"] = max_loops
     stats["tools_used"] = total_tools
+    stats["tools_called"] = all_tools_called
 
     if force_response_on_cap:
         # Force architect to synthesize with whatever we have
@@ -2041,7 +2055,7 @@ def _react_mode_answer(
             If None, uses the module-level default.
 
     Returns:
-        Tuple of (final_answer, tools_used_count).
+        Tuple of (final_answer, tools_used_count, tools_called_names).
     """
     import logging
     from src.prompt_builders import build_react_prompt, REACT_TOOL_WHITELIST
@@ -2049,6 +2063,7 @@ def _react_mode_answer(
     log = logging.getLogger(__name__)
     active_whitelist = tool_whitelist if tool_whitelist is not None else REACT_TOOL_WHITELIST
     tools_used = 0
+    tools_called: list[str] = []
 
     react_prompt = build_react_prompt(
         prompt=prompt,
@@ -2067,7 +2082,7 @@ def _react_mode_answer(
             role=role,
             n_tokens=2048,
             skip_suffix=True,
-            stop_sequences=["Observation:", "\n\n\n"],
+            stop_sequences=["Observation:", "\n\n\n", QWEN_STOP],
         )
         response = response.strip()
 
@@ -2083,7 +2098,7 @@ def _react_mode_answer(
             idx = response.index("Final Answer:")
             answer = response[idx + len("Final Answer:"):].strip()
             log.info(f"ReAct completed in {turn + 1} turns, {tools_used} tools used")
-            return answer, tools_used
+            return answer, tools_used, tools_called
 
         # Parse Action line
         action_match = None
@@ -2104,7 +2119,7 @@ def _react_mode_answer(
                 if stripped.startswith("Thought:"):
                     stripped = stripped[len("Thought:"):].strip()
                 answer_lines.append(stripped)
-            return "\n".join(answer_lines).strip(), tools_used
+            return "\n".join(answer_lines).strip(), tools_used, tools_called
 
         # Parse tool name and args: "tool_name(arg1="val1", arg2=val2)"
         import re as _re
@@ -2125,6 +2140,7 @@ def _react_mode_answer(
                     args = _parse_react_args(args_str)
                     result = tool_registry.invoke(tool_name, "frontdoor", **args)
                     tools_used += 1
+                    tools_called.append(tool_name)
                     # Truncate large results
                     result_str = str(result)
                     if len(result_str) > 2000:
@@ -2144,8 +2160,8 @@ def _react_mode_answer(
             last_thought = line.strip()[len("Thought:"):].strip()
 
     if last_thought:
-        return f"[ReAct max turns reached]\n{last_thought}", tools_used
-    return f"[ReAct: Could not determine answer after {max_turns} turns]", tools_used
+        return f"[ReAct max turns reached]\n{last_thought}", tools_used, tools_called
+    return f"[ReAct: Could not determine answer after {max_turns} turns]", tools_used, tools_called
 
 
 def _should_use_direct_mode(prompt: str, context: str = "") -> bool:
@@ -2460,17 +2476,33 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         # Get server URLs from request or use defaults
         server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
 
-        try:
-            primitives = LLMPrimitives(
-                mock_mode=False,
-                server_urls=server_urls,
-                registry=state.registry,
-            )
-        except Exception as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Failed to initialize real mode backends: {e}",
-            )
+        # Reuse shared LLMPrimitives instance for connection pooling.
+        # Each request resets per-request counters but keeps persistent
+        # httpx connections (~6x latency reduction from keepalive).
+        if (
+            hasattr(state, '_real_primitives')
+            and state._real_primitives is not None
+            and not request.server_urls  # Custom URLs require fresh instance
+        ):
+            primitives = state._real_primitives
+            primitives.reset_counters()
+        else:
+            try:
+                primitives = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls=server_urls,
+                    registry=state.registry,
+                )
+                if not request.server_urls:
+                    state._real_primitives = primitives
+            except Exception as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Failed to initialize real mode backends: {e}",
+                )
+
+        # Forward per-request cache_prompt override to primitives
+        primitives.cache_prompt = request.cache_prompt
 
         # Verify at least one backend is available
         if not primitives._backends:
@@ -2535,6 +2567,8 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
             _vl_logger.warning("vision_escalation cannot do react mode, forcing direct")
             vision_exec_mode = "direct"
 
+        vision_tools_used = 0
+        vision_tools_called: list[str] = []
         try:
             if request.files and len(request.files) > 0:
                 answer = await _handle_multi_file_vision(request, primitives, state, task_id)
@@ -2560,7 +2594,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
 
                 vl_port = 8086  # worker_vision
                 _vl_logger.info(f"Vision ReAct mode on port {vl_port}")
-                answer, tools_used = await _vision_react_mode_answer(
+                answer, vision_tools_used, vision_tools_called = await _vision_react_mode_answer(
                     prompt=request.prompt,
                     image_b64=image_b64,
                     mime_type=mime_type,
@@ -2571,10 +2605,13 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 routed_to_vision = "worker_vision"
             else:
                 # Direct mode: OCR pre-chaining + VL (existing path)
+                # OCR is always attempted even in direct mode
                 answer = await _handle_vision_request(
                     request, primitives, state, task_id,
                     force_server=force_server,
                 )
+                vision_tools_used = 1  # OCR pre-processing counts as a tool call
+                vision_tools_called = ["ocr_extract"]
                 if force_server:
                     routed_to_vision = force_server
 
@@ -2601,6 +2638,14 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 routed_to=routed_to_vision,
                 role_history=[routed_to_vision],
                 routing_strategy=routing_strategy,
+                tokens_generated=0,
+                formalization_applied=False,
+                tools_used=vision_tools_used,
+                tools_called=vision_tools_called,
+                prompt_eval_ms=primitives.total_prompt_eval_ms,
+                generation_ms=primitives.total_generation_ms,
+                predicted_tps=primitives._last_predicted_tps,
+                http_overhead_ms=primitives.total_http_overhead_ms,
             )
         except Exception as e:
             import logging
@@ -2698,6 +2743,11 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 tokens_generated=primitives.total_tokens_generated,
                 formalization_applied=formalization_applied,
                 tools_used=delegation_stats.get("tools_used", 0),
+                tools_called=delegation_stats.get("tools_called", []),
+                prompt_eval_ms=primitives.total_prompt_eval_ms,
+                generation_ms=primitives.total_generation_ms,
+                predicted_tps=primitives._last_predicted_tps,
+                http_overhead_ms=primitives.total_http_overhead_ms,
             )
 
     # ── ReAct tool loop mode ───────────────────────────────────────────
@@ -2710,8 +2760,9 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         )
 
         react_tools_used = 0
+        react_tools_called: list[str] = []
         try:
-            answer, react_tools_used = _react_mode_answer(
+            answer, react_tools_used, react_tools_called = _react_mode_answer(
                 prompt=request.prompt,
                 context=request.context or "",
                 primitives=primitives,
@@ -2770,6 +2821,11 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 tokens_generated=primitives.total_tokens_generated,
                 formalization_applied=formalization_applied,
                 tools_used=react_tools_used,
+                tools_called=react_tools_called,
+                prompt_eval_ms=primitives.total_prompt_eval_ms,
+                generation_ms=primitives.total_generation_ms,
+                predicted_tps=primitives._last_predicted_tps,
+                http_overhead_ms=primitives.total_http_overhead_ms,
             )
 
     if execution_mode == "direct" and request.real_mode:
@@ -2795,7 +2851,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 role=str(initial_role),
                 n_tokens=2048,
                 skip_suffix=True,  # No registry suffix — it forces elaboration
-                stop_sequences=["\n\n\n"],  # Triple-newline = end of response (anti-loop)
+                stop_sequences=["\n\n\n", QWEN_STOP],  # Triple-newline = end of response (anti-loop)
             )
             answer = answer.strip()
         except Exception as e:
@@ -2810,7 +2866,7 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                     role=str(initial_role),
                     n_tokens=4096,
                     skip_suffix=True,
-                    stop_sequences=["\n\n\n"],
+                    stop_sequences=["\n\n\n", QWEN_STOP],
                 )
                 answer = answer.strip()
             except Exception as e2:
@@ -2900,6 +2956,11 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
             routing_strategy=routing_strategy,
             tokens_generated=primitives.total_tokens_generated,
             formalization_applied=formalization_applied,
+            tools_used=0,
+            prompt_eval_ms=primitives.total_prompt_eval_ms,
+            generation_ms=primitives.total_generation_ms,
+            predicted_tps=primitives._last_predicted_tps,
+            http_overhead_ms=primitives.total_http_overhead_ms,
         )
 
     # ── REPL orchestration mode ───────────────────────────────────────
@@ -2964,6 +3025,11 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
                 routing_strategy=routing_strategy,
                 tokens_generated=primitives.total_tokens_generated,
                 formalization_applied=formalization_applied,
+                tools_used=0,
+                prompt_eval_ms=primitives.total_prompt_eval_ms,
+                generation_ms=primitives.total_generation_ms,
+                predicted_tps=primitives._last_predicted_tps,
+                http_overhead_ms=primitives.total_http_overhead_ms,
             )
         except Exception as e:
             # Fall back to standard orchestration on two-stage failure
@@ -3351,6 +3417,14 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=formalization_applied,
         tools_used=repl._tool_invocations,
+        tools_called=(
+            [inv.tool_name for inv in repl.tool_registry.get_invocation_log()]
+            if repl.tool_registry else []
+        ),
+        prompt_eval_ms=primitives.total_prompt_eval_ms,
+        generation_ms=primitives.total_generation_ms,
+        predicted_tps=primitives._last_predicted_tps,
+        http_overhead_ms=primitives.total_http_overhead_ms,
     )
 
 

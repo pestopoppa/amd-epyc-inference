@@ -40,6 +40,12 @@ class ChatRequest(BaseModel):
         default=None,
         description="List of file paths for multi-file vision/document tasks (archives auto-extracted)"
     )
+    # Per-request cache control
+    cache_prompt: bool | None = Field(
+        default=None,
+        description="Override cache_prompt for this request (None=backend default True). "
+        "Set to False for benchmark seeding where prefix caching adds overhead."
+    )
     # Extended thinking support (Claude Code parity)
     thinking_budget: int = Field(
         default=0,
