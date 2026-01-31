@@ -4,7 +4,7 @@
 
 The Memory-augmented Reinforcement Learning (MemRL) system enables the orchestrator to learn from experience. Episodic memory stores task contexts, actions, and outcomes. A two-phase retriever finds similar past situations. Q-value scoring learns which actions work best for which tasks. The system progresses through 7 phases, from manual routing to full learned orchestration.
 
-As of 2026-01-28, the system contains 2714 memories with FAISS-accelerated retrieval providing 35x speedup over NumPy baseline (70ms → ~2ms at 500K scale).
+As of 2026-01-31, the system contains 2,714 memories (1,213 canonical seeds + 1,501 non-seed) with FAISS-accelerated retrieval providing 35x speedup over NumPy baseline (70ms → ~2ms at 500K scale). A contamination cleanup on 2026-01-31 surgically removed 6,506 entries from buggy validation script runs while preserving the original Jan 28 seed corpus.
 
 ## Episodic Memory Architecture
 

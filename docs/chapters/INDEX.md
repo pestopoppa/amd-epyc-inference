@@ -69,7 +69,7 @@ Novel contributions (recommended reading order):
 
 | # | Title | Key Result |
 |---|-------|------------|
-| 15 | [MemRL System](15-memrl-system.md) | 2714 memories, FAISS, Q-scoring |
+| 15 | [MemRL System](15-memrl-system.md) | 2,714 memories (cleaned), FAISS, Q-scoring |
 | 16 | [Graph-Based Reasoning](16-graph-reasoning.md) | 13 failure modes, Kuzu backend |
 | 17 | [Memory Seeding](17-memory-seeding.md) | 56 seeds, 8 strategies |
 | 18 | [Escalation & Routing](18-escalation-and-routing.md) | Learned + rule-based routing |

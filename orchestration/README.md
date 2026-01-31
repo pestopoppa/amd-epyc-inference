@@ -543,6 +543,24 @@ python orchestration/repl_memory/seed_loader.py
 python orchestration/repl_memory/seed_loader.py --force
 ```
 
+### Database Maintenance
+
+The episodic store can accumulate entries from validation script runs. To check for contamination:
+
+```bash
+# Check entry counts by date
+python3 -c "
+import sqlite3
+db = sqlite3.connect('orchestration/repl_memory/sessions/episodic.db')
+for row in db.execute('SELECT DATE(created_at) as d, COUNT(*) FROM memories GROUP BY d ORDER BY d'):
+    print(f'  {row[0]}: {row[1]}')
+"
+
+# Backups are at *.bak files (episodic.db.bak, embeddings.faiss.bak, id_map.npy.bak)
+```
+
+**2026-01-31 cleanup**: Surgically removed 6,506 validation-run entries (Jan 30-31) while preserving 2,714 original seed entries (Jan 28). FAISS index rebuilt from 9,181 → 2,714 embeddings (-70% file size).
+
 ### Category Coverage
 
 | Category | Count | Tools |

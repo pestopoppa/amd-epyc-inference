@@ -1,7 +1,7 @@
 # Orchestrator Architecture Review & chat.py Decomposition
 
 **Date**: 2026-01-31
-**Status**: In Progress (Phase 3 of 5 complete)
+**Status**: In Progress (Phase 3 of 5 complete, MemRL DB cleaned for validation)
 **Author**: Claude Opus 4.5 (architecture review session)
 
 ## Summary
@@ -116,12 +116,21 @@ All other modules: no cross-deps to new modules
 - Deleted `src/api/services/orchestrator.py` (dead facade)
 - Updated all imports to use `src.prompt_builders` directly
 
+## Completed Phases
+
+- **Phase 1**: chat.py God Module decomposition (3,763→561 lines, 8 modules) — see `chat-module-decomposition.md`
+- **Phase 1b**: Pipeline restructure (`_handle_chat()` 1,091→80 lines, 11 stage functions)
+- **Phase 2**: State management + circuit breaker (8 Protocol interfaces, BackendHealthTracker)
+- **Phase 3**: Configuration consolidation (27 files, ~185 values wired to `src/config.py`, 1012+165 tests)
+
 ## Remaining Phases (Not Yet Implemented)
 
-- **Phase 2**: Fix state management (DI, Protocol types, frozen configs)
-- **Phase 3**: Configuration consolidation (paths, thresholds, magic numbers)
 - **Phase 4**: Test quality (integration tests, coverage, benchmarks)
 - **Phase 5**: Infrastructure hardening (rate limiting, circuit breakers, health)
+
+## MemRL Database Cleanup (2026-01-31)
+
+Surgically removed 6,506 validation-run contaminated entries from episodic.db while preserving 2,714 original seed data entries. FAISS index rebuilt (9,181→2,714 embeddings, -70% file size). Database ready for clean validation run.
 
 ## How to Add New Execution Modes
 

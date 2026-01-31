@@ -299,6 +299,10 @@ Wired dead `src/config.py` into runtime. ~185 hardcoded config values from 27 fi
 
 `5290955` — feat: Phase 3 configuration consolidation — wire dead config.py into runtime
 
+## MemRL Database Cleanup (2026-01-31)
+
+Validation script runs on Jan 30-31 contaminated `episodic.db` with 6,506 routing entries (57 unique questions × ~114 repetitions). Surgically removed via date-based SQL delete + FAISS index rebuild. Preserved all 2,714 original Jan 28 seed entries (1,213 with `is_seed: true`). Database ready for clean validation run.
+
 ## Remaining Phases (Not Yet Implemented)
 
 - **Phase 4**: Test quality (integration tests, coverage, benchmarks, 0.44x → 0.8x ratio)

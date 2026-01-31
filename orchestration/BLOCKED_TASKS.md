@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-31 (Phase 3 config consolidation complete: 27 files, ~185 values migrated, 1012+165 tests pass)
+**Last Updated**: 2026-01-31 (Phase 3 config consolidation complete, MemRL DB cleaned: 6,506 contaminated entries removed, 2,714 preserved, FAISS rebuilt)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -21,8 +21,8 @@
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
 | **Orchestrator Quality Regression** | — | **HIGH** | `progress/2026-01/2026-01-29.md` | ✅ FIXES APPLIED (direct-answer mode, VL pipeline rewrite, port mapping fix). Re-run benchmark pending. |
-| **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 + DEV TASKS + OVERHEAD MITIGATIONS + HEALTH CHECK HARDENING + STRATIFIED SAMPLING + PIPELINE PERF OPTIMIZATION COMPLETE. 857 tests pass. `POST /config` endpoint added. **Live validation pending** (seeding + learning loop + regression gate). |
-| **Architecture Review (Phases 1-3)** | — | **HIGH** | `handoffs/active/chat-module-decomposition.md` | ✅ PHASE 3 COMPLETE. Phase 1: God Module decomposition (3763→561 lines). Phase 1b: Pipeline restructure (1091→80 lines). Phase 2: State management + circuit breaker. Phase 3: Config consolidation (27 files, 1012 tests). **Phases 4-5 remaining** (test quality, infra hardening). |
+| **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 + DEV TASKS + OVERHEAD MITIGATIONS + HEALTH CHECK HARDENING + STRATIFIED SAMPLING + PIPELINE PERF OPTIMIZATION COMPLETE. 1012 tests pass. `POST /config` endpoint added. MemRL DB cleaned (6,506→0 contaminated entries). **Live validation pending** (seeding + learning loop + regression gate). |
+| **Architecture Review (Phases 1-3)** | — | **HIGH** | `handoffs/active/chat-module-decomposition.md` | ✅ PHASE 3 COMPLETE + MemRL DB CLEANED. Phase 1: God Module decomposition (3763→561 lines). Phase 1b: Pipeline restructure (1091→80 lines). Phase 2: State management + circuit breaker. Phase 3: Config consolidation (27 files, 1012 tests). MemRL DB: 6,506 contaminated entries surgically removed, FAISS rebuilt. **Phases 4-5 remaining** (test quality, infra hardening). |
 | **Orchestration Architecture Roadmap** | — | **MEDIUM** | `handoffs/active/orchestration-architecture-roadmap.md` | 📋 ACTIVE (merged from refactoring + PARL: 7 items A-G remaining) |
 | **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
