@@ -1,7 +1,7 @@
-# chat.py God Module Decomposition — Phases 1 + 1b
+# chat.py God Module Decomposition — Phases 1 + 1b + 2
 
 **Date**: 2026-01-31
-**Status**: Complete (Phase 1 + Phase 1b)
+**Status**: Complete (Phase 1 + Phase 1b + Phase 2)
 **Author**: Claude Opus 4.5 (architecture review session)
 **Parent**: `handoffs/active/orchestrator-architecture-review.md`
 
@@ -212,9 +212,62 @@ chat_routing.py
 | Dead imports removed | — | 13 | 13 |
 | New tests added | — | 15 | **31** (15 + 16) |
 
+## Phase 2: State Management + Circuit Breaker (Complete)
+
+### Protocol Interfaces (src/api/protocols.py — NEW)
+
+8 runtime-checkable Protocol interfaces replacing `Any` types on AppState:
+- `QScorerProtocol`, `EpisodicStoreProtocol`, `HybridRouterProtocol`
+- `ProgressLoggerProtocol`, `ToolRegistryProtocol`, `ScriptRegistryProtocol`
+- `RegistryLoaderProtocol`, `FailureGraphProtocol`
+
+All under `TYPE_CHECKING` guard — zero runtime import cost. Structural subtyping: existing classes satisfy protocols without inheriting.
+
+### BackendHealthTracker (src/api/health_tracker.py — NEW)
+
+Circuit breaker with three states: closed → open → half-open → closed.
+
+| State | Behavior |
+|-------|----------|
+| closed | Normal. Failures increment counter. |
+| open | Fast-fail (no HTTP sent). After cooldown, → half-open. |
+| half-open | Allow one probe. Success → closed. Failure → open (double cooldown, max 300s). |
+
+Thread-safe via `threading.Lock`. Integrated at `LLMPrimitives._call_caching_backend()` — checks `is_available()` before dispatch, records `record_success()`/`record_failure()` after. Fast-fail before HTTP request avoids 300s timeout waits.
+
+### Health Endpoint Enriched
+
+`/health` now returns per-backend circuit status via `backend_health` field on `HealthResponse`. Status "ok" when all circuits closed, "degraded" when any open/half-open.
+
+### Feature Validation
+
+Added 3 dependency rules: `specialist_routing`, `plan_review`, `architect_delegation` all require `memrl`.
+
+### Phase 2 Files
+
+| File | Change |
+|------|--------|
+| `src/api/protocols.py` | **NEW** — 8 Protocol interfaces |
+| `src/api/health_tracker.py` | **NEW** — BackendHealthTracker circuit breaker |
+| `src/api/state.py` | 8 `Any` → Protocol types, +health_tracker field |
+| `src/features.py` | +3 dependency validations |
+| `src/api/__init__.py` | Feature validation at startup, health_tracker cleanup |
+| `src/llm_primitives.py` | health_tracker integration (pre-dispatch check + post-dispatch record) |
+| `src/api/routes/health.py` | Per-backend health aggregation |
+| `src/api/models/responses.py` | +backend_health field on HealthResponse |
+| `tests/unit/test_health_tracker.py` | **NEW** — 18 circuit breaker tests |
+| `tests/unit/test_api_imports.py` | +5 Protocol/health_tracker tests |
+
+### Phase 2 Test Results
+
+| Suite | Passed | Notes |
+|-------|--------|-------|
+| test_health_tracker.py | 18/18 | All circuit states, cooldown, thread safety |
+| test_api_imports.py | 37/37 | +5 new Protocol/health_tracker tests |
+| Full unit suite | 940/940 | Excluding 2 pre-existing pdf_router failures |
+
 ## Remaining Phases (Not Yet Implemented)
 
-- **Phase 2**: Fix state management (DI via FastAPI Depends(), Protocol types, BackendHealthTracker circuit breaker)
 - **Phase 3**: Configuration consolidation (paths, thresholds, magic numbers → Config class)
 - **Phase 4**: Test quality (integration tests, coverage, benchmarks, 0.44x → 0.8x ratio)
 - **Phase 5**: Infrastructure hardening (rate limiting, health checks, structured logging)
