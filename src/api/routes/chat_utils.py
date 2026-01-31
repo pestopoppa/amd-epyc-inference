@@ -8,6 +8,7 @@ output quality heuristics, format enforcement, and shared constants.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from src.features import features
@@ -19,6 +20,57 @@ from src.roles import Role
 
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
+
+
+# ── Role-specific timeouts (Phase 1b: KV cache bug mitigation) ──────────
+# Maps role → timeout in seconds. Sized by model: small models time out
+# fast (no point waiting 300s for a 7B that should respond in 5s).
+ROLE_TIMEOUTS: dict[str, int] = {
+    # Tier C workers — 7B models, fast
+    "worker_explore": 30,
+    "worker_math": 30,
+    "worker_vision": 30,
+    "worker_summarize": 120,  # shares 32B server with coder_escalation
+    # Tier A — 30B MoE frontdoor
+    "frontdoor": 60,
+    "coder_primary": 60,
+    # Tier B — escalation + specialist
+    "coder_escalation": 120,
+    "vision_escalation": 60,
+    "ingest_long_context": 120,
+    # Tier B — architects (large models, legitimately slow)
+    "architect_general": 300,
+    "architect_coding": 300,
+}
+DEFAULT_TIMEOUT_S = 120  # Fallback for unknown roles
+
+
+@dataclass
+class RoutingResult:
+    """Encapsulates all routing decisions made before execution.
+
+    Created by _route_request(), consumed by mode handlers and response builder.
+    Frozen after creation — routing is a read-only decision.
+    """
+
+    task_id: str
+    task_ir: dict
+    use_mock: bool
+    routing_decision: list = field(default_factory=list)
+    routing_strategy: str = ""
+    formalization_applied: bool = False
+    timeout_s: int = DEFAULT_TIMEOUT_S
+
+    @property
+    def role(self) -> str:
+        """Primary role for this request."""
+        if self.routing_decision:
+            return str(self.routing_decision[0])
+        return str(Role.FRONTDOOR)
+
+    def timeout_for_role(self, role: str) -> int:
+        """Get timeout for a specific role (used during escalation)."""
+        return ROLE_TIMEOUTS.get(str(role), DEFAULT_TIMEOUT_S)
 
 # Three-stage summarization configuration (Stage 0: compression, Stage 1: draft, Stage 2: review)
 THREE_STAGE_CONFIG = {

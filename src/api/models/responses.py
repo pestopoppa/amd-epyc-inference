@@ -30,6 +30,9 @@ class ChatResponse(BaseModel):
     generation_ms: float = Field(default=0.0, description="Token generation time in ms (excludes prompt eval)")
     predicted_tps: float = Field(default=0.0, description="Clean generation-only tokens/second from llama.cpp")
     http_overhead_ms: float = Field(default=0.0, description="Server-side overhead: HTTP round-trip minus inference time (ms)")
+    # Error signaling (Phase 1b): explicit failure codes instead of silent 200 OK
+    error_code: int | None = Field(default=None, description="Error code if request failed (504=timeout, 502=backend down, None=success)")
+    error_detail: str | None = Field(default=None, description="Structured error description when error_code is set")
 
 
 class HealthResponse(BaseModel):

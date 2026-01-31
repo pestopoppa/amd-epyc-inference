@@ -185,3 +185,183 @@ class TestCallableSmoke:
 
         result = auto_wrap_final("print('hello')")
         assert isinstance(result, str)
+
+
+# ── Phase 1b: Pipeline stage tests ──────────────────────────────────────
+
+
+class TestChatPipelineImports:
+    """Verify Phase 1b pipeline module imports resolve."""
+
+    def test_chat_pipeline_imports(self):
+        """Import chat_pipeline — catches any ImportError."""
+        from src.api.routes import chat_pipeline  # noqa: F401
+
+    def test_pipeline_stage_functions_importable(self):
+        """All pipeline stage functions are importable."""
+        from src.api.routes.chat_pipeline import (  # noqa: F401
+            _route_request,
+            _preprocess,
+            _init_primitives,
+            _execute_mock,
+            _execute_vision,
+            _plan_review_gate,
+            _execute_delegated,
+            _execute_react,
+            _execute_direct,
+            _execute_repl,
+            _annotate_error,
+        )
+
+    def test_routing_result_importable(self):
+        """RoutingResult dataclass is importable from chat_utils."""
+        from src.api.routes.chat_utils import RoutingResult
+        assert RoutingResult is not None
+
+
+class TestRoutingResult:
+    """Tests for RoutingResult dataclass."""
+
+    def test_default_values(self):
+        from src.api.routes.chat_utils import RoutingResult
+
+        r = RoutingResult(task_id="test-123", task_ir={}, use_mock=False)
+        assert r.task_id == "test-123"
+        assert r.use_mock is False
+        assert r.routing_decision == []
+        assert r.routing_strategy == ""
+        assert r.formalization_applied is False
+        assert r.timeout_s > 0
+
+    def test_role_property(self):
+        from src.api.routes.chat_utils import RoutingResult
+
+        r = RoutingResult(
+            task_id="t", task_ir={}, use_mock=False,
+            routing_decision=["architect_general"],
+        )
+        assert r.role == "architect_general"
+
+    def test_role_property_empty(self):
+        from src.api.routes.chat_utils import RoutingResult
+
+        r = RoutingResult(task_id="t", task_ir={}, use_mock=False)
+        assert "frontdoor" in r.role.lower()
+
+    def test_timeout_for_role(self):
+        from src.api.routes.chat_utils import RoutingResult
+
+        r = RoutingResult(task_id="t", task_ir={}, use_mock=False)
+        assert r.timeout_for_role("worker_explore") == 30
+        assert r.timeout_for_role("architect_general") == 300
+        assert r.timeout_for_role("frontdoor") == 60
+
+
+class TestRoleTimeouts:
+    """Tests for ROLE_TIMEOUTS mapping."""
+
+    def test_all_known_roles_have_timeouts(self):
+        from src.api.routes.chat_utils import ROLE_TIMEOUTS
+
+        expected_roles = [
+            "worker_explore", "worker_math", "worker_vision",
+            "frontdoor", "coder_primary", "coder_escalation",
+            "architect_general", "architect_coding",
+        ]
+        for role in expected_roles:
+            assert role in ROLE_TIMEOUTS, f"Missing timeout for {role}"
+
+    def test_worker_timeouts_shorter_than_architect(self):
+        from src.api.routes.chat_utils import ROLE_TIMEOUTS
+
+        assert ROLE_TIMEOUTS["worker_explore"] < ROLE_TIMEOUTS["architect_general"]
+        assert ROLE_TIMEOUTS["worker_math"] < ROLE_TIMEOUTS["architect_coding"]
+
+    def test_default_timeout_exists(self):
+        from src.api.routes.chat_utils import DEFAULT_TIMEOUT_S
+
+        assert DEFAULT_TIMEOUT_S > 0
+        assert DEFAULT_TIMEOUT_S <= 300
+
+
+class TestAnnotateError:
+    """Tests for _annotate_error() error detection."""
+
+    def test_success_response_unchanged(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="The answer is 42",
+            turns=1,
+            elapsed_seconds=0.5,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code is None
+        assert result.error_detail is None
+
+    def test_timeout_error_gets_504(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="[ERROR: frontdoor LM call failed: Request timed out after 60s]",
+            turns=1,
+            elapsed_seconds=60.5,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code == 504
+        assert "timed out" in result.error_detail.lower()
+
+    def test_backend_error_gets_502(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="[ERROR: Direct LLM call failed after retry: Backend unavailable]",
+            turns=1,
+            elapsed_seconds=1.0,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code == 502
+
+    def test_generic_error_gets_500(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="[ERROR: unexpected parse error]",
+            turns=1,
+            elapsed_seconds=0.1,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code == 500
+
+    def test_failed_prefix_gets_500(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="[FAILED: max escalations reached]",
+            turns=1,
+            elapsed_seconds=5.0,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code == 500
+
+    def test_chatresponse_error_fields_default_none(self):
+        from src.api.models.responses import ChatResponse
+
+        resp = ChatResponse(
+            answer="hello",
+            turns=1,
+            elapsed_seconds=0.1,
+            mock_mode=True,
+        )
+        assert resp.error_code is None
+        assert resp.error_detail is None

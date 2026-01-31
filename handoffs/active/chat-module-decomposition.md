@@ -1,20 +1,27 @@
-# chat.py God Module Decomposition — Phase 1
+# chat.py God Module Decomposition — Phases 1 + 1b
 
 **Date**: 2026-01-31
-**Status**: Complete
+**Status**: Complete (Phase 1 + Phase 1b)
 **Author**: Claude Opus 4.5 (architecture review session)
 **Parent**: `handoffs/active/orchestrator-architecture-review.md`
 
 ## What Was Done
 
+### Phase 1: Function Extraction (33 functions → 7 modules)
+
 Decomposed the 3,763-line `src/api/routes/chat.py` God Module into 8 focused modules. The original file contained 38 functions including `_handle_chat()` (1,091 lines, ~30 code paths) which was untestable and unsafe to modify.
+
+### Phase 1b: Pipeline Restructure + KV Cache Bug Fix
+
+Restructured `_handle_chat()` from 1,091 lines to ~80-line thin dispatcher calling named pipeline stage functions in `chat_pipeline.py`. Simultaneously integrated KV cache pressure bug fix: explicit error_code/error_detail on ChatResponse instead of silent HTTP 200 OK with error strings.
 
 ### New Module Structure
 
 ```
 src/api/routes/
-├── chat.py               # Thin orchestrator: endpoints + _handle_chat pipeline (1,558 lines)
-├── chat_utils.py          # Constants + utilities (token est, stub detection, formalization)
+├── chat.py               # Thin dispatcher: endpoints + ~80-line _handle_chat (561 lines)
+├── chat_pipeline.py       # Pipeline stages: route → preprocess → init → execute → annotate (1,203 lines)
+├── chat_utils.py          # Constants + utilities + RoutingResult + ROLE_TIMEOUTS (297 lines)
 ├── chat_vision.py         # Vision pipeline (OCR, VL routing, ReAct VL, multi-file)
 ├── chat_summarization.py  # Two-stage/three-stage context processing pipeline
 ├── chat_review.py         # Architect review, quality gates, plan review
@@ -68,14 +75,67 @@ src/api/routes/
 - `QWEN_STOP` — Qwen chat-template stop token `<|im_end|>`
 - `LONG_CONTEXT_CONFIG` — Long context exploration thresholds
 - `_STUB_PATTERNS` — FINAL() stub detection patterns
+- `ROLE_TIMEOUTS` — Role → timeout mapping (Phase 1b)
+- `DEFAULT_TIMEOUT_S` — Fallback timeout 120s (Phase 1b)
+
+### Phase 1b: Pipeline Stage Functions (chat_pipeline.py)
+
+| Function | Stage | Description |
+|----------|-------|-------------|
+| `_route_request()` | 1 | HybridRouter, failure veto, MemRL logging → RoutingResult |
+| `_preprocess()` | 2 | Input formalization (MathSmith-8B gate) |
+| `_init_primitives()` | 3 | LLMPrimitives setup, server URL, backend health check |
+| `_execute_mock()` | 4 | Mock mode simulated response (early return) |
+| `_plan_review_gate()` | 5 | Architect pre-execution plan review |
+| `_execute_vision()` | 6 | Vision pipeline (OCR, VL, multi-file) |
+| `_execute_delegated()` | 7 | Architect → specialist delegation |
+| `_execute_react()` | 8 | ReAct tool loop with quality check |
+| `_execute_direct()` | 9 | Direct LLM call + formalization + review |
+| `_execute_repl()` | 10 | Multi-turn REPL orchestration, escalation, summarization |
+| `_annotate_error()` | post | Detect `[ERROR:`/`[FAILED:` → set error_code (504/502/500) |
+
+### Phase 1b: New Dataclasses
+
+**RoutingResult** (chat_utils.py) — Encapsulates all routing decisions:
+- `task_id`, `task_ir`, `use_mock`, `routing_decision`, `routing_strategy`
+- `formalization_applied`, `timeout_s`
+- Properties: `role` (primary role), `timeout_for_role(role)` (per-role lookup)
+
+**ROLE_TIMEOUTS** (chat_utils.py) — Role-specific timeout mapping:
+- Workers (7B): 30s
+- Frontdoor/coder_primary (30B MoE): 60s
+- Coder escalation/ingest (32B/80B): 120s
+- Architects (235B/480B): 300s
+
+### Phase 1b: KV Cache Bug Fix (error_code/error_detail)
+
+**Bug**: KV cache pressure causes llama-server timeouts → `[ERROR: ...]` strings returned as HTTP 200 OK (silent failure). Benchmarks silently collected empty/error results.
+
+**Fix**: `_annotate_error()` detects error patterns in ChatResponse.answer:
+- `[ERROR: ... timed out ...]` → error_code=504, error_detail=answer
+- `[ERROR: ... backend/failed ...]` → error_code=502
+- `[ERROR: ...]` (other) → error_code=500
+- `[FAILED: ...]` → error_code=500
+- Success → error_code=None, error_detail=None
+
+**ChatResponse** (responses.py) — Added fields:
+- `error_code: int | None` — None=success, 504=timeout, 502=backend, 500=generic
+- `error_detail: str | None` — Structured error description
 
 ### Cross-Module Dependencies
 
 ```
-chat.py (thin orchestrator)
-  ├── imports from: ALL 7 new modules
-  ├── imports from: src.prompt_builders (build_root_lm_prompt, etc.)
-  └── imports from: src.api.services.memrl, src.features, etc.
+chat.py (thin dispatcher, 561 lines)
+  ├── imports from: chat_pipeline (11 stage functions)
+  ├── imports from: chat_utils (RoutingResult, constants)
+  ├── imports from: chat_routing (_select_mode)
+  └── imports from: src.prompt_builders, src.api.services.memrl, src.features
+
+chat_pipeline.py (pipeline stages, 1,203 lines)
+  ├── imports from: chat_utils (RoutingResult, ROLE_TIMEOUTS, constants)
+  ├── imports from: chat_vision, chat_summarization, chat_review
+  ├── imports from: chat_react, chat_delegation, chat_routing
+  └── imports from: src.prompt_builders, src.features, src.api.state
 
 chat_utils.py (leaf — no new-module deps)
   └── imports from: src.features, src.prompt_builders
@@ -124,36 +184,49 @@ chat_routing.py
 
 | File | Changes |
 |------|---------|
-| `test_api_imports.py` | Rewritten: 15 tests verify all 8 modules + facade deletion |
+| `test_api_imports.py` | Phase 1: 15 tests. Phase 1b: +16 tests (pipeline imports, RoutingResult, timeouts, annotate_error) |
 | `test_react_mode.py` | Import paths → `chat_react`, patch targets, 3-value unpack |
 | `test_architect_delegation.py` | Import paths → `chat_delegation`, patch targets |
 | `test_plan_review.py` | Import paths → `chat_review` (4 functions) |
 | `test_vision_routing.py` | Import paths → `chat_utils`/`chat_vision`, `asyncio.run()` fix |
 
+### Phase 1b New Tests (16 tests in test_api_imports.py)
+
+| Class | Tests | What's Covered |
+|-------|-------|----------------|
+| `TestChatPipelineImports` | 3 | Module import, all 11 stage functions importable, RoutingResult importable |
+| `TestRoutingResult` | 4 | Default values, role property (populated/empty), timeout_for_role |
+| `TestRoleTimeouts` | 3 | All known roles have timeouts, workers < architects, DEFAULT_TIMEOUT_S bounds |
+| `TestAnnotateError` | 6 | Success unchanged, timeout→504, backend→502, generic→500, failed→500, defaults None |
+
 ### Metrics
 
-| Metric | Before | After |
-|--------|--------|-------|
-| chat.py lines | 3,763 | 1,558 |
-| Functions in chat.py | 38 | 5 |
-| Test failures (decomposition-related) | 45 | **0** |
-| Independently testable modules | 1 | 8 |
-| Dead imports removed | — | 13 |
+| Metric | Before | After Phase 1 | After Phase 1b |
+|--------|--------|---------------|----------------|
+| chat.py lines | 3,763 | 1,558 | **561** |
+| _handle_chat() lines | 1,091 | 1,091 | **~80** |
+| Functions in chat.py | 38 | 5 | 3 |
+| Pipeline modules | 0 | 0 | **1** (chat_pipeline.py, 1,203 lines) |
+| Test failures (decomp-related) | 45 | 0 | **0** |
+| Independently testable modules | 1 | 8 | **9** |
+| Dead imports removed | — | 13 | 13 |
+| New tests added | — | 15 | **31** (15 + 16) |
 
 ## Remaining Phases (Not Yet Implemented)
 
-- **Phase 2**: Fix state management (DI via FastAPI Depends(), Protocol types, frozen configs)
+- **Phase 2**: Fix state management (DI via FastAPI Depends(), Protocol types, BackendHealthTracker circuit breaker)
 - **Phase 3**: Configuration consolidation (paths, thresholds, magic numbers → Config class)
 - **Phase 4**: Test quality (integration tests, coverage, benchmarks, 0.44x → 0.8x ratio)
-- **Phase 5**: Infrastructure hardening (rate limiting, circuit breakers, health checks)
+- **Phase 5**: Infrastructure hardening (rate limiting, health checks, structured logging)
 
 ## How to Add New Execution Modes
 
-After decomposition, adding a new mode (e.g., "plan" mode) requires:
-1. Create `src/api/routes/chat_plan.py` with handler function
+After Phase 1b pipeline restructure, adding a new mode (e.g., "plan" mode) requires:
+1. Create `src/api/routes/chat_plan.py` with `_execute_plan()` returning `ChatResponse | None`
 2. Add mode detection to `_select_mode()` in `chat_routing.py`
-3. Add `elif execution_mode == "plan":` branch in `chat.py`'s `_handle_chat()`
-4. Write tests in `tests/unit/test_chat_plan.py`
+3. Add handler call in `chat.py`'s `_handle_chat()` dispatcher (~3 lines)
+4. Wrap result with `_annotate_error()` for automatic error signaling
+5. Write tests in `tests/unit/test_chat_plan.py`
 
 ## Resume Commands
 
@@ -178,3 +251,6 @@ python3 -c "from src.api.routes.chat_routing import _classify_and_route; print('
 2. **chat_stream() included** — Decomposed alongside `_handle_chat()` (uses same module imports). Not deferred.
 3. **orchestrator.py deleted** — Dead facade removed. `ESCALATION_ROLES` dict moved inline to `src/api/services/__init__.py` since it's only used by the services package.
 4. **No behavior changes** — Pure extract-and-move. All logic, thresholds, and heuristics preserved exactly.
+5. **Pipeline stages return ChatResponse | None** (Phase 1b) — Mode handlers return `None` to signal "fall through to next mode", preserving original cascading semantics.
+6. **_annotate_error() wraps all returns** (Phase 1b) — Single post-processing step for KV cache bug fix. No mode handler code needed to change.
+7. **RoutingResult is mutable dataclass** (Phase 1b) — Not frozen, because `_preprocess()` mutates `formalization_applied`. Will freeze in Phase 2 when DI passes immutable routing context.
