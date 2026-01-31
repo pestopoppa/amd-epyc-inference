@@ -164,6 +164,14 @@ class Features:
         if self.scripts and not self.tools:
             errors.append("scripts feature requires tools feature")
 
+        # MemRL-dependent features
+        if self.specialist_routing and not self.memrl:
+            errors.append("specialist_routing feature requires memrl feature")
+        if self.plan_review and not self.memrl:
+            errors.append("plan_review feature requires memrl feature")
+        if self.architect_delegation and not self.memrl:
+            errors.append("architect_delegation feature requires memrl feature")
+
         # RestrictedPython requires the library
         if self.restricted_python:
             try:

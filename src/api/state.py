@@ -11,20 +11,24 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
+from src.api.health_tracker import BackendHealthTracker
+
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
     from src.gate_runner import GateRunner
     from src.failure_router import FailureRouter
+    from src.api.protocols import (
+        QScorerProtocol,
+        EpisodicStoreProtocol,
+        HybridRouterProtocol,
+        ProgressLoggerProtocol,
+        ToolRegistryProtocol,
+        ScriptRegistryProtocol,
+        RegistryLoaderProtocol,
+        FailureGraphProtocol,
+    )
 
 logger = logging.getLogger(__name__)
-
-# Type hints for optional imports (set at runtime by _load_optional_imports)
-ProgressLogger: type | None = None
-QScorer: type | None = None
-EpisodicStore: type | None = None
-HybridRouter: type | None = None
-ToolRegistry: type | None = None
-ScriptRegistry: type | None = None
 
 
 @dataclass
@@ -49,25 +53,28 @@ class AppState:
     llm_primitives: LLMPrimitives | None = None
     gate_runner: GateRunner | None = None
     failure_router: FailureRouter | None = None
-    progress_logger: Any | None = None  # ProgressLogger type
+    progress_logger: ProgressLoggerProtocol | None = None
 
     # Q-scorer components (for idle-time scoring)
-    q_scorer: Any | None = None  # QScorer type
-    episodic_store: Any | None = None  # EpisodicStore type
+    q_scorer: QScorerProtocol | None = None
+    episodic_store: EpisodicStoreProtocol | None = None
 
     # Hybrid routing (learned + rule-based)
-    hybrid_router: Any | None = None  # HybridRouter type
+    hybrid_router: HybridRouterProtocol | None = None
 
     # Graph-enhanced memory (Phase 3: specialist routing)
-    failure_graph: Any | None = None  # FailureGraph type
-    hypothesis_graph: Any | None = None  # HypothesisGraph type
+    failure_graph: FailureGraphProtocol | None = None
+    hypothesis_graph: Any | None = None  # No protocol accesses found
 
     # Tool and script registries for REPL
-    tool_registry: Any | None = None  # ToolRegistry type
-    script_registry: Any | None = None  # ScriptRegistry type
+    tool_registry: ToolRegistryProtocol | None = None
+    script_registry: ScriptRegistryProtocol | None = None
 
     # Registry loader (for role defaults)
-    registry: Any = None  # RegistryLoader, typed as Any to avoid import cycle
+    registry: RegistryLoaderProtocol | None = None
+
+    # Backend health tracking (circuit breaker)
+    health_tracker: BackendHealthTracker = field(default_factory=BackendHealthTracker)
 
     # Plan review state (architect-in-the-loop)
     plan_review_phase: str = "A"  # "A" (bootstrap), "B" (supervised fade), "C" (spot-check)

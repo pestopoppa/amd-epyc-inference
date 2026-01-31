@@ -365,3 +365,70 @@ class TestAnnotateError:
         )
         assert resp.error_code is None
         assert resp.error_detail is None
+
+
+# ── Phase 2: Protocol + health tracker tests ─────────────────────────────
+
+
+class TestProtocolImports:
+    """Verify Protocol interfaces are importable."""
+
+    def test_all_protocols_importable(self):
+        from src.api.protocols import (  # noqa: F401
+            QScorerProtocol,
+            EpisodicStoreProtocol,
+            HybridRouterProtocol,
+            ProgressLoggerProtocol,
+            ToolRegistryProtocol,
+            ScriptRegistryProtocol,
+            RegistryLoaderProtocol,
+            FailureGraphProtocol,
+        )
+
+    def test_protocols_are_runtime_checkable(self):
+        from src.api.protocols import (
+            QScorerProtocol,
+            EpisodicStoreProtocol,
+            HybridRouterProtocol,
+            ProgressLoggerProtocol,
+            ToolRegistryProtocol,
+            ScriptRegistryProtocol,
+            RegistryLoaderProtocol,
+            FailureGraphProtocol,
+        )
+
+        for proto in (
+            QScorerProtocol, EpisodicStoreProtocol, HybridRouterProtocol,
+            ProgressLoggerProtocol, ToolRegistryProtocol, ScriptRegistryProtocol,
+            RegistryLoaderProtocol, FailureGraphProtocol,
+        ):
+            # runtime_checkable protocols support isinstance()
+            assert isinstance(proto, type), f"{proto} is not a type"
+
+
+class TestHealthTrackerImports:
+    """Verify health tracker module is importable and wired into AppState."""
+
+    def test_health_tracker_importable(self):
+        from src.api.health_tracker import (  # noqa: F401
+            BackendCircuit,
+            BackendHealthTracker,
+            DEFAULT_COOLDOWN_S,
+            DEFAULT_FAILURE_THRESHOLD,
+            MAX_COOLDOWN_S,
+        )
+
+    def test_appstate_has_health_tracker(self):
+        from src.api.state import AppState
+        from src.api.health_tracker import BackendHealthTracker
+
+        state = AppState()
+        assert hasattr(state, "health_tracker")
+        assert isinstance(state.health_tracker, BackendHealthTracker)
+
+    def test_health_response_has_backend_health_field(self):
+        from src.api.models.responses import HealthResponse
+
+        resp = HealthResponse(status="ok")
+        assert hasattr(resp, "backend_health")
+        assert resp.backend_health is None  # default

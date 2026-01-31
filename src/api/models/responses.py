@@ -38,10 +38,14 @@ class ChatResponse(BaseModel):
 class HealthResponse(BaseModel):
     """Response model for health endpoint."""
 
-    status: str = Field(..., description="Health status")
-    models_loaded: int = Field(default=0, description="Number of models loaded")
+    status: str = Field(..., description="Health status: ok | degraded")
+    models_loaded: int = Field(default=0, description="Number of healthy backends")
     mock_mode_available: bool = Field(default=True, description="Mock mode availability")
     version: str = Field(default="0.1.0", description="API version")
+    backend_health: dict[str, Any] | None = Field(
+        default=None,
+        description="Per-backend circuit breaker status (URL → state/failure_count/cooldown)",
+    )
 
 
 class GateResultModel(BaseModel):

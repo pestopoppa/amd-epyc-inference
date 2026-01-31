@@ -49,6 +49,12 @@ async def lifespan(app: FastAPI):
     state = get_state()
     f = features()
 
+    # Validate feature dependencies at startup
+    validation_errors = f.validate()
+    if validation_errors:
+        for err in validation_errors:
+            logger.error(f"Feature validation error: {err}")
+
     # Load feature flags and optional imports
     load_optional_imports()
 
@@ -69,7 +75,11 @@ async def lifespan(app: FastAPI):
 
     ProgressLogger = get_progress_logger_class()
 
-    state.llm_primitives = LLMPrimitives(mock_mode=f.mock_mode, registry=state.registry)
+    state.llm_primitives = LLMPrimitives(
+        mock_mode=f.mock_mode,
+        registry=state.registry,
+        health_tracker=state.health_tracker,
+    )
     state.progress_logger = ProgressLogger() if ProgressLogger else None
     state.gate_runner = GateRunner(progress_logger=state.progress_logger)
     state.failure_router = FailureRouter()
@@ -155,6 +165,7 @@ async def lifespan(app: FastAPI):
     state.tool_registry = None
     state.script_registry = None
     state.registry = None
+    state.health_tracker.reset()
 
 
 def create_app() -> FastAPI:

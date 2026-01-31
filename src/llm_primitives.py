@@ -195,6 +195,7 @@ class LLMPrimitives:
         registry: Any | None = None,
         worker_pool: Any | None = None,
         use_worker_pool: bool = False,
+        health_tracker: Any | None = None,
     ):
         """Initialize LLM primitives.
 
@@ -209,9 +210,11 @@ class LLMPrimitives:
             registry: Optional RegistryLoader for role-based generation defaults.
             worker_pool: Optional WorkerPoolManager for worker role routing.
             use_worker_pool: If True and worker_pool provided, route worker calls through pool.
+            health_tracker: Optional BackendHealthTracker for circuit breaker integration.
         """
         self.model_server = model_server
         self.mock_mode = mock_mode
+        self.health_tracker = health_tracker
         self.config = config if config is not None else LLMPrimitivesConfig()
         self.mock_responses = mock_responses if mock_responses is not None else {}
         self.server_urls = server_urls
@@ -986,7 +989,22 @@ class LLMPrimitives:
             cache_prompt=self.cache_prompt,
         )
 
+        # Circuit breaker: fast-fail if backend is known to be down
+        backend_url = self.server_urls.get(role, "") if self.server_urls else ""
+        if backend_url and self.health_tracker:
+            if not self.health_tracker.is_available(backend_url):
+                raise RuntimeError(
+                    f"Backend unavailable (circuit open): {backend_url}"
+                )
+
         result = backend.infer(role_config, request)
+
+        # Record success/failure for circuit breaker
+        if backend_url and self.health_tracker:
+            if result.success:
+                self.health_tracker.record_success(backend_url)
+            else:
+                self.health_tracker.record_failure(backend_url)
 
         if not result.success:
             raise RuntimeError(f"Inference failed: {result.error_message}")
