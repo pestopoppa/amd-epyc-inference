@@ -93,15 +93,17 @@ async def lifespan(app: FastAPI):
             state.tool_registry = ToolRegistry()
 
             # Load tools from YAML registry (22 tools in orchestration/tool_registry.yaml)
+            from src.config import get_config as _get_config
+            _paths = _get_config().paths
             loaded = load_tools_from_yaml(
                 state.tool_registry,
-                "/mnt/raid0/llm/claude/orchestration/tool_registry.yaml"
+                str(_paths.tool_registry_path),
             )
             logger.info(f"Loaded {loaded} tools from YAML registry")
 
             # Load role permissions from model registry
             state.tool_registry.load_permissions_from_registry(
-                "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+                str(_paths.registry_path),
             )
 
             # Register built-in tools (programmatic tools)
@@ -126,7 +128,7 @@ async def lifespan(app: FastAPI):
         try:
             state.script_registry = ScriptRegistry()
             state.script_registry.load_from_directory(
-                "/mnt/raid0/llm/claude/orchestration/script_registry"
+                str(_paths.script_registry_dir),
             )
         except Exception as e:
             logger.info(f"Script registry not available: {e}")

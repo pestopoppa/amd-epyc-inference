@@ -207,9 +207,11 @@ def _register_data_tools(registry: ToolRegistry) -> None:
     )
     def write_json(path: str, data: Any, indent: int = 2) -> dict[str, Any]:
         """Write data to a JSON file."""
-        # Security: only allow writing to /mnt/raid0/
-        if not path.startswith("/mnt/raid0/"):
-            return {"error": "Can only write to /mnt/raid0/", "success": False}
+        # Security: only allow writing to RAID array
+        from src.config import get_config
+        _raid_prefix = get_config().paths.raid_prefix
+        if not path.startswith(_raid_prefix):
+            return {"error": f"Can only write to {_raid_prefix}", "success": False}
 
         try:
             with open(path, "w") as f:

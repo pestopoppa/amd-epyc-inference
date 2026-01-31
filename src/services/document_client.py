@@ -32,13 +32,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Default server URL
-DEFAULT_OCR_URL = "http://localhost:9001"
+# Default server URL — sourced from centralized config
+from src.config import get_config as _get_config
+
+DEFAULT_OCR_URL = _get_config().server_urls.ocr_server
 
 # Timeouts
-SINGLE_PAGE_TIMEOUT = 120.0  # 2 minutes for single page
-PDF_TIMEOUT = 600.0  # 10 minutes for full PDF
-HEALTH_CHECK_TIMEOUT = 5.0
+SINGLE_PAGE_TIMEOUT = _get_config().timeouts.ocr_single_page
+PDF_TIMEOUT = _get_config().timeouts.ocr_pdf
+HEALTH_CHECK_TIMEOUT = _get_config().timeouts.health_check
 
 
 class OCRServerError(Exception):

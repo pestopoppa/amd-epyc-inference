@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.config import get_config as _get_config
 from src.prompt_builders import (
     VISION_REACT_EXECUTABLE_TOOLS,
     VISION_TOOL_DESCRIPTIONS,
@@ -211,14 +212,15 @@ async def _handle_vision_request(
     }
 
     # Try VL servers — constrained if force_server is set
+    _urls = _get_config().server_urls
     if force_server == "worker_vision":
-        vl_servers = [("worker_vision", "http://localhost:8086")]
+        vl_servers = [("worker_vision", _urls.worker_vision)]
     elif force_server == "vision_escalation":
-        vl_servers = [("vision_escalation", "http://localhost:8087")]
+        vl_servers = [("vision_escalation", _urls.vision_escalation)]
     else:
         vl_servers = [
-            ("worker_vision", "http://localhost:8086"),
-            ("vision_escalation", "http://localhost:8087"),
+            ("worker_vision", _urls.worker_vision),
+            ("vision_escalation", _urls.vision_escalation),
         ]
 
     last_error = None
@@ -270,7 +272,7 @@ async def _handle_vision_request(
                 "store_results": False,
             }
             resp = await client.post(
-                "http://localhost:8000/vision/analyze",
+                f"{_urls.api_url}/vision/analyze",
                 json=legacy_payload,
             )
         if resp.status_code == 200:
@@ -319,9 +321,10 @@ async def _execute_vision_tool(
         import httpx
 
         try:
+            _ocr_url = _get_config().server_urls.ocr_server
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(
-                    "http://localhost:9001/v1/document/ocr",
+                    f"{_ocr_url}/v1/document/ocr",
                     json={"image_base64": image_b64},
                 )
             if resp.status_code == 200:
@@ -443,7 +446,14 @@ Important rules:
         }
     ]
 
-    vl_url = f"http://localhost:{vl_port}/v1/chat/completions"
+    # Build VL URL from config server_urls for known ports, fallback to port param
+    _react_urls = _get_config().server_urls
+    _port_to_url = {
+        8086: _react_urls.worker_vision,
+        8087: _react_urls.vision_escalation,
+    }
+    _base = _port_to_url.get(vl_port, f"http://localhost:{vl_port}")
+    vl_url = f"{_base}/v1/chat/completions"
 
     for turn in range(max_turns):
         # Call VL backend

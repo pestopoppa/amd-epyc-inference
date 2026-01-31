@@ -4,35 +4,40 @@ This module consolidates all configuration into a hierarchical structure
 with environment variable support via pydantic-settings.
 
 Usage:
-    from src.config import get_config, OrchestratorConfig
+    from src.config import get_config
 
     # Get config (loads from environment)
     config = get_config()
 
     # Access nested config
     print(config.llm.output_cap)
-    print(config.escalation.max_retries)
+    print(config.server_urls.frontdoor)
+    print(config.timeouts.for_role("architect_general"))
 
 Environment Variables:
     All settings can be overridden via environment variables with
-    ORCHESTRATOR_ prefix and double underscore for nesting:
+    ORCHESTRATOR_ prefix and section name:
 
     ORCHESTRATOR_MOCK_MODE=1
-    ORCHESTRATOR_LLM__OUTPUT_CAP=4096
-    ORCHESTRATOR_ESCALATION__MAX_RETRIES=3
+    ORCHESTRATOR_LLM_OUTPUT_CAP=4096
+    ORCHESTRATOR_ESCALATION_MAX_RETRIES=3
+    ORCHESTRATOR_SERVER_URLS_FRONTDOOR=http://custom:9999
+    ORCHESTRATOR_TIMEOUTS_DEFAULT_REQUEST=60
+    ORCHESTRATOR_PATHS_PROJECT_ROOT=/custom/path
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+
 # Try to use pydantic-settings if available, fall back to basic dataclass
 try:
-    from pydantic import Field
+    from pydantic import Field as PydanticField
     from pydantic_settings import BaseSettings, SettingsConfigDict
 
     PYDANTIC_SETTINGS_AVAILABLE = True
@@ -62,13 +67,18 @@ def _env_float(name: str, default: float) -> float:
     """Parse float from environment variable."""
     val = os.environ.get(name, "")
     try:
-        return float(val)
+        return float(val) if val else default
     except ValueError:
         return default
 
 
+def _env_str(name: str, default: str) -> str:
+    """Parse string from environment variable."""
+    return os.environ.get(name, default)
+
+
 # ============================================================================
-# Configuration Dataclasses (Pydantic-free fallback)
+# Configuration Dataclasses
 # ============================================================================
 
 
@@ -82,8 +92,8 @@ class LLMConfig:
     batch_parallelism: int = 4
     """Maximum parallel calls in llm_batch."""
 
-    call_timeout: int = 120
-    """Timeout per call in seconds."""
+    call_timeout: int = 300
+    """Timeout per call in seconds (matches LlamaServerBackend)."""
 
     mock_response_prefix: str = "[MOCK]"
     """Prefix for mock responses."""
@@ -96,6 +106,9 @@ class LLMConfig:
 
     default_completion_rate: float = 1.50
     """Default cost rate per 1M completion tokens."""
+
+    qwen_stop_token: str = "<|im_end|>"
+    """Qwen chat-template stop token to prevent runaway generation."""
 
 
 @dataclass
@@ -174,24 +187,46 @@ class ServerConfigData:
 
 @dataclass
 class MonitorConfigData:
-    """Configuration for generation monitoring."""
+    """Configuration for generation monitoring.
 
-    entropy_threshold: float = 2.5
-    """Entropy threshold for early abort."""
+    Base defaults — MonitorConfig.for_tier() in generation_monitor.py
+    provides tier-specific overrides on top of these.
+    """
 
-    repetition_window: int = 50
-    """Window size for repetition detection."""
+    entropy_threshold: float = 4.0
+    """Sustained entropy above this triggers abort."""
+
+    entropy_spike_threshold: float = 2.0
+    """Single-token entropy jump threshold."""
 
     repetition_threshold: float = 0.3
-    """Threshold for repetition ratio."""
+    """Threshold for repeated n-gram ratio (0-1)."""
 
-    min_tokens_before_abort: int = 20
+    min_tokens_before_abort: int = 50
     """Minimum tokens before allowing abort."""
+
+    perplexity_window: int = 20
+    """Rolling window size for perplexity trend."""
+
+    max_length_multiplier: float = 2.0
+    """Abort if >N x median task length."""
+
+    entropy_sustained_count: int = 10
+    """Tokens of high entropy before abort."""
+
+    ngram_size: int = 3
+    """N-gram size for repetition detection."""
+
+    combined_threshold: float = 0.7
+    """Weighted score for combined signals."""
 
 
 @dataclass
 class PathsConfig:
-    """Configuration for file paths."""
+    """Configuration for file paths.
+
+    All paths MUST be on /mnt/raid0/ per project rules.
+    """
 
     models_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/models"))
     """Directory for GGUF models."""
@@ -207,31 +242,332 @@ class PathsConfig:
     )
     """Path to model registry YAML."""
 
+    tool_registry_path: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/tool_registry.yaml")
+    )
+    """Path to tool registry YAML."""
+
+    script_registry_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/script_registry")
+    )
+    """Directory for script registry."""
+
+    project_root: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/claude")
+    )
+    """Project root directory."""
+
+    sessions_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/repl_memory/sessions")
+    )
+    """Session storage directory."""
+
+    artifacts_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/tmp/claude/artifacts")
+    )
+    """Artifacts directory for context manager."""
+
+    llama_cpp_bin: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/llama.cpp/build/bin")
+    )
+    """llama.cpp binary directory."""
+
+    model_base: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/lmstudio/models")
+    )
+    """Base directory for LM Studio models."""
+
+    log_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/claude/logs")
+    )
+    """Log files directory."""
+
+    raid_prefix: str = "/mnt/raid0/"
+    """Required prefix for all data paths (security)."""
+
 
 @dataclass
+class ServerURLsConfig:
+    """Server URL mapping for all orchestrator roles.
+
+    Each field maps an orchestrator role to a llama-server URL.
+    """
+
+    # Tier A - Front Door / Orchestrator
+    frontdoor: str = "http://localhost:8080"
+    coder_primary: str = "http://localhost:8080"
+
+    # Tier B - Specialists (code)
+    coder: str = "http://localhost:8081"
+    coder_escalation: str = "http://localhost:8081"
+
+    # Tier C - Workers
+    worker: str = "http://localhost:8082"
+    worker_general: str = "http://localhost:8082"
+    worker_explore: str = "http://localhost:8082"
+    worker_math: str = "http://localhost:8082"
+    worker_vision: str = "http://localhost:8086"
+    vision_escalation: str = "http://localhost:8087"
+    worker_code: str = "http://localhost:8092"
+    worker_fast: str = "http://localhost:8102"
+    worker_fast_1: str = "http://localhost:8102"
+    worker_fast_2: str = "http://localhost:8112"
+    worker_summarize: str = "http://localhost:8081"
+
+    # Tier B - Architects
+    architect_general: str = "http://localhost:8083"
+    architect_coding: str = "http://localhost:8084"
+    ingest_long_context: str = "http://localhost:8085"
+
+    # Services
+    api_url: str = "http://localhost:8000"
+    ocr_server: str = "http://localhost:9001"
+    vision_api: str = "http://localhost:8000/v1/vision/analyze"
+
+    def as_dict(self) -> dict[str, str]:
+        """Return role->URL mapping as dict (for LLMPrimitives compatibility).
+
+        Excludes service URLs (api_url, ocr_server, vision_api).
+        """
+        d = asdict(self)
+        # Remove non-role entries
+        for key in ("api_url", "ocr_server", "vision_api"):
+            d.pop(key, None)
+        return d
+
+
+@dataclass
+class TimeoutsConfig:
+    """All timeout values in seconds."""
+
+    # Role-specific request timeouts (mirrors ROLE_TIMEOUTS in chat_utils.py)
+    worker_explore: int = 30
+    worker_math: int = 30
+    worker_vision: int = 30
+    worker_summarize: int = 120
+    frontdoor: int = 60
+    coder_primary: int = 60
+    coder_escalation: int = 120
+    vision_escalation: int = 60
+    ingest_long_context: int = 120
+    architect_general: int = 300
+    architect_coding: int = 300
+    default_request: int = 120
+    """Fallback for unknown roles."""
+
+    # Backend timeouts
+    server_request: int = 300
+    server_connect: int = 5
+
+    # Service timeouts
+    ocr_single_page: float = 120.0
+    ocr_pdf: float = 600.0
+    health_check: float = 5.0
+    vision_inference: int = 120
+    vision_figure: float = 60.0
+    ffmpeg_version: int = 5
+    ffmpeg_probe: int = 30
+    ffmpeg_extract: int = 600
+    exiftool: int = 30
+    gradio_client: float = 300.0
+
+    def for_role(self, role: str) -> int:
+        """Get timeout for a specific role, falling back to default."""
+        _role_map = {
+            "worker_explore": self.worker_explore,
+            "worker_math": self.worker_math,
+            "worker_vision": self.worker_vision,
+            "worker_summarize": self.worker_summarize,
+            "frontdoor": self.frontdoor,
+            "coder_primary": self.coder_primary,
+            "coder_escalation": self.coder_escalation,
+            "vision_escalation": self.vision_escalation,
+            "ingest_long_context": self.ingest_long_context,
+            "architect_general": self.architect_general,
+            "architect_coding": self.architect_coding,
+        }
+        return _role_map.get(str(role), self.default_request)
+
+    def role_timeouts_dict(self) -> dict[str, int]:
+        """Return role->timeout dict (for backward compat with ROLE_TIMEOUTS)."""
+        return {
+            "worker_explore": self.worker_explore,
+            "worker_math": self.worker_math,
+            "worker_vision": self.worker_vision,
+            "worker_summarize": self.worker_summarize,
+            "frontdoor": self.frontdoor,
+            "coder_primary": self.coder_primary,
+            "coder_escalation": self.coder_escalation,
+            "vision_escalation": self.vision_escalation,
+            "ingest_long_context": self.ingest_long_context,
+            "architect_general": self.architect_general,
+            "architect_coding": self.architect_coding,
+        }
+
+
+@dataclass
+class VisionConfig:
+    """Vision pipeline configuration."""
+
+    base_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/vision"))
+    llama_mtmd_cli: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli")
+    )
+    vl_model_path: Path = field(
+        default_factory=lambda: Path(
+            "/mnt/raid0/llm/lmstudio/models/lmstudio-community/"
+            "Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+        )
+    )
+    vl_mmproj_path: Path = field(
+        default_factory=lambda: Path(
+            "/mnt/raid0/llm/lmstudio/models/lmstudio-community/"
+            "Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf"
+        )
+    )
+    vl_server_port: int = 8086
+    vl_escalation_server_port: int = 8087
+
+    # Processing limits
+    max_image_size_mb: int = 20
+    max_image_dimension: int = 4096
+    default_batch_size: int = 100
+    max_concurrent_workers: int = 4
+    default_video_fps: float = 1.0
+    default_vl_max_tokens: int = 512
+    default_vl_threads: int = 8
+
+    # Thumbnail settings
+    thumb_size: tuple[int, int] = (256, 256)
+    thumb_quality: int = 85
+    temp_jpeg_quality: int = 95
+
+    # Face detection
+    face_min_confidence: float = 0.9
+    face_embedding_dim: int = 512
+    face_identification_threshold: float = 0.6
+
+    # Model names
+    arcface_model_name: str = "buffalo_l"
+    clip_model_name: str = "ViT-B/32"
+    sentence_transformer_model: str = "all-MiniLM-L6-v2"
+    onnx_providers: list[str] = field(
+        default_factory=lambda: ["CPUExecutionProvider"]
+    )
+    supported_image_extensions: list[str] = field(
+        default_factory=lambda: ["jpg", "jpeg", "png", "heic", "webp", "bmp", "tiff"]
+    )
+
+
+@dataclass
+class ChatPipelineConfig:
+    """Chat pipeline configuration thresholds."""
+
+    # Three-stage summarization
+    summarization_threshold_tokens: int = 5000
+    """~20K chars triggers Stage 1+2."""
+    multi_doc_discount: float = 0.7
+    """Lower threshold for multiple documents."""
+    compression_enabled: bool = False
+    """Stage 0 compression (disabled due to LLMLingua-2 quality issues)."""
+    compression_min_chars: int = 30000
+    compression_target_ratio: float = 0.5
+    stage1_context_limit: int = 20000
+
+    # Long context exploration
+    long_context_enabled: bool = True
+    long_context_threshold_chars: int = 20000
+    """~5K tokens triggers exploration mode."""
+    long_context_max_turns: int = 8
+
+    # Quality detection thresholds
+    repetition_unique_ratio: float = 0.5
+    garbled_short_line_ratio: float = 0.6
+    min_answer_length: int = 50
+
+    # Review Q-value thresholds
+    review_low_q_threshold: float = 0.6
+    review_skip_q_threshold: float = 0.6
+
+    # Plan review phase transitions
+    plan_review_phase_a_min: int = 50
+    plan_review_phase_b_mean_q: float = 0.7
+    plan_review_phase_b_min_q: float = 0.5
+    plan_review_phase_c_min_q: float = 0.7
+    plan_review_phase_c_min_total: int = 100
+    plan_review_phase_c_skip_rate: float = 0.90
+    """Fraction of reviews skipped in Phase C (spot-check)."""
+
+
+@dataclass
+class DelegationConfig:
+    """Configuration for proactive delegation."""
+
+    max_iterations: int = 3
+    max_total_iterations: int = 10
+    max_concurrent_analysis: int = 4
+    max_review_tokens: int = 128
+    max_taskir_tokens: int = 256
+    max_plan_review_tokens: int = 128
+
+
+@dataclass
+class ServicesConfig:
+    """Configuration for services (OCR, PDF, archives, drafts)."""
+
+    lightonocr_model: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf")
+    )
+    lightonocr_mmproj: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-mmproj-F16.gguf")
+    )
+    lightonocr_max_tokens: int = 2048
+
+    draft_cache_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/cache/drafts")
+    )
+    draft_cache_ttl_hours: float = 24.0
+
+    archive_extract_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/tmp/archives")
+    )
+    max_archive_size: int = 500 * 1024 * 1024  # 500 MB
+    max_extracted_size: int = 1024 * 1024 * 1024  # 1 GB
+    max_archive_files: int = 1000
+
+    pdf_router_temp_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/tmp/pdf_router")
+    )
+
+
+@dataclass
+class WorkerPoolPathsConfig:
+    """Paths for worker pool management."""
+
+    llama_server_path: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-server")
+    )
+    log_dir: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/claude/logs")
+    )
+    model_base: Path = field(
+        default_factory=lambda: Path("/mnt/raid0/llm/lmstudio/models")
+    )
+
+
+# NOTE: FeaturesConfig is kept for backward compatibility but features
+# should be managed via src.features.Features (its own lifecycle/singleton).
+@dataclass
 class FeaturesConfig:
-    """Configuration for feature flags."""
+    """Configuration for feature flags (DEPRECATED: use src.features instead)."""
 
     memrl: bool = False
-    """Enable Memory-based RL (Q-scoring, learned routing)."""
-
     tools: bool = False
-    """Enable tool registry for REPL."""
-
     scripts: bool = False
-    """Enable script registry (requires tools)."""
-
     streaming: bool = False
-    """Enable SSE streaming endpoints."""
-
     openai_compat: bool = False
-    """Enable OpenAI-compatible API."""
-
     repl: bool = True
-    """Enable REPL execution."""
-
     caching: bool = True
-    """Enable response caching."""
 
 
 @dataclass
@@ -248,26 +584,23 @@ class OrchestratorConfigData:
     debug: bool = False
     """Enable debug logging."""
 
+    # Existing sections
     llm: LLMConfig = field(default_factory=LLMConfig)
-    """LLM primitives configuration."""
-
     escalation: EscalationConfigData = field(default_factory=EscalationConfigData)
-    """Escalation policy configuration."""
-
     repl: REPLConfigData = field(default_factory=REPLConfigData)
-    """REPL environment configuration."""
-
     server: ServerConfigData = field(default_factory=ServerConfigData)
-    """Backend server configuration."""
-
     monitor: MonitorConfigData = field(default_factory=MonitorConfigData)
-    """Generation monitor configuration."""
-
     paths: PathsConfig = field(default_factory=PathsConfig)
-    """File paths configuration."""
-
     features: FeaturesConfig = field(default_factory=FeaturesConfig)
-    """Feature flags configuration."""
+
+    # New sections (Phase 3)
+    server_urls: ServerURLsConfig = field(default_factory=ServerURLsConfig)
+    timeouts: TimeoutsConfig = field(default_factory=TimeoutsConfig)
+    vision: VisionConfig = field(default_factory=VisionConfig)
+    chat: ChatPipelineConfig = field(default_factory=ChatPipelineConfig)
+    delegation: DelegationConfig = field(default_factory=DelegationConfig)
+    services: ServicesConfig = field(default_factory=ServicesConfig)
+    worker_pool: WorkerPoolPathsConfig = field(default_factory=WorkerPoolPathsConfig)
 
 
 # ============================================================================
@@ -277,46 +610,36 @@ class OrchestratorConfigData:
 if PYDANTIC_SETTINGS_AVAILABLE:
 
     class LLMSettings(BaseSettings):
-        """LLM configuration with env support."""
-
         output_cap: int = 8192
         batch_parallelism: int = 4
-        call_timeout: int = 120
+        call_timeout: int = 300
         mock_response_prefix: str = "[MOCK]"
         max_recursion_depth: int = 5
         default_prompt_rate: float = 0.50
         default_completion_rate: float = 1.50
+        qwen_stop_token: str = "<|im_end|>"
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_LLM_",
-            extra="ignore",
+            env_prefix="ORCHESTRATOR_LLM_", extra="ignore",
         )
 
     class EscalationSettings(BaseSettings):
-        """Escalation configuration with env support."""
-
         max_retries: int = 2
         max_escalations: int = 2
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_ESCALATION_",
-            extra="ignore",
+            env_prefix="ORCHESTRATOR_ESCALATION_", extra="ignore",
         )
 
     class REPLSettings(BaseSettings):
-        """REPL configuration with env support."""
-
         max_output_len: int = 10000
         timeout_seconds: int = 30
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_REPL_",
-            extra="ignore",
+            env_prefix="ORCHESTRATOR_REPL_", extra="ignore",
         )
 
     class ServerSettings(BaseSettings):
-        """Server configuration with env support."""
-
         default_url: str = "http://localhost:8080"
         timeout: int = 300
         num_slots: int = 4
@@ -325,13 +648,108 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         retry_backoff: float = 0.5
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_SERVER_",
-            extra="ignore",
+            env_prefix="ORCHESTRATOR_SERVER_", extra="ignore",
+        )
+
+    class ServerURLsSettings(BaseSettings):
+        frontdoor: str = "http://localhost:8080"
+        coder_primary: str = "http://localhost:8080"
+        coder: str = "http://localhost:8081"
+        coder_escalation: str = "http://localhost:8081"
+        worker: str = "http://localhost:8082"
+        worker_general: str = "http://localhost:8082"
+        worker_explore: str = "http://localhost:8082"
+        worker_math: str = "http://localhost:8082"
+        worker_vision: str = "http://localhost:8086"
+        vision_escalation: str = "http://localhost:8087"
+        worker_code: str = "http://localhost:8092"
+        worker_fast: str = "http://localhost:8102"
+        worker_fast_1: str = "http://localhost:8102"
+        worker_fast_2: str = "http://localhost:8112"
+        worker_summarize: str = "http://localhost:8081"
+        architect_general: str = "http://localhost:8083"
+        architect_coding: str = "http://localhost:8084"
+        ingest_long_context: str = "http://localhost:8085"
+        api_url: str = "http://localhost:8000"
+        ocr_server: str = "http://localhost:9001"
+        vision_api: str = "http://localhost:8000/v1/vision/analyze"
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_SERVER_URLS_", extra="ignore",
+        )
+
+    class TimeoutsSettings(BaseSettings):
+        worker_explore: int = 30
+        worker_math: int = 30
+        worker_vision: int = 30
+        worker_summarize: int = 120
+        frontdoor: int = 60
+        coder_primary: int = 60
+        coder_escalation: int = 120
+        vision_escalation: int = 60
+        ingest_long_context: int = 120
+        architect_general: int = 300
+        architect_coding: int = 300
+        default_request: int = 120
+        server_request: int = 300
+        server_connect: int = 5
+        ocr_single_page: float = 120.0
+        ocr_pdf: float = 600.0
+        health_check: float = 5.0
+        vision_inference: int = 120
+        vision_figure: float = 60.0
+        ffmpeg_version: int = 5
+        ffmpeg_probe: int = 30
+        ffmpeg_extract: int = 600
+        exiftool: int = 30
+        gradio_client: float = 300.0
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_TIMEOUTS_", extra="ignore",
+        )
+
+    class ChatPipelineSettings(BaseSettings):
+        summarization_threshold_tokens: int = 5000
+        multi_doc_discount: float = 0.7
+        compression_enabled: bool = False
+        compression_min_chars: int = 30000
+        compression_target_ratio: float = 0.5
+        stage1_context_limit: int = 20000
+        long_context_enabled: bool = True
+        long_context_threshold_chars: int = 20000
+        long_context_max_turns: int = 8
+        repetition_unique_ratio: float = 0.5
+        garbled_short_line_ratio: float = 0.6
+        min_answer_length: int = 50
+        review_low_q_threshold: float = 0.6
+        review_skip_q_threshold: float = 0.6
+        plan_review_phase_a_min: int = 50
+        plan_review_phase_b_mean_q: float = 0.7
+        plan_review_phase_b_min_q: float = 0.5
+        plan_review_phase_c_min_q: float = 0.7
+        plan_review_phase_c_min_total: int = 100
+        plan_review_phase_c_skip_rate: float = 0.90
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_CHAT_", extra="ignore",
+        )
+
+    class MonitorSettings(BaseSettings):
+        entropy_threshold: float = 4.0
+        entropy_spike_threshold: float = 2.0
+        repetition_threshold: float = 0.3
+        min_tokens_before_abort: int = 50
+        perplexity_window: int = 20
+        max_length_multiplier: float = 2.0
+        entropy_sustained_count: int = 10
+        ngram_size: int = 3
+        combined_threshold: float = 0.7
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_MONITOR_", extra="ignore",
         )
 
     class FeaturesSettings(BaseSettings):
-        """Feature flags with env support."""
-
         memrl: bool = False
         tools: bool = False
         scripts: bool = False
@@ -341,25 +759,25 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         caching: bool = True
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_",
-            extra="ignore",
+            env_prefix="ORCHESTRATOR_", extra="ignore",
         )
 
     class OrchestratorSettings(BaseSettings):
-        """Root configuration with env support."""
-
         mock_mode: bool = True
         debug: bool = False
 
-        llm: LLMSettings = Field(default_factory=LLMSettings)
-        escalation: EscalationSettings = Field(default_factory=EscalationSettings)
-        repl: REPLSettings = Field(default_factory=REPLSettings)
-        server: ServerSettings = Field(default_factory=ServerSettings)
-        features: FeaturesSettings = Field(default_factory=FeaturesSettings)
+        llm: LLMSettings = PydanticField(default_factory=LLMSettings)
+        escalation: EscalationSettings = PydanticField(default_factory=EscalationSettings)
+        repl: REPLSettings = PydanticField(default_factory=REPLSettings)
+        server: ServerSettings = PydanticField(default_factory=ServerSettings)
+        monitor: MonitorSettings = PydanticField(default_factory=MonitorSettings)
+        features: FeaturesSettings = PydanticField(default_factory=FeaturesSettings)
+        server_urls: ServerURLsSettings = PydanticField(default_factory=ServerURLsSettings)
+        timeouts: TimeoutsSettings = PydanticField(default_factory=TimeoutsSettings)
+        chat: ChatPipelineSettings = PydanticField(default_factory=ChatPipelineSettings)
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_",
-            extra="ignore",
+            env_prefix="ORCHESTRATOR_", extra="ignore",
         )
 
 
@@ -370,37 +788,98 @@ if PYDANTIC_SETTINGS_AVAILABLE:
 
 def _load_from_env() -> OrchestratorConfigData:
     """Load configuration from environment variables (fallback method)."""
+    P = "ORCHESTRATOR_"
     return OrchestratorConfigData(
-        mock_mode=_env_bool("ORCHESTRATOR_MOCK_MODE", True),
-        debug=_env_bool("ORCHESTRATOR_DEBUG", False),
+        mock_mode=_env_bool(f"{P}MOCK_MODE", True),
+        debug=_env_bool(f"{P}DEBUG", False),
         llm=LLMConfig(
-            output_cap=_env_int("ORCHESTRATOR_LLM_OUTPUT_CAP", 8192),
-            batch_parallelism=_env_int("ORCHESTRATOR_LLM_BATCH_PARALLELISM", 4),
-            call_timeout=_env_int("ORCHESTRATOR_LLM_CALL_TIMEOUT", 120),
-            max_recursion_depth=_env_int("ORCHESTRATOR_LLM_MAX_RECURSION_DEPTH", 5),
+            output_cap=_env_int(f"{P}LLM_OUTPUT_CAP", 8192),
+            batch_parallelism=_env_int(f"{P}LLM_BATCH_PARALLELISM", 4),
+            call_timeout=_env_int(f"{P}LLM_CALL_TIMEOUT", 300),
+            max_recursion_depth=_env_int(f"{P}LLM_MAX_RECURSION_DEPTH", 5),
+            default_prompt_rate=_env_float(f"{P}LLM_DEFAULT_PROMPT_RATE", 0.50),
+            default_completion_rate=_env_float(f"{P}LLM_DEFAULT_COMPLETION_RATE", 1.50),
+            qwen_stop_token=_env_str(f"{P}LLM_QWEN_STOP_TOKEN", "<|im_end|>"),
         ),
         escalation=EscalationConfigData(
-            max_retries=_env_int("ORCHESTRATOR_ESCALATION_MAX_RETRIES", 2),
-            max_escalations=_env_int("ORCHESTRATOR_ESCALATION_MAX_ESCALATIONS", 2),
+            max_retries=_env_int(f"{P}ESCALATION_MAX_RETRIES", 2),
+            max_escalations=_env_int(f"{P}ESCALATION_MAX_ESCALATIONS", 2),
         ),
         repl=REPLConfigData(
-            max_output_len=_env_int("ORCHESTRATOR_REPL_MAX_OUTPUT_LEN", 10000),
-            timeout_seconds=_env_int("ORCHESTRATOR_REPL_TIMEOUT_SECONDS", 30),
+            max_output_len=_env_int(f"{P}REPL_MAX_OUTPUT_LEN", 10000),
+            timeout_seconds=_env_int(f"{P}REPL_TIMEOUT_SECONDS", 30),
         ),
         server=ServerConfigData(
-            default_url=os.environ.get("ORCHESTRATOR_SERVER_DEFAULT_URL", "http://localhost:8080"),
-            timeout=_env_int("ORCHESTRATOR_SERVER_TIMEOUT", 300),
-            num_slots=_env_int("ORCHESTRATOR_SERVER_NUM_SLOTS", 4),
+            default_url=_env_str(f"{P}SERVER_DEFAULT_URL", "http://localhost:8080"),
+            timeout=_env_int(f"{P}SERVER_TIMEOUT", 300),
+            num_slots=_env_int(f"{P}SERVER_NUM_SLOTS", 4),
+            connect_timeout=_env_int(f"{P}SERVER_CONNECT_TIMEOUT", 5),
+            retry_count=_env_int(f"{P}SERVER_RETRY_COUNT", 3),
+            retry_backoff=_env_float(f"{P}SERVER_RETRY_BACKOFF", 0.5),
         ),
-        features=FeaturesConfig(
-            memrl=_env_bool("ORCHESTRATOR_MEMRL", False),
-            tools=_env_bool("ORCHESTRATOR_TOOLS", False),
-            scripts=_env_bool("ORCHESTRATOR_SCRIPTS", False),
-            streaming=_env_bool("ORCHESTRATOR_STREAMING", False),
-            openai_compat=_env_bool("ORCHESTRATOR_OPENAI_COMPAT", False),
-            repl=_env_bool("ORCHESTRATOR_REPL", True),
-            caching=_env_bool("ORCHESTRATOR_CACHING", True),
+        monitor=MonitorConfigData(
+            entropy_threshold=_env_float(f"{P}MONITOR_ENTROPY_THRESHOLD", 4.0),
+            entropy_spike_threshold=_env_float(f"{P}MONITOR_ENTROPY_SPIKE_THRESHOLD", 2.0),
+            repetition_threshold=_env_float(f"{P}MONITOR_REPETITION_THRESHOLD", 0.3),
+            min_tokens_before_abort=_env_int(f"{P}MONITOR_MIN_TOKENS_BEFORE_ABORT", 50),
+            perplexity_window=_env_int(f"{P}MONITOR_PERPLEXITY_WINDOW", 20),
+            max_length_multiplier=_env_float(f"{P}MONITOR_MAX_LENGTH_MULTIPLIER", 2.0),
+            entropy_sustained_count=_env_int(f"{P}MONITOR_ENTROPY_SUSTAINED_COUNT", 10),
+            ngram_size=_env_int(f"{P}MONITOR_NGRAM_SIZE", 3),
+            combined_threshold=_env_float(f"{P}MONITOR_COMBINED_THRESHOLD", 0.7),
         ),
+        server_urls=ServerURLsConfig(
+            frontdoor=_env_str(f"{P}SERVER_URLS_FRONTDOOR", "http://localhost:8080"),
+            coder_primary=_env_str(f"{P}SERVER_URLS_CODER_PRIMARY", "http://localhost:8080"),
+            coder=_env_str(f"{P}SERVER_URLS_CODER", "http://localhost:8081"),
+            coder_escalation=_env_str(f"{P}SERVER_URLS_CODER_ESCALATION", "http://localhost:8081"),
+            worker=_env_str(f"{P}SERVER_URLS_WORKER", "http://localhost:8082"),
+            worker_general=_env_str(f"{P}SERVER_URLS_WORKER_GENERAL", "http://localhost:8082"),
+            worker_explore=_env_str(f"{P}SERVER_URLS_WORKER_EXPLORE", "http://localhost:8082"),
+            worker_math=_env_str(f"{P}SERVER_URLS_WORKER_MATH", "http://localhost:8082"),
+            worker_vision=_env_str(f"{P}SERVER_URLS_WORKER_VISION", "http://localhost:8086"),
+            vision_escalation=_env_str(f"{P}SERVER_URLS_VISION_ESCALATION", "http://localhost:8087"),
+            worker_code=_env_str(f"{P}SERVER_URLS_WORKER_CODE", "http://localhost:8092"),
+            worker_fast=_env_str(f"{P}SERVER_URLS_WORKER_FAST", "http://localhost:8102"),
+            worker_fast_1=_env_str(f"{P}SERVER_URLS_WORKER_FAST_1", "http://localhost:8102"),
+            worker_fast_2=_env_str(f"{P}SERVER_URLS_WORKER_FAST_2", "http://localhost:8112"),
+            worker_summarize=_env_str(f"{P}SERVER_URLS_WORKER_SUMMARIZE", "http://localhost:8081"),
+            architect_general=_env_str(f"{P}SERVER_URLS_ARCHITECT_GENERAL", "http://localhost:8083"),
+            architect_coding=_env_str(f"{P}SERVER_URLS_ARCHITECT_CODING", "http://localhost:8084"),
+            ingest_long_context=_env_str(f"{P}SERVER_URLS_INGEST_LONG_CONTEXT", "http://localhost:8085"),
+            api_url=_env_str(f"{P}SERVER_URLS_API_URL", "http://localhost:8000"),
+            ocr_server=_env_str(f"{P}SERVER_URLS_OCR_SERVER", "http://localhost:9001"),
+            vision_api=_env_str(f"{P}SERVER_URLS_VISION_API", "http://localhost:8000/v1/vision/analyze"),
+        ),
+        timeouts=TimeoutsConfig(
+            worker_explore=_env_int(f"{P}TIMEOUTS_WORKER_EXPLORE", 30),
+            worker_math=_env_int(f"{P}TIMEOUTS_WORKER_MATH", 30),
+            worker_vision=_env_int(f"{P}TIMEOUTS_WORKER_VISION", 30),
+            worker_summarize=_env_int(f"{P}TIMEOUTS_WORKER_SUMMARIZE", 120),
+            frontdoor=_env_int(f"{P}TIMEOUTS_FRONTDOOR", 60),
+            coder_primary=_env_int(f"{P}TIMEOUTS_CODER_PRIMARY", 60),
+            coder_escalation=_env_int(f"{P}TIMEOUTS_CODER_ESCALATION", 120),
+            vision_escalation=_env_int(f"{P}TIMEOUTS_VISION_ESCALATION", 60),
+            ingest_long_context=_env_int(f"{P}TIMEOUTS_INGEST_LONG_CONTEXT", 120),
+            architect_general=_env_int(f"{P}TIMEOUTS_ARCHITECT_GENERAL", 300),
+            architect_coding=_env_int(f"{P}TIMEOUTS_ARCHITECT_CODING", 300),
+            default_request=_env_int(f"{P}TIMEOUTS_DEFAULT_REQUEST", 120),
+            server_request=_env_int(f"{P}TIMEOUTS_SERVER_REQUEST", 300),
+            server_connect=_env_int(f"{P}TIMEOUTS_SERVER_CONNECT", 5),
+        ),
+        chat=ChatPipelineConfig(
+            summarization_threshold_tokens=_env_int(f"{P}CHAT_SUMMARIZATION_THRESHOLD_TOKENS", 5000),
+            multi_doc_discount=_env_float(f"{P}CHAT_MULTI_DOC_DISCOUNT", 0.7),
+            compression_enabled=_env_bool(f"{P}CHAT_COMPRESSION_ENABLED", False),
+            compression_min_chars=_env_int(f"{P}CHAT_COMPRESSION_MIN_CHARS", 30000),
+            compression_target_ratio=_env_float(f"{P}CHAT_COMPRESSION_TARGET_RATIO", 0.5),
+            stage1_context_limit=_env_int(f"{P}CHAT_STAGE1_CONTEXT_LIMIT", 20000),
+            long_context_enabled=_env_bool(f"{P}CHAT_LONG_CONTEXT_ENABLED", True),
+            long_context_threshold_chars=_env_int(f"{P}CHAT_LONG_CONTEXT_THRESHOLD_CHARS", 20000),
+            long_context_max_turns=_env_int(f"{P}CHAT_LONG_CONTEXT_MAX_TURNS", 8),
+        ),
+        # paths, features, vision, delegation, services, worker_pool
+        # use plain defaults (env var override via pydantic-settings only)
     )
 
 
@@ -416,7 +895,6 @@ def get_config() -> OrchestratorConfigData:
     """
     if PYDANTIC_SETTINGS_AVAILABLE:
         settings = OrchestratorSettings()
-        # Convert to dataclass for consistency
         return OrchestratorConfigData(
             mock_mode=settings.mock_mode,
             debug=settings.debug,
@@ -428,6 +906,7 @@ def get_config() -> OrchestratorConfigData:
                 max_recursion_depth=settings.llm.max_recursion_depth,
                 default_prompt_rate=settings.llm.default_prompt_rate,
                 default_completion_rate=settings.llm.default_completion_rate,
+                qwen_stop_token=settings.llm.qwen_stop_token,
             ),
             escalation=EscalationConfigData(
                 max_retries=settings.escalation.max_retries,
@@ -445,6 +924,17 @@ def get_config() -> OrchestratorConfigData:
                 retry_count=settings.server.retry_count,
                 retry_backoff=settings.server.retry_backoff,
             ),
+            monitor=MonitorConfigData(
+                entropy_threshold=settings.monitor.entropy_threshold,
+                entropy_spike_threshold=settings.monitor.entropy_spike_threshold,
+                repetition_threshold=settings.monitor.repetition_threshold,
+                min_tokens_before_abort=settings.monitor.min_tokens_before_abort,
+                perplexity_window=settings.monitor.perplexity_window,
+                max_length_multiplier=settings.monitor.max_length_multiplier,
+                entropy_sustained_count=settings.monitor.entropy_sustained_count,
+                ngram_size=settings.monitor.ngram_size,
+                combined_threshold=settings.monitor.combined_threshold,
+            ),
             features=FeaturesConfig(
                 memrl=settings.features.memrl,
                 tools=settings.features.tools,
@@ -454,6 +944,83 @@ def get_config() -> OrchestratorConfigData:
                 repl=settings.features.repl,
                 caching=settings.features.caching,
             ),
+            server_urls=ServerURLsConfig(
+                frontdoor=settings.server_urls.frontdoor,
+                coder_primary=settings.server_urls.coder_primary,
+                coder=settings.server_urls.coder,
+                coder_escalation=settings.server_urls.coder_escalation,
+                worker=settings.server_urls.worker,
+                worker_general=settings.server_urls.worker_general,
+                worker_explore=settings.server_urls.worker_explore,
+                worker_math=settings.server_urls.worker_math,
+                worker_vision=settings.server_urls.worker_vision,
+                vision_escalation=settings.server_urls.vision_escalation,
+                worker_code=settings.server_urls.worker_code,
+                worker_fast=settings.server_urls.worker_fast,
+                worker_fast_1=settings.server_urls.worker_fast_1,
+                worker_fast_2=settings.server_urls.worker_fast_2,
+                worker_summarize=settings.server_urls.worker_summarize,
+                architect_general=settings.server_urls.architect_general,
+                architect_coding=settings.server_urls.architect_coding,
+                ingest_long_context=settings.server_urls.ingest_long_context,
+                api_url=settings.server_urls.api_url,
+                ocr_server=settings.server_urls.ocr_server,
+                vision_api=settings.server_urls.vision_api,
+            ),
+            timeouts=TimeoutsConfig(
+                worker_explore=settings.timeouts.worker_explore,
+                worker_math=settings.timeouts.worker_math,
+                worker_vision=settings.timeouts.worker_vision,
+                worker_summarize=settings.timeouts.worker_summarize,
+                frontdoor=settings.timeouts.frontdoor,
+                coder_primary=settings.timeouts.coder_primary,
+                coder_escalation=settings.timeouts.coder_escalation,
+                vision_escalation=settings.timeouts.vision_escalation,
+                ingest_long_context=settings.timeouts.ingest_long_context,
+                architect_general=settings.timeouts.architect_general,
+                architect_coding=settings.timeouts.architect_coding,
+                default_request=settings.timeouts.default_request,
+                server_request=settings.timeouts.server_request,
+                server_connect=settings.timeouts.server_connect,
+                ocr_single_page=settings.timeouts.ocr_single_page,
+                ocr_pdf=settings.timeouts.ocr_pdf,
+                health_check=settings.timeouts.health_check,
+                vision_inference=settings.timeouts.vision_inference,
+                vision_figure=settings.timeouts.vision_figure,
+                ffmpeg_version=settings.timeouts.ffmpeg_version,
+                ffmpeg_probe=settings.timeouts.ffmpeg_probe,
+                ffmpeg_extract=settings.timeouts.ffmpeg_extract,
+                exiftool=settings.timeouts.exiftool,
+                gradio_client=settings.timeouts.gradio_client,
+            ),
+            chat=ChatPipelineConfig(
+                summarization_threshold_tokens=settings.chat.summarization_threshold_tokens,
+                multi_doc_discount=settings.chat.multi_doc_discount,
+                compression_enabled=settings.chat.compression_enabled,
+                compression_min_chars=settings.chat.compression_min_chars,
+                compression_target_ratio=settings.chat.compression_target_ratio,
+                stage1_context_limit=settings.chat.stage1_context_limit,
+                long_context_enabled=settings.chat.long_context_enabled,
+                long_context_threshold_chars=settings.chat.long_context_threshold_chars,
+                long_context_max_turns=settings.chat.long_context_max_turns,
+                repetition_unique_ratio=settings.chat.repetition_unique_ratio,
+                garbled_short_line_ratio=settings.chat.garbled_short_line_ratio,
+                min_answer_length=settings.chat.min_answer_length,
+                review_low_q_threshold=settings.chat.review_low_q_threshold,
+                review_skip_q_threshold=settings.chat.review_skip_q_threshold,
+                plan_review_phase_a_min=settings.chat.plan_review_phase_a_min,
+                plan_review_phase_b_mean_q=settings.chat.plan_review_phase_b_mean_q,
+                plan_review_phase_b_min_q=settings.chat.plan_review_phase_b_min_q,
+                plan_review_phase_c_min_q=settings.chat.plan_review_phase_c_min_q,
+                plan_review_phase_c_min_total=settings.chat.plan_review_phase_c_min_total,
+                plan_review_phase_c_skip_rate=settings.chat.plan_review_phase_c_skip_rate,
+            ),
+            # These sections use plain defaults (path serialization is complex)
+            paths=PathsConfig(),
+            vision=VisionConfig(),
+            delegation=DelegationConfig(),
+            services=ServicesConfig(),
+            worker_pool=WorkerPoolPathsConfig(),
         )
     else:
         return _load_from_env()

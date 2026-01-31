@@ -61,9 +61,13 @@ class DraftCache:
     def __init__(
         self,
         cache_dir: Path | None = None,
-        ttl_hours: float = DEFAULT_TTL_HOURS,
+        ttl_hours: float | None = None,
     ):
-        self.cache_dir = cache_dir or self.DEFAULT_CACHE_DIR
+        from src.config import get_config
+        _svc = get_config().services
+        self.cache_dir = cache_dir or _svc.draft_cache_dir
+        if ttl_hours is None:
+            ttl_hours = _svc.draft_cache_ttl_hours
         self.ttl_seconds = ttl_hours * 3600
         self._lock = threading.Lock()
 

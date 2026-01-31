@@ -25,6 +25,8 @@ import warnings
 
 import pytest
 
+from src.config import reset_config
+
 
 # Memory threshold in GB (fail if less available)
 MEMORY_THRESHOLD_GB = 100
@@ -92,6 +94,18 @@ def pytest_configure(config):
             "Install with: pip install psutil",
             UserWarning,
         )
+
+
+@pytest.fixture(autouse=True)
+def _reset_config_between_tests():
+    """Ensure config cache is clean between tests.
+
+    Prevents env var leaks from one test affecting another.
+    Uses reset_config() which clears the lru_cache on get_config().
+    """
+    reset_config()
+    yield
+    reset_config()
 
 
 def pytest_collection_modifyitems(config, items):

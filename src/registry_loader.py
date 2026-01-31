@@ -21,7 +21,7 @@ from typing import Any
 
 import yaml
 
-# Default registry location
+# Default registry location (static fallback; config preferred in __init__)
 DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "orchestration" / "model_registry.yaml"
 
 
@@ -168,13 +168,24 @@ class RegistryLoader:
             registry_path: Path to model_registry.yaml. Uses default if None.
             validate_paths: If True, verify model files exist on disk.
         """
-        self.registry_path = Path(registry_path) if registry_path else DEFAULT_REGISTRY_PATH
+        if registry_path is not None:
+            self.registry_path = Path(registry_path)
+        else:
+            try:
+                from src.config import get_config
+                self.registry_path = get_config().paths.registry_path
+            except Exception:
+                self.registry_path = DEFAULT_REGISTRY_PATH
         self._raw: dict[str, Any] = {}
         self._roles: dict[str, RoleConfig] = {}
         self._routing_hints: list[RoutingHint] = []
         self._command_templates: dict[str, str] = {}
         self._escalation_chains: dict[str, EscalationChain] = {}
-        self._model_base_path: Path = Path("/mnt/raid0/llm/lmstudio/models")
+        try:
+            from src.config import get_config
+            self._model_base_path: Path = get_config().paths.model_base
+        except Exception:
+            self._model_base_path: Path = Path("/mnt/raid0/llm/lmstudio/models")
         self._runtime_defaults: dict[str, Any] = {}
         self._missing_models: list[str] = []
 

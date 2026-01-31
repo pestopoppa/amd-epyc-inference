@@ -30,10 +30,12 @@ from src.models.document import FigureRef
 
 logger = logging.getLogger(__name__)
 
-# Vision API configuration
-VISION_API_URL = "http://localhost:8000/v1/vision/analyze"
-VISION_TIMEOUT = 60.0  # 60s per figure
-MAX_CONCURRENT_ANALYSIS = 4  # Limit concurrent vision API calls
+# Vision API configuration — sourced from centralized config
+from src.config import get_config as _get_config
+
+VISION_API_URL = _get_config().server_urls.vision_api
+VISION_TIMEOUT = _get_config().timeouts.vision_figure
+MAX_CONCURRENT_ANALYSIS = _get_config().delegation.max_concurrent_analysis
 
 # Default prompt for figure description
 DEFAULT_FIGURE_PROMPT = (

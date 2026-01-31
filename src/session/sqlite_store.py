@@ -33,8 +33,10 @@ from src.session.protocol import BaseSessionStore, WhereFilter
 
 logger = logging.getLogger(__name__)
 
-# Default paths (on RAID array per CLAUDE.md requirements)
-DEFAULT_SESSIONS_DIR = Path("/mnt/raid0/llm/claude/orchestration/repl_memory/sessions")
+# Default paths — sourced from centralized config (on RAID array per CLAUDE.md)
+from src.config import get_config as _get_config
+
+DEFAULT_SESSIONS_DIR = _get_config().paths.sessions_dir
 DEFAULT_DB_PATH = DEFAULT_SESSIONS_DIR / "sessions.db"
 DEFAULT_EMBEDDINGS_PATH = DEFAULT_SESSIONS_DIR / "session_embeddings.npy"
 

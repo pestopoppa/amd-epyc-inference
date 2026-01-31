@@ -113,6 +113,16 @@ class WorkerInstance:
         return f"http://localhost:{self.config.port}"
 
 
+def _wp_default_server_path() -> str:
+    from src.config import get_config
+    return str(get_config().worker_pool.llama_server_path)
+
+
+def _wp_default_log_dir() -> str:
+    from src.config import get_config
+    return str(get_config().worker_pool.log_dir)
+
+
 @dataclass
 class WorkerPoolConfig:
     """Configuration for the entire worker pool."""
@@ -121,8 +131,8 @@ class WorkerPoolConfig:
     warm_timeout_seconds: int = 300  # 5 minutes
     expansion_threshold: int = 4  # Concurrent tasks to trigger WARM expansion
     health_check_interval: int = 30
-    llama_server_path: str = "/mnt/raid0/llm/llama.cpp/build/bin/llama-server"
-    log_dir: str = "/mnt/raid0/llm/claude/logs"
+    llama_server_path: str = field(default_factory=_wp_default_server_path)
+    log_dir: str = field(default_factory=_wp_default_log_dir)
 
     workers: dict[str, WorkerConfig] = field(default_factory=dict)
 

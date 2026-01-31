@@ -55,6 +55,11 @@ class AbortReason(str, Enum):
     COMBINED_SIGNALS = "combined_signals"
 
 
+def _monitor_cfg():
+    from src.config import get_config
+    return get_config().monitor
+
+
 @dataclass
 class MonitorConfig:
     """Configuration for generation monitoring.
@@ -62,6 +67,9 @@ class MonitorConfig:
     Thresholds can be adjusted per-task or per-tier. Higher tiers
     (architect) get more relaxed thresholds since they handle
     harder tasks with natural uncertainty.
+
+    Base defaults sourced from centralized config (src.config).
+    Tier-specific overrides in for_tier() are algorithmic and stay hardcoded.
 
     Attributes:
         min_tokens_before_abort: Minimum tokens before abort is allowed.
@@ -75,15 +83,15 @@ class MonitorConfig:
         combined_threshold: Weighted score for combined signals.
     """
 
-    min_tokens_before_abort: int = 50
-    entropy_threshold: float = 4.0
-    entropy_spike_threshold: float = 2.0
-    repetition_threshold: float = 0.3
-    perplexity_window: int = 20
-    max_length_multiplier: float = 2.0
-    entropy_sustained_count: int = 10
-    ngram_size: int = 3
-    combined_threshold: float = 0.7
+    min_tokens_before_abort: int = field(default_factory=lambda: _monitor_cfg().min_tokens_before_abort)
+    entropy_threshold: float = field(default_factory=lambda: _monitor_cfg().entropy_threshold)
+    entropy_spike_threshold: float = field(default_factory=lambda: _monitor_cfg().entropy_spike_threshold)
+    repetition_threshold: float = field(default_factory=lambda: _monitor_cfg().repetition_threshold)
+    perplexity_window: int = field(default_factory=lambda: _monitor_cfg().perplexity_window)
+    max_length_multiplier: float = field(default_factory=lambda: _monitor_cfg().max_length_multiplier)
+    entropy_sustained_count: int = field(default_factory=lambda: _monitor_cfg().entropy_sustained_count)
+    ngram_size: int = field(default_factory=lambda: _monitor_cfg().ngram_size)
+    combined_threshold: float = field(default_factory=lambda: _monitor_cfg().combined_threshold)
 
     @classmethod
     def for_tier(cls, tier: str) -> MonitorConfig:

@@ -17,8 +17,10 @@ from typing import Any, Generator
 import gradio as gr
 import httpx
 
-# Default API base URL
-DEFAULT_API_URL = "http://localhost:8000"
+# Default API base URL — sourced from centralized config
+from src.config import get_config as _get_config
+
+DEFAULT_API_URL = _get_config().server_urls.api_url
 
 
 def create_httpx_client(api_url: str) -> httpx.Client:

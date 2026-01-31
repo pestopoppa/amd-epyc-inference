@@ -125,18 +125,35 @@ class QueryCost:
         )
 
 
-@dataclass
-class LLMPrimitivesConfig:
-    """Configuration for LLM primitives."""
+def _llm_cfg():
+    from src.config import get_config
+    return get_config().llm
 
-    output_cap: int = 8192  # Max chars per sub-LM output
-    batch_parallelism: int = 4  # Max parallel calls in llm_batch
-    call_timeout: int = 300  # Timeout per call in seconds (matches LlamaServerBackend)
-    mock_response_prefix: str = "[MOCK]"  # Prefix for mock responses
-    max_recursion_depth: int = 5  # Maximum nesting depth for sub-LM calls
-    # Cost estimation rates (per 1M tokens)
-    default_prompt_rate: float = 0.50  # $ per 1M input tokens
-    default_completion_rate: float = 1.50  # $ per 1M output tokens
+
+class LLMPrimitivesConfig:
+    """Configuration for LLM primitives.
+
+    Defaults sourced from centralized config (src.config.LLMConfig).
+    """
+
+    def __init__(
+        self,
+        output_cap: int | None = None,
+        batch_parallelism: int | None = None,
+        call_timeout: int | None = None,
+        mock_response_prefix: str | None = None,
+        max_recursion_depth: int | None = None,
+        default_prompt_rate: float | None = None,
+        default_completion_rate: float | None = None,
+    ):
+        cfg = _llm_cfg()
+        self.output_cap = output_cap if output_cap is not None else cfg.output_cap
+        self.batch_parallelism = batch_parallelism if batch_parallelism is not None else cfg.batch_parallelism
+        self.call_timeout = call_timeout if call_timeout is not None else cfg.call_timeout
+        self.mock_response_prefix = mock_response_prefix if mock_response_prefix is not None else cfg.mock_response_prefix
+        self.max_recursion_depth = max_recursion_depth if max_recursion_depth is not None else cfg.max_recursion_depth
+        self.default_prompt_rate = default_prompt_rate if default_prompt_rate is not None else cfg.default_prompt_rate
+        self.default_completion_rate = default_completion_rate if default_completion_rate is not None else cfg.default_completion_rate
 
 
 class LLMPrimitives:

@@ -222,9 +222,11 @@ class ArchiveExtractor:
             max_extracted_size: Max total extracted size in bytes.
             max_files: Max number of files in archive.
         """
-        self.max_archive_size = max_archive_size or self.MAX_ARCHIVE_SIZE
-        self.max_extracted_size = max_extracted_size or self.MAX_EXTRACTED_SIZE
-        self.max_files = max_files or self.MAX_FILES
+        from src.config import get_config
+        _svc = get_config().services
+        self.max_archive_size = max_archive_size or _svc.max_archive_size
+        self.max_extracted_size = max_extracted_size or _svc.max_extracted_size
+        self.max_files = max_files or _svc.max_archive_files
 
     def get_archive_type(self, path: Path) -> ArchiveType | None:
         """Determine archive type from file extension.

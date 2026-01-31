@@ -61,6 +61,11 @@ class ReviewDecision(Enum):
     REJECT = "reject"
 
 
+def _deleg_cfg():
+    from src.config import get_config
+    return get_config().delegation
+
+
 @dataclass
 class IterationContext:
     """Track iteration state to prevent infinite loops.
@@ -73,8 +78,8 @@ class IterationContext:
         iteration_history: Log of iteration decisions
     """
 
-    max_iterations: int = 3
-    max_total_iterations: int = 10
+    max_iterations: int = field(default_factory=lambda: _deleg_cfg().max_iterations)
+    max_total_iterations: int = field(default_factory=lambda: _deleg_cfg().max_total_iterations)
     current_iteration: int = 0
     total_iterations: int = 0
     subtask_iterations: dict[str, int] = field(default_factory=dict)

@@ -31,16 +31,21 @@ from src.registry_loader import RoleConfig
 logger = logging.getLogger(__name__)
 
 
+def _server_cfg():
+    from src.config import get_config
+    return get_config().server
+
+
 @dataclass
 class ServerConfig:
     """Configuration for a llama-server instance."""
 
-    base_url: str = "http://localhost:8080"
-    timeout: int = 300  # Request timeout in seconds
-    num_slots: int = 4  # Number of parallel slots
-    connect_timeout: int = 5  # Connection timeout
-    retry_count: int = 3  # Number of retries on failure
-    retry_backoff: float = 0.5  # Backoff factor for retries
+    base_url: str = field(default_factory=lambda: _server_cfg().default_url)
+    timeout: int = field(default_factory=lambda: _server_cfg().timeout)
+    num_slots: int = field(default_factory=lambda: _server_cfg().num_slots)
+    connect_timeout: int = field(default_factory=lambda: _server_cfg().connect_timeout)
+    retry_count: int = field(default_factory=lambda: _server_cfg().retry_count)
+    retry_backoff: float = field(default_factory=lambda: _server_cfg().retry_backoff)
 
 
 @dataclass

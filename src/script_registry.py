@@ -411,7 +411,11 @@ class ScriptRegistry:
         from src.mcp_client import call_mcp_tool, load_server_configs
 
         if self._mcp_configs is None:
-            config_path = Path(__file__).parent.parent / "orchestration" / "mcp_servers.yaml"
+            try:
+                from src.config import get_config
+                config_path = get_config().paths.project_root / "orchestration" / "mcp_servers.yaml"
+            except Exception:
+                config_path = Path(__file__).parent.parent / "orchestration" / "mcp_servers.yaml"
             self._mcp_configs = load_server_configs(config_path)
 
         server_id = script.mcp_server

@@ -81,8 +81,13 @@ class ContextConfig:
     auto_summarize: bool = True  # Auto-summarize large entries
     summary_threshold: int = 5000  # Summarize entries larger than this
     artifact_base_path: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/tmp/claude/artifacts")
+        default_factory=lambda: _ctx_artifacts_path()
     )
+
+
+def _ctx_artifacts_path() -> Path:
+    from src.config import get_config
+    return get_config().paths.artifacts_dir
 
 
 class ContextManagerError(Exception):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from src.config import get_config as _get_config
 from src.prompt_builders import (
     build_review_verdict_prompt,
     build_revision_prompt,
@@ -41,12 +42,14 @@ def _detect_output_quality_issue(answer: str) -> str | None:
     words = answer.split()
     n_words = len(words)
 
+    _chat_thresholds = _get_config().chat
+
     # 1. High n-gram repetition (degeneration loops)
     if n_words >= 20:
         trigrams = [" ".join(words[i:i+3]) for i in range(n_words - 2)]
         if trigrams:
             unique_ratio = len(set(trigrams)) / len(trigrams)
-            if unique_ratio < 0.5:  # More than 50% repeated trigrams
+            if unique_ratio < _chat_thresholds.repetition_unique_ratio:
                 return f"high_repetition (unique_ratio={unique_ratio:.2f})"
 
     # 2. Self-contradictory trace (model says X then says not-X)
@@ -56,7 +59,7 @@ def _detect_output_quality_issue(answer: str) -> str | None:
         # indicates garbled/confused trace
         short_lines = sum(1 for l in lines if 0 < len(l.strip()) < 10)
         total_lines = sum(1 for l in lines if l.strip())
-        if total_lines > 5 and short_lines / total_lines > 0.6:
+        if total_lines > 5 and short_lines / total_lines > _chat_thresholds.garbled_short_line_ratio:
             return "garbled_output (mostly very short lines)"
 
     # 3. Empty or near-empty after stripping common prefixes
@@ -103,7 +106,7 @@ def _should_review(state: "AppState", task_id: str, role: str, answer: str) -> b
         if not role_results:
             return False
         avg_q = sum(r.q_value for r in role_results) / len(role_results)
-        return avg_q < 0.6
+        return avg_q < _get_config().chat.review_low_q_threshold
     except Exception:
         return False
 
@@ -233,10 +236,11 @@ def _needs_plan_review(
 
     # Phase-dependent gating
     phase = state.plan_review_phase
+    _chat_cfg = _get_config().chat
 
-    # Bypass 6: Phase C — 90% stochastic skip
+    # Bypass 6: Phase C — stochastic skip (default 90% skip rate)
     if phase == "C":
-        if random.random() > 0.10:
+        if random.random() < _chat_cfg.plan_review_phase_c_skip_rate:
             return False
 
     # Bypass 5: Phase B — Q-value gating
@@ -246,7 +250,7 @@ def _needs_plan_review(
             results = retriever.retrieve_for_routing(task_ir)
             if results:
                 avg_q = sum(r.q_value for r in results) / len(results)
-                if avg_q >= 0.6:
+                if avg_q >= _chat_cfg.review_skip_q_threshold:
                     return False
         except Exception:
             pass  # On error, allow review
@@ -441,8 +445,10 @@ def _compute_plan_review_phase(stats: dict) -> str:
     Returns:
         Phase string: "A", "B", or "C".
     """
+    _pr = _get_config().chat
+
     total = stats.get("total_reviews", 0)
-    if total < 50:
+    if total < _pr.plan_review_phase_a_min:
         return "A"
 
     q_vals = stats.get("task_class_q_values", {})
@@ -453,8 +459,8 @@ def _compute_plan_review_phase(stats: dict) -> str:
     mean_q = sum(values) / len(values)
     min_q = min(values)
 
-    if min_q >= 0.7 and total >= 100:
+    if min_q >= _pr.plan_review_phase_c_min_q and total >= _pr.plan_review_phase_c_min_total:
         return "C"
-    if mean_q >= 0.7 and min_q >= 0.5:
+    if mean_q >= _pr.plan_review_phase_b_mean_q and min_q >= _pr.plan_review_phase_b_min_q:
         return "B"
     return "A"

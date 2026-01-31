@@ -85,8 +85,8 @@ class PDFRouter:
 
     def __init__(
         self,
-        lightonocr_url: str = "http://localhost:9001",
-        temp_dir: str = "/mnt/raid0/llm/tmp/pdf_router",
+        lightonocr_url: str | None = None,
+        temp_dir: str | None = None,
         pdftotext_path: str = "pdftotext",
     ):
         """Initialize PDF router.
@@ -96,8 +96,10 @@ class PDFRouter:
             temp_dir: Directory for temporary files
             pdftotext_path: Path to pdftotext binary
         """
-        self.lightonocr_url = lightonocr_url
-        self.temp_dir = Path(temp_dir)
+        from src.config import get_config
+        _cfg = get_config()
+        self.lightonocr_url = lightonocr_url or _cfg.server_urls.ocr_server
+        self.temp_dir = Path(temp_dir or str(_cfg.services.pdf_router_temp_dir))
         self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.pdftotext_path = pdftotext_path
 

@@ -32,24 +32,28 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lightonocr-llama-server")
 
-# Configuration
+# Configuration — centralized defaults, env vars take priority
+from src.config import get_config as _get_config
+_svc = _get_config().services
+_vis = _get_config().vision
+
 MODEL_PATH = os.environ.get(
     "LIGHTONOCR_MODEL",
-    "/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf"
+    str(_svc.lightonocr_model),
 )
 MMPROJ_PATH = os.environ.get(
     "LIGHTONOCR_MMPROJ",
-    "/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-mmproj-F16.gguf"
+    str(_svc.lightonocr_mmproj),
 )
 CLI_PATH = os.environ.get(
     "LLAMA_MTMD_CLI",
-    "/mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli"
+    str(_vis.llama_mtmd_cli),
 )
 
 # Worker pool configuration (8×12 optimal based on benchmarks)
 NUM_WORKERS = int(os.environ.get("LIGHTONOCR_WORKERS", "8"))
 THREADS_PER_WORKER = int(os.environ.get("LIGHTONOCR_THREADS", "12"))
-MAX_TOKENS = int(os.environ.get("LIGHTONOCR_MAX_TOKENS", "2048"))
+MAX_TOKENS = int(os.environ.get("LIGHTONOCR_MAX_TOKENS", str(_svc.lightonocr_max_tokens)))
 TIMEOUT_SEC = int(os.environ.get("LIGHTONOCR_TIMEOUT", "300"))  # 5 min for complex pages
 
 

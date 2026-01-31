@@ -149,6 +149,11 @@ class EscalationDecision:
         return self.action in {EscalationAction.FAIL, EscalationAction.SKIP}
 
 
+def _esc_cfg():
+    from src.config import get_config
+    return get_config().escalation
+
+
 @dataclass
 class EscalationConfig:
     """Configuration for escalation policy.
@@ -160,14 +165,10 @@ class EscalationConfig:
         no_escalate_categories: Error categories that never trigger escalation.
     """
 
-    max_retries: int = 2
-    max_escalations: int = 2
+    max_retries: int = field(default_factory=lambda: _esc_cfg().max_retries)
+    max_escalations: int = field(default_factory=lambda: _esc_cfg().max_escalations)
     optional_gates: frozenset[str] = field(
-        default_factory=lambda: frozenset({
-            "typecheck",
-            "integration",
-            "shellcheck",
-        })
+        default_factory=lambda: _esc_cfg().optional_gates
     )
     no_escalate_categories: frozenset[ErrorCategory] = field(
         default_factory=lambda: frozenset({

@@ -190,19 +190,24 @@ class RetryInfo:
         self.backoff_seconds = min(30.0, self.backoff_seconds * 2)
 
 
+def _exec_defaults():
+    from src.config import get_config
+    return get_config()
+
+
 @dataclass
 class ExecutorConfig:
     """Configuration for the Executor."""
 
     max_parallel_workers: int = 2
-    step_timeout: int = 300  # seconds
+    step_timeout: int = field(default_factory=lambda: _exec_defaults().server.timeout)
     retry_failed_steps: bool = True  # Enable by default
-    max_retries: int = 2  # Retry up to 2 times (3 total attempts)
+    max_retries: int = field(default_factory=lambda: _exec_defaults().escalation.max_retries)
     retry_backoff_base: float = 1.0  # Base backoff in seconds
     dry_run: bool = False  # If True, don't actually run inference
     # Escalation settings
     enable_escalation: bool = True  # Escalate to more capable models on failure
-    max_escalations_per_step: int = 2  # Max escalations per step
+    max_escalations_per_step: int = field(default_factory=lambda: _exec_defaults().escalation.max_escalations)
 
 
 class Executor:

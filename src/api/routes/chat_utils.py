@@ -23,26 +23,12 @@ if TYPE_CHECKING:
 
 
 # ── Role-specific timeouts (Phase 1b: KV cache bug mitigation) ──────────
-# Maps role → timeout in seconds. Sized by model: small models time out
-# fast (no point waiting 300s for a 7B that should respond in 5s).
-ROLE_TIMEOUTS: dict[str, int] = {
-    # Tier C workers — 7B models, fast
-    "worker_explore": 30,
-    "worker_math": 30,
-    "worker_vision": 30,
-    "worker_summarize": 120,  # shares 32B server with coder_escalation
-    # Tier A — 30B MoE frontdoor
-    "frontdoor": 60,
-    "coder_primary": 60,
-    # Tier B — escalation + specialist
-    "coder_escalation": 120,
-    "vision_escalation": 60,
-    "ingest_long_context": 120,
-    # Tier B — architects (large models, legitimately slow)
-    "architect_general": 300,
-    "architect_coding": 300,
-}
-DEFAULT_TIMEOUT_S = 120  # Fallback for unknown roles
+# Sourced from centralized config (src.config.TimeoutsConfig).
+from src.config import get_config as _get_config
+
+_timeouts = _get_config().timeouts
+ROLE_TIMEOUTS: dict[str, int] = _timeouts.role_timeouts_dict()
+DEFAULT_TIMEOUT_S: int = _timeouts.default_request
 
 
 @dataclass
@@ -72,22 +58,19 @@ class RoutingResult:
         """Get timeout for a specific role (used during escalation)."""
         return ROLE_TIMEOUTS.get(str(role), DEFAULT_TIMEOUT_S)
 
-# Three-stage summarization configuration (Stage 0: compression, Stage 1: draft, Stage 2: review)
+# Three-stage summarization configuration — values sourced from centralized config
+_chat_cfg = _get_config().chat
 THREE_STAGE_CONFIG = {
     "enabled": True,
-    "threshold_tokens": 5000,  # ~20K chars triggers Stage 1+2
-    "multi_doc_discount": 0.7,  # Lower threshold for multiple documents
+    "threshold_tokens": _chat_cfg.summarization_threshold_tokens,
+    "multi_doc_discount": _chat_cfg.multi_doc_discount,
     "stage1_role": Role.FRONTDOOR,
     "stage2_role": Role.INGEST_LONG_CONTEXT,
-    # Stage 0: Compression settings (LLMLingua-2)
-    # DISABLED: Extractive compression causes quality regression (hallucinations, typos)
-    # See handoffs/active/cmprsr_prompt_compression.md for details
-    # Re-enable when Cmprsr (abstractive) weights become available
     "compression": {
-        "enabled": False,  # Disabled due to quality issues with LLMLingua-2
-        "min_chars": 30000,
-        "target_ratio": 0.5,
-        "stage1_context_limit": 20000,
+        "enabled": _chat_cfg.compression_enabled,
+        "min_chars": _chat_cfg.compression_min_chars,
+        "target_ratio": _chat_cfg.compression_target_ratio,
+        "stage1_context_limit": _chat_cfg.stage1_context_limit,
     },
 }
 
@@ -95,15 +78,13 @@ THREE_STAGE_CONFIG = {
 TWO_STAGE_CONFIG = THREE_STAGE_CONFIG
 
 # Qwen chat-template stop token — prevents runaway generation past turn boundary
-QWEN_STOP = "<|im_end|>"
+QWEN_STOP = _get_config().llm.qwen_stop_token
 
 # Long context exploration configuration
-# When context exceeds this threshold, use REPL-based chunked exploration
-# instead of dumping the full context into a single model's window
 LONG_CONTEXT_CONFIG = {
-    "enabled": True,
-    "threshold_chars": 20000,  # ~5K tokens triggers exploration mode
-    "max_turns": 8,  # Allow more turns for multi-step exploration
+    "enabled": _chat_cfg.long_context_enabled,
+    "threshold_chars": _chat_cfg.long_context_threshold_chars,
+    "max_turns": _chat_cfg.long_context_max_turns,
 }
 
 _STUB_PATTERNS = {
