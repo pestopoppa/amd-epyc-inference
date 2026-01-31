@@ -1,0 +1,145 @@
+# Orchestrator Architecture Review & chat.py Decomposition
+
+**Date**: 2026-01-31
+**Status**: In Progress (Phase 3 of 5 complete)
+**Author**: Claude Opus 4.5 (architecture review session)
+
+## Summary
+
+Comprehensive architecture review of the hierarchical orchestrator codebase (110 source files, 44K LOC, 51 test files). Identified 5 critical issues, 9 serious issues, 6 minor issues. Phase 1 decomposes the 3,763-line `chat.py` God Module into 8 focused modules.
+
+## Architecture Review Findings
+
+### Critical Issues
+
+| # | Issue | File(s) | Impact |
+|---|-------|---------|--------|
+| C1 | `_handle_chat()` is 1,091 lines with ~30 code paths | `src/api/routes/chat.py` | Untestable, unsafe to modify |
+| C2 | Global mutable singletons with partial thread safety | `state.py`, `features.py`, `memrl.py` | Race conditions |
+| C3 | No dependency injection - manual wiring via imports | `api/__init__.py` | Hard to test |
+| C4 | String command generation without shell escaping | `registry_loader.py` | Injection vector |
+| C5 | 0.44x test:source ratio, heavy mocking, no CI/CD | `tests/` | False confidence |
+
+### Serious Issues
+
+- S1: Hardcoded `/mnt/raid0/` paths (non-portable)
+- S2: `prompt_builders.py` mixes all 40+ prompt types (1,501 lines)
+- S3: Dead `api/services/orchestrator.py` facade (deleted in Phase 1)
+- S4: 8/15 `AppState` fields typed as `Any` (no type checking)
+- S5: Magic numbers scattered (token budgets, thresholds, intervals)
+- S6: CORS wildcard `*` in production
+- S7: Incomplete feature flag validation (missing memrl deps)
+- S8: No rate limiting or circuit breakers
+- S9: 19-line health check (no dependent service checks)
+
+### What Works Well
+
+1. Tier architecture (A/B/C/D) is clean
+2. Feature flag system is well-designed
+3. Backend abstraction (ModelBackend + CachingBackend decorator)
+4. MemRL episodic memory with two-phase retrieval
+5. AST-based REPL sandboxing
+6. Generation monitor for early abort
+7. TOON token compression (40-65% reduction)
+
+## Phase 1: chat.py Decomposition
+
+### New Module Structure
+
+```
+src/api/routes/
+  chat.py              3,763 -> ~300 lines (thin orchestrator)
+  chat_utils.py        ~200 lines (utilities + constants)
+  chat_routing.py      ~120 lines (intent classification + mode selection)
+  chat_vision.py       ~600 lines (vision pipeline)
+  chat_summarization.py ~200 lines (two/three-stage pipeline)
+  chat_review.py       ~500 lines (architect review + quality gates)
+  chat_react.py        ~200 lines (ReAct tool loop)
+  chat_delegation.py   ~400 lines (architect delegation)
+```
+
+### Function-to-Module Mapping
+
+| Function | From Line | To Module |
+|----------|-----------|-----------|
+| `_estimate_tokens` | :98 | chat_utils |
+| `_is_summarization_task` | :103 | chat_summarization |
+| `_should_use_two_stage` | :121 | chat_summarization |
+| `_run_two_stage_summarization` | :158 | chat_summarization |
+| `_is_ocr_heavy_prompt` | :317 | chat_vision |
+| `_needs_structured_analysis` | :336 | chat_vision |
+| `_handle_vision_request` | :361 | chat_vision |
+| `_execute_vision_tool` | :583 | chat_vision |
+| `_vision_react_mode_answer` | :660 | chat_vision |
+| `_handle_multi_file_vision` | :856 | chat_vision |
+| `_is_stub_final` | :978 | chat_utils |
+| `_strip_tool_outputs` | :989 | chat_utils |
+| `_resolve_answer` | :1043 | chat_utils |
+| `_detect_output_quality_issue` | :1067 | chat_review |
+| `_truncate_looped_answer` | :1118 | chat_utils |
+| `_should_review` | :1150 | chat_review |
+| `_architect_verdict` | :1189 | chat_review |
+| `_fast_revise` | :1230 | chat_review |
+| `_parse_architect_decision` | :1272 | chat_delegation |
+| `_architect_delegated_answer` | :1374 | chat_delegation |
+| `_needs_plan_review` | :1599 | chat_review |
+| `_architect_plan_review` | :1669 | chat_review |
+| `_apply_plan_review` | :1735 | chat_review |
+| `_store_plan_review_episode` | :1777 | chat_review |
+| `_compute_plan_review_phase` | :1843 | chat_review |
+| `_should_formalize` | :1877 | chat_utils |
+| `_formalize_output` | :1895 | chat_utils |
+| `_parse_react_args` | :1938 | chat_react |
+| `_should_use_react_mode` | :1995 | chat_react |
+| `_react_mode_answer` | :2032 | chat_react |
+| `_should_use_direct_mode` | :2167 | chat_routing |
+| `_select_mode` | :2214 | chat_routing |
+| `_classify_and_route` | :2255 | chat_routing |
+
+### Cross-Module Dependencies
+
+```
+chat.py (orchestrator)
+  imports from: ALL new modules
+
+chat_delegation.py
+  imports from: chat_react (_react_mode_answer)
+
+chat_summarization.py
+  imports from: chat_utils (estimate_tokens, constants)
+
+All other modules: no cross-deps to new modules
+```
+
+### Also Done in Phase 1
+
+- Deleted `src/api/services/orchestrator.py` (dead facade)
+- Updated all imports to use `src.prompt_builders` directly
+
+## Remaining Phases (Not Yet Implemented)
+
+- **Phase 2**: Fix state management (DI, Protocol types, frozen configs)
+- **Phase 3**: Configuration consolidation (paths, thresholds, magic numbers)
+- **Phase 4**: Test quality (integration tests, coverage, benchmarks)
+- **Phase 5**: Infrastructure hardening (rate limiting, circuit breakers, health)
+
+## How to Add New Execution Modes
+
+After decomposition, adding a new mode (e.g., "plan" mode) requires:
+1. Create `src/api/routes/chat_plan.py` with handler function
+2. Add mode to `_select_mode()` in `chat_routing.py`
+3. Add `elif execution_mode == "plan":` branch in `chat.py`'s `_handle_chat()`
+4. Write tests in `tests/unit/test_chat_plan.py`
+
+## Resume Commands
+
+```bash
+# Run tests after decomposition
+cd /mnt/raid0/llm/claude && pytest tests/unit/test_api.py tests/integration/ -v
+
+# Run gates
+cd /mnt/raid0/llm/claude && make gates
+
+# Check for orchestrator.py import remnants
+grep -r "from src.api.services.orchestrator" src/ tests/
+```

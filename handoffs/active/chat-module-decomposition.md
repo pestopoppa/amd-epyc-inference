@@ -1,7 +1,7 @@
-# chat.py God Module Decomposition — Phases 1 + 1b + 2
+# chat.py God Module Decomposition — Phases 1 + 1b + 2 + 3
 
 **Date**: 2026-01-31
-**Status**: Complete (Phase 1 + Phase 1b + Phase 2)
+**Status**: Complete (Phase 1 + Phase 1b + Phase 2 + Phase 3)
 **Author**: Claude Opus 4.5 (architecture review session)
 **Parent**: `handoffs/active/orchestrator-architecture-review.md`
 
@@ -266,11 +266,43 @@ Added 3 dependency rules: `specialist_routing`, `plan_review`, `architect_delega
 | test_api_imports.py | 37/37 | +5 new Protocol/health_tracker tests |
 | Full unit suite | 940/940 | Excluding 2 pre-existing pdf_router failures |
 
+## Phase 3: Configuration Consolidation (Complete)
+
+Wired dead `src/config.py` into runtime. ~185 hardcoded config values from 27 files migrated to centralized config with env var override support.
+
+### config.py Expansion (1039 lines)
+
+7 new dataclass sections: `ServerURLsConfig`, `TimeoutsConfig`, `VisionConfig`, `ChatPipelineConfig`, `DelegationConfig`, `ServicesConfig`, `WorkerPoolPathsConfig`. Each has pydantic-settings variant for `ORCHESTRATOR_*` env var overrides.
+
+### Wiring (27 files, 4 waves)
+
+| Wave | Files | Risk |
+|------|-------|------|
+| 0 | `src/config.py`, `tests/unit/test_config_consolidation.py` (NEW) | LOW |
+| 1 | 10 leaf consumers (vision, services/*, session, gradio) | LOW |
+| 2 | 8 mid-level consumers (backends, monitor, llm_primitives, escalation, executor, context) | MEDIUM |
+| 3 | 8 top-level consumers (chat_utils, chat_vision, chat_review, api/__init__, delegation, registry, tools) | MEDIUM |
+
+### Patterns
+
+- `default_factory=lambda: helper_fn()` for dataclass fields
+- Lazy imports inside function bodies to prevent circular deps
+- `__init__` with None defaults for non-dataclass classes
+- Static fallbacks preserved for backward compat
+- `repl_environment.py` security paths left hardcoded (by design)
+
+### Tests
+
+70 config consolidation tests (52 defaults + 8 env overrides + 18 wiring verification). Full suite: 1012 unit + 165 integration pass. `reset_config()` autouse fixture in `tests/conftest.py`.
+
+### Commit
+
+`5290955` — feat: Phase 3 configuration consolidation — wire dead config.py into runtime
+
 ## Remaining Phases (Not Yet Implemented)
 
-- **Phase 3**: Configuration consolidation (paths, thresholds, magic numbers → Config class)
 - **Phase 4**: Test quality (integration tests, coverage, benchmarks, 0.44x → 0.8x ratio)
-- **Phase 5**: Infrastructure hardening (rate limiting, health checks, structured logging)
+- **Phase 5**: Infrastructure hardening (rate limiting, CORS tightening, structured logging)
 
 ## How to Add New Execution Modes
 

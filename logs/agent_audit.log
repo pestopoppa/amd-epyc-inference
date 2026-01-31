@@ -579,3 +579,7 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 {"ts":"2026-01-31T13:42:58+01:00","session":"ses_20260131_134208_1786301","level":"INFO","cat":"TASK_END","msg":"MCP module install","details":"outcome=success"}
 {"ts":"2026-01-31T13:50:02+01:00","session":"ses_20260131_134208_1786301","level":"INFO","cat":"TASK_START","msg":"Documentation + requirements update","details":"Updated progress report, handoff, BLOCKED_TASKS, pyproject.toml, requirements-dev.txt, orchestration README, chapter 21"}
 {"ts":"2026-01-31T13:50:02+01:00","session":"ses_20260131_134208_1786301","level":"INFO","cat":"TASK_END","msg":"Documentation + requirements update","details":"outcome=success"}
+{"ts":"2026-01-31T20:50:50+01:00","session":"ses_20260131_205050_1992258","level":"INFO","cat":"SESSION_START","msg":"Phase 1b completion + Phase 2: State Management + Circuit Breaker","details":"new_session=ses_20260131_205050_1992258"}
+{"ts":"2026-01-31T22:59:25+01:00","session":"ses_20260131_225925_2071139","level":"INFO","cat":"SESSION_START","msg":"Phase 3: Configuration consolidation — full sweep complete","details":"new_session=ses_20260131_225925_2071139"}
+{"ts":"2026-01-31T22:59:42+01:00","session":"ses_20260131_225925_2071139","level":"INFO","cat":"TASK_START","msg":"Phase 3 config consolidation","details":"Wired dead src/config.py into runtime, 27 files, 1012 tests pass"}
+{"ts":"2026-01-31T22:59:42+01:00","session":"ses_20260131_225925_2071139","level":"INFO","cat":"TASK_END","msg":"Phase 3 config consolidation","details":"outcome=success"}
