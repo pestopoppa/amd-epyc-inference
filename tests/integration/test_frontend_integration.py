@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from src.api import app
 from src.api.state import get_state, reset_state
-from src.api.routes.sessions import _sessions, _pending_permissions
+from src.api.routes.sessions import _pending_permissions, _session_store
 
 
 @pytest.fixture
@@ -21,9 +21,10 @@ def client():
     # Reset API state
     reset_state()
 
-    # Clear sessions and permissions
-    _sessions.clear()
+    # Clear pending permissions and reset session store
     _pending_permissions.clear()
+    import src.api.routes.sessions as sess_mod
+    sess_mod._session_store = None  # Force re-initialization
 
     with TestClient(app) as c:
         yield c
