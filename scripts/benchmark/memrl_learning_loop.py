@@ -174,6 +174,7 @@ def call_orchestrator(
     url: str = DEFAULT_ORCHESTRATOR_URL,
     timeout: int = DEFAULT_TIMEOUT,
     image_path: str = "",
+    client: "httpx.Client | None" = None,
 ) -> dict[str, Any]:
     """Call the orchestrator API.
 
@@ -182,6 +183,7 @@ def call_orchestrator(
         url: Orchestrator API URL.
         timeout: Request timeout in seconds.
         image_path: Optional path to image file for VL questions.
+        client: Optional persistent httpx.Client for connection reuse.
 
     Returns:
         Response dict with answer, routing_strategy, routed_to, etc.
@@ -196,11 +198,14 @@ def call_orchestrator(
         payload["image_path"] = image_path
 
     try:
-        response = httpx.post(
-            f"{url}/chat",
-            json=payload,
-            timeout=timeout,
-        )
+        if client is not None:
+            response = client.post(f"{url}/chat", json=payload)
+        else:
+            response = httpx.post(
+                f"{url}/chat",
+                json=payload,
+                timeout=timeout,
+            )
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -253,6 +258,10 @@ def run_iteration(
     mode_dist: dict[str, int] = {"direct": 0, "react": 0, "repl": 0, "unknown": 0}
     suite_scores: dict[str, dict[str, int]] = {}
 
+    # Persistent HTTP client for connection reuse across iteration
+    import httpx as _httpx
+    _client = _httpx.Client(timeout=DEFAULT_TIMEOUT)
+
     for i, prompt_info in enumerate(prompts):
         suite = prompt_info["suite"]
         qid = prompt_info["id"]
@@ -268,7 +277,7 @@ def run_iteration(
         )
 
         q_start = time.perf_counter()
-        response = call_orchestrator(prompt, url, image_path=image_path)
+        response = call_orchestrator(prompt, url, image_path=image_path, client=_client)
         q_elapsed = time.perf_counter() - q_start
 
         answer = response.get("answer", "")
@@ -336,6 +345,8 @@ def run_iteration(
                             )
         except Exception as e:
             logger.debug(f"Q-scorer update skipped: {e}")
+
+    _client.close()
 
     elapsed = time.perf_counter() - start_time
     correct = sum(1 for r in results if r.passed)

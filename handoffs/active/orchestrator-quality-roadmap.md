@@ -1,7 +1,7 @@
 # Robust Orchestrator Quality (3-Phase Roadmap)
 
 **Created**: 2026-01-29
-**Status**: Phase 1-5 COMPLETE, VL Suite Rebuilt, Provenance Audit Done, Health Check Hardened, Stratified Sampling Ready (live validation pending)
+**Status**: Phase 1-5 COMPLETE, VL Suite Rebuilt, Provenance Audit Done, Health Check Hardened, Stratified Sampling Ready, Pipeline Perf Optimized (live validation pending)
 **Session transcript**: `/home/daniele/.claude/projects/-mnt-raid0-llm-claude/1c01759b-1cc7-479f-b886-7249fe6b90ca.jsonl`
 
 ---
@@ -530,3 +530,48 @@ Installed `mcp` package. All 12 `test_mcp_server.py` tests now pass. Total test 
 | `scripts/benchmark/seed_specialist_routing.py` | Per-role health skip, header dedup clarity |
 | `scripts/benchmark/dataset_adapters.py` | `_stratified_sample()`, `has_real_tiers`, tier logic |
 | `scripts/benchmark/compare_orchestrator_direct.py` | `--stratify-tiers` CLI flag wired through |
+
+---
+
+## Pipeline Performance Optimization — 2026-01-31
+
+### Problem
+
+Full pipeline takes ~2h24m. 4 redundant API restarts (~60s), step 6 over-sampled (10/suite for binary check), per-call httpx.Client overhead, sequential health checks.
+
+### Changes
+
+| # | Optimization | Saves | Key Change |
+|---|-------------|-------|------------|
+| 1 | Remove 2 redundant `restart_api` (steps 4, 5 = identical env to step 2) | ~30s | Comment-only replacement |
+| 2 | `POST /config` endpoint for hot-toggle (steps 5b, 6) | ~30s | New `src/api/routes/config.py` |
+| 3 | Step 6 sample 10→5 (kill-switch = binary property) | ~175s | `--debug-sample 5` |
+| 4 | Persistent `httpx.Client` in 3 benchmark scripts | ~2s | Optional `client=` parameter |
+| 5 | Parallel health checks (step 0, 8 ports) | ~2s | Background jobs + wait |
+
+**Total: ~239s (−2.8%), pipeline ~2h24m → ~2h20m.**
+
+### `POST /config` API
+
+```bash
+# Hot-toggle feature flags without restart
+curl -s -X POST http://localhost:8000/config \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_review": true}'
+# Returns: {"status": "ok", "features": {...}}
+```
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `scripts/benchmark/run_phase3_validation.sh` | 2 restarts removed, 2 curl toggles, parallel health, sample 10→5 |
+| `src/api/routes/config.py` | **NEW** — runtime feature toggle endpoint |
+| `src/api/routes/__init__.py` | Registered config router |
+| `scripts/benchmark/compare_orchestrator_direct.py` | Persistent httpx.Client in `run_comparison()` |
+| `scripts/benchmark/seed_specialist_routing.py` | Persistent httpx.Client in `run_seeding()` |
+| `scripts/benchmark/memrl_learning_loop.py` | Persistent httpx.Client in `run_iteration()` |
+
+### Future Opportunity
+
+MoE 30B-A3B models (3B active) are candidates for parallel inference testing. If validated, direct-backend parallel seeding could save ~2,000s (−23%), bringing pipeline to ~1h48m.

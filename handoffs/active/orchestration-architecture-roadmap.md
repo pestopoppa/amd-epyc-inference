@@ -208,6 +208,7 @@ python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
 | `src/prompt_builders.py` | System prompts, REACT_TOOL_WHITELIST |
 | `src/repl_environment.py` | REPL sandbox, delegate(), tool bindings |
 | `src/features.py` | Feature flags (architect_delegation, etc.) |
+| `src/api/routes/config.py` | POST /config — runtime feature flag hot-reload |
 | `src/escalation.py` | Unified escalation policy |
 | `src/roles.py` | Role and Tier enums |
 | `orchestration/task_ir.schema.json` | TaskIR schema (parallel_group, depends_on) |

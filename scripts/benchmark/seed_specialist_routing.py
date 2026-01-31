@@ -138,6 +138,7 @@ def call_orchestrator_forced(
     timeout: int = DEFAULT_TIMEOUT,
     image_path: str = "",
     cache_prompt: bool | None = None,
+    client: "httpx.Client | None" = None,
 ) -> dict[str, Any]:
     """Call orchestrator with forced role and mode routing.
 
@@ -149,6 +150,7 @@ def call_orchestrator_forced(
         timeout: Request timeout in seconds.
         image_path: Optional path to image for VL questions.
         cache_prompt: Override cache_prompt (None=default, False=disable).
+        client: Optional persistent httpx.Client for connection reuse.
 
     Returns:
         Response dict.
@@ -167,11 +169,14 @@ def call_orchestrator_forced(
         payload["cache_prompt"] = cache_prompt
 
     try:
-        response = httpx.post(
-            f"{url}/chat",
-            json=payload,
-            timeout=timeout,
-        )
+        if client is not None:
+            response = client.post(f"{url}/chat", json=payload)
+        else:
+            response = httpx.post(
+                f"{url}/chat",
+                json=payload,
+                timeout=timeout,
+            )
         response.raise_for_status()
         return response.json()
     except Exception as e:
@@ -509,6 +514,10 @@ def run_seeding(
 
     consecutive_zero_success = 0  # Abort after 3 questions with zero successful combos
 
+    # Persistent HTTP client for connection reuse across all API calls
+    import httpx as _httpx
+    _client = _httpx.Client(timeout=SLOW_ROLE_TIMEOUT)
+
     for i, prompt_info in enumerate(all_prompts):
         suite = prompt_info["suite"]
         qid = prompt_info["id"]
@@ -545,6 +554,7 @@ def run_seeding(
             response = call_orchestrator_forced(
                 prompt, role, mode, url, role_timeout,
                 image_path=image_path, cache_prompt=cache_prompt_val,
+                client=_client,
             )
             q_elapsed = time.perf_counter() - q_start
 
@@ -676,6 +686,7 @@ def run_seeding(
     else:
         logger.info("\n[DRY RUN] Skipping reward injection")
 
+    _client.close()
     return all_results
 
 

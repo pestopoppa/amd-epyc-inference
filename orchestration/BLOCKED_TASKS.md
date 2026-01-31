@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-01-31 (Health check hardened, stratified sampling, MCP installed, requirements audited)
+**Last Updated**: 2026-01-31 (Pipeline perf optimized: POST /config endpoint, redundant restarts removed, persistent httpx, parallel health checks)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -21,7 +21,7 @@
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
 | **Orchestrator Quality Regression** | — | **HIGH** | `progress/2026-01/2026-01-29.md` | ✅ FIXES APPLIED (direct-answer mode, VL pipeline rewrite, port mapping fix). Re-run benchmark pending. |
-| **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 + DEV TASKS + OVERHEAD MITIGATIONS + HEALTH CHECK HARDENING + STRATIFIED SAMPLING COMPLETE. 857 tests pass. **Live validation pending** (seeding + learning loop + regression gate). |
+| **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 + DEV TASKS + OVERHEAD MITIGATIONS + HEALTH CHECK HARDENING + STRATIFIED SAMPLING + PIPELINE PERF OPTIMIZATION COMPLETE. 857 tests pass. `POST /config` endpoint added. **Live validation pending** (seeding + learning loop + regression gate). |
 | **Orchestration Architecture Roadmap** | — | **MEDIUM** | `handoffs/active/orchestration-architecture-roadmap.md` | 📋 ACTIVE (merged from refactoring + PARL: 7 items A-G remaining) |
 | **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |

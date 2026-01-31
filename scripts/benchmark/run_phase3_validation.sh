@@ -141,14 +141,25 @@ step0_health_check() {
   log "=========================================="
 
   local all_ok=true
+  local health_results="/tmp/phase3_health_$$"
+  mkdir -p "$health_results"
   for port in 8080 8081 8082 8083 8086 8087 8090 9001; do
-    if check_port "$port"; then
-      log "  Port ${port}: OK"
-    else
-      log "  Port ${port}: DOWN"
+    ( if check_port "$port"; then
+        echo "OK" > "${health_results}/${port}"
+      else
+        echo "DOWN" > "${health_results}/${port}"
+      fi ) &
+  done
+  wait
+  for port in 8080 8081 8082 8083 8086 8087 8090 9001; do
+    local status
+    status=$(cat "${health_results}/${port}" 2>/dev/null || echo "DOWN")
+    log "  Port ${port}: ${status}"
+    if [[ "$status" != "OK" ]]; then
       all_ok=false
     fi
   done
+  rm -rf "$health_results"
 
   if ! $all_ok; then
     gate_fail "Not all backends healthy. Start HOT tier first."
@@ -351,8 +362,8 @@ step4_learning_loop() {
   log "STEP 4: Learning Loop (5 iterations)"
   log "=========================================="
 
-  # Ensure API has specialist routing + architect delegation ON
-  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
+  # API already running with SPECIALIST_ROUTING=1 ARCHITECT_DELEGATION=1 MEMRL=1
+  # from step 2 — skip redundant restart (identical env vars)
 
   local output="${RESULTS_DIR}/memrl_phase3_loop.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/memrl_learning_loop.py \
@@ -398,7 +409,8 @@ step5_regression_gate() {
   log "STEP 5: Final Regression Gate"
   log "=========================================="
 
-  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_MEMRL=1"
+  # API already running with SPECIALIST_ROUTING=1 ARCHITECT_DELEGATION=1 MEMRL=1
+  # from step 2 — skip redundant restart (identical env vars)
 
   local output="${RESULTS_DIR}/phase3_specialist_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
@@ -503,7 +515,15 @@ step5b_plan_review() {
 
   # Same seed suite but with PLAN_REVIEW enabled alongside SPECIALIST_ROUTING.
   # Compares: accuracy delta vs step 5, correction rate, convergence signal.
-  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRATOR_PLAN_REVIEW=1 ORCHESTRATOR_MEMRL=1"
+  # Hot-toggle plan_review via /config instead of restarting the API.
+  log "  Enabling plan_review via /config..."
+  if ! $DRY_RUN; then
+    curl -sf -X POST http://localhost:8000/config \
+      -H 'Content-Type: application/json' \
+      -d '{"plan_review": true}' > /dev/null
+  else
+    log "[DRY-RUN] Would POST /config {plan_review: true}"
+  fi
 
   local output="${RESULTS_DIR}/phase3_plan_review_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
@@ -621,12 +641,22 @@ step6_kill_switch() {
   log "STEP 6: Kill Switch Test"
   log "=========================================="
 
-  restart_api "ORCHESTRATOR_SPECIALIST_ROUTING=0 ORCHESTRATOR_ARCHITECT_DELEGATION=0 ORCHESTRATOR_MEMRL=1"
+  # Hot-toggle routing off via /config instead of restarting the API.
+  log "  Disabling specialist_routing, architect_delegation, plan_review via /config..."
+  if ! $DRY_RUN; then
+    curl -sf -X POST http://localhost:8000/config \
+      -H 'Content-Type: application/json' \
+      -d '{"specialist_routing": false, "architect_delegation": false, "plan_review": false}' > /dev/null
+  else
+    log "[DRY-RUN] Would POST /config {specialist_routing: false, architect_delegation: false, plan_review: false}"
+  fi
 
   local output="${RESULTS_DIR}/phase3_killswitch_seed${PIPELINE_SEED}.json"
+  # Kill-switch only checks routing returns to frontdoor (binary property).
+  # 5 per suite (35 total) is sufficient.
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/compare_orchestrator_direct.py \
     --debug --suite all \
-    --debug-seed ${PIPELINE_SEED} --debug-sample 10 \
+    --debug-seed ${PIPELINE_SEED} --debug-sample 5 \
     --output ${output}"
 
   if $DRY_RUN; then

@@ -313,8 +313,14 @@ def call_orchestrator(
     config: Optional[dict] = None,
     context: str = "",
     image_path: str = "",
+    client: Optional[httpx.Client] = None,
 ) -> dict:
-    """Call orchestrator API."""
+    """Call orchestrator API.
+
+    Args:
+        client: Optional persistent httpx.Client. If None, creates a
+            temporary client per call (slower due to connection setup).
+    """
 
     payload = {
         "prompt": prompt,
@@ -327,24 +333,26 @@ def call_orchestrator(
     if config:
         payload.update(config)
 
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            start = time.perf_counter()
-            response = client.post(
-                f"{api_url}/chat",
-                json=payload
-            )
-            latency_ms = (time.perf_counter() - start) * 1000
+    def _do_request(c: httpx.Client) -> dict:
+        start = time.perf_counter()
+        response = c.post(f"{api_url}/chat", json=payload)
+        latency_ms = (time.perf_counter() - start) * 1000
+        if response.status_code == 200:
+            result = response.json()
+            result["latency_ms"] = latency_ms
+            return result
+        else:
+            return {
+                "error": f"HTTP {response.status_code}: {response.text[:200]}",
+                "latency_ms": latency_ms,
+            }
 
-            if response.status_code == 200:
-                result = response.json()
-                result["latency_ms"] = latency_ms
-                return result
-            else:
-                return {
-                    "error": f"HTTP {response.status_code}: {response.text[:200]}",
-                    "latency_ms": latency_ms
-                }
+    try:
+        if client is not None:
+            return _do_request(client)
+        else:
+            with httpx.Client(timeout=timeout) as c:
+                return _do_request(c)
     except Exception as e:
         return {"error": f"{type(e).__name__}: {e}", "latency_ms": 0}
 
@@ -361,7 +369,8 @@ def compare_prompt(
     baseline: dict,
     api_url: str,
     timeout: int,
-    config: Optional[dict] = None
+    config: Optional[dict] = None,
+    client: Optional[httpx.Client] = None,
 ) -> ComparisonResult:
     """Compare orchestrator response to baseline for a single prompt."""
 
@@ -380,6 +389,7 @@ def compare_prompt(
         prompt_data["prompt"], api_url, timeout, config,
         context=prompt_data.get("context", ""),
         image_path=prompt_data.get("image_path") or "",
+        client=client,
     )
 
     # Log errors visibly instead of swallowing them
@@ -427,6 +437,7 @@ def create_baseline_entry(
     prompt_data: dict,
     api_url: str,
     timeout: int,
+    client: Optional[httpx.Client] = None,
 ) -> dict:
     """Create baseline entry by calling orchestrator with architect_general role.
 
@@ -439,6 +450,7 @@ def create_baseline_entry(
         config={"role": "architect_general"},
         context=prompt_data.get("context", ""),
         image_path=prompt_data.get("image_path") or "",
+        client=client,
     )
 
     answer = result.get("answer", "")
@@ -541,12 +553,16 @@ def run_comparison(
             from scripts.benchmark.debug_scorer import score_answer as _score_answer
             _debug_scorer = _score_answer
 
+    # Use a persistent httpx.Client to avoid per-request connection setup
+    max_timeout = max(suite_timeouts.values()) if suite_timeouts else timeout
+    _client = httpx.Client(timeout=max_timeout)
+
     for prompt_data in prompts:
         suite_name = prompt_data["suite"]
         effective_timeout = suite_timeouts.get(suite_name, timeout)
         print(f"  [{suite_name}] {prompt_data['id']}...", end=" ", flush=True)
 
-        result = compare_prompt(prompt_data, baseline, api_url, effective_timeout, config)
+        result = compare_prompt(prompt_data, baseline, api_url, effective_timeout, config, client=_client)
 
         # Debug mode: score with deterministic scorer
         if _debug_scorer and prompt_data.get("scoring_method"):
@@ -577,6 +593,8 @@ def run_comparison(
 
         if not has_answer:
             errors += 1
+
+    _client.close()
 
     # Compute summary
     valid_speedups = [r.speedup for r in results if r.speedup > 0]
