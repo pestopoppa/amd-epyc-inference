@@ -136,6 +136,23 @@ The orchestrator benchmark pipeline compares orchestrated responses against dire
 | `scripts/benchmark/run_orchestrator_benchmark.py` | Full 4-phase benchmark runner (smoke, compare, optimize, verify) |
 | `scripts/benchmark/compare_orchestrator_direct.py` | Per-suite orchestrator vs baseline comparison |
 
+### On-the-Fly Dataset Sampling (January 2026)
+
+Six suites now sample fresh questions from real HuggingFace datasets on each run, totaling 31,820 questions:
+
+| Suite | Dataset(s) | Pool Size |
+|-------|-----------|-----------|
+| general | MMLU (cais/mmlu) | 14,042 |
+| math | GSM8K + MATH-500 | 1,819 |
+| coder | HumanEval + MBPP | 664 |
+| thinking | ARC-Challenge + HellaSwag | 11,214 |
+| instruction_precision | IFEval (google/IFEval) | 541 |
+| vl | OCRBench + ChartQA | 3,500 |
+
+Adapters in `scripts/benchmark/dataset_adapters.py`. Falls back to static YAML for `agentic` and `long_context` (no public datasets).
+
+**Stratified sampling**: `--stratify-tiers` draws equal questions per difficulty tier for suites with real tier metadata (MMLU, Math, IFEval). Other suites silently fall through to uniform random.
+
 ### CLI Options
 
 ```bash
@@ -147,6 +164,9 @@ The orchestrator benchmark pipeline compares orchestrated responses against dire
 
 # Create baseline from architect model
 ./compare_orchestrator_direct.py --create-baseline --suite all
+
+# Tier-balanced sampling (equal questions per difficulty tier)
+./compare_orchestrator_direct.py --debug --suite all --stratify-tiers
 ```
 
 The `--restart-api` flag restarts only the uvicorn API (port 8000), not the llama-server backends (8080-8090). Use after Python code changes.

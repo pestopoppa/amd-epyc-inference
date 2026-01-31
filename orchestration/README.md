@@ -654,8 +654,12 @@ See `research/TOON_EVALUATION.md` for full evaluation report.
 
 ## Dependencies
 
+All dependencies are declared in `pyproject.toml`. Install with:
+
 ```bash
-pip install jsonschema>=4.20
+pip install -e .           # Core dependencies
+pip install -e ".[dev]"    # + testing/linting tools
+pip install -e ".[datasets]"  # + HuggingFace datasets for benchmark sampling
 ```
 
-Or add to `requirements-dev.txt`.
+See `pyproject.toml` for optional dependency groups: `toon`, `graph`, `sandbox`, `tuning`, `ui`.

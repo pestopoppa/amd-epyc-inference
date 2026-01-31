@@ -1,7 +1,7 @@
 # Robust Orchestrator Quality (3-Phase Roadmap)
 
 **Created**: 2026-01-29
-**Status**: Phase 1-5 COMPLETE, VL Suite Rebuilt, Provenance Audit Done (live validation pending)
+**Status**: Phase 1-5 COMPLETE, VL Suite Rebuilt, Provenance Audit Done, Health Check Hardened, Stratified Sampling Ready (live validation pending)
 **Session transcript**: `/home/daniele/.claude/projects/-mnt-raid0-llm-claude/1c01759b-1cc7-479f-b886-7249fe6b90ca.jsonl`
 
 ---
@@ -101,7 +101,7 @@ Must not regress eval suite scores below Phase 1 baseline.
 **Problem**: All text prompts route to frontdoor (30B). Specialists unused.
 **Solution**: Feature-flagged specialist routing + GraphEnhancedRetriever + failure veto + comparative seeding.
 
-Code complete, 884 unit tests pass, zero regressions. **Live validation pending.**
+Code complete, 857 unit tests pass (recount after test cleanup), zero regressions. **Live validation pending.**
 
 ### What was built (8 steps + architect delegation)
 
@@ -481,3 +481,52 @@ ORCHESTRATOR_SPECIALIST_ROUTING=1 ORCHESTRATOR_ARCHITECT_DELEGATION=1 ORCHESTRAT
 |------|---------|
 | `scripts/benchmark/seed_specialist_routing.py` | `_deduplicate_roles()`, `_modes_for_role()`, `--no-dedup`, alias annotations in summary, reward cloning |
 | `scripts/benchmark/run_phase3_validation.sh` | Random `PIPELINE_SEED`, `--seed N` flag, dedup comment, seed in all filenames |
+
+---
+
+## Health Check Hardening + Stratified Sampling — 2026-01-31
+
+### Health Check: Per-Role Skip with Retry
+
+**Problem**: Seeding script used `break` when health check failed, aborting ALL remaining combos. After frontdoor:react generated 953 tokens, server was briefly busy → health check failed → coder_escalation, architect_general, architect_coding (all on separate servers) were skipped.
+
+**Fix**: Replaced `break` with per-role `failed_roles` tracking:
+- `failed_roles: set[str]` — tracks roles whose health check failed
+- Before each combo: if `role in failed_roles`, skip (continue), don't abort everything
+- On health failure: wait 5s, retry with 10s timeout, then add role to `failed_roles`
+- Other roles on different servers proceed normally
+
+### Header Log: Tested vs Cloned Combos
+
+**Problem**: Header showed "Testing 13 combos" including coder_primary even though dedup was active.
+
+**Fix**: Compute `tested_combos` from `unique_roles`, log separately:
+```
+Tested combos: 10 (frontdoor:direct, frontdoor:react, frontdoor:repl, ...)
+Cloned combos: 3 (coder_primary→frontdoor)
+```
+
+### Stratified Tier-Balanced Sampling
+
+Built `_stratified_sample()` in `dataset_adapters.py`. When `--stratify-tiers` is passed, suites with real difficulty metadata draw equal questions per tier instead of uniform random.
+
+| Adapter | `has_real_tiers` | Tier Logic |
+|---------|-----------------|------------|
+| MMLUAdapter | True | Subject difficulty (physics/math → T3, humanities → T1) |
+| MathAdapter | True | GSM8K → T1, MATH-500 level ≤3 → T2, level >3 → T3 |
+| IFEvalAdapter | True | Constraint count (≤1 → T1, ≤3 → T2, 4+ → T3) |
+| Others | False | Silent fallback to uniform random |
+
+Wired `--stratify-tiers` through `compare_orchestrator_direct.py` → `load_debug_prompts()` → `adapter.sample()`.
+
+### MCP Module
+
+Installed `mcp` package. All 12 `test_mcp_server.py` tests now pass. Total test count: 857 (up from 483).
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `scripts/benchmark/seed_specialist_routing.py` | Per-role health skip, header dedup clarity |
+| `scripts/benchmark/dataset_adapters.py` | `_stratified_sample()`, `has_real_tiers`, tier logic |
+| `scripts/benchmark/compare_orchestrator_direct.py` | `--stratify-tiers` CLI flag wired through |

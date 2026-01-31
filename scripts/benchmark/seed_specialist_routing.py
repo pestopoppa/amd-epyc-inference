@@ -297,7 +297,10 @@ def _build_role_mode_combos(
     roles: list[str],
     modes: list[str],
 ) -> list[tuple[str, str]]:
-    """Build (role, mode) combinations respecting role-specific constraints.
+    """Build (role, mode) combinations in mode-first order.
+
+    Iterates mode-first so that consecutive calls hit different servers,
+    giving each server 40-100s natural cooldown before being called again.
 
     Architect roles get ARCHITECT_MODES (direct + delegated).
     Vision roles get per-model modes from VISION_MODES.
@@ -308,19 +311,26 @@ def _build_role_mode_combos(
         modes: List of mode names.
 
     Returns:
-        List of (role, mode) tuples.
+        List of (role, mode) tuples in mode-first order.
     """
+    # Gather all modes in stable order: standard modes first, then extras
+    all_modes = list(modes)
+    for m in sorted(ARCHITECT_MODES):
+        if m not in all_modes:
+            all_modes.append(m)
+
     combos = []
-    for role in roles:
-        if role in ARCHITECT_ROLES:
-            for mode in ARCHITECT_MODES:
-                combos.append((role, mode))
-        elif role in VISION_ROLES:
-            for mode in VISION_MODES.get(role, {"direct"}):
-                combos.append((role, mode))
-        else:
-            for mode in modes:
-                combos.append((role, mode))
+    for mode in all_modes:
+        for role in roles:
+            if role in ARCHITECT_ROLES:
+                if mode in ARCHITECT_MODES:
+                    combos.append((role, mode))
+            elif role in VISION_ROLES:
+                if mode in VISION_MODES.get(role, {"direct"}):
+                    combos.append((role, mode))
+            else:
+                if mode in modes:
+                    combos.append((role, mode))
     return combos
 
 
@@ -441,9 +451,14 @@ def run_seeding(
     else:
         roles_to_test = list(roles)
 
-    # Build (role, mode) combos — architects get direct only
+    # Build (role, mode) combos — mode-first ordering for server cooldown
     combos = _build_role_mode_combos(roles_to_test, modes)
     combo_keys = [f"{r}:{m}" for r, m in combos]
+
+    # Preflight health check — verify server is reachable before loading prompts
+    if not _check_server_health(url):
+        logger.error(f"Preflight health check failed: {url} unreachable")
+        return []
 
     # Load prompts from debug suite (deterministic scoring)
     all_prompts: list[dict[str, Any]] = []
@@ -492,6 +507,8 @@ def run_seeding(
     SLOW_ROLES = {"architect_general", "architect_coding"}
     SLOW_ROLE_TIMEOUT = max(timeout, 300)
 
+    consecutive_zero_success = 0  # Abort after 3 questions with zero successful combos
+
     for i, prompt_info in enumerate(all_prompts):
         suite = prompt_info["suite"]
         qid = prompt_info["id"]
@@ -522,11 +539,6 @@ def run_seeding(
         cache_prompt_val = False if skip_cache else None
 
         for combo_idx, (role, mode) in enumerate(active_combos):
-            # Health check before each call to detect server death early
-            if combo_idx > 0 and not _check_server_health(url):
-                logger.error(f"  Server unhealthy before {role}:{mode} — skipping remaining combos for {qid}")
-                break
-
             key = f"{role}:{mode}"
             role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else timeout
             q_start = time.perf_counter()
@@ -641,6 +653,21 @@ def run_seeding(
             if role_part in alias_map:
                 alias_tag = f" (={alias_map[role_part]})"
             logger.info(f"    reward[{key}] = {reward:+.1f}{alias_tag}")
+
+        # Track consecutive questions with zero successful combos
+        any_success = any(
+            rr.error is None for rr in role_results.values()
+        )
+        if any_success:
+            consecutive_zero_success = 0
+        else:
+            consecutive_zero_success += 1
+            if consecutive_zero_success >= 3:
+                logger.error(
+                    f"Aborting: {consecutive_zero_success} consecutive questions "
+                    f"with zero successful combos — server appears dead"
+                )
+                break
 
     # Inject rewards into MemRL
     if not dry_run:
@@ -904,16 +931,22 @@ def main():
 
     # Compute alias_map for logging and summary (even before run_seeding)
     alias_map: dict[str, str] = {}
+    unique_roles = list(args.roles)
     if not args.no_dedup:
-        _, alias_map = _deduplicate_roles(args.roles)
+        unique_roles, alias_map = _deduplicate_roles(args.roles)
 
-    combos = _build_role_mode_combos(args.roles, args.modes)
+    # Show actual combos that will be tested (after dedup)
+    tested_combos = _build_role_mode_combos(unique_roles, args.modes)
+    all_combos = _build_role_mode_combos(args.roles, args.modes)
     logger.info("=" * 60)
     logger.info("Comparative Specialist Seeding (role×mode)")
     logger.info(f"  Suites: {args.suites}")
     logger.info(f"  Roles: {args.roles}")
     logger.info(f"  Modes: {args.modes}")
-    logger.info(f"  Combos: {len(combos)} ({', '.join(f'{r}:{m}' for r, m in combos)})")
+    logger.info(f"  Tested combos: {len(tested_combos)} ({', '.join(f'{r}:{m}' for r, m in tested_combos)})")
+    if alias_map:
+        logger.info(f"  Cloned combos: {len(all_combos) - len(tested_combos)} "
+                     f"({', '.join(f'{a}→{c}' for a, c in sorted(alias_map.items()))})")
     logger.info(f"  Sample size: {args.sample_size}/suite")
     logger.info(f"  Seed: {args.seed}")
     logger.info(f"  Dry run: {args.dry_run}")
@@ -953,7 +986,7 @@ def main():
             "suites": args.suites,
             "roles": args.roles,
             "modes": args.modes,
-            "combos": [f"{r}:{m}" for r, m in combos],
+            "combos": [f"{r}:{m}" for r, m in all_combos],
             "sample_size": args.sample_size,
             "seed": args.seed,
             "dry_run": args.dry_run,

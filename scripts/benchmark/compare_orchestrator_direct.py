@@ -57,11 +57,16 @@ def _load_from_dataset_adapter(
     suite_name: str,
     sample_count: int,
     seed: int,
+    stratify: bool = False,
 ) -> list[dict]:
     """Load questions on-the-fly from HuggingFace cached datasets.
 
     Samples from the full dataset pool for the given suite.
     Falls back to static YAML if the adapter or datasets library is unavailable.
+
+    Args:
+        stratify: If True, draw equal counts per difficulty tier for suites
+            with real tier data (general/MMLU, math, instruction_precision).
 
     Supported suites: general (MMLU 14K), math (GSM8K 1.3K + MATH-500),
     coder (HumanEval 164 + MBPP 500), thinking (ARC 1.2K + HellaSwag 10K),
@@ -83,10 +88,11 @@ def _load_from_dataset_adapter(
     if adapter is None:
         return []
 
-    prompts = adapter.sample(n=sample_count, seed=seed)
+    prompts = adapter.sample(n=sample_count, seed=seed, stratify=stratify)
+    strat_tag = " (stratified)" if stratify and adapter.has_real_tiers else ""
     if prompts:
         print(f"  [debug] {suite_name}: sampled {len(prompts)} from "
-              f"{adapter.total_available} dataset questions (seed={seed})")
+              f"{adapter.total_available} dataset questions (seed={seed}){strat_tag}")
     return prompts
 
 
@@ -95,6 +101,7 @@ def load_debug_prompts(
     sample_per_suite: int = 10,
     seed: int | None = None,
     partition: tuple[int, int] | None = None,
+    stratify: bool = False,
 ) -> list[dict]:
     """Load debug benchmark prompts from HuggingFace datasets or static YAML.
 
@@ -138,7 +145,7 @@ def load_debug_prompts(
     for suite_name in suite_names:
         # Try on-the-fly dataset adapter first
         adapter_prompts = _load_from_dataset_adapter(
-            suite_name, sample_per_suite, seed=seed
+            suite_name, sample_per_suite, seed=seed, stratify=stratify
         )
         if adapter_prompts:
             all_prompts.extend(adapter_prompts)
@@ -482,6 +489,7 @@ def run_comparison(
     debug_mode: bool = False,
     debug_sample: int = 10,
     debug_seed: int | None = None,
+    stratify_tiers: bool = False,
 ) -> dict:
     """Run comparison between orchestrator and baseline.
 
@@ -489,10 +497,14 @@ def run_comparison(
         debug_mode: If True, use debug suite with deterministic scoring.
         debug_sample: Number of questions to sample per suite in debug mode.
         debug_seed: RNG seed for debug sampling (None = timestamp).
+        stratify_tiers: If True, balance difficulty tiers in sampling.
     """
 
     if debug_mode:
-        prompts = load_debug_prompts(suite, sample_per_suite=debug_sample, seed=debug_seed)
+        prompts = load_debug_prompts(
+            suite, sample_per_suite=debug_sample, seed=debug_seed,
+            stratify=stratify_tiers,
+        )
     else:
         prompts = get_comparison_prompts(suite)
     baseline = load_baseline() if use_baseline else {}
@@ -802,6 +814,13 @@ def main():
         help="Run per-suite frontdoor-parity regression check. "
         "Fails if any suite drops below frontdoor baseline - 1 point."
     )
+    parser.add_argument(
+        "--stratify-tiers",
+        action="store_true",
+        help="Balance difficulty tiers in sampling. Draws equal questions per "
+        "tier for suites with real difficulty data (general/MMLU, math, "
+        "instruction_precision). Other suites use uniform random."
+    )
 
     args = parser.parse_args()
 
@@ -862,6 +881,7 @@ def main():
         debug_mode=args.debug,
         debug_sample=args.debug_sample,
         debug_seed=args.debug_seed,
+        stratify_tiers=args.stratify_tiers,
     )
 
     print_summary(summary)

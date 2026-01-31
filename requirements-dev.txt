@@ -1,27 +1,18 @@
-# Development dependencies for amd-epyc-inference
-# ================================================
+# DEPRECATED — Use pyproject.toml instead
+# ========================================
 #
-# Install: pip install -r requirements-dev.txt
+# All dependencies are now declared in pyproject.toml.
 #
-# These are intentionally minimal. Add more as the Python codebase grows.
+# Install core:     pip install -e .
+# Install dev:      pip install -e ".[dev]"
+# Install datasets: pip install -e ".[datasets]"
+# Install all:      pip install -e ".[dev,datasets,toon,graph,sandbox,tuning,ui]"
+#
+# This file is kept only for backwards compatibility with scripts
+# that may reference it. Do not add new dependencies here.
 
-# Schema validation (required for IR validation)
+# Minimal subset for scripts that use `pip install -r requirements-dev.txt`
 jsonschema>=4.20
-
-# YAML parsing (for model_registry.yaml)
 pyyaml>=6.0
-
-# ── Optional (uncomment when needed) ──────────────────────────────────────────
-
-# Linting and formatting (add when you have substantial Python code)
-# ruff>=0.1.0
-
-# Type checking
-# pyright>=1.1.350
-
-# Testing
 pytest>=7.4.0
-pytest-asyncio>=0.21.0
-
-# Markdown formatting
-# mdformat>=0.7.0
+pytest-asyncio>=0.23.0

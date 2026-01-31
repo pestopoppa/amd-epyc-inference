@@ -63,6 +63,9 @@ class BaseAdapter:
     suite_name: str = ""
     _dataset = None
 
+    # Adapters with real difficulty data should set this True
+    has_real_tiers: bool = False
+
     def _ensure_loaded(self):
         raise NotImplementedError
 
@@ -74,13 +77,49 @@ class BaseAdapter:
     def _row_to_prompt(self, idx: int, row: dict) -> dict:
         raise NotImplementedError
 
-    def sample(self, n: int = 10, seed: int = 42) -> list[dict]:
+    def sample(self, n: int = 10, seed: int = 42, stratify: bool = False) -> list[dict]:
+        """Sample n questions. If stratify=True AND adapter has real tiers,
+        draw equal counts per tier for balanced difficulty distribution."""
         self._ensure_loaded()
         if not self._dataset:
             return []
+        if stratify and self.has_real_tiers:
+            return self._stratified_sample(n, seed)
         rng = random.Random(seed)
         indices = rng.sample(range(len(self._dataset)), min(n, len(self._dataset)))
         return [self._row_to_prompt(i, self._dataset[i]) for i in indices]
+
+    def _stratified_sample(self, n: int, seed: int) -> list[dict]:
+        """Draw equal questions per tier. Requires _get_tier_for_index()."""
+        rng = random.Random(seed)
+        # Bucket indices by tier
+        tier_buckets: dict[int, list[int]] = {}
+        for i in range(len(self._dataset)):
+            t = self._get_tier_for_index(i)
+            tier_buckets.setdefault(t, []).append(i)
+
+        tiers = sorted(tier_buckets.keys())
+        if not tiers:
+            return []
+
+        # Equal share per tier, remainder distributed round-robin
+        per_tier = n // len(tiers)
+        remainder = n % len(tiers)
+
+        results = []
+        for i, t in enumerate(tiers):
+            bucket = tier_buckets[t]
+            count = per_tier + (1 if i < remainder else 0)
+            count = min(count, len(bucket))
+            indices = rng.sample(bucket, count)
+            results.extend(self._row_to_prompt(idx, self._dataset[idx]) for idx in indices)
+
+        rng.shuffle(results)
+        return results
+
+    def _get_tier_for_index(self, idx: int) -> int:
+        """Return tier for a given dataset index. Override in adapters with real tiers."""
+        return 1
 
 
 # ── MMLU (General Knowledge) ─────────────────────────────────────────────
@@ -90,7 +129,18 @@ class MMLUAdapter(BaseAdapter):
     """MMLU: 14,042 multiple-choice questions across 57 subjects."""
 
     suite_name = "general"
+    has_real_tiers = True  # Subject-based difficulty mapping
     CHOICE_LABELS = ["A", "B", "C", "D"]
+
+    HARD_SUBJECTS = {
+        "abstract_algebra", "college_mathematics", "formal_logic",
+        "college_physics", "electrical_engineering", "machine_learning",
+        "conceptual_physics", "college_chemistry", "anatomy",
+    }
+    EASY_SUBJECTS = {
+        "high_school_geography", "high_school_us_history",
+        "miscellaneous", "us_foreign_policy",
+    }
 
     def _ensure_loaded(self):
         if self._dataset is not None:
@@ -118,18 +168,9 @@ class MMLUAdapter(BaseAdapter):
         expected = self.CHOICE_LABELS[answer_idx]
 
         # Tier based on subject difficulty
-        hard_subjects = {
-            "abstract_algebra", "college_mathematics", "formal_logic",
-            "college_physics", "electrical_engineering", "machine_learning",
-            "conceptual_physics", "college_chemistry", "anatomy",
-        }
-        easy_subjects = {
-            "high_school_geography", "high_school_us_history",
-            "miscellaneous", "us_foreign_policy",
-        }
-        if subject in hard_subjects:
+        if subject in self.HARD_SUBJECTS:
             tier = 3
-        elif subject in easy_subjects:
+        elif subject in self.EASY_SUBJECTS:
             tier = 1
         else:
             tier = 2
@@ -147,6 +188,14 @@ class MMLUAdapter(BaseAdapter):
             "scoring_config": {},
         }
 
+    def _get_tier_for_index(self, idx: int) -> int:
+        subject = self._dataset[idx].get("subject", "general")
+        if subject in self.HARD_SUBJECTS:
+            return 3
+        elif subject in self.EASY_SUBJECTS:
+            return 1
+        return 2
+
 
 # ── GSM8K + MATH-500 (Math) ──────────────────────────────────────────────
 
@@ -155,6 +204,7 @@ class MathAdapter(BaseAdapter):
     """GSM8K (1,319) + MATH-500 (500) = 1,819 math problems."""
 
     suite_name = "math"
+    has_real_tiers = True  # GSM8K=T1, MATH-500 level 1-3=T2, level 4-5=T3
     _gsm8k = None
     _math500 = None
 
@@ -184,10 +234,22 @@ class MathAdapter(BaseAdapter):
             math_idx = idx - gsm8k_len
             return self._math500_prompt(math_idx, self._math500[math_idx])
 
-    def sample(self, n: int = 10, seed: int = 42) -> list[dict]:
+    def _get_tier_for_index(self, idx: int) -> int:
+        gsm8k_len = len(self._gsm8k) if self._gsm8k else 0
+        if idx < gsm8k_len:
+            return 1  # GSM8K = grade-school
+        math_idx = idx - gsm8k_len
+        if self._math500 and math_idx < len(self._math500):
+            level = self._math500[math_idx].get("level", 3)
+            return 2 if level <= 3 else 3
+        return 1
+
+    def sample(self, n: int = 10, seed: int = 42, stratify: bool = False) -> list[dict]:
         self._ensure_loaded()
         if not self._dataset:
             return []
+        if stratify:
+            return self._stratified_sample(n, seed)
         rng = random.Random(seed)
         # Split: ~60% GSM8K, ~40% MATH-500
         gsm8k_len = len(self._gsm8k) if self._gsm8k else 0
@@ -280,7 +342,7 @@ class CoderAdapter(BaseAdapter):
             print(f"  [adapter] Coder datasets load failed: {e}")
             self._dataset = []
 
-    def sample(self, n: int = 10, seed: int = 42) -> list[dict]:
+    def sample(self, n: int = 10, seed: int = 42, stratify: bool = False) -> list[dict]:
         self._ensure_loaded()
         if not self._dataset:
             return []
@@ -397,7 +459,7 @@ class ThinkingAdapter(BaseAdapter):
             print(f"  [adapter] Thinking datasets load failed: {e}")
             self._dataset = []
 
-    def sample(self, n: int = 10, seed: int = 42) -> list[dict]:
+    def sample(self, n: int = 10, seed: int = 42, stratify: bool = False) -> list[dict]:
         self._ensure_loaded()
         if not self._dataset:
             return []
@@ -500,6 +562,7 @@ class IFEvalAdapter(BaseAdapter):
     """IFEval: 541 instruction-following prompts with verifiable constraints."""
 
     suite_name = "instruction_precision"
+    has_real_tiers = True  # Tier from constraint count: 1→T1, 2-3→T2, 4+→T3
 
     def _ensure_loaded(self):
         if self._dataset is not None:
@@ -590,6 +653,11 @@ class IFEvalAdapter(BaseAdapter):
             # Generic fallback — just check response is non-empty
             return "programmatic", {"verifier": "non_empty", "constraint": constraint_id}
 
+    def _get_tier_for_index(self, idx: int) -> int:
+        row = self._dataset[idx]
+        n_constraints = len(row.get("instruction_id_list", []))
+        return 1 if n_constraints <= 1 else (2 if n_constraints <= 3 else 3)
+
 
 # ── VL (Vision-Language) ──────────────────────────────────────────────────
 
@@ -616,7 +684,7 @@ class VLAdapter(BaseAdapter):
         self._ensure_loaded()
         return self._vl_adapter.total_available if self._vl_adapter else 0
 
-    def sample(self, n: int = 10, seed: int = 42) -> list[dict]:
+    def sample(self, n: int = 10, seed: int = 42, stratify: bool = False) -> list[dict]:
         self._ensure_loaded()
         if self._vl_adapter:
             return self._vl_adapter.sample(n=n, seed=seed, extract_images=True)
