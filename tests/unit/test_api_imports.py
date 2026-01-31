@@ -2,22 +2,22 @@
 """Tests for API module imports and function signature compatibility.
 
 These tests catch the class of bug where:
-- chat.py imports a function from a deprecated wrapper that is missing new parameters
-- Function signatures in wrappers diverge from the canonical source
-- New parameters added to prompt_builders aren't forwarded by orchestrator.py
+- chat.py imports a function that doesn't exist in the canonical source
+- New parameters added to prompt_builders break callers
+- Decomposed chat modules have broken imports or circular dependencies
 
 The build_root_lm_prompt import bug (commit 7b4b2da) caused ALL real_mode
 requests to crash with TypeError, producing empty benchmark results.
+The orchestrator.py facade that caused that bug was deleted in Phase 1.
 """
 
 import inspect
-from typing import get_type_hints
 
 import pytest
 
 
 class TestChatImportsResolve:
-    """Verify all imports in chat.py resolve without errors."""
+    """Verify all imports in chat.py and decomposed modules resolve without errors."""
 
     def test_chat_module_imports(self):
         """Import chat module — catches any ImportError or circular import."""
@@ -38,99 +38,120 @@ class TestChatImportsResolve:
             build_escalation_prompt,
         )
 
-    def test_orchestrator_wrapper_imports(self):
-        """Import orchestrator wrapper — catches stale re-exports."""
-        from src.api.services.orchestrator import (  # noqa: F401
-            build_root_lm_prompt,
-            extract_code_from_response,
-            auto_wrap_final,
-            classify_error,
-            build_escalation_prompt,
+    def test_chat_utils_imports(self):
+        """Import chat_utils — catches missing functions or constants."""
+        from src.api.routes.chat_utils import (  # noqa: F401
+            THREE_STAGE_CONFIG,
+            TWO_STAGE_CONFIG,
+            QWEN_STOP,
+            LONG_CONTEXT_CONFIG,
+            _estimate_tokens,
+            _is_stub_final,
+            _strip_tool_outputs,
+            _resolve_answer,
+            _truncate_looped_answer,
+            _should_formalize,
+            _formalize_output,
+        )
+
+    def test_chat_routing_imports(self):
+        """Import chat_routing — catches missing functions."""
+        from src.api.routes.chat_routing import (  # noqa: F401
+            _should_use_direct_mode,
+            _select_mode,
+            _classify_and_route,
+        )
+
+    def test_chat_react_imports(self):
+        """Import chat_react — catches missing functions."""
+        from src.api.routes.chat_react import (  # noqa: F401
+            _parse_react_args,
+            _should_use_react_mode,
+            _react_mode_answer,
+        )
+
+    def test_chat_delegation_imports(self):
+        """Import chat_delegation — catches missing functions."""
+        from src.api.routes.chat_delegation import (  # noqa: F401
+            _parse_architect_decision,
+            _architect_delegated_answer,
+        )
+
+    def test_chat_review_imports(self):
+        """Import chat_review — catches missing functions."""
+        from src.api.routes.chat_review import (  # noqa: F401
+            _detect_output_quality_issue,
+            _should_review,
+            _architect_verdict,
+            _fast_revise,
+            _needs_plan_review,
+            _architect_plan_review,
+            _apply_plan_review,
+            _store_plan_review_episode,
+            _compute_plan_review_phase,
+        )
+
+    def test_chat_vision_imports(self):
+        """Import chat_vision — catches missing functions."""
+        from src.api.routes.chat_vision import (  # noqa: F401
+            _is_ocr_heavy_prompt,
+            _needs_structured_analysis,
+            _handle_vision_request,
+            _execute_vision_tool,
+            _vision_react_mode_answer,
+            _handle_multi_file_vision,
+        )
+
+    def test_chat_summarization_imports(self):
+        """Import chat_summarization — catches missing functions."""
+        from src.api.routes.chat_summarization import (  # noqa: F401
+            _is_summarization_task,
+            _should_use_two_stage,
+            _run_two_stage_summarization,
         )
 
 
 class TestSignatureCompatibility:
-    """Verify wrapper signatures match canonical source signatures."""
-
-    def test_build_root_lm_prompt_signature_match(self):
-        """Deprecated wrapper must accept all params the canonical function does.
-
-        This is the exact bug that crashed all benchmarks: the wrapper in
-        orchestrator.py was missing the `routing_context` parameter.
-        """
-        from src.prompt_builders import build_root_lm_prompt as canonical
-        from src.api.services.orchestrator import build_root_lm_prompt as wrapper
-
-        canonical_params = set(inspect.signature(canonical).parameters.keys())
-        wrapper_params = set(inspect.signature(wrapper).parameters.keys())
-
-        # Wrapper must accept AT LEAST all canonical params
-        missing = canonical_params - wrapper_params
-        assert not missing, (
-            f"Deprecated wrapper is missing parameters: {missing}. "
-            f"Canonical has: {sorted(canonical_params)}, "
-            f"Wrapper has: {sorted(wrapper_params)}"
-        )
+    """Verify key function signatures have expected parameters."""
 
     def test_build_root_lm_prompt_routing_context(self):
-        """Specifically verify routing_context param exists everywhere."""
-        from src.prompt_builders import build_root_lm_prompt as canonical
-        from src.api.services.orchestrator import build_root_lm_prompt as wrapper
+        """Verify routing_context param exists (the param whose absence crashed benchmarks)."""
+        from src.prompt_builders import build_root_lm_prompt
 
-        canonical_sig = inspect.signature(canonical)
-        wrapper_sig = inspect.signature(wrapper)
-
-        assert "routing_context" in canonical_sig.parameters, \
-            "routing_context missing from canonical build_root_lm_prompt"
-        assert "routing_context" in wrapper_sig.parameters, \
-            "routing_context missing from wrapper build_root_lm_prompt"
-
-    def test_classify_error_signature_match(self):
-        """classify_error wrapper matches canonical."""
-        from src.prompt_builders import classify_error as canonical
-        from src.api.services.orchestrator import classify_error as wrapper
-
-        canonical_params = set(inspect.signature(canonical).parameters.keys())
-        wrapper_params = set(inspect.signature(wrapper).parameters.keys())
-
-        missing = canonical_params - wrapper_params
-        assert not missing, f"classify_error wrapper missing params: {missing}"
-
-    def test_build_escalation_prompt_signature_match(self):
-        """build_escalation_prompt wrapper matches canonical."""
-        from src.prompt_builders import build_escalation_prompt as canonical
-        from src.api.services.orchestrator import build_escalation_prompt as wrapper
-
-        canonical_params = set(inspect.signature(canonical).parameters.keys())
-        wrapper_params = set(inspect.signature(wrapper).parameters.keys())
-
-        missing = canonical_params - wrapper_params
-        assert not missing, f"build_escalation_prompt wrapper missing params: {missing}"
+        sig = inspect.signature(build_root_lm_prompt)
+        assert "routing_context" in sig.parameters, \
+            "routing_context missing from build_root_lm_prompt"
 
 
 class TestChatRouteImportSource:
     """Verify chat.py imports critical functions from the right module."""
 
-    def test_build_root_lm_prompt_from_prompt_builders(self):
-        """chat.py must import build_root_lm_prompt from prompt_builders, not the wrapper.
-
-        The wrapper is deprecated and may lag behind on new parameters.
-        """
+    def test_no_orchestrator_imports(self):
+        """chat.py must not import from deleted orchestrator.py facade."""
         import ast
         from pathlib import Path
 
         chat_path = Path(__file__).parent.parent.parent / "src" / "api" / "routes" / "chat.py"
         tree = ast.parse(chat_path.read_text())
 
-        # Find all ImportFrom nodes
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 if node.module and "orchestrator" in node.module:
                     imported_names = [alias.name for alias in node.names]
-                    assert "build_root_lm_prompt" not in imported_names, (
-                        "chat.py imports build_root_lm_prompt from deprecated orchestrator wrapper. "
-                        "Import from src.prompt_builders instead."
+                    assert False, (
+                        f"chat.py still imports from deleted orchestrator facade: {imported_names}. "
+                        f"Import from src.prompt_builders or decomposed modules instead."
                     )
+
+    def test_orchestrator_facade_deleted(self):
+        """Verify orchestrator.py facade no longer exists."""
+        from pathlib import Path
+
+        facade_path = Path(__file__).parent.parent.parent / "src" / "api" / "services" / "orchestrator.py"
+        assert not facade_path.exists(), (
+            "src/api/services/orchestrator.py still exists — it should have been deleted "
+            "during Phase 1 decomposition."
+        )
 
 
 class TestCallableSmoke:

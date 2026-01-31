@@ -114,19 +114,19 @@ class TestNeedsPlanReview:
 
     def test_bypass_trivial_complexity(self, mock_state):
         """TRIVIAL tasks should bypass review."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
         task_ir = {"objective": "What is Python?", "task_type": "chat"}
         assert _needs_plan_review(task_ir, ["frontdoor"], mock_state) is False
 
     def test_bypass_simple_complexity(self, mock_state):
         """SIMPLE tasks should bypass review."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
         task_ir = {"objective": "Fix the typo in main.py", "task_type": "code"}
         assert _needs_plan_review(task_ir, ["coder_primary"], mock_state) is False
 
     def test_bypass_complex_complexity(self, mock_state):
         """COMPLEX tasks bypass review (architect already owns plan)."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
         task_ir = {
             "objective": "Design a distributed database schema with fault-tolerant consensus protocol",
             "task_type": "code",
@@ -135,7 +135,7 @@ class TestNeedsPlanReview:
 
     def test_moderate_triggers_review(self, mock_state):
         """MODERATE complexity tasks should trigger review in Phase A."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
         task_ir = {
             "objective": "Implement error handling and then write unit tests for the module",
             "task_type": "code",
@@ -144,7 +144,7 @@ class TestNeedsPlanReview:
 
     def test_bypass_architect_role(self, mock_state):
         """Architect routing should not self-review."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
         task_ir = {
             "objective": "Implement error handling and then write unit tests for the module",
             "task_type": "code",
@@ -153,7 +153,7 @@ class TestNeedsPlanReview:
 
     def test_phase_c_stochastic_skip(self, mock_state):
         """Phase C should skip 90% of reviews stochastically."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
         mock_state.plan_review_phase = "C"
         task_ir = {
             "objective": "Implement error handling and then write unit tests for the module",
@@ -172,7 +172,7 @@ class TestNeedsPlanReview:
 
     def test_phase_b_q_value_bypass(self, mock_state):
         """Phase B should bypass review when Q-value >= 0.6."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
 
         mock_state.plan_review_phase = "B"
         mock_router = MagicMock()
@@ -189,7 +189,7 @@ class TestNeedsPlanReview:
 
     def test_phase_b_low_q_triggers_review(self, mock_state):
         """Phase B should trigger review when Q-value < 0.6."""
-        from src.api.routes.chat import _needs_plan_review
+        from src.api.routes.chat_review import _needs_plan_review
 
         mock_state.plan_review_phase = "B"
         mock_router = MagicMock()
@@ -306,7 +306,7 @@ class TestReviewPlan:
 
 class TestApplyPlanReview:
     def test_reroute_first_step(self):
-        from src.api.routes.chat import _apply_plan_review
+        from src.api.routes.chat_review import _apply_plan_review
         review = PlanReviewResult(
             decision="reroute",
             patches=[{"step": "S1", "op": "reroute", "v": "architect_general"}],
@@ -315,7 +315,7 @@ class TestApplyPlanReview:
         assert result == ["architect_general"]
 
     def test_reroute_second_step(self):
-        from src.api.routes.chat import _apply_plan_review
+        from src.api.routes.chat_review import _apply_plan_review
         review = PlanReviewResult(
             decision="reroute",
             patches=[{"step": "S2", "op": "reroute", "v": "worker_math"}],
@@ -324,7 +324,7 @@ class TestApplyPlanReview:
         assert result == ["coder_primary", "worker_math"]
 
     def test_no_patches_returns_unchanged(self):
-        from src.api.routes.chat import _apply_plan_review
+        from src.api.routes.chat_review import _apply_plan_review
         review = PlanReviewResult(decision="ok", patches=[])
         result = _apply_plan_review(["coder_primary"], review)
         assert result == ["coder_primary"]
@@ -335,17 +335,17 @@ class TestApplyPlanReview:
 
 class TestComputePlanReviewPhase:
     def test_phase_a_low_reviews(self):
-        from src.api.routes.chat import _compute_plan_review_phase
+        from src.api.routes.chat_review import _compute_plan_review_phase
         stats = {"total_reviews": 10, "task_class_q_values": {}}
         assert _compute_plan_review_phase(stats) == "A"
 
     def test_phase_a_no_q_values(self):
-        from src.api.routes.chat import _compute_plan_review_phase
+        from src.api.routes.chat_review import _compute_plan_review_phase
         stats = {"total_reviews": 60, "task_class_q_values": {}}
         assert _compute_plan_review_phase(stats) == "A"
 
     def test_phase_b_moderate_q(self):
-        from src.api.routes.chat import _compute_plan_review_phase
+        from src.api.routes.chat_review import _compute_plan_review_phase
         stats = {
             "total_reviews": 60,
             "task_class_q_values": {"code": 0.8, "chat": 0.6},
@@ -353,7 +353,7 @@ class TestComputePlanReviewPhase:
         assert _compute_plan_review_phase(stats) == "B"
 
     def test_phase_c_high_q(self):
-        from src.api.routes.chat import _compute_plan_review_phase
+        from src.api.routes.chat_review import _compute_plan_review_phase
         stats = {
             "total_reviews": 150,
             "task_class_q_values": {"code": 0.9, "chat": 0.8},
@@ -361,7 +361,7 @@ class TestComputePlanReviewPhase:
         assert _compute_plan_review_phase(stats) == "C"
 
     def test_phase_a_when_min_q_too_low(self):
-        from src.api.routes.chat import _compute_plan_review_phase
+        from src.api.routes.chat_review import _compute_plan_review_phase
         stats = {
             "total_reviews": 60,
             "task_class_q_values": {"code": 0.9, "chat": 0.3},
@@ -374,7 +374,7 @@ class TestComputePlanReviewPhase:
 
 class TestStorePlanReviewEpisode:
     def test_stores_progress_log_entry(self, mock_state):
-        from src.api.routes.chat import _store_plan_review_episode
+        from src.api.routes.chat_review import _store_plan_review_episode
 
         mock_state.progress_logger = MagicMock()
         mock_state.q_scorer = None
@@ -392,7 +392,7 @@ class TestStorePlanReviewEpisode:
         assert entry.data["score"] == 0.9
 
     def test_updates_stats(self, mock_state):
-        from src.api.routes.chat import _store_plan_review_episode
+        from src.api.routes.chat_review import _store_plan_review_episode
 
         review = PlanReviewResult(decision="reroute", score=0.6, feedback="fix routing")
         task_ir = {"objective": "Build API", "task_type": "code"}
@@ -404,7 +404,7 @@ class TestStorePlanReviewEpisode:
         assert mock_state._plan_review_stats["approved"] == 0
 
     def test_approved_increments_approved(self, mock_state):
-        from src.api.routes.chat import _store_plan_review_episode
+        from src.api.routes.chat_review import _store_plan_review_episode
 
         review = PlanReviewResult(decision="ok", score=0.9)
         task_ir = {"objective": "Fix bug", "task_type": "code"}
@@ -415,7 +415,7 @@ class TestStorePlanReviewEpisode:
         assert mock_state._plan_review_stats["corrected"] == 0
 
     def test_stores_memrl_episode(self, mock_state):
-        from src.api.routes.chat import _store_plan_review_episode
+        from src.api.routes.chat_review import _store_plan_review_episode
 
         mock_state.q_scorer = MagicMock()
         mock_state.hybrid_router = MagicMock()

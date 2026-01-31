@@ -37,7 +37,7 @@ class TestVisionConstants:
 
     def test_qwen_stop_constant_exists(self):
         """QWEN_STOP constant exists and equals '<|im_end|>'."""
-        from src.api.routes.chat import QWEN_STOP
+        from src.api.routes.chat_utils import QWEN_STOP
 
         assert QWEN_STOP == "<|im_end|>"
 
@@ -55,7 +55,7 @@ class TestVisionConstants:
 
 def _run_async(coro):
     """Run an async coroutine synchronously for testing."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class TestExecuteVisionTool:
@@ -63,14 +63,14 @@ class TestExecuteVisionTool:
 
     def test_calculate_tool(self):
         """calculate(expression="2+3") returns '5'."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         result = _run_async(_execute_vision_tool('calculate(expression="2+3")', "dummy_b64"))
         assert result == "5"
 
     def test_get_current_date(self):
         """get_current_date() returns a date string."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         result = _run_async(_execute_vision_tool("get_current_date()", "dummy_b64"))
         # Should contain year-month-day pattern
@@ -79,7 +79,7 @@ class TestExecuteVisionTool:
 
     def test_get_current_time(self):
         """get_current_time() returns an ISO timestamp."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         result = _run_async(_execute_vision_tool("get_current_time()", "dummy_b64"))
         assert "T" in result  # ISO format has T separator
@@ -87,7 +87,7 @@ class TestExecuteVisionTool:
     @patch("httpx.AsyncClient")
     def test_ocr_extract_success(self, mock_client_cls):
         """ocr_extract sends POST to port 9001 and returns text."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -107,7 +107,7 @@ class TestExecuteVisionTool:
     @patch("httpx.AsyncClient")
     def test_ocr_extract_http_error(self, mock_client_cls):
         """OCR HTTP error returns error message."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         mock_resp = MagicMock()
         mock_resp.status_code = 500
@@ -125,7 +125,7 @@ class TestExecuteVisionTool:
 
     def test_unknown_tool(self):
         """Unknown tool returns error listing available tools."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         result = _run_async(
             _execute_vision_tool('unknown_tool(arg="val")', "dummy_b64")
@@ -138,7 +138,7 @@ class TestExecuteVisionTool:
 
     def test_unparseable_action(self):
         """Unparseable action string returns parse error."""
-        from src.api.routes.chat import _execute_vision_tool
+        from src.api.routes.chat_vision import _execute_vision_tool
 
         result = _run_async(
             _execute_vision_tool("this is not a valid action", "dummy_b64")

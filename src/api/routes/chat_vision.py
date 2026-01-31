@@ -1,0 +1,673 @@
+"""Vision pipeline for chat endpoints.
+
+Extracted from chat.py during Phase 1 decomposition.
+Contains: OCR pre-processing, VL model routing, vision ReAct loop,
+multi-file vision handling, and structured analysis.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from src.prompt_builders import (
+    VISION_REACT_EXECUTABLE_TOOLS,
+    VISION_TOOL_DESCRIPTIONS,
+)
+from src.api.routes.chat_utils import QWEN_STOP
+
+if TYPE_CHECKING:
+    from src.api.models import ChatRequest
+    from src.api.state import AppState
+    from src.llm_primitives import LLMPrimitives
+
+
+def _is_ocr_heavy_prompt(prompt: str) -> bool:
+    """Detect if a vision prompt would benefit from deterministic OCR pre-processing.
+
+    ALWAYS returns True — OCR is cheap (~1s via LightOnOCR-2-1B on port 9001)
+    and provides text context that helps the VL model for ANY task:
+    - Text extraction: OCR is primary answer source
+    - Chart analysis: OCR extracts axis labels, values, legends
+    - Document analysis: OCR extracts full text for Twyne/whitepaper/protocol analysis
+    - Scene understanding: OCR captures signage, labels, text overlays
+
+    Args:
+        prompt: The user's vision prompt.
+
+    Returns:
+        Always True. OCR context is universally beneficial.
+    """
+    return True
+
+
+def _needs_structured_analysis(prompt: str) -> bool:
+    """Detect if a vision prompt needs full structured analysis beyond OCR.
+
+    Structured analysis triggers VisionPipeline with VL_STRUCTURED analyzer
+    for document forensics, diagram parsing, protocol architecture, etc.
+
+    Args:
+        prompt: The user's vision prompt.
+
+    Returns:
+        True if structured analysis should complement OCR.
+    """
+    prompt_lower = prompt.lower()
+    structured_keywords = [
+        "analyze", "architecture", "diagram", "protocol",
+        "economic model", "security audit", "security analysis",
+        "whitepaper", "smart contract", "incentive",
+        "trust assumption", "attack vector", "forensic",
+        "entity extraction", "business relationship",
+        "flow chart", "flowchart", "sequence diagram",
+        "system design", "data flow", "state machine",
+    ]
+    return any(kw in prompt_lower for kw in structured_keywords)
+
+
+async def _handle_vision_request(
+    request: "ChatRequest",
+    primitives: "LLMPrimitives",
+    state: "AppState",
+    task_id: str,
+    force_server: str | None = None,
+) -> str:
+    """Route a vision request through OCR + VL pipeline.
+
+    For OCR-heavy prompts (text extraction, sign reading):
+    1. LightOnOCR-2-1B (port 9001) extracts text deterministically
+    2. Extracted text + image + prompt sent to VL model for understanding
+
+    For non-OCR prompts (chart analysis, scene understanding):
+    1. Image + prompt sent directly to VL model
+
+    Fallback chain for VL:
+    1. VL worker (port 8086, Qwen2.5-VL-7B, ~15 t/s)
+    2. VL escalation (port 8087, Qwen3-VL-30B-A3B, ~10 t/s)
+    3. Vision pipeline endpoint (legacy subprocess path)
+
+    Args:
+        request: Chat request with image_path or image_base64.
+        primitives: LLMPrimitives (unused, for interface compat).
+        state: Application state.
+        task_id: Task ID for logging.
+        force_server: Optional server constraint. "worker_vision" uses only
+            port 8086, "vision_escalation" uses only port 8087. None uses
+            the default fallback chain.
+
+    Returns:
+        Answer string from the vision model.
+    """
+    import httpx
+    import base64
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Get image as base64
+    image_b64 = request.image_base64
+    if not image_b64 and request.image_path:
+        from pathlib import Path
+        img_path = Path(request.image_path)
+        if not img_path.exists():
+            raise RuntimeError(f"Image not found: {request.image_path}")
+        image_b64 = base64.b64encode(img_path.read_bytes()).decode("utf-8")
+
+    if not image_b64:
+        raise RuntimeError("No image data provided (need image_path or image_base64)")
+
+    # ── Always-on OCR pre-processing (~1s, deterministic, port 9001) ─────
+    ocr_text = ""
+    try:
+        from src.services.document_client import get_document_client
+        client = get_document_client()
+        ocr_result = await client.ocr_image(
+            image=image_b64,
+            output_format="text",
+        )
+        ocr_text = ocr_result.text.strip() if ocr_result.text else ""
+        if ocr_text:
+            logger.info(f"OCR pre-processing extracted {len(ocr_text)} chars for VL")
+    except Exception as e:
+        logger.warning(f"OCR pre-processing failed (continuing without): {e}")
+        ocr_text = ""
+
+    # ── Structured analysis for document/diagram prompts ───────────────
+    structured_context = ""
+    if _needs_structured_analysis(request.prompt):
+        try:
+            from src.vision.pipeline import VisionPipeline
+            import io
+            from PIL import Image
+
+            # Decode base64 to PIL Image for VisionPipeline
+            img_bytes = base64.b64decode(image_b64)
+            pil_image = Image.open(io.BytesIO(img_bytes))
+
+            pipeline = VisionPipeline()
+            result = pipeline.analyze(pil_image, analyzers=["vl_structured", "vl_ocr"])
+
+            # Format structured findings
+            parts = []
+            if hasattr(result, "structured") and result.structured:
+                parts.append(f"Structured elements:\n{result.structured}")
+            if hasattr(result, "description") and result.description:
+                parts.append(f"Visual description:\n{result.description}")
+            structured_context = "\n\n".join(parts)
+            if structured_context:
+                logger.info(f"Structured analysis added {len(structured_context)} chars context")
+        except ImportError:
+            logger.debug("VisionPipeline not available, skipping structured analysis")
+        except Exception as e:
+            logger.warning(f"Structured analysis failed (continuing without): {e}")
+
+    # Build VL prompt — inject OCR text and structured context
+    vl_prompt = request.prompt
+    context_parts = []
+    if ocr_text:
+        context_parts.append(f"OCR-extracted text from image:\n---\n{ocr_text}\n---")
+    if structured_context:
+        context_parts.append(f"Structured analysis:\n---\n{structured_context}\n---")
+    if context_parts:
+        context_block = "\n\n".join(context_parts)
+        vl_prompt = (
+            f"{context_block}\n\n"
+            f"Using the above extracted information and the image, answer:\n{request.prompt}"
+        )
+
+    # Detect image MIME type from header bytes
+    mime_type = "image/jpeg"  # default
+    try:
+        raw = base64.b64decode(image_b64[:32])
+        if raw[:4] == b'\x89PNG':
+            mime_type = "image/png"
+        elif raw[:4] == b'RIFF':
+            mime_type = "image/webp"
+    except Exception:
+        pass
+
+    # Build multimodal chat completion payload for llama-server
+    vl_payload = {
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{image_b64}",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": vl_prompt,
+                    },
+                ],
+            }
+        ],
+        "max_tokens": 2048,
+        "temperature": 0.0,
+        "stop": [QWEN_STOP],
+    }
+
+    # Try VL servers — constrained if force_server is set
+    if force_server == "worker_vision":
+        vl_servers = [("worker_vision", "http://localhost:8086")]
+    elif force_server == "vision_escalation":
+        vl_servers = [("vision_escalation", "http://localhost:8087")]
+    else:
+        vl_servers = [
+            ("worker_vision", "http://localhost:8086"),
+            ("vision_escalation", "http://localhost:8087"),
+        ]
+
+    last_error = None
+    for server_name, server_url in vl_servers:
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    f"{server_url}/v1/chat/completions",
+                    json=vl_payload,
+                )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                # Extract answer from chat completions format
+                choices = data.get("choices", [])
+                if choices:
+                    content = choices[0].get("message", {}).get("content", "")
+                    if content:
+                        logger.info(f"VL answer from {server_name} ({len(content)} chars)")
+                        return content.strip()
+
+                # Try legacy completion format
+                content = data.get("content", "")
+                if content:
+                    return content.strip()
+
+                last_error = f"{server_name}: empty response"
+                logger.warning(f"VL {server_name}: got 200 but empty content")
+            else:
+                last_error = f"{server_name}: HTTP {resp.status_code}"
+                logger.warning(f"VL {server_name}: HTTP {resp.status_code}: {resp.text[:200]}")
+
+        except httpx.ConnectError:
+            last_error = f"{server_name}: connection refused (server not running?)"
+            logger.warning(f"VL {server_name}: connection refused at {server_url}")
+        except Exception as e:
+            last_error = f"{server_name}: {type(e).__name__}: {e}"
+            logger.warning(f"VL {server_name} failed: {type(e).__name__}: {e}")
+
+    # All VL servers failed — try legacy vision pipeline as last resort
+    logger.warning(f"All VL servers failed ({last_error}), trying vision pipeline")
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            legacy_payload = {
+                "image_path": request.image_path,
+                "image_base64": request.image_base64,
+                "analyzers": ["vl_describe"],
+                "vl_prompt": request.prompt,
+                "store_results": False,
+            }
+            resp = await client.post(
+                "http://localhost:8000/vision/analyze",
+                json=legacy_payload,
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            # AnalyzeResult has .description at top level
+            description = data.get("description", "")
+            if description:
+                return description
+    except Exception as e:
+        logger.warning(f"Legacy vision pipeline also failed: {e}")
+
+    raise RuntimeError(f"All vision paths failed. Last error: {last_error}")
+
+
+async def _execute_vision_tool(
+    action_str: str,
+    image_b64: str,
+) -> str:
+    """Execute a tool invoked from the vision ReAct loop.
+
+    Dispatches to:
+    - ocr_extract → POST to LightOnOCR port 9001
+    - calculate, get_current_date, etc. → standard Python eval
+
+    Args:
+        action_str: Parsed action string, e.g. 'ocr_extract(image_base64="...")'.
+        image_b64: The base64 image data (injected for ocr_extract).
+
+    Returns:
+        Observation string from tool execution.
+    """
+    import re as _re
+    import logging
+
+    log = logging.getLogger(__name__)
+
+    tool_match = _re.match(r"(\w+)\((.*)\)$", action_str, _re.DOTALL)
+    if not tool_match:
+        return f"[ERROR: Could not parse action: {action_str}]"
+
+    tool_name = tool_match.group(1)
+    args_str = tool_match.group(2)
+
+    if tool_name == "ocr_extract":
+        # Route to LightOnOCR on port 9001
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(
+                    "http://localhost:9001/v1/document/ocr",
+                    json={"image_base64": image_b64},
+                )
+            if resp.status_code == 200:
+                data = resp.json()
+                text = data.get("text", data.get("full_text", ""))
+                if text:
+                    return text[:4000]  # Cap observation length
+                return "[OCR returned empty text]"
+            return f"[OCR error: HTTP {resp.status_code}]"
+        except Exception as e:
+            log.warning(f"OCR tool execution failed: {e}")
+            return f"[OCR error: {type(e).__name__}: {e}]"
+
+    elif tool_name == "calculate":
+        # Safe math evaluation
+        try:
+            # Parse expression from args
+            expr_match = _re.search(r'expression\s*=\s*"([^"]*)"', args_str)
+            if not expr_match:
+                expr_match = _re.search(r'expression\s*=\s*\'([^\']*)\'', args_str)
+            if expr_match:
+                import ast
+                result = eval(compile(ast.parse(expr_match.group(1), mode='eval'), '<calc>', 'eval'))
+                return str(result)
+            return "[ERROR: Could not parse calculate expression]"
+        except Exception as e:
+            return f"[Calculate error: {e}]"
+
+    elif tool_name in ("get_current_date", "get_current_time"):
+        from datetime import datetime
+        now = datetime.utcnow()
+        if tool_name == "get_current_date":
+            return now.strftime("%Y-%m-%d (%A)")
+        return now.isoformat()
+
+    else:
+        available = ", ".join(sorted(VISION_REACT_EXECUTABLE_TOOLS))
+        return f"[Tool '{tool_name}' not available in vision ReAct mode. Available: {available}]"
+
+
+async def _vision_react_mode_answer(
+    prompt: str,
+    image_b64: str,
+    mime_type: str,
+    context: str = "",
+    vl_port: int = 8086,
+    max_turns: int = 5,
+) -> tuple[str, int]:
+    """Vision-aware ReAct loop using direct VL backend calls.
+
+    Unlike _react_mode_answer() which uses primitives.llm_call() (text-only),
+    this sends multimodal messages directly to VL backend via httpx with
+    OpenAI /v1/chat/completions format.
+
+    The image is included in the first user message only. Subsequent turns
+    are text-only (tool observations). The VL model's context window carries
+    the image forward across turns.
+
+    Args:
+        prompt: The user's question.
+        image_b64: Base64-encoded image data.
+        mime_type: Image MIME type (e.g. "image/png").
+        context: Optional text context.
+        vl_port: VL backend port (8086=worker_vision, 8087=vision_escalation).
+        max_turns: Maximum Thought/Action/Observation cycles.
+
+    Returns:
+        Tuple of (final_answer, tools_used_count).
+    """
+    import httpx
+    import logging
+
+    log = logging.getLogger(__name__)
+    tools_used = 0
+    tools_called: list[str] = []
+
+    # Build tool descriptions from single source of truth
+    tool_descriptions = [f"- {desc}" for desc in VISION_TOOL_DESCRIPTIONS.values()]
+
+    react_system = f"""You have access to the following tools:
+{chr(10).join(tool_descriptions)}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: reason about what to do next
+Action: tool_name(arg1="value1")
+Observation: the result of the action
+... (repeat Thought/Action/Observation as needed, up to {max_turns} times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original question
+
+Important rules:
+- Always start with a Thought before an Action
+- To use OCR on the image, call: Action: ocr_extract(image_base64="current")
+- After each Observation, decide if you have enough info for a Final Answer
+- If no tools are needed, skip directly to Final Answer
+- Be concise in your Final Answer — answer the question directly"""
+
+    # Build initial messages — image in first user message
+    context_prefix = f"Context:\n{context}\n\n" if context else ""
+    question_text = f"{react_system}\n\n{context_prefix}Question: {prompt}"
+
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{image_b64}",
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": question_text,
+                },
+            ],
+        }
+    ]
+
+    vl_url = f"http://localhost:{vl_port}/v1/chat/completions"
+
+    for turn in range(max_turns):
+        # Call VL backend
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    vl_url,
+                    json={
+                        "messages": messages,
+                        "max_tokens": 2048,
+                        "temperature": 0.0,
+                        "stop": [QWEN_STOP],
+                    },
+                )
+
+            if resp.status_code != 200:
+                log.warning(f"Vision ReAct turn {turn}: HTTP {resp.status_code}")
+                break
+
+            data = resp.json()
+            choices = data.get("choices", [])
+            if not choices:
+                log.warning(f"Vision ReAct turn {turn}: no choices in response")
+                break
+
+            response_text = choices[0].get("message", {}).get("content", "").strip()
+            if not response_text:
+                log.warning(f"Vision ReAct turn {turn}: empty content")
+                break
+
+        except Exception as e:
+            log.warning(f"Vision ReAct turn {turn} failed: {e}")
+            break
+
+        # Append assistant response
+        messages.append({"role": "assistant", "content": response_text})
+
+        # Check for Final Answer
+        if "Final Answer:" in response_text:
+            idx = response_text.index("Final Answer:")
+            answer = response_text[idx + len("Final Answer:"):].strip()
+            log.info(f"Vision ReAct completed in {turn + 1} turns, {tools_used} tools")
+            return answer, tools_used, tools_called
+
+        # Parse Action line
+        action_match = None
+        for line in response_text.split("\n"):
+            line = line.strip()
+            if line.startswith("Action:"):
+                action_match = line[len("Action:"):].strip()
+                break
+
+        if not action_match:
+            # No action and no final answer — treat response as answer
+            log.info(f"Vision ReAct turn {turn}: no Action, treating as answer")
+            # Strip Thought: prefix
+            lines = response_text.split("\n")
+            answer_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith("Thought:"):
+                    stripped = stripped[len("Thought:"):].strip()
+                answer_lines.append(stripped)
+            return "\n".join(answer_lines).strip(), tools_used, tools_called
+
+        # Execute the tool — extract name for tracking
+        import re as _re_vt
+        _vt_match = _re_vt.match(r"(\w+)\(", action_match)
+        _vt_name = _vt_match.group(1) if _vt_match else action_match
+        tools_used += 1
+        tools_called.append(_vt_name)
+        observation = await _execute_vision_tool(action_match, image_b64)
+        log.info(f"Vision ReAct turn {turn}: {action_match[:50]} → {len(observation)} chars")
+
+        # Append observation as user message (text-only — no image re-send)
+        messages.append({
+            "role": "user",
+            "content": f"Observation: {observation}",
+        })
+
+    # Max turns exhausted — synthesize from conversation
+    log.warning(f"Vision ReAct exhausted {max_turns} turns")
+    # Ask for final answer
+    messages.append({
+        "role": "user",
+        "content": "You have used all available turns. Please provide your Final Answer now.",
+    })
+
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                vl_url,
+                json={
+                    "messages": messages,
+                    "max_tokens": 2048,
+                    "temperature": 0.0,
+                    "stop": [QWEN_STOP],
+                },
+            )
+        if resp.status_code == 200:
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                content = choices[0].get("message", {}).get("content", "").strip()
+                if "Final Answer:" in content:
+                    idx = content.index("Final Answer:")
+                    return content[idx + len("Final Answer:"):].strip(), tools_used, tools_called
+                return content, tools_used, tools_called
+    except Exception as e:
+        log.warning(f"Vision ReAct final synthesis failed: {e}")
+
+    return "[Vision ReAct: no answer produced]", tools_used, tools_called
+
+
+async def _handle_multi_file_vision(
+    request: "ChatRequest",
+    primitives: "LLMPrimitives",
+    state: "AppState",
+    task_id: str,
+) -> str:
+    """Handle vision requests with multiple files or archives.
+
+    For archives (zip, tar, etc.): Extract → process each file → aggregate.
+    For multiple files: Process each → aggregate via MultiDocumentResult.
+
+    Uses:
+    - ArchiveExtractor for ZIP/TAR/7Z extraction with security constraints
+    - DocumentFormalizerClient for multi-page PDF OCR
+    - BatchProcessor for parallel image processing
+    - Two-stage summarization for synthesis
+
+    Args:
+        request: Chat request with files field.
+        primitives: LLMPrimitives for synthesis.
+        state: Application state.
+        task_id: Task ID for logging.
+
+    Returns:
+        Synthesized answer from all files.
+    """
+    import logging
+    from pathlib import Path
+    from src.api.routes.chat_summarization import _run_two_stage_summarization
+
+    logger = logging.getLogger(__name__)
+    files = request.files or []
+
+    if not files:
+        raise RuntimeError("No files provided")
+
+    # Check for archives
+    archive_extensions = {".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".7z"}
+    extracted_files = []
+
+    for fpath in files:
+        p = Path(fpath)
+        suffix = "".join(p.suffixes).lower()
+        if suffix in archive_extensions or p.suffix.lower() in archive_extensions:
+            try:
+                from src.services.archive_extractor import ArchiveExtractor
+                extractor = ArchiveExtractor()
+                manifest = extractor.list_contents(fpath)
+                logger.info(
+                    f"Archive {p.name}: {manifest.total_files} files, "
+                    f"{manifest.total_size_bytes / 1024:.1f}KB"
+                )
+                # Extract all (respects security limits: 500MB max, 1000 files max)
+                result = extractor.extract_all(fpath)
+                extracted_files.extend(str(ef) for ef in result.extracted_paths)
+            except Exception as e:
+                logger.warning(f"Archive extraction failed for {fpath}: {e}")
+                extracted_files.append(fpath)  # Try to process as-is
+        else:
+            extracted_files.append(fpath)
+
+    if not extracted_files:
+        raise RuntimeError("No files to process after extraction")
+
+    # Process each file — OCR for documents, VisionPipeline for images
+    file_results = []
+    for fpath in extracted_files:
+        p = Path(fpath)
+        try:
+            if p.suffix.lower() == ".pdf":
+                # Multi-page PDF via DocumentFormalizerClient
+                from src.services.document_client import get_document_client
+                client = get_document_client()
+                ocr_result = await client.ocr_pdf_with_partial_success(fpath)
+                file_results.append(
+                    f"[File: {p.name}]\n{ocr_result.text or '[OCR failed]'}"
+                )
+            elif p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}:
+                # Single image — OCR + VL
+                import base64
+                img_b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
+                from src.services.document_client import get_document_client
+                client = get_document_client()
+                ocr_result = await client.ocr_image(image=img_b64, output_format="text")
+                file_results.append(
+                    f"[File: {p.name}]\n{ocr_result.text or '[No text extracted]'}"
+                )
+            else:
+                # Text files
+                content = p.read_text(errors="replace")[:10000]
+                file_results.append(f"[File: {p.name}]\n{content}")
+        except Exception as e:
+            file_results.append(f"[File: {p.name}] Error: {e}")
+
+    # Synthesize: two-stage if many files, direct if few
+    all_content = "\n\n".join(file_results)
+    if len(all_content) > 20000:
+        answer, _stats = await _run_two_stage_summarization(
+            request.prompt, all_content, primitives, state, task_id,
+        )
+    else:
+        synthesis_prompt = (
+            f"{all_content}\n\n"
+            f"Based on the files above, answer:\n{request.prompt}"
+        )
+        answer = primitives.llm_call(
+            synthesis_prompt,
+            role="frontdoor",
+            n_tokens=2048,
+            skip_suffix=True,
+        )
+
+    return answer.strip()

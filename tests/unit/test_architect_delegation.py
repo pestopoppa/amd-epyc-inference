@@ -24,7 +24,7 @@ class TestParseArchitectDecision:
     """Tests for _parse_architect_decision()."""
 
     def test_toon_direct(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision("D|The answer is 42")
         assert result["mode"] == "direct"
@@ -32,7 +32,7 @@ class TestParseArchitectDecision:
         assert result["brief"] == ""
 
     def test_toon_investigate(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
             "I|brief:Check src/api.py for error handling|to:coder_primary"
@@ -43,7 +43,7 @@ class TestParseArchitectDecision:
         assert result["delegate_mode"] == "react"
 
     def test_toon_investigate_repl_mode(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
             "I|brief:Draft implementation doc|to:coder_primary|mode:repl"
@@ -53,7 +53,7 @@ class TestParseArchitectDecision:
         assert result["delegate_mode"] == "repl"
 
     def test_json_direct(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         payload = json.dumps({"mode": "direct", "answer": "The answer is 42"})
         result = _parse_architect_decision(payload)
@@ -61,7 +61,7 @@ class TestParseArchitectDecision:
         assert result["answer"] == "The answer is 42"
 
     def test_json_investigate(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         payload = json.dumps({
             "mode": "investigate",
@@ -74,7 +74,7 @@ class TestParseArchitectDecision:
         assert result["delegate_to"] == "worker_explore"
 
     def test_markdown_wrapped_json(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         wrapped = '```json\n{"mode": "direct", "answer": "hello"}\n```'
         result = _parse_architect_decision(wrapped)
@@ -82,14 +82,14 @@ class TestParseArchitectDecision:
         assert result["answer"] == "hello"
 
     def test_fallback_bare_text(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision("Just a plain text answer with no format")
         assert result["mode"] == "direct"
         assert result["answer"] == "Just a plain text answer with no format"
 
     def test_invalid_role_clamped(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
             "I|brief:Check something|to:nonexistent_role"
@@ -98,7 +98,7 @@ class TestParseArchitectDecision:
         assert result["delegate_to"] == "coder_primary"
 
     def test_invalid_mode_clamped(self):
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
             "I|brief:Check something|to:coder_primary|mode:invalid"
@@ -129,7 +129,7 @@ class TestArchitectDelegatedAnswer:
 
     def test_direct_answer_no_loops(self):
         """Architect answers directly — no delegation loops."""
-        from src.api.routes.chat import _architect_delegated_answer
+        from src.api.routes.chat_delegation import _architect_delegated_answer
 
         primitives = self._mock_primitives(["D|The answer is 42"])
         state = self._mock_state()
@@ -147,7 +147,7 @@ class TestArchitectDelegatedAnswer:
 
     def test_one_investigation_loop(self):
         """Architect investigates once, then synthesizes."""
-        from src.api.routes.chat import _architect_delegated_answer
+        from src.api.routes.chat_delegation import _architect_delegated_answer
 
         responses = [
             # Loop 0 Phase A: architect decides to investigate
@@ -162,7 +162,7 @@ class TestArchitectDelegatedAnswer:
 
         # Mock _react_mode_answer to avoid needing real ReAct loop
         with patch(
-            "src.api.routes.chat._react_mode_answer",
+            "src.api.routes.chat_delegation._react_mode_answer",
             return_value=("File contents: error handling at line 42", 2),
         ):
             answer, stats = _architect_delegated_answer(
@@ -178,7 +178,7 @@ class TestArchitectDelegatedAnswer:
 
     def test_multi_loop_investigation(self):
         """Architect requests two investigations before answering."""
-        from src.api.routes.chat import _architect_delegated_answer
+        from src.api.routes.chat_delegation import _architect_delegated_answer
 
         responses = [
             # Loop 0 Phase A: first investigation request
@@ -193,7 +193,7 @@ class TestArchitectDelegatedAnswer:
         state = self._mock_state()
 
         with patch(
-            "src.api.routes.chat._react_mode_answer",
+            "src.api.routes.chat_delegation._react_mode_answer",
             side_effect=[("Report from A", 1), ("Report from B", 3)],
         ):
             answer, stats = _architect_delegated_answer(
@@ -209,7 +209,7 @@ class TestArchitectDelegatedAnswer:
 
     def test_max_loops_cap_forces_response(self):
         """When architect keeps investigating past max_loops, force synthesis."""
-        from src.api.routes.chat import _architect_delegated_answer
+        from src.api.routes.chat_delegation import _architect_delegated_answer
 
         responses = [
             # Loop 0: investigate
@@ -226,7 +226,7 @@ class TestArchitectDelegatedAnswer:
         state = self._mock_state()
 
         with patch(
-            "src.api.routes.chat._react_mode_answer",
+            "src.api.routes.chat_delegation._react_mode_answer",
             side_effect=[("Report X", 1), ("Report Y", 1), ("Report Z", 1)],
         ):
             answer, stats = _architect_delegated_answer(
@@ -243,7 +243,7 @@ class TestArchitectDelegatedAnswer:
 
     def test_specialist_document_passthrough(self):
         """Specialist drafts document, architect says 'Approved' → document is answer."""
-        from src.api.routes.chat import _architect_delegated_answer
+        from src.api.routes.chat_delegation import _architect_delegated_answer
 
         responses = [
             # Loop 0: architect requests REPL drafting
@@ -258,7 +258,7 @@ class TestArchitectDelegatedAnswer:
         specialist_doc = "def hello():\n    return 'world'"
 
         with patch(
-            "src.api.routes.chat.REPLEnvironment",
+            "src.api.routes.chat_delegation.REPLEnvironment",
         ) as mock_repl_cls:
             # Mock REPL to produce a document
             mock_repl = MagicMock()
@@ -286,7 +286,7 @@ class TestArchitectDelegatedAnswer:
 
     def test_delegate_role_validation(self):
         """Invalid delegate role gets clamped to coder_primary."""
-        from src.api.routes.chat import _parse_architect_decision
+        from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
             "I|brief:Do something|to:invalid_role_xyz"

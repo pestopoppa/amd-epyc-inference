@@ -18,41 +18,41 @@ class TestParseReactArgs:
     """Tests for _parse_react_args()."""
 
     def test_empty_string(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         assert _parse_react_args("") == {}
 
     def test_single_string_arg(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         result = _parse_react_args('query="quantum computing"')
         assert result == {"query": "quantum computing"}
 
     def test_multiple_args(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         result = _parse_react_args('query="machine learning", max_results=5')
         assert result == {"query": "machine learning", "max_results": 5}
 
     def test_numeric_arg(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         result = _parse_react_args("expression=\"2+2\"")
         assert result == {"expression": "2+2"}
 
     def test_single_quotes(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         result = _parse_react_args("query='test value'")
         assert result == {"query": "test value"}
 
     def test_boolean_arg(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         result = _parse_react_args("verbose=True")
         assert result == {"verbose": True}
 
     def test_comma_in_quoted_string(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         result = _parse_react_args('query="hello, world"')
         assert result == {"query": "hello, world"}
 
     def test_no_equals(self):
-        from src.api.routes.chat import _parse_react_args
+        from src.api.routes.chat_react import _parse_react_args
         # Should skip parts without =
         result = _parse_react_args("orphan_value")
         assert result == {}
@@ -61,39 +61,39 @@ class TestParseReactArgs:
 class TestShouldUseReactMode:
     """Tests for _should_use_react_mode()."""
 
-    @patch("src.api.routes.chat.features")
+    @patch("src.api.routes.chat_react.features")
     def test_disabled_by_feature_flag(self, mock_features):
-        from src.api.routes.chat import _should_use_react_mode
+        from src.api.routes.chat_react import _should_use_react_mode
         mock_features.return_value = MagicMock(react_mode=False)
         assert _should_use_react_mode("search for quantum computing") is False
 
-    @patch("src.api.routes.chat.features")
+    @patch("src.api.routes.chat_react.features")
     def test_enabled_with_search_keyword(self, mock_features):
-        from src.api.routes.chat import _should_use_react_mode
+        from src.api.routes.chat_react import _should_use_react_mode
         mock_features.return_value = MagicMock(react_mode=True)
         assert _should_use_react_mode("search for quantum computing papers") is True
 
-    @patch("src.api.routes.chat.features")
+    @patch("src.api.routes.chat_react.features")
     def test_enabled_with_calculate(self, mock_features):
-        from src.api.routes.chat import _should_use_react_mode
+        from src.api.routes.chat_react import _should_use_react_mode
         mock_features.return_value = MagicMock(react_mode=True)
         assert _should_use_react_mode("calculate the area of a circle with radius 5") is True
 
-    @patch("src.api.routes.chat.features")
+    @patch("src.api.routes.chat_react.features")
     def test_enabled_with_date_query(self, mock_features):
-        from src.api.routes.chat import _should_use_react_mode
+        from src.api.routes.chat_react import _should_use_react_mode
         mock_features.return_value = MagicMock(react_mode=True)
         assert _should_use_react_mode("what is the current date?") is True
 
-    @patch("src.api.routes.chat.features")
+    @patch("src.api.routes.chat_react.features")
     def test_no_match_on_plain_question(self, mock_features):
-        from src.api.routes.chat import _should_use_react_mode
+        from src.api.routes.chat_react import _should_use_react_mode
         mock_features.return_value = MagicMock(react_mode=True)
         assert _should_use_react_mode("explain the theory of relativity") is False
 
-    @patch("src.api.routes.chat.features")
+    @patch("src.api.routes.chat_react.features")
     def test_large_context_prevents_react(self, mock_features):
-        from src.api.routes.chat import _should_use_react_mode
+        from src.api.routes.chat_react import _should_use_react_mode
         mock_features.return_value = MagicMock(react_mode=True)
         assert _should_use_react_mode("search for info", "x" * 6000) is False
 
@@ -103,7 +103,7 @@ class TestReactModeAnswer:
 
     def test_direct_final_answer(self):
         """LLM immediately produces a Final Answer."""
-        from src.api.routes.chat import _react_mode_answer
+        from src.api.routes.chat_react import _react_mode_answer
 
         mock_primitives = MagicMock()
         mock_primitives.llm_call.return_value = (
@@ -111,7 +111,7 @@ class TestReactModeAnswer:
             "Final Answer: 42"
         )
 
-        result, tools = _react_mode_answer(
+        result, tools, _ = _react_mode_answer(
             prompt="What is 6 times 7?",
             context="",
             primitives=mock_primitives,
@@ -123,7 +123,7 @@ class TestReactModeAnswer:
 
     def test_tool_call_then_answer(self):
         """LLM calls a tool then produces Final Answer."""
-        from src.api.routes.chat import _react_mode_answer
+        from src.api.routes.chat_react import _react_mode_answer
 
         mock_primitives = MagicMock()
         # First call: Action
@@ -137,7 +137,7 @@ class TestReactModeAnswer:
         mock_registry.invoke.return_value = "42"
         mock_registry.list_tools.return_value = []
 
-        result, tools = _react_mode_answer(
+        result, tools, _ = _react_mode_answer(
             prompt="What is 6 times 7?",
             context="",
             primitives=mock_primitives,
@@ -150,7 +150,7 @@ class TestReactModeAnswer:
 
     def test_disallowed_tool_rejected(self):
         """Tool not in whitelist is rejected."""
-        from src.api.routes.chat import _react_mode_answer
+        from src.api.routes.chat_react import _react_mode_answer
 
         mock_primitives = MagicMock()
         mock_primitives.llm_call.side_effect = [
@@ -161,7 +161,7 @@ class TestReactModeAnswer:
         mock_registry = MagicMock()
         mock_registry.list_tools.return_value = []
 
-        result, tools = _react_mode_answer(
+        result, tools, _ = _react_mode_answer(
             prompt="list my files",
             context="",
             primitives=mock_primitives,
@@ -173,14 +173,14 @@ class TestReactModeAnswer:
 
     def test_no_action_treated_as_answer(self):
         """Response with no Action and no Final Answer is treated as answer."""
-        from src.api.routes.chat import _react_mode_answer
+        from src.api.routes.chat_react import _react_mode_answer
 
         mock_primitives = MagicMock()
         mock_primitives.llm_call.return_value = (
             "Thought: The answer is simply 42."
         )
 
-        result, tools = _react_mode_answer(
+        result, tools, _ = _react_mode_answer(
             prompt="What is the meaning of life?",
             context="",
             primitives=mock_primitives,
@@ -191,7 +191,7 @@ class TestReactModeAnswer:
 
     def test_max_turns_reached(self):
         """Test behavior when max turns are reached."""
-        from src.api.routes.chat import _react_mode_answer
+        from src.api.routes.chat_react import _react_mode_answer
 
         mock_primitives = MagicMock()
         # Always produce an action without final answer
@@ -203,7 +203,7 @@ class TestReactModeAnswer:
         mock_registry.invoke.return_value = "2"
         mock_registry.list_tools.return_value = []
 
-        result, tools = _react_mode_answer(
+        result, tools, _ = _react_mode_answer(
             prompt="infinite loop test",
             context="",
             primitives=mock_primitives,
@@ -242,13 +242,13 @@ class TestStripToolOutputs:
     """Tests for delimiter-based _strip_tool_outputs()."""
 
     def test_strip_delimited_output(self):
-        from src.api.routes.chat import _strip_tool_outputs
+        from src.api.routes.chat_utils import _strip_tool_outputs
         text = "Hello <<<TOOL_OUTPUT>>>{\"role\": \"frontdoor\"}<<<END_TOOL_OUTPUT>>> World"
         result = _strip_tool_outputs(text, [])
         assert result == "Hello  World"
 
     def test_strip_multiline_delimited_output(self):
-        from src.api.routes.chat import _strip_tool_outputs
+        from src.api.routes.chat_utils import _strip_tool_outputs
         text = "Before\n<<<TOOL_OUTPUT>>>line1\nline2\nline3<<<END_TOOL_OUTPUT>>>\nAfter"
         result = _strip_tool_outputs(text, [])
         assert "Before" in result
@@ -256,13 +256,13 @@ class TestStripToolOutputs:
         assert "line1" not in result
 
     def test_legacy_fallback(self):
-        from src.api.routes.chat import _strip_tool_outputs
+        from src.api.routes.chat_utils import _strip_tool_outputs
         text = 'Hello {"role": "frontdoor"} World'
         result = _strip_tool_outputs(text, ['{"role": "frontdoor"}'])
         assert result == "Hello  World"
 
     def test_empty_text(self):
-        from src.api.routes.chat import _strip_tool_outputs
+        from src.api.routes.chat_utils import _strip_tool_outputs
         assert _strip_tool_outputs("", []) == ""
 
 

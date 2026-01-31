@@ -10,6 +10,7 @@ from src.api.routes.openai_compat import router as openai_router
 from src.api.routes.sessions import router as sessions_router
 from src.api.routes.vision import router as vision_router
 from src.api.routes.documents import router as documents_router
+from src.api.routes.config import router as config_router
 
 
 def create_api_router() -> APIRouter:
@@ -29,6 +30,7 @@ def create_api_router() -> APIRouter:
     router.include_router(sessions_router, tags=["sessions"])
     router.include_router(vision_router, prefix="/v1", tags=["vision"])
     router.include_router(documents_router, prefix="/v1", tags=["documents"])
+    router.include_router(config_router, tags=["config"])
 
     return router
 
@@ -43,4 +45,5 @@ __all__ = [
     "sessions_router",
     "vision_router",
     "documents_router",
+    "config_router",
 ]
