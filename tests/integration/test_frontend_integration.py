@@ -7,17 +7,19 @@ and session management in mock mode.
 from __future__ import annotations
 
 import json
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from src.api import app
 from src.api.state import get_state, reset_state
-from src.api.routes.sessions import _pending_permissions, _session_store
+from src.api.routes.sessions import _pending_permissions
 
 
 @pytest.fixture
-def client():
-    """Create a test client with state reset."""
+def client(tmp_path):
+    """Create a test client with state reset and temp session store."""
     # Reset API state
     reset_state()
 
@@ -26,8 +28,21 @@ def client():
     import src.api.routes.sessions as sess_mod
     sess_mod._session_store = None  # Force re-initialization
 
-    with TestClient(app) as c:
-        yield c
+    # Create a fresh SQLiteSessionStore in a temp directory for test isolation.
+    # We must instantiate with explicit paths because Python default args are
+    # evaluated at definition time — patching the module constant is too late.
+    from src.session import SQLiteSessionStore
+    temp_store = SQLiteSessionStore(
+        db_path=tmp_path / "sessions.db",
+        embeddings_path=tmp_path / "session_embeddings.npy",
+    )
+
+    with patch.object(sess_mod, "get_session_store", return_value=temp_store):
+        with TestClient(app) as c:
+            yield c
+
+    # Cleanup
+    sess_mod._session_store = None
 
 
 class TestSSEStreaming:

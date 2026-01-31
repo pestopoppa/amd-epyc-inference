@@ -328,8 +328,8 @@ class TestStatsEndpoint:
     """Tests for /v1/vision/stats endpoint."""
 
     @patch("src.api.routes.vision.get_collection_stats")
-    @patch("src.api.routes.vision.get_session")
-    def test_get_stats(self, mock_session, mock_chroma_stats, test_client):
+    @patch("src.db.models.vision.managed_session")
+    def test_get_stats(self, mock_managed_session, mock_chroma_stats, test_client):
         """Test getting pipeline statistics."""
         mock_chroma_stats.return_value = {
             "faces": 100,
@@ -337,12 +337,13 @@ class TestStatsEndpoint:
             "images": 500,
         }
 
-        # Mock SQLite session
+        # Mock managed_session context manager returning a session with query()
         mock_query = MagicMock()
         mock_query.count.return_value = 500
         mock_session_instance = MagicMock()
         mock_session_instance.query.return_value = mock_query
-        mock_session.return_value = mock_session_instance
+        mock_managed_session.return_value.__enter__ = MagicMock(return_value=mock_session_instance)
+        mock_managed_session.return_value.__exit__ = MagicMock(return_value=False)
 
         response = test_client.get("/v1/vision/stats")
 
