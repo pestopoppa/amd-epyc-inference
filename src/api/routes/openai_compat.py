@@ -11,9 +11,10 @@ import time
 import uuid
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from src.api.dependencies import dep_app_state
 from src.api.models import (
     OpenAIChatRequest,
     OpenAIChatResponse,
@@ -23,8 +24,7 @@ from src.api.models import (
     OpenAIModelsResponse,
     OpenAIUsage,
 )
-from src.api.state import get_state
-from src.config import get_config
+from src.api.state import AppState
 from src.prompt_builders import (
     build_root_lm_prompt,
     extract_code_from_response,
@@ -66,7 +66,10 @@ async def list_models() -> OpenAIModelsResponse:
 
 
 @router.post("/chat/completions", response_model=None)
-async def openai_chat_completions(request: OpenAIChatRequest):
+async def openai_chat_completions(
+    request: OpenAIChatRequest,
+    state: AppState = Depends(dep_app_state),
+):
     """OpenAI-compatible chat completions endpoint.
 
     Supports both streaming and non-streaming modes.
@@ -80,7 +83,6 @@ async def openai_chat_completions(request: OpenAIChatRequest):
     - Configure ~/.aider.conf.yml with openai-api-base: http://localhost:8000/v1
     - Aider will use this endpoint for all LLM calls
     """
-    state = get_state()
 
     # Extract the last user message as the prompt
     user_messages = [m for m in request.messages if m.role == "user"]
@@ -144,16 +146,9 @@ async def openai_chat_completions(request: OpenAIChatRequest):
                     yield f"data: {json.dumps(chunk)}\n\n"
                 response_text = mock_response
             else:
-                # Real orchestration with streaming
-                try:
-                    server_urls = get_config().server_urls.as_dict()
-                    primitives = LLMPrimitives(
-                        mock_mode=False,
-                        server_urls=server_urls,
-                        registry=state.registry,
-                    )
-                except Exception as e:
-                    error_msg = f"Backend initialization failed: {e}"
+                # Real orchestration with streaming - use singleton LLMPrimitives
+                if state.llm_primitives is None:
+                    error_msg = "LLM primitives not initialized"
                     chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -168,6 +163,8 @@ async def openai_chat_completions(request: OpenAIChatRequest):
                     yield f"data: {json.dumps(chunk)}\n\n"
                     response_text = error_msg
                     primitives = None
+                else:
+                    primitives = state.llm_primitives
 
                 if primitives:
                     # Build combined context
@@ -276,14 +273,14 @@ async def openai_chat_completions(request: OpenAIChatRequest):
             # Mock mode fallback
             response_text = f"[MOCK] Processed via {role}: {prompt[:100]}..."
         else:
-            # Real orchestration
+            # Real orchestration - use singleton LLMPrimitives
             try:
-                server_urls = get_config().server_urls.as_dict()
-                primitives = LLMPrimitives(
-                    mock_mode=False,
-                    server_urls=server_urls,
-                    registry=state.registry,
-                )
+                if state.llm_primitives is None:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="LLM primitives not initialized",
+                    )
+                primitives = state.llm_primitives
 
                 combined_context = prompt
                 if context:

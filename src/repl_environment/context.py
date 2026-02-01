@@ -13,22 +13,26 @@ from src.repl_environment.types import FinalSignal
 
 
 class _ContextMixin:
-    """Mixin providing context management and tool dispatch for REPLEnvironment.
+    """Mixin providing context management and tool dispatch.
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - context: str
-    - artifacts: dict
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - _execution_count: int
-    - _findings_buffer: list
-    - _tool_invocations: int
-    - llm_primitives: Any | None
-    - tool_registry: Any | None
-    - script_registry: Any | None
-    - role: str
-    - _globals: dict
+    Includes: _context_len, _chunk_context, _summarize_chunks, _final, _final_var,
+    _mark_finding, _list_findings, get_findings, clear_findings, _tracked_llm_call,
+    _tracked_llm_batch, _invoke_tool, _call_tool, _list_tools, _invoke_script, _find_scripts.
+
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        context: str — full input context
+        artifacts: dict — collected artifacts
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        _execution_count: int — number of execute() calls
+        _findings_buffer: list — key findings buffer for session persistence
+        _tool_invocations: int — tool invocation counter
+        llm_primitives: Any | None — LLM primitives for delegation
+        tool_registry: Any | None — registry of available tools
+        script_registry: Any | None — registry of prepared scripts
+        role: str — current agent role
+        _globals: dict — restricted globals for REPL execution
     """
 
     # ------------------------------------------------------------------

@@ -14,22 +14,26 @@ if TYPE_CHECKING:
 
 
 class _StateMixin:
-    """Mixin providing state inspection and persistence for REPLEnvironment.
+    """Mixin providing state inspection and persistence.
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - context: str
-    - artifacts: dict
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - _execution_count: int
-    - _final_answer: str | None
-    - _grep_hits_buffer: list
-    - _findings_buffer: list
-    - _globals: dict
-    - progress_logger: Any | None
-    - task_id: str
-    - _build_globals() -> dict
+    Includes: get_state, get_exploration_log, get_grep_history, clear_grep_history,
+    get_exploration_strategy, log_exploration_completed, suggest_exploration,
+    checkpoint, restore, get_checkpoint_metadata, reset.
+
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        context: str — full input context
+        artifacts: dict — collected artifacts
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        _execution_count: int — number of execute() calls
+        _final_answer: str | None — final answer if set
+        _grep_hits_buffer: list — grep results buffer
+        _findings_buffer: list — key findings buffer
+        _globals: dict — restricted globals for REPL execution
+        progress_logger: Any | None — progress tracking service
+        task_id: str — task identifier for logging
+        _build_globals: Callable[[], dict] — method to rebuild globals dict
     """
 
     def get_state(self) -> str:

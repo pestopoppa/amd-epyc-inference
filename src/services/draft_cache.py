@@ -55,9 +55,6 @@ class DraftCache:
             cache.set(key, CachedDraft(draft, grep_hits, figures, ...))
     """
 
-    DEFAULT_CACHE_DIR = Path("/mnt/raid0/llm/cache/drafts")
-    DEFAULT_TTL_HOURS = 24
-
     def __init__(
         self,
         cache_dir: Path | None = None,

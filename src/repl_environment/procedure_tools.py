@@ -9,13 +9,17 @@ from typing import Any
 
 
 class _ProcedureToolsMixin:
-    """Mixin providing procedure tools for REPLEnvironment.
+    """Mixin providing self-management procedure tools.
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - role: str
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
+    Includes: _run_procedure, _list_procedures, _get_procedure_status,
+    _checkpoint_create, _checkpoint_restore, _registry_lookup, _registry_update,
+    _benchmark_run, _benchmark_compare, _gate_run.
+
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        role: str — current agent role
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
     """
 
     def _run_procedure(self, procedure_id: str, **kwargs) -> str:

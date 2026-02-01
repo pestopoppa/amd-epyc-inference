@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 
 
 class _FileExplorationMixin:
-    """Mixin providing read-only file system exploration tools.
+    """Mixin providing read-only file system exploration tools (_peek, _grep, _list_dir, _file_info).
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - context: str
-    - artifacts: dict
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - _grep_hits_buffer: list
-    - _validate_file_path(path) -> tuple[bool, str | None]
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        context: str — full input context
+        artifacts: dict — collected artifacts
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        _grep_hits_buffer: list — grep results buffer for two-stage summarization
+        _validate_file_path: Callable[[str], tuple[bool, str | None]] — path validation method
     """
 
     def _peek(self, n: int = 500, file_path: str | None = None) -> str:

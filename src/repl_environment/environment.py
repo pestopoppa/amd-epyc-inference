@@ -129,6 +129,26 @@ class REPLEnvironment(
         # Build restricted globals
         self._globals = self._build_globals()
 
+        # Verify mixin contracts are satisfied (runtime validation)
+        # This ensures all required attributes exist before mixin methods are called
+        required_attrs = [
+            # Core state
+            'config', 'context', 'artifacts', 'role', 'task_id',
+            # Counters
+            '_exploration_calls', '_execution_count', '_tool_invocations',
+            # Logs and buffers
+            '_exploration_log', '_grep_hits_buffer', '_findings_buffer',
+            # State
+            '_final_answer', '_globals',
+            # Optional dependencies
+            'llm_primitives', 'tool_registry', 'script_registry',
+            'progress_logger', '_retriever', '_hybrid_router',
+            # Methods
+            '_validate_file_path', '_build_globals',
+        ]
+        for attr in required_attrs:
+            assert hasattr(self, attr), f"Mixin contract violated: missing required attribute '{attr}'"
+
     def _build_globals(self) -> dict[str, Any]:
         """Build the restricted globals dict for exec()."""
         import builtins

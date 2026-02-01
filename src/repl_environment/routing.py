@@ -11,18 +11,18 @@ from src.repl_environment.types import wrap_tool_output
 
 
 class _RoutingMixin:
-    """Mixin providing routing and delegation tools for REPLEnvironment.
+    """Mixin providing routing and delegation tools (_recall, _escalate, _my_role, _route_advice, _delegate).
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - context: str
-    - artifacts: dict
-    - role: str
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - llm_primitives: Any | None
-    - _retriever: Any | None
-    - _hybrid_router: Any | None
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        context: str — full input context
+        artifacts: dict — collected artifacts
+        role: str — current agent role
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        llm_primitives: Any | None — LLM primitives for delegation
+        _retriever: TwoPhaseRetriever | None — episodic memory retriever (MemRL)
+        _hybrid_router: HybridRouter | None — routing decision engine (MemRL)
     """
 
     def _recall(self, query: str, limit: int = 5) -> str:

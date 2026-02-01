@@ -9,15 +9,15 @@ from typing import Any
 
 
 class _DocumentToolsMixin:
-    """Mixin providing document processing tools for REPLEnvironment.
+    """Mixin providing document processing tools (_ocr_document, _analyze_figure, _extract_figure).
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - progress_logger: ProgressLogger | None
-    - task_id: str
-    - _validate_file_path(path) -> tuple[bool, str | None]
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        progress_logger: ProgressLogger | None — progress tracking service
+        task_id: str — task identifier for logging
+        _validate_file_path: Callable[[str], tuple[bool, str | None]] — path validation method
     """
 
     def _ocr_document(self, path: str) -> str:
@@ -234,7 +234,9 @@ class _DocumentToolsMixin:
             if output_path:
                 save_path = output_path
             else:
-                fd, save_path = tempfile.mkstemp(suffix=".png", dir="/mnt/raid0/llm/tmp")
+                from src.config import get_config
+                tmp_dir = str(get_config().paths.tmp_dir)
+                fd, save_path = tempfile.mkstemp(suffix=".png", dir=tmp_dir)
                 os.close(fd)
 
             cropped.save(save_path, "PNG")

@@ -30,16 +30,20 @@ class _FileToolsMixin(
     set of file tools. It exists for backward compatibility with code that
     imports _FileToolsMixin directly.
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - context: str
-    - artifacts: dict
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - progress_logger: ProgressLogger | None
-    - task_id: str
-    - _grep_hits_buffer: list
-    - ALLOWED_FILE_PATHS: list[str]
-    - _validate_file_path(path) -> tuple[bool, str | None]
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        context: str — full input context
+        artifacts: dict — collected artifacts
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        _grep_hits_buffer: list — grep results buffer
+        _validate_file_path: Callable[[str], tuple[bool, str | None]] — path validation method
+        _ocr_document: Callable[[str], str] — OCR document processor (from DocumentToolsMixin)
+
+    Note: Individual mixin contracts are documented in:
+        - file_exploration.py (_FileExplorationMixin)
+        - archive_tools.py (_ArchiveToolsMixin)
+        - external_access.py (_ExternalAccessMixin)
+        - file_mutation.py (_FileMutationMixin)
     """
     pass

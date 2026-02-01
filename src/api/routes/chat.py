@@ -20,11 +20,12 @@ import time
 import uuid
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
+from src.api.dependencies import dep_app_state
 from src.api.models import ChatRequest, ChatResponse, RewardRequest
-from src.api.state import get_state
+from src.api.state import AppState
 from src.config import get_config
 from src.prompt_builders import (
     build_root_lm_prompt,
@@ -123,7 +124,10 @@ router = APIRouter()
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    state: AppState = Depends(dep_app_state),
+) -> ChatResponse:
     """Process a chat request through the orchestrator.
 
     Modes:
@@ -136,25 +140,25 @@ async def chat(request: ChatRequest) -> ChatResponse:
     - Cache statistics in response
     - Full orchestration loop with Root LM (Phase 8)
     """
-    state = get_state()
-
     # Track active requests for idle-time Q-scoring (thread-safe)
     state.increment_active()
     try:
-        return await _handle_chat(request)
+        return await _handle_chat(request, state)
     finally:
         state.decrement_active()
 
 
 @router.post("/chat/reward")
-async def inject_reward(request: RewardRequest):
+async def inject_reward(
+    request: RewardRequest,
+    state: AppState = Depends(dep_app_state),
+):
     """Inject an external reward signal into MemRL.
 
     Used by orchestrator_eval.py to close the learning loop: after
     deterministic scoring of a benchmark answer, the score is fed back
     as a reward so the Q-scorer can learn from routing decisions.
     """
-    state = get_state()
     success = store_external_reward(
         state,
         request.task_description,
@@ -165,7 +169,7 @@ async def inject_reward(request: RewardRequest):
     return {"success": success}
 
 
-async def _handle_chat(request: ChatRequest) -> ChatResponse:
+async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
     """Thin dispatcher — routes through pipeline stages.
 
     Phase 1b restructure: each stage is a named function in chat_pipeline.py.
@@ -183,7 +187,6 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
         8. Mode handler         → ChatResponse
         9. _annotate_error()    → set error_code/error_detail on failures
     """
-    state = get_state()
     start_time = time.perf_counter()
 
     # Stage 1: Routing
@@ -263,7 +266,10 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest) -> StreamingResponse:
+async def chat_stream(
+    request: ChatRequest,
+    state: AppState = Depends(dep_app_state),
+) -> StreamingResponse:
     """SSE streaming endpoint with routing metadata.
 
     Streams events using standardized SSE format (via sse_utils):
@@ -284,8 +290,6 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
     Note: Uses sse-starlette when available (via feature flag), otherwise
     falls back to manual SSE formatting for backward compatibility.
     """
-    state = get_state()
-
     # Generate task ID for MemRL tracking (outside generator for closure)
     task_id = f"stream-{uuid.uuid4().hex[:8]}"
 

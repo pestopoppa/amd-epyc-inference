@@ -665,11 +665,13 @@ class TestEndToEndArchiveWorkflow:
 class TestArchiveCleanup:
     """Tests for archive cleanup functionality."""
 
-    def test_cleanup_removes_old_extractions(self, tmp_path):
+    def test_cleanup_removes_old_extractions(self, tmp_path, monkeypatch):
         """Test cleanup removes expired extraction directories."""
         import os
         import time
+        from pathlib import Path
         from src.services.archive_extractor import ArchiveExtractor
+        from src import config as config_module
 
         # Create mock archive directory structure
         base_dir = tmp_path / "archives"
@@ -687,18 +689,21 @@ class TestArchiveCleanup:
         old_time = time.time() - (48 * 3600)  # 48 hours ago
         os.utime(old_dir, (old_time, old_time))
 
-        # Override base dir for testing
-        original_base = ArchiveExtractor.BASE_EXTRACT_DIR
-        ArchiveExtractor.BASE_EXTRACT_DIR = base_dir
+        # Patch the config to use our test directory
+        original_get_config = config_module.get_config
 
-        try:
-            cleaned = ArchiveExtractor.cleanup_expired(max_age_hours=24)
+        def mock_get_config():
+            config = original_get_config()
+            config.services.archive_extract_dir = Path(base_dir)
+            return config
 
-            assert cleaned == 1
-            assert not old_dir.exists()
-            assert new_dir.exists()
-        finally:
-            ArchiveExtractor.BASE_EXTRACT_DIR = original_base
+        monkeypatch.setattr(config_module, "get_config", mock_get_config)
+
+        cleaned = ArchiveExtractor.cleanup_expired(max_age_hours=24)
+
+        assert cleaned == 1
+        assert not old_dir.exists()
+        assert new_dir.exists()
 
 
 # =============================================================================

@@ -178,8 +178,6 @@ class LlamaCppBackend(ModelBackend):
         "prompt_lookup": "llama-lookup",
     }
 
-    LLAMA_CPP_PATH = Path("/mnt/raid0/llm/llama.cpp/build/bin")
-
     def __init__(self, registry: RegistryLoader):
         """Initialize the llama.cpp backend.
 
@@ -233,9 +231,10 @@ class LlamaCppBackend(ModelBackend):
         Returns:
             Shell command string ready for execution.
         """
+        from src.config import get_config
         accel_type = role_config.acceleration.type
         binary_name = self.BINARY_MAP.get(accel_type, "llama-completion")
-        binary_path = self.LLAMA_CPP_PATH / binary_name
+        binary_path = get_config().paths.llama_cpp_bin / binary_name
 
         # Start with timeout and NUMA wrapper
         parts = [

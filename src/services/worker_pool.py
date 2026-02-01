@@ -164,7 +164,8 @@ class WorkerPoolManager:
 
     def _load_default_config(self) -> WorkerPoolConfig:
         """Load default configuration (can be overridden by registry)."""
-        model_base = "/mnt/raid0/llm/lmstudio/models"
+        from src.config import get_config
+        model_base = str(get_config().paths.model_base)
         return WorkerPoolConfig(
             workers={
                 "explore": WorkerConfig(

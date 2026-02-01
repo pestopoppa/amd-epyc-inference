@@ -393,19 +393,20 @@ class TestCleanup:
         old_time = time.time() - (48 * 3600)  # 48 hours ago
         os.utime(old_dir, (old_time, old_time))
 
-        # Override base dir for testing
-        original_base = ArchiveExtractor.BASE_EXTRACT_DIR
-        ArchiveExtractor.BASE_EXTRACT_DIR = base_dir
+        # Mock config to point at our temp base_dir
+        from unittest.mock import MagicMock, patch
+        from src import config as config_module
 
-        try:
+        mock_cfg = MagicMock()
+        mock_cfg.services.archive_extract_dir = base_dir
+
+        with patch.object(config_module, "get_config", return_value=mock_cfg):
             cleaned = ArchiveExtractor.cleanup_expired(max_age_hours=24)
 
             # Old dir should be cleaned
             assert cleaned == 1
             assert not old_dir.exists()
             assert new_dir.exists()
-        finally:
-            ArchiveExtractor.BASE_EXTRACT_DIR = original_base
 
 
 class TestDataclasses:

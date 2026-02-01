@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 class _FileMutationMixin:
     """Mixin providing file write operations and patch management.
 
-    Expects the following attributes from the concrete class:
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - _validate_file_path(path) -> tuple[bool, str | None]
+    Required attributes (provided by REPLEnvironment.__init__):
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        _validate_file_path: Callable[[str], tuple[bool, str | None]] — path validation method
     """
 
     def _log_append(self, log_name: str, message: str) -> str:

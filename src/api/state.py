@@ -159,19 +159,23 @@ class AppState:
 
 # Global application state singleton
 _state: AppState | None = None
+_state_lock = threading.Lock()
 
 
 def get_state() -> AppState:
-    """Get the global application state.
+    """Get the global application state (thread-safe).
 
-    Creates a new AppState if one doesn't exist.
+    Creates a new AppState if one doesn't exist, using double-checked
+    locking to prevent race conditions during initialization.
 
     Returns:
         The global AppState instance.
     """
     global _state
     if _state is None:
-        _state = AppState()
+        with _state_lock:
+            if _state is None:
+                _state = AppState()
     return _state
 
 

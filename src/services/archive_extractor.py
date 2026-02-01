@@ -206,9 +206,6 @@ class ArchiveExtractor:
     MAX_COMPRESSION_RATIO = 100  # Suspicious if > 100:1
     MAX_RECURSION_DEPTH = 2
 
-    # Base extraction directory
-    BASE_EXTRACT_DIR = Path("/mnt/raid0/llm/tmp/archives")
-
     def __init__(
         self,
         max_archive_size: int | None = None,
@@ -566,15 +563,17 @@ class ArchiveExtractor:
         Returns:
             ExtractionResult with extracted file paths.
         """
+        from src.config import get_config
         start_time = time.perf_counter()
 
         # Determine destination
         if dest is None:
+            base_extract_dir = get_config().services.archive_extract_dir
             archive_hash = hashlib.sha256(str(path).encode()).hexdigest()[:8]
             if session_id:
-                dest = self.BASE_EXTRACT_DIR / session_id / archive_hash
+                dest = base_extract_dir / session_id / archive_hash
             else:
-                dest = self.BASE_EXTRACT_DIR / archive_hash
+                dest = base_extract_dir / archive_hash
 
         dest.mkdir(parents=True, exist_ok=True)
 
@@ -913,13 +912,15 @@ class ArchiveExtractor:
         Returns:
             Number of directories cleaned up.
         """
+        from src.config import get_config
         cleaned = 0
         cutoff = time.time() - (max_age_hours * 3600)
 
-        if not cls.BASE_EXTRACT_DIR.exists():
+        base_extract_dir = get_config().services.archive_extract_dir
+        if not base_extract_dir.exists():
             return 0
 
-        for session_dir in cls.BASE_EXTRACT_DIR.iterdir():
+        for session_dir in base_extract_dir.iterdir():
             if not session_dir.is_dir():
                 continue
 

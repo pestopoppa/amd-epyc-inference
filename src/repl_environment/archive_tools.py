@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 class _ArchiveToolsMixin:
     """Mixin providing archive and document ingestion tools.
 
-    Expects the following attributes from the concrete class:
-    - config: REPLConfig
-    - artifacts: dict
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
-    - _validate_file_path(path) -> tuple[bool, str | None]
-    - _ocr_document(path) -> str  (from DocumentToolsMixin)
+    Required attributes (provided by REPLEnvironment.__init__):
+        config: REPLConfig — environment configuration
+        artifacts: dict — collected artifacts
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
+        _validate_file_path: Callable[[str], tuple[bool, str | None]] — path validation method
+        _ocr_document: Callable[[str], str] — OCR document processor (from DocumentToolsMixin)
     """
 
     def _archive_open(self, path: str) -> str:

@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 
 
 class _ExternalAccessMixin:
-    """Mixin providing network and shell access tools.
+    """Mixin providing network and shell access tools (_web_fetch, _run_shell).
 
-    Expects the following attributes from the concrete class:
-    - _exploration_calls: int
-    - _exploration_log: ExplorationLog
+    Required attributes (provided by REPLEnvironment.__init__):
+        _exploration_calls: int — exploration call counter
+        _exploration_log: ExplorationLog — exploration event history
     """
 
     def _web_fetch(self, url: str, max_chars: int = 10000) -> str:
