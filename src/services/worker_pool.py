@@ -491,14 +491,19 @@ class WorkerPoolManager:
         name = instance.config.name
 
         async def _shutdown_after_timeout():
-            await asyncio.sleep(self.config.warm_timeout_seconds)
-            async with self._lock:
-                # Check if still idle
-                if instance.last_used:
-                    idle_time = (datetime.now() - instance.last_used).total_seconds()
-                    if idle_time >= self.config.warm_timeout_seconds:
-                        logger.info(f"Shutting down idle WARM worker {name}")
-                        await self._stop_worker(instance)
+            try:
+                await asyncio.sleep(self.config.warm_timeout_seconds)
+                async with self._lock:
+                    # Check if still idle
+                    if instance.last_used:
+                        idle_time = (datetime.now() - instance.last_used).total_seconds()
+                        if idle_time >= self.config.warm_timeout_seconds:
+                            logger.info(f"Shutting down idle WARM worker {name}")
+                            await self._stop_worker(instance)
+            except asyncio.CancelledError:
+                pass  # Expected when rescheduling
+            except Exception:
+                logger.exception(f"Error in warm shutdown task for worker {name}")
 
         # Cancel existing shutdown task if any
         if name in self._warm_shutdown_tasks:

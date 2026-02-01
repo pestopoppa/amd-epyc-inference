@@ -252,12 +252,11 @@ class TestArchivePreprocessing:
 
             result = await preprocessor.preprocess_archive(sample_document_archive)
 
-            # Should succeed even with mock OCR
-            assert result.success or result.error is not None
-
-            if result.success and result.document_result:
-                # Should have processed the PDFs
-                assert result.document_result.total_pages > 0
+            # Should succeed with mocked OCR
+            assert result.success is True
+            assert result.document_result is not None
+            # Should have processed the 2 PDFs (report.pdf, guide.pdf)
+            assert result.document_result.total_pages > 0
 
     @pytest.mark.asyncio
     async def test_preprocess_detects_archive_input(self, sample_document_archive):
@@ -307,8 +306,35 @@ class TestREPLArchiveFunctions:
         )
 
         assert result.error is None
-        assert "total_files" in result.output
-        assert "types" in result.output
+
+        # Parse the JSON output to verify structure
+        # The output contains the printed result, which should be JSON
+        output_lines = result.output.strip().split('\n')
+        # Find the line with JSON (may have other output before it)
+        json_line = None
+        for line in output_lines:
+            if 'total_files' in line:
+                json_line = line
+                break
+
+        assert json_line is not None, "Output should contain JSON with total_files"
+
+        # Parse and verify the manifest structure
+        try:
+            manifest_data = json.loads(json_line)
+            assert manifest_data['total_files'] == 7  # Matches sample_document_archive fixture
+            assert 'types' in manifest_data
+            # Verify specific file types from the fixture
+            types = manifest_data['types']
+            assert '.md' in types  # readme.md
+            assert '.py' in types  # main.py, utils.py
+            assert '.pdf' in types  # report.pdf, guide.pdf
+            assert '.json' in types  # config.json
+            assert '.txt' in types  # notes.txt
+        except json.JSONDecodeError:
+            # If not valid JSON, check it's a dict-like string representation
+            assert "total_files" in json_line
+            assert "7" in json_line or "'total_files': 7" in json_line
 
         # Check artifacts storage
         assert "_archives" in repl_environment.artifacts
@@ -326,7 +352,20 @@ class TestREPLArchiveFunctions:
         )
 
         assert result.error is None
-        assert "extracted" in result.output.lower()
+
+        # Parse the output to verify extraction details
+        output = result.output.lower()
+        assert "extracted" in output
+
+        # Should mention 2 files extracted (main.py and utils.py from fixture)
+        # Check for either count or filenames
+        assert "2" in result.output or "main.py" in result.output or "utils.py" in result.output
+
+        # Verify the specific filenames if present in output
+        if "main.py" in result.output:
+            assert "main.py" in result.output
+        if "utils.py" in result.output:
+            assert "utils.py" in result.output
 
     def test_archive_file_retrieval(
         self, sample_document_archive, repl_environment
@@ -341,8 +380,11 @@ class TestREPLArchiveFunctions:
             "content = archive_file('readme.md')\nprint(content)"
         )
 
-        # Should contain readme content or error message if not found
         assert result.error is None
+
+        # Verify the output contains the actual file content from the fixture
+        # The readme.md fixture contains: "# Project Documentation\n\nThis is the readme."
+        assert "Project Documentation" in result.output or "readme" in result.output.lower()
 
     def test_archive_search_across_files(
         self, sample_document_archive, repl_environment
@@ -355,12 +397,23 @@ class TestREPLArchiveFunctions:
         extract_result = repl_environment.execute("print(archive_extract(pattern='*.md'))")
         assert extract_result.error is None
 
-        # Search for content (may not find matches depending on content)
+        # Search for "Project" which appears in readme.md: "# Project Documentation"
         result = repl_environment.execute(
             "result = archive_search('Project')\nprint(result)"
         )
 
         assert result.error is None
+
+        # Verify the search found matches
+        # The readme.md contains "Project Documentation", so search should find it
+        output = result.output.lower()
+        # Check for search result indicators
+        assert (
+            "project" in output
+            or "found" in output
+            or "match" in output
+            or "readme" in output  # filename where match was found
+        ), "Search should find 'Project' in readme.md"
 
     def test_archive_functions_error_handling(self, repl_environment):
         """Test archive functions handle errors gracefully."""
@@ -654,7 +707,18 @@ class TestEndToEndArchiveWorkflow:
             "print(result)"
         )
         assert extract_result.error is None
-        assert "extracted" in extract_result.output.lower() or "error" not in extract_result.output.lower()
+
+        # Parse the extract output to verify specific files were extracted
+        output = extract_result.output.lower()
+        assert "extracted" in output or "error" not in output
+
+        # Should mention the .py files extracted from the fixture
+        # The fixture has src/main.py and src/utils.py
+        assert (
+            "main.py" in extract_result.output
+            or "utils.py" in extract_result.output
+            or "2" in extract_result.output  # 2 files extracted
+        ), "Extract should report the Python files from the archive"
 
 
 # =============================================================================

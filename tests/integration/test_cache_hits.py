@@ -121,7 +121,6 @@ def sample_prompts():
 class TestPrefixRouterIntegration:
     """Integration tests for PrefixRouter with CachingBackend."""
 
-    @pytest.mark.xfail(reason="Pre-existing: router routes twice per query (via infer + manual call)")
     def test_same_prefix_hits_same_slot(self, mock_backend, mock_role_config, sample_prompts):
         """Prompts with same prefix should route to same slot."""
         from src.prefix_cache import PrefixRouter, CachingBackend
@@ -132,16 +131,17 @@ class TestPrefixRouterIntegration:
         router = PrefixRouter(num_slots=4, prefix_length=128)
         caching = CachingBackend(mock_backend, router)
 
-        # Route multiple queries with same system prompt
-        slots = []
+        # Route multiple queries with same system prompt via caching.infer()
+        # (which internally calls router.get_slot_for_prompt)
         for query in sample_prompts["queries"]:
             request = InferenceRequest(role="test", prompt=query)
             caching.infer(mock_role_config, request)
-            slots.append(router.get_slot_for_prompt(query))
 
-        # All should hit same slot (first miss, then hits)
-        assert len(set(slots)) == 1
-        assert router.cache_hits >= len(slots) - 1
+        # All queries share a prefix within first 128 chars, so only 1 unique prefix
+        assert len(router.prefix_to_slot) == 1
+        # First query is a miss, rest are hits
+        assert router.cache_misses == 1
+        assert router.cache_hits == len(sample_prompts["queries"]) - 1
 
     def test_different_prefix_different_slots(self, mock_backend, mock_role_config):
         """Prompts with different prefixes should route to different slots."""
@@ -167,7 +167,6 @@ class TestPrefixRouterIntegration:
         assert len(set(slots)) == 3
         assert router.cache_misses == 3
 
-    @pytest.mark.xfail(reason="Pre-existing: hit rate calculation needs investigation")
     def test_hit_rate_improves_with_reuse(self, mock_backend, mock_role_config, sample_prompts):
         """Cache hit rate should improve with prefix reuse."""
         from src.prefix_cache import PrefixRouter, CachingBackend
@@ -177,15 +176,18 @@ class TestPrefixRouterIntegration:
         router = PrefixRouter(num_slots=4, prefix_length=128)
         caching = CachingBackend(mock_backend, router)
 
-        # Run multiple rounds of queries
+        # Run multiple rounds of queries via caching.infer()
         for _ in range(3):
             for query in sample_prompts["queries"]:
                 request = InferenceRequest(role="test", prompt=query)
                 caching.infer(mock_role_config, request)
 
-        # Hit rate should be high after repeated queries
+        # 15 total routes: 1 miss (first query ever), 14 hits
+        # Hit rate = 14/15 = 93.3%
         hit_rate = caching.get_hit_rate()
         assert hit_rate > 0.5, f"Expected hit rate > 50%, got {hit_rate:.1%}"
+        # With shared prefix, expect very high hit rate
+        assert hit_rate > 0.9, f"Expected hit rate > 90%, got {hit_rate:.1%}"
 
 
 # =============================================================================
@@ -299,7 +301,6 @@ class TestHotPrefixPersistence:
         assert "saved_at" in manifest
         assert len(manifest["slots"]) == saved
 
-    @pytest.mark.xfail(reason="Pre-existing: persistence restore logic needs review")
     def test_restore_updates_router_state(self, mock_backend, tmp_path):
         """Restored prefixes should update router state."""
         from src.prefix_cache import PrefixRouter, CachingBackend
@@ -320,7 +321,8 @@ class TestHotPrefixPersistence:
         router1.get_slot_for_prompt("System prompt: Query 2")  # Hit on shared prefix
 
         # Save
-        caching1.save_hot_prefixes()
+        saved = caching1.save_hot_prefixes()
+        assert saved > 0
 
         # Create new router and restore (must use same prefix_length)
         router2 = PrefixRouter(num_slots=4, prefix_length=16)
@@ -331,6 +333,10 @@ class TestHotPrefixPersistence:
 
         # Router should have restored prefix mappings
         assert len(router2.prefix_to_slot) > 0
+
+        # The restored prefix hash should match the original
+        original_hash = list(router1.prefix_to_slot.keys())[0]
+        assert original_hash in router2.prefix_to_slot
 
     def test_clear_removes_all_files(self, mock_backend, tmp_path):
         """Clear should remove all cache files."""
@@ -485,7 +491,6 @@ class TestCachePerformanceBenchmarks:
         # Should handle at least 5k lookups/sec
         assert ops_per_sec > 5000, f"Cache too slow: {ops_per_sec:.0f} lookups/sec"
 
-    @pytest.mark.xfail(reason="Pre-existing: throughput varies by environment, may fail in CI")
     def test_canonicalization_throughput(self):
         """Canonicalization should not be a bottleneck."""
         from src.prefix_cache import canonicalize_prompt

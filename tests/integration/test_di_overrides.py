@@ -119,32 +119,83 @@ class TestDIOverrides:
         assert "mock" not in r2.json().get("backend_health", {})
 
     def test_override_llm_primitives_for_chat(self, app, client):
-        """Overriding dep_llm_primitives affects real_mode chat requests."""
+        """Overriding dep_llm_primitives makes it accessible via dependency injection."""
+        from src.api.state import AppState
+
+        # Create mock primitives
         mock_primitives = MagicMock()
         mock_primitives.llm_call.return_value = "Mocked LLM response"
 
-        # Note: The chat endpoint doesn't directly use dep_llm_primitives,
-        # but we can still test that the override mechanism works by
-        # verifying the override is in place
+        # Override llm_primitives dependency
         app.dependency_overrides[dep_llm_primitives] = lambda: mock_primitives
 
-        # Verify override is registered
-        assert dep_llm_primitives in app.dependency_overrides
+        # Also override app_state for mock mode
+        mock_state = MagicMock(spec=AppState)
+        mock_state.registry = None
+        mock_state.hybrid_router = None
+        mock_state.progress_logger = None
+        mock_state.tool_registry = None
+        mock_state.script_registry = None
+        mock_state.health_tracker = MagicMock()
+        mock_state.increment_active = MagicMock()
+        mock_state.decrement_active = MagicMock()
+        mock_state.increment_request = MagicMock()
+        app.dependency_overrides[dep_app_state] = lambda: mock_state
 
-        # Clear for cleanup
-        app.dependency_overrides.clear()
+        # Make a chat request in mock mode to verify no crashes
+        response = client.post("/chat", json={
+            "prompt": "test override",
+            "mock_mode": True,
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "answer" in data
+        # Verify state tracking was called
+        mock_state.increment_active.assert_called_once()
+        mock_state.decrement_active.assert_called_once()
+
+        # Verify override was accessible
+        assert dep_llm_primitives in app.dependency_overrides
 
     def test_override_optional_dependencies(self, app, client):
         """Test overriding optional dependencies (progress_logger, hybrid_router, etc.)."""
+        from src.api.state import AppState
+
         mock_progress_logger = MagicMock()
         mock_hybrid_router = MagicMock()
         mock_tool_registry = MagicMock()
 
+        # Create mock state with all necessary attributes
+        mock_state = MagicMock(spec=AppState)
+        mock_state.registry = None
+        mock_state.hybrid_router = mock_hybrid_router
+        mock_state.progress_logger = mock_progress_logger
+        mock_state.tool_registry = mock_tool_registry
+        mock_state.script_registry = None
+        mock_state.health_tracker = MagicMock()
+        mock_state.increment_active = MagicMock()
+        mock_state.decrement_active = MagicMock()
+        mock_state.increment_request = MagicMock()
+
+        # Override dependencies
         app.dependency_overrides[dep_progress_logger] = lambda: mock_progress_logger
         app.dependency_overrides[dep_hybrid_router] = lambda: mock_hybrid_router
         app.dependency_overrides[dep_tool_registry] = lambda: mock_tool_registry
+        app.dependency_overrides[dep_app_state] = lambda: mock_state
 
-        # Verify overrides are registered
+        # Make a chat request in mock mode to verify these don't break the pipeline
+        response = client.post("/chat", json={
+            "prompt": "test optional deps",
+            "mock_mode": True,
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "answer" in data
+        assert data.get("mock_mode") is True
+
+        # Verify overrides were registered
         assert dep_progress_logger in app.dependency_overrides
         assert dep_hybrid_router in app.dependency_overrides
         assert dep_tool_registry in app.dependency_overrides
@@ -227,29 +278,90 @@ class TestDIOverrides:
         })
 
         assert response.status_code == 200
+        data = response.json()
+
         # Verify state tracking methods were called
         mock_state.increment_active.assert_called_once()
         mock_state.decrement_active.assert_called_once()
 
+        # Verify response structure and content
+        assert "answer" in data
+        assert data["answer"] != ""  # Not empty
+        assert data.get("mock_mode") is True
+        assert "elapsed_seconds" in data
+        assert data["elapsed_seconds"] >= 0
+
     def test_override_registry_loader(self, app, client):
         """Test overriding registry loader dependency."""
+        from src.api.state import AppState
+
         mock_registry = MagicMock()
         mock_registry.get_role_defaults.return_value = {
             "n_ctx": 8192,
             "n_tokens": 512,
         }
 
+        # Create mock state with registry
+        mock_state = MagicMock(spec=AppState)
+        mock_state.registry = mock_registry
+        mock_state.hybrid_router = None
+        mock_state.progress_logger = None
+        mock_state.tool_registry = None
+        mock_state.script_registry = None
+        mock_state.health_tracker = MagicMock()
+        mock_state.increment_active = MagicMock()
+        mock_state.decrement_active = MagicMock()
+        mock_state.increment_request = MagicMock()
+
         app.dependency_overrides[dep_registry_loader] = lambda: mock_registry
+        app.dependency_overrides[dep_app_state] = lambda: mock_state
+
+        # Make a chat request to verify the mock registry doesn't crash the pipeline
+        response = client.post("/chat", json={
+            "prompt": "test registry override",
+            "mock_mode": True,
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "answer" in data
+        assert data.get("mock_mode") is True
 
         # Verify override is in place
         assert dep_registry_loader in app.dependency_overrides
 
     def test_override_script_registry(self, app, client):
         """Test overriding script registry dependency."""
+        from src.api.state import AppState
+
         mock_script_registry = MagicMock()
         mock_script_registry.search.return_value = []
 
+        # Create mock state with script registry
+        mock_state = MagicMock(spec=AppState)
+        mock_state.registry = None
+        mock_state.hybrid_router = None
+        mock_state.progress_logger = None
+        mock_state.tool_registry = None
+        mock_state.script_registry = mock_script_registry
+        mock_state.health_tracker = MagicMock()
+        mock_state.increment_active = MagicMock()
+        mock_state.decrement_active = MagicMock()
+        mock_state.increment_request = MagicMock()
+
         app.dependency_overrides[dep_script_registry] = lambda: mock_script_registry
+        app.dependency_overrides[dep_app_state] = lambda: mock_state
+
+        # Make a chat request to verify the mock script registry doesn't crash the pipeline
+        response = client.post("/chat", json={
+            "prompt": "test script registry override",
+            "mock_mode": True,
+        })
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "answer" in data
+        assert data.get("mock_mode") is True
 
         # Verify override is in place
         assert dep_script_registry in app.dependency_overrides

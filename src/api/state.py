@@ -103,6 +103,46 @@ class AppState:
     # Thread safety lock for statistics
     _stats_lock: threading.Lock = field(default_factory=threading.Lock)
 
+    def update_plan_review_stats(
+        self, approved: bool, task_class: str = "", q_value: float | None = None,
+    ) -> dict:
+        """Update plan review statistics (thread-safe).
+
+        Args:
+            approved: Whether the plan was approved without corrections.
+            task_class: Optional task class for Q-value tracking.
+            q_value: Optional Q-value for the task class.
+
+        Returns:
+            Current plan review stats snapshot.
+        """
+        with self._stats_lock:
+            self._plan_review_stats["total_reviews"] = (
+                self._plan_review_stats.get("total_reviews", 0) + 1
+            )
+            if approved:
+                self._plan_review_stats["approved"] = (
+                    self._plan_review_stats.get("approved", 0) + 1
+                )
+            else:
+                self._plan_review_stats["corrected"] = (
+                    self._plan_review_stats.get("corrected", 0) + 1
+                )
+            if task_class and q_value is not None:
+                self._plan_review_stats.setdefault(
+                    "task_class_q_values", {}
+                )[task_class] = q_value
+            return dict(self._plan_review_stats)
+
+    def get_plan_review_stats(self) -> dict:
+        """Get plan review statistics (thread-safe snapshot).
+
+        Returns:
+            Copy of plan review stats.
+        """
+        with self._stats_lock:
+            return dict(self._plan_review_stats)
+
     def increment_request(self, mock_mode: bool, turns: int) -> None:
         """Track a completed request (thread-safe).
 

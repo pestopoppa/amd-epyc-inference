@@ -47,6 +47,20 @@ def mock_state():
     state.hybrid_router = None
     state.progress_logger = None
     state.q_scorer = None
+
+    # Configure update_plan_review_stats to behave like the real method
+    def _update_stats(approved=False, task_class="", q_value=None):
+        stats = state._plan_review_stats
+        stats["total_reviews"] = stats.get("total_reviews", 0) + 1
+        if approved:
+            stats["approved"] = stats.get("approved", 0) + 1
+        else:
+            stats["corrected"] = stats.get("corrected", 0) + 1
+        if task_class and q_value is not None:
+            stats.setdefault("task_class_q_values", {})[task_class] = q_value
+        return dict(stats)
+
+    state.update_plan_review_stats = _update_stats
     return state
 
 

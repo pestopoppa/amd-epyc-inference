@@ -405,13 +405,8 @@ def _store_plan_review_episode(
             )
         )
 
-    # Update plan review stats (thread-safe via GIL for dict mutations)
-    stats = state._plan_review_stats
-    stats["total_reviews"] = stats.get("total_reviews", 0) + 1
-    if review.is_ok:
-        stats["approved"] = stats.get("approved", 0) + 1
-    else:
-        stats["corrected"] = stats.get("corrected", 0) + 1
+    # Update plan review stats (thread-safe)
+    stats = state.update_plan_review_stats(approved=review.is_ok)
 
     # Recompute phase
     state.plan_review_phase = _compute_plan_review_phase(stats)

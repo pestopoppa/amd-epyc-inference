@@ -443,18 +443,21 @@ class CachingBackend:
 
         os.makedirs(save_dir, exist_ok=True)
 
-        # Get slot stats and sort by hit count
-        slot_stats = self.router.get_slot_stats()
-        sorted_slots = sorted(slot_stats, key=lambda s: s["hit_count"], reverse=True)
+        # Sort slots by hit count for saving the hottest ones
+        sorted_slots = sorted(
+            self.router.slots.values(),
+            key=lambda s: s.hit_count,
+            reverse=True,
+        )
 
         saved_count = 0
         manifest: list[dict] = []
 
         for slot in sorted_slots[:top_n]:
-            slot_id = slot["slot_id"]
-            prefix_hash = slot["prefix_hash"]
+            slot_id = slot.slot_id
+            prefix_hash = slot.prefix_hash  # Full hash, not truncated
 
-            if not prefix_hash or slot["hit_count"] == 0:
+            if not prefix_hash or slot.hit_count == 0:
                 continue
 
             # Save slot state via backend
@@ -463,11 +466,11 @@ class CachingBackend:
                 manifest.append({
                     "slot_id": slot_id,
                     "prefix_hash": prefix_hash,
-                    "hit_count": slot["hit_count"],
+                    "hit_count": slot.hit_count,
                     "filename": filename,
                 })
                 saved_count += 1
-                logger.info(f"Saved slot {slot_id} ({prefix_hash[:8]}..., {slot['hit_count']} hits)")
+                logger.info(f"Saved slot {slot_id} ({prefix_hash[:8]}..., {slot.hit_count} hits)")
 
         # Write manifest for restoration
         manifest_path = os.path.join(save_dir, "manifest.json")

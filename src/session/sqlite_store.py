@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -63,6 +64,7 @@ class SQLiteSessionStore(BaseSessionStore):
         self.db_path = Path(db_path)
         self.embeddings_path = Path(embeddings_path)
         self.embedding_dim = embedding_dim
+        self._embeddings_lock = threading.Lock()
 
         # Ensure directories exist
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -211,7 +213,10 @@ class SQLiteSessionStore(BaseSessionStore):
         self._next_embedding_idx = 0
 
     def _grow_embeddings(self) -> None:
-        """Double the embeddings array size when full."""
+        """Double the embeddings array size when full.
+
+        Must be called under ``_embeddings_lock``.
+        """
         current_size = len(self._embeddings)
         new_size = current_size * 2
 
@@ -447,6 +452,13 @@ class SQLiteSessionStore(BaseSessionStore):
         logger.info(f"Deleted session {session_id}")
         return True
 
+    # Valid column names for ORDER BY (whitelist to prevent SQL injection)
+    _VALID_ORDER_COLUMNS = frozenset({
+        "id", "name", "project", "status", "created_at", "last_active",
+        "last_checkpoint_at", "message_count", "working_directory",
+        "task_id", "resume_count", "last_topic",
+    })
+
     def list_sessions(
         self,
         where: WhereFilter | None = None,
@@ -456,6 +468,12 @@ class SQLiteSessionStore(BaseSessionStore):
         offset: int = 0,
     ) -> list[Session]:
         """List sessions with optional filtering."""
+        if order_by not in self._VALID_ORDER_COLUMNS:
+            raise ValueError(
+                f"Invalid order_by column: {order_by!r}. "
+                f"Must be one of: {sorted(self._VALID_ORDER_COLUMNS)}"
+            )
+
         query = "SELECT * FROM sessions"
         params: list[Any] = []
 
@@ -818,14 +836,15 @@ class SQLiteSessionStore(BaseSessionStore):
         content_type: str = "session",
     ) -> int:
         """Store an embedding for semantic search."""
-        # Ensure we have space
-        if self._next_embedding_idx >= len(self._embeddings):
-            self._grow_embeddings()
+        with self._embeddings_lock:
+            # Ensure we have space
+            if self._next_embedding_idx >= len(self._embeddings):
+                self._grow_embeddings()
 
-        # Store embedding
-        idx = self._next_embedding_idx
-        self._embeddings[idx] = embedding
-        self._next_embedding_idx += 1
+            # Store embedding
+            idx = self._next_embedding_idx
+            self._embeddings[idx] = embedding
+            self._next_embedding_idx += 1
 
         # Save metadata
         with self._get_connection() as conn:
