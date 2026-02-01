@@ -3,6 +3,7 @@
 from src.api.models.requests import (
     ChatRequest,
     GateRequest,
+    RewardRequest,
 )
 from src.api.models.responses import (
     ChatResponse,
@@ -35,6 +36,7 @@ __all__ = [
     # Requests
     "ChatRequest",
     "GateRequest",
+    "RewardRequest",
     # Responses
     "ChatResponse",
     "HealthResponse",

@@ -59,6 +59,15 @@ class ChatRequest(BaseModel):
     )
 
 
+class RewardRequest(BaseModel):
+    """Request model for injecting external rewards into MemRL."""
+
+    task_description: str = Field(..., description="Description of the task that was scored")
+    action: str = Field(..., description="Action taken, e.g. 'frontdoor:direct'")
+    reward: float = Field(..., ge=-1.0, le=1.0, description="Reward value (-1.0 to 1.0)")
+    context: dict | None = Field(default=None, description="Optional metadata (suite, tier, scoring_method)")
+
+
 class GateRequest(BaseModel):
     """Request model for running gates."""
 

@@ -654,10 +654,20 @@ def start_orchestrator() -> ProcessInfo | None:
 
     print("  Starting orchestrator API on port 8000")
 
-    # Set environment
+    # Set environment — enable production feature flags
     env = os.environ.copy()
     env["HF_HOME"] = "/mnt/raid0/llm/cache/huggingface"
     env["TMPDIR"] = "/mnt/raid0/llm/tmp"
+    # Feature flags: enable production capabilities
+    env["ORCHESTRATOR_MEMRL"] = "1"
+    env["ORCHESTRATOR_TOOLS"] = "1"
+    env["ORCHESTRATOR_SCRIPTS"] = "1"
+    env["ORCHESTRATOR_REPL"] = "1"
+    env["ORCHESTRATOR_CACHING"] = "1"
+    env["ORCHESTRATOR_STREAMING"] = "1"
+    env["ORCHESTRATOR_MOCK_MODE"] = "0"
+    env["ORCHESTRATOR_GENERATION_MONITOR"] = "1"
+    env["ORCHESTRATOR_REACT_MODE"] = "1"
 
     with open(log_file, "w") as log:
         proc = subprocess.Popen(

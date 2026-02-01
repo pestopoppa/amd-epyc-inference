@@ -289,6 +289,7 @@ def _execute_mock(
         mock_mode=True,
         real_mode=False,
         cache_stats=None,
+        mode="mock",
     )
 
 
@@ -498,6 +499,7 @@ def _execute_delegated(
             if p.get("phase") == "B"
         ],
         routing_strategy="delegated",
+        mode="delegated",
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=routing.formalization_applied,
         tools_used=delegation_stats.get("tools_used", 0),
@@ -594,6 +596,7 @@ def _execute_react(
         routed_to=str(initial_role),
         role_history=[str(initial_role)],
         routing_strategy="react",
+        mode="react",
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=routing.formalization_applied,
         tools_used=react_tools_used,
@@ -730,6 +733,7 @@ def _execute_direct(
         routed_to=str(initial_role),
         role_history=[str(initial_role)],
         routing_strategy=routing.routing_strategy,
+        mode="direct",
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=routing.formalization_applied,
         tools_used=0,
@@ -841,6 +845,7 @@ async def _execute_repl(
                 routed_to=str(initial_role),
                 role_history=[str(initial_role), str(TWO_STAGE_CONFIG["stage2_role"])],
                 routing_strategy=routing_strategy,
+                mode="repl",
                 tokens_generated=primitives.total_tokens_generated,
                 formalization_applied=formalization_applied,
                 tools_used=0,
@@ -1205,6 +1210,7 @@ async def _execute_repl(
         routed_to=str(current_role),
         role_history=[str(r) for r in role_history],
         routing_strategy=routing_strategy,
+        mode="repl",
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=formalization_applied,
         tools_used=repl._tool_invocations,

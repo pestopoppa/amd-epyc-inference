@@ -95,11 +95,12 @@ def _select_mode(
         except Exception:
             pass  # Fall through to heuristic
 
-    # Heuristic fallback: direct → react → repl
-    if _should_use_direct_mode(prompt, context):
-        if _should_use_react_mode(prompt, context):
-            return "react"
-        return "direct"
+    # Heuristic fallback: react (if keywords match) → repl (default)
+    # REPL is a superset of direct — model can FINAL("answer") immediately
+    # for simple questions, or use tools/escalate if needed. This gives MemRL
+    # exposure to non-direct modes during cold start so it can learn.
+    if _should_use_react_mode(prompt, context):
+        return "react"
     return "repl"
 
 
