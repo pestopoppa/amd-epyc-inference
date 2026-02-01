@@ -8,7 +8,7 @@
 # Run specific:  make shellcheck
 
 SHELL := /usr/bin/env bash
-.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck unit integration security bench clean help
+.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -146,6 +146,11 @@ typecheck:
 	else \
 		echo "  ⚠ no Python typechecker installed"; \
 	fi
+
+coverage:
+	@echo "==> coverage"
+	@$(PY) -m pytest tests/ -q --cov=src --cov-report=term-missing --cov-fail-under=30 \
+		&& echo "  ✓ coverage passed (≥30%)"
 
 unit:
 	@echo "==> unit tests"

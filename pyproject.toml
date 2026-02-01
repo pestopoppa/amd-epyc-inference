@@ -48,6 +48,7 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
     "pytest-timeout>=2.2.0",
+    "pytest-cov>=4.1.0",
     "hypothesis>=6.0.0",
 ]
 toon = [
@@ -121,10 +122,34 @@ timeout = 120
 # If using pytest-xdist, limit to: pytest -n 4
 # See tests/conftest.py for memory safety guards.
 
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "src/gradio_ui.py",        # UI module, not testable in CI
+    "src/cli_*.py",            # CLI entrypoints
+    "src/vision/*",            # Requires model files
+    "src/__pycache__/*",
+]
+
+[tool.coverage.report]
+fail_under = 30
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ ==",
+    "raise NotImplementedError",
+]
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+no_implicit_optional = true
 
 [build-system]
 requires = ["hatchling"]

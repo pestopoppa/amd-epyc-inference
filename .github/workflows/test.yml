@@ -35,8 +35,12 @@ jobs:
       - name: Run linter
         run: ruff check src/ tests/ --select E,F,W
 
-      - name: Run tests
-        run: pytest tests/ -x --timeout=120 -q
+      - name: Run tests with coverage
+        run: pytest tests/ -x --timeout=120 -q --cov=src --cov-report=term-missing --cov-fail-under=30
         env:
-          # Prevent tests from trying to access local hardware paths
           ORCHESTRATOR_MOCK_MODE: "true"
+
+      - name: Type check
+        run: mypy src/ --ignore-missing-imports --no-error-summary || true
+        # Note: mypy runs in advisory mode (|| true) until type annotations are complete.
+        # Remove "|| true" once mypy passes cleanly to enforce type checking.
