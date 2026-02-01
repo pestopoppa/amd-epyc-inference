@@ -17,7 +17,7 @@ cd /mnt/raid0/llm/claude && timeout 120 python3 -m pytest tests/ -x -q
 cat src/api/routes/chat.py           # _architect_delegated_answer() (line 1086)
 cat src/proactive_delegation.py      # ProactiveDelegator, ArchitectReviewService
 cat src/llm_primitives.py            # llm_call/llm_batch (persona injection point)
-cat src/prompt_builders.py           # System prompts, REACT_TOOL_WHITELIST
+cat src/prompt_builders/__init__.py   # System prompts package (re-exports all 27 names)
 cat orchestration/task_ir.schema.json # TaskIR schema (has parallel_group!)
 cat orchestration/model_registry.yaml # Role configs
 
@@ -47,6 +47,22 @@ cat orchestration/model_registry.yaml # Role configs
 - Multi-loop capped at 3, feature flag `architect_delegation`
 - `"delegated"` force mode, `read_file`/`list_directory` in `REACT_TOOL_WHITELIST`
 - 884 tests passing
+
+### Vision → Document Pipeline Integration (2026-02-01)
+
+- `/chat` vision requests now use full document pipeline (DocumentPreprocessor → DocumentChunker → FigureAnalyzer → DocumentREPLEnvironment)
+- `_execute_vision()` preprocesses, stores on `routing.document_result`, returns None (no early return)
+- Mode selection forces REPL + FRONTDOOR when document results present
+- `_execute_repl()` creates DocumentREPLEnvironment with sections/figures/search tools
+- Base64 image input support via temp file on RAID
+- 1234 tests passing
+
+### Architecture Review Work Items (2026-02-01)
+
+- **WI-9**: Staged reward shaping — `StagedScorer` with PARL-inspired λ annealing (see F below)
+- **WI-10**: Parallel gate execution — `asyncio.gather()` for independent gates (see G below)
+- **WI-11**: `prompt_builders.py` decomposition — 1,501-line monolith → `src/prompt_builders/` package with 6 sub-modules (types, constants, builder, review, code_utils, formatting). Zero downstream import changes.
+- 1398 tests passing
 
 ### Other Infrastructure
 
@@ -99,7 +115,7 @@ cat orchestration/model_registry.yaml # Role configs
 
 **TaskIR schema already has**: `parallel_group`, `depends_on`, `parallelism.max_concurrent_steps` — these fields are inert, need execution layer.
 
-**Files to modify**: `src/api/routes/chat.py`, `src/prompt_builders.py`
+**Files to modify**: `src/api/routes/chat.py`, `src/prompt_builders/`
 **Files to create**: `src/parallel_executor.py`, `tests/unit/test_parallel_executor.py`
 
 ### D. Critical Path Metric (PARL Phase 2)
@@ -138,32 +154,29 @@ cat orchestration/model_registry.yaml # Role configs
 **Files to create**: `orchestration/persona_registry.yaml`, `src/persona_loader.py`, `tests/unit/test_persona_registry.py`
 **Files to modify**: `src/llm_primitives.py`, `src/repl_environment.py`, `orchestration/task_ir.schema.json`, `orchestration/repl_memory/seed_loader.py`
 
-### F. Staged Reward Shaping (PARL Phase 4)
+### F. Staged Reward Shaping (PARL Phase 4) — ✅ COMPLETE (WI-9)
 
 **Goal**: PARL-inspired annealing for MemRL Q-value updates — explore early, exploit later.
 
-**Work**:
-- `StagedQScorer` class with annealing schedule (lambda: 0.3 → 0.0 over 50 steps)
-- Exploration bonus: `1 / sqrt(N + 1)` for underexplored (task_type, role, persona) combos
-- Reward: `lambda * exploration_bonus + (1 - lambda) * success_reward`
+**Implemented**:
+- `StagedScorer` class in `orchestration/repl_memory/staged_scorer.py` (~120 lines)
+- Annealing schedule: λ(step) = λ_init × max(0, 1 − step/horizon), default λ_init=0.3
+- Exploration bonus: `1/√(N+1)` for underexplored combos
+- Reward: `λ × exploration_bonus + (1 − λ) × success_reward`
+- 8 unit tests in `tests/unit/test_staged_scorer.py`
 
-**Depends on**: Phase E (needs persona Q-values)
+### G. Parallel Gate Execution (PARL Phase 5) — ✅ COMPLETE (WI-10)
 
-**Files to create**: `src/staged_q_scorer.py`, `tests/unit/test_staged_q_scorer.py`
+**Goal**: Run independent gates concurrently.
 
-### G. Parallel Gate Execution (PARL Phase 5)
+**Implemented**:
+- `_run_gate_parallel()` using `asyncio.to_thread()` for subprocess gates
+- `run_gates_parallel()` using `asyncio.gather()` for independent gates
+- Sequential fallback preserved for dependent gates
+- `parallel_gates` feature flag in `src/features.py`
+- 6 unit tests in `tests/unit/test_gate_runner.py`
 
-**Goal**: Run independent gates concurrently. Profile first.
-
-**Work**:
-1. Profile current gate performance (`time make check-schema` etc.)
-2. **Decision gate**: If total < 10s, skip (not worth complexity)
-3. If justified: `make gates-fast` with `-j3` for lightweight gates (schema, shellcheck, format, lint)
-4. Keep unit/integration sequential (memory-heavy)
-
-**Independent**: Can be worked at any time.
-
-**Files to modify**: `Makefile`
+**Files modified**: `src/gate_runner.py`, `src/features.py`
 
 ---
 
@@ -171,13 +184,13 @@ cat orchestration/model_registry.yaml # Role configs
 
 | Item | Status | Dependencies |
 |------|--------|--------------|
-| A. Structured Logging | ❌ | None |
-| B. Integration Test Fix | ❌ | None |
+| A. Structured Logging | ✅ (task_extra + JSONFormatter + 14 pipeline calls) | None |
+| B. Integration Test Fix | ✅ (already fixed in prior session) | None |
 | C. ProactiveDelegator + Parallel Execution | ❌ | None |
 | D. Critical Path Metric | ❌ | C |
 | E. Persona Registry + MemRL | ❌ | None |
-| F. Staged Reward Shaping | ❌ | E |
-| G. Parallel Gate Execution | ❌ | None (profile first) |
+| F. Staged Reward Shaping | ✅ (WI-9: StagedScorer + 8 tests) | E (loosened — implemented independently) |
+| G. Parallel Gate Execution | ✅ (WI-10: asyncio.gather + feature flag + 6 tests) | None |
 
 **Independent items**: A, B, C, E, G can be worked in any order.
 
@@ -205,7 +218,7 @@ python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
 | `src/api/routes/chat.py` | Chat endpoints, _architect_delegated_answer() |
 | `src/proactive_delegation.py` | ProactiveDelegator, ArchitectReviewService |
 | `src/llm_primitives.py` | llm_call/llm_batch, persona injection point |
-| `src/prompt_builders.py` | System prompts, REACT_TOOL_WHITELIST |
+| `src/prompt_builders/` | System prompts package (types, constants, builder, review, code_utils, formatting) |
 | `src/repl_environment.py` | REPL sandbox, delegate(), tool bindings |
 | `src/features.py` | Feature flags (architect_delegation, etc.) |
 | `src/api/routes/config.py` | POST /config — runtime feature flag hot-reload |
@@ -238,8 +251,8 @@ When this roadmap is complete:
 - [ ] C: ParallelStepExecutor tests passing, /delegate endpoints wired
 - [ ] D: CriticalPathReport generated for multi-step tasks
 - [ ] E: Persona registry loads, llm_call accepts persona, MemRL seeds loaded
-- [ ] F: StagedQScorer annealing verified
-- [ ] G: Gate profiling done (implement only if justified)
+- [x] F: StagedScorer annealing verified (WI-9, 8 tests)
+- [x] G: Parallel gate execution implemented (WI-10, 6 tests)
 - [ ] All tests passing: `pytest tests/ -x -q`
 - [ ] Gates passing: `make gates`
 - [ ] Key findings → `docs/chapters/` (if significant)

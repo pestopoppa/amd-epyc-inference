@@ -143,6 +143,15 @@ class Features:
     # Phase 5: Architect delegation (investigate via specialist tools)
     architect_delegation: bool = False  # Architect delegates tool work to faster specialists
 
+    # Phase 7: Parallel step execution (wave-based dependency ordering)
+    parallel_execution: bool = False  # Enable wave-based step execution in ProactiveDelegator
+
+    # Phase 8: Persona registry (dynamic prompt specialization)
+    personas: bool = False  # Enable persona-based system prompt overlays
+
+    # Phase 9: Staged reward shaping (PARL-inspired explore→exploit annealing)
+    staged_rewards: bool = False  # Anneal exploration bonus in Q-value updates
+
     # Phase 4: Input formalizer (extract formal specs before specialist execution)
     input_formalizer: bool = False  # Preprocess complex prompts via MathSmith-8B
 
@@ -171,6 +180,12 @@ class Features:
             errors.append("plan_review feature requires memrl feature")
         if self.architect_delegation and not self.memrl:
             errors.append("architect_delegation feature requires memrl feature")
+        if self.parallel_execution and not self.architect_delegation:
+            errors.append("parallel_execution feature requires architect_delegation feature")
+        if self.personas and not self.memrl:
+            errors.append("personas feature requires memrl feature")
+        if self.staged_rewards and not self.memrl:
+            errors.append("staged_rewards feature requires memrl feature")
 
         # RestrictedPython requires the library
         if self.restricted_python:
@@ -205,6 +220,9 @@ class Features:
             "specialist_routing": self.specialist_routing,
             "plan_review": self.plan_review,
             "architect_delegation": self.architect_delegation,
+            "parallel_execution": self.parallel_execution,
+            "personas": self.personas,
+            "staged_rewards": self.staged_rewards,
             "input_formalizer": self.input_formalizer,
             "generation_monitor": self.generation_monitor,
             "mock_mode": self.mock_mode,
@@ -290,6 +308,9 @@ def get_features(
             "specialist_routing": False,  # Enable after comparative seeding proves benefit
             "plan_review": False,  # Enable after Phase A validation
             "architect_delegation": False,  # Enable after delegation regression testing
+            "parallel_execution": False,  # Enable after parallel execution regression testing
+            "personas": False,  # Enable after persona quality validation
+            "staged_rewards": False,  # Enable after exploration/exploitation validation
             "input_formalizer": False,  # Enable after regression testing
             "generation_monitor": True,  # Early failure detection in production
             "mock_mode": False,  # Real mode in production
@@ -310,6 +331,9 @@ def get_features(
             "specialist_routing": False,  # Disabled in tests by default
             "plan_review": False,  # Disabled in tests by default
             "architect_delegation": False,  # Disabled in tests by default
+            "parallel_execution": False,  # Disabled in tests by default
+            "personas": False,  # Disabled in tests by default
+            "staged_rewards": False,  # Disabled in tests by default
             "input_formalizer": False,  # Disabled in tests by default
             "generation_monitor": False,  # Disabled in tests by default
             "mock_mode": True,  # Mock mode in tests
@@ -331,6 +355,9 @@ def get_features(
         "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
         "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),
         "architect_delegation": _env_bool("ARCHITECT_DELEGATION", defaults["architect_delegation"]),
+        "parallel_execution": _env_bool("PARALLEL_EXECUTION", defaults["parallel_execution"]),
+        "personas": _env_bool("PERSONAS", defaults["personas"]),
+        "staged_rewards": _env_bool("STAGED_REWARDS", defaults["staged_rewards"]),
         "input_formalizer": _env_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
         "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
         "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),

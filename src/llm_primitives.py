@@ -61,6 +61,7 @@ class CallLogEntry:
     prompts: list[str] | None = None
     context_slice: str | None = None
     role: str = "worker"
+    persona: str | None = None
     result: str | list[str] | None = None
     elapsed_seconds: float = 0.0
     error: str | None = None
@@ -429,6 +430,7 @@ class LLMPrimitives:
         n_tokens: int | None = None,
         skip_suffix: bool = False,
         stop_sequences: list[str] | None = None,
+        persona: str | None = None,
     ) -> str:
         """Call a sub-LM with optional context slice.
 
@@ -441,6 +443,9 @@ class LLMPrimitives:
                 Used in direct-answer mode where any suffix (like "Elaborate on
                 specialist outputs") degrades instruction precision quality.
             stop_sequences: Optional list of stop sequences to halt generation early.
+            persona: Optional persona name (e.g., "security_auditor"). When set and
+                the personas feature is enabled, injects the persona's system prompt
+                before the user prompt.
 
         Returns:
             Sub-LM response (capped at output_cap chars).
@@ -459,7 +464,7 @@ class LLMPrimitives:
         self._max_recursion_depth_reached = max(self._max_recursion_depth_reached, self._recursion_depth)
 
         try:
-            return self._llm_call_impl(prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences)
+            return self._llm_call_impl(prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences, persona)
         finally:
             self._recursion_depth -= 1
 
@@ -471,6 +476,7 @@ class LLMPrimitives:
         n_tokens: int | None = None,
         skip_suffix: bool = False,
         stop_sequences: list[str] | None = None,
+        persona: str | None = None,
     ) -> str:
         """Internal implementation of llm_call (after recursion check)."""
         start_time = time.perf_counter()
@@ -490,6 +496,15 @@ class LLMPrimitives:
         if n_tokens is None:
             n_tokens = 512  # Fallback default
 
+        # Inject persona system prompt if specified and feature enabled
+        if persona and not skip_suffix:
+            from src.features import features as _get_features
+            if _get_features().personas:
+                from src.persona_loader import get_persona_registry
+                persona_cfg = get_persona_registry().get(persona)
+                if persona_cfg:
+                    prompt = f"{persona_cfg.system_prompt.strip()}\n\n{prompt}"
+
         # Apply system prompt suffix if configured for this role
         if system_prompt_suffix:
             prompt = f"{prompt}\n\n{system_prompt_suffix}"
@@ -507,6 +522,7 @@ class LLMPrimitives:
             prompt=prompt,
             context_slice=context_slice[:500] if context_slice else None,
             role=role,
+            persona=persona,
         )
 
         try:

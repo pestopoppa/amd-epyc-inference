@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from .embedder import TaskEmbedder
 from .episodic_store import EpisodicStore
 from .progress_logger import EventType, ProgressEntry, ProgressLogger, ProgressReader
+from .staged_scorer import StagedQScorer
 
 
 @dataclass
@@ -94,12 +95,14 @@ class QScorer:
         logger: ProgressLogger,
         reader: ProgressReader,
         config: Optional[ScoringConfig] = None,
+        staged_scorer: Optional[StagedQScorer] = None,
     ):
         self.store = store
         self.embedder = embedder
         self.logger = logger
         self.reader = reader
         self.config = config or ScoringConfig()
+        self.staged_scorer = staged_scorer
         self._last_score_time: Optional[datetime] = None
 
     def score_pending_tasks(self) -> Dict[str, Any]:
@@ -190,6 +193,20 @@ class QScorer:
 
         # Compute reward
         reward = self._compute_reward(task_outcome, gate_results, escalations, plan_reviews)
+
+        # Apply staged reward shaping if enabled (explore early, exploit later)
+        if self.staged_scorer is not None:
+            task_type = ""
+            if task_started and task_started.data:
+                task_type = task_started.data.get("task_type", "")
+            action_str = ""
+            if routing_decision and routing_decision.data:
+                routing = routing_decision.data.get("routing", [])
+                action_str = ",".join(routing) if isinstance(routing, list) else str(routing)
+            if action_str and task_type:
+                reward = self.staged_scorer.compute_staged_reward(
+                    reward, action_str, task_type, self.store,
+                )
 
         result = {
             "memories_updated": 0,

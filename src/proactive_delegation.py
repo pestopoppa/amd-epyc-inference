@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1032,12 +1033,63 @@ class ProactiveDelegator:
             result.aggregated_output = "[ERROR: No subtasks in plan]"
             return result
 
-        # Execute each subtask with review loop
-        for step in steps:
-            subtask_result = await self._execute_with_review(task_ir, step)
-            result.subtask_results.append(subtask_result)
-            if subtask_result.role not in result.roles_used:
-                result.roles_used.append(subtask_result.role)
+        # Execute subtasks: wave-based if parallel_execution enabled, else sequential
+        from src.features import features as _get_features
+
+        plan_start = time.monotonic()
+        used_parallel = False
+
+        if _get_features().parallel_execution and len(steps) > 1:
+            from src.parallel_step_executor import compute_waves, StepExecutor
+
+            used_parallel = True
+            waves = compute_waves(steps)
+            max_concurrent = plan.get("parallelism", {}).get(
+                "max_concurrent_steps", 2,
+            )
+            executor = StepExecutor(
+                primitives=self.primitives,
+                review_service=self.review_service,
+                iteration_context=self.iteration_context,
+                max_burst_concurrent=max_concurrent,
+            )
+            subtask_results = await executor.execute_plan(
+                task_ir, waves, ROLE_MAPPING,
+            )
+            for sr in subtask_results:
+                result.subtask_results.append(sr)
+                if sr.role not in result.roles_used:
+                    result.roles_used.append(sr.role)
+        else:
+            for step in steps:
+                subtask_result = await self._execute_with_review(task_ir, step)
+                result.subtask_results.append(subtask_result)
+                if subtask_result.role not in result.roles_used:
+                    result.roles_used.append(subtask_result.role)
+
+        plan_elapsed = time.monotonic() - plan_start
+
+        # Critical path metrics (post-hoc observability)
+        if used_parallel and len(result.subtask_results) > 1:
+            try:
+                from src.metrics.critical_path import compute_critical_path
+                from src.parallel_step_executor import extract_step_timings
+
+                timings = extract_step_timings(result.subtask_results, steps)
+                cp_report = compute_critical_path(
+                    timings, wall_clock_seconds=plan_elapsed,
+                )
+                logger.info(
+                    "Critical path: %.1fs (%d steps), parallelism ratio: %.2f, "
+                    "total work: %.1fs, wall clock: %.1fs",
+                    cp_report.critical_path_seconds,
+                    len(cp_report.critical_path_steps),
+                    cp_report.parallelism_ratio,
+                    cp_report.total_work_seconds,
+                    cp_report.wall_clock_seconds,
+                )
+            except Exception as e:
+                logger.debug("Critical path computation skipped: %s", e)
 
         # Aggregate results
         result.aggregated_output = self.aggregation_service.aggregate(

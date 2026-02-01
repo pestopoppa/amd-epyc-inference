@@ -26,7 +26,7 @@ async def run_gates(request: GateRequest) -> GatesResponse:
     if request.gate_names:
         results = state.gate_runner.run_gates_by_name(request.gate_names)
     else:
-        results = state.gate_runner.run_all_gates(
+        results = await state.gate_runner.run_all_gates_parallel(
             stop_on_first_failure=request.stop_on_first_failure,
             required_only=request.required_only,
         )

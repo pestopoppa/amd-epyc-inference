@@ -20,6 +20,7 @@ from src.roles import Role
 
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
+    from src.services.document_preprocessor import PreprocessingResult
 
 
 # ── Role-specific timeouts (Phase 1b: KV cache bug mitigation) ──────────
@@ -46,6 +47,7 @@ class RoutingResult:
     routing_strategy: str = ""
     formalization_applied: bool = False
     timeout_s: int = DEFAULT_TIMEOUT_S
+    document_result: PreprocessingResult | None = None
 
     @property
     def role(self) -> str:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for FastAPI endpoints."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,6 +53,7 @@ def mock_gate_runner():
         ),
     ]
     mock.run_all_gates.return_value = mock_results
+    mock.run_all_gates_parallel = AsyncMock(return_value=mock_results)
     mock.run_gates_by_name.return_value = [mock_results[0]]  # Return format gate
 
     return mock

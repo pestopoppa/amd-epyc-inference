@@ -1,7 +1,7 @@
 # Orchestrator Architecture Review & chat.py Decomposition
 
-**Date**: 2026-01-31
-**Status**: In Progress (Phase 3 of 5 complete, MemRL DB cleaned for validation)
+**Date**: 2026-02-01
+**Status**: In Progress (Phase 3 of 5 complete + WI-9/10/11 done, MemRL DB cleaned for validation)
 **Author**: Claude Opus 4.5 (architecture review session)
 
 ## Summary
@@ -23,7 +23,7 @@ Comprehensive architecture review of the hierarchical orchestrator codebase (110
 ### Serious Issues
 
 - S1: Hardcoded `/mnt/raid0/` paths (non-portable)
-- S2: `prompt_builders.py` mixes all 40+ prompt types (1,501 lines)
+- ~~S2: `prompt_builders.py` mixes all 40+ prompt types (1,501 lines)~~ → **RESOLVED (WI-11)**: Decomposed into `src/prompt_builders/` package with 6 sub-modules (types, constants, builder, review, code_utils, formatting). Zero downstream import changes.
 - S3: Dead `api/services/orchestrator.py` facade (deleted in Phase 1)
 - S4: 8/15 `AppState` fields typed as `Any` (no type checking)
 - S5: Magic numbers scattered (token budgets, thresholds, intervals)
@@ -122,6 +122,11 @@ All other modules: no cross-deps to new modules
 - **Phase 1b**: Pipeline restructure (`_handle_chat()` 1,091→80 lines, 11 stage functions)
 - **Phase 2**: State management + circuit breaker (8 Protocol interfaces, BackendHealthTracker)
 - **Phase 3**: Configuration consolidation (27 files, ~185 values wired to `src/config.py`, 1012+165 tests)
+- **WI-9**: Staged reward shaping — PARL-inspired annealing coefficient λ(step) 0.3→0.0, exploration bonus 1/√(N+1)
+- **WI-10**: Parallel gate execution — `asyncio.to_thread()` + `asyncio.gather()` for concurrent subprocess gates, `parallel_gates` feature flag
+- **WI-11**: prompt_builders.py decomposition — 1,501-line monolith → 6-module package (resolves S2)
+
+**Test count**: 1398 passed, 25 skipped, 0 failures
 
 ## Remaining Phases (Not Yet Implemented)
 

@@ -183,13 +183,25 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS middleware for development
+    # Middleware (order matters: last added = first executed)
+    from src.config import get_config as _get_config
+    _api_cfg = _get_config().api
+
+    # CORS — explicit origins required when credentials are enabled
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=_api_cfg.cors_origins,
+        allow_credentials=_api_cfg.cors_allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    # Rate limiting — per-IP token bucket
+    from src.api.rate_limit import RateLimitMiddleware
+    app.add_middleware(
+        RateLimitMiddleware,
+        rpm=_api_cfg.rate_limit_rpm,
+        burst=_api_cfg.rate_limit_burst,
     )
 
     # Include all routes

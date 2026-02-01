@@ -390,3 +390,218 @@ class TestGetSummary:
         assert "[FAILED] fail" in summary
         assert "1/2 passed" in summary
         assert "1 failed" in summary
+
+
+class TestGateConfigParallelizable:
+    """Test parallelizable field on GateConfig."""
+
+    def test_default_not_parallelizable(self):
+        """GateConfig defaults to parallelizable=False."""
+        config = GateConfig(name="test", command="echo hello")
+        assert config.parallelizable is False
+
+    def test_from_dict_parallelizable(self):
+        """from_dict reads parallelizable flag."""
+        data = {"name": "lint", "command": "make lint", "parallelizable": True}
+        config = GateConfig.from_dict(data)
+        assert config.parallelizable is True
+
+    def test_from_dict_no_parallelizable(self):
+        """from_dict defaults to False when not specified."""
+        data = {"name": "unit", "command": "make test-unit"}
+        config = GateConfig.from_dict(data)
+        assert config.parallelizable is False
+
+
+class TestRunAllGatesParallel:
+    """Test async parallel gate execution."""
+
+    @pytest.mark.asyncio
+    async def test_parallel_gates_run_concurrently(self, tmp_path):
+        """Two fast parallelizable gates complete faster than sequential."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: gate1
+    command: "sleep 0.3 && echo gate1"
+    timeout: 10
+    parallelizable: true
+  - name: gate2
+    command: "sleep 0.3 && echo gate2"
+    timeout: 10
+    parallelizable: true
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        import time
+        start = time.perf_counter()
+        results = await runner.run_all_gates_parallel()
+        elapsed = time.perf_counter() - start
+
+        assert len(results) == 2
+        assert all(r.passed for r in results)
+        # Sequential would take ~0.6s, parallel should take ~0.3s (+overhead)
+        assert elapsed < 0.55
+
+    @pytest.mark.asyncio
+    async def test_parallel_then_sequential(self, tmp_path):
+        """Parallel gates run first, then sequential gates."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: fast_lint
+    command: echo lint
+    timeout: 10
+    parallelizable: true
+  - name: fast_format
+    command: echo format
+    timeout: 10
+    parallelizable: true
+  - name: heavy_unit
+    command: echo unit
+    timeout: 10
+    parallelizable: false
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel()
+
+        assert len(results) == 3
+        assert all(r.passed for r in results)
+        # Results in config order
+        assert results[0].gate_name == "fast_lint"
+        assert results[1].gate_name == "fast_format"
+        assert results[2].gate_name == "heavy_unit"
+
+    @pytest.mark.asyncio
+    async def test_parallel_required_failure_stops(self, tmp_path):
+        """Required parallel gate failure stops sequential phase."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: bad_lint
+    command: exit 1
+    timeout: 10
+    required: true
+    parallelizable: true
+  - name: heavy_unit
+    command: echo should_not_run
+    timeout: 10
+    required: true
+    parallelizable: false
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel(stop_on_first_failure=True)
+
+        # Only parallel gate result returned, sequential never ran
+        assert len(results) == 1
+        assert results[0].gate_name == "bad_lint"
+        assert not results[0].passed
+
+    @pytest.mark.asyncio
+    async def test_parallel_optional_failure_continues(self, tmp_path):
+        """Optional parallel gate failure doesn't stop execution."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: optional_lint
+    command: exit 1
+    timeout: 10
+    required: false
+    parallelizable: true
+  - name: heavy_unit
+    command: echo runs
+    timeout: 10
+    required: true
+    parallelizable: false
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel(stop_on_first_failure=True)
+
+        assert len(results) == 2
+        assert not results[0].passed  # optional lint failed
+        assert results[1].passed  # unit ran and passed
+
+    @pytest.mark.asyncio
+    async def test_parallel_preserves_order(self, tmp_path):
+        """Results returned in config order, not completion order."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: slow
+    command: "sleep 0.2 && echo slow"
+    timeout: 10
+    parallelizable: true
+  - name: fast
+    command: echo fast
+    timeout: 10
+    parallelizable: true
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel()
+
+        # Even though "fast" finishes first, "slow" appears first in results
+        assert results[0].gate_name == "slow"
+        assert results[1].gate_name == "fast"
+
+    @pytest.mark.asyncio
+    async def test_parallel_with_retries(self, tmp_path):
+        """Gate with retry_count gets retried after parallel batch."""
+        # Create a file that the gate checks for (simulates flaky gate)
+        marker = tmp_path / "attempt_counter"
+        marker.write_text("0")
+        config_file = tmp_path / "gates.yaml"
+        # First attempt fails, retry succeeds
+        config_file.write_text(f"""
+gates:
+  - name: flaky
+    command: "count=$(cat {marker}); count=$((count+1)); echo $count > {marker}; test $count -ge 2"
+    timeout: 10
+    retry_count: 1
+    parallelizable: true
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel()
+
+        assert len(results) == 1
+        assert results[0].passed  # Passed on retry
+
+    @pytest.mark.asyncio
+    async def test_all_sequential_fallback(self, tmp_path):
+        """When no parallelizable gates, behaves like run_all_gates."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: gate1
+    command: echo gate1
+    timeout: 10
+  - name: gate2
+    command: echo gate2
+    timeout: 10
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel()
+
+        assert len(results) == 2
+        assert all(r.passed for r in results)
+
+    @pytest.mark.asyncio
+    async def test_parallel_required_only(self, tmp_path):
+        """required_only=True filters before parallelization."""
+        config_file = tmp_path / "gates.yaml"
+        config_file.write_text("""
+gates:
+  - name: optional_lint
+    command: echo lint
+    timeout: 10
+    required: false
+    parallelizable: true
+  - name: required_unit
+    command: echo unit
+    timeout: 10
+    required: true
+    parallelizable: false
+""")
+        runner = GateRunner(config_path=config_file, working_dir=tmp_path)
+        results = await runner.run_all_gates_parallel(required_only=True)
+
+        assert len(results) == 1
+        assert results[0].gate_name == "required_unit"

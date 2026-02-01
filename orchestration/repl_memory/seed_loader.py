@@ -31,6 +31,65 @@ def load_seeds() -> list[dict]:
         return json.load(f)
 
 
+def _get_persona_seeds() -> list[dict]:
+    """Return persona-selection seed examples.
+
+    These teach MemRL which persona overlay works best for which task
+    types, bootstrapping persona selection before enough real task
+    outcomes accumulate.
+
+    Returns:
+        List of persona seed dictionaries.
+    """
+    return [
+        # Engineering personas
+        {"task": "Review this code for SQL injection vulnerabilities",
+         "action": "persona:security_auditor", "outcome": "success"},
+        {"task": "Check the authentication flow for CSRF and session fixation",
+         "action": "persona:security_auditor", "outcome": "success"},
+        {"task": "Write documentation explaining the orchestration architecture",
+         "action": "persona:technical_writer", "outcome": "success"},
+        {"task": "Profile the database query and reduce latency",
+         "action": "persona:performance_optimizer", "outcome": "success"},
+        {"task": "Optimize memory allocation in the batch processing pipeline",
+         "action": "persona:performance_optimizer", "outcome": "success"},
+        {"task": "Write unit tests for the authentication module",
+         "action": "persona:test_designer", "outcome": "success"},
+        {"task": "Generate edge case tests for the rate limiter",
+         "action": "persona:test_designer", "outcome": "success"},
+        {"task": "Review the refactored module for code quality issues",
+         "action": "persona:code_reviewer", "outcome": "success"},
+        {"task": "Analyze the CSV export data for statistical anomalies",
+         "action": "persona:data_analyst", "outcome": "success"},
+        {"task": "Tune the KV cache settings for the inference server",
+         "action": "persona:inference_specialist", "outcome": "success"},
+        {"task": "Compare benchmark scores across model configurations",
+         "action": "persona:benchmark_analyst", "outcome": "success"},
+        {"task": "Implement the finite element solver for the heat equation",
+         "action": "persona:computational_physicist", "outcome": "success"},
+        {"task": "Design the training pipeline for the reward model",
+         "action": "persona:ai_engineer", "outcome": "success"},
+        # Research & academic personas
+        {"task": "Design an experiment to measure speculative decoding quality impact",
+         "action": "persona:research_architect", "outcome": "success"},
+        {"task": "Write up the findings from the MoE expert reduction study",
+         "action": "persona:research_writer", "outcome": "success"},
+        {"task": "Summarize the meeting notes and extract action items",
+         "action": "persona:secretary", "outcome": "success"},
+        {"task": "Review the literature on transformer attention mechanisms",
+         "action": "persona:research_analyst", "outcome": "success"},
+        {"task": "Derive the partition function for the Ising model",
+         "action": "persona:theoretical_physicist", "outcome": "success"},
+        {"task": "Analyze the epistemological implications of AI alignment",
+         "action": "persona:philosopher", "outcome": "success"},
+        {"task": "Contextualize the development of computing within Cold War history",
+         "action": "persona:academic_historian", "outcome": "success"},
+        # Practical persona
+        {"task": "Help me configure the RAID array and UPS monitoring",
+         "action": "persona:hardware_specialist", "outcome": "success"},
+    ]
+
+
 def _get_routing_seeds() -> list[dict]:
     """Return mode-annotated routing seed examples.
 
@@ -191,6 +250,30 @@ def seed_memory(force: bool = False) -> dict:
             stats["by_category"]["routing"] = stats["by_category"].get("routing", 0) + 1
         except Exception as e:
             print(f"  Failed to load routing seed '{rseed['task'][:50]}...': {e}")
+            stats["failed"] += 1
+
+    # Load persona-selection seeds
+    persona_seeds = _get_persona_seeds()
+    for pseed in persona_seeds:
+        try:
+            embedding = embedder.embed_text(pseed["task"])
+            context = {
+                "task_description": pseed["task"],
+                "category": "persona",
+                "is_seed": True,
+            }
+            store.store(
+                embedding=embedding,
+                action=pseed["action"],
+                action_type="persona",
+                context=context,
+                outcome=pseed.get("outcome", "success"),
+                initial_q=0.85,
+            )
+            stats["loaded"] += 1
+            stats["by_category"]["persona"] = stats["by_category"].get("persona", 0) + 1
+        except Exception as e:
+            print(f"  Failed to load persona seed '{pseed['task'][:50]}...': {e}")
             stats["failed"] += 1
 
     # Flush FAISS index to disk before reporting stats

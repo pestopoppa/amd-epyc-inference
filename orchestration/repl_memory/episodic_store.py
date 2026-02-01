@@ -545,6 +545,35 @@ class EpisodicStore:
                 row = conn.execute("SELECT COUNT(*) FROM memories").fetchone()
         return row[0] if row else 0
 
+    def count_by_combo(
+        self, action: str, task_type: Optional[str] = None,
+    ) -> int:
+        """Count memories matching action and optional task_type in context.
+
+        Uses SQLite json_extract() to filter by task_type stored in the
+        JSON context column. Requires SQLite 3.38+ (2022).
+
+        Args:
+            action: Action string to match (e.g. "frontdoor:direct").
+            task_type: Optional task_type value in context JSON.
+
+        Returns:
+            Count of matching memories.
+        """
+        with sqlite3.connect(self.sqlite_path) as conn:
+            if task_type:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM memories WHERE action = ? "
+                    "AND json_extract(context, '$.task_type') = ?",
+                    (action, task_type),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM memories WHERE action = ?",
+                    (action,),
+                ).fetchone()
+        return row[0] if row else 0
+
     def get_stats(self) -> Dict[str, Any]:
         """Get memory statistics."""
         with sqlite3.connect(self.sqlite_path) as conn:
@@ -904,6 +933,9 @@ class GraphEnhancedStore:
 
     def count(self, action_type: Optional[str] = None) -> int:
         return self.store.count(action_type)
+
+    def count_by_combo(self, action: str, task_type: Optional[str] = None) -> int:
+        return self.store.count_by_combo(action, task_type)
 
     def get_stats(self) -> Dict[str, Any]:
         stats = self.store.get_stats()

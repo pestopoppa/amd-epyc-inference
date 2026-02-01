@@ -327,10 +327,15 @@ The orchestration layer is implemented in:
 - `src/dispatcher.py` - Task routing
 - `src/executor.py` - Step execution, escalation
 - `src/context_manager.py` - Context passing between steps
+- `src/prompt_builders/` - Prompt construction package (6 sub-modules: types, constants, builder, review, code_utils, formatting)
+- `src/gate_runner.py` - Verification gate execution (sequential + parallel via `asyncio.gather()`)
+- `src/features.py` - Feature flag system with dataclass validation
+- `src/config.py` - Centralized configuration (~185 values)
 - `orchestration/model_registry.yaml` - Deterministic model mapping
 - `orchestration/task_ir.schema.json` - TaskIR validation
+- `orchestration/repl_memory/` - MemRL episodic memory (staged rewards, FAISS retrieval, Q-scoring)
 
-**Test Coverage**: 184 unit tests + 9 integration tests passing
+**Test Coverage**: 1398 tests passing (0 failures, 25 skipped)
 
 ## References
 

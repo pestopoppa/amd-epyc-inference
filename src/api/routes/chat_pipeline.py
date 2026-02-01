@@ -71,7 +71,7 @@ from src.api.routes.chat_utils import (
     _strip_tool_outputs,
     _truncate_looped_answer,
 )
-from src.api.routes.chat_vision import (
+from src.api.routes.chat_vision import (  # noqa: F401 — kept for backward compat
     _handle_multi_file_vision,
     _handle_vision_request,
     _vision_react_mode_answer,
@@ -79,6 +79,8 @@ from src.api.routes.chat_vision import (
 
 if TYPE_CHECKING:
     pass
+
+from src.api.structured_logging import task_extra
 
 log = logging.getLogger(__name__)
 
@@ -137,8 +139,10 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
             risk = state.failure_graph.get_failure_risk(str(routing_decision[0]))
             if risk > 0.5:
                 log.warning(
-                    f"Failure veto: {routing_decision[0]} risk={risk:.2f} > 0.5, "
-                    f"reverting to frontdoor"
+                    "Failure veto: %s risk=%.2f > 0.5, reverting to frontdoor",
+                    routing_decision[0], risk,
+                    extra=task_extra(task_id=task_id, role=str(routing_decision[0]),
+                                     stage="routing", strategy="failure_vetoed"),
                 )
                 routing_decision = [str(Role.FRONTDOOR)]
                 routing_strategy = "failure_vetoed"
@@ -196,6 +200,8 @@ def _preprocess(request: ChatRequest, state, routing: RoutingResult) -> None:
                     problem_hint,
                     fml_result.elapsed_seconds,
                     fml_result.model_role,
+                    extra=task_extra(task_id=routing.task_id, stage="preprocess",
+                                     latency_ms=fml_result.elapsed_seconds * 1000),
                 )
 
 
@@ -324,110 +330,88 @@ async def _execute_vision(
     state,
     start_time: float,
 ) -> ChatResponse | None:
-    """Handle vision requests. Returns ChatResponse or None (fall through to text modes)."""
+    """Preprocess vision inputs through the document pipeline.
+
+    Instead of answering directly, this stage runs DocumentPreprocessor to
+    extract text, sections, and figures from the image/document. The result
+    is stored on routing.document_result so that _execute_repl() can use
+    DocumentREPLEnvironment with structured document access tools.
+
+    Returns None to fall through to REPL mode (the normal path).
+    Only returns ChatResponse on unrecoverable errors.
+    """
     has_vision_input = request.image_path or request.image_base64 or request.files
     if not (request.real_mode and has_vision_input):
         return None
 
-    vision_roles = {"worker_vision", "vision_escalation"}
-    forced_role = request.force_role or ""
-    forced_mode = request.force_mode or ""
-    routed_to_vision = "worker_vision"
+    from src.services.document_preprocessor import (
+        DocumentPreprocessor,
+        PreprocessingConfig,
+    )
 
-    force_server = None
-    if forced_role in vision_roles:
-        force_server = forced_role
-        routed_to_vision = forced_role
+    config = PreprocessingConfig(
+        extract_figures=True,
+        describe_figures=True,
+    )
+    preprocessor = DocumentPreprocessor(config=config)
 
-    vision_exec_mode = forced_mode if forced_mode in ("direct", "react") else "direct"
-    if forced_role == "vision_escalation" and vision_exec_mode == "react":
-        log.warning("vision_escalation cannot do react mode, forcing direct")
-        vision_exec_mode = "direct"
-
-    vision_tools_used = 0
-    vision_tools_called: list[str] = []
     try:
-        if request.files and len(request.files) > 0:
-            answer = await _handle_multi_file_vision(request, primitives, state, routing.task_id)
-        elif vision_exec_mode == "react" and force_server in (None, "worker_vision"):
-            import base64 as _b64
-
-            image_b64 = request.image_base64
-            if not image_b64 and request.image_path:
-                from pathlib import Path
-                image_b64 = _b64.b64encode(Path(request.image_path).read_bytes()).decode("utf-8")
-
-            mime_type = "image/jpeg"
-            try:
-                raw = _b64.b64decode(image_b64[:32])
-                if raw[:4] == b'\x89PNG':
-                    mime_type = "image/png"
-                elif raw[:4] == b'RIFF':
-                    mime_type = "image/webp"
-            except Exception:
-                pass
-
-            vl_port = 8086
-            log.info(f"Vision ReAct mode on port {vl_port}")
-            answer, vision_tools_used, vision_tools_called = await _vision_react_mode_answer(
-                prompt=request.prompt,
-                image_b64=image_b64,
-                mime_type=mime_type,
-                context=request.context or "",
-                vl_port=vl_port,
-                max_turns=5,
-            )
-            routed_to_vision = "worker_vision"
-        else:
-            answer = await _handle_vision_request(
-                request, primitives, state, routing.task_id,
-                force_server=force_server,
-            )
-            vision_tools_used = 1
-            vision_tools_called = ["ocr_extract"]
-            if force_server:
-                routed_to_vision = force_server
-
-        elapsed = time.perf_counter() - start_time
-        state.increment_request(mock_mode=False, turns=1)
-
-        if state.progress_logger:
-            mode_label = f"vision/{vision_exec_mode}"
-            state.progress_logger.log_task_completed(
-                task_id=routing.task_id,
-                success=True,
-                details=f"{mode_label} via {routed_to_vision}, {elapsed:.3f}s",
-            )
-            score_completed_task(state, routing.task_id)
-
-        return ChatResponse(
-            answer=answer,
-            turns=1,
-            tokens_used=0,
-            elapsed_seconds=elapsed,
-            mock_mode=False,
-            real_mode=True,
-            cache_stats=None,
-            routed_to=routed_to_vision,
-            role_history=[routed_to_vision],
-            routing_strategy=routing.routing_strategy,
-            tokens_generated=0,
-            formalization_applied=False,
-            tools_used=vision_tools_used,
-            tools_called=vision_tools_called,
-            prompt_eval_ms=primitives.total_prompt_eval_ms,
-            generation_ms=primitives.total_generation_ms,
-            predicted_tps=primitives._last_predicted_tps,
-            http_overhead_ms=primitives.total_http_overhead_ms,
-        )
-    except Exception as e:
-        log.warning(f"Vision pipeline failed: {type(e).__name__}: {e}")
         if request.image_path:
-            request.context = (request.context or "") + (
-                f"\n\n[IMAGE: {request.image_path} — Vision pipeline unavailable. "
-                f"Use image analysis tools if available, otherwise note the limitation.]"
+            log.info(
+                "Vision preprocessing file: %s", request.image_path,
+                extra=task_extra(task_id=routing.task_id, stage="execute", mode="vision_preprocess"),
             )
-        return None  # Fall through to standard orchestration
+            result = await preprocessor.preprocess_file(request.image_path)
+        elif request.image_base64:
+            log.info(
+                "Vision preprocessing base64 image",
+                extra=task_extra(task_id=routing.task_id, stage="execute", mode="vision_preprocess"),
+            )
+            task_ir = {"inputs": [{"type": "base64", "value": request.image_base64}]}
+            result = await preprocessor.preprocess(task_ir)
+        elif request.files:
+            log.info(
+                "Vision preprocessing %d files", len(request.files),
+                extra=task_extra(task_id=routing.task_id, stage="execute", mode="vision_preprocess"),
+            )
+            task_ir = {"inputs": [{"type": "path", "value": f} for f in request.files]}
+            result = await preprocessor.preprocess(task_ir)
+        else:
+            result = None
+
+        if result and result.success and result.document_result:
+            routing.document_result = result
+            log.info(
+                "Document preprocessing succeeded: %d sections, %d figures",
+                len(result.document_result.sections),
+                len(result.document_result.figures),
+                extra=task_extra(task_id=routing.task_id, stage="execute",
+                                 mode="vision_preprocess"),
+            )
+            return None  # Fall through to REPL with document context
+
+        # Preprocessing returned but without usable document result
+        warn_msg = result.error if result else "unknown"
+        log.warning(
+            "Document preprocessing failed: %s", warn_msg,
+            extra=task_extra(task_id=routing.task_id, stage="execute",
+                             mode="vision_preprocess", error_type="preprocess_failed"),
+        )
+
+    except Exception as e:
+        log.warning(
+            "Vision preprocessing exception: %s: %s", type(e).__name__, e,
+            extra=task_extra(task_id=routing.task_id, stage="execute",
+                             mode="vision_preprocess", error_type=type(e).__name__),
+        )
+
+    # Preprocessing failed — inject context note and fall through to text modes
+    image_ref = request.image_path or "(base64 image)"
+    request.context = (request.context or "") + (
+        f"\n\n[IMAGE: {image_ref} — Document pipeline failed. "
+        f"Answering without OCR context.]"
+    )
+    return None  # Fall through to standard orchestration
 
 
 # ── Stage 7: Delegated mode ─────────────────────────────────────────────
@@ -452,7 +436,11 @@ def _execute_delegated(
     if not (use_delegation and request.real_mode):
         return None
 
-    log.info(f"Delegated mode for {initial_role} (prompt: {len(request.prompt)} chars)")
+    log.info(
+        "Delegated mode for %s (prompt: %d chars)", initial_role, len(request.prompt),
+        extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                         stage="execute", mode="delegated", prompt_len=len(request.prompt)),
+    )
 
     try:
         answer, delegation_stats = _architect_delegated_answer(
@@ -466,7 +454,11 @@ def _execute_delegated(
         )
         answer = answer.strip() if answer else ""
     except Exception as e:
-        log.warning(f"Delegation failed ({e}), falling back to direct")
+        log.warning(
+            "Delegation failed (%s), falling back to direct", e,
+            extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                             stage="execute", mode="delegated", error_type=type(e).__name__),
+        )
         return None
 
     if not answer:
@@ -532,7 +524,11 @@ def _execute_react(
     if not (request.real_mode):
         return None
 
-    log.info(f"ReAct mode for {initial_role} (prompt: {len(request.prompt)} chars)")
+    log.info(
+        "ReAct mode for %s (prompt: %d chars)", initial_role, len(request.prompt),
+        extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                         stage="execute", mode="react", prompt_len=len(request.prompt)),
+    )
 
     react_tools_used = 0
     react_tools_called: list[str] = []
@@ -547,7 +543,11 @@ def _execute_react(
         )
         answer = answer.strip()
     except Exception as e:
-        log.warning(f"ReAct mode failed ({e}), falling back to direct")
+        log.warning(
+            "ReAct mode failed (%s), falling back to direct", e,
+            extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                             stage="execute", mode="react", error_type=type(e).__name__),
+        )
         return None
 
     if not answer:
@@ -617,7 +617,11 @@ def _execute_direct(
     initial_role,
 ) -> ChatResponse:
     """Handle direct LLM call mode (no REPL wrapper)."""
-    log.info(f"Direct-answer mode for {initial_role} (prompt: {len(request.prompt)} chars)")
+    log.info(
+        "Direct-answer mode for %s (prompt: %d chars)", initial_role, len(request.prompt),
+        extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                         stage="execute", mode="direct", prompt_len=len(request.prompt)),
+    )
 
     direct_prompt = request.prompt
     if request.context:
@@ -633,7 +637,11 @@ def _execute_direct(
         )
         answer = answer.strip()
     except Exception as e:
-        log.warning(f"Direct LLM call failed ({e}), retrying once...")
+        log.warning(
+            "Direct LLM call failed (%s), retrying once...", e,
+            extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                             stage="execute", mode="direct", error_type=type(e).__name__),
+        )
         try:
             answer = primitives.llm_call(
                 direct_prompt,
@@ -661,8 +669,10 @@ def _execute_direct(
         quality_issue = _detect_output_quality_issue(answer)
         if quality_issue:
             log.info(
-                f"Output quality issue detected ({quality_issue}), "
-                f"escalating from {initial_role} to coder_escalation"
+                "Output quality issue detected (%s), escalating from %s to coder_escalation",
+                quality_issue, initial_role,
+                extra=task_extra(task_id=routing.task_id, role=str(initial_role),
+                                 stage="quality_check", error_type=quality_issue),
             )
             try:
                 escalated_answer = primitives.llm_call(
@@ -746,22 +756,51 @@ async def _execute_repl(
     routing_strategy = routing.routing_strategy
     formalization_applied = routing.formalization_applied
 
-    # Create REPL environment
+    # Create REPL environment — use DocumentREPLEnvironment when document
+    # preprocessing produced structured results (sections, figures, etc.)
     combined_context = request.prompt
     if request.context:
         combined_context += f"\n\nContext:\n{request.context}"
 
-    repl = REPLEnvironment(
-        context=combined_context,
-        llm_primitives=primitives,
-        tool_registry=state.tool_registry,
-        script_registry=state.script_registry,
-        role=initial_role,
-        progress_logger=state.progress_logger,
-        task_id=task_id,
-        retriever=state.hybrid_router.retriever if state.hybrid_router else None,
-        hybrid_router=state.hybrid_router,
-    )
+    if routing.document_result and routing.document_result.document_result:
+        from src.repl_document import DocumentREPLEnvironment, DocumentContext
+
+        doc_result = routing.document_result.document_result
+        doc_context = DocumentContext.from_document_result(doc_result)
+
+        # Use searchable text as REPL context, prepend the user's question
+        doc_text = doc_result.to_searchable_text()
+        combined_context = f"Question: {request.prompt}\n\n{doc_text}"
+
+        repl = DocumentREPLEnvironment(
+            context=combined_context,
+            document_context=doc_context,
+            llm_primitives=primitives,
+            tool_registry=state.tool_registry,
+            script_registry=state.script_registry,
+            role=initial_role,
+            progress_logger=state.progress_logger,
+            task_id=task_id,
+            retriever=state.hybrid_router.retriever if state.hybrid_router else None,
+            hybrid_router=state.hybrid_router,
+        )
+        log.info(
+            "Using DocumentREPLEnvironment: %d sections, %d figures",
+            len(doc_context.sections), len(doc_context.figures),
+            extra=task_extra(task_id=task_id, stage="execute", mode="repl_document"),
+        )
+    else:
+        repl = REPLEnvironment(
+            context=combined_context,
+            llm_primitives=primitives,
+            tool_registry=state.tool_registry,
+            script_registry=state.script_registry,
+            role=initial_role,
+            progress_logger=state.progress_logger,
+            task_id=task_id,
+            retriever=state.hybrid_router.retriever if state.hybrid_router else None,
+            hybrid_router=state.hybrid_router,
+        )
 
     # Check for two-stage summarization opportunity
     if request.real_mode and _should_use_two_stage(
@@ -1028,7 +1067,10 @@ async def _execute_repl(
 
             # MemRL-informed quality review gate
             if request.real_mode and _should_review(state, task_id, current_role, answer):
-                log.info(f"Review gate triggered for {current_role} (task {task_id})")
+                log.info(
+                    "Review gate triggered for %s (task %s)", current_role, task_id,
+                    extra=task_extra(task_id=task_id, role=current_role, stage="review"),
+                )
                 verdict = _architect_verdict(
                     question=request.prompt,
                     answer=answer,
@@ -1036,7 +1078,10 @@ async def _execute_repl(
                 )
                 if verdict and verdict.upper().startswith("WRONG"):
                     corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
-                    log.info(f"Review verdict: WRONG — revising ({corrections[:80]})")
+                    log.info(
+                        "Review verdict: WRONG — revising (%.80s)", corrections,
+                        extra=task_extra(task_id=task_id, role=current_role, stage="review"),
+                    )
                     answer = _fast_revise(
                         question=request.prompt,
                         original_answer=answer,
@@ -1044,7 +1089,10 @@ async def _execute_repl(
                         primitives=primitives,
                     )
                 else:
-                    log.info("Review verdict: OK")
+                    log.info(
+                        "Review verdict: OK",
+                        extra=task_extra(task_id=task_id, role=current_role, stage="review"),
+                    )
 
             break
 

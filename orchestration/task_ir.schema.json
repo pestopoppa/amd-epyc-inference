@@ -129,7 +129,11 @@
             "minimum": 1,
             "description": "Max parallel instances of this agent"
           },
-          "notes": { "type": "string" }
+          "notes": { "type": "string" },
+          "persona_hint": {
+            "type": "string",
+            "description": "Suggested persona overlay (e.g. 'security_auditor', 'code_reviewer')"
+          }
         }
       }
     },
@@ -189,6 +193,10 @@
               "timeout_seconds": {
                 "type": "integer",
                 "minimum": 1
+              },
+              "persona": {
+                "type": "string",
+                "description": "Persona overlay for this step's actor"
               }
             }
           }

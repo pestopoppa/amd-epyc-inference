@@ -432,7 +432,11 @@ class DocumentPreprocessor:
             )
 
     def _extract_document_paths(self, task_ir: dict[str, Any]) -> list[Path]:
-        """Extract document file paths from TaskIR inputs."""
+        """Extract document file paths from TaskIR inputs.
+
+        Handles both file paths and base64-encoded images. Base64 images are
+        saved to a temp file on RAID storage and returned as a path.
+        """
         paths = []
 
         for inp in task_ir.get("inputs", []):
@@ -447,6 +451,32 @@ class DocumentPreprocessor:
                 # Also check for archives
                 elif self._is_archive(path):
                     paths.append(path)
+            elif inp_type == "base64" and value:
+                # Save base64 image to temp file for processing
+                try:
+                    import base64
+                    import tempfile
+
+                    img_bytes = base64.b64decode(value)
+
+                    # Detect format from magic bytes
+                    ext = ".png"
+                    if img_bytes[:2] == b'\xff\xd8':
+                        ext = ".jpg"
+                    elif img_bytes[:4] == b'RIFF':
+                        ext = ".webp"
+                    elif img_bytes[:4] == b'%PDF':
+                        ext = ".pdf"
+
+                    tmp_dir = Path("/mnt/raid0/llm/tmp")
+                    tmp_dir.mkdir(parents=True, exist_ok=True)
+                    fd, tmp_path = tempfile.mkstemp(suffix=ext, dir=str(tmp_dir))
+                    with open(fd, "wb") as f:
+                        f.write(img_bytes)
+
+                    paths.append(Path(tmp_path))
+                except Exception as e:
+                    logger.warning(f"Failed to save base64 image to temp file: {e}")
 
         return paths
 

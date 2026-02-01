@@ -541,6 +541,30 @@ class ServicesConfig:
 
 
 @dataclass
+class ApiConfig:
+    """Configuration for API middleware (CORS, rate limiting)."""
+
+    cors_origins: list[str] = field(
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:8000",
+        ]
+    )
+    """Allowed CORS origins. Must be explicit when allow_credentials is True."""
+
+    cors_allow_credentials: bool = True
+    """Whether to allow credentials in CORS requests."""
+
+    rate_limit_rpm: int = 60
+    """Requests per minute per client IP."""
+
+    rate_limit_burst: int = 10
+    """Maximum burst size above the sustained rate."""
+
+
+@dataclass
 class WorkerPoolPathsConfig:
     """Paths for worker pool management."""
 
@@ -601,6 +625,7 @@ class OrchestratorConfigData:
     delegation: DelegationConfig = field(default_factory=DelegationConfig)
     services: ServicesConfig = field(default_factory=ServicesConfig)
     worker_pool: WorkerPoolPathsConfig = field(default_factory=WorkerPoolPathsConfig)
+    api: ApiConfig = field(default_factory=ApiConfig)
 
 
 # ============================================================================

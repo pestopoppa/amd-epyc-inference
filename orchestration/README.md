@@ -466,6 +466,9 @@ The `repl_memory/` directory contains the MemRL episodic memory system for learn
 | `repl_memory/faiss_store.py` | FAISS embedding store + NumPy fallback |
 | `repl_memory/embedder.py` | Task embedding via Qwen2.5-0.5B |
 | `repl_memory/retriever.py` | Two-phase retrieval + hybrid router |
+| `repl_memory/q_scorer.py` | Async Q-value update agent |
+| `repl_memory/progress_logger.py` | Structured JSONL logging |
+| `repl_memory/staged_scorer.py` | PARL-inspired staged reward shaping (λ annealing + exploration bonus) |
 
 ### Embedding Backend
 

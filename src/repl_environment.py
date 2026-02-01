@@ -1710,6 +1710,7 @@ class REPLEnvironment:
         prompt: str,
         target_role: str = "worker_general",
         reason: str = "",
+        persona: str = "",
     ) -> str:
         """Delegate a subtask to a specific role with outcome tracking.
 
@@ -1724,6 +1725,7 @@ class REPLEnvironment:
             prompt: The task to delegate.
             target_role: Role to delegate to (e.g., "coder_primary", "worker_math").
             reason: Why this role was chosen (helps MemRL learn).
+            persona: Optional persona overlay (e.g., "security_auditor").
 
         Returns:
             The delegated model's response, or error message.
@@ -1757,12 +1759,15 @@ class REPLEnvironment:
             "from_role": self.role,
             "to_role": target_role,
             "reason": reason,
+            "persona": persona,
             "prompt_preview": prompt[:100],
             "timestamp": time.time(),
         }
 
         try:
-            result = self.llm_primitives.llm_call(prompt, role=target_role)
+            result = self.llm_primitives.llm_call(
+                prompt, role=target_role, persona=persona or None,
+            )
             elapsed = time.perf_counter() - start
 
             delegation_record["success"] = True

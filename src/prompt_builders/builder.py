@@ -1,0 +1,669 @@
+"""PromptBuilder class and module-level convenience functions.
+
+Contains:
+- PromptBuilder class (Root LM, escalation, step, stage2 review, system prompts)
+- Module-level backward-compat functions
+- build_routing_context() for MemRL integration
+- build_long_context_exploration_prompt() for large document processing
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from src.prompt_builders.types import (
+    EscalationPrompt,
+    PromptConfig,
+    RootLMPrompt,
+    StepPrompt,
+)
+from src.prompt_builders.constants import DEFAULT_ROOT_LM_RULES, DEFAULT_ROOT_LM_TOOLS
+from src.roles import Role, get_tier
+
+if TYPE_CHECKING:
+    from src.context_manager import ContextManager
+    # Support both legacy and new escalation types
+    from src.failure_router import ErrorCategory, FailureContext, RoutingDecision
+    from src.escalation import EscalationContext, EscalationDecision
+
+
+class PromptBuilder:
+    """Builder for all prompt types in the orchestration system.
+
+    This class provides a unified interface for building prompts for:
+    - Root LM (orchestrator) prompts
+    - Escalation prompts
+    - Step execution prompts
+    - Role-specific system prompts
+
+    Example:
+        builder = PromptBuilder()
+
+        # Build Root LM prompt
+        prompt = builder.build_root_lm_prompt(
+            state="artifacts = {}",
+            original_prompt="Summarize the document",
+            turn=0,
+        )
+
+        # Build escalation prompt
+        esc_prompt = builder.build_escalation_prompt(
+            original_prompt="...",
+            state="...",
+            failure_context=context,
+            decision=decision,
+        )
+    """
+
+    def __init__(self, config: PromptConfig | None = None):
+        """Initialize the prompt builder.
+
+        Args:
+            config: Optional configuration. Uses defaults if not provided.
+        """
+        self.config = config or PromptConfig()
+
+    def build_root_lm_prompt(
+        self,
+        state: str,
+        original_prompt: str,
+        last_output: str = "",
+        last_error: str = "",
+        turn: int = 0,
+        routing_context: str = "",
+        *,
+        as_structured: bool = False,
+    ) -> str | RootLMPrompt:
+        """Build the prompt for the Root LM (frontdoor).
+
+        The Root LM generates Python code that executes in a sandboxed REPL.
+        It has access to the context and can call sub-LMs for complex tasks.
+
+        Args:
+            state: Current REPL state from repl.get_state()
+            original_prompt: The user's original prompt
+            last_output: Output from the last code execution
+            last_error: Error from the last code execution (if any)
+            turn: Current turn number (0-indexed)
+            as_structured: Return RootLMPrompt instead of string
+
+        Returns:
+            Prompt string or RootLMPrompt if as_structured=True
+        """
+        prompt = RootLMPrompt(
+            system="You are an orchestrator that generates Python code to solve tasks.",
+            tools=DEFAULT_ROOT_LM_TOOLS,
+            rules=DEFAULT_ROOT_LM_RULES,
+            state=f"Turn {turn + 1}\n{state}",
+            task=original_prompt,
+            instruction="Write Python code to complete the task. Output only the code:",
+        )
+
+        # Build context section based on last output/error
+        context_parts = []
+        if last_error:
+            error_preview = last_error[:self.config.max_error_preview]
+            if len(last_error) > self.config.max_error_preview:
+                error_preview += "..."
+            context_parts.extend([
+                "## Last Error",
+                "```",
+                error_preview,
+                "```",
+                "Fix the error and try again.",
+            ])
+        elif last_output:
+            output_preview = last_output[:self.config.max_output_preview]
+            if len(last_output) > self.config.max_output_preview:
+                output_preview += "..."
+            context_parts.extend([
+                "## Last Output",
+                "```",
+                output_preview,
+                "```",
+            ])
+
+        if routing_context:
+            context_parts.append(f"## Routing Intelligence\n{routing_context}")
+
+        if context_parts:
+            prompt.context = "\n".join(context_parts)
+
+        if as_structured:
+            return prompt
+        return prompt.to_string()
+
+    def build_escalation_prompt(
+        self,
+        original_prompt: str,
+        state: str,
+        failure_context: "FailureContext | EscalationContext",
+        decision: "RoutingDecision | EscalationDecision",
+        *,
+        as_structured: bool = False,
+    ) -> str | EscalationPrompt:
+        """Build a prompt for an escalated role.
+
+        Includes failure context to help the higher-tier model understand
+        what went wrong and what was tried.
+
+        Supports both legacy (FailureContext/RoutingDecision) and new
+        (EscalationContext/EscalationDecision) types for migration.
+
+        Args:
+            original_prompt: The user's original prompt.
+            state: Current REPL state.
+            failure_context: Context about the failure (legacy or new type).
+            decision: The routing decision with escalation reason (legacy or new type).
+            as_structured: Return EscalationPrompt instead of string
+
+        Returns:
+            Prompt string or EscalationPrompt if as_structured=True
+        """
+        # Handle both legacy (role) and new (current_role) attribute names
+        role = getattr(failure_context, "current_role", None) or getattr(failure_context, "role", "unknown")
+
+        prompt = EscalationPrompt(
+            header=f"# Escalation from {role}",
+            failure_info=(
+                f"The {role} failed after "
+                f"{failure_context.failure_count} attempts.\n"
+                f"Reason: {decision.reason}"
+            ),
+            state=state,
+            task=original_prompt,
+            instructions=(
+                "Fix the issue and complete the task. "
+                "You have more capability than the previous role.\n"
+                "Output Python code that will execute in the REPL environment."
+            ),
+        )
+
+        # Build error details
+        error_parts = [f"Category: {failure_context.error_category}"]
+        if failure_context.gate_name:
+            error_parts.append(f"Gate: {failure_context.gate_name}")
+        if failure_context.error_message:
+            error_preview = failure_context.error_message[:self.config.max_error_preview]
+            error_parts.extend([
+                "",
+                "Error message:",
+                "```",
+                error_preview,
+                "```",
+            ])
+        prompt.error_details = "\n".join(error_parts)
+
+        if as_structured:
+            return prompt
+        return prompt.to_string()
+
+    def build_step_prompt(
+        self,
+        action: str,
+        inputs: list[str] | None = None,
+        outputs: list[str] | None = None,
+        context: ContextManager | None = None,
+        constraints: str = "",
+        *,
+        as_structured: bool = False,
+    ) -> str | StepPrompt:
+        """Build a prompt for step execution.
+
+        Uses ContextManager for rich context formatting if provided.
+
+        Args:
+            action: The action/task to perform.
+            inputs: Input keys to include from context.
+            outputs: Expected output keys.
+            context: Optional ContextManager for input formatting.
+            constraints: Additional constraints or requirements.
+            as_structured: Return StepPrompt instead of string
+
+        Returns:
+            Prompt string or StepPrompt if as_structured=True
+        """
+        prompt = StepPrompt(action=action, constraints=constraints)
+
+        # Build inputs section
+        if inputs:
+            if context:
+                context_str = context.build_prompt_context(
+                    input_keys=inputs,
+                    max_chars=self.config.max_context_chars,
+                )
+                if context_str:
+                    prompt.inputs = context_str
+                else:
+                    missing = [k for k in inputs if not context.has(k)]
+                    if missing:
+                        prompt.inputs = f"\n(Not available: {', '.join(missing)})"
+            else:
+                prompt.inputs = f"\n{', '.join(inputs)}"
+
+        # Build outputs section
+        if outputs:
+            prompt.outputs = ", ".join(outputs)
+
+        if as_structured:
+            return prompt
+        return prompt.to_string()
+
+    def build_stage2_review_prompt(
+        self,
+        draft_summary: str,
+        grep_hits: list[dict[str, Any]],
+        figures: list[dict[str, Any]],
+        original_task: str = "",
+    ) -> str:
+        """Build a prompt for Stage 2 of two-stage summarization.
+
+        Stage 2 receives the frontdoor's draft summary along with key excerpts
+        (grep hits) and figure descriptions. The large model refines the summary
+        without reading the full document.
+
+        Args:
+            draft_summary: The draft summary from Stage 1 (frontdoor).
+            grep_hits: List of grep hit records from REPL's get_grep_history().
+                       Each record contains pattern, source, match_count, hits.
+            figures: List of figure descriptions from document processing.
+            original_task: Optional original summarization task.
+
+        Returns:
+            Prompt string for Stage 2 model.
+        """
+        parts = [
+            "# Document Summary Review",
+            "",
+            "You are reviewing a draft summary produced by a fast model. Your task is to:",
+            "1. Verify accuracy against the provided excerpts",
+            "2. Add important details that may be missing",
+            "3. Improve clarity and completeness",
+            "4. Correct any inaccuracies",
+            "",
+        ]
+
+        # Add original task if provided
+        if original_task:
+            parts.extend([
+                "## Original Request",
+                original_task,
+                "",
+            ])
+
+        # Add draft summary
+        parts.extend([
+            "## Draft Summary (to review and refine)",
+            "```",
+            draft_summary[:8000],  # Cap draft length
+            "```",
+            "",
+        ])
+
+        # Add grep excerpts (key source material)
+        if grep_hits:
+            parts.extend([
+                "## Key Excerpts from Source Document",
+                "These are search results the draft model found relevant:",
+                "",
+            ])
+
+            # NOTE: TOON encoding was tested for grep hits but found to be LESS
+            # efficient than Markdown due to pattern repetition. Keeping Markdown.
+            total_chars = 0
+            max_excerpt_chars = 6000  # Cap total excerpt size
+
+            for hit_record in grep_hits:
+                if total_chars >= max_excerpt_chars:
+                    parts.append(f"[... additional excerpts truncated at {max_excerpt_chars} chars]")
+                    break
+
+                pattern = hit_record.get("pattern", "")
+                hits = hit_record.get("hits", [])
+
+                if hits:
+                    parts.append(f"### Search: `{pattern}`")
+                    for hit in hits[:5]:  # Cap at 5 hits per pattern
+                        context = hit.get("context", hit.get("match", ""))
+                        line_num = hit.get("line_num", "?")
+                        excerpt = f"Line {line_num}: {context[:500]}"
+                        total_chars += len(excerpt)
+                        parts.append(excerpt)
+                        if total_chars >= max_excerpt_chars:
+                            break
+                    parts.append("")
+
+        # Add figure descriptions
+        if figures:
+            parts.extend([
+                "## Figures in Document",
+                "",
+            ])
+
+            for i, fig in enumerate(figures[:10], 1):  # Cap at 10 figures
+                desc = fig.get("description", fig.get("text", "No description"))
+                page = fig.get("page", "?")
+                parts.append(f"**Figure {i}** (Page {page}): {desc[:500]}")
+            parts.append("")
+
+        # Final instruction
+        parts.extend([
+            "## Your Task",
+            "Write a refined, accurate executive summary based on the draft and excerpts above.",
+            "",
+            "IMPORTANT OUTPUT FORMAT:",
+            "- Write the summary directly - no thinking, analysis, or meta-commentary",
+            "- Do not explain your reasoning or discuss terminology",
+            "- Do not include phrases like 'here is' or 'based on the draft'",
+            "- Start directly with the summary content",
+            "- Keep the same structure as the draft but improve accuracy and completeness",
+        ])
+
+        return "\n".join(parts)
+
+    def get_system_prompt(self, role: Role) -> str:
+        """Get the system prompt for a specific role.
+
+        Args:
+            role: The role to get the system prompt for.
+
+        Returns:
+            System prompt string.
+        """
+        tier = get_tier(role)
+        role_name = role.value
+
+        # Base system prompts by role
+        system_prompts = {
+            Role.FRONTDOOR: (
+                "You are an orchestrator AI. Your job is to understand user requests, "
+                "break them into tasks, and generate Python code that executes in a "
+                "sandboxed REPL environment. You can call sub-LMs for complex subtasks."
+            ),
+            Role.CODER_PRIMARY: (
+                "You are a senior software engineer. Write clean, efficient code that "
+                "follows best practices. Focus on correctness and maintainability."
+            ),
+            Role.CODER_ARCHITECT: (
+                "You are a software architect. Design robust systems and APIs. "
+                "Consider scalability, security, and long-term maintainability."
+            ),
+            Role.ARCHITECT_GENERAL: (
+                "You are a system architect. You handle complex problems that require "
+                "deep reasoning and coordination across multiple domains."
+            ),
+            Role.ARCHITECT_CODING: (
+                "You are a principal engineer with expertise in complex codebases. "
+                "You solve the hardest coding problems and design critical systems."
+            ),
+            Role.INGEST_LONG_CONTEXT: (
+                "You are a document analysis specialist. Process and synthesize "
+                "information from long documents while maintaining accuracy."
+            ),
+            Role.WORKER_GENERAL: (
+                "You are a general-purpose assistant. Complete tasks efficiently "
+                "and accurately. Focus on the specific task at hand."
+            ),
+            Role.WORKER_MATH: (
+                "You are a mathematical reasoning specialist. Solve math problems "
+                "step by step, showing your work clearly."
+            ),
+            Role.WORKER_VISION: (
+                "You are a vision-language specialist. Analyze images and provide "
+                "accurate descriptions and interpretations."
+            ),
+        }
+
+        # Return role-specific prompt or a generic one
+        return system_prompts.get(
+            role,
+            f"You are a {tier.name.lower()}-tier {role_name} assistant. "
+            f"Complete tasks efficiently and accurately.",
+        )
+
+
+# Module-level functions for backwards compatibility
+_default_builder: PromptBuilder | None = None
+
+
+def _get_builder() -> PromptBuilder:
+    """Get the default prompt builder."""
+    global _default_builder
+    if _default_builder is None:
+        _default_builder = PromptBuilder()
+    return _default_builder
+
+
+def build_root_lm_prompt(
+    state: str,
+    original_prompt: str,
+    last_output: str = "",
+    last_error: str = "",
+    turn: int = 0,
+    routing_context: str = "",
+) -> str:
+    """Build the prompt for the Root LM (frontdoor).
+
+    Module-level function for backwards compatibility.
+    See PromptBuilder.build_root_lm_prompt() for full documentation.
+    """
+    result = _get_builder().build_root_lm_prompt(
+        state=state,
+        original_prompt=original_prompt,
+        last_output=last_output,
+        last_error=last_error,
+        turn=turn,
+        routing_context=routing_context,
+    )
+    return result if isinstance(result, str) else result.to_string()
+
+
+def build_escalation_prompt(
+    original_prompt: str,
+    state: str,
+    failure_context: "FailureContext | EscalationContext",
+    decision: "RoutingDecision | EscalationDecision",
+) -> str:
+    """Build a prompt for an escalated role.
+
+    Module-level function for backwards compatibility.
+    Supports both legacy and new escalation types.
+    See PromptBuilder.build_escalation_prompt() for full documentation.
+    """
+    result = _get_builder().build_escalation_prompt(
+        original_prompt=original_prompt,
+        state=state,
+        failure_context=failure_context,
+        decision=decision,
+    )
+    return result if isinstance(result, str) else result.to_string()
+
+
+def build_step_prompt(
+    action: str,
+    inputs: list[str] | None = None,
+    outputs: list[str] | None = None,
+    context: ContextManager | None = None,
+) -> str:
+    """Build a prompt for step execution.
+
+    Module-level function for backwards compatibility.
+    See PromptBuilder.build_step_prompt() for full documentation.
+    """
+    result = _get_builder().build_step_prompt(
+        action=action,
+        inputs=inputs,
+        outputs=outputs,
+        context=context,
+    )
+    return result if isinstance(result, str) else result.to_string()
+
+
+def build_stage2_review_prompt(
+    draft_summary: str,
+    grep_hits: list[dict[str, Any]],
+    figures: list[dict[str, Any]],
+    original_task: str = "",
+) -> str:
+    """Build a prompt for Stage 2 of two-stage summarization.
+
+    Module-level function for backwards compatibility.
+    See PromptBuilder.build_stage2_review_prompt() for full documentation.
+    """
+    return _get_builder().build_stage2_review_prompt(
+        draft_summary=draft_summary,
+        grep_hits=grep_hits,
+        figures=figures,
+        original_task=original_task,
+    )
+
+
+def build_routing_context(
+    role: str,
+    hybrid_router: Any,
+    task_description: str,
+    max_chars: int = 300,
+) -> str:
+    """Build compact routing context for injection into Root LM prompt.
+
+    Called on turn 0 only to give the model initial routing intelligence
+    from MemRL. Kept very compact to minimize token overhead (~75 tokens).
+
+    Args:
+        role: Current model's role.
+        hybrid_router: HybridRouter instance (may be None).
+        task_description: The user's task.
+        max_chars: Maximum characters for routing context.
+
+    Returns:
+        Compact routing context string, or "" if unavailable.
+    """
+    if hybrid_router is None:
+        return ""
+
+    from src.roles import get_tier
+
+    try:
+        task_ir = {
+            "task_type": "chat",
+            "objective": task_description[:200],
+        }
+        results = hybrid_router.retriever.retrieve_for_routing(task_ir)
+
+        tier = get_tier(role)
+
+        if not results:
+            return f"Role: {role} (Tier {tier.value})\nNo similar past tasks found."[:max_chars]
+
+        # Build structured routing data for TOON encoding
+        similar = []
+        for r in results[:3]:
+            ctx = r.memory.context or {}
+            similar.append({
+                "role": ctx.get("role", r.memory.action),
+                "Q": round(r.q_value, 2),
+                "outcome": r.memory.outcome or "?",
+            })
+
+        best = hybrid_router.retriever.get_best_action(results)
+        routing_data = {
+            "self": {"role": role, "tier": tier.value},
+            "similar": similar,
+        }
+        if best:
+            routing_data["suggested"] = {"role": best[0], "conf": round(best[1], 2)}
+
+        # TOON encoding: ~50% reduction on uniform similar-tasks array
+        try:
+            from src.services.toon_encoder import is_available, encode
+            if is_available() and len(similar) >= 2:
+                return encode(routing_data)[:max_chars]
+        except Exception:
+            pass
+
+        # Fallback: compact text format
+        lines = [f"Role: {role} (Tier {tier.value})"]
+        for s in similar:
+            lines.append(f"  Similar → {s['role']}: Q={s['Q']:.2f} ({s['outcome']})")
+        if best:
+            lines.append(f"Suggested: {best[0]} (conf={best[1]:.2f})")
+        return "\n".join(lines)[:max_chars]
+
+    except Exception:
+        return ""
+
+
+def build_long_context_exploration_prompt(
+    original_prompt: str,
+    context_chars: int,
+    state: str = "",
+) -> str:
+    """Build a prompt that instructs the model to explore large context via REPL tools.
+
+    Instead of dumping the full context into the LLM's input window, this prompt
+    tells the model to use REPL exploration tools (peek, grep, chunk_context,
+    summarize_chunks) to process it piece by piece.
+
+    Args:
+        original_prompt: The user's original task/question.
+        context_chars: Character count of the full context.
+        state: Current REPL state.
+
+    Returns:
+        Prompt string for the Root LM.
+    """
+    est_tokens = context_chars // 4
+    n_chunks = max(2, min(8, est_tokens // 4000))  # ~4K tokens per chunk
+
+    # Detect search/needle tasks
+    search_keywords = ["find", "search", "locate", "identify", "extract", "detect", "where"]
+    is_search = any(kw in original_prompt.lower().split() for kw in search_keywords)
+
+    if is_search:
+        first_step = f"""# Step 1: Search for relevant items
+matches = grep(r"key|secret|password|token|credential|api_key")
+for m in matches:
+    print(f"Line {{m['line']}}: {{m['text']}}")"""
+    else:
+        first_step = f"""# Step 1: Inspect document structure
+header = peek(2000)
+print(header)"""
+
+    return f"""You are an orchestrator processing a large document ({context_chars:,} chars, ~{est_tokens:,} tokens).
+
+## Task
+{original_prompt}
+
+## Strategy
+The full document is stored in the `context` variable.
+These functions are ALREADY AVAILABLE — call them directly:
+
+```python
+{first_step}
+
+# Step 2: Search for specific terms
+matches = grep(r"pattern_here")  # returns list of {{"line": int, "text": str, "position": int}}
+
+# Step 3: Parallel analysis (dispatches to workers)
+summaries = summarize_chunks(
+    task="{original_prompt[:80]}",
+    n_chunks={n_chunks}
+)  # returns list of {{"index": int, "summary": str}}
+
+# Step 4: Synthesize and return
+FINAL("your answer here")
+```
+
+**DO NOT** define your own functions. `peek`, `grep`, `summarize_chunks`, `FINAL` are built-ins.
+**DO NOT** try to read files from disk — the context is already loaded in memory.
+
+{f'## Current State{chr(10)}{state}' if state else ''}
+
+## Rules
+- NEVER import anything — all tools are pre-loaded
+- NEVER send full context to llm_call() (too large)
+- Use grep() to find specific needles, summarize_chunks() for broad analysis
+- Workers return section summaries — you synthesize the final answer
+- Output only valid Python code — no markdown, no explanations
+
+Code:"""

@@ -23,7 +23,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from src.api.models import ChatRequest, ChatResponse
+from src.api.models import ChatRequest, ChatResponse, RewardRequest
 from src.api.state import get_state
 from src.prompt_builders import (
     build_root_lm_prompt,
@@ -37,6 +37,7 @@ from src.prompt_builders import (
 from src.api.services.memrl import (
     ensure_memrl_initialized,
     score_completed_task,
+    store_external_reward,
 )
 from src.features import features
 from src.llm_primitives import LLMPrimitives
@@ -143,6 +144,25 @@ async def chat(request: ChatRequest) -> ChatResponse:
         state.decrement_active()
 
 
+@router.post("/chat/reward")
+async def inject_reward(request: RewardRequest):
+    """Inject an external reward signal into MemRL.
+
+    Used by orchestrator_eval.py to close the learning loop: after
+    deterministic scoring of a benchmark answer, the score is fed back
+    as a reward so the Q-scorer can learn from routing decisions.
+    """
+    state = get_state()
+    success = store_external_reward(
+        state,
+        request.task_description,
+        request.action,
+        request.reward,
+        request.context,
+    )
+    return {"success": success}
+
+
 async def _handle_chat(request: ChatRequest) -> ChatResponse:
     """Thin dispatcher — routes through pipeline stages.
 
@@ -187,7 +207,14 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
 
     # Stage 7: Mode selection
     initial_role = routing.routing_decision[0] if routing.routing_decision else Role.FRONTDOOR
-    if request.force_mode and request.force_mode in ("direct", "react", "repl", "delegated"):
+
+    # Force REPL for vision-preprocessed requests — the document pipeline
+    # populated routing.document_result, so we need DocumentREPLEnvironment
+    # with a text model (frontdoor) to synthesize the answer.
+    if routing.document_result is not None:
+        execution_mode = "repl"
+        initial_role = Role.FRONTDOOR
+    elif request.force_mode and request.force_mode in ("direct", "react", "repl", "delegated"):
         execution_mode = request.force_mode
     else:
         execution_mode = _select_mode(request.prompt, request.context or "", state)

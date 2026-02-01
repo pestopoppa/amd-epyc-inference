@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -40,6 +41,7 @@ class GateConfig:
     required: bool = True
     retry_count: int = 0
     description: str = ""
+    parallelizable: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GateConfig:
@@ -51,6 +53,7 @@ class GateConfig:
             required=data.get("required", True),
             retry_count=data.get("retry_count", 0),
             description=data.get("description", ""),
+            parallelizable=data.get("parallelizable", False),
         )
 
 
@@ -149,6 +152,7 @@ class GateRunner:
                 timeout=30,
                 required=True,
                 description="Check code formatting",
+                parallelizable=True,
             ),
             GateConfig(
                 name="lint",
@@ -156,6 +160,7 @@ class GateRunner:
                 timeout=60,
                 required=True,
                 description="Run linters",
+                parallelizable=True,
             ),
             GateConfig(
                 name="typecheck",
@@ -348,6 +353,91 @@ class GateRunner:
                 break
 
         return results
+
+    async def run_all_gates_parallel(
+        self,
+        stop_on_first_failure: bool = True,
+        required_only: bool = False,
+        task_id: str | None = None,
+        agent_tier: str = "C",
+        agent_role: str = "worker",
+    ) -> list[GateResult]:
+        """Run gates with lightweight gates in parallel, heavy gates sequential.
+
+        Gates marked ``parallelizable=True`` run concurrently in Phase 1.
+        Remaining gates run sequentially in Phase 2 (same as run_all_gates).
+
+        Args:
+            stop_on_first_failure: Stop after first required gate fails.
+            required_only: Only run gates marked as required.
+            task_id: Optional task ID for MemRL logging.
+            agent_tier: Agent tier for logging.
+            agent_role: Agent role for logging.
+
+        Returns:
+            List of GateResult objects in config order.
+        """
+        gates = self.gates
+        if required_only:
+            gates = [g for g in gates if g.required]
+
+        # Partition into parallel and sequential
+        parallel_gates = [g for g in gates if g.parallelizable]
+        sequential_gates = [g for g in gates if not g.parallelizable]
+
+        # Track results by gate name for ordered output
+        results_map: dict[str, GateResult] = {}
+
+        # Phase 1: Run parallelizable gates concurrently
+        if parallel_gates:
+            async def _run_gate_async(gate: GateConfig) -> GateResult:
+                return await asyncio.to_thread(
+                    self.run_gate, gate, 1, task_id, agent_tier, agent_role,
+                )
+
+            parallel_results = await asyncio.gather(
+                *[_run_gate_async(g) for g in parallel_gates],
+            )
+
+            # Retry failures sequentially
+            for gate, result in zip(parallel_gates, parallel_results):
+                if not result.passed and gate.retry_count > 0:
+                    for attempt in range(2, gate.retry_count + 2):
+                        result = self.run_gate(
+                            gate, attempt, task_id, agent_tier, agent_role,
+                        )
+                        if result.passed:
+                            break
+                results_map[gate.name] = result
+
+            # Check if any required parallel gate failed
+            if stop_on_first_failure:
+                for gate in parallel_gates:
+                    r = results_map[gate.name]
+                    if not r.passed and gate.required:
+                        # Return results in config order (parallel only)
+                        return [
+                            results_map[g.name]
+                            for g in gates
+                            if g.name in results_map
+                        ]
+
+        # Phase 2: Run sequential gates in order
+        for gate in sequential_gates:
+            for attempt in range(1, gate.retry_count + 2):
+                result = self.run_gate(
+                    gate, attempt, task_id, agent_tier, agent_role,
+                )
+                if result.passed:
+                    break
+
+            results_map[gate.name] = result
+
+            if stop_on_first_failure and not result.passed and gate.required:
+                break
+
+        # Return results in original config order
+        return [results_map[g.name] for g in gates if g.name in results_map]
 
     def run_gates_by_name(self, gate_names: list[str]) -> list[GateResult]:
         """Run specific gates by name.
