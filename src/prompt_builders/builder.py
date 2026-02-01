@@ -667,3 +667,33 @@ FINAL("your answer here")
 - Output only valid Python code — no markdown, no explanations
 
 Code:"""
+
+
+def build_task_decomposition_prompt(objective: str, context: str = "") -> str:
+    """Prompt for architect to decompose a task into parallel-executable steps.
+
+    Asks for a JSON array of plan steps with TaskIR-compatible fields.
+    Uses abbreviated instruction to minimize tokens at 6.75 t/s.
+
+    Args:
+        objective: The user's task/question.
+        context: Optional context text.
+
+    Returns:
+        Prompt string for the architect model.
+    """
+    context_note = f"\nContext ({len(context)} chars): {context[:200]}..." if context else ""
+    return f"""Decompose this task into 2-5 parallel-executable steps.
+Return ONLY a JSON array, no markdown fences, no explanation.
+
+Each step: {{"id":"S1","actor":"worker"|"coder"|"architect","action":"what to do","depends_on":[],"parallel_group":"group_name","outputs":["result"]}}
+
+Rules:
+- Independent steps share a parallel_group so they run simultaneously
+- Use depends_on only when a step needs another step's output
+- actor: "worker" for exploration/summarization, "coder" for code, "architect" for design
+- Keep actions concise (1-2 sentences)
+
+Task: {objective[:500]}{context_note}
+
+JSON:"""

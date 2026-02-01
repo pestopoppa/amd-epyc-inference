@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -709,7 +710,8 @@ class DocumentPreprocessor:
         return enriched
 
 
-# Singleton instance
+# Singleton instance (thread-safe, double-checked locking)
+_preprocessor_lock = threading.Lock()
 _preprocessor: DocumentPreprocessor | None = None
 
 
@@ -717,7 +719,9 @@ def get_document_preprocessor() -> DocumentPreprocessor:
     """Get the singleton document preprocessor instance."""
     global _preprocessor
     if _preprocessor is None:
-        _preprocessor = DocumentPreprocessor()
+        with _preprocessor_lock:
+            if _preprocessor is None:
+                _preprocessor = DocumentPreprocessor()
     return _preprocessor
 
 

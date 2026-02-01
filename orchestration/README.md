@@ -110,20 +110,23 @@ The dispatcher should read this file and **never improvise** model selection.
 
 ## Production Server Topology (Updated 2026-01-28)
 
-Launch the production stack using the deterministic launcher:
+Launch the production stack using the Python orchestrator:
 
 ```bash
-# Full production stack (~510GB, 45% of 1130GB RAM)
-./scripts/server/launch_production.sh --full
+# Full production stack (~535GB, 47% of 1130GB RAM)
+python scripts/server/orchestrator_stack.py start
 
-# Minimal stack for testing (~45GB)
-./scripts/server/launch_production.sh --minimal
+# HOT tier only (~535GB)
+python scripts/server/orchestrator_stack.py start --hot-only
+
+# Development mode (single 0.5B model, fast startup)
+python scripts/server/orchestrator_stack.py start --dev
 
 # Check status
-./scripts/server/launch_production.sh --status
+python scripts/server/orchestrator_stack.py status
 
 # Stop all
-./scripts/server/launch_production.sh --stop
+python scripts/server/orchestrator_stack.py stop --all
 ```
 
 ### HOT Tier (Always Resident, ~510GB)

@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-01 (Security hardening: path traversal fix, base64 limits, config auth, 6 thread-safe singletons. 1425 tests pass.)
+**Last Updated**: 2026-02-01 (Roadmap items C/D/E complete, proactive_delegation decomposed, document_preprocessor singleton fixed. 1425 tests pass.)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -23,7 +23,7 @@
 | **Orchestrator Quality Regression** | — | **HIGH** | `progress/2026-01/2026-01-29.md` | ✅ FIXES APPLIED (direct-answer mode, VL pipeline rewrite, port mapping fix). Re-run benchmark pending. |
 | **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 + DEV TASKS + OVERHEAD MITIGATIONS + HEALTH CHECK HARDENING + STRATIFIED SAMPLING + PIPELINE PERF OPTIMIZATION COMPLETE. 1398 tests pass. `POST /config` endpoint added. MemRL DB cleaned (6,506→0 contaminated entries). **Live validation pending** (seeding + learning loop + regression gate). |
 | **Architecture Review (Phases 1-3 + WI-9/10/11 + N1/N2/N3)** | — | **HIGH** | `handoffs/active/orchestrator-architecture-review.md` | ✅ PHASE 3 + WI-9/10/11 + N1/N2/N3 COMPLETE. N1: repl_environment.py decomposition (3511→10 modules). N2: shell=True→shlex.split (5 files). N3: dead api.py deleted. 1419 tests pass. **Phases 4-5 remaining** (test quality, infra hardening). |
-| **Orchestration Architecture Roadmap** | — | **MEDIUM** | `handoffs/active/orchestration-architecture-roadmap.md` | 📋 ACTIVE (merged from refactoring + PARL: 7 items A-G remaining) |
+| **Orchestration Architecture Roadmap** | — | **MEDIUM** | `handoffs/active/orchestration-architecture-roadmap.md` | ✅ ALL 7 ITEMS COMPLETE (A-G). C: ProactiveDelegator wired (Stage 6.5), D: Critical path already done, E: Persona batch+auto-select. proactive_delegation.py decomposed to package. Ready for archival. |
 | **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
 | **Orchestrator real mode** | — | **LOW** | `handoffs/active/orchestrator.md` | 📋 READY (stack infrastructure complete, live verification pending) |

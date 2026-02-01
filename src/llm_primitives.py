@@ -498,12 +498,7 @@ class LLMPrimitives:
 
         # Inject persona system prompt if specified and feature enabled
         if persona and not skip_suffix:
-            from src.features import features as _get_features
-            if _get_features().personas:
-                from src.persona_loader import get_persona_registry
-                persona_cfg = get_persona_registry().get(persona)
-                if persona_cfg:
-                    prompt = f"{persona_cfg.system_prompt.strip()}\n\n{prompt}"
+            prompt = self._apply_persona_prefix(prompt, persona)
 
         # Apply system prompt suffix if configured for this role
         if system_prompt_suffix:
@@ -557,16 +552,32 @@ class LLMPrimitives:
             self.call_log.append(log_entry)
             return f"[ERROR: {e}]"
 
+    def _apply_persona_prefix(self, prompt: str, persona: str | None) -> str:
+        """Prepend persona system prompt if persona is set and feature enabled.
+
+        Extracted from _llm_call_impl to share with batch methods.
+        """
+        if persona:
+            from src.features import features as _get_features
+            if _get_features().personas:
+                from src.persona_loader import get_persona_registry
+                persona_cfg = get_persona_registry().get(persona)
+                if persona_cfg:
+                    return f"{persona_cfg.system_prompt.strip()}\n\n{prompt}"
+        return prompt
+
     def llm_batch(
         self,
         prompts: list[str],
         role: str = "worker",
+        persona: str | None = None,
     ) -> list[str]:
         """Call multiple sub-LMs in parallel.
 
         Args:
             prompts: List of prompts to send to sub-LMs.
             role: Role determining which model to use.
+            persona: Optional persona name for system prompt injection.
 
         Returns:
             List of responses in the same order as prompts.
@@ -574,12 +585,17 @@ class LLMPrimitives:
         start_time = time.perf_counter()
         self.total_batch_calls += 1
 
+        # Apply persona prefix to all prompts if specified
+        if persona:
+            prompts = [self._apply_persona_prefix(p, persona) for p in prompts]
+
         # Create log entry
         log_entry = CallLogEntry(
             timestamp=time.time(),
             call_type="batch",
             prompts=prompts[:5] if len(prompts) <= 5 else prompts[:5] + ["..."],
             role=role,
+            persona=persona,
         )
 
         try:
@@ -621,6 +637,7 @@ class LLMPrimitives:
         self,
         prompts: list[str],
         role: str = "worker",
+        persona: str | None = None,
     ) -> list[str]:
         """Call multiple sub-LMs in parallel using asyncio.
 
@@ -630,6 +647,7 @@ class LLMPrimitives:
         Args:
             prompts: List of prompts to send to sub-LMs.
             role: Role determining which model to use.
+            persona: Optional persona name for system prompt injection.
 
         Returns:
             List of responses in the same order as prompts.
@@ -637,12 +655,17 @@ class LLMPrimitives:
         start_time = time.perf_counter()
         self.total_batch_calls += 1
 
+        # Apply persona prefix to all prompts if specified
+        if persona:
+            prompts = [self._apply_persona_prefix(p, persona) for p in prompts]
+
         # Create log entry
         log_entry = CallLogEntry(
             timestamp=time.time(),
             call_type="batch_async",
             prompts=prompts[:5] if len(prompts) <= 5 else prompts[:5] + ["..."],
             role=role,
+            persona=persona,
         )
 
         try:

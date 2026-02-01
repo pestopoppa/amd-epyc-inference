@@ -281,7 +281,7 @@ Prevents infinite review-fix cycles. After max iterations, accept output or esca
 
 1. `src/escalation.py`: Unified escalation policy (336 lines)
 2. `src/failure_router.py`: Legacy router with MemRL (787 lines)
-3. `src/proactive_delegation.py`: Complexity-aware routing (1138 lines)
+3. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
 4. `src/roles.py`: Role definitions and escalation chains
 
 ### Theoretical Foundations

@@ -43,6 +43,7 @@ from src.prompt_builders.builder import (
     build_routing_context,
     build_stage2_review_prompt,
     build_step_prompt,
+    build_task_decomposition_prompt,
 )
 
 # Review and delegation prompts
@@ -91,6 +92,7 @@ __all__ = [
     "build_stage2_review_prompt",
     "build_routing_context",
     "build_long_context_exploration_prompt",
+    "build_task_decomposition_prompt",
     # Review
     "build_review_verdict_prompt",
     "build_revision_prompt",

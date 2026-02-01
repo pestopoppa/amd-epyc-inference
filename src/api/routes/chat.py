@@ -109,6 +109,7 @@ from src.api.routes.chat_pipeline import (
     _execute_mock,
     _execute_vision,
     _plan_review_gate,
+    _execute_proactive,
     _execute_delegated,
     _execute_react,
     _execute_direct,
@@ -204,6 +205,13 @@ async def _handle_chat(request: ChatRequest) -> ChatResponse:
     vision_result = await _execute_vision(request, routing, primitives, state, start_time)
     if vision_result is not None:
         return _annotate_error(vision_result)
+
+    # Stage 6.5: Proactive delegation for COMPLEX tasks
+    proactive_result = await _execute_proactive(
+        request, routing, primitives, state, start_time,
+    )
+    if proactive_result is not None:
+        return _annotate_error(proactive_result)
 
     # Stage 7: Mode selection
     initial_role = routing.routing_decision[0] if routing.routing_decision else Role.FRONTDOOR
