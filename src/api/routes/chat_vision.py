@@ -231,7 +231,7 @@ async def _handle_vision_request(
     last_error = None
     for server_name, server_url in vl_servers:
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=_get_config().timeouts.vision_inference) as client:
                 resp = await client.post(
                     f"{server_url}/v1/chat/completions",
                     json=vl_payload,
@@ -268,7 +268,7 @@ async def _handle_vision_request(
     # All VL servers failed — try legacy vision pipeline as last resort
     logger.warning(f"All VL servers failed ({last_error}), trying vision pipeline")
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=_get_config().timeouts.vision_inference) as client:
             legacy_payload = {
                 "image_path": request.image_path,
                 "image_base64": request.image_base64,
@@ -324,7 +324,7 @@ async def _execute_vision_tool(
 
         try:
             _ocr_url = _get_config().server_urls.ocr_server
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=_get_config().timeouts.vision_figure) as client:
                 resp = await client.post(
                     f"{_ocr_url}/v1/document/ocr",
                     json={"image_base64": image_b64},
@@ -458,7 +458,7 @@ Important rules:
     for turn in range(max_turns):
         # Call VL backend
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=_get_config().timeouts.vision_inference) as client:
                 resp = await client.post(
                     vl_url,
                     json={
@@ -543,7 +543,7 @@ Important rules:
     })
 
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=_get_config().timeouts.vision_inference) as client:
             resp = await client.post(
                 vl_url,
                 json={

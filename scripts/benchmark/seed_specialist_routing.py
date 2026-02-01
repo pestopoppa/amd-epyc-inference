@@ -134,6 +134,15 @@ def _handle_sigint(sig, frame):
 signal.signal(signal.SIGINT, _handle_sigint)
 
 
+# ── Exceptions ────────────────────────────────────────────────────────
+
+
+class HealthCheckError(Exception):
+    """Raised when the orchestrator API is unreachable."""
+
+    pass
+
+
 # ── Data structures ───────────────────────────────────────────────────
 
 
@@ -518,29 +527,65 @@ def _build_role_mode_combos(
     roles: list[str],
     modes: list[str],
 ) -> list[tuple[str, str]]:
-    """Build (role, mode) combinations in mode-first order.
+    """Build (role, mode) combinations with two invariants:
 
-    Iterates mode-first so that consecutive calls hit different servers,
-    giving each server 40-100s natural cooldown before being called again.
+    1. MODE-FIRST: Cycle through modes before roles, so consecutive calls
+       hit different backend servers (natural cooldown for each server).
+    2. HEAVY SEPARATION: Heavy model combos (architects, ingest) are never
+       adjacent. Light combos are interleaved between them so light work
+       runs while heavy servers cool down.
+
+    The idle-wait in evaluate_question() enforces that heavy models are
+    actually idle before any request, but good ordering reduces idle-wait
+    time by doing useful light work in the gaps.
     """
     all_modes = list(modes)
     for m in sorted(ARCHITECT_MODES):
         if m not in all_modes:
             all_modes.append(m)
 
-    combos = []
+    light: list[tuple[str, str]] = []
+    heavy: list[tuple[str, str]] = []
+
     for mode in all_modes:
         for role in roles:
+            port = ROLE_PORT.get(role, 0)
+            is_heavy = port in HEAVY_PORTS
             if role in ARCHITECT_ROLES:
                 if mode in ARCHITECT_MODES:
-                    combos.append((role, mode))
+                    heavy.append((role, mode))
             elif role in VISION_ROLES:
                 if mode in VISION_MODES.get(role, {"direct"}):
-                    combos.append((role, mode))
+                    (heavy if is_heavy else light).append((role, mode))
             else:
                 if mode in modes:
-                    combos.append((role, mode))
-    return combos
+                    (heavy if is_heavy else light).append((role, mode))
+
+    # Interleave: spread heavy combos evenly across the light sequence.
+    # With N light and M heavy: place one heavy after every N//M light combos.
+    if not heavy:
+        return light
+    if not light:
+        return heavy
+
+    result: list[tuple[str, str]] = []
+    gap = max(1, len(light) // len(heavy))
+    heavy_iter = iter(heavy)
+    next_heavy = next(heavy_iter, None)
+
+    for i, combo in enumerate(light):
+        result.append(combo)
+        if next_heavy is not None and (i + 1) % gap == 0:
+            result.append(next_heavy)
+            next_heavy = next(heavy_iter, None)
+
+    # Append remaining heavy combos at the end
+    if next_heavy is not None:
+        result.append(next_heavy)
+    for h in heavy_iter:
+        result.append(h)
+
+    return result
 
 
 def _deduplicate_roles(
@@ -585,6 +630,71 @@ def _check_server_health(url: str, timeout: int = 5) -> bool:
         return False
 
 
+# ── Backend idle enforcement ─────────────────────────────────────────
+
+# Heavy model ports: MUST be confirmed idle before sending the next request.
+# These models saturate memory bandwidth when generating — concurrent inference
+# across any of them destroys throughput for ALL of them.
+HEAVY_PORTS = {8083, 8084, 8085, 8087}
+
+# Role → backend port mapping (mirrors LLMPrimitives.DEFAULT_SERVER_URLS)
+ROLE_PORT: dict[str, int] = {
+    "frontdoor": 8080,
+    "coder_primary": 8080,
+    "coder_escalation": 8081,
+    "worker_explore": 8082,
+    "worker_math": 8082,
+    "worker_vision": 8086,
+    "vision_escalation": 8087,
+    "architect_general": 8083,
+    "architect_coding": 8084,
+    "ingest_long_context": 8085,
+}
+
+
+def _is_server_idle(port: int, timeout: int = 3) -> bool:
+    """Check if all slots on a llama-server port are idle."""
+    import httpx
+
+    try:
+        resp = httpx.get(f"http://localhost:{port}/slots", timeout=timeout)
+        if resp.status_code != 200:
+            return True  # Can't check — assume idle
+        slots = resp.json()
+        return not any(s.get("is_processing", False) for s in slots)
+    except Exception:
+        return True  # Server unreachable — assume idle
+
+
+def _wait_for_heavy_models_idle(max_wait: int = 600) -> None:
+    """Block until ALL heavy model servers are idle.
+
+    Called before every combo to ensure no concurrent heavy inference.
+    Light/fast workers (8080-8082, 8086) are allowed to overlap.
+    """
+    start = time.perf_counter()
+    while True:
+        all_idle = True
+        busy_ports = []
+        for port in HEAVY_PORTS:
+            if not _is_server_idle(port):
+                all_idle = False
+                busy_ports.append(port)
+        if all_idle:
+            elapsed = time.perf_counter() - start
+            if elapsed > 1.0:
+                logger.info(f"  [idle-wait] Heavy models idle after {elapsed:.1f}s")
+            return
+        if time.perf_counter() - start > max_wait:
+            logger.warning(
+                f"  [idle-wait] Timeout after {max_wait}s, ports still busy: {busy_ports}"
+            )
+            return
+        if _shutdown:
+            return
+        time.sleep(2)
+
+
 # ── Preflight checks ──────────────────────────────────────────────────
 
 
@@ -603,12 +713,34 @@ def _check_port(port: int) -> bool:
 MODEL_PORTS = [8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8090]
 
 
+def _kill_port(port: int) -> bool:
+    """Kill the process listening on a port. Returns True if killed."""
+    import subprocess
+
+    result = subprocess.run(
+        ["fuser", "-k", f"{port}/tcp"],
+        capture_output=True,
+        timeout=10,
+    )
+    time.sleep(1)
+    return not _check_port(port)
+
+
 def _launch_api_only() -> bool:
     """Launch just the orchestrator API (uvicorn on port 8000).
 
     Used when model servers are already running but the API is not.
+    If port 8000 is already taken by a stale process, kills it first.
     """
     import subprocess
+
+    # Kill stale API process if port 8000 is occupied
+    if _check_port(8000):
+        logger.warning("  Port 8000 already in use — killing stale process...")
+        if not _kill_port(8000):
+            logger.error("  Could not free port 8000")
+            return False
+        logger.info("  Port 8000 freed")
 
     logger.info("  Launching orchestrator API only (model servers already running)...")
 
@@ -621,6 +753,9 @@ def _launch_api_only() -> bool:
     env["ORCHESTRATOR_REAL_MODE"] = "1"
     env["ORCHESTRATOR_SCRIPTS"] = "1"
     env["ORCHESTRATOR_REACT_MODE"] = "1"
+    env["ORCHESTRATOR_MEMRL"] = "1"
+    env["ORCHESTRATOR_TOOLS"] = "1"
+    env["ORCHESTRATOR_GENERATION_MONITOR"] = "1"
 
     log_file = PROJECT_ROOT / "logs" / "orchestrator_autolaunch.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -638,8 +773,11 @@ def _launch_api_only() -> bool:
         env=env,
     )
 
-    # Wait for API to become healthy
+    # Wait for API to become healthy — verify OUR process is still alive
     for attempt in range(24):  # Up to 2 minutes
+        if proc.poll() is not None:
+            logger.error(f"  API process exited (code={proc.returncode}). Check log: {log_file}")
+            return False
         if _check_server_health(DEFAULT_ORCHESTRATOR_URL):
             logger.info(f"  API healthy (pid={proc.pid}) after {(attempt + 1) * 5}s")
             return True
@@ -691,6 +829,28 @@ def _auto_launch_stack(hot_only: bool = True) -> bool:
     return False
 
 
+MAX_RECOVERY_ATTEMPTS = 10
+
+
+def _attempt_recovery(url: str) -> bool:
+    """Attempt to recover a dead orchestrator API.
+
+    Checks what's still running and takes the minimal action:
+    - Model ports up → restart API only (kills stale process on :8000)
+    - Nothing up → full stack launch
+    """
+    model_ports_up = sum(1 for p in MODEL_PORTS if _check_port(p))
+
+    if model_ports_up > 0:
+        logger.info(
+            f"  Recovery: {model_ports_up} model port(s) still up — restarting API only"
+        )
+        return _launch_api_only()
+    else:
+        logger.info("  Recovery: no model ports up — launching full stack")
+        return _auto_launch_stack()
+
+
 def run_preflight(url: str) -> bool:
     """Run preflight health checks on orchestrator and backends.
 
@@ -704,23 +864,27 @@ def run_preflight(url: str) -> bool:
     logger.info("=" * 60)
 
     # 1. Orchestrator API health (auto-launch if down)
-    if not _check_server_health(url):
-        model_ports_up = sum(1 for p in MODEL_PORTS if _check_port(p))
-        if model_ports_up > 0:
-            # Model servers running but API is not — just start the API
-            logger.info(
-                f"  API not reachable but {model_ports_up} model port(s) are up "
-                f"— launching API only..."
-            )
-            if not _launch_api_only():
-                logger.error("PREFLIGHT FAILED: Could not start orchestrator API")
-                return False
-        else:
-            # Nothing running — launch full stack
-            logger.info(f"  No stack running — launching full stack...")
-            if not _auto_launch_stack():
-                logger.error("PREFLIGHT FAILED: Could not start orchestrator stack")
-                return False
+    api_healthy = _check_server_health(url)
+    model_ports_up = sum(1 for p in MODEL_PORTS if _check_port(p))
+
+    if api_healthy:
+        logger.info(f"  API already running ({url})")
+    elif model_ports_up > 0:
+        # Model servers running but API is not — just start the API
+        # _launch_api_only() handles killing stale processes on :8000
+        logger.info(
+            f"  API not reachable but {model_ports_up} model port(s) are up "
+            f"— launching API only..."
+        )
+        if not _launch_api_only():
+            logger.error("PREFLIGHT FAILED: Could not start orchestrator API")
+            return False
+    else:
+        # Nothing running — launch full stack
+        logger.info("  No stack running — launching full stack...")
+        if not _auto_launch_stack():
+            logger.error("PREFLIGHT FAILED: Could not start orchestrator stack")
+            return False
     logger.info(f"  API health: OK ({url})")
 
     # 2. Backend health (check ports via /health on orchestrator)
@@ -737,13 +901,13 @@ def run_preflight(url: str) -> bool:
     except Exception:
         pass  # Health endpoint may not expose backends — continue
 
-    # 3. Smoke test
+    # 3. Smoke test (60s timeout — if 2+2 takes longer, something is broken)
     logger.info("  Smoke test: 2+2...")
     try:
         resp = httpx.post(
             f"{url}/chat",
             json={"prompt": "What is 2+2? Answer with just the number.", "real_mode": True},
-            timeout=120,
+            timeout=60,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -753,6 +917,10 @@ def run_preflight(url: str) -> bool:
         else:
             logger.error(f"  Smoke test FAIL: HTTP {resp.status_code}")
             return False
+    except httpx.TimeoutException:
+        logger.error("  Smoke test TIMEOUT (60s) — API may be misconfigured for real_mode")
+        logger.error("  Try: kill API on :8000 and relaunch, or check orchestrator_autolaunch.log")
+        return False
     except Exception as e:
         logger.error(f"  Smoke test FAIL: {e}")
         return False
@@ -934,6 +1102,16 @@ def evaluate_question(
         if _shutdown:
             return None
 
+        # Before hitting a heavy model, confirm all heavy ports are idle.
+        # The HTTP call blocks until the full chain completes (architect →
+        # workers → synthesis → response), so the heavy model is normally
+        # idle by the time we get here. This is a safety check for edge
+        # cases (slot not yet freed, background KV cache cleanup, etc.).
+        # Light→light transitions skip this — no need to poll.
+        target_port = ROLE_PORT.get(role, 0)
+        if target_port in HEAVY_PORTS:
+            _wait_for_heavy_models_idle()
+
         key = f"{role}:{mode}"
         role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else max(timeout, suite_timeout)
         q_start = time.perf_counter()
@@ -993,9 +1171,30 @@ def evaluate_question(
         )
 
         status = "PASS" if passed else ("ERROR" if error else "FAIL")
-        polluted_tps = tokens_generated / q_elapsed if q_elapsed > 0 and tokens_generated > 0 else 0
-        display_tps = predicted_tps if predicted_tps > 0 else polluted_tps
-        logger.info(f"  {key:30s} → {status} ({q_elapsed:.1f}s, {display_tps:.1f} t/s, {tokens_generated} tok)")
+        display_tps = predicted_tps if predicted_tps > 0 else 0
+
+        # Main line: role:mode → status (time, speed, tokens)
+        parts = [f"  {key:30s} → {status} ({q_elapsed:.1f}s"]
+        if display_tps > 0:
+            parts.append(f", {display_tps:.1f} t/s")
+        parts.append(f", {tokens_generated} tok)")
+        logger.info("".join(parts))
+
+        # Detail line: tools, chain, delegation
+        details = []
+        if tools_used > 0:
+            tool_names = ", ".join(tools_called) if tools_called else "?"
+            details.append(f"tools({tools_used}): {tool_names}")
+        if role_history and len(role_history) > 1:
+            details.append(f"chain: {' → '.join(role_history)}")
+        if formalization_applied:
+            details.append("formalized")
+        if generation_ms > 0:
+            details.append(f"gen={generation_ms:.0f}ms")
+        if prompt_eval_ms > 0:
+            details.append(f"prompt_eval={prompt_eval_ms:.0f}ms")
+        if details:
+            logger.info(f"  {'':30s}   {'  '.join(details)}")
 
     # Compute comparative rewards (baseline is frontdoor:direct)
     rewards = compute_comparative_rewards(role_results, baseline_key="frontdoor:direct")
@@ -1094,10 +1293,9 @@ def run_batch(
     combos = _build_role_mode_combos(roles_to_test, modes)
     combo_keys = [f"{r}:{m}" for r, m in combos]
 
-    # Health check
+    # Health check (continuous loop pre-checks this, but one-shot mode needs it)
     if not _check_server_health(url):
-        logger.error(f"Health check failed: {url} unreachable")
-        return []
+        raise HealthCheckError(f"API unreachable: {url}")
 
     # Load existing checkpoint + seen set
     completed = load_checkpoint(session_id)
@@ -1446,29 +1644,61 @@ Examples:
     if args.continuous:
         # ── Continuous mode ──
         batch = 0
+        consecutive_failures = 0
         logger.info(f"Starting continuous evaluation: session={session_id}")
         logger.info(f"  Ctrl+C to stop gracefully (finishes current question)")
 
         while not _shutdown:
+            # ── Health gate with auto-recovery ──
+            if not _check_server_health(args.url):
+                consecutive_failures += 1
+                if consecutive_failures > MAX_RECOVERY_ATTEMPTS:
+                    logger.error(
+                        f"API unrecoverable after {MAX_RECOVERY_ATTEMPTS} attempts. Exiting."
+                    )
+                    break
+                backoff = min(30 * (2 ** (consecutive_failures - 1)), 600)
+                logger.warning(
+                    f"API down (attempt {consecutive_failures}/{MAX_RECOVERY_ATTEMPTS}). "
+                    f"Attempting recovery..."
+                )
+                recovered = _attempt_recovery(args.url)
+                if recovered:
+                    logger.info("  Recovery successful — resuming evaluation")
+                    consecutive_failures = 0
+                    continue
+                logger.warning(f"  Recovery failed — sleeping {backoff}s before retry")
+                for _ in range(backoff):
+                    if _shutdown:
+                        break
+                    time.sleep(1)
+                continue
+            consecutive_failures = 0
+
             batch += 1
             batch_seed = base_seed + batch
             logger.info(f"\n[Batch {batch}, seed={batch_seed}]")
 
-            results = run_batch(
-                suites=args.suites,
-                roles=args.roles,
-                modes=args.modes,
-                sample_per_suite=args.sample_size,
-                seed=batch_seed,
-                url=args.url,
-                timeout=args.timeout,
-                session_id=session_id,
-                dry_run=args.dry_run,
-                skip_cache=args.skip_cache,
-                cooldown=args.cooldown,
-                no_dedup=args.no_dedup,
-                escalation_chains=not args.no_escalation_chains,
-            )
+            try:
+                results = run_batch(
+                    suites=args.suites,
+                    roles=args.roles,
+                    modes=args.modes,
+                    sample_per_suite=args.sample_size,
+                    seed=batch_seed,
+                    url=args.url,
+                    timeout=args.timeout,
+                    session_id=session_id,
+                    dry_run=args.dry_run,
+                    skip_cache=args.skip_cache,
+                    cooldown=args.cooldown,
+                    no_dedup=args.no_dedup,
+                    escalation_chains=not args.no_escalation_chains,
+                )
+            except HealthCheckError:
+                # API died mid-batch — loop back to health gate
+                logger.warning("API died during batch — will attempt recovery")
+                continue
 
             if results:
                 print_batch_summary(results, args.roles, args.modes, alias_map=alias_map)

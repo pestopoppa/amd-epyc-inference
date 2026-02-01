@@ -44,7 +44,7 @@ def test_rejects_home_path():
 
 
 def test_allowed_prefixes_are_correct():
-    """Verify the allowlist matches CLAUDE.md requirements."""
+    """Verify the allowlist matches CLAUDE.md requirements (all on /mnt/raid0/)."""
     assert "/mnt/raid0/llm/" in ALLOWED_PREFIXES
-    assert "/tmp/" in ALLOWED_PREFIXES
+    assert "/mnt/raid0/llm/tmp/" in ALLOWED_PREFIXES
     assert len(ALLOWED_PREFIXES) == 2

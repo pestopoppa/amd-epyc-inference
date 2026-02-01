@@ -65,8 +65,7 @@ PORT_MAP = {
     "worker_vision": 8086,   # Dedicated VL server
     "vision_escalation": 8087,  # VL escalation (Qwen3-VL-30B MoE)
     # worker_code REMOVED - route to coder_escalation (32B, faster + better quality)
-    "worker_fast_1": 8102,   # Fast worker 1 (1.5B, WARM)
-    "worker_fast_2": 8112,   # Fast worker 2 (1.5B, WARM)
+    "worker_fast": 8102,     # Fast worker (1.5B, WARM, 4 slots)
     # Specialists
     "architect_general": 8083,
     "architect_coding": 8084,
@@ -125,10 +124,8 @@ WARM_SERVERS = [
     {"port": 8083, "roles": ["architect_general"]},
     {"port": 8084, "roles": ["architect_coding"]},
     {"port": 8085, "roles": ["ingest_long_context"]},
-    # Worker pool WARM tier (fast workers for burst capacity)
-    {"port": 8102, "roles": ["worker_fast_1"],
-     "worker_pool": True, "worker_type": "fast"},
-    {"port": 8112, "roles": ["worker_fast_2"],
+    # Worker pool WARM tier (single fast worker with 4 slots for burst capacity)
+    {"port": 8102, "roles": ["worker_fast"],
      "worker_pool": True, "worker_type": "fast"},
 ]
 
@@ -364,17 +361,16 @@ def build_server_command(
 
         # Worker-type specific configuration
         if worker_type == "fast":
-            # Fast workers: 1.5B model, fewer threads, smaller context
+            # Fast worker: 1.5B model, 4 slots for parallel burst capacity
             return [
                 str(LLAMA_SERVER),
                 "-m", model_path,
                 "--host", "127.0.0.1",
                 "--port", str(port),
-                "-np", "2",  # 2 parallel slots
-                "-c", "8192",  # 4K per slot
-                "-t", "12",  # 12 threads for small model
+                "-np", "4",  # 4 parallel slots (consolidated from 2×2)
+                "-c", "16384",  # 4K per slot
+                "-t", "16",  # 16 threads for small model
                 "--flash-attn", "on",
-                # No --lookup here: fast workers have no spec decode or draft model
             ]
         else:
             # explore workers: 7B model with speculative decoding for 46 t/s

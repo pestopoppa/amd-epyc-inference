@@ -14,15 +14,20 @@ Usage:
 
 from __future__ import annotations
 
+import glob
 import json
+import logging
 import os
 import re
+import shlex
 import subprocess
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 try:
     import yaml
@@ -783,14 +788,25 @@ class ProcedureRegistry:
         return bool(eval(condition, {"__builtins__": {}}, eval_context))
 
     def _execute_shell(self, action: dict[str, Any]) -> str:
-        """Execute a shell command."""
+        """Execute a shell command using shlex for safe argument splitting."""
         command = action.get("command", "")
         timeout = action.get("timeout_seconds", 300)
         working_dir = action.get("working_dir", "/mnt/raid0/llm/claude")
 
+        # Validate working directory is on RAID
+        if not working_dir.startswith("/mnt/raid0/"):
+            raise ProcedureExecutionError(
+                f"Working directory must be on /mnt/raid0/: {working_dir}"
+            )
+
+        try:
+            cmd_parts = shlex.split(command)
+        except ValueError as e:
+            raise ProcedureExecutionError(f"Invalid command syntax: {e}") from e
+
+        logger.debug("Executing shell: %s (cwd=%s)", cmd_parts, working_dir)
         result = subprocess.run(
-            command,
-            shell=True,
+            cmd_parts,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -915,24 +931,29 @@ class ProcedureRegistry:
         """Run a verification gate."""
         gate_name = action.get("args", {}).get("gate")
 
-        # Map gates to commands
-        gate_commands = {
-            "schema": "python3 orchestration/validate_ir.py task orchestration/last_task_ir.json",
-            "lint": "ruff check src/",
-            "format": "ruff format --check src/",
-            "shellcheck": "shellcheck scripts/**/*.sh",
-            "unit": "pytest tests/unit/ -q",
+        cwd = "/mnt/raid0/llm/claude"
+
+        # Map gates to argument lists (no shell=True needed)
+        gate_commands: dict[str, list[str]] = {
+            "schema": ["python3", "orchestration/validate_ir.py", "task",
+                        "orchestration/last_task_ir.json"],
+            "lint": ["ruff", "check", "src/"],
+            "format": ["ruff", "format", "--check", "src/"],
+            "shellcheck": ["shellcheck"]
+                          + sorted(glob.glob("scripts/**/*.sh",
+                                             root_dir=cwd, recursive=True)),
+            "unit": ["pytest", "tests/unit/", "-q"],
         }
 
         if gate_name not in gate_commands:
             raise ProcedureExecutionError(f"Unknown gate: {gate_name}")
 
+        logger.debug("Running gate %s: %s", gate_name, gate_commands[gate_name])
         result = subprocess.run(
             gate_commands[gate_name],
-            shell=True,
             capture_output=True,
             text=True,
-            cwd="/mnt/raid0/llm/claude",
+            cwd=cwd,
         )
 
         if result.returncode != 0:

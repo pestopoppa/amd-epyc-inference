@@ -6,10 +6,13 @@ web_fetch, run_shell, log_append, file_write_safe, and patch tools.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from src.repl_environment.types import wrap_tool_output
+
+logger = logging.getLogger(__name__)
 
 
 class _FileToolsMixin:
@@ -53,6 +56,7 @@ class _FileToolsMixin:
             except FileNotFoundError:
                 return f"[ERROR: File not found: {file_path}]"
             except Exception as e:
+                logger.debug("peek failed", exc_info=True)
                 return f"[ERROR: {type(e).__name__}: {e}]"
 
         # Read from context
@@ -97,6 +101,7 @@ class _FileToolsMixin:
             except FileNotFoundError:
                 return [f"[ERROR: File not found: {file_path}]"]
             except Exception as e:
+                logger.debug("grep failed", exc_info=True)
                 return [f"[ERROR: {type(e).__name__}: {e}]"]
         else:
             source_text = self.context
@@ -165,6 +170,7 @@ class _FileToolsMixin:
                     try:
                         entry_info["size"] = entry.stat().st_size
                     except Exception:
+                        logger.debug("Failed to stat %s", entry.name, exc_info=True)
                         entry_info["size"] = 0
                 entries.append(entry_info)
 
@@ -195,6 +201,7 @@ class _FileToolsMixin:
         except PermissionError:
             return f"[ERROR: Permission denied: {path}]"
         except Exception as e:
+            logger.debug("list_dir failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _file_info(self, path: str) -> str:
@@ -236,6 +243,7 @@ class _FileToolsMixin:
         except FileNotFoundError:
             return json.dumps({"path": path, "exists": False})
         except Exception as e:
+            logger.debug("file_info failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     # =========================================================================
@@ -300,6 +308,7 @@ class _FileToolsMixin:
         except ImportError:
             return "[ERROR: Archive extractor not available]"
         except Exception as e:
+            logger.debug("archive_open failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _archive_extract(
@@ -405,6 +414,7 @@ class _FileToolsMixin:
                                 sections_total += ocr_data.get("total_pages", 0)
                                 figures_total += len(ocr_data.get("figures", []))
                         except Exception:
+                            logger.debug("Archive document processing failed: %s", filename, exc_info=True)
                             # Store as unprocessed document
                             archive_info["processed_files"][filename] = {
                                 "type": "document",
@@ -420,6 +430,7 @@ class _FileToolsMixin:
                                 "lines": content.count("\n") + 1,
                             }
                         except Exception:
+                            logger.debug("Archive binary processing failed: %s", filename, exc_info=True)
                             archive_info["processed_files"][filename] = {
                                 "type": "binary",
                                 "size": file_path.stat().st_size,
@@ -446,6 +457,7 @@ class _FileToolsMixin:
         except ImportError:
             return "[ERROR: Archive extractor not available]"
         except Exception as e:
+            logger.debug("archive_extract failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _archive_file(self, filename: str, archive_name: str | None = None) -> str:
@@ -616,6 +628,7 @@ class _FileToolsMixin:
         except requests.exceptions.RequestException as e:
             return f"[ERROR: Request failed: {e}]"
         except Exception as e:
+            logger.debug("web_fetch failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _run_shell(self, cmd: str, timeout: int = 30) -> str:
@@ -701,6 +714,7 @@ class _FileToolsMixin:
         except subprocess.TimeoutExpired:
             return f"[ERROR: Command timed out after {timeout}s]"
         except Exception as e:
+            logger.debug("run_shell failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _log_append(self, log_name: str, message: str) -> str:
@@ -733,6 +747,7 @@ class _FileToolsMixin:
             return f"Appended to {log_name}"
 
         except Exception as e:
+            logger.debug("log_append failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _file_write_safe(
@@ -782,6 +797,7 @@ class _FileToolsMixin:
             return f"Wrote {len(content)} bytes to {path}"
 
         except Exception as e:
+            logger.debug("file_write_safe failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     # =========================================================================
@@ -835,6 +851,7 @@ class _FileToolsMixin:
             return f"Patch created: {patch_path}\nReview with: cat {patch_path}"
 
         except Exception as e:
+            logger.debug("prepare_patch failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _list_patches(self, status: str = "pending") -> str:
@@ -883,6 +900,7 @@ class _FileToolsMixin:
             return json.dumps(results, indent=2)
 
         except Exception as e:
+            logger.debug("list_patches failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _apply_approved_patch(self, patch_name: str) -> str:
@@ -940,6 +958,7 @@ class _FileToolsMixin:
             return f"Patch applied successfully and moved to approved: {approved_path}"
 
         except Exception as e:
+            logger.debug("apply_approved_patch failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
     def _reject_patch(self, patch_name: str, reason: str) -> str:
@@ -976,4 +995,5 @@ class _FileToolsMixin:
             return f"Patch rejected and moved to: {rejected_path}"
 
         except Exception as e:
+            logger.debug("reject_patch failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"

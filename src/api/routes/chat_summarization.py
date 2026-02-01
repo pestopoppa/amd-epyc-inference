@@ -149,7 +149,7 @@ async def _run_two_stage_summarization(
         worker_prompts.append(worker_prompt)
 
     # Dispatch to workers in parallel via llm_batch
-    # Prefer worker_fast (1.5B, ports 8102/8112) for speed, but these are
+    # Prefer worker_fast (1.5B, port 8102, 4 slots) for speed, but this is
     # WARM tier and may not be running. Fall back to worker_explore (7B, 8082).
     worker_role = "worker_fast"
     try:

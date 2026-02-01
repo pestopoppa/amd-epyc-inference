@@ -9,6 +9,33 @@ from enum import Enum
 from typing import Any
 
 
+# ── Custom Exceptions ─────────────────────────────────────────────────
+
+
+class DelegationError(Exception):
+    """Base exception for proactive delegation failures."""
+
+
+class ArchitectPlanError(DelegationError):
+    """Architect failed to generate a valid plan."""
+
+
+class StepExecutionError(DelegationError):
+    """A delegation step failed execution."""
+
+    def __init__(self, step_id: str, role: str, cause: Exception | None = None):
+        self.step_id = step_id
+        self.role = role
+        self.cause = cause
+        msg = f"Step {step_id} ({role}) failed"
+        if cause:
+            msg += f": {cause}"
+        super().__init__(msg)
+
+
+# ── Enums ─────────────────────────────────────────────────────────────
+
+
 class ReviewDecision(Enum):
     """Architect's review decision."""
 

@@ -161,7 +161,7 @@ def score_completed_task_with_mode(
             if state.progress_logger:
                 state.progress_logger.flush()
         except Exception:
-            pass
+            logger.debug("Fallback Q-scoring failed for task %s", task_id, exc_info=True)
 
 
 def store_external_reward(
@@ -224,8 +224,9 @@ async def background_cleanup(state: "AppState") -> None:
             # Only run when idle and Q-scorer is available
             # Note: Don't call ensure_memrl_initialized() here - only init on real use
             if state.active_requests == 0 and state.q_scorer and state.q_scorer_enabled:
-                # Score a small batch of pending tasks
-                results = state.q_scorer.score_pending_tasks()
+                # Score a small batch of pending tasks (run in thread to avoid
+                # blocking the event loop — this does DB reads + embeddings)
+                results = await asyncio.to_thread(state.q_scorer.score_pending_tasks)
 
                 if results and not results.get("skipped"):
                     tasks_processed = results.get("tasks_processed", 0)

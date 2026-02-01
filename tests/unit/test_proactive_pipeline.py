@@ -131,7 +131,7 @@ class TestExecuteProactiveGating:
     ):
         from src.api.routes.chat_pipeline import _execute_proactive
 
-        with patch("src.api.routes.chat_pipeline.features") as mock_feat:
+        with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=False)
             result = await _execute_proactive(
                 mock_request, mock_routing, mock_primitives, mock_state, 0.0,
@@ -145,7 +145,7 @@ class TestExecuteProactiveGating:
         from src.api.routes.chat_pipeline import _execute_proactive
 
         mock_request.real_mode = False
-        with patch("src.api.routes.chat_pipeline.features") as mock_feat:
+        with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=True)
             result = await _execute_proactive(
                 mock_request, mock_routing, mock_primitives, mock_state, 0.0,
@@ -159,7 +159,7 @@ class TestExecuteProactiveGating:
         from src.api.routes.chat_pipeline import _execute_proactive
         from src.proactive_delegation import TaskComplexity
 
-        with patch("src.api.routes.chat_pipeline.features") as mock_feat:
+        with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=True)
             with patch(
                 "src.proactive_delegation.classify_task_complexity",
@@ -179,7 +179,7 @@ class TestExecuteProactiveGating:
 
         mock_routing.routing_decision = ["architect_general"]
 
-        with patch("src.api.routes.chat_pipeline.features") as mock_feat:
+        with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=True)
             with patch(
                 "src.proactive_delegation.classify_task_complexity",
@@ -202,7 +202,7 @@ class TestExecuteProactiveGating:
             {"id": "S1", "action": "do everything"},
         ]))
 
-        with patch("src.api.routes.chat_pipeline.features") as mock_feat:
+        with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=True)
             with patch(
                 "src.proactive_delegation.classify_task_complexity",
@@ -240,3 +240,130 @@ class TestBuildTaskDecompositionPrompt:
 
         prompt = build_task_decomposition_prompt("task", "some context here")
         assert "Context" in prompt
+
+
+# ── Custom exception tests ────────────────────────────────────────────
+
+
+class TestCustomExceptions:
+    """Test custom delegation exception hierarchy."""
+
+    def test_delegation_error_is_exception(self):
+        from src.proactive_delegation import DelegationError
+        assert issubclass(DelegationError, Exception)
+        e = DelegationError("test failure")
+        assert str(e) == "test failure"
+
+    def test_architect_plan_error_inherits(self):
+        from src.proactive_delegation import ArchitectPlanError, DelegationError
+        assert issubclass(ArchitectPlanError, DelegationError)
+        e = ArchitectPlanError("bad plan")
+        assert isinstance(e, DelegationError)
+        assert str(e) == "bad plan"
+
+    def test_step_execution_error_inherits(self):
+        from src.proactive_delegation import StepExecutionError, DelegationError
+        assert issubclass(StepExecutionError, DelegationError)
+
+    def test_step_execution_error_fields(self):
+        from src.proactive_delegation import StepExecutionError
+        cause = ValueError("bad input")
+        e = StepExecutionError("S1", "coder_primary", cause=cause)
+        assert e.step_id == "S1"
+        assert e.role == "coder_primary"
+        assert e.cause is cause
+        assert "S1" in str(e)
+        assert "coder_primary" in str(e)
+        assert "bad input" in str(e)
+
+    def test_step_execution_error_no_cause(self):
+        from src.proactive_delegation import StepExecutionError
+        e = StepExecutionError("S2", "worker_general")
+        assert e.cause is None
+        assert "S2" in str(e)
+        assert "bad input" not in str(e)
+
+    def test_exceptions_catchable_by_base(self):
+        from src.proactive_delegation import (
+            DelegationError, ArchitectPlanError, StepExecutionError,
+        )
+        with pytest.raises(DelegationError):
+            raise ArchitectPlanError("plan failed")
+        with pytest.raises(DelegationError):
+            raise StepExecutionError("S1", "worker")
+
+
+# ── IterationContext tests ────────────────────────────────────────────
+
+
+class TestIterationContext:
+    """Test iteration tracking and limits."""
+
+    def test_can_iterate_fresh(self):
+        from src.proactive_delegation import IterationContext
+        ctx = IterationContext(max_iterations=3, max_total_iterations=10)
+        assert ctx.can_iterate("sub1") is True
+
+    def test_can_iterate_at_limit(self):
+        from src.proactive_delegation import IterationContext, ReviewDecision
+        ctx = IterationContext(max_iterations=2, max_total_iterations=10)
+        ctx.record_iteration("sub1", ReviewDecision.REQUEST_CHANGES, "fix X")
+        assert ctx.can_iterate("sub1") is True
+        ctx.record_iteration("sub1", ReviewDecision.REQUEST_CHANGES, "fix Y")
+        assert ctx.can_iterate("sub1") is False
+
+    def test_total_iterations_limit(self):
+        from src.proactive_delegation import IterationContext, ReviewDecision
+        ctx = IterationContext(max_iterations=5, max_total_iterations=3)
+        ctx.record_iteration("s1", ReviewDecision.REQUEST_CHANGES)
+        ctx.record_iteration("s2", ReviewDecision.REQUEST_CHANGES)
+        ctx.record_iteration("s3", ReviewDecision.REQUEST_CHANGES)
+        assert ctx.can_iterate("s4") is False
+
+    def test_record_iteration_history(self):
+        from src.proactive_delegation import IterationContext, ReviewDecision
+        ctx = IterationContext(max_iterations=5, max_total_iterations=10)
+        ctx.record_iteration("sub1", ReviewDecision.APPROVE, "looks good")
+        assert len(ctx.iteration_history) == 1
+        assert ctx.iteration_history[0]["subtask_id"] == "sub1"
+        assert ctx.iteration_history[0]["decision"] == "approve"
+        assert ctx.iteration_history[0]["feedback"] == "looks good"
+
+    def test_get_summary(self):
+        from src.proactive_delegation import IterationContext, ReviewDecision
+        ctx = IterationContext(max_iterations=3, max_total_iterations=10)
+        ctx.record_iteration("s1", ReviewDecision.APPROVE)
+        ctx.record_iteration("s2", ReviewDecision.REJECT)
+        summary = ctx.get_summary()
+        assert summary["total_iterations"] == 2
+        assert summary["subtask_counts"] == {"s1": 1, "s2": 1}
+        assert summary["max_reached"] is False
+
+
+# ── ComplexitySignals tests ───────────────────────────────────────────
+
+
+class TestComplexitySignals:
+    """Test complexity signal detection."""
+
+    def test_default_signals(self):
+        from src.proactive_delegation import ComplexitySignals
+        signals = ComplexitySignals()
+        assert signals.word_count == 0
+        assert signals.has_code_keywords is False
+        assert signals.question_type == "unknown"
+
+    def test_classify_trivial(self):
+        from src.proactive_delegation import classify_task_complexity, TaskComplexity
+        complexity, signals = classify_task_complexity("What is 2+2?")
+        assert complexity in (TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE)
+
+    def test_classify_complex_triggers(self):
+        from src.proactive_delegation import classify_task_complexity, TaskComplexity
+        complexity, signals = classify_task_complexity(
+            "Design and implement a distributed caching system with "
+            "consistency guarantees, sharding, and replication across "
+            "multiple data centers with failover handling"
+        )
+        assert complexity in (TaskComplexity.MODERATE, TaskComplexity.COMPLEX)
+        assert signals.has_architecture_keywords or signals.has_multi_step_keywords

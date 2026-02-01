@@ -30,7 +30,7 @@ from src.repl_environment.security import ASTSecurityVisitor
 from src.repl_environment.environment import (
     REPLEnvironment,
     create_repl_environment,
-    _RestrictedREPLEnvironment,
+    _RestrictedREPLEnvironment,  # noqa: F401 — internal, used by create_repl_environment
 )
 
 __all__ = [
@@ -51,5 +51,4 @@ __all__ = [
     # Core classes
     "REPLEnvironment",
     "create_repl_environment",
-    "_RestrictedREPLEnvironment",
 ]

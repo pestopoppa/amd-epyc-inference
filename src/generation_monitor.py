@@ -95,7 +95,7 @@ class MonitorConfig:
 
     @classmethod
     def for_tier(cls, tier: str) -> MonitorConfig:
-        """Get tier-specific configuration.
+        """Get tier-specific configuration from centralized config.
 
         Higher tiers get more relaxed thresholds since they handle
         harder tasks with natural uncertainty.
@@ -106,35 +106,16 @@ class MonitorConfig:
         Returns:
             MonitorConfig with tier-appropriate thresholds.
         """
-        tier_configs = {
-            "worker": cls(
-                entropy_threshold=4.5,
-                entropy_spike_threshold=2.5,
-                min_tokens_before_abort=50,
-            ),
-            "coder": cls(
-                entropy_threshold=5.0,
-                entropy_spike_threshold=3.0,
-                min_tokens_before_abort=100,
-                repetition_threshold=0.2,  # Stricter for code
-            ),
-            "architect": cls(
-                entropy_threshold=6.0,
-                entropy_spike_threshold=4.0,
-                min_tokens_before_abort=200,
-                repetition_threshold=0.4,  # Most tolerant
-            ),
-            "ingest": cls(
-                entropy_threshold=5.5,
-                entropy_spike_threshold=3.5,
-                min_tokens_before_abort=100,
-            ),
-        }
-        return tier_configs.get(tier, cls())
+        cfg = _monitor_cfg()
+        overrides = cfg.tier_overrides.get(tier, {})
+        if not overrides:
+            return cls()
+        return cls(**{k: v for k, v in overrides.items()
+                      if k in cls.__dataclass_fields__})
 
     @classmethod
     def for_task(cls, task_type: str) -> MonitorConfig:
-        """Get task-specific configuration.
+        """Get task-specific configuration from centralized config.
 
         Args:
             task_type: One of "code", "reasoning", "general".
@@ -142,20 +123,12 @@ class MonitorConfig:
         Returns:
             MonitorConfig with task-appropriate thresholds.
         """
-        task_configs = {
-            "code": cls(
-                min_tokens_before_abort=100,
-                repetition_threshold=0.2,
-                ngram_size=4,  # Larger n-grams for code
-            ),
-            "reasoning": cls(
-                entropy_threshold=4.5,
-                min_tokens_before_abort=30,
-                perplexity_window=15,
-            ),
-            "general": cls(),  # Defaults
-        }
-        return task_configs.get(task_type, cls())
+        cfg = _monitor_cfg()
+        overrides = cfg.task_overrides.get(task_type, {})
+        if not overrides:
+            return cls()
+        return cls(**{k: v for k, v in overrides.items()
+                      if k in cls.__dataclass_fields__})
 
 
 @dataclass

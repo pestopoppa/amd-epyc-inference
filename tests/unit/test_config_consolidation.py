@@ -164,7 +164,6 @@ class TestServerURLsDefaults:
         assert cfg.architect_coding == "http://localhost:8084"
         assert cfg.ingest_long_context == "http://localhost:8085"
         assert cfg.worker_fast == "http://localhost:8102"
-        assert cfg.worker_fast_2 == "http://localhost:8112"
         assert cfg.worker_summarize == "http://localhost:8081"
 
 

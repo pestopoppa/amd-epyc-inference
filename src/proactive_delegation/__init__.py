@@ -17,11 +17,14 @@ Usage:
 # Types
 from src.proactive_delegation.types import (
     AggregatedResult,
+    ArchitectPlanError,
     ArchitectReview,
     ComplexitySignals,
+    DelegationError,
     IterationContext,
     PlanReviewResult,
     ReviewDecision,
+    StepExecutionError,
     SubtaskResult,
     TaskComplexity,
 )
@@ -46,6 +49,10 @@ from src.proactive_delegation.review_service import (
 from src.proactive_delegation.delegator import ProactiveDelegator
 
 __all__ = [
+    # Exceptions
+    "DelegationError",
+    "ArchitectPlanError",
+    "StepExecutionError",
     # Types
     "ReviewDecision",
     "TaskComplexity",

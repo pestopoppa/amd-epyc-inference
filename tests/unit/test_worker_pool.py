@@ -67,13 +67,13 @@ def pool_config():
                 slots=2,
                 task_types=["code_impl", "refactor"],
             ),
-            "fast_1": WorkerConfig(
-                name="fast_1",
+            "fast": WorkerConfig(
+                name="fast",
                 port=8102,
                 model_path="/mnt/raid0/llm/models/fast.gguf",
                 tier=WorkerTier.WARM,
-                threads=12,
-                slots=2,
+                threads=16,
+                slots=4,
                 task_types=["boilerplate", "transform"],
             ),
         },
@@ -280,13 +280,13 @@ class TestWorkerPoolManager:
 
     def test_build_launch_command_fast(self, pool_manager):
         """Test launch command for fast worker."""
-        config = pool_manager.config.workers["fast_1"]
+        config = pool_manager.config.workers["fast"]
         cmd = pool_manager._build_launch_command(config)
 
         assert "--port" in cmd
         assert "8102" in cmd
         assert "-t" in cmd
-        assert "12" in cmd  # fewer threads for small model
+        assert "16" in cmd  # threads for consolidated fast worker
 
     @pytest.mark.asyncio
     async def test_stop_all(self, pool_manager):
@@ -314,7 +314,7 @@ class TestWorkerPoolManager:
         assert status["initialized"] is True
         assert "explore" in status["hot_workers"]
         assert "code" in status["hot_workers"]
-        assert "fast_1" in status["warm_workers"]
+        assert "fast" in status["warm_workers"]
 
         # Cleanup
         await pool_manager.stop_all()

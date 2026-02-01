@@ -46,6 +46,7 @@ Adding New Features:
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -370,12 +371,16 @@ def get_features(
     return Features(**flags)
 
 
-# Singleton for global access (lazy-loaded)
+# Singleton for global access (lazy-loaded, thread-safe)
 _features: Features | None = None
+_features_lock = threading.Lock()
 
 
 def features() -> Features:
     """Get the global Features instance (lazy-loaded from environment).
+
+    Thread-safe via double-checked locking (matches PromptCompressor,
+    WorkerPoolManager patterns).
 
     For most code, use this function:
         from src.features import features
@@ -387,7 +392,9 @@ def features() -> Features:
     """
     global _features
     if _features is None:
-        _features = get_features()
+        with _features_lock:
+            if _features is None:
+                _features = get_features()
     return _features
 
 
@@ -397,7 +404,8 @@ def reset_features() -> None:
     Call this to re-read feature flags from environment.
     """
     global _features
-    _features = None
+    with _features_lock:
+        _features = None
 
 
 def set_features(new_features: Features) -> None:
@@ -407,4 +415,5 @@ def set_features(new_features: Features) -> None:
         new_features: Features instance to use globally.
     """
     global _features
-    _features = new_features
+    with _features_lock:
+        _features = new_features

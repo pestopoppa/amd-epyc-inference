@@ -143,12 +143,11 @@ python scripts/server/orchestrator_stack.py stop --all
 | 8087 | vision_escalation | Qwen3-VL-30B-A3B-Q4_K_M + mmproj | MoE4 | ~10 t/s |
 | 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | — | — |
 
-### WARM Tier (Burst Capacity, ~5GB)
+### WARM Tier (Burst Capacity, ~1GB)
 
-| Port | Role | Model | Acceleration | Speed |
-|------|------|-------|--------------|-------|
-| 8102 | worker_fast_1 | Qwen2.5-Coder-1.5B-Q4_K_M | lookup | 60 t/s |
-| 8112 | worker_fast_2 | Qwen2.5-Coder-1.5B-Q4_K_M | lookup | 60 t/s |
+| Port | Role | Model | Slots | Speed |
+|------|------|-------|-------|-------|
+| 8102 | worker_fast | Qwen2.5-Coder-1.5B-Q4_K_M | 4 | 60 t/s |
 
 ### Services
 

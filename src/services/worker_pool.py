@@ -185,22 +185,13 @@ class WorkerPoolManager:
                     slots=2,
                     task_types=["code_impl", "refactor", "test_gen"],
                 ),
-                "fast_1": WorkerConfig(
-                    name="fast_1",
+                "fast": WorkerConfig(
+                    name="fast",
                     port=8102,
                     model_path=f"{model_base}/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
                     tier=WorkerTier.WARM,
-                    threads=12,
-                    slots=2,
-                    task_types=["boilerplate", "transform", "parallel_burst"],
-                ),
-                "fast_2": WorkerConfig(
-                    name="fast_2",
-                    port=8112,
-                    model_path=f"{model_base}/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
-                    tier=WorkerTier.WARM,
-                    threads=12,
-                    slots=2,
+                    threads=16,
+                    slots=4,
                     task_types=["boilerplate", "transform", "parallel_burst"],
                 ),
             }

@@ -12,6 +12,7 @@ from src.proactive_delegation.types import (
     ComplexitySignals,
     IterationContext,
     ReviewDecision,
+    StepExecutionError,
     SubtaskResult,
     TaskComplexity,
 )
@@ -300,13 +301,14 @@ class ProactiveDelegator:
                     n_tokens=1024,
                 )
             except Exception as e:
-                logger.warning(f"Specialist {role} failed: {e}", exc_info=True)
+                exc = StepExecutionError(subtask_id, role, cause=e)
+                logger.warning("%s", exc, exc_info=True)
                 return SubtaskResult(
                     subtask_id=subtask_id,
                     role=role,
                     output="",
                     success=False,
-                    error=str(e),
+                    error=str(exc),
                 )
 
             # Architect review

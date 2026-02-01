@@ -180,8 +180,6 @@ class LLMPrimitives:
         "vision_escalation": "http://localhost:8087",
         "worker_code": "http://localhost:8092",
         "worker_fast": "http://localhost:8102",
-        "worker_fast_1": "http://localhost:8102",
-        "worker_fast_2": "http://localhost:8112",
         # Architects
         "architect_general": "http://localhost:8083",
         "architect_coding": "http://localhost:8084",
@@ -1073,10 +1071,6 @@ class LLMPrimitives:
             self._last_predicted_tps = result.predicted_per_second
         return result.output
 
-    # Pool of fast worker roles for round-robin dispatch
-    WORKER_FAST_POOL = ["worker_fast_1", "worker_fast_2"]
-    _worker_fast_counter: int = 0
-
     def _real_batch(self, prompts: list[str], role: str) -> list[str]:
         """Make real inference calls in parallel.
 
@@ -1101,22 +1095,10 @@ class LLMPrimitives:
 
         results: list[str | None] = [None] * len(prompts)
 
-        # Round-robin dispatch for worker_fast across 8102+8112 pool
-        use_fast_pool = (role == "worker_fast" and
-                         any(self._backends.get(r) for r in self.WORKER_FAST_POOL))
-
         with ThreadPoolExecutor(max_workers=self.config.batch_parallelism) as executor:
             future_to_idx = {}
             for i, prompt in enumerate(prompts):
-                if use_fast_pool:
-                    # Distribute across fast worker pool (round-robin)
-                    pool_role = self.WORKER_FAST_POOL[
-                        LLMPrimitives._worker_fast_counter % len(self.WORKER_FAST_POOL)
-                    ]
-                    LLMPrimitives._worker_fast_counter += 1
-                    future = executor.submit(self._real_call, prompt, pool_role)
-                else:
-                    future = executor.submit(self._real_call, prompt, role)
+                future = executor.submit(self._real_call, prompt, role)
                 future_to_idx[future] = i
 
             # Collect results in order

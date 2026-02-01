@@ -88,6 +88,12 @@ cat orchestration/model_registry.yaml # Role configs
 - **Module-level loggers**: Consolidated function-level logger creation to module top in 7 chat route files
 - 1425 tests passing
 
+### Final Polish (2026-02-01, Session 10)
+
+- **chat_pipeline.py decomposition**: 1,439-line monolith → `src/api/routes/chat_pipeline/` package (4 modules: `routing.py` 228L, `stages.py` 704L, `repl_executor.py` 532L, `__init__.py` 64L). Zero downstream import changes; test mock patch targets updated.
+- **Misc cleanup**: `_RestrictedREPLEnvironment` removed from `__all__`, handoff lifecycle cleanup, test count updated in docs.
+- 1517 tests passing
+
 ### Other Infrastructure
 
 - HTTP connection pooling (httpx, ~6x latency reduction)
@@ -218,6 +224,7 @@ python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
 | File | Purpose |
 |------|---------|
 | `src/api/routes/chat.py` | Chat endpoints, _architect_delegated_answer() |
+| `src/api/routes/chat_pipeline/` | Pipeline package (routing, stages, repl_executor) |
 | `src/proactive_delegation/` | ProactiveDelegator package (types, complexity, review_service, delegator) |
 | `src/llm_primitives.py` | llm_call/llm_batch, persona injection point |
 | `src/prompt_builders/` | System prompts package (types, constants, builder, review, code_utils, formatting) |
@@ -256,8 +263,8 @@ When this roadmap is complete:
 - [x] E: Persona registry + llm_batch persona + StepExecutor injection + MemRL auto-selection
 - [x] F: StagedScorer annealing verified (WI-9, 8 tests)
 - [x] G: Parallel gate execution implemented (WI-10, 6 tests)
-- [x] All tests passing: 1425 passed (+ 4 xpassed), 25 skipped
-- [ ] Gates passing: `make gates`
-- [ ] Key findings → `docs/chapters/` (if significant)
+- [x] All tests passing: 1517 passed, 25 skipped, 0 failed
+- [x] Gates passing: `make gates`
+- [x] Key findings → `docs/chapters/10-orchestration-architecture.md` updated
 - [x] Update `orchestration/BLOCKED_TASKS.md`
 - [ ] DELETE this handoff file (all items complete — ready for archival)

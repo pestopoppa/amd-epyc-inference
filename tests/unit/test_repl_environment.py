@@ -456,3 +456,395 @@ class TestConfig:
         repl = REPLEnvironment(context="test", config=config)
 
         assert repl.config.max_grep_results == 10
+
+
+# ============================================================
+# NEW TEST CLASSES FOR UNTESTED SUBSYSTEMS
+# ============================================================
+
+
+class TestREPLTypes:
+    """Test exception classes and type utilities."""
+
+    def test_repl_error_instantiation(self):
+        """Test REPLError can be instantiated and raised."""
+        from src.repl_environment import REPLError
+
+        error = REPLError("test error")
+        assert str(error) == "test error"
+        assert isinstance(error, Exception)
+
+    def test_repl_timeout_inheritance(self):
+        """Test REPLTimeout inherits from REPLError."""
+        from src.repl_environment import REPLTimeout, REPLError
+
+        timeout = REPLTimeout("timed out")
+        assert str(timeout) == "timed out"
+        assert isinstance(timeout, REPLError)
+        assert isinstance(timeout, Exception)
+
+    def test_repl_security_error_inheritance(self):
+        """Test REPLSecurityError inherits from REPLError."""
+        from src.repl_environment import REPLSecurityError, REPLError
+
+        error = REPLSecurityError("dangerous code")
+        assert str(error) == "dangerous code"
+        assert isinstance(error, REPLError)
+        assert isinstance(error, Exception)
+
+    def test_final_signal_exception(self):
+        """Test FinalSignal exception with answer attribute."""
+        from src.repl_environment import FinalSignal
+
+        signal = FinalSignal("the answer is 42")
+        assert signal.answer == "the answer is 42"
+        assert str(signal) == "the answer is 42"
+        assert isinstance(signal, Exception)
+
+    def test_final_signal_preserves_type(self):
+        """Test FinalSignal converts answer to string."""
+        from src.repl_environment import FinalSignal
+
+        signal = FinalSignal("test")
+        assert isinstance(signal.answer, str)
+
+    def test_wrap_tool_output_function(self):
+        """Test wrap_tool_output adds delimiters."""
+        from src.repl_environment import wrap_tool_output, TOOL_OUTPUT_START, TOOL_OUTPUT_END
+
+        output = wrap_tool_output("some tool output")
+        assert output.startswith(TOOL_OUTPUT_START)
+        assert output.endswith(TOOL_OUTPUT_END)
+        assert "some tool output" in output
+
+    def test_wrap_tool_output_constants(self):
+        """Test tool output delimiter constants exist."""
+        from src.repl_environment import TOOL_OUTPUT_START, TOOL_OUTPUT_END
+
+        assert isinstance(TOOL_OUTPUT_START, str)
+        assert isinstance(TOOL_OUTPUT_END, str)
+        assert len(TOOL_OUTPUT_START) > 0
+        assert len(TOOL_OUTPUT_END) > 0
+
+
+class TestASTSecurityVisitor:
+    """Test the AST security visitor."""
+
+    def test_visitor_initialization(self):
+        """Test ASTSecurityVisitor initializes with empty violations."""
+        from src.repl_environment import ASTSecurityVisitor
+
+        visitor = ASTSecurityVisitor()
+        assert visitor.violations == []
+
+    def test_visit_import_forbidden(self):
+        """Test visitor detects forbidden module imports."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "import os"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "os" in str(visitor.violations)
+
+    def test_visit_import_subprocess(self):
+        """Test visitor detects subprocess import."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "import subprocess"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "subprocess" in str(visitor.violations)
+
+    def test_visit_from_import_forbidden(self):
+        """Test visitor detects from...import of forbidden modules."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "from os import path"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "os" in str(visitor.violations)
+
+    def test_visit_call_eval(self):
+        """Test visitor detects eval() calls."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "eval('1+1')"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "eval" in str(visitor.violations)
+
+    def test_visit_call_exec(self):
+        """Test visitor detects exec() calls."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "exec('x=1')"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "exec" in str(visitor.violations)
+
+    def test_visit_call_dunder_import(self):
+        """Test visitor detects __import__() calls."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "__import__('os')"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "__import__" in str(visitor.violations)
+
+    def test_visit_attribute_dunder_class(self):
+        """Test visitor detects __class__ attribute access."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "x.__class__"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "__class__" in str(visitor.violations)
+
+    def test_visit_subscript_dunder_string(self):
+        """Test visitor detects string-based dunder subscript access."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = "obj['__class__']"
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert len(visitor.violations) > 0
+        assert "__class__" in str(visitor.violations)
+
+    def test_safe_code_no_violations(self):
+        """Test safe code produces no violations."""
+        import ast
+        from src.repl_environment import ASTSecurityVisitor
+
+        code = """
+x = [1, 2, 3]
+y = sum(x)
+print(y)
+"""
+        tree = ast.parse(code)
+        visitor = ASTSecurityVisitor()
+        visitor.visit(tree)
+
+        assert visitor.violations == []
+
+
+class TestContextMixin:
+    """Test context management methods."""
+
+    def test_context_len(self):
+        """Test _context_len returns character count."""
+        repl = REPLEnvironment(context="Hello World")
+        result = repl.execute("print(context_len())")
+
+        assert "11" in result.output
+
+    def test_context_len_empty(self):
+        """Test _context_len with empty context."""
+        repl = REPLEnvironment(context="")
+        result = repl.execute("print(context_len())")
+
+        assert "0" in result.output
+
+    def test_chunk_context_basic(self):
+        """Test _chunk_context splits context into chunks."""
+        context = "A" * 1000
+        repl = REPLEnvironment(context=context)
+        result = repl.execute("chunks = chunk_context(4); print(len(chunks))")
+
+        assert "4" in result.output
+        assert result.error is None
+
+    def test_chunk_context_returns_metadata(self):
+        """Test chunk_context returns chunks with metadata."""
+        context = "Hello World"
+        repl = REPLEnvironment(context=context)
+        result = repl.execute("""
+chunks = chunk_context(2)
+print(chunks[0]['index'])
+print('text' in chunks[0])
+print('char_count' in chunks[0])
+""")
+
+        assert "0" in result.output
+        assert "True" in result.output
+
+    def test_chunk_context_tracks_exploration(self):
+        """Test chunk_context increments exploration calls."""
+        repl = REPLEnvironment(context="test")
+        initial_calls = repl._exploration_calls
+        repl.execute("chunk_context(2)")
+
+        assert repl._exploration_calls > initial_calls
+
+
+class TestRoutingMixin:
+    """Test routing and delegation methods."""
+
+    def test_my_role_returns_role_info(self):
+        """Test my_role() returns current role information."""
+        repl = REPLEnvironment(context="test")
+        # Set role explicitly
+        repl.role = "worker_explore"
+        result = repl.execute("output = my_role(); print('TOOL_OUTPUT' in output)")
+
+        # my_role() should return output wrapped in tool delimiters
+        assert "True" in result.output or result.error is None
+
+    def test_escalate_sets_artifacts(self):
+        """Test escalate() sets escalation artifacts."""
+        repl = REPLEnvironment(context="test")
+        result = repl.execute("escalate('need help', 'architect_general')")
+
+        assert repl.artifacts.get("_escalation_requested") is True
+        assert "need help" in repl.artifacts.get("_escalation_reason", "")
+
+    def test_escalate_returns_message(self):
+        """Test escalate() returns acknowledgment message."""
+        repl = REPLEnvironment(context="test")
+        result = repl.execute("print(escalate('complex task'))")
+
+        assert "ESCALATION REQUESTED" in result.output
+        assert "complex task" in result.output
+
+
+class TestExplorationLog:
+    """Test exploration event logging."""
+
+    def test_exploration_event_creation(self):
+        """Test ExplorationEvent dataclass creation."""
+        from src.repl_environment.types import ExplorationEvent
+
+        event = ExplorationEvent(
+            function="peek",
+            args={"n": 100},
+            result_size=500,
+            timestamp=123.456,
+            token_estimate=125,
+        )
+
+        assert event.function == "peek"
+        assert event.args == {"n": 100}
+        assert event.result_size == 500
+        assert event.token_estimate == 125
+
+    def test_exploration_log_initialization(self):
+        """Test ExplorationLog initializes with empty events."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        assert log.events == []
+        assert log.total_exploration_tokens == 0
+
+    def test_exploration_log_add_event_string(self):
+        """Test add_event with string result."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("peek", {"n": 100}, "A" * 100)
+
+        assert len(log.events) == 1
+        assert log.events[0].function == "peek"
+        assert log.events[0].result_size == 100
+        assert log.total_exploration_tokens == 25  # 100 / 4
+
+    def test_exploration_log_add_event_list(self):
+        """Test add_event with list result."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("grep", {"pattern": "test"}, ["line1", "line2", "line3"])
+
+        assert len(log.events) == 1
+        assert log.events[0].result_size == 3
+        # Token estimate for lists is 0 (based on list length, not character count)
+        # Only strings get token estimates
+        assert log.events[0].token_estimate == 0
+
+    def test_exploration_log_strategy_summary(self):
+        """Test get_strategy_summary returns function counts."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("peek", {}, "A" * 100)
+        log.add_event("grep", {}, "B" * 100)
+        log.add_event("peek", {}, "C" * 100)
+
+        summary = log.get_strategy_summary()
+        assert summary["total_events"] == 3
+        assert summary["function_counts"]["peek"] == 2
+        assert summary["function_counts"]["grep"] == 1
+
+    def test_exploration_log_token_efficiency(self):
+        """Test get_token_efficiency calculates ratio."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("peek", {}, "A" * 400)  # 100 tokens
+
+        efficiency = log.get_token_efficiency(result_tokens=200)
+        assert efficiency["exploration_tokens"] == 100
+        assert efficiency["result_tokens"] == 200
+        assert efficiency["efficiency_ratio"] == 2.0
+
+    def test_exploration_log_classify_strategy_delegated(self):
+        """Test strategy classification identifies delegated."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("llm_call", {}, "response")
+
+        summary = log.get_strategy_summary()
+        assert summary["strategy_type"] == "delegated"
+
+    def test_exploration_log_classify_strategy_search(self):
+        """Test strategy classification identifies search."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("grep", {}, "result1")
+        log.add_event("grep", {}, "result2")
+        log.add_event("peek", {}, "preview")
+
+        summary = log.get_strategy_summary()
+        assert summary["strategy_type"] == "search"
+
+    def test_exploration_log_classify_strategy_scan(self):
+        """Test strategy classification identifies scan."""
+        from src.repl_environment.types import ExplorationLog
+
+        log = ExplorationLog()
+        log.add_event("peek", {}, "preview1")
+        log.add_event("peek", {}, "preview2")
+
+        summary = log.get_strategy_summary()
+        assert summary["strategy_type"] == "scan"

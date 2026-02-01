@@ -34,10 +34,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Roles that map to WARM burst workers (8102/8112) — can genuinely overlap
+# Roles that map to WARM burst worker (8102, 4 slots) — can genuinely overlap
 BURST_WORKER_ROLES = frozenset({
-    "worker_fast", "worker_fast_1", "worker_fast_2",
-    "fast_1", "fast_2",
+    "worker_fast",
 })
 
 
@@ -367,9 +366,13 @@ class StepExecutor:
         prompt = self._build_step_prompt(task_ir, step)
 
         # Resolve persona: explicit step field → MemRL auto-selection → None
-        persona = step.get("persona") or step.get("persona_hint")
-        if not persona and self.hybrid_router:
-            persona = self._auto_select_persona(task_ir, step, role)
+        # Gated behind features().personas flag
+        from src.features import features as _get_features
+        persona = None
+        if _get_features().personas:
+            persona = step.get("persona") or step.get("persona_hint")
+            if not persona and self.hybrid_router:
+                persona = self._auto_select_persona(task_ir, step, role)
 
         start = time.monotonic()
         try:

@@ -189,8 +189,8 @@ class ServerConfigData:
 class MonitorConfigData:
     """Configuration for generation monitoring.
 
-    Base defaults — MonitorConfig.for_tier() in generation_monitor.py
-    provides tier-specific overrides on top of these.
+    Base defaults used by MonitorConfig(). Per-tier and per-task overrides
+    are in tier_overrides and task_overrides, consumed by for_tier()/for_task().
     """
 
     entropy_threshold: float = 4.0
@@ -219,6 +219,20 @@ class MonitorConfigData:
 
     combined_threshold: float = 0.7
     """Weighted score for combined signals."""
+
+    tier_overrides: dict[str, dict[str, float]] = field(default_factory=lambda: {
+        "worker": {"entropy_threshold": 4.5, "entropy_spike_threshold": 2.5, "min_tokens_before_abort": 50},
+        "coder": {"entropy_threshold": 5.0, "entropy_spike_threshold": 3.0, "min_tokens_before_abort": 100, "repetition_threshold": 0.2},
+        "architect": {"entropy_threshold": 6.0, "entropy_spike_threshold": 4.0, "min_tokens_before_abort": 200, "repetition_threshold": 0.4},
+        "ingest": {"entropy_threshold": 5.5, "entropy_spike_threshold": 3.5, "min_tokens_before_abort": 100},
+    })
+    """Per-tier threshold overrides. Keys are tier names, values are dicts of field→value."""
+
+    task_overrides: dict[str, dict[str, float]] = field(default_factory=lambda: {
+        "code": {"min_tokens_before_abort": 100, "repetition_threshold": 0.2, "ngram_size": 4},
+        "reasoning": {"entropy_threshold": 4.5, "min_tokens_before_abort": 30, "perplexity_window": 15},
+    })
+    """Per-task threshold overrides. Keys are task types, values are dicts of field→value."""
 
 
 @dataclass
@@ -310,8 +324,6 @@ class ServerURLsConfig:
     vision_escalation: str = "http://localhost:8087"
     worker_code: str = "http://localhost:8092"
     worker_fast: str = "http://localhost:8102"
-    worker_fast_1: str = "http://localhost:8102"
-    worker_fast_2: str = "http://localhost:8112"
     worker_summarize: str = "http://localhost:8081"
 
     # Tier B - Architects
@@ -689,8 +701,6 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         vision_escalation: str = "http://localhost:8087"
         worker_code: str = "http://localhost:8092"
         worker_fast: str = "http://localhost:8102"
-        worker_fast_1: str = "http://localhost:8102"
-        worker_fast_2: str = "http://localhost:8112"
         worker_summarize: str = "http://localhost:8081"
         architect_general: str = "http://localhost:8083"
         architect_coding: str = "http://localhost:8084"
@@ -866,8 +876,6 @@ def _load_from_env() -> OrchestratorConfigData:
             vision_escalation=_env_str(f"{P}SERVER_URLS_VISION_ESCALATION", "http://localhost:8087"),
             worker_code=_env_str(f"{P}SERVER_URLS_WORKER_CODE", "http://localhost:8092"),
             worker_fast=_env_str(f"{P}SERVER_URLS_WORKER_FAST", "http://localhost:8102"),
-            worker_fast_1=_env_str(f"{P}SERVER_URLS_WORKER_FAST_1", "http://localhost:8102"),
-            worker_fast_2=_env_str(f"{P}SERVER_URLS_WORKER_FAST_2", "http://localhost:8112"),
             worker_summarize=_env_str(f"{P}SERVER_URLS_WORKER_SUMMARIZE", "http://localhost:8081"),
             architect_general=_env_str(f"{P}SERVER_URLS_ARCHITECT_GENERAL", "http://localhost:8083"),
             architect_coding=_env_str(f"{P}SERVER_URLS_ARCHITECT_CODING", "http://localhost:8084"),
@@ -982,8 +990,6 @@ def get_config() -> OrchestratorConfigData:
                 vision_escalation=settings.server_urls.vision_escalation,
                 worker_code=settings.server_urls.worker_code,
                 worker_fast=settings.server_urls.worker_fast,
-                worker_fast_1=settings.server_urls.worker_fast_1,
-                worker_fast_2=settings.server_urls.worker_fast_2,
                 worker_summarize=settings.server_urls.worker_summarize,
                 architect_general=settings.server_urls.architect_general,
                 architect_coding=settings.server_urls.architect_coding,

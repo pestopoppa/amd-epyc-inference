@@ -292,11 +292,17 @@ class REPLEnvironment(
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
 
+        old_handler = None
+        _alarm_set = False
         try:
-            # Set timeout (Unix only)
+            # Set timeout (Unix only, main thread only)
             if hasattr(signal, "SIGALRM"):
-                old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(self.config.timeout_seconds)
+                try:
+                    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(self.config.timeout_seconds)
+                    _alarm_set = True
+                except ValueError:
+                    pass  # Not main thread — skip signal-based timeout
 
             try:
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
@@ -343,7 +349,7 @@ class REPLEnvironment(
 
         finally:
             # Clear timeout
-            if hasattr(signal, "SIGALRM"):
+            if _alarm_set:
                 signal.alarm(0)
                 signal.signal(signal.SIGALRM, old_handler)
 

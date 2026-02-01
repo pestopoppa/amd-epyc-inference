@@ -387,27 +387,16 @@ worker_pool:
       description: "Code implementation, following architect instructions"
       expected_tps: 18
 
-    # === WARM WORKERS (Load on demand, ~2GB total) ===
-    fast_1:
+    # === WARM WORKER (Load on demand, ~1GB) ===
+    fast:
       port: 8102
       model: Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf
       tier: warm
-      threads: 12
-      slots: 2
+      threads: 16
+      slots: 4
       memory_gb: 1.0
       task_types: [boilerplate, transform, parallel_burst]
-      description: "Simple transformations, boilerplate, high-volume parallel"
-      expected_tps: 60
-
-    fast_2:
-      port: 8112
-      model: Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf
-      tier: warm
-      threads: 12
-      slots: 2
-      memory_gb: 1.0
-      task_types: [boilerplate, transform, parallel_burst]
-      description: "Additional capacity for burst workloads"
+      description: "Simple transformations, boilerplate, high-volume parallel (4 concurrent slots)"
       expected_tps: 60
 
   launch_flags:

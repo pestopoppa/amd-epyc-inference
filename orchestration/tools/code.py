@@ -1,9 +1,13 @@
 """Code tools - linting, formatting, git, execution."""
 
 import ast
+import logging
+import re
 import subprocess
 import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def python_eval(expression: str, variables: dict | None = None) -> Any:
@@ -56,18 +60,40 @@ def python_eval(expression: str, variables: dict | None = None) -> Any:
         return {"error": str(e)}
 
 
+_DANGEROUS_PATTERNS = [
+    re.compile(r"rm\s+-r[f ]?\s+/(?:\s|$)"),  # rm -rf / (with whitespace tolerance)
+    re.compile(r"\bmkfs\b"),
+    re.compile(r"\bdd\s+if="),
+    re.compile(r">\s*/dev/"),
+    re.compile(r"chmod\s+-R\s+777\s+/(?:\s|$)"),
+    re.compile(r"\bshutdown\b"),
+    re.compile(r"\breboot\b"),
+    re.compile(r"\bsystemctl\s+(stop|disable|mask)\b"),
+]
+
+
 def run_shell(command: str, timeout: int = 30, cwd: str | None = None) -> dict:
-    """Execute shell command with sandbox restrictions."""
-    # Block dangerous commands
-    dangerous = ["rm -rf /", "mkfs", "dd if=", "> /dev/", "chmod -R 777 /"]
-    if any(d in command for d in dangerous):
+    """Execute shell command with sandbox restrictions.
+
+    NOTE: shell=True is intentional — this is a general-purpose shell executor
+    for orchestration agents. Commands may contain pipes, redirects, and other
+    shell features. The safety net is the regex-based blocklist below.
+    """
+    # Normalize whitespace for blocklist check
+    normalized = " ".join(command.split())
+    if any(p.search(normalized) for p in _DANGEROUS_PATTERNS):
+        logger.warning("Blocked dangerous command: %.200s", command)
         return {"error": "Command blocked for safety"}
+
+    # Validate cwd is on RAID if specified
+    if cwd and not cwd.startswith("/mnt/raid0/"):
+        return {"error": f"Working directory must be on /mnt/raid0/: {cwd}"}
 
     start = time.time()
     try:
         result = subprocess.run(
             command,
-            shell=True,
+            shell=True,  # Intentional: general-purpose shell executor
             capture_output=True,
             text=True,
             timeout=timeout,

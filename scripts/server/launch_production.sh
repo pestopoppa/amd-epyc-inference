@@ -65,13 +65,12 @@ case "$MODE" in
         python3 "$STACK_PY" start --hot-only
         ;;
     --with-burst)
-        echo "Mode: FULL + burst workers (~515GB)"
+        echo "Mode: FULL + burst worker (~515GB)"
         echo ""
         echo "Additional burst capacity:"
-        echo "  - worker_fast_1 (8102): Qwen2.5-Coder-1.5B, 60 t/s"
-        echo "  - worker_fast_2 (8112): Qwen2.5-Coder-1.5B, 60 t/s"
+        echo "  - worker_fast (8102): Qwen2.5-Coder-1.5B, 4 slots, 60 t/s"
         echo ""
-        python3 "$STACK_PY" start --include-warm worker_fast_1 worker_fast_2
+        python3 "$STACK_PY" start --include-warm worker_fast
         ;;
     --dev)
         echo "Mode: DEV (single 0.5B model)"

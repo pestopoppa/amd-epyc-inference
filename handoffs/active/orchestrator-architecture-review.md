@@ -1,7 +1,7 @@
 # Orchestrator Architecture Review & chat.py Decomposition
 
 **Date**: 2026-02-01
-**Status**: In Progress (Phase 3 of 5 complete + WI-9/10/11 done + C/D/E roadmap complete, MemRL DB cleaned for validation)
+**Status**: Substantially Complete (Phases 1-3 + WI-9/10/11 + C/D/E roadmap + H1-H7 hardening + T1-T4 test expansion + final polish)
 **Author**: Claude Opus 4.5 (architecture review session)
 
 ## Summary
@@ -126,12 +126,27 @@ All other modules: no cross-deps to new modules
 - **WI-10**: Parallel gate execution — `asyncio.to_thread()` + `asyncio.gather()` for concurrent subprocess gates, `parallel_gates` feature flag
 - **WI-11**: prompt_builders.py decomposition — 1,501-line monolith → 6-module package (resolves S2)
 
-**Test count**: 1398 passed, 25 skipped, 0 failures
+**Test count**: 1517+ passed, 0 failures
+
+## Final Review (2026-02-01) — Grade: A- (89/100)
+
+### Additional completed work (post-Phase 3):
+- **H1-H7**: Hardening (thread-safe singletons, bare except logging, async safety, path traversal fix, base64 limits, config auth, dead code cleanup)
+- **T1-T4**: Test coverage expansion (+92 new tests, real behavior testing)
+- **Roadmap items A-G**: All completed (see orchestration-architecture-roadmap.md)
+- **orchestration/ shell=True**: Replaced 2/3 with `shlex.split()`, documented 1 as intentional
+- **Vision timeout centralization**: 6 hardcoded values → `config.py:TimeoutsConfig`
+- **chat_pipeline.py decomposition**: 1,439-line monolith → `chat_pipeline/` package (4 modules: routing.py 228L, stages.py 704L, repl_executor.py 532L, __init__.py 64L)
+- **repl_environment naming**: Removed `_RestrictedREPLEnvironment` from `__all__` (internal class)
+
+### Remaining (low priority):
+- **C3**: AppState service locator → FastAPI `Depends()` DI (18 files, high effort)
+- Stale handoff cleanup (many old handoffs in active/)
 
 ## Remaining Phases (Not Yet Implemented)
 
-- **Phase 4**: Test quality (integration tests, coverage, benchmarks)
-- **Phase 5**: Infrastructure hardening (rate limiting, circuit breakers, health)
+- **Phase 4**: Test quality (integration tests, coverage, benchmarks) — partially addressed by T1-T4
+- **Phase 5**: Infrastructure hardening (rate limiting, circuit breakers, health) — partially addressed by H1-H7
 
 ## MemRL Database Cleanup (2026-01-31)
 

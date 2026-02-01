@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-ALLOWED_PREFIXES = ["/mnt/raid0/llm/", "/tmp/"]
+ALLOWED_PREFIXES = ["/mnt/raid0/llm/", "/mnt/raid0/llm/tmp/"]
 
 
 def validate_api_path(raw: str) -> Path:

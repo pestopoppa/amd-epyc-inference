@@ -439,3 +439,502 @@ class TestDetectFormatConstraints:
     def test_case_insensitive(self):
         constraints = detect_format_constraints("RETURN AS JSON FORMAT")
         assert any("json" in c.lower() for c in constraints)
+
+
+# ── Prompt Types ──────────────────────────────────────────────────────────
+
+
+class TestRootLMPrompt:
+    """Test RootLMPrompt dataclass and to_string() method."""
+
+    def test_empty_prompt(self):
+        from src.prompt_builders.types import RootLMPrompt
+        prompt = RootLMPrompt()
+        result = prompt.to_string()
+        assert isinstance(result, str)
+
+    def test_system_only(self):
+        from src.prompt_builders.types import RootLMPrompt
+        prompt = RootLMPrompt(system="You are a test assistant.")
+        result = prompt.to_string()
+        assert "You are a test assistant." in result
+
+    def test_all_sections(self):
+        from src.prompt_builders.types import RootLMPrompt
+        prompt = RootLMPrompt(
+            system="System prompt",
+            tools="Tool descriptions",
+            rules="Rules here",
+            state="State info",
+            context="Context info",
+            task="Task description",
+            instruction="Final instruction",
+        )
+        result = prompt.to_string()
+        assert "System prompt" in result
+        assert "Tool descriptions" in result
+        assert "Rules here" in result
+        assert "State info" in result
+        assert "Context info" in result
+        assert "Task description" in result
+        assert "Final instruction" in result
+
+    def test_section_headers(self):
+        from src.prompt_builders.types import RootLMPrompt
+        prompt = RootLMPrompt(
+            tools="peek(), grep()",
+            rules="No imports",
+            task="Do something",
+        )
+        result = prompt.to_string()
+        assert "## Available Tools" in result
+        assert "## Rules" in result
+        assert "## Task" in result
+
+    def test_missing_sections_omitted(self):
+        from src.prompt_builders.types import RootLMPrompt
+        prompt = RootLMPrompt(task="Just a task")
+        result = prompt.to_string()
+        assert "## Available Tools" not in result
+        assert "## Rules" not in result
+
+
+class TestEscalationPrompt:
+    """Test EscalationPrompt dataclass and to_string() method."""
+
+    def test_empty_escalation(self):
+        from src.prompt_builders.types import EscalationPrompt
+        prompt = EscalationPrompt()
+        result = prompt.to_string()
+        assert isinstance(result, str)
+
+    def test_header_and_failure_info(self):
+        from src.prompt_builders.types import EscalationPrompt
+        prompt = EscalationPrompt(
+            header="# Escalation from worker",
+            failure_info="Failed after 2 attempts",
+        )
+        result = prompt.to_string()
+        assert "# Escalation from worker" in result
+        assert "Failed after 2 attempts" in result
+
+    def test_error_details_section(self):
+        from src.prompt_builders.types import EscalationPrompt
+        prompt = EscalationPrompt(
+            header="# Escalation",
+            error_details="SyntaxError: invalid syntax",
+        )
+        result = prompt.to_string()
+        assert "## Error Details" in result
+        assert "SyntaxError" in result
+
+    def test_all_sections(self):
+        from src.prompt_builders.types import EscalationPrompt
+        prompt = EscalationPrompt(
+            header="# Escalation from coder",
+            failure_info="Failed 3 times",
+            error_details="TypeError: expected str",
+            state="x = 42",
+            task="Fix the bug",
+            instructions="Use better error handling",
+        )
+        result = prompt.to_string()
+        assert "# Escalation from coder" in result
+        assert "Failed 3 times" in result
+        assert "## Error Details" in result
+        assert "## Current State" in result
+        assert "## Original Task" in result
+        assert "## Instructions" in result
+
+
+class TestStepPrompt:
+    """Test StepPrompt dataclass and to_string() method."""
+
+    def test_empty_step(self):
+        from src.prompt_builders.types import StepPrompt
+        prompt = StepPrompt()
+        result = prompt.to_string()
+        assert isinstance(result, str)
+
+    def test_action_only(self):
+        from src.prompt_builders.types import StepPrompt
+        prompt = StepPrompt(action="Implement error handler")
+        result = prompt.to_string()
+        assert "Task: Implement error handler" in result
+
+    def test_with_inputs_and_outputs(self):
+        from src.prompt_builders.types import StepPrompt
+        prompt = StepPrompt(
+            action="Process data",
+            inputs="data.json",
+            outputs="result, summary",
+        )
+        result = prompt.to_string()
+        assert "Task: Process data" in result
+        assert "Inputs:" in result
+        assert "data.json" in result
+        assert "Expected outputs: result, summary" in result
+
+    def test_with_constraints(self):
+        from src.prompt_builders.types import StepPrompt
+        prompt = StepPrompt(
+            action="Format output",
+            constraints="JSON only, max 100 words",
+        )
+        result = prompt.to_string()
+        assert "Constraints: JSON only, max 100 words" in result
+
+
+# ── build_react_prompt ────────────────────────────────────────────────────
+
+
+class TestBuildReactPrompt:
+    """Test ReAct-style prompt generation."""
+
+    def test_basic_prompt_without_registry(self):
+        from src.prompt_builders import build_react_prompt
+        result = build_react_prompt("What is 2+2?")
+        assert "Question: What is 2+2?" in result
+        assert "Thought:" in result
+        assert "Action:" in result
+        assert "Final Answer:" in result
+
+    def test_includes_context(self):
+        from src.prompt_builders import build_react_prompt
+        result = build_react_prompt(
+            "Summarize this document",
+            context="The document is about quantum computing.",
+        )
+        assert "Context:" in result
+        assert "quantum computing" in result
+
+    def test_custom_max_turns(self):
+        from src.prompt_builders import build_react_prompt
+        result = build_react_prompt("test", max_turns=10)
+        assert "10 times" in result or "10" in result
+
+    def test_includes_tool_descriptions(self):
+        from src.prompt_builders import build_react_prompt
+        result = build_react_prompt("test")
+        # Should have static fallback tools
+        assert "calculate" in result or "web_search" in result
+
+    def test_custom_whitelist(self):
+        from src.prompt_builders import build_react_prompt
+        custom_whitelist = frozenset({"calculate", "get_current_date"})
+        result = build_react_prompt("test", tool_whitelist=custom_whitelist)
+        assert isinstance(result, str)
+
+    def test_none_tool_registry(self):
+        from src.prompt_builders import build_react_prompt
+        result = build_react_prompt("test", tool_registry=None)
+        assert "Question: test" in result
+
+
+# ── Review Prompts (Additional) ───────────────────────────────────────────
+
+
+class TestBuildPlanReviewPrompt:
+    """Test architect plan review prompt generation."""
+
+    def test_basic_plan(self):
+        from src.prompt_builders import build_plan_review_prompt
+        steps = [
+            {"id": "S1", "actor": "coder", "action": "Implement handler"},
+            {"id": "S2", "actor": "worker", "action": "Write tests"},
+        ]
+        result = build_plan_review_prompt(
+            objective="Build API handler",
+            task_type="code",
+            plan_steps=steps,
+        )
+        assert "Build API handler" in result
+        assert "S1:coder:Implement handler" in result
+        assert "S2:worker:Write tests" in result
+
+    def test_includes_json_format(self):
+        from src.prompt_builders import build_plan_review_prompt
+        result = build_plan_review_prompt(
+            objective="Test",
+            task_type="code",
+            plan_steps=[],
+        )
+        assert "JSON" in result or "json" in result
+        assert '"d":' in result or '"decision":' in result
+
+    def test_truncates_long_actions(self):
+        from src.prompt_builders import build_plan_review_prompt
+        steps = [{"id": "S1", "actor": "coder", "action": "x" * 200}]
+        result = build_plan_review_prompt("test", "code", steps)
+        # Action should be truncated to 50 chars
+        assert result.count("x") < 100
+
+    def test_handles_deps_and_outputs(self):
+        from src.prompt_builders import build_plan_review_prompt
+        steps = [
+            {
+                "id": "S1",
+                "actor": "coder",
+                "action": "Load data",
+                "outputs": ["data.json"],
+            },
+            {
+                "id": "S2",
+                "actor": "worker",
+                "action": "Process",
+                "deps": ["S1"],
+            },
+        ]
+        result = build_plan_review_prompt("test", "code", steps)
+        assert "data.json" in result
+        assert "(S1)" in result
+
+
+class TestBuildArchitectInvestigatePrompt:
+    """Test architect investigation decision prompt."""
+
+    def test_basic_structure(self):
+        from src.prompt_builders import build_architect_investigate_prompt
+        result = build_architect_investigate_prompt("What is the capital of France?")
+        assert "What is the capital of France?" in result
+        assert "D|" in result  # Direct answer format
+        assert "I|" in result  # Investigate format
+
+    def test_with_context(self):
+        from src.prompt_builders import build_architect_investigate_prompt
+        result = build_architect_investigate_prompt(
+            "Summarize the document",
+            context="Document excerpt here...",
+        )
+        assert "Document excerpt here..." in result
+        assert "Context" in result
+
+    def test_mentions_valid_roles(self):
+        from src.prompt_builders import build_architect_investigate_prompt
+        result = build_architect_investigate_prompt("test")
+        assert "coder_primary" in result or "worker_explore" in result
+
+
+class TestBuildArchitectSynthesisPrompt:
+    """Test architect synthesis prompt after investigation."""
+
+    def test_basic_synthesis(self):
+        from src.prompt_builders import build_architect_synthesis_prompt
+        result = build_architect_synthesis_prompt(
+            question="What is X?",
+            report="Investigation found: X is Y.",
+            loop_num=1,
+            max_loops=3,
+        )
+        assert "What is X?" in result
+        assert "Investigation found: X is Y." in result
+        assert "D|" in result  # Direct answer format
+
+    def test_allows_further_investigation(self):
+        from src.prompt_builders import build_architect_synthesis_prompt
+        result = build_architect_synthesis_prompt(
+            "test", "report", loop_num=1, max_loops=3
+        )
+        # Should allow another investigation
+        assert "I|" in result or "investigation" in result.lower()
+
+    def test_no_investigation_at_max_loops(self):
+        from src.prompt_builders import build_architect_synthesis_prompt
+        result = build_architect_synthesis_prompt(
+            "test", "report", loop_num=3, max_loops=3
+        )
+        # Should NOT offer further investigation
+        # (loop_num=3 means we've completed loop 3, so loop_num < max_loops is False)
+        lines = result.split("\n")
+        # Check if investigate option is missing
+        investigate_mentioned = any("loop" in line and "3/3" in line for line in lines)
+        assert not investigate_mentioned
+
+    def test_truncates_long_report(self):
+        from src.prompt_builders import build_architect_synthesis_prompt
+        long_report = "x" * 10000
+        result = build_architect_synthesis_prompt(
+            "test", long_report, loop_num=1, max_loops=3
+        )
+        # Report should be truncated to 6000 chars
+        assert result.count("x") < 7000
+
+
+# ── build_formalizer_prompt ───────────────────────────────────────────────
+
+
+class TestBuildFormalizerPrompt:
+    """Test output formalizer prompt generation."""
+
+    def test_basic_structure(self):
+        from src.prompt_builders import build_formalizer_prompt
+        result = build_formalizer_prompt(
+            answer="The answer is 42.",
+            prompt="What is the answer?",
+            format_spec="JSON format",
+        )
+        assert "JSON format" in result
+        assert "The answer is 42." in result
+        assert "What is the answer?" in result
+
+    def test_truncates_long_prompt(self):
+        from src.prompt_builders import build_formalizer_prompt
+        long_prompt = "x" * 1000
+        result = build_formalizer_prompt("answer", long_prompt, "JSON")
+        # Prompt should be truncated to 500 chars (allow 1 extra for edge case)
+        assert result.count("x") <= 501
+
+    def test_includes_instructions(self):
+        from src.prompt_builders import build_formalizer_prompt
+        result = build_formalizer_prompt("answer", "prompt", "JSON")
+        assert "ONLY" in result or "only" in result.lower()
+
+
+# ── build_step_prompt (additional) ────────────────────────────────────────
+
+
+class TestBuildStepPromptFunction:
+    """Test build_step_prompt() module-level function."""
+
+    def test_basic_step(self):
+        from src.prompt_builders import build_step_prompt
+        result = build_step_prompt("Analyze data")
+        assert "Analyze data" in result
+
+    def test_with_inputs_and_outputs(self):
+        from src.prompt_builders import build_step_prompt
+        result = build_step_prompt(
+            action="Process",
+            inputs=["data.json", "config.yaml"],
+            outputs=["result.csv"],
+        )
+        assert "Process" in result
+        assert "data.json" in result or "config.yaml" in result
+
+
+# ── build_stage2_review_prompt ────────────────────────────────────────────
+
+
+class TestBuildStage2ReviewPrompt:
+    """Test Stage 2 review prompt for two-stage summarization."""
+
+    def test_basic_structure(self):
+        from src.prompt_builders import build_stage2_review_prompt
+        result = build_stage2_review_prompt(
+            draft_summary="This is a draft summary.",
+            grep_hits=[],
+            figures=[],
+        )
+        assert "This is a draft summary." in result
+        assert "review" in result.lower() or "Review" in result
+
+    def test_includes_original_task(self):
+        from src.prompt_builders import build_stage2_review_prompt
+        result = build_stage2_review_prompt(
+            draft_summary="Summary",
+            grep_hits=[],
+            figures=[],
+            original_task="Summarize the document about quantum computing",
+        )
+        assert "quantum computing" in result
+
+    def test_includes_grep_hits(self):
+        from src.prompt_builders import build_stage2_review_prompt
+        grep_hits = [
+            {
+                "pattern": "quantum",
+                "hits": [
+                    {"context": "Quantum computers use qubits", "line_num": 42},
+                ],
+            }
+        ]
+        result = build_stage2_review_prompt("Summary", grep_hits, [])
+        assert "quantum" in result
+        assert "qubits" in result
+
+    def test_includes_figures(self):
+        from src.prompt_builders import build_stage2_review_prompt
+        figures = [
+            {"description": "Architecture diagram", "page": 5},
+            {"description": "Performance graph", "page": 12},
+        ]
+        result = build_stage2_review_prompt("Summary", [], figures)
+        assert "Architecture diagram" in result
+        assert "Performance graph" in result
+
+    def test_truncates_long_draft(self):
+        from src.prompt_builders import build_stage2_review_prompt
+        long_draft = "x" * 10000
+        result = build_stage2_review_prompt(long_draft, [], [])
+        # Draft should be truncated to 8000 chars
+        assert result.count("x") <= 8500  # Allow some margin for formatting
+
+
+# ── build_task_decomposition_prompt ───────────────────────────────────────
+
+
+class TestBuildTaskDecompositionPrompt:
+    """Test task decomposition prompt for architect."""
+
+    def test_basic_decomposition(self):
+        from src.prompt_builders import build_task_decomposition_prompt
+        result = build_task_decomposition_prompt("Build a REST API")
+        assert "Build a REST API" in result
+        assert "JSON" in result or "json" in result
+
+    def test_with_context(self):
+        from src.prompt_builders import build_task_decomposition_prompt
+        result = build_task_decomposition_prompt(
+            "Analyze codebase",
+            context="The codebase is in Python.",
+        )
+        assert "Analyze codebase" in result
+        assert "Python" in result
+
+    def test_mentions_step_fields(self):
+        from src.prompt_builders import build_task_decomposition_prompt
+        result = build_task_decomposition_prompt("test")
+        assert "actor" in result or '"actor"' in result
+        assert "action" in result or '"action"' in result
+
+
+# ── Constants Consistency ─────────────────────────────────────────────────
+
+
+class TestConstants:
+    """Test prompt_builders constants for consistency."""
+
+    def test_vision_tools_subset_of_react_tools(self):
+        from src.prompt_builders import (
+            REACT_TOOL_WHITELIST,
+            VISION_REACT_TOOL_WHITELIST,
+        )
+        # VISION_REACT_TOOL_WHITELIST should be a superset
+        assert REACT_TOOL_WHITELIST.issubset(VISION_REACT_TOOL_WHITELIST)
+
+    def test_executable_tools_subset_of_whitelist(self):
+        from src.prompt_builders import (
+            VISION_REACT_EXECUTABLE_TOOLS,
+            VISION_REACT_TOOL_WHITELIST,
+        )
+        # Executable tools should be a subset of whitelist
+        assert VISION_REACT_EXECUTABLE_TOOLS.issubset(VISION_REACT_TOOL_WHITELIST)
+
+    def test_vision_tool_descriptions_match_executable(self):
+        from src.prompt_builders import (
+            VISION_REACT_EXECUTABLE_TOOLS,
+            VISION_TOOL_DESCRIPTIONS,
+        )
+        # All executable tools should have descriptions
+        for tool in VISION_REACT_EXECUTABLE_TOOLS:
+            assert tool in VISION_TOOL_DESCRIPTIONS
+
+    def test_default_tools_and_rules_not_empty(self):
+        from src.prompt_builders import DEFAULT_ROOT_LM_TOOLS, DEFAULT_ROOT_LM_RULES
+        assert len(DEFAULT_ROOT_LM_TOOLS) > 100  # Should be substantial
+        assert len(DEFAULT_ROOT_LM_RULES) > 100
+
+    def test_react_format_has_placeholders(self):
+        from src.prompt_builders import REACT_FORMAT
+        assert "{tool_descriptions}" in REACT_FORMAT
+        assert "{max_turns}" in REACT_FORMAT
