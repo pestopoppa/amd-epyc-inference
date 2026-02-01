@@ -546,6 +546,8 @@ def evaluate_question(
             _wait_for_heavy_models_idle()
 
         key = f"{role}:{mode}"
+        if target_port in HEAVY_PORTS:
+            logger.info(f"  → {key} (heavy model, expect 30-120s)...")
         role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else max(timeout, suite_timeout)
         q_start = time.perf_counter()
         response = call_orchestrator_forced(
@@ -752,6 +754,9 @@ def run_batch(
     logger.info(f"Session: {session_id}")
     logger.info(f"Batch: {len(questions)} questions ({text_count} text, {vl_count} VL)")
     logger.info(f"Combos: {len(combos)} ({', '.join(combo_keys)})")
+    heavy_count = sum(1 for r, m in combos if ROLE_PORT.get(r, 0) in HEAVY_PORTS)
+    if heavy_count:
+        logger.info(f"  Heavy combos per question: {heavy_count} (30-120s each)")
     logger.info(f"Seed: {seed}  Rewards: {'off' if dry_run else 'on'}")
     logger.info(f"{'='*60}\n")
 

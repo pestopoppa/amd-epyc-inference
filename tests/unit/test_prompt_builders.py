@@ -599,6 +599,49 @@ class TestRootLMPrompt:
     def test_section_headers(self):
         from src.prompt_builders.types import RootLMPrompt
         prompt = RootLMPrompt(
+            system="sys",
+            tools="tools",
+            rules="rules",
+        )
+        result = prompt.to_string()
+        # Structural: Should have clear section separation
+        assert "###" in result or "##" in result
+
+
+# ── Constants Coverage ────────────────────────────────────────────────────
+
+
+class TestPromptConstants:
+    """Test constants from src/prompt_builders/constants.py."""
+
+    def test_default_root_lm_tools_not_empty(self):
+        """Test DEFAULT_ROOT_LM_TOOLS is a non-empty string."""
+        from src.prompt_builders.constants import DEFAULT_ROOT_LM_TOOLS
+        assert isinstance(DEFAULT_ROOT_LM_TOOLS, str)
+        assert len(DEFAULT_ROOT_LM_TOOLS) > 100
+        # Should contain key tool names
+        assert "peek" in DEFAULT_ROOT_LM_TOOLS
+        assert "grep" in DEFAULT_ROOT_LM_TOOLS
+        assert "FINAL" in DEFAULT_ROOT_LM_TOOLS
+
+    def test_default_root_lm_rules_not_empty(self):
+        """Test DEFAULT_ROOT_LM_RULES is a non-empty string."""
+        from src.prompt_builders.constants import DEFAULT_ROOT_LM_RULES
+        assert isinstance(DEFAULT_ROOT_LM_RULES, str)
+        assert len(DEFAULT_ROOT_LM_RULES) > 50
+        # Should contain critical rules
+        assert "FINAL" in DEFAULT_ROOT_LM_RULES
+        assert "NO IMPORTS" in DEFAULT_ROOT_LM_RULES.upper()
+
+    def test_react_tool_whitelist_not_empty(self):
+        """Test REACT_TOOL_WHITELIST has expected tools."""
+        from src.prompt_builders.constants import REACT_TOOL_WHITELIST
+        assert isinstance(REACT_TOOL_WHITELIST, frozenset)
+        assert len(REACT_TOOL_WHITELIST) > 0
+        # Should include safe read-only tools
+        assert "web_search" in REACT_TOOL_WHITELIST or "search_wikipedia" in REACT_TOOL_WHITELIST
+        from src.prompt_builders.types import RootLMPrompt
+        prompt = RootLMPrompt(
             tools="peek(), grep()",
             rules="No imports",
             task="Do something",
