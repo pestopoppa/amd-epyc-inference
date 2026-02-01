@@ -662,7 +662,9 @@ def start_orchestrator() -> ProcessInfo | None:
     env["ORCHESTRATOR_MEMRL"] = "1"
     env["ORCHESTRATOR_TOOLS"] = "1"
     env["ORCHESTRATOR_SCRIPTS"] = "1"
-    env["ORCHESTRATOR_REPL"] = "1"
+    # NOTE: Do NOT set ORCHESTRATOR_REPL here — it collides with
+    # OrchestratorSettings.repl (REPLSettings model) in config.py.
+    # The repl feature flag defaults to True in features.py already.
     env["ORCHESTRATOR_CACHING"] = "1"
     env["ORCHESTRATOR_STREAMING"] = "1"
     env["ORCHESTRATOR_MOCK_MODE"] = "0"

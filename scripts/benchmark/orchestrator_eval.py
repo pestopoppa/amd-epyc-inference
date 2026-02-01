@@ -131,8 +131,10 @@ class EvalResult:
     # Reward
     reward_injected: bool
 
-    # Error (empty string if none)
+    # Fields with defaults (must come last in dataclass)
     error: str = ""
+    tools_called: list[str] = field(default_factory=list)
+    role_history: list[str] = field(default_factory=list)
 
 
 # ── Checkpoint management ─────────────────────────────────────────────
@@ -441,10 +443,18 @@ def evaluate_prompt(
     mode = result.get("mode", "unknown")
     latency_ms = result.get("latency_ms", 0)
     tokens_generated = result.get("tokens_generated", result.get("tokens_used", 0))
-    server_elapsed = result.get("elapsed_seconds", 0)
-    tps = tokens_generated / server_elapsed if server_elapsed > 0 else 0.0
+    # Use predicted_tps from llama.cpp (generation-only, excludes prompt eval)
+    # Fall back to wall-clock calculation if not available
+    predicted_tps = result.get("predicted_tps", 0.0)
+    if predicted_tps > 0:
+        tps = predicted_tps
+    else:
+        server_elapsed = result.get("elapsed_seconds", 0)
+        tps = tokens_generated / server_elapsed if server_elapsed > 0 else 0.0
     turns = result.get("turns", 0)
     tools_used = result.get("tools_used", 0)
+    tools_called = result.get("tools_called", [])
+    role_history = result.get("role_history", [])
     # ChatResponse doesn't expose task_id; use error_code as a proxy for failure
     task_id = result.get("error_detail", "") if result.get("error_code") else ""
 
@@ -498,6 +508,8 @@ def evaluate_prompt(
         correct=correct,
         reward_injected=reward_injected,
         error=error,
+        tools_called=tools_called,
+        role_history=role_history,
     )
 
 
@@ -535,8 +547,8 @@ def run_eval(
         return completed
 
     print(f"Evaluating {len(questions)} questions...\n")
-    print(f"{'ID':40s} {'Suite':12s} {'ms':>7s} {'t/s':>7s} {'Route':>15s} {'Score':>6s}")
-    print("-" * 92)
+    print(f"{'ID':40s} {'Suite':12s} {'ms':>7s} {'t/s':>7s} {'Route':>15s} {'Mode':>8s} {'Score':>6s}")
+    print("-" * 100)
 
     max_timeout = max(SUITE_TIMEOUTS.get(q["suite"], DEFAULT_TIMEOUT) for q in questions)
     client = httpx.Client(timeout=max_timeout)
@@ -555,7 +567,7 @@ def run_eval(
             record_seen(result.prompt_id, result.suite, session_id)
             new_results.append(result)
 
-            # Live output
+            # Live output — main line
             score_str = "PASS" if result.correct else "FAIL"
             if result.error:
                 score_str = "ERR"
@@ -563,8 +575,18 @@ def run_eval(
             print(
                 f"{result.prompt_id:40s} {result.suite:12s} "
                 f"{result.latency_ms:7.0f} {tps_str:>7s} "
-                f"{result.routed_to:>15s} {score_str:>6s}"
+                f"{result.routed_to:>15s} {result.mode:>8s} "
+                f"{score_str:>6s}"
             )
+            # Detail line — role chain and tools (only when interesting)
+            details = []
+            if len(result.role_history) > 1:
+                details.append("chain: " + " → ".join(result.role_history))
+            if result.tools_called:
+                unique_tools = list(dict.fromkeys(result.tools_called))  # dedup, preserve order
+                details.append(f"tools({result.tools_used}): " + ", ".join(unique_tools))
+            if details:
+                print(f"{'':40s}   {'  '.join(details)}")
     finally:
         client.close()
 
@@ -619,11 +641,32 @@ def _print_summary(results: list[EvalResult], session_id: str):
         for role, count in sorted(route_counts.items(), key=lambda x: -x[1]):
             print(f"  {role:25s} {count:3d}")
 
+    # Mode distribution
+    mode_counts: dict[str, int] = {}
+    for r in results:
+        mode_counts[r.mode] = mode_counts.get(r.mode, 0) + 1
+    if mode_counts:
+        print(f"\nExecution mode:")
+        for mode_name, count in sorted(mode_counts.items(), key=lambda x: -x[1]):
+            print(f"  {mode_name:25s} {count:3d}")
+
+    # Tool usage
+    tool_results = [r for r in results if r.tools_used > 0]
+    if tool_results:
+        all_tools: dict[str, int] = {}
+        for r in tool_results:
+            for t in r.tools_called:
+                all_tools[t] = all_tools.get(t, 0) + 1
+        print(f"\nTool usage: {len(tool_results)}/{total} prompts used tools")
+        if all_tools:
+            for tool_name, count in sorted(all_tools.items(), key=lambda x: -x[1])[:10]:
+                print(f"  {tool_name:25s} {count:3d}")
+
     # Speed
     valid_tps = [r.tps for r in results if r.tps > 0]
     if valid_tps:
         avg_tps = sum(valid_tps) / len(valid_tps)
-        print(f"\nAvg speed: {avg_tps:.1f} t/s")
+        print(f"\nAvg speed: {avg_tps:.1f} t/s (generation-only)")
 
     # Reward injection
     rewarded = sum(1 for r in results if r.reward_injected)
@@ -727,7 +770,9 @@ def restart_orchestrator_api(api_url: str) -> None:
     env["ORCHESTRATOR_MEMRL"] = "1"
     env["ORCHESTRATOR_TOOLS"] = "1"
     env["ORCHESTRATOR_SCRIPTS"] = "1"
-    env["ORCHESTRATOR_REPL"] = "1"
+    # NOTE: Do NOT set ORCHESTRATOR_REPL here — it collides with
+    # OrchestratorSettings.repl (REPLSettings model) in config.py.
+    # The repl feature flag defaults to True in features.py already.
     env["ORCHESTRATOR_CACHING"] = "1"
     env["ORCHESTRATOR_MOCK_MODE"] = "0"
     env["ORCHESTRATOR_GENERATION_MONITOR"] = "1"
