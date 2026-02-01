@@ -64,6 +64,13 @@ cat orchestration/model_registry.yaml # Role configs
 - **WI-11**: `prompt_builders.py` decomposition — 1,501-line monolith → `src/prompt_builders/` package with 6 sub-modules (types, constants, builder, review, code_utils, formatting). Zero downstream import changes.
 - 1398 tests passing
 
+### Post-Refactoring Architecture Cleanup (2026-02-01)
+
+- **N1**: `repl_environment.py` decomposition — 3,511-line monolith → `src/repl_environment/` package with 8 modules (types, security, file_tools, document_tools, routing, procedure_tools, context, state, environment). Mixin-based: REPLEnvironment inherits 6 focused mixins. Zero downstream import changes.
+- **N2**: Replaced all 5 `shell=True` subprocess calls with `shlex.split()` + `shell=False` (model_server, file_tools, script_registry, formalizer, gate_runner).
+- **N3**: Deleted dead `src/api.py` (1,852 lines) — shadowed by `src/api/__init__.py` package.
+- 1419 tests passing
+
 ### Other Infrastructure
 
 - HTTP connection pooling (httpx, ~6x latency reduction)
@@ -219,7 +226,7 @@ python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
 | `src/proactive_delegation.py` | ProactiveDelegator, ArchitectReviewService |
 | `src/llm_primitives.py` | llm_call/llm_batch, persona injection point |
 | `src/prompt_builders/` | System prompts package (types, constants, builder, review, code_utils, formatting) |
-| `src/repl_environment.py` | REPL sandbox, delegate(), tool bindings |
+| `src/repl_environment/` | REPL sandbox package (types, security, file_tools, document_tools, routing, procedure_tools, context, state, environment) |
 | `src/features.py` | Feature flags (architect_delegation, etc.) |
 | `src/api/routes/config.py` | POST /config — runtime feature flag hot-reload |
 | `src/escalation.py` | Unified escalation policy |

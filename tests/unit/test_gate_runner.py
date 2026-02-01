@@ -150,7 +150,7 @@ gates:
         config_file.write_text("""
 gates:
   - name: fail
-    command: exit 1
+    command: "false"
     timeout: 10
 """)
         runner = GateRunner(config_path=config_file, working_dir=tmp_path)
@@ -263,7 +263,7 @@ gates:
         config_file.write_text("""
 gates:
   - name: fail
-    command: exit 1
+    command: "false"
     timeout: 10
     required: true
   - name: never_runs
@@ -282,7 +282,7 @@ gates:
         config_file.write_text("""
 gates:
   - name: optional_fail
-    command: exit 1
+    command: "false"
     timeout: 10
     required: false
   - name: should_run
@@ -423,11 +423,11 @@ class TestRunAllGatesParallel:
         config_file.write_text("""
 gates:
   - name: gate1
-    command: "sleep 0.3 && echo gate1"
+    command: sleep 0.3
     timeout: 10
     parallelizable: true
   - name: gate2
-    command: "sleep 0.3 && echo gate2"
+    command: sleep 0.3
     timeout: 10
     parallelizable: true
 """)
@@ -478,7 +478,7 @@ gates:
         config_file.write_text("""
 gates:
   - name: bad_lint
-    command: exit 1
+    command: "false"
     timeout: 10
     required: true
     parallelizable: true
@@ -503,7 +503,7 @@ gates:
         config_file.write_text("""
 gates:
   - name: optional_lint
-    command: exit 1
+    command: "false"
     timeout: 10
     required: false
     parallelizable: true
@@ -527,7 +527,7 @@ gates:
         config_file.write_text("""
 gates:
   - name: slow
-    command: "sleep 0.2 && echo slow"
+    command: sleep 0.2
     timeout: 10
     parallelizable: true
   - name: fast
@@ -545,15 +545,22 @@ gates:
     @pytest.mark.asyncio
     async def test_parallel_with_retries(self, tmp_path):
         """Gate with retry_count gets retried after parallel batch."""
-        # Create a file that the gate checks for (simulates flaky gate)
+        # Create a small helper script: fails on first call, succeeds on second
         marker = tmp_path / "attempt_counter"
         marker.write_text("0")
+        helper = tmp_path / "flaky_gate.py"
+        helper.write_text(
+            f"import sys, pathlib\n"
+            f"p = pathlib.Path({str(marker)!r})\n"
+            f"n = int(p.read_text()) + 1\n"
+            f"p.write_text(str(n))\n"
+            f"sys.exit(0 if n >= 2 else 1)\n"
+        )
         config_file = tmp_path / "gates.yaml"
-        # First attempt fails, retry succeeds
         config_file.write_text(f"""
 gates:
   - name: flaky
-    command: "count=$(cat {marker}); count=$((count+1)); echo $count > {marker}; test $count -ge 2"
+    command: python3 {helper}
     timeout: 10
     retry_count: 1
     parallelizable: true

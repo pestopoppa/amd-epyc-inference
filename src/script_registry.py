@@ -445,10 +445,10 @@ class ScriptRegistry:
         for key, value in args.items():
             command = command.replace(f"{{{key}}}", str(value))
 
-        # Execute (with safety constraints)
+        # Execute (with safety constraints, no shell injection)
+        import shlex
         result = subprocess.run(
-            command,
-            shell=True,
+            shlex.split(command),
             capture_output=True,
             text=True,
             timeout=60,  # 1 minute timeout

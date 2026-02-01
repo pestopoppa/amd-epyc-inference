@@ -304,9 +304,9 @@ class LlamaCppBackend(ModelBackend):
 
         try:
             # Run inference
+            import shlex
             result = subprocess.run(
-                cmd,
-                shell=True,
+                shlex.split(cmd),
                 capture_output=True,
                 text=True,
                 timeout=request.timeout + 10,  # Extra buffer beyond internal timeout

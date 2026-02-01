@@ -201,9 +201,9 @@ class GateRunner:
         start_time = time.perf_counter()
 
         try:
+            import shlex
             result = subprocess.run(
-                gate.command,
-                shell=True,
+                shlex.split(gate.command),
                 capture_output=True,
                 text=True,
                 timeout=gate.timeout,

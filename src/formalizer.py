@@ -218,9 +218,9 @@ def formalize_prompt(
             )
             log.info("Running formalizer (%s): %s", role_name, cmd[:120])
 
+            import shlex
             proc = subprocess.run(
-                cmd,
-                shell=True,
+                shlex.split(cmd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
