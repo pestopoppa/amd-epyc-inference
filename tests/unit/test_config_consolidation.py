@@ -118,23 +118,27 @@ class TestGetConfig:
         assert isinstance(cfg.llm, LLMConfig)
 
 
-# ── ServerURLsConfig defaults match LLMPrimitives.DEFAULT_SERVER_URLS ────
+# ── ServerURLsConfig as single source of truth ─────────────────────────
 
 
 class TestServerURLsDefaults:
-    """Verify ServerURLsConfig defaults match llm_primitives.py DEFAULT_SERVER_URLS."""
+    """Verify ServerURLsConfig is the single source of truth for server URLs."""
 
-    def test_as_dict_superset_of_llm_primitives(self):
-        """as_dict() must contain all keys from DEFAULT_SERVER_URLS."""
-        from src.llm_primitives import LLMPrimitives
-
+    def test_as_dict_contains_all_role_urls(self):
+        """as_dict() must contain all expected orchestrator role URLs."""
         cfg = ServerURLsConfig()
         config_dict = cfg.as_dict()
-        for role, url in LLMPrimitives.DEFAULT_SERVER_URLS.items():
+        # All roles that LLMPrimitives consumers depend on
+        expected_roles = {
+            "frontdoor", "coder_primary", "coder", "coder_escalation",
+            "worker", "worker_general", "worker_explore", "worker_math",
+            "worker_vision", "vision_escalation", "worker_code", "worker_fast",
+            "architect_general", "architect_coding", "ingest_long_context",
+        }
+        for role in expected_roles:
             assert role in config_dict, f"Missing role: {role}"
-            assert config_dict[role] == url, (
-                f"URL mismatch for {role}: config={config_dict[role]}, "
-                f"expected={url}"
+            assert config_dict[role].startswith("http://"), (
+                f"URL for {role} must be HTTP: got {config_dict[role]}"
             )
 
     def test_as_dict_excludes_services(self):

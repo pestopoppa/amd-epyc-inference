@@ -26,6 +26,8 @@ from src.api.routes import create_api_router
 from src.api.services.memrl import (
     load_optional_imports,
     background_cleanup,
+    ensure_memrl_initialized,
+    shutdown_scoring,
     get_progress_logger_class,
     get_tool_registry_class,
     get_script_registry_class,
@@ -44,7 +46,8 @@ async def lifespan(app: FastAPI):
     3. Load registry (YAML parsing only)
     4. Initialize core components (LLM primitives, gate runner, failure router)
     5. Initialize optional components based on features
-    6. Start background tasks if MemRL enabled
+    6. Eagerly initialize MemRL (Q-scorer, TaskEmbedder, HybridRouter)
+    7. Start background tasks if MemRL enabled
     """
     state = get_state()
     f = features()
@@ -136,6 +139,11 @@ async def lifespan(app: FastAPI):
     else:
         state.script_registry = None
 
+    # Eagerly initialize MemRL components at startup (loads TaskEmbedder model).
+    # This avoids a ~10-30s block on the first real_mode request.
+    if f.memrl:
+        ensure_memrl_initialized(state)
+
     # Background Q-scoring task (only if MemRL feature enabled)
     if f.memrl:
         state._q_scorer_task = asyncio.create_task(background_cleanup(state))
@@ -151,6 +159,9 @@ async def lifespan(app: FastAPI):
             await state._q_scorer_task
         except asyncio.CancelledError:
             pass
+
+    # Shutdown Q-scorer thread pool
+    shutdown_scoring()
 
     # Flush progress logger before cleanup
     if state.progress_logger:

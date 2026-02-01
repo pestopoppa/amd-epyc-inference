@@ -342,7 +342,7 @@ class WorkerPoolManager:
                     if resp.status == 200:
                         return True
             except Exception:
-                pass
+                logger.debug("Health check poll failed for port %s", port, exc_info=True)
             await asyncio.sleep(2)
 
         return False
@@ -366,9 +366,9 @@ class WorkerPoolManager:
                     try:
                         os.kill(int(pid_str), signal.SIGKILL)
                     except Exception:
-                        pass
+                        logger.debug("Failed to kill PID %s on port %s", pid_str, port, exc_info=True)
         except Exception:
-            pass
+            logger.debug("Port kill lookup failed for port %s", port, exc_info=True)
 
     async def _stop_worker(self, instance: WorkerInstance) -> None:
         """Stop a worker instance."""

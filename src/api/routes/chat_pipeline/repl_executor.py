@@ -304,8 +304,21 @@ async def _execute_repl(
         code = auto_wrap_final(code)
 
         # 4. Execute code in REPL (in thread to avoid blocking event loop —
-        #    repl.execute() can call blocking I/O like requests.get in _web_fetch)
-        result = await asyncio.to_thread(repl.execute, code)
+        #    repl.execute() can call blocking I/O like requests.get in _web_fetch).
+        #    signal.alarm() timeouts silently fail in non-main threads, so we use
+        #    asyncio.wait_for as the authoritative timeout mechanism.
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(repl.execute, code),
+                timeout=repl.config.timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            from src.repl_environment.types import ExecutionResult
+            result = ExecutionResult(
+                output="",
+                is_final=False,
+                error=f"REPL execution timed out after {repl.config.timeout_seconds}s",
+            )
 
         # 4a. Check model-initiated routing
         if repl.artifacts.get("_escalation_requested"):

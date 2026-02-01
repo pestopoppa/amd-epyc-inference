@@ -107,11 +107,32 @@ def get_script_registry_class() -> type | None:
     return ScriptRegistry
 
 
-def score_completed_task(state: "AppState", task_id: str) -> None:
-    """Score a completed task immediately (no inference required).
+def _do_score(state: "AppState", task_id: str, mode: str | None = None) -> None:
+    """Synchronous scoring helper — runs in a worker thread."""
+    try:
+        if mode is not None:
+            state.q_scorer._score_task(task_id, mode_context=mode)
+        else:
+            state.q_scorer._score_task(task_id)
+        if state.progress_logger:
+            state.progress_logger.flush()
+    except Exception as e:
+        logger.warning(f"Q-scoring failed for task {task_id}: {e}", exc_info=True)
 
-    Called after log_task_completed() to update Q-values in real-time.
-    This is lightweight - just DB reads/writes, no LLM inference.
+
+from concurrent.futures import ThreadPoolExecutor
+
+# Bounded thread pool for Q-scoring. Prevents unbounded thread accumulation
+# when embedder (port 8090) is slow or unresponsive. Threads that can't
+# acquire a slot are silently dropped (scoring is non-critical).
+_score_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="q-scorer")
+
+
+def score_completed_task(state: "AppState", task_id: str) -> None:
+    """Fire-and-forget task scoring in the Q-scorer thread pool.
+
+    Scoring involves embedder calls (port 8090) which are synchronous HTTP.
+    Running in the event loop would block all concurrent requests.
 
     Args:
         state: Application state containing Q-scorer.
@@ -119,16 +140,7 @@ def score_completed_task(state: "AppState", task_id: str) -> None:
     """
     if not state.q_scorer or not state.q_scorer_enabled:
         return
-
-    try:
-        # Score just this task
-        state.q_scorer._score_task(task_id)
-        # Flush logger to persist Q-value updates
-        if state.progress_logger:
-            state.progress_logger.flush()
-    except Exception as e:
-        # Log but don't fail the user request - scoring is non-critical
-        logger.warning(f"Q-scoring failed for task {task_id}: {e}", exc_info=True)
+    _score_pool.submit(_do_score, state, task_id)
 
 
 def score_completed_task_with_mode(
@@ -136,10 +148,7 @@ def score_completed_task_with_mode(
     task_id: str,
     mode: str = "direct",
 ) -> None:
-    """Score a completed task with execution mode context.
-
-    Extended version of score_completed_task() that includes the execution
-    mode (direct/react/repl) in the memory context for MemRL learning.
+    """Fire-and-forget task scoring with execution mode context.
 
     Args:
         state: Application state containing Q-scorer.
@@ -148,20 +157,12 @@ def score_completed_task_with_mode(
     """
     if not state.q_scorer or not state.q_scorer_enabled:
         return
+    _score_pool.submit(_do_score, state, task_id, mode)
 
-    try:
-        state.q_scorer._score_task(task_id, mode_context=mode)
-        if state.progress_logger:
-            state.progress_logger.flush()
-    except Exception as e:
-        logger.warning(f"Q-scoring (with mode) failed for task {task_id}: {e}", exc_info=True)
-        # Fall back to basic scoring
-        try:
-            state.q_scorer._score_task(task_id)
-            if state.progress_logger:
-                state.progress_logger.flush()
-        except Exception:
-            logger.debug("Fallback Q-scoring failed for task %s", task_id, exc_info=True)
+
+def shutdown_scoring() -> None:
+    """Shutdown the Q-scorer thread pool. Called during app lifespan shutdown."""
+    _score_pool.shutdown(wait=False)
 
 
 def store_external_reward(

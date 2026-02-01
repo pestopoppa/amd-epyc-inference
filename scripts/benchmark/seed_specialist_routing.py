@@ -122,16 +122,49 @@ ESCALATION_REWARD = 0.8
 # Graceful shutdown flag
 _shutdown = False
 
+# Module-level httpx.Client for connection-reusing polling/health checks.
+# Bare httpx.get() creates a new TCP connection per call, which accumulates
+# in TIME_WAIT and can exhaust socket descriptors over multi-day runs.
+_poll_client: "httpx.Client | None" = None
+
+
+def _get_poll_client() -> "httpx.Client":
+    """Get or create the module-level httpx client for polling."""
+    global _poll_client
+    if _poll_client is None:
+        import httpx
+        _poll_client = httpx.Client(timeout=10)
+    return _poll_client
+
+
+def _close_poll_client() -> None:
+    """Close the module-level polling client if open."""
+    global _poll_client
+    if _poll_client is not None:
+        try:
+            _poll_client.close()
+        except Exception:
+            pass
+        _poll_client = None
+
 
 def _handle_sigint(sig, frame):
     global _shutdown
     if _shutdown:
+        _close_poll_client()
         sys.exit(1)
     _shutdown = True
     print("\n[SIGINT] Finishing current question, then stopping...")
 
 
+def _handle_sigterm(sig, frame):
+    global _shutdown
+    _shutdown = True
+    _close_poll_client()
+
+
 signal.signal(signal.SIGINT, _handle_sigint)
+signal.signal(signal.SIGTERM, _handle_sigterm)
 
 
 # ── Exceptions ────────────────────────────────────────────────────────
@@ -593,7 +626,8 @@ def _deduplicate_roles(
     server_urls: dict[str, str] | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     """Remove roles that share the same backend URL."""
-    urls = server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
+    from src.config import get_config as _get_cfg
+    urls = server_urls or _get_cfg().server_urls.as_dict()
     seen: dict[str, str] = {}
     unique: list[str] = []
     aliases: dict[str, str] = {}
@@ -621,10 +655,8 @@ def _modes_for_role(role: str, modes: list[str]) -> list[str]:
 
 def _check_server_health(url: str, timeout: int = 5) -> bool:
     """Check if the orchestrator server is healthy."""
-    import httpx
-
     try:
-        resp = httpx.get(f"{url}/health", timeout=timeout)
+        resp = _get_poll_client().get(f"{url}/health", timeout=timeout)
         return resp.status_code == 200
     except Exception:
         return False
@@ -637,7 +669,7 @@ def _check_server_health(url: str, timeout: int = 5) -> bool:
 # across any of them destroys throughput for ALL of them.
 HEAVY_PORTS = {8083, 8084, 8085, 8087}
 
-# Role → backend port mapping (mirrors LLMPrimitives.DEFAULT_SERVER_URLS)
+# Role → backend port mapping (mirrors get_config().server_urls)
 ROLE_PORT: dict[str, int] = {
     "frontdoor": 8080,
     "coder_primary": 8080,
@@ -654,10 +686,8 @@ ROLE_PORT: dict[str, int] = {
 
 def _is_server_idle(port: int, timeout: int = 3) -> bool:
     """Check if all slots on a llama-server port are idle."""
-    import httpx
-
     try:
-        resp = httpx.get(f"http://localhost:{port}/slots", timeout=timeout)
+        resp = _get_poll_client().get(f"http://localhost:{port}/slots", timeout=timeout)
         if resp.status_code != 200:
             return True  # Can't check — assume idle
         slots = resp.json()
@@ -857,8 +887,6 @@ def run_preflight(url: str) -> bool:
     Auto-launches the orchestrator stack if the API is not reachable.
     Returns True if all checks pass.
     """
-    import httpx
-
     logger.info("=" * 60)
     logger.info("PREFLIGHT CHECKS")
     logger.info("=" * 60)
@@ -889,7 +917,7 @@ def run_preflight(url: str) -> bool:
 
     # 2. Backend health (check ports via /health on orchestrator)
     try:
-        resp = httpx.get(f"{url}/health", timeout=10)
+        resp = _get_poll_client().get(f"{url}/health", timeout=10)
         if resp.status_code == 200:
             health_data = resp.json()
             backends = health_data.get("backends", {})
@@ -904,7 +932,7 @@ def run_preflight(url: str) -> bool:
     # 3. Smoke test (60s timeout — if 2+2 takes longer, something is broken)
     logger.info("  Smoke test: 2+2...")
     try:
-        resp = httpx.post(
+        resp = _get_poll_client().post(
             f"{url}/chat",
             json={"prompt": "What is 2+2? Answer with just the number.", "real_mode": True},
             timeout=60,
@@ -917,12 +945,12 @@ def run_preflight(url: str) -> bool:
         else:
             logger.error(f"  Smoke test FAIL: HTTP {resp.status_code}")
             return False
-    except httpx.TimeoutException:
-        logger.error("  Smoke test TIMEOUT (60s) — API may be misconfigured for real_mode")
-        logger.error("  Try: kill API on :8000 and relaunch, or check orchestrator_autolaunch.log")
-        return False
     except Exception as e:
-        logger.error(f"  Smoke test FAIL: {e}")
+        if "timeout" in str(e).lower() or "Timeout" in type(e).__name__:
+            logger.error("  Smoke test TIMEOUT (60s) — API may be misconfigured for real_mode")
+            logger.error("  Try: kill API on :8000 and relaunch, or check orchestrator_autolaunch.log")
+        else:
+            logger.error(f"  Smoke test FAIL: {e}")
         return False
 
     logger.info("PREFLIGHT PASSED")
@@ -1284,7 +1312,8 @@ def run_batch(
         unique_roles, alias_map = _deduplicate_roles(roles)
         if alias_map:
             for alias, canonical in sorted(alias_map.items()):
-                canon_url = LLMPrimitives.DEFAULT_SERVER_URLS.get(canonical, "?")
+                from src.config import get_config as _get_cfg2
+                canon_url = _get_cfg2().server_urls.as_dict().get(canonical, "?")
                 logger.info(f"Dedup: {alias} → {canonical} (same backend {canon_url})")
         roles_to_test = unique_roles
     else:
@@ -1770,4 +1799,7 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        _close_poll_client()
