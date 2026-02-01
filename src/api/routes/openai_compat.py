@@ -24,6 +24,7 @@ from src.api.models import (
     OpenAIUsage,
 )
 from src.api.state import get_state
+from src.config import get_config
 from src.prompt_builders import (
     build_root_lm_prompt,
     extract_code_from_response,
@@ -145,7 +146,7 @@ async def openai_chat_completions(request: OpenAIChatRequest):
             else:
                 # Real orchestration with streaming
                 try:
-                    server_urls = LLMPrimitives.DEFAULT_SERVER_URLS
+                    server_urls = get_config().server_urls.as_dict()
                     primitives = LLMPrimitives(
                         mock_mode=False,
                         server_urls=server_urls,
@@ -277,7 +278,7 @@ async def openai_chat_completions(request: OpenAIChatRequest):
         else:
             # Real orchestration
             try:
-                server_urls = LLMPrimitives.DEFAULT_SERVER_URLS
+                server_urls = get_config().server_urls.as_dict()
                 primitives = LLMPrimitives(
                     mock_mode=False,
                     server_urls=server_urls,

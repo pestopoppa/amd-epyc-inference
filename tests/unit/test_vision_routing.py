@@ -144,3 +144,81 @@ class TestExecuteVisionTool:
             _execute_vision_tool("this is not a valid action", "dummy_b64")
         )
         assert "[ERROR: Could not parse action" in result
+
+
+# ── _safe_eval_math tests ─────────────────────────────────────────────────
+
+
+class TestSafeEvalMath:
+    """Tests for _safe_eval_math — safe arithmetic-only evaluator."""
+
+    def test_basic_addition(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("2 + 3") == 5
+
+    def test_basic_multiplication(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("6 * 7") == 42
+
+    def test_division(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("10 / 4") == 2.5
+
+    def test_floor_division(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("10 // 3") == 3
+
+    def test_modulo(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("10 % 3") == 1
+
+    def test_power(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("2 ** 10") == 1024
+
+    def test_unary_negative(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("-5 + 3") == -2
+
+    def test_complex_expression(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("(2 + 3) * 4 - 1") == 19
+
+    def test_float_literal(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        assert _safe_eval_math("3.14 * 2") == pytest.approx(6.28)
+
+    def test_division_by_zero_raises(self):
+        from src.api.routes.chat_vision import _safe_eval_math
+        with pytest.raises(ZeroDivisionError):
+            _safe_eval_math("1 / 0")
+
+    def test_rejects_import(self):
+        """__import__('os') must be rejected — this was the original security hole."""
+        from src.api.routes.chat_vision import _safe_eval_math
+        with pytest.raises(ValueError, match="Unsupported expression node"):
+            _safe_eval_math("__import__('os').system('echo pwned')")
+
+    def test_rejects_attribute_access(self):
+        """Attribute access like (1).__class__ must be rejected."""
+        from src.api.routes.chat_vision import _safe_eval_math
+        with pytest.raises(ValueError, match="Unsupported expression node"):
+            _safe_eval_math("(1).__class__")
+
+    def test_rejects_function_call(self):
+        """Function calls like len('abc') must be rejected."""
+        from src.api.routes.chat_vision import _safe_eval_math
+        with pytest.raises(ValueError, match="Unsupported expression node"):
+            _safe_eval_math("len('abc')")
+
+    def test_rejects_string_literal(self):
+        """String literals must be rejected (only int/float allowed)."""
+        from src.api.routes.chat_vision import _safe_eval_math
+        with pytest.raises(ValueError, match="Unsupported expression node"):
+            _safe_eval_math("'hello'")
+
+    def test_rejects_list_comprehension(self):
+        """List comprehensions must be rejected."""
+        from src.api.routes.chat_vision import _safe_eval_math
+        with pytest.raises((ValueError, SyntaxError)):
+            _safe_eval_math("[x for x in range(10)]")

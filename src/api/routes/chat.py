@@ -25,6 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from src.api.models import ChatRequest, ChatResponse, RewardRequest
 from src.api.state import get_state
+from src.config import get_config
 from src.prompt_builders import (
     build_root_lm_prompt,
     build_long_context_exploration_prompt,
@@ -354,7 +355,7 @@ async def chat_stream(request: ChatRequest) -> StreamingResponse:
         # Real mode - initialize MemRL components on first real use (lazy loading)
         ensure_memrl_initialized(state)
 
-        server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
+        server_urls = request.server_urls or get_config().server_urls.as_dict()
         try:
             primitives = LLMPrimitives(mock_mode=False, server_urls=server_urls, registry=state.registry)
         except Exception as e:

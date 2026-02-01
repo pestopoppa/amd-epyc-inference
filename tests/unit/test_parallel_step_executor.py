@@ -412,18 +412,24 @@ class TestDelegateEndpoint:
         assert response.status_code == 422
         assert "Circular" in response.json()["detail"]
 
-    @patch("src.api.routes.delegate.get_state")
     @patch("src.api.routes.delegate.features")
-    def test_no_primitives_returns_503(self, mock_features, mock_get_state, client):
+    def test_no_primitives_returns_503(self, mock_features, client):
         mock_features.return_value = MagicMock(parallel_execution=True)
         mock_state = MagicMock()
         mock_state.llm_primitives = None
-        mock_get_state.return_value = mock_state
-        response = client.post(
-            "/api/delegate",
-            json={"task_ir": self._make_task_ir()},
-        )
-        assert response.status_code == 503
+
+        from src.api.dependencies import dep_app_state
+
+        app = client.app
+        app.dependency_overrides[dep_app_state] = lambda: mock_state
+        try:
+            response = client.post(
+                "/api/delegate",
+                json={"task_ir": self._make_task_ir()},
+            )
+            assert response.status_code == 503
+        finally:
+            app.dependency_overrides.clear()
 
 
 # ── Feature Flag ─────────────────────────────────────────────────────────

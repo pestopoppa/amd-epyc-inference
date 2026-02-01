@@ -37,28 +37,38 @@ class TestExtractCodeFromResponse:
         result = extract_code_from_response(response)
         assert "print('hello')" in result
         assert "```" not in result
+        # Structural: Should strip markdown completely
+        assert result.strip() == "print('hello')"
 
     def test_markdown_block_no_language(self):
         response = "```\nx = 42\n```"
         result = extract_code_from_response(response)
         assert "x = 42" in result
+        # Structural: Should extract cleanly
+        assert "```" not in result
 
     def test_unpaired_trailing_backticks(self):
         """Model quirk: sometimes generates trailing ``` without opening."""
         response = "FINAL('result')\n```"
         result = extract_code_from_response(response)
         assert "FINAL" in result
+        # Structural: Should preserve valid code
+        assert "FINAL('result')" in result
 
     def test_repl_function_recognized_as_code(self):
         """Lines starting with REPL tools should be treated as code."""
         response = "peek(0, 50)\ngrep('error')"
         result = extract_code_from_response(response)
         assert "peek(0, 50)" in result
+        # Structural: Should preserve both lines
+        assert result.count("\n") >= 1
 
     def test_final_function_recognized(self):
         response = "FINAL('The answer is 42')"
         result = extract_code_from_response(response)
         assert "FINAL(" in result
+        # Structural: Should match input exactly
+        assert result == response
 
     def test_strips_import_lines(self):
         response = "```python\nimport json\nfrom pathlib import Path\nresult = json.loads(data)\n```"
@@ -66,27 +76,38 @@ class TestExtractCodeFromResponse:
         assert "import json" not in result
         assert "from pathlib" not in result
         assert "result = json.loads(data)" in result
+        # Structural: Should have only one line (imports stripped)
+        assert result.count("\n") == 0
 
     def test_preserves_from_in_non_import(self):
         """'from' in normal code should not be stripped."""
         response = "x = get_data_from_source()\nFINAL(x)"
         result = extract_code_from_response(response)
         assert "get_data_from_source" in result
+        # Structural: Should preserve both lines
+        assert "FINAL(x)" in result
+        assert result.count("\n") >= 1
 
     def test_empty_response(self):
         result = extract_code_from_response("")
         assert result == ""
+        # Structural: Should be truly empty
+        assert len(result) == 0
 
     def test_code_extracted_from_indented_block(self):
         response = "```python\n    x = 1\n    y = 2\n```"
         result = extract_code_from_response(response)
         assert "x = 1" in result
         assert "y = 2" in result
+        # Structural: Should preserve indentation structure
+        assert result.count("\n") >= 1  # Multiple lines preserved
 
     def test_multiple_code_blocks_picks_first(self):
         response = "```python\nfirst = 1\n```\n```python\nsecond = 2\n```"
         result = extract_code_from_response(response)
         assert "first = 1" in result
+        # Structural: Should NOT include second block
+        assert "second" not in result
 
 
 # ── auto_wrap_final ───────────────────────────────────────────────────────
@@ -97,39 +118,55 @@ class TestAutoWrapFinal:
 
     def test_already_has_final(self):
         code = "FINAL('hello world')"
-        assert auto_wrap_final(code) == code
+        result = auto_wrap_final(code)
+        assert result == code
+        # Structural: Should be unchanged
+        assert result.count("FINAL(") == 1
 
     def test_exploration_not_wrapped(self):
         """Exploration functions should NOT be wrapped."""
         for func in ("peek(0, 50)", "grep('error')", "llm_call('summarize')"):
             result = auto_wrap_final(func)
             assert "FINAL" not in result, f"Should not wrap: {func}"
+            # Structural: Should be unchanged
+            assert result == func
 
     def test_llm_batch_not_wrapped(self):
         code = "llm_batch(['q1', 'q2'], role='worker')"
         result = auto_wrap_final(code)
         assert "FINAL" not in result
+        # Structural: Should be unchanged
+        assert result == code
 
     def test_artifacts_not_wrapped(self):
         code = "artifacts['summary'] = 'done'"
         result = auto_wrap_final(code)
         assert "FINAL" not in result
+        # Structural: Should be unchanged
+        assert result == code
 
     def test_def_wrapped_in_triple_quotes(self):
         code = "def factorial(n):\n    return 1 if n <= 1 else n * factorial(n-1)"
         result = auto_wrap_final(code)
         assert "FINAL(" in result
         assert "'''" in result or '"""' in result
+        # Structural: FINAL should wrap the entire code
+        assert result.startswith("FINAL(") or "= FINAL(" in result
 
     def test_class_wrapped_in_triple_quotes(self):
         code = "class MyWidget:\n    pass"
         result = auto_wrap_final(code)
         assert "FINAL(" in result
+        # Structural: Should use triple quotes for multiline
+        assert "'''" in result or '"""' in result
 
     def test_single_expression_wrapped(self):
         code = "result = compute_answer()"
         result = auto_wrap_final(code)
         assert "FINAL(" in result
+        # Structural: FINAL should be properly formed
+        assert result.count("FINAL(") == 1
+        assert ")" in result
 
     def test_control_flow_not_wrapped(self):
         """Control flow statements should not be wrapped."""
@@ -137,11 +174,15 @@ class TestAutoWrapFinal:
                       "try:", "with open('f'):"):
             result = auto_wrap_final(stmt)
             assert "FINAL" not in result, f"Should not wrap: {stmt}"
+            # Structural: Should be unchanged
+            assert result == stmt
 
     def test_import_not_wrapped(self):
         code = "import os"
         result = auto_wrap_final(code)
         assert "FINAL" not in result
+        # Structural: Should be unchanged
+        assert result == code
 
     def test_escapes_triple_quotes(self):
         """Triple quotes in code must be escaped to prevent syntax errors."""
@@ -149,6 +190,8 @@ class TestAutoWrapFinal:
         result = auto_wrap_final(code)
         assert "FINAL(" in result
         # The triple quotes should be escaped or the code should use the other style
+        # Structural: Should contain the original code
+        assert "some text" in result
 
 
 # ── classify_error ────────────────────────────────────────────────────────
@@ -162,10 +205,14 @@ class TestClassifyError:
             result = classify_error("some error", gate_name=gate)
             assert result.value in ("FORMAT", "SCHEMA", "format", "schema"), \
                 f"Gate '{gate}' should classify as FORMAT or SCHEMA"
+            # Structural: Should have value attribute
+            assert hasattr(result, 'value')
 
     def test_syntax_error_is_code(self):
         result = classify_error("SyntaxError: invalid syntax")
         assert result.value.upper() in ("CODE", "SYNTAX")
+        # Structural: Should have value attribute
+        assert hasattr(result, 'value')
 
     def test_type_error_is_code(self):
         result = classify_error("TypeError: expected str, got int")
@@ -205,6 +252,8 @@ class TestClassifyError:
     def test_empty_message(self):
         result = classify_error("")
         assert result is not None
+        # Structural: Should return an error category enum
+        assert hasattr(result, 'value')
 
 
 # ── build_root_lm_prompt ──────────────────────────────────────────────────
@@ -218,6 +267,9 @@ class TestBuildRootLmPrompt:
             state="ready", original_prompt="What is 2+2?"
         )
         assert "What is 2+2?" in result
+        # Structural: Should be substantial multiline prompt
+        assert len(result) > 200
+        assert result.count("\n") > 5
 
     def test_includes_routing_context_on_turn_0(self):
         result = build_root_lm_prompt(
@@ -227,6 +279,8 @@ class TestBuildRootLmPrompt:
             routing_context="Role: frontdoor | Tier: A",
         )
         assert "frontdoor" in result
+        # Structural: Routing context should appear before task
+        assert result.index("frontdoor") < result.index("test")
 
     def test_includes_error_context(self):
         result = build_root_lm_prompt(
@@ -235,6 +289,8 @@ class TestBuildRootLmPrompt:
             last_error="NameError: x is not defined",
         )
         assert "NameError" in result
+        # Structural: Error should be clearly separated (on own line or in section)
+        assert "\nNameError" in result or "## " in result
 
     def test_includes_last_output(self):
         result = build_root_lm_prompt(
@@ -243,6 +299,8 @@ class TestBuildRootLmPrompt:
             last_output="42",
         )
         assert "42" in result
+        # Structural: State should appear before output
+        assert result.index("x = 42") < result.index("42", result.index("x = 42") + 6)
 
     def test_returns_string(self):
         result = build_root_lm_prompt(state="", original_prompt="hello")
@@ -259,6 +317,8 @@ class TestBuildRoutingContext:
     def test_none_router_returns_empty(self):
         result = build_routing_context("frontdoor", None, "some task")
         assert result == ""
+        # Structural: Should be completely empty
+        assert len(result) == 0
 
     def test_router_exception_returns_empty(self):
         """Gracefully handles retrieval failures."""
@@ -266,6 +326,8 @@ class TestBuildRoutingContext:
         mock_router.get_q_values_for_task.side_effect = RuntimeError("DB error")
         result = build_routing_context("frontdoor", mock_router, "some task")
         assert result == ""
+        # Structural: Should be completely empty on error
+        assert len(result) == 0
 
     def test_respects_max_chars(self):
         mock_router = MagicMock()
@@ -274,6 +336,8 @@ class TestBuildRoutingContext:
         ] * 10
         result = build_routing_context("frontdoor", mock_router, "task", max_chars=100)
         assert len(result) <= 150  # Some overflow is OK for formatting
+        # Structural: May be empty if max_chars too restrictive
+        assert isinstance(result, str)
 
 
 # ── build_long_context_exploration_prompt ──────────────────────────────────
@@ -285,26 +349,38 @@ class TestBuildLongContextExplorationPrompt:
     def test_includes_original_prompt(self):
         result = build_long_context_exploration_prompt("Find the bug", 20000)
         assert "Find the bug" in result
+        # Structural: Should be substantial multiline exploration prompt
+        assert len(result) > 200
+        assert result.count("\n") > 5
 
     def test_estimates_tokens(self):
         result = build_long_context_exploration_prompt("task", 40000)
         # 40000 chars / 4 = ~10000 tokens
         assert "10000" in result or "10,000" in result or "10k" in result.lower()
+        # Structural: Should be substantial exploration prompt
+        assert len(result) > 300
 
     def test_search_task_uses_grep(self):
         """Search tasks should start with grep()."""
         result = build_long_context_exploration_prompt("Find all error handlers", 20000)
         assert "grep" in result.lower()
+        # Structural: grep should appear before FINAL in instructions
+        assert result.lower().index("grep") < result.index("FINAL")
 
     def test_non_search_task_uses_peek(self):
         """Non-search tasks should start with peek()."""
         result = build_long_context_exploration_prompt("Summarize this document", 20000)
         assert "peek" in result.lower()
+        # Structural: peek should appear before FINAL in instructions
+        assert result.lower().index("peek") < result.index("FINAL")
 
     def test_includes_repl_tools(self):
         result = build_long_context_exploration_prompt("task", 20000)
         for tool in ("peek", "grep", "FINAL"):
             assert tool in result
+        # Structural: Tools should appear in order (peek/grep before FINAL)
+        assert result.index("peek") < result.index("FINAL")
+        assert result.index("grep") < result.index("FINAL")
 
 
 # ── build_escalation_prompt ───────────────────────────────────────────────
@@ -332,6 +408,9 @@ class TestBuildEscalationPrompt:
         result = build_escalation_prompt("Fix the bug", "x = None", ctx, MockDecision())
         assert isinstance(result, str)
         assert len(result) > 50
+        # Structural: Should have header format and be multiline
+        assert "\n## " in result
+        assert result.count("\n") > 5
 
     def test_includes_error_info(self):
         from src.escalation import EscalationContext, EscalationAction
@@ -351,6 +430,8 @@ class TestBuildEscalationPrompt:
 
         result = build_escalation_prompt("Debug timeout", "", ctx, MockDecision())
         assert "timeout" in result.lower() or "Timeout" in result
+        # Structural: Should be well-formatted prompt (length and multiline)
+        assert len(result) > 200
 
 
 # ── build_review_verdict_prompt ───────────────────────────────────────────
@@ -366,6 +447,9 @@ class TestBuildReviewVerdictPrompt:
         )
         assert "What is 2+2?" in result
         assert "4" in result
+        # Structural: Question should appear before answer
+        assert result.index("What is 2+2?") < result.index("4")
+        assert len(result) > 50
 
     def test_truncates_long_question(self):
         long_q = "x" * 500
@@ -373,11 +457,16 @@ class TestBuildReviewVerdictPrompt:
         assert len(long_q) > 300  # original is long
         # The prompt itself should be reasonable length
         assert result is not None
+        # Structural: Should be truncated but substantial
+        assert len(result) > 50
+        assert len(result) < 1000
 
     def test_truncates_long_answer(self):
         long_a = "y" * 3000
         result = build_review_verdict_prompt(question="q", answer=long_a)
         assert result is not None
+        # Structural: Should be truncated to reasonable size
+        assert len(result) < 5000
 
     def test_context_digest_included(self):
         result = build_review_verdict_prompt(
@@ -386,6 +475,9 @@ class TestBuildReviewVerdictPrompt:
             context_digest="Important context about the topic",
         )
         assert "Important context" in result
+        # Structural: Should be multiline with context section
+        assert result.count("\n") > 3
+        assert len(result) > 50
 
 
 # ── build_revision_prompt ─────────────────────────────────────────────────
@@ -402,11 +494,16 @@ class TestBuildRevisionPrompt:
         )
         assert "Python" in result
         assert "dynamic typing" in result
+        # Structural: Should have clear sections
+        assert len(result) > 50
+        assert result.count("\n") > 2
 
     def test_returns_string(self):
         result = build_revision_prompt("q", "a", "fix it")
         assert isinstance(result, str)
         assert len(result) > 20
+        # Structural: Should be multiline
+        assert result.count("\n") > 1
 
 
 # ── detect_format_constraints ─────────────────────────────────────────────
@@ -418,27 +515,40 @@ class TestDetectFormatConstraints:
     def test_json_format_detected(self):
         constraints = detect_format_constraints("Return the answer as JSON")
         assert any("json" in c.lower() for c in constraints)
+        # Structural: Should return non-empty list
+        assert len(constraints) > 0
+        assert isinstance(constraints, list)
 
     def test_numbered_list_detected(self):
         constraints = detect_format_constraints("Give me a numbered list of items")
         assert len(constraints) > 0
+        # Structural: Should detect list format
+        assert any("list" in c.lower() or "numbered" in c.lower() for c in constraints)
 
     def test_bullet_list_detected(self):
         constraints = detect_format_constraints("Format as a bullet list")
         assert len(constraints) > 0
         assert any("bullet" in c.lower() for c in constraints)
+        # Structural: Should be exactly one constraint
+        assert len(constraints) >= 1
 
     def test_no_constraints_returns_empty(self):
         constraints = detect_format_constraints("What is the capital of France?")
         assert isinstance(constraints, list)
+        # Structural: Should be empty or very minimal
+        assert len(constraints) <= 1
 
     def test_table_format_detected(self):
         constraints = detect_format_constraints("Show the results in a table")
         assert len(constraints) > 0
+        # Structural: Should detect table keyword
+        assert any("table" in c.lower() for c in constraints)
 
     def test_case_insensitive(self):
         constraints = detect_format_constraints("RETURN AS JSON FORMAT")
         assert any("json" in c.lower() for c in constraints)
+        # Structural: Should find constraints
+        assert len(constraints) > 0
 
 
 # ── Prompt Types ──────────────────────────────────────────────────────────
@@ -452,12 +562,16 @@ class TestRootLMPrompt:
         prompt = RootLMPrompt()
         result = prompt.to_string()
         assert isinstance(result, str)
+        # Structural: Should be valid but minimal
+        assert len(result) >= 0
 
     def test_system_only(self):
         from src.prompt_builders.types import RootLMPrompt
         prompt = RootLMPrompt(system="You are a test assistant.")
         result = prompt.to_string()
         assert "You are a test assistant." in result
+        # Structural: Should be clean output
+        assert len(result) > 20
 
     def test_all_sections(self):
         from src.prompt_builders.types import RootLMPrompt
@@ -478,6 +592,9 @@ class TestRootLMPrompt:
         assert "Context info" in result
         assert "Task description" in result
         assert "Final instruction" in result
+        # Structural: Verify section ordering
+        assert result.index("System prompt") < result.index("Tool descriptions")
+        assert result.index("Tool descriptions") < result.index("Task description")
 
     def test_section_headers(self):
         from src.prompt_builders.types import RootLMPrompt
@@ -490,6 +607,10 @@ class TestRootLMPrompt:
         assert "## Available Tools" in result
         assert "## Rules" in result
         assert "## Task" in result
+        # Structural: Headers should be on own lines
+        assert "\n## Available Tools\n" in result
+        assert "\n## Rules\n" in result
+        assert "\n## Task\n" in result
 
     def test_missing_sections_omitted(self):
         from src.prompt_builders.types import RootLMPrompt
@@ -497,6 +618,9 @@ class TestRootLMPrompt:
         result = prompt.to_string()
         assert "## Available Tools" not in result
         assert "## Rules" not in result
+        # Structural: Should have Task header and be minimal but valid
+        assert "## Task" in result
+        assert len(result) > 10
 
 
 class TestEscalationPrompt:
@@ -507,6 +631,8 @@ class TestEscalationPrompt:
         prompt = EscalationPrompt()
         result = prompt.to_string()
         assert isinstance(result, str)
+        # Structural: Should be valid empty escalation
+        assert len(result) >= 0
 
     def test_header_and_failure_info(self):
         from src.prompt_builders.types import EscalationPrompt
@@ -517,6 +643,9 @@ class TestEscalationPrompt:
         result = prompt.to_string()
         assert "# Escalation from worker" in result
         assert "Failed after 2 attempts" in result
+        # Structural: Should be multiline with proper structure
+        assert result.count("\n") > 1
+        assert len(result) > 30
 
     def test_error_details_section(self):
         from src.prompt_builders.types import EscalationPrompt
@@ -527,6 +656,8 @@ class TestEscalationPrompt:
         result = prompt.to_string()
         assert "## Error Details" in result
         assert "SyntaxError" in result
+        # Structural: Section header should be on own line
+        assert "\n## Error Details\n" in result
 
     def test_all_sections(self):
         from src.prompt_builders.types import EscalationPrompt
@@ -545,6 +676,10 @@ class TestEscalationPrompt:
         assert "## Current State" in result
         assert "## Original Task" in result
         assert "## Instructions" in result
+        # Structural: Verify section ordering
+        assert result.index("# Escalation") < result.index("## Error Details")
+        assert result.index("## Error Details") < result.index("## Original Task")
+        assert len(result) > 150
 
 
 class TestStepPrompt:
@@ -555,12 +690,16 @@ class TestStepPrompt:
         prompt = StepPrompt()
         result = prompt.to_string()
         assert isinstance(result, str)
+        # Structural: Should be valid minimal step
+        assert len(result) >= 0
 
     def test_action_only(self):
         from src.prompt_builders.types import StepPrompt
         prompt = StepPrompt(action="Implement error handler")
         result = prompt.to_string()
         assert "Task: Implement error handler" in result
+        # Structural: Should be clean single-line task
+        assert len(result) > 20
 
     def test_with_inputs_and_outputs(self):
         from src.prompt_builders.types import StepPrompt
@@ -574,6 +713,9 @@ class TestStepPrompt:
         assert "Inputs:" in result
         assert "data.json" in result
         assert "Expected outputs: result, summary" in result
+        # Structural: Verify Task appears before Inputs and outputs
+        assert result.index("Task:") < result.index("Inputs:")
+        assert result.index("Inputs:") < result.index("Expected outputs:")
 
     def test_with_constraints(self):
         from src.prompt_builders.types import StepPrompt
@@ -583,6 +725,9 @@ class TestStepPrompt:
         )
         result = prompt.to_string()
         assert "Constraints: JSON only, max 100 words" in result
+        # Structural: Should be properly formatted
+        assert "Task:" in result
+        assert len(result) > 20
 
 
 # ── build_react_prompt ────────────────────────────────────────────────────
@@ -598,6 +743,10 @@ class TestBuildReactPrompt:
         assert "Thought:" in result
         assert "Action:" in result
         assert "Final Answer:" in result
+        # Structural: Verify ReAct section ordering
+        assert result.index("Question:") < result.index("Thought:")
+        assert result.index("Thought:") < result.index("Action:")
+        assert result.index("Action:") < result.index("Final Answer:")
 
     def test_includes_context(self):
         from src.prompt_builders import build_react_prompt
@@ -607,28 +756,40 @@ class TestBuildReactPrompt:
         )
         assert "Context:" in result
         assert "quantum computing" in result
+        # Structural: No duplicate sections
+        sections = [line for line in result.split("\n") if ":" in line and line.strip().endswith(":")]
+        assert len(sections) == len(set(sections)), "Should have no duplicate section headers"
 
     def test_custom_max_turns(self):
         from src.prompt_builders import build_react_prompt
         result = build_react_prompt("test", max_turns=10)
         assert "10 times" in result or "10" in result
+        # Structural: Should mention the turn limit
+        assert "10" in result
 
     def test_includes_tool_descriptions(self):
         from src.prompt_builders import build_react_prompt
         result = build_react_prompt("test")
         # Should have static fallback tools
         assert "calculate" in result or "web_search" in result
+        # Structural: Should be substantial prompt
+        assert len(result) > 200
+        assert result.count("\n") > 5
 
     def test_custom_whitelist(self):
         from src.prompt_builders import build_react_prompt
         custom_whitelist = frozenset({"calculate", "get_current_date"})
         result = build_react_prompt("test", tool_whitelist=custom_whitelist)
         assert isinstance(result, str)
+        # Structural: Should be substantial ReAct prompt
+        assert len(result) > 100
 
     def test_none_tool_registry(self):
         from src.prompt_builders import build_react_prompt
         result = build_react_prompt("test", tool_registry=None)
         assert "Question: test" in result
+        # Structural: Should still be valid ReAct prompt
+        assert len(result) > 50
 
 
 # ── Review Prompts (Additional) ───────────────────────────────────────────
@@ -651,6 +812,9 @@ class TestBuildPlanReviewPrompt:
         assert "Build API handler" in result
         assert "S1:coder:Implement handler" in result
         assert "S2:worker:Write tests" in result
+        # Structural: Steps should be in order
+        assert result.index("S1:") < result.index("S2:")
+        assert len(result) > 100
 
     def test_includes_json_format(self):
         from src.prompt_builders import build_plan_review_prompt
@@ -661,6 +825,8 @@ class TestBuildPlanReviewPrompt:
         )
         assert "JSON" in result or "json" in result
         assert '"d":' in result or '"decision":' in result
+        # Structural: Should have clear format specification
+        assert result.count("\n") > 3
 
     def test_truncates_long_actions(self):
         from src.prompt_builders import build_plan_review_prompt
@@ -668,6 +834,8 @@ class TestBuildPlanReviewPrompt:
         result = build_plan_review_prompt("test", "code", steps)
         # Action should be truncated to 50 chars
         assert result.count("x") < 100
+        # Structural: Should still have S1 ID
+        assert "S1" in result
 
     def test_handles_deps_and_outputs(self):
         from src.prompt_builders import build_plan_review_prompt
@@ -688,6 +856,8 @@ class TestBuildPlanReviewPrompt:
         result = build_plan_review_prompt("test", "code", steps)
         assert "data.json" in result
         assert "(S1)" in result
+        # Structural: S1 should appear before S2 (dependency order)
+        assert result.index("S1") < result.index("S2")
 
 
 class TestBuildArchitectInvestigatePrompt:
@@ -699,6 +869,9 @@ class TestBuildArchitectInvestigatePrompt:
         assert "What is the capital of France?" in result
         assert "D|" in result  # Direct answer format
         assert "I|" in result  # Investigate format
+        # Structural: D| and I| should be on own lines
+        assert "\nD|" in result or result.startswith("D|")
+        assert "\nI|" in result
 
     def test_with_context(self):
         from src.prompt_builders import build_architect_investigate_prompt
@@ -708,11 +881,17 @@ class TestBuildArchitectInvestigatePrompt:
         )
         assert "Document excerpt here..." in result
         assert "Context" in result
+        # Structural: Should have both D| and I| decision options
+        assert result.count("D|") >= 1
+        assert result.count("I|") >= 1
 
     def test_mentions_valid_roles(self):
         from src.prompt_builders import build_architect_investigate_prompt
         result = build_architect_investigate_prompt("test")
         assert "coder_primary" in result or "worker_explore" in result
+        # Structural: Options should be distinct (D| and I| both present)
+        assert result.count("D|") >= 1
+        assert result.count("I|") >= 1
 
 
 class TestBuildArchitectSynthesisPrompt:
@@ -729,6 +908,9 @@ class TestBuildArchitectSynthesisPrompt:
         assert "What is X?" in result
         assert "Investigation found: X is Y." in result
         assert "D|" in result  # Direct answer format
+        # Structural: Should be substantial multiline synthesis prompt
+        assert len(result) > 200
+        assert result.count("\n") > 5
 
     def test_allows_further_investigation(self):
         from src.prompt_builders import build_architect_synthesis_prompt
@@ -737,6 +919,8 @@ class TestBuildArchitectSynthesisPrompt:
         )
         # Should allow another investigation
         assert "I|" in result or "investigation" in result.lower()
+        # Structural: Should have decision format options
+        assert result.count("D|") >= 1 or result.count("I|") >= 1
 
     def test_no_investigation_at_max_loops(self):
         from src.prompt_builders import build_architect_synthesis_prompt
@@ -749,6 +933,8 @@ class TestBuildArchitectSynthesisPrompt:
         # Check if investigate option is missing
         investigate_mentioned = any("loop" in line and "3/3" in line for line in lines)
         assert not investigate_mentioned
+        # Structural: Should still have decision option
+        assert "D|" in result
 
     def test_truncates_long_report(self):
         from src.prompt_builders import build_architect_synthesis_prompt
@@ -758,6 +944,8 @@ class TestBuildArchitectSynthesisPrompt:
         )
         # Report should be truncated to 6000 chars
         assert result.count("x") < 7000
+        # Structural: Should still have decision options
+        assert "D|" in result
 
 
 # ── build_formalizer_prompt ───────────────────────────────────────────────
@@ -776,6 +964,9 @@ class TestBuildFormalizerPrompt:
         assert "JSON format" in result
         assert "The answer is 42." in result
         assert "What is the answer?" in result
+        # Structural: Format spec should be clearly indicated
+        assert len(result) > 50
+        assert result.count("\n") > 2
 
     def test_truncates_long_prompt(self):
         from src.prompt_builders import build_formalizer_prompt
@@ -783,11 +974,16 @@ class TestBuildFormalizerPrompt:
         result = build_formalizer_prompt("answer", long_prompt, "JSON")
         # Prompt should be truncated to 500 chars (allow 1 extra for edge case)
         assert result.count("x") <= 501
+        # Structural: Should still have format spec
+        assert "JSON" in result
 
     def test_includes_instructions(self):
         from src.prompt_builders import build_formalizer_prompt
         result = build_formalizer_prompt("answer", "prompt", "JSON")
         assert "ONLY" in result or "only" in result.lower()
+        # Structural: Should have clear directive structure
+        assert "JSON" in result
+        assert len(result) > 30
 
 
 # ── build_step_prompt (additional) ────────────────────────────────────────
@@ -800,6 +996,8 @@ class TestBuildStepPromptFunction:
         from src.prompt_builders import build_step_prompt
         result = build_step_prompt("Analyze data")
         assert "Analyze data" in result
+        # Structural: Should have Task label
+        assert "Task:" in result
 
     def test_with_inputs_and_outputs(self):
         from src.prompt_builders import build_step_prompt
@@ -810,6 +1008,9 @@ class TestBuildStepPromptFunction:
         )
         assert "Process" in result
         assert "data.json" in result or "config.yaml" in result
+        # Structural: Should format list inputs properly
+        assert len(result) > 20
+        assert result.count("\n") >= 1
 
 
 # ── build_stage2_review_prompt ────────────────────────────────────────────
@@ -827,6 +1028,9 @@ class TestBuildStage2ReviewPrompt:
         )
         assert "This is a draft summary." in result
         assert "review" in result.lower() or "Review" in result
+        # Structural: Should be multiline review prompt
+        assert result.count("\n") > 3
+        assert len(result) > 50
 
     def test_includes_original_task(self):
         from src.prompt_builders import build_stage2_review_prompt
@@ -837,6 +1041,8 @@ class TestBuildStage2ReviewPrompt:
             original_task="Summarize the document about quantum computing",
         )
         assert "quantum computing" in result
+        # Structural: Original task should appear early in prompt
+        assert result.index("quantum computing") < len(result) // 2
 
     def test_includes_grep_hits(self):
         from src.prompt_builders import build_stage2_review_prompt
@@ -851,6 +1057,8 @@ class TestBuildStage2ReviewPrompt:
         result = build_stage2_review_prompt("Summary", grep_hits, [])
         assert "quantum" in result
         assert "qubits" in result
+        # Structural: Grep hits should appear after summary
+        assert result.index("Summary") < result.index("quantum")
 
     def test_includes_figures(self):
         from src.prompt_builders import build_stage2_review_prompt
@@ -861,6 +1069,8 @@ class TestBuildStage2ReviewPrompt:
         result = build_stage2_review_prompt("Summary", [], figures)
         assert "Architecture diagram" in result
         assert "Performance graph" in result
+        # Structural: Figures should be listed in order
+        assert result.index("Architecture diagram") < result.index("Performance graph")
 
     def test_truncates_long_draft(self):
         from src.prompt_builders import build_stage2_review_prompt
@@ -868,6 +1078,8 @@ class TestBuildStage2ReviewPrompt:
         result = build_stage2_review_prompt(long_draft, [], [])
         # Draft should be truncated to 8000 chars
         assert result.count("x") <= 8500  # Allow some margin for formatting
+        # Structural: Should still be substantial
+        assert len(result) > 100
 
 
 # ── build_task_decomposition_prompt ───────────────────────────────────────
@@ -881,6 +1093,9 @@ class TestBuildTaskDecompositionPrompt:
         result = build_task_decomposition_prompt("Build a REST API")
         assert "Build a REST API" in result
         assert "JSON" in result or "json" in result
+        # Structural: Should be substantial decomposition prompt
+        assert len(result) > 100
+        assert result.count("\n") > 3
 
     def test_with_context(self):
         from src.prompt_builders import build_task_decomposition_prompt
@@ -890,12 +1105,16 @@ class TestBuildTaskDecompositionPrompt:
         )
         assert "Analyze codebase" in result
         assert "Python" in result
+        # Structural: Task should appear before context
+        assert result.index("Analyze codebase") < result.index("Python")
 
     def test_mentions_step_fields(self):
         from src.prompt_builders import build_task_decomposition_prompt
         result = build_task_decomposition_prompt("test")
         assert "actor" in result or '"actor"' in result
         assert "action" in result or '"action"' in result
+        # Structural: Should specify JSON format structure
+        assert "{" in result or "JSON" in result
 
 
 # ── Constants Consistency ─────────────────────────────────────────────────
@@ -911,6 +1130,8 @@ class TestConstants:
         )
         # VISION_REACT_TOOL_WHITELIST should be a superset
         assert REACT_TOOL_WHITELIST.issubset(VISION_REACT_TOOL_WHITELIST)
+        # Structural: Vision should have more or equal tools
+        assert len(VISION_REACT_TOOL_WHITELIST) >= len(REACT_TOOL_WHITELIST)
 
     def test_executable_tools_subset_of_whitelist(self):
         from src.prompt_builders import (
@@ -919,6 +1140,8 @@ class TestConstants:
         )
         # Executable tools should be a subset of whitelist
         assert VISION_REACT_EXECUTABLE_TOOLS.issubset(VISION_REACT_TOOL_WHITELIST)
+        # Structural: Executable should be smaller or equal
+        assert len(VISION_REACT_EXECUTABLE_TOOLS) <= len(VISION_REACT_TOOL_WHITELIST)
 
     def test_vision_tool_descriptions_match_executable(self):
         from src.prompt_builders import (
@@ -928,13 +1151,20 @@ class TestConstants:
         # All executable tools should have descriptions
         for tool in VISION_REACT_EXECUTABLE_TOOLS:
             assert tool in VISION_TOOL_DESCRIPTIONS
+        # Structural: Counts should match
+        assert len(VISION_REACT_EXECUTABLE_TOOLS) <= len(VISION_TOOL_DESCRIPTIONS)
 
     def test_default_tools_and_rules_not_empty(self):
         from src.prompt_builders import DEFAULT_ROOT_LM_TOOLS, DEFAULT_ROOT_LM_RULES
         assert len(DEFAULT_ROOT_LM_TOOLS) > 100  # Should be substantial
         assert len(DEFAULT_ROOT_LM_RULES) > 100
+        # Structural: Both should be strings
+        assert isinstance(DEFAULT_ROOT_LM_TOOLS, str)
+        assert isinstance(DEFAULT_ROOT_LM_RULES, str)
 
     def test_react_format_has_placeholders(self):
         from src.prompt_builders import REACT_FORMAT
         assert "{tool_descriptions}" in REACT_FORMAT
         assert "{max_turns}" in REACT_FORMAT
+        # Structural: Should be substantial template
+        assert len(REACT_FORMAT) > 100

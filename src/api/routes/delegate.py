@@ -13,10 +13,11 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.api.state import get_state
+from src.api.dependencies import dep_app_state
+from src.api.state import AppState
 from src.features import features
 from src.parallel_step_executor import compute_waves
 
@@ -48,7 +49,10 @@ class DelegateResponse(BaseModel):
 
 
 @router.post("/api/delegate", response_model=DelegateResponse)
-async def delegate(request: DelegateRequest) -> DelegateResponse:
+async def delegate(
+    request: DelegateRequest,
+    state: AppState = Depends(dep_app_state),
+) -> DelegateResponse:
     """Execute a TaskIR via wave-based delegation.
 
     When ``dry_run=True``, returns only the computed wave plan without
@@ -94,7 +98,6 @@ async def delegate(request: DelegateRequest) -> DelegateResponse:
         )
 
     # Full execution: need LLM primitives
-    state = get_state()
     if state.llm_primitives is None:
         raise HTTPException(
             status_code=503,

@@ -7,7 +7,9 @@ multi-file vision handling, and structured analysis.
 
 from __future__ import annotations
 
+import ast as _ast
 import logging
+import operator as _operator
 from typing import TYPE_CHECKING
 
 from src.config import get_config as _get_config
@@ -292,6 +294,36 @@ async def _handle_vision_request(
     raise RuntimeError(f"All vision paths failed. Last error: {last_error}")
 
 
+_SAFE_OPS = {
+    _ast.Add: _operator.add,
+    _ast.Sub: _operator.sub,
+    _ast.Mult: _operator.mul,
+    _ast.Div: _operator.truediv,
+    _ast.FloorDiv: _operator.floordiv,
+    _ast.Mod: _operator.mod,
+    _ast.Pow: _operator.pow,
+    _ast.USub: _operator.neg,
+}
+
+
+def _safe_eval_math(expr: str) -> float | int:
+    """Evaluate arithmetic expression safely — no function calls, imports, or attribute access."""
+    tree = _ast.parse(expr, mode='eval')
+
+    def _eval(node):
+        if isinstance(node, _ast.Expression):
+            return _eval(node.body)
+        if isinstance(node, _ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, _ast.BinOp) and type(node.op) in _SAFE_OPS:
+            return _SAFE_OPS[type(node.op)](_eval(node.left), _eval(node.right))
+        if isinstance(node, _ast.UnaryOp) and type(node.op) in _SAFE_OPS:
+            return _SAFE_OPS[type(node.op)](_eval(node.operand))
+        raise ValueError(f"Unsupported expression node: {type(node).__name__}")
+
+    return _eval(tree)
+
+
 async def _execute_vision_tool(
     action_str: str,
     image_b64: str,
@@ -341,15 +373,14 @@ async def _execute_vision_tool(
             return f"[OCR error: {type(e).__name__}: {e}]"
 
     elif tool_name == "calculate":
-        # Safe math evaluation
+        # Safe math evaluation (AST-walking, no arbitrary code execution)
         try:
             # Parse expression from args
             expr_match = _re.search(r'expression\s*=\s*"([^"]*)"', args_str)
             if not expr_match:
                 expr_match = _re.search(r'expression\s*=\s*\'([^\']*)\'', args_str)
             if expr_match:
-                import ast
-                result = eval(compile(ast.parse(expr_match.group(1), mode='eval'), '<calc>', 'eval'))
+                result = _safe_eval_math(expr_match.group(1))
                 return str(result)
             return "[ERROR: Could not parse calculate expression]"
         except Exception as e:

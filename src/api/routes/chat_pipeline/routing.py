@@ -10,6 +10,7 @@ from fastapi import HTTPException
 
 from src.api.models import ChatRequest, ChatResponse
 from src.api.services.memrl import ensure_memrl_initialized, score_completed_task
+from src.config import get_config
 from src.features import features
 from src.llm_primitives import LLMPrimitives
 from src.roles import Role
@@ -158,7 +159,7 @@ def _init_primitives(request: ChatRequest, state) -> LLMPrimitives:
     Raises HTTPException(503) if backends unavailable.
     """
     if request.real_mode:
-        server_urls = request.server_urls or LLMPrimitives.DEFAULT_SERVER_URLS
+        server_urls = request.server_urls or get_config().server_urls.as_dict()
 
         if (
             hasattr(state, '_real_primitives')

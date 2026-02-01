@@ -1,32 +1,37 @@
 """Gate execution endpoints."""
 
+from __future__ import annotations
+
 import time
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from src.api.dependencies import dep_gate_runner
 from src.api.models import GateRequest, GateResultModel, GatesResponse
-from src.api.state import get_state
+
+if TYPE_CHECKING:
+    from src.gate_runner import GateRunner
 
 router = APIRouter()
 
 
 @router.post("/gates", response_model=GatesResponse)
-async def run_gates(request: GateRequest) -> GatesResponse:
+async def run_gates(
+    request: GateRequest,
+    gate_runner: "GateRunner" = Depends(dep_gate_runner),
+) -> GatesResponse:
     """Run quality gates.
 
     Can run all gates, specific gates by name, or only required gates.
+    dep_gate_runner raises 503 if gate runner is not initialized.
     """
-    state = get_state()
-
-    if state.gate_runner is None:
-        raise HTTPException(status_code=503, detail="Gate runner not initialized")
-
     start_time = time.perf_counter()
 
     if request.gate_names:
-        results = state.gate_runner.run_gates_by_name(request.gate_names)
+        results = gate_runner.run_gates_by_name(request.gate_names)
     else:
-        results = await state.gate_runner.run_all_gates_parallel(
+        results = await gate_runner.run_all_gates_parallel(
             stop_on_first_failure=request.stop_on_first_failure,
             required_only=request.required_only,
         )
@@ -51,11 +56,8 @@ async def run_gates(request: GateRequest) -> GatesResponse:
 
 
 @router.get("/gates", response_model=list[str])
-async def list_gates() -> list[str]:
+async def list_gates(
+    gate_runner: "GateRunner" = Depends(dep_gate_runner),
+) -> list[str]:
     """List available gate names."""
-    state = get_state()
-
-    if state.gate_runner is None:
-        raise HTTPException(status_code=503, detail="Gate runner not initialized")
-
-    return state.gate_runner.get_gate_names()
+    return gate_runner.get_gate_names()

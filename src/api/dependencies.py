@@ -1,0 +1,107 @@
+"""FastAPI dependency injection layer for the orchestrator API.
+
+Provides typed dependency functions using FastAPI's Depends() pattern.
+Replaces direct get_state() calls in route handlers, enabling:
+- Testability: Override dependencies in tests without monkeypatching
+- Type safety: Each handler declares exactly what it needs
+- Validation: Required components raise HTTP 503 if unavailable
+
+Usage in route handlers:
+    from fastapi import Depends
+    from src.api.dependencies import get_app_state, dep_gate_runner
+
+    @router.post("/gates")
+    async def run_gates(gate_runner: GateRunner = Depends(dep_gate_runner)):
+        ...
+
+Usage in tests:
+    from src.api.dependencies import dep_gate_runner
+    app.dependency_overrides[dep_gate_runner] = lambda: mock_gate_runner
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from fastapi import HTTPException
+
+from src.api.state import get_state
+
+if TYPE_CHECKING:
+    from src.api.health_tracker import BackendHealthTracker
+    from src.api.state import AppState
+    from src.gate_runner import GateRunner
+    from src.llm_primitives import LLMPrimitives
+    from src.api.protocols import (
+        HybridRouterProtocol,
+        ProgressLoggerProtocol,
+        RegistryLoaderProtocol,
+        ToolRegistryProtocol,
+        ScriptRegistryProtocol,
+    )
+
+
+# ── Core state dependency ─────────────────────────────────────────────────
+
+
+def dep_app_state() -> "AppState":
+    """Get the global application state."""
+    return get_state()
+
+
+# ── Required components (raise 503 if unavailable) ────────────────────────
+
+
+def dep_llm_primitives() -> "LLMPrimitives":
+    """Get LLMPrimitives. Raises 503 if not initialized."""
+    state = get_state()
+    if state.llm_primitives is None:
+        raise HTTPException(
+            status_code=503,
+            detail="LLM primitives not initialized (server not ready)",
+        )
+    return state.llm_primitives
+
+
+def dep_gate_runner() -> "GateRunner":
+    """Get GateRunner. Raises 503 if not initialized."""
+    state = get_state()
+    if state.gate_runner is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Gate runner not initialized",
+        )
+    return state.gate_runner
+
+
+def dep_health_tracker() -> "BackendHealthTracker":
+    """Get BackendHealthTracker (always available on AppState)."""
+    return get_state().health_tracker
+
+
+# ── Optional components (return None if unavailable) ──────────────────────
+
+
+def dep_progress_logger() -> "ProgressLoggerProtocol | None":
+    """Get ProgressLogger if available."""
+    return get_state().progress_logger
+
+
+def dep_hybrid_router() -> "HybridRouterProtocol | None":
+    """Get HybridRouter if available."""
+    return get_state().hybrid_router
+
+
+def dep_tool_registry() -> "ToolRegistryProtocol | None":
+    """Get ToolRegistry if available."""
+    return get_state().tool_registry
+
+
+def dep_script_registry() -> "ScriptRegistryProtocol | None":
+    """Get ScriptRegistry if available."""
+    return get_state().script_registry
+
+
+def dep_registry_loader() -> "RegistryLoaderProtocol | None":
+    """Get RegistryLoader if available."""
+    return get_state().registry
