@@ -41,12 +41,12 @@ import random
 import signal
 import sys
 import time
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-# Add project root to path
+# Bootstrap: needed before seeding_types can be imported. Same value as seeding_types.PROJECT_ROOT.
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
@@ -58,168 +58,67 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Lazy import — resolved after sys.path setup above
-from src.llm_primitives import LLMPrimitives
+# ── Re-exports from extracted modules (test backwards compatibility) ──
+# Tests import these symbols from this file; keep them accessible here.
 
-# ── Constants ─────────────────────────────────────────────────────────
-
-DEFAULT_ORCHESTRATOR_URL = "http://localhost:8000"
-DEFAULT_TIMEOUT = 120
-DEFAULT_SUITES = [
-    "thinking", "general", "math", "agentic",
-    "coder", "instruction_precision", "vl",
-]
-DEFAULT_ROLES = [
-    "frontdoor", "coder_primary", "coder_escalation",
-    "architect_general", "architect_coding",
-    "worker_vision", "vision_escalation",
-]
-DEFAULT_MODES = ["direct", "react", "repl"]
-
-EVAL_DIR = PROJECT_ROOT / "benchmarks" / "results" / "eval"
-SEEN_FILE = EVAL_DIR / "seen_questions.jsonl"
-DEBUG_PROMPTS_DIR = PROJECT_ROOT / "benchmarks" / "prompts" / "debug"
-
-# Architect roles delegate tool work to faster specialists.
-# They support direct (no tools) and delegated (multi-loop delegation) modes.
-ARCHITECT_ROLES = {"architect_general", "architect_coding"}
-ARCHITECT_MODES = {"direct", "delegated"}
-
-# Vision roles have model-specific mode constraints.
-# worker_vision (Qwen2.5-VL-7B) supports tool calls → direct + react.
-# vision_escalation (Qwen3-VL-30B-A3B) is 0% agentic → direct only.
-VISION_ROLES = {"worker_vision", "vision_escalation"}
-VISION_MODES: dict[str, set[str]] = {
-    "worker_vision": {"direct", "react"},
-    "vision_escalation": {"direct"},
-}
-
-# Per-suite timeout overrides (seconds)
-SUITE_TIMEOUTS: dict[str, int] = {
-    "long_context": 600,
-    "coder": 180,
-    "vl": 180,
-}
-
-# Cost tiers for escalation chain detection (lower = cheaper).
-# When a cheaper role fails and a more expensive role passes,
-# that's a valuable escalation signal for MemRL.
-ROLE_COST_TIER: dict[str, int] = {
-    "worker_explore": 1,
-    "worker_math": 1,
-    "worker_vision": 1,
-    "frontdoor": 2,
-    "coder_primary": 2,
-    "vision_escalation": 3,
-    "coder_escalation": 3,
-    "architect_general": 4,
-    "architect_coding": 5,
-}
-
-# Escalation reward: lower than +1.0 (direct win) because escalation adds latency.
-ESCALATION_REWARD = 0.8
-
-# Graceful shutdown flag
-_shutdown = False
-
-# Module-level httpx.Client for connection-reusing polling/health checks.
-# Bare httpx.get() creates a new TCP connection per call, which accumulates
-# in TIME_WAIT and can exhaust socket descriptors over multi-day runs.
-_poll_client: "httpx.Client | None" = None
+from seeding_types import (  # noqa: E402, F401
+    ARCHITECT_MODES,
+    ARCHITECT_ROLES,
+    ComparativeResult,
+    DEBUG_PROMPTS_DIR,
+    DEFAULT_MODES,
+    DEFAULT_ORCHESTRATOR_URL,
+    DEFAULT_ROLES,
+    DEFAULT_SUITES,
+    DEFAULT_TIMEOUT,
+    ESCALATION_REWARD,
+    EVAL_DIR,
+    HEAVY_PORTS,
+    HealthCheckError,
+    MODEL_PORTS,
+    ROLE_COST_TIER,
+    ROLE_PORT,
+    RoleResult,
+    SEEN_FILE,
+    SUITE_TIMEOUTS,
+    VISION_MODES,
+    VISION_ROLES,
+    state,
+)
+from seeding_rewards import (  # noqa: E402, F401
+    DEFAULT_BASELINE_TPS,
+    _inject_escalation_chains_http,
+    _inject_rewards_http,
+    compute_comparative_rewards,
+    detect_escalation_chains,
+)
+from seeding_infra import (  # noqa: E402, F401
+    MAX_RECOVERY_ATTEMPTS,
+    _attempt_recovery,
+    _check_server_health,
+    _wait_for_heavy_models_idle,
+    run_preflight,
+)
 
 
-def _get_poll_client() -> "httpx.Client":
-    """Get or create the module-level httpx client for polling."""
-    global _poll_client
-    if _poll_client is None:
-        import httpx
-        _poll_client = httpx.Client(timeout=10)
-    return _poll_client
-
-
-def _close_poll_client() -> None:
-    """Close the module-level polling client if open."""
-    global _poll_client
-    if _poll_client is not None:
-        try:
-            _poll_client.close()
-        except Exception:
-            pass
-        _poll_client = None
+# ── Signal handlers ──────────────────────────────────────────────────
 
 
 def _handle_sigint(sig, frame):
-    global _shutdown
-    if _shutdown:
-        _close_poll_client()
+    if state.shutdown:
+        state.close_poll_client()
         sys.exit(1)
-    _shutdown = True
+    state.shutdown = True
     print("\n[SIGINT] Finishing current question, then stopping...")
 
 
 def _handle_sigterm(sig, frame):
-    global _shutdown
-    _shutdown = True
-    _close_poll_client()
+    state.shutdown = True
+    state.close_poll_client()
 
 
 signal.signal(signal.SIGINT, _handle_sigint)
 signal.signal(signal.SIGTERM, _handle_sigterm)
-
-
-# ── Exceptions ────────────────────────────────────────────────────────
-
-
-class HealthCheckError(Exception):
-    """Raised when the orchestrator API is unreachable."""
-
-    pass
-
-
-# ── Data structures ───────────────────────────────────────────────────
-
-
-@dataclass
-class RoleResult:
-    """Result of running a question through a specific role+mode."""
-
-    role: str
-    mode: str
-    answer: str
-    passed: bool
-    elapsed_seconds: float
-    error: str | None = None
-    tokens_generated: int = 0
-    tools_used: int = 0
-    tools_called: list[str] = field(default_factory=list)
-    routed_to: str = ""
-    role_history: list[str] = field(default_factory=list)
-    routing_strategy: str = ""
-    turns: int = 0
-    tokens_used: int = 0
-    formalization_applied: bool = False
-    cache_stats: dict[str, Any] | None = None
-    # Clean timing data from llama.cpp (excludes prompt eval overhead)
-    predicted_tps: float = 0.0
-    generation_ms: float = 0.0
-    prompt_eval_ms: float = 0.0
-    http_overhead_ms: float = 0.0
-
-
-@dataclass
-class ComparativeResult:
-    """Comparative result across roles for a single question."""
-
-    suite: str
-    question_id: str
-    prompt: str
-    expected: str
-    dataset_source: str = "yaml"
-    prompt_hash: str = ""
-    timestamp: str = ""
-    role_results: dict[str, RoleResult] = field(default_factory=dict)
-    rewards: dict[str, float] = field(default_factory=dict)
-    rewards_injected: int = 0
 
 
 # ── Checkpoint management ─────────────────────────────────────────────
@@ -488,72 +387,7 @@ def score_answer_deterministic(
     return score_answer(answer, expected, scoring_method, scoring_config or {})
 
 
-# Default per-role optimized tokens/second from production benchmarks.
-# Update these when swapping models in the orchestrator stack.
-DEFAULT_BASELINE_TPS: dict[str, float] = {
-    "frontdoor": 18.3,
-    "coder_primary": 18.3,
-    "coder_escalation": 39.44,
-    "architect_general": 6.75,
-    "architect_coding": 10.3,
-    "ingest_long_context": 6.29,
-    "worker_explore": 27.88,
-    "worker_math": 48.5,
-    "worker_vision": 15.28,
-    "vision_escalation": 27.6,
-}
-
-
-def compute_comparative_rewards(
-    role_results: dict[str, RoleResult],
-    baseline_key: str = "frontdoor:direct",
-    cost_config: dict[str, Any] | None = None,
-) -> dict[str, float]:
-    """Compute comparative rewards relative to the baseline.
-
-    Reward scheme (xRouter-style, correctness-gated cost penalty):
-      specialist correct & baseline wrong → +1.0 (clear specialist win)
-      specialist wrong & baseline right   → -0.5 (specialist worse)
-      both correct → 0.5 - lambda * max(0, cost_ratio - 1.0)  (cost-aware)
-      both wrong   → -0.3 (neither helps)
-    """
-    cost_config = cost_config or {}
-    lam = cost_config.get("lambda", 0.15)
-    baseline_tps = cost_config.get("baseline_tps_by_role", DEFAULT_BASELINE_TPS)
-
-    rewards = {}
-    baseline = role_results.get(baseline_key)
-    if baseline is None:
-        for key, result in role_results.items():
-            rewards[key] = 1.0 if result.passed else 0.0
-        return rewards
-
-    baseline_passed = baseline.passed
-
-    for key, result in role_results.items():
-        if key == baseline_key:
-            rewards[key] = 1.0 if result.passed else 0.0
-        elif result.passed and not baseline_passed:
-            rewards[key] = 1.0
-        elif not result.passed and baseline_passed:
-            rewards[key] = -0.5
-        elif result.passed and baseline_passed:
-            base = 0.5
-            role_tps = baseline_tps.get(result.role, 0)
-            gen_elapsed = result.generation_ms / 1000.0 if result.generation_ms > 0 else 0
-            actual_elapsed = gen_elapsed if gen_elapsed > 0 else result.elapsed_seconds
-            if (role_tps > 0 and result.tokens_generated > 0
-                    and actual_elapsed > 0):
-                expected = result.tokens_generated / role_tps
-                cost_ratio = actual_elapsed / expected
-                cost_penalty = lam * max(0.0, cost_ratio - 1.0)
-                rewards[key] = max(0.1, base - cost_penalty)
-            else:
-                rewards[key] = 0.3
-        else:
-            rewards[key] = -0.3
-
-    return rewards
+# ── Combo building ───────────────────────────────────────────────────
 
 
 def _build_role_mode_combos(
@@ -653,430 +487,6 @@ def _modes_for_role(role: str, modes: list[str]) -> list[str]:
     return list(modes)
 
 
-def _check_server_health(url: str, timeout: int = 5) -> bool:
-    """Check if the orchestrator server is healthy."""
-    try:
-        resp = _get_poll_client().get(f"{url}/health", timeout=timeout)
-        return resp.status_code == 200
-    except Exception:
-        return False
-
-
-# ── Backend idle enforcement ─────────────────────────────────────────
-
-# Heavy model ports: MUST be confirmed idle before sending the next request.
-# These models saturate memory bandwidth when generating — concurrent inference
-# across any of them destroys throughput for ALL of them.
-HEAVY_PORTS = {8083, 8084, 8085, 8087}
-
-# Role → backend port mapping (mirrors get_config().server_urls)
-ROLE_PORT: dict[str, int] = {
-    "frontdoor": 8080,
-    "coder_primary": 8080,
-    "coder_escalation": 8081,
-    "worker_explore": 8082,
-    "worker_math": 8082,
-    "worker_vision": 8086,
-    "vision_escalation": 8087,
-    "architect_general": 8083,
-    "architect_coding": 8084,
-    "ingest_long_context": 8085,
-}
-
-
-def _is_server_idle(port: int, timeout: int = 3) -> bool:
-    """Check if all slots on a llama-server port are idle."""
-    try:
-        resp = _get_poll_client().get(f"http://localhost:{port}/slots", timeout=timeout)
-        if resp.status_code != 200:
-            return True  # Can't check — assume idle
-        slots = resp.json()
-        return not any(s.get("is_processing", False) for s in slots)
-    except Exception:
-        return True  # Server unreachable — assume idle
-
-
-def _wait_for_heavy_models_idle(max_wait: int = 600) -> None:
-    """Block until ALL heavy model servers are idle.
-
-    Called before every combo to ensure no concurrent heavy inference.
-    Light/fast workers (8080-8082, 8086) are allowed to overlap.
-    """
-    start = time.perf_counter()
-    while True:
-        all_idle = True
-        busy_ports = []
-        for port in HEAVY_PORTS:
-            if not _is_server_idle(port):
-                all_idle = False
-                busy_ports.append(port)
-        if all_idle:
-            elapsed = time.perf_counter() - start
-            if elapsed > 1.0:
-                logger.info(f"  [idle-wait] Heavy models idle after {elapsed:.1f}s")
-            return
-        if time.perf_counter() - start > max_wait:
-            logger.warning(
-                f"  [idle-wait] Timeout after {max_wait}s, ports still busy: {busy_ports}"
-            )
-            return
-        if _shutdown:
-            return
-        time.sleep(2)
-
-
-# ── Preflight checks ──────────────────────────────────────────────────
-
-
-STACK_SCRIPT = PROJECT_ROOT / "scripts" / "server" / "orchestrator_stack.py"
-
-
-def _check_port(port: int) -> bool:
-    """Check if a port is listening."""
-    import socket
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("localhost", port)) == 0
-
-
-# Model server ports (excluding API port 8000)
-MODEL_PORTS = [8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087, 8090]
-
-
-def _kill_port(port: int) -> bool:
-    """Kill the process listening on a port. Returns True if killed."""
-    import subprocess
-
-    result = subprocess.run(
-        ["fuser", "-k", f"{port}/tcp"],
-        capture_output=True,
-        timeout=10,
-    )
-    time.sleep(1)
-    return not _check_port(port)
-
-
-def _launch_api_only() -> bool:
-    """Launch just the orchestrator API (uvicorn on port 8000).
-
-    Used when model servers are already running but the API is not.
-    If port 8000 is already taken by a stale process, kills it first.
-    """
-    import subprocess
-
-    # Kill stale API process if port 8000 is occupied
-    if _check_port(8000):
-        logger.warning("  Port 8000 already in use — killing stale process...")
-        if not _kill_port(8000):
-            logger.error("  Could not free port 8000")
-            return False
-        logger.info("  Port 8000 freed")
-
-    logger.info("  Launching orchestrator API only (model servers already running)...")
-
-    env = os.environ.copy()
-    env["HF_HOME"] = "/mnt/raid0/llm/cache/huggingface"
-    env["TMPDIR"] = "/mnt/raid0/llm/tmp"
-    env["ORCHESTRATOR_CACHING"] = "1"
-    env["ORCHESTRATOR_STREAMING"] = "1"
-    env["ORCHESTRATOR_MOCK_MODE"] = "0"
-    env["ORCHESTRATOR_REAL_MODE"] = "1"
-    env["ORCHESTRATOR_SCRIPTS"] = "1"
-    env["ORCHESTRATOR_REACT_MODE"] = "1"
-    env["ORCHESTRATOR_MEMRL"] = "1"
-    env["ORCHESTRATOR_TOOLS"] = "1"
-    env["ORCHESTRATOR_GENERATION_MONITOR"] = "1"
-
-    log_file = PROJECT_ROOT / "logs" / "orchestrator_autolaunch.log"
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    proc = subprocess.Popen(
-        [
-            sys.executable, "-m", "uvicorn",
-            "src.api:app",
-            "--host", "127.0.0.1",
-            "--port", "8000",
-        ],
-        cwd=str(PROJECT_ROOT),
-        stdout=open(log_file, "w"),
-        stderr=subprocess.STDOUT,
-        env=env,
-    )
-
-    # Wait for API to become healthy — verify OUR process is still alive
-    for attempt in range(24):  # Up to 2 minutes
-        if proc.poll() is not None:
-            logger.error(f"  API process exited (code={proc.returncode}). Check log: {log_file}")
-            return False
-        if _check_server_health(DEFAULT_ORCHESTRATOR_URL):
-            logger.info(f"  API healthy (pid={proc.pid}) after {(attempt + 1) * 5}s")
-            return True
-        time.sleep(5)
-
-    logger.error(f"  API did not start. Check log: {log_file}")
-    proc.kill()
-    return False
-
-
-def _auto_launch_stack(hot_only: bool = True) -> bool:
-    """Launch the full orchestrator stack and wait for it to become healthy.
-
-    Only called when NO ports are in use (cold start).
-    Returns True if the stack came up successfully.
-    """
-    import subprocess
-
-    if not STACK_SCRIPT.exists():
-        logger.error(f"  Stack script not found: {STACK_SCRIPT}")
-        return False
-
-    cmd = [sys.executable, str(STACK_SCRIPT), "start"]
-    if hot_only:
-        cmd.append("--hot-only")
-
-    logger.info(f"  Auto-launching full stack: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            logger.error(f"  Stack launch failed (exit {result.returncode})")
-            if result.stderr:
-                for line in result.stderr.strip().splitlines()[-5:]:
-                    logger.error(f"    {line}")
-            return False
-    except subprocess.TimeoutExpired:
-        logger.error("  Stack launch timed out after 600s")
-        return False
-
-    # Wait for API to become healthy
-    logger.info("  Waiting for API to become healthy...")
-    for attempt in range(60):  # Up to 5 minutes
-        if _check_server_health(DEFAULT_ORCHESTRATOR_URL):
-            logger.info(f"  API healthy after {(attempt + 1) * 5}s")
-            return True
-        time.sleep(5)
-
-    logger.error("  API did not become healthy within 5 minutes")
-    return False
-
-
-MAX_RECOVERY_ATTEMPTS = 10
-
-
-def _attempt_recovery(url: str) -> bool:
-    """Attempt to recover a dead orchestrator API.
-
-    Checks what's still running and takes the minimal action:
-    - Model ports up → restart API only (kills stale process on :8000)
-    - Nothing up → full stack launch
-    """
-    model_ports_up = sum(1 for p in MODEL_PORTS if _check_port(p))
-
-    if model_ports_up > 0:
-        logger.info(
-            f"  Recovery: {model_ports_up} model port(s) still up — restarting API only"
-        )
-        return _launch_api_only()
-    else:
-        logger.info("  Recovery: no model ports up — launching full stack")
-        return _auto_launch_stack()
-
-
-def run_preflight(url: str) -> bool:
-    """Run preflight health checks on orchestrator and backends.
-
-    Auto-launches the orchestrator stack if the API is not reachable.
-    Returns True if all checks pass.
-    """
-    logger.info("=" * 60)
-    logger.info("PREFLIGHT CHECKS")
-    logger.info("=" * 60)
-
-    # 1. Orchestrator API health (auto-launch if down)
-    api_healthy = _check_server_health(url)
-    model_ports_up = sum(1 for p in MODEL_PORTS if _check_port(p))
-
-    if api_healthy:
-        logger.info(f"  API already running ({url})")
-    elif model_ports_up > 0:
-        # Model servers running but API is not — just start the API
-        # _launch_api_only() handles killing stale processes on :8000
-        logger.info(
-            f"  API not reachable but {model_ports_up} model port(s) are up "
-            f"— launching API only..."
-        )
-        if not _launch_api_only():
-            logger.error("PREFLIGHT FAILED: Could not start orchestrator API")
-            return False
-    else:
-        # Nothing running — launch full stack
-        logger.info("  No stack running — launching full stack...")
-        if not _auto_launch_stack():
-            logger.error("PREFLIGHT FAILED: Could not start orchestrator stack")
-            return False
-    logger.info(f"  API health: OK ({url})")
-
-    # 2. Backend health (check ports via /health on orchestrator)
-    try:
-        resp = _get_poll_client().get(f"{url}/health", timeout=10)
-        if resp.status_code == 200:
-            health_data = resp.json()
-            backends = health_data.get("backends", {})
-            if backends:
-                for name, status in backends.items():
-                    ok = status.get("healthy", False) if isinstance(status, dict) else status
-                    tag = "OK" if ok else "DOWN"
-                    logger.info(f"  Backend {name}: {tag}")
-    except Exception:
-        pass  # Health endpoint may not expose backends — continue
-
-    # 3. Smoke test (60s timeout — if 2+2 takes longer, something is broken)
-    logger.info("  Smoke test: 2+2...")
-    try:
-        resp = _get_poll_client().post(
-            f"{url}/chat",
-            json={"prompt": "What is 2+2? Answer with just the number.", "real_mode": True},
-            timeout=60,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            answer = data.get("answer", "")[:50]
-            routed_to = data.get("routed_to", "unknown")
-            logger.info(f"  Smoke test OK: routed_to={routed_to}, answer={answer}")
-        else:
-            logger.error(f"  Smoke test FAIL: HTTP {resp.status_code}")
-            return False
-    except Exception as e:
-        if "timeout" in str(e).lower() or "Timeout" in type(e).__name__:
-            logger.error("  Smoke test TIMEOUT (60s) — API may be misconfigured for real_mode")
-            logger.error("  Try: kill API on :8000 and relaunch, or check orchestrator_autolaunch.log")
-        else:
-            logger.error(f"  Smoke test FAIL: {e}")
-        return False
-
-    logger.info("PREFLIGHT PASSED")
-    logger.info("=" * 60)
-    return True
-
-
-# ── Escalation chain detection ────────────────────────────────────────
-
-
-def detect_escalation_chains(
-    role_results: dict[str, RoleResult],
-) -> list[dict[str, Any]]:
-    """Detect cases where a cheap model fails but a more expensive one passes.
-
-    Returns list of escalation chain dicts:
-      {"from_role": "worker_explore", "from_mode": "direct",
-       "to_role": "coder_escalation", "to_mode": "direct",
-       "action": "escalate:worker_explore->coder_escalation",
-       "reward": 0.8}
-    """
-    chains: list[dict[str, Any]] = []
-    entries = []
-    for key, rr in role_results.items():
-        role, mode = key.split(":", 1)
-        tier = ROLE_COST_TIER.get(role, 99)
-        entries.append((tier, role, mode, rr))
-
-    entries.sort(key=lambda x: x[0])
-
-    # For each failed cheap role, find the cheapest passing expensive role
-    for i, (tier_i, role_i, mode_i, rr_i) in enumerate(entries):
-        if rr_i.passed or rr_i.error:
-            continue  # Only look at failures (not errors)
-        for j in range(i + 1, len(entries)):
-            tier_j, role_j, mode_j, rr_j = entries[j]
-            if tier_j <= tier_i:
-                continue
-            if rr_j.passed:
-                chains.append({
-                    "from_role": role_i,
-                    "from_mode": mode_i,
-                    "to_role": role_j,
-                    "to_mode": mode_j,
-                    "action": f"escalate:{role_i}->{role_j}",
-                    "reward": ESCALATION_REWARD,
-                })
-                break  # Only the cheapest passing escalation target
-
-    return chains
-
-
-def _inject_escalation_chains_http(
-    comp: ComparativeResult,
-    chains: list[dict[str, Any]],
-    url: str,
-    client: "httpx.Client",
-) -> int:
-    """Inject escalation chain rewards via HTTP API.
-
-    Returns number of rewards successfully injected.
-    """
-    injected = 0
-    for chain in chains:
-        try:
-            resp = client.post(
-                f"{url}/chat/reward",
-                json={
-                    "task_description": comp.prompt[:200],
-                    "action": chain["action"],
-                    "reward": chain["reward"],
-                    "context": {
-                        "task_type": comp.suite,
-                        "source": "escalation_chain",
-                        "question_id": comp.question_id,
-                        "action_type": "escalation",
-                        "from_role": chain["from_role"],
-                        "to_role": chain["to_role"],
-                    },
-                },
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                injected += 1
-        except Exception:
-            continue
-    return injected
-
-
-# ── Reward injection ──────────────────────────────────────────────────
-
-
-def _inject_rewards_http(
-    comp: ComparativeResult,
-    url: str,
-    client: "httpx.Client",
-) -> int:
-    """Inject comparative rewards for one question via HTTP API.
-
-    Returns number of rewards successfully injected.
-    """
-    injected = 0
-    for action_key, reward in comp.rewards.items():
-        try:
-            resp = client.post(
-                f"{url}/chat/reward",
-                json={
-                    "task_description": comp.prompt[:200],
-                    "action": action_key,
-                    "reward": reward,
-                    "context": {
-                        "task_type": comp.suite,
-                        "source": "comparative_seeding",
-                        "question_id": comp.question_id,
-                        "comparative": True,
-                    },
-                },
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                injected += 1
-        except Exception:
-            continue
-    return injected
-
-
 # ── Main evaluation loop ──────────────────────────────────────────────
 
 
@@ -1127,15 +537,10 @@ def evaluate_question(
     suite_timeout = SUITE_TIMEOUTS.get(suite, timeout)
 
     for combo_idx, (role, mode) in enumerate(active_combos):
-        if _shutdown:
+        if state.shutdown:
             return None
 
         # Before hitting a heavy model, confirm all heavy ports are idle.
-        # The HTTP call blocks until the full chain completes (architect →
-        # workers → synthesis → response), so the heavy model is normally
-        # idle by the time we get here. This is a safety check for edge
-        # cases (slot not yet freed, background KV cache cleanup, etc.).
-        # Light→light transitions skip this — no need to poll.
         target_port = ROLE_PORT.get(role, 0)
         if target_port in HEAVY_PORTS:
             _wait_for_heavy_models_idle()
@@ -1359,7 +764,7 @@ def run_batch(
 
     try:
         for i, prompt_info in enumerate(questions):
-            if _shutdown:
+            if state.shutdown:
                 logger.info(f"\n[Stopped after {i} questions]")
                 break
 
@@ -1677,7 +1082,7 @@ Examples:
         logger.info(f"Starting continuous evaluation: session={session_id}")
         logger.info(f"  Ctrl+C to stop gracefully (finishes current question)")
 
-        while not _shutdown:
+        while not state.shutdown:
             # ── Health gate with auto-recovery ──
             if not _check_server_health(args.url):
                 consecutive_failures += 1
@@ -1698,7 +1103,7 @@ Examples:
                     continue
                 logger.warning(f"  Recovery failed — sleeping {backoff}s before retry")
                 for _ in range(backoff):
-                    if _shutdown:
+                    if state.shutdown:
                         break
                     time.sleep(1)
                 continue
@@ -1732,12 +1137,12 @@ Examples:
             if results:
                 print_batch_summary(results, args.roles, args.modes, alias_map=alias_map)
 
-            if _shutdown:
+            if state.shutdown:
                 break
 
             logger.info(f"\n[Sleeping {args.continuous_interval}s before next batch...]")
             for _ in range(args.continuous_interval):
-                if _shutdown:
+                if state.shutdown:
                     break
                 time.sleep(1)
 
@@ -1802,4 +1207,4 @@ if __name__ == "__main__":
     try:
         main()
     finally:
-        _close_poll_client()
+        state.close_poll_client()
