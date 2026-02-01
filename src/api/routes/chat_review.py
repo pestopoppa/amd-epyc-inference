@@ -7,6 +7,7 @@ architect verdict, fast revision, and plan review pipeline.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from src.config import get_config as _get_config
@@ -14,6 +15,8 @@ from src.prompt_builders import (
     build_review_verdict_prompt,
     build_revision_prompt,
 )
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.api.state import AppState
@@ -107,7 +110,8 @@ def _should_review(state: "AppState", task_id: str, role: str, answer: str) -> b
             return False
         avg_q = sum(r.q_value for r in role_results) / len(role_results)
         return avg_q < _get_config().chat.review_low_q_threshold
-    except Exception:
+    except Exception as exc:
+        log.debug("Q-value review gate check failed: %s", exc)
         return False
 
 
@@ -148,7 +152,8 @@ def _architect_verdict(
         if text.upper().startswith("OK"):
             return None
         return text  # "WRONG: <corrections>"
-    except Exception:
+    except Exception as exc:
+        log.debug("Architect verdict call failed: %s", exc)
         return None  # On error, don't block — return original answer
 
 
@@ -180,7 +185,8 @@ def _fast_revise(
             n_tokens=2000,
         )
         return result.strip() or original_answer
-    except Exception:
+    except Exception as exc:
+        log.debug("Fast revision failed: %s", exc)
         return original_answer  # Fallback to original on error
 
 
@@ -252,8 +258,8 @@ def _needs_plan_review(
                 avg_q = sum(r.q_value for r in results) / len(results)
                 if avg_q >= _chat_cfg.review_skip_q_threshold:
                     return False
-        except Exception:
-            pass  # On error, allow review
+        except Exception as exc:
+            log.debug("Plan review Q-value gating failed: %s", exc)
 
     return True
 
@@ -279,10 +285,7 @@ def _architect_plan_review(
     Returns:
         PlanReviewResult or None on failure.
     """
-    import logging
     from src.proactive_delegation import ArchitectReviewService
-
-    log = logging.getLogger(__name__)
 
     objective = task_ir.get("objective", "")
     task_type = task_ir.get("task_type", "chat")
@@ -428,8 +431,8 @@ def _store_plan_review_episode(
                     "source": "plan_review",
                 },
             )
-        except Exception:
-            pass  # MemRL storage is non-critical
+        except Exception as exc:
+            log.debug("MemRL plan review score storage failed: %s", exc)
 
 
 def _compute_plan_review_phase(stats: dict) -> str:

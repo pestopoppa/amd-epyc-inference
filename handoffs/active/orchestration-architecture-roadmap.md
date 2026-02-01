@@ -80,6 +80,14 @@ cat orchestration/model_registry.yaml # Role configs
 - **Dead code**: Removed unused `role_enum` in routing.py, deprecation note on gradio_ui.py
 - 1425 tests passing
 
+### Observability & Remaining Hardening (2026-02-01)
+
+- **Sync→async fix**: `httpx.get()` → `httpx.AsyncClient()` in `chat_summarization.py:153` (was blocking event loop)
+- **Exception logging**: Added `log.debug()` to 17 bare `except: pass` blocks across 6 chat route files
+- **Thread-safe PromptCompressor**: Double-checked locking on `PromptCompressor.get_instance()` (7th singleton fixed)
+- **Module-level loggers**: Consolidated function-level logger creation to module top in 7 chat route files
+- 1425 tests passing
+
 ### Other Infrastructure
 
 - HTTP connection pooling (httpx, ~6x latency reduction)

@@ -7,6 +7,7 @@ output quality heuristics, format enforcement, and shared constants.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -17,6 +18,8 @@ from src.prompt_builders import (
     detect_format_constraints,
 )
 from src.roles import Role
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
@@ -259,9 +262,6 @@ def _formalize_output(
     Returns:
         Reformatted answer, or original if formalization fails.
     """
-    import logging
-    log = logging.getLogger(__name__)
-
     formalizer_prompt = build_formalizer_prompt(answer, prompt, format_spec)
     try:
         result = primitives.llm_call(

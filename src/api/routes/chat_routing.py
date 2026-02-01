@@ -7,10 +7,13 @@ MemRL-informed mode selection, and proactive intent classification.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from src.features import features
 from src.roles import Role
+
+log = logging.getLogger(__name__)
 
 
 def _should_use_direct_mode(prompt: str, context: str = "") -> bool:
@@ -92,8 +95,8 @@ def _select_mode(
             _routing, _strategy, mode = state.hybrid_router.route_with_mode(task_ir)
             if mode in ("direct", "react", "repl"):
                 return mode
-        except Exception:
-            pass  # Fall through to heuristic
+        except Exception as exc:
+            log.debug("MemRL route_with_mode failed, using heuristic: %s", exc)
 
     # Heuristic fallback: react (if keywords match) → repl (default)
     # REPL is a superset of direct — model can FINAL("answer") immediately

@@ -16,11 +16,14 @@ Architecture:
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+_compressor_lock = threading.Lock()
 
 
 @dataclass
@@ -69,9 +72,11 @@ class PromptCompressor:
 
     @classmethod
     def get_instance(cls) -> "PromptCompressor":
-        """Get singleton instance (keeps model loaded)."""
+        """Get singleton instance (thread-safe, keeps model loaded)."""
         if cls._instance is None:
-            cls._instance = cls()
+            with _compressor_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
 
     def _ensure_model_loaded(self) -> None:

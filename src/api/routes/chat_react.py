@@ -7,10 +7,13 @@ Thought/Action/Observation loop with whitelisted read-only tools.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, TYPE_CHECKING
 
 from src.features import features
 from src.api.routes.chat_utils import QWEN_STOP
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
@@ -138,10 +141,8 @@ def _react_mode_answer(
     Returns:
         Tuple of (final_answer, tools_used_count, tools_called_names).
     """
-    import logging
     from src.prompt_builders import build_react_prompt, REACT_TOOL_WHITELIST
 
-    log = logging.getLogger(__name__)
     active_whitelist = tool_whitelist if tool_whitelist is not None else REACT_TOOL_WHITELIST
     tools_used = 0
     tools_called: list[str] = []

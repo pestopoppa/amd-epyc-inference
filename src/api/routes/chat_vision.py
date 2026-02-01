@@ -7,6 +7,7 @@ multi-file vision handling, and structured analysis.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from src.config import get_config as _get_config
@@ -15,6 +16,8 @@ from src.prompt_builders import (
     VISION_TOOL_DESCRIPTIONS,
 )
 from src.api.routes.chat_utils import QWEN_STOP
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.api.models import ChatRequest
@@ -101,9 +104,6 @@ async def _handle_vision_request(
     """
     import httpx
     import base64
-    import logging
-
-    logger = logging.getLogger(__name__)
 
     # Get image as base64
     image_b64 = request.image_base64
@@ -189,8 +189,8 @@ async def _handle_vision_request(
             mime_type = "image/png"
         elif raw[:4] == b'RIFF':
             mime_type = "image/webp"
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("MIME type detection from b64 header failed: %s", exc)
 
     # Build multimodal chat completion payload for llama-server
     vl_payload = {
@@ -310,9 +310,6 @@ async def _execute_vision_tool(
         Observation string from tool execution.
     """
     import re as _re
-    import logging
-
-    log = logging.getLogger(__name__)
 
     tool_match = _re.match(r"(\w+)\((.*)\)$", action_str, _re.DOTALL)
     if not tool_match:
@@ -340,7 +337,7 @@ async def _execute_vision_tool(
                 return "[OCR returned empty text]"
             return f"[OCR error: HTTP {resp.status_code}]"
         except Exception as e:
-            log.warning(f"OCR tool execution failed: {e}")
+            logger.warning(f"OCR tool execution failed: {e}")
             return f"[OCR error: {type(e).__name__}: {e}]"
 
     elif tool_name == "calculate":
@@ -400,9 +397,7 @@ async def _vision_react_mode_answer(
         Tuple of (final_answer, tools_used_count).
     """
     import httpx
-    import logging
 
-    log = logging.getLogger(__name__)
     tools_used = 0
     tools_called: list[str] = []
 
@@ -475,22 +470,22 @@ Important rules:
                 )
 
             if resp.status_code != 200:
-                log.warning(f"Vision ReAct turn {turn}: HTTP {resp.status_code}")
+                logger.warning(f"Vision ReAct turn {turn}: HTTP {resp.status_code}")
                 break
 
             data = resp.json()
             choices = data.get("choices", [])
             if not choices:
-                log.warning(f"Vision ReAct turn {turn}: no choices in response")
+                logger.warning(f"Vision ReAct turn {turn}: no choices in response")
                 break
 
             response_text = choices[0].get("message", {}).get("content", "").strip()
             if not response_text:
-                log.warning(f"Vision ReAct turn {turn}: empty content")
+                logger.warning(f"Vision ReAct turn {turn}: empty content")
                 break
 
         except Exception as e:
-            log.warning(f"Vision ReAct turn {turn} failed: {e}")
+            logger.warning(f"Vision ReAct turn {turn} failed: {e}")
             break
 
         # Append assistant response
@@ -500,7 +495,7 @@ Important rules:
         if "Final Answer:" in response_text:
             idx = response_text.index("Final Answer:")
             answer = response_text[idx + len("Final Answer:"):].strip()
-            log.info(f"Vision ReAct completed in {turn + 1} turns, {tools_used} tools")
+            logger.info(f"Vision ReAct completed in {turn + 1} turns, {tools_used} tools")
             return answer, tools_used, tools_called
 
         # Parse Action line
@@ -513,7 +508,7 @@ Important rules:
 
         if not action_match:
             # No action and no final answer — treat response as answer
-            log.info(f"Vision ReAct turn {turn}: no Action, treating as answer")
+            logger.info(f"Vision ReAct turn {turn}: no Action, treating as answer")
             # Strip Thought: prefix
             lines = response_text.split("\n")
             answer_lines = []
@@ -531,7 +526,7 @@ Important rules:
         tools_used += 1
         tools_called.append(_vt_name)
         observation = await _execute_vision_tool(action_match, image_b64)
-        log.info(f"Vision ReAct turn {turn}: {action_match[:50]} → {len(observation)} chars")
+        logger.info(f"Vision ReAct turn {turn}: {action_match[:50]} → {len(observation)} chars")
 
         # Append observation as user message (text-only — no image re-send)
         messages.append({
@@ -540,7 +535,7 @@ Important rules:
         })
 
     # Max turns exhausted — synthesize from conversation
-    log.warning(f"Vision ReAct exhausted {max_turns} turns")
+    logger.warning(f"Vision ReAct exhausted {max_turns} turns")
     # Ask for final answer
     messages.append({
         "role": "user",
@@ -568,7 +563,7 @@ Important rules:
                     return content[idx + len("Final Answer:"):].strip(), tools_used, tools_called
                 return content, tools_used, tools_called
     except Exception as e:
-        log.warning(f"Vision ReAct final synthesis failed: {e}")
+        logger.warning(f"Vision ReAct final synthesis failed: {e}")
 
     return "[Vision ReAct: no answer produced]", tools_used, tools_called
 
@@ -599,11 +594,9 @@ async def _handle_multi_file_vision(
     Returns:
         Synthesized answer from all files.
     """
-    import logging
     from pathlib import Path
     from src.api.routes.chat_summarization import _run_two_stage_summarization
 
-    logger = logging.getLogger(__name__)
     files = request.files or []
 
     if not files:

@@ -7,14 +7,19 @@ context processing pipeline with worker digest → frontdoor synthesis.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING
+
+import httpx
 
 from src.api.routes.chat_utils import (
     _estimate_tokens,
     TWO_STAGE_CONFIG,
     LONG_CONTEXT_CONFIG,
 )
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.api.state import AppState
@@ -146,26 +151,28 @@ async def _run_two_stage_summarization(
     # Dispatch to workers in parallel via llm_batch
     # Prefer worker_fast (1.5B, ports 8102/8112) for speed, but these are
     # WARM tier and may not be running. Fall back to worker_explore (7B, 8082).
-    import httpx
-
     worker_role = "worker_fast"
     try:
-        resp = httpx.get("http://localhost:8102/health", timeout=2)
+        async with httpx.AsyncClient(timeout=2) as client:
+            resp = await client.get("http://localhost:8102/health")
         if resp.status_code != 200:
             worker_role = "worker_explore"
-    except Exception:
+    except Exception as exc:
+        log.debug("worker_fast health check failed, using worker_explore: %s", exc)
         worker_role = "worker_explore"
 
     try:
         digests = primitives.llm_batch(worker_prompts, role=worker_role, n_tokens=500)
-    except Exception:
+    except Exception as exc:
+        log.warning("llm_batch failed for role=%s, falling back to sequential: %s", worker_role, exc)
         # Fallback: sequential calls with worker_explore (always HOT)
         digests = []
         for wp in worker_prompts:
             try:
                 d = primitives.llm_call(wp, role="worker_explore", n_tokens=500)
                 digests.append(d)
-            except Exception:
+            except Exception as inner_exc:
+                log.debug("Worker sequential call failed: %s", inner_exc)
                 digests.append("[Worker failed to process this section]")
 
     stage1_time = time.perf_counter() - stage1_start

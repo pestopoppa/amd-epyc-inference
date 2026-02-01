@@ -9,11 +9,14 @@ investigation briefs and specialists execute via ReAct or REPL.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any, TYPE_CHECKING
 
 from src.api.routes.chat_react import _react_mode_answer
 from src.repl_environment import REPLEnvironment
+
+log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
@@ -158,13 +161,11 @@ def _architect_delegated_answer(
     Returns:
         Tuple of (answer_text, stats_dict).
     """
-    import logging
     from src.prompt_builders import (
         build_architect_investigate_prompt,
         build_architect_synthesis_prompt,
     )
 
-    log = logging.getLogger(__name__)
     total_tools = 0
     all_tools_called: list[str] = []
     stats: dict = {
@@ -182,8 +183,8 @@ def _architect_delegated_answer(
             from src.services.toon_encoder import encode, is_available
             if is_available() and len(context) > 100:
                 toon_context = encode({"ctx": context[:3000]})
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("TOON encoding failed, using raw context: %s", exc)
 
     tool_registry = getattr(state, "tool_registry", None)
     reports: list[str] = []
@@ -340,7 +341,8 @@ def _architect_delegated_answer(
                 skip_suffix=True,
             )
             return answer.strip(), stats
-        except Exception:
+        except Exception as exc:
+            log.debug("Forced synthesis failed, returning last report: %s", exc)
             # Last resort: return the latest specialist report
             return reports[-1] if reports else "[ERROR: Delegation exhausted]", stats
     else:

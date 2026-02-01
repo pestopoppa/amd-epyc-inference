@@ -146,8 +146,8 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
                 )
                 routing_decision = [str(Role.FRONTDOOR)]
                 routing_strategy = "failure_vetoed"
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Failure risk veto check failed: %s", exc)
 
     # Log task start (MemRL integration)
     if state.progress_logger:
@@ -571,8 +571,8 @@ def _execute_react(
                 if escalated.strip():
                     answer = escalated.strip()
                     initial_role = Role.CODER_ESCALATION
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("ReAct coder escalation failed: %s", exc)
 
     elapsed = time.perf_counter() - start_time
     state.increment_request(mock_mode=False, turns=1)
@@ -687,8 +687,8 @@ def _execute_direct(
                 if escalated_answer.strip():
                     answer = escalated_answer.strip()
                     initial_role = Role.CODER_ESCALATION
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Direct mode coder escalation failed: %s", exc)
 
     # MemRL-informed quality review gate
     if answer and not answer.startswith("[ERROR") and _should_review(
@@ -972,8 +972,8 @@ async def _execute_repl(
                             description=f"{role_history[-1]} failed: {abort_reason[:200]}",
                             severity=3,
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug("failure_graph.record_failure (abort) failed: %s", exc)
                 current_role = str(decision.target_role)
                 role_history.append(current_role)
                 escalation_prompt = build_escalation_prompt(
@@ -1135,8 +1135,8 @@ async def _execute_repl(
                             description=f"{current_role} failed: {last_error[:200]}",
                             severity=min(consecutive_failures + 2, 5),
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.debug("failure_graph.record_failure (error) failed: %s", exc)
                 current_role = str(decision.target_role)
                 role_history.append(current_role)
                 consecutive_failures = 0
