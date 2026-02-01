@@ -8,6 +8,7 @@ Replaces in-memory session store with SQLiteSessionStore for:
 """
 
 import logging
+import threading
 import uuid
 from datetime import datetime
 from typing import Any
@@ -32,17 +33,20 @@ router = APIRouter()
 
 # Persistent session store (initialized lazily)
 _session_store: SQLiteSessionStore | None = None
+_session_store_lock = threading.Lock()
 
 # In-memory pending permissions (not persisted - short-lived)
 _pending_permissions: dict[str, dict] = {}
 
 
 def get_session_store() -> SQLiteSessionStore:
-    """Get or initialize the session store."""
+    """Get or initialize the session store (thread-safe)."""
     global _session_store
     if _session_store is None:
-        _session_store = SQLiteSessionStore()
-        logger.info("Initialized SQLiteSessionStore")
+        with _session_store_lock:
+            if _session_store is None:
+                _session_store = SQLiteSessionStore()
+                logger.info("Initialized SQLiteSessionStore")
     return _session_store
 
 

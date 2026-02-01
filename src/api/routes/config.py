@@ -1,6 +1,6 @@
 """Runtime configuration endpoint for hot-reloading feature flags."""
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from src.features import features, set_features, Features
 
@@ -11,12 +11,19 @@ router = APIRouter()
 async def update_config(request: Request):
     """Update feature flags at runtime without restarting the API.
 
-    Accepts a JSON body with feature flag names as keys and booleans as values.
-    Only known feature flags are applied; unknown keys are ignored.
+    Restricted to localhost only to prevent unauthorized remote configuration
+    changes. Accepts a JSON body with feature flag names as keys and booleans
+    as values. Only known feature flags are applied; unknown keys are ignored.
 
     Returns:
         Updated feature flag summary.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    if client_ip not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(
+            status_code=403,
+            detail="Config changes only allowed from localhost",
+        )
     body = await request.json()
     current = features()
     current_summary = current.summary()

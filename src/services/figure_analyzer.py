@@ -17,6 +17,7 @@ import asyncio
 import base64
 import io
 import logging
+import threading
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -314,13 +315,16 @@ class FigureAnalyzer:
 
 # Singleton instance
 _analyzer: FigureAnalyzer | None = None
+_analyzer_lock = threading.Lock()
 
 
 def get_figure_analyzer() -> FigureAnalyzer:
-    """Get the singleton figure analyzer instance."""
+    """Get the singleton figure analyzer instance (thread-safe)."""
     global _analyzer
     if _analyzer is None:
-        _analyzer = FigureAnalyzer()
+        with _analyzer_lock:
+            if _analyzer is None:
+                _analyzer = FigureAnalyzer()
     return _analyzer
 
 

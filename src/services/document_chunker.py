@@ -8,6 +8,7 @@ context management and section-level access.
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -287,13 +288,16 @@ class DocumentChunker:
 
 # Singleton instance
 _chunker: DocumentChunker | None = None
+_chunker_lock = threading.Lock()
 
 
 def get_document_chunker() -> DocumentChunker:
-    """Get the singleton document chunker instance."""
+    """Get the singleton document chunker instance (thread-safe)."""
     global _chunker
     if _chunker is None:
-        _chunker = DocumentChunker()
+        with _chunker_lock:
+            if _chunker is None:
+                _chunker = DocumentChunker()
     return _chunker
 
 

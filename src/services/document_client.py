@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -324,13 +325,16 @@ class DocumentFormalizerClient:
 
 # Singleton instance
 _client: DocumentFormalizerClient | None = None
+_client_lock = threading.Lock()
 
 
 def get_document_client() -> DocumentFormalizerClient:
-    """Get the singleton document client instance."""
+    """Get the singleton document client instance (thread-safe)."""
     global _client
     if _client is None:
-        _client = DocumentFormalizerClient()
+        with _client_lock:
+            if _client is None:
+                _client = DocumentFormalizerClient()
     return _client
 
 

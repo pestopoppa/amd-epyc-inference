@@ -108,8 +108,8 @@ async def _handle_vision_request(
     # Get image as base64
     image_b64 = request.image_base64
     if not image_b64 and request.image_path:
-        from pathlib import Path
-        img_path = Path(request.image_path)
+        from src.api.routes.path_validation import validate_api_path
+        img_path = validate_api_path(request.image_path)
         if not img_path.exists():
             raise RuntimeError(f"Image not found: {request.image_path}")
         image_b64 = base64.b64encode(img_path.read_bytes()).decode("utf-8")
@@ -132,6 +132,11 @@ async def _handle_vision_request(
     except Exception as e:
         logger.warning(f"OCR pre-processing failed (continuing without): {e}")
         ocr_text = ""
+
+    # ── Base64 size guard (50MB max for images) ─────────────────────────
+    MAX_IMG_B64_SIZE = 50 * 1024 * 1024  # 50MB
+    if len(image_b64) > MAX_IMG_B64_SIZE:
+        raise RuntimeError(f"Image too large ({len(image_b64) // 1024 // 1024}MB, max 50MB)")
 
     # ── Structured analysis for document/diagram prompts ───────────────
     structured_context = ""

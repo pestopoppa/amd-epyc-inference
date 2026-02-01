@@ -175,9 +175,8 @@ class _RoutingMixin:
             JSON string with role metadata.
         """
         import json
-        from src.roles import Role, Tier, get_tier, get_escalation_chain
+        from src.roles import Tier, get_tier, get_escalation_chain
 
-        role_enum = Role.from_string(self.role)
         try:
             tier = get_tier(self.role)
             tier_val = tier.value

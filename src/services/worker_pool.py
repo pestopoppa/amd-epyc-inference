@@ -28,6 +28,7 @@ import asyncio
 import logging
 import os
 import signal
+import threading
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -723,13 +724,16 @@ class WorkerPoolManager:
 
 # Singleton instance for module-level access
 _pool_instance: Optional[WorkerPoolManager] = None
+_pool_lock = threading.Lock()
 
 
 def get_worker_pool() -> WorkerPoolManager:
-    """Get or create the global worker pool instance."""
+    """Get or create the global worker pool instance (thread-safe)."""
     global _pool_instance
     if _pool_instance is None:
-        _pool_instance = WorkerPoolManager()
+        with _pool_lock:
+            if _pool_instance is None:
+                _pool_instance = WorkerPoolManager()
     return _pool_instance
 
 

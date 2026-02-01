@@ -30,6 +30,7 @@ from src.services.document_client import (
     OCRServerUnavailable,
     get_document_client,
 )
+from src.api.routes.path_validation import validate_api_path
 from src.services.document_chunker import get_document_chunker
 
 logger = logging.getLogger(__name__)
@@ -148,12 +149,18 @@ async def process_document_endpoint(request: DocumentProcessRequest) -> Document
     file_path = None
 
     if request.file_path:
-        file_path = Path(request.file_path)
+        file_path = validate_api_path(request.file_path)
         if not file_path.exists():
             raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
     elif request.file_base64:
         # Decode base64 to temp file
+        MAX_B64_SIZE = 100 * 1024 * 1024  # 100MB
+        if len(request.file_base64) > MAX_B64_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail="Base64 payload too large (max 100MB)",
+            )
         try:
             temp_file = tempfile.NamedTemporaryFile(
                 suffix=".pdf",

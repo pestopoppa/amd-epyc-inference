@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-01 (N1/N2/N3 cleanup: repl_environment decomposition, shell=True removal, dead api.py deletion. 1419 tests pass.)
+**Last Updated**: 2026-02-01 (Security hardening: path traversal fix, base64 limits, config auth, 6 thread-safe singletons. 1425 tests pass.)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---

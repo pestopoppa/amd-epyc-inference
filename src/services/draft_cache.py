@@ -218,11 +218,14 @@ class DraftCache:
 
 # Global cache instance
 _draft_cache: DraftCache | None = None
+_draft_cache_lock = threading.Lock()
 
 
 def get_draft_cache() -> DraftCache:
-    """Get the global draft cache instance."""
+    """Get the global draft cache instance (thread-safe)."""
     global _draft_cache
     if _draft_cache is None:
-        _draft_cache = DraftCache()
+        with _draft_cache_lock:
+            if _draft_cache is None:
+                _draft_cache = DraftCache()
     return _draft_cache

@@ -71,6 +71,15 @@ cat orchestration/model_registry.yaml # Role configs
 - **N3**: Deleted dead `src/api.py` (1,852 lines) — shadowed by `src/api/__init__.py` package.
 - 1419 tests passing
 
+### Security & Thread Safety Hardening (2026-02-01)
+
+- **Path traversal fix**: `validate_api_path()` with `os.path.realpath()` + allowlist in `documents.py`, `chat_vision.py`
+- **Base64 size limits**: 100MB max for documents, 50MB max for images (HTTP 413)
+- **Config endpoint auth**: `POST /config` restricted to localhost only (HTTP 403)
+- **Thread-safe singletons**: Double-checked locking on 6 critical singletons (worker_pool, sessions, figure_analyzer, document_chunker, document_client, draft_cache)
+- **Dead code**: Removed unused `role_enum` in routing.py, deprecation note on gradio_ui.py
+- 1425 tests passing
+
 ### Other Infrastructure
 
 - HTTP connection pooling (httpx, ~6x latency reduction)
@@ -228,7 +237,8 @@ python3 orchestration/validate_ir.py task orchestration/last_task_ir.json
 | `src/prompt_builders/` | System prompts package (types, constants, builder, review, code_utils, formatting) |
 | `src/repl_environment/` | REPL sandbox package (types, security, file_tools, document_tools, routing, procedure_tools, context, state, environment) |
 | `src/features.py` | Feature flags (architect_delegation, etc.) |
-| `src/api/routes/config.py` | POST /config — runtime feature flag hot-reload |
+| `src/api/routes/config.py` | POST /config — runtime feature flag hot-reload (localhost-only) |
+| `src/api/routes/path_validation.py` | validate_api_path() — shared path traversal prevention |
 | `src/escalation.py` | Unified escalation policy |
 | `src/roles.py` | Role and Tier enums |
 | `orchestration/task_ir.schema.json` | TaskIR schema (parallel_group, depends_on) |

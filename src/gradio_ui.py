@@ -1,5 +1,11 @@
 """Gradio Web UI for Orchestrator.
 
+.. deprecated::
+    This module is not actively used. The OpenAI-compatible API
+    (``/v1/chat/completions``) with external clients (Aider, etc.)
+    is the preferred interaction method. Retained as an optional
+    entry point (``orchestrator-ui`` in pyproject.toml).
+
 Provides a web interface for interacting with the orchestrator:
 - Chat with streaming responses
 - Editable code artifacts
