@@ -335,7 +335,7 @@ The orchestration layer is implemented in:
 - `orchestration/task_ir.schema.json` - TaskIR validation
 - `orchestration/repl_memory/` - MemRL episodic memory (staged rewards, FAISS retrieval, Q-scoring)
 
-**Test Coverage**: 1517+ tests passing (0 failures)
+**Test Coverage**: 2015 tests passing (0 failures), 67.48% line coverage
 
 ## References
 

@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-01 (Architecture review #2 complete. All 7 WIs: eval() fix, URL consolidation, llm_primitives→package, file_tools→4 mixins, DI layer, test expansion. 1545 tests pass.)
+**Last Updated**: 2026-02-02 (Test coverage expansion: +314 tests across 18 new files. 2015 tests pass, 67.48% coverage.)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -22,7 +22,7 @@
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
 | **Orchestrator Quality Regression** | — | **HIGH** | `progress/2026-01/2026-01-29.md` | ✅ FIXES APPLIED (direct-answer mode, VL pipeline rewrite, port mapping fix). Re-run benchmark pending. |
 | **Orchestrator Quality Roadmap** | — | **HIGH** | `handoffs/active/orchestrator-quality-roadmap.md` | ✅ PHASES 1-3 + DEV TASKS + ALL OPTIMIZATIONS COMPLETE. 1517 tests pass. `POST /config` endpoint added. MemRL DB cleaned. **Live validation pending** (seeding + learning loop + regression gate). |
-| **Architecture Review (Final: A / 93/100)** | — | **HIGH** | `handoffs/active/orchestrator-architecture-review.md` | ✅ COMPLETE. All 7 WIs from review #2: eval() security fix, URL consolidation, llm_primitives→package (10 modules), file_tools→4 mixins, DI layer (9 deps), 48 new tests, worker_pool logging. C3 (DI) now resolved. 1545 tests pass. Ready for archival. |
+| **Architecture Review (Final: A / 93/100)** | — | **HIGH** | `handoffs/active/orchestrator-architecture-review.md` | ✅ COMPLETE. All review WIs done + 314 coverage tests (2026-02-02). 2015 tests, 67.48% coverage. Ready for archival. |
 | **Orchestration Architecture Roadmap** | — | **MEDIUM** | `handoffs/active/orchestration-architecture-roadmap.md` | ✅ ALL 7 ITEMS COMPLETE (A-G). chat_pipeline.py→package decomposition done. 1517 tests. Ready for archival. |
 | **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |

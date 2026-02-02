@@ -1,7 +1,7 @@
 # Orchestrator Architecture Review & chat.py Decomposition
 
 **Date**: 2026-02-01
-**Status**: COMPLETE (Phases 1-3 + WI-9/10/11 + C/D/E roadmap + H1-H7 hardening + T1-T4 tests + final polish + Review #2: all 7 WIs done — eval() fix, URL consolidation, llm_primitives/file_tools decomposition, DI layer, 48 new tests. 1545 tests pass.)
+**Status**: COMPLETE (Phases 1-3 + WI-9/10/11 + C/D/E roadmap + H1-H7 hardening + T1-T4 tests + final polish + Review #2: all 7 WIs done — eval() fix, URL consolidation, llm_primitives/file_tools decomposition, DI layer, 48 new tests. +314 coverage tests (2026-02-02). 2015 tests pass, 67.48% coverage.)
 **Author**: Claude Opus 4.5 (architecture review session)
 
 ## Summary
@@ -126,7 +126,7 @@ All other modules: no cross-deps to new modules
 - **WI-10**: Parallel gate execution — `asyncio.to_thread()` + `asyncio.gather()` for concurrent subprocess gates, `parallel_gates` feature flag
 - **WI-11**: prompt_builders.py decomposition — 1,501-line monolith → 6-module package (resolves S2)
 
-**Test count**: 1517+ passed, 0 failures
+**Test count**: 2015 passed, 0 failures (67.48% coverage)
 
 ## Final Review (2026-02-01) — Grade: A- (89/100)
 
@@ -138,6 +138,11 @@ All other modules: no cross-deps to new modules
 - **Vision timeout centralization**: 6 hardcoded values → `config.py:TimeoutsConfig`
 - **chat_pipeline.py decomposition**: 1,439-line monolith → `chat_pipeline/` package (4 modules: routing.py 228L, stages.py 704L, repl_executor.py 532L, __init__.py 64L)
 - **repl_environment naming**: Removed `_RestrictedREPLEnvironment` from `__all__` (internal class)
+
+### Coverage expansion (2026-02-02):
+- **+314 tests** across 18 new files (cost tracking, escalation, executor, inference mixin, LlamaServer, MemRL service, model server, parsing config, LLM primitives, REPL state, roles, session models, session protocol, SQLite store, SSE utils, tools base, worker pool)
+- **Bugs fixed**: memrl patch target (local import binding), ThreadPoolExecutor ordering (lifespan shutdown leak)
+- **Result**: 2015 tests, 67.48% coverage
 
 ### Remaining (low priority):
 - **C3**: AppState service locator → FastAPI `Depends()` DI (18 files, high effort)
