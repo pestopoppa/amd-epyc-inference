@@ -276,19 +276,44 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Reconstruction:** Write 40 synthetic passages embedding specific "needle" facts (names, dates, model numbers, measurements). Each passage should contain plausible distractor information. The needle should not be in the first or last sentence. Use `substring` scoring for names/phrases, `exact_match` with numeric extraction for numbers.
 
+### Mode Advantage (90 questions) — February 2026
+
+| Source | ID Prefix | Tier | Count | Scoring |
+|--------|-----------|------|-------|---------|
+| Computation-gated | `ma_comp_*` | 2-3 | 15 | exact_match |
+| Iterative-fix | `ma_iter_*` | 2-3 | 15 | code_execution / exact_match |
+| Multi-step composition | `ma_multi_*` | 2-3 | 15 | exact_match |
+| Escalation-gated | `ma_esc_*` | 3 | 15 | code_execution |
+| Mini-SWE | `ma_swe_*` | 2-3 | 30 | code_execution |
+
+**Purpose**: Produce strong comparative rewards for MemRL routing. Unlike other suites where direct inference often suffices, these tasks structurally require specific execution modes (react/repl/delegation).
+
+**Tier 2 (45):** Computation that models hallucinate (modular arithmetic, statistics, string encoding), iterative debugging (bug fix with test suite, regex construction), and multi-step chained calculations.
+
+**Tier 3 (45):** Expert algorithms (A*, trie, Union-Find, KMP, Bloom filter, Aho-Corasick), mini-SWE tasks (broken class + failing tests + known fix), and complex constraint satisfaction.
+
+**Scoring breakdown**: 31 exact_match, 57 code_execution, 2 substring. All expected answers verified by Python computation. SWE tasks use code_execution with inline test assertions.
+
+**Reconstruction:** Write tasks where the answer is structurally uncomputable by direct inference: large-number modular arithmetic, iterative code debugging, multi-step data processing, graduate-level algorithm implementation. Verify every expected answer by running the computation. Use `mode_advantage: true` tag on exemplars added to other suites.
+
+**Validation note:** Agent-generated mode-advantage questions had 17 answer errors across 76 tasks in the original batch. Always verify expected answers by computation, especially for: modular arithmetic (rounding), financial calculations (compound interest), combinatorial counting, and CSV data aggregation.
+
+**Exemplars in other suites**: 16 additional `mode_advantage: true` tagged questions across math (+4), coder (+4), agentic (+4), and long_context (+4).
+
 ## Current Pool Statistics
 
 | Suite | Count | T1 | T2 | T3 | Primary Scoring |
 |-------|-------|----|----|----|--------------------|
 | thinking | 40 | 13 | 14 | 13 | multiple_choice |
-| math | 40 | 12 | 13 | 15 | exact_match |
+| math | 44 | 12 | 13 | 19 | exact_match |
 | general | 42 | 10 | 17 | 15 | multiple_choice |
-| coder | 40 | 16 | 15 | 9 | code_execution |
+| coder | 44 | 16 | 15 | 13 | code_execution |
 | vl | 40 | 8 | 18 | 14 | exact_match |
-| agentic | 40 | 11 | 15 | 14 | substring |
+| agentic | 44 | 11 | 15 | 18 | substring |
 | instruction_precision | 43 | 13 | 17 | 13 | programmatic |
-| long_context | 40 | 8 | 14 | 18 | substring / exact_match |
-| **TOTAL** | **325** | 91 | 123 | 111 | — |
+| long_context | 44 | 8 | 14 | 22 | substring / exact_match |
+| mode_advantage | 90 | 0 | 45 | 45 | code_execution / exact_match |
+| **TOTAL** | **431** | 91 | 168 | 172 | — |
 
 ## Reconstruction Procedure
 
@@ -302,7 +327,7 @@ To rebuild the full question pool from scratch:
 2. **Create suite stubs:**
    ```bash
    mkdir -p benchmarks/prompts/debug
-   for suite in thinking math general coder vl agentic instruction_precision long_context; do
+   for suite in thinking math general coder vl agentic instruction_precision long_context mode_advantage; do
      cat > benchmarks/prompts/debug/${suite}.yaml << EOF
    suite: ${suite}
    version: "1.0"
@@ -328,7 +353,8 @@ To rebuild the full question pool from scratch:
    ```python
    import yaml
    for suite in ['thinking', 'math', 'general', 'coder', 'vl',
-                  'agentic', 'instruction_precision', 'long_context']:
+                  'agentic', 'instruction_precision', 'long_context',
+                  'mode_advantage']:
        with open(f'benchmarks/prompts/debug/{suite}.yaml') as f:
            data = yaml.safe_load(f)
        ids = [q['id'] for q in data['questions']]

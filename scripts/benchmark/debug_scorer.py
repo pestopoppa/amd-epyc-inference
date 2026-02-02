@@ -48,6 +48,11 @@ def score_answer(
     if not answer or not answer.strip():
         return False
 
+    # Strip <think>...</think> blocks before scoring (architect models produce these)
+    answer = re.sub(r'<think>.*?</think>', '', answer, flags=re.DOTALL).strip()
+    if not answer:
+        return False
+
     config = scoring_config or {}
 
     scorers = {
@@ -202,42 +207,80 @@ def _score_programmatic(
 
     Config:
         verifier: Name of verifier to run. Options:
-            - word_count_min: answer has >= N words
-            - word_count_max: answer has <= N words
-            - word_count_range: answer has N-M words
-            - contains_keyword: answer contains keyword
-            - no_keyword: answer does NOT contain keyword
-            - starts_with: answer starts with given text
-            - ends_with: answer ends with given text
-            - json_valid: answer contains valid JSON
-            - all_uppercase: answer is all uppercase
-            - all_lowercase: answer is all lowercase
-            - bullet_list: answer uses bullet points
-            - numbered_list: answer uses numbered list
-            - paragraph_count: answer has exactly N paragraphs
-            - sentence_count_min: answer has >= N sentences
-            - comma_separated: answer is comma-separated values
-            - title_case: first word of each sentence is capitalized
+
+            YAML prompt verifiers:
+            - word_count_min/max/range: word count checks (threshold, min_val, max_val)
+            - contains_keyword / no_keyword: keyword presence (keyword)
+            - starts_with / ends_with: text prefix/suffix (text)
+            - json_valid / all_uppercase / all_lowercase: format checks
+            - bullet_list / numbered_list: list format checks
+            - paragraph_count / sentence_count_min: structure checks (threshold)
+            - comma_separated / title_case: format checks
+
+            IFEval adapter verifiers (from dataset_adapters.py):
+            - no_comma: answer contains no commas
+            - has_title: first line is short + title-cased
+            - placeholder_count: count of [placeholder] patterns (count)
+            - bullet_count: minimum bullet points (count)
+            - contains_keywords: all keywords present (keywords list)
+            - no_forbidden_words: none of forbidden words present (forbidden list)
+            - language: language check (always passes — no langdetect)
+            - non_empty: answer is non-empty
+            - highlighted_sections: contains **bold** or ## headings
+            - word_count: word count with relation (count, relation)
+            - sentence_count: sentence count with relation (count, relation)
+
         threshold: Numeric threshold for count-based verifiers.
+        count: Alias for threshold (used by IFEval adapter).
+        relation: "at_least" | "at_most" | "exactly" (IFEval word/sentence count).
         keyword: Keyword for contains/no_keyword verifiers.
+        keywords: Keyword list for contains_keywords verifier.
+        forbidden: Forbidden word list for no_forbidden_words verifier.
         text: Text for starts_with/ends_with verifiers.
         min_val / max_val: Range for range-based verifiers.
     """
     verifier = config.get("verifier", "")
     threshold = config.get("threshold", 0)
     keyword = config.get("keyword", "")
+    keywords = config.get("keywords", [])
+    forbidden = config.get("forbidden", [])
     text = config.get("text", "")
     min_val = config.get("min_val", 0)
     max_val = config.get("max_val", 0)
+    # IFEval adapter uses "count" and "relation" instead of threshold/min_val/max_val
+    count = config.get("count", threshold)
+    relation = config.get("relation", "at_least")
 
     answer_stripped = answer.strip()
     words = answer_stripped.split()
-    word_count = len(words)
+    wc = len(words)
+    lines = answer_stripped.split("\n")
+
+    def _word_count_by_relation() -> bool:
+        """Handle word_count/sentence_count with 'relation' from IFEval adapter."""
+        if relation == "at_least":
+            return wc >= count
+        elif relation == "at_most":
+            return wc <= count
+        elif relation == "exactly":
+            return wc == count
+        return wc >= count  # default: at_least
+
+    def _sentence_count_by_relation() -> bool:
+        sc = len(re.findall(r"[.!?]+", answer_stripped))
+        if relation == "at_least":
+            return sc >= count
+        elif relation == "at_most":
+            return sc <= count
+        elif relation == "exactly":
+            return sc == count
+        return sc >= count
 
     verifiers = {
-        "word_count_min": lambda: word_count >= threshold,
-        "word_count_max": lambda: word_count <= threshold,
-        "word_count_range": lambda: min_val <= word_count <= max_val,
+        # Original verifiers (YAML prompts use these names)
+        "word_count_min": lambda: wc >= (count or threshold),
+        "word_count_max": lambda: wc <= (count or threshold),
+        "word_count_range": lambda: min_val <= wc <= max_val,
         "contains_keyword": lambda: keyword.lower() in answer_stripped.lower(),
         "no_keyword": lambda: keyword.lower() not in answer_stripped.lower(),
         "starts_with": lambda: answer_stripped.lower().startswith(text.lower()),
@@ -247,17 +290,46 @@ def _score_programmatic(
         "all_lowercase": lambda: answer_stripped == answer_stripped.lower(),
         "bullet_list": lambda: any(
             line.strip().startswith(("- ", "* ", "• "))
-            for line in answer_stripped.split("\n") if line.strip()
+            for line in lines if line.strip()
         ),
         "numbered_list": lambda: any(
             re.match(r"^\d+[\.\)]\s", line.strip())
-            for line in answer_stripped.split("\n") if line.strip()
+            for line in lines if line.strip()
         ),
         "paragraph_count": lambda: len([
             p for p in re.split(r"\n\s*\n", answer_stripped) if p.strip()
-        ]) == threshold,
-        "sentence_count_min": lambda: len(re.findall(r"[.!?]+", answer_stripped)) >= threshold,
-        "comma_separated": lambda: "," in answer_stripped and not "\n" in answer_stripped.strip(),
+        ]) == (count or threshold),
+        "sentence_count_min": lambda: len(re.findall(r"[.!?]+", answer_stripped)) >= (count or threshold),
+        "comma_separated": lambda: "," in answer_stripped and "\n" not in answer_stripped.strip(),
+        # IFEval adapter verifiers (dataset_adapters.py emits these names)
+        "no_comma": lambda: "," not in answer_stripped,
+        "has_title": lambda: bool(
+            lines[0].strip() and len(lines[0].strip().split()) <= 10
+            and lines[0].strip().istitle()
+        ) if lines else False,
+        "placeholder_count": lambda: len(re.findall(r'\[.*?\]', answer_stripped)) >= (count or 1),
+        "bullet_count": lambda: sum(
+            1 for line in lines
+            if line.strip().startswith(("- ", "* ", "• "))
+        ) >= (count or 1),
+        "contains_keywords": lambda: all(
+            kw.lower() in answer_stripped.lower() for kw in keywords
+        ) if keywords else True,
+        "no_forbidden_words": lambda: not any(
+            fw.lower() in answer_stripped.lower() for fw in forbidden
+        ) if forbidden else True,
+        "language": lambda: True,  # Cannot verify without langdetect; pass through
+        "non_empty": lambda: len(answer_stripped) > 0,
+        "highlighted_sections": lambda: bool(
+            re.search(r'\*\*[^*]+\*\*', answer_stripped)
+            or re.search(r'^##\s+', answer_stripped, re.MULTILINE)
+        ),
+        # IFEval relation-based verifiers (word_count with at_least/at_most/exactly)
+        "word_count": _word_count_by_relation,
+        "sentence_count": _sentence_count_by_relation,
+        "title_case": lambda: all(
+            w[0].isupper() for w in words if w and w[0].isalpha()
+        ) if words else False,
     }
 
     fn = verifiers.get(verifier)

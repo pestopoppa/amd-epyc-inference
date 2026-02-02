@@ -214,6 +214,17 @@ With cost-aware rewards, MemRL will learn:
 3. **Under contention**: penalize overloaded specialists (cost_ratio > 1.0), route to available ones
 4. **Mode preferences**: ReAct with tools might be slower but more reliable — cost penalty balances this
 
+## Mode-Advantage Task Enrichment (February 2026)
+
+The cost-aware reward system is most effective when combined with tasks that produce strong comparative signal. The mode-advantage suite (90 tasks, see [Chapter 24](24-benchmark-suite-construction.md)) was specifically designed for this:
+
+- **Computation-gated tasks** (15): Models hallucinate on modular arithmetic, but react mode with Python gets the correct answer. Cost penalty doesn't apply — react wins on correctness (+1.0).
+- **Iterative-fix tasks** (15 + 30 SWE): REPL mode runs tests iteratively; direct mode patches blind. When both fail, cost penalty differentiates (-0.3 vs -0.3 - cost).
+- **Multi-step tasks** (15): Chained calculations where cost penalty matters — delegation is slower but more reliable.
+- **Escalation-gated tasks** (15): Specialist wins on correctness (+1.0); cost penalty is irrelevant because frontdoor fails entirely (0.0).
+
+Three HuggingFace dataset adapters (GAIA, CRUXEval, BigCodeBench) provide additional volume where tool-use modes structurally outperform direct inference.
+
 ## Future Work
 
 1. **Dynamic lambda by task priority**: interactive queries use higher lambda (latency-sensitive); batch uses lower lambda (quality-sensitive).

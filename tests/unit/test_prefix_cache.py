@@ -455,21 +455,25 @@ class TestTokenizedRadixCache:
 class TestCachingBackend:
     """Tests for CachingBackend class."""
 
-    def test_routes_to_slot(self):
-        """Should route prompts through PrefixRouter."""
-        mock_backend = MagicMock()
-        mock_backend.infer.return_value = MagicMock(
+    @pytest.fixture
+    def mock_backend(self):
+        """Create a mock backend for testing CachingBackend."""
+        backend = MagicMock()
+        backend.infer.return_value = MagicMock(
             role="test",
             output="response",
             tokens_generated=10,
         )
-        mock_backend.get_cache_stats.return_value = MagicMock(
+        backend.get_cache_stats.return_value = MagicMock(
             hit_rate=50.0,
             token_savings_rate=30.0,
             total_prompt_tokens=100,
             cached_prompt_tokens=30,
         )
+        return backend
 
+    def test_routes_to_slot(self, mock_backend):
+        """Should route prompts through PrefixRouter."""
         router = PrefixRouter(num_slots=4)
         caching = CachingBackend(mock_backend, router)
 
@@ -482,14 +486,8 @@ class TestCachingBackend:
         # Router should have tracked the request
         assert router.total_routes == 1
 
-    def test_canonicalizes_prompt(self):
+    def test_canonicalizes_prompt(self, mock_backend):
         """Should canonicalize prompts when enabled."""
-        mock_backend = MagicMock()
-        mock_backend.infer.return_value = MagicMock()
-        mock_backend.get_cache_stats.return_value = MagicMock(
-            hit_rate=0, token_savings_rate=0, total_prompt_tokens=0, cached_prompt_tokens=0
-        )
-
         caching = CachingBackend(mock_backend, canonicalize=True)
 
         request = InferenceRequest(role="test", prompt="Time: 2024-01-15T10:00:00Z")
@@ -503,9 +501,8 @@ class TestCachingBackend:
         call_args = mock_backend.infer.call_args
         assert call_args[0][1].prompt == "Time: 2024-01-15T10:00:00Z"
 
-    def test_get_hit_rate(self):
+    def test_get_hit_rate(self, mock_backend):
         """Should return correct hit rate."""
-        mock_backend = MagicMock()
         router = PrefixRouter(num_slots=4)
         caching = CachingBackend(mock_backend, router)
 
@@ -517,8 +514,9 @@ class TestCachingBackend:
 
     def test_get_stats(self):
         """Should combine router and backend stats."""
-        mock_backend = MagicMock()
-        mock_backend.get_cache_stats.return_value = MagicMock(
+        # Create a specialized mock backend with specific stats for this test
+        backend = MagicMock()
+        backend.get_cache_stats.return_value = MagicMock(
             hit_rate=75.0,
             token_savings_rate=50.0,
             total_prompt_tokens=1000,
@@ -528,7 +526,7 @@ class TestCachingBackend:
         router = PrefixRouter(num_slots=4)
         router.get_slot_for_prompt("test")
 
-        caching = CachingBackend(mock_backend, router)
+        caching = CachingBackend(backend, router)
         stats = caching.get_stats()
 
         assert stats["router_total_routes"] == 1
@@ -538,6 +536,21 @@ class TestCachingBackend:
 
 class TestCachingBackendPersistence:
     """Tests for CachingBackend hot prefix persistence (Phase E)."""
+
+    @pytest.fixture
+    def persistence_backend(self):
+        """Create a mock backend for persistence tests."""
+        backend = MagicMock()
+
+        # Make save_slot actually create the file
+        def mock_save_slot(slot_id, filename):
+            with open(filename, "wb") as f:
+                f.write(b"mock kv cache data")
+            return True
+
+        backend.save_slot.side_effect = mock_save_slot
+        backend.restore_slot.return_value = True
+        return backend
 
     def test_save_hot_prefixes_no_cache_dir(self):
         """Should return 0 when no cache_dir configured."""
@@ -555,21 +568,10 @@ class TestCachingBackendPersistence:
         restored = caching.restore_hot_prefixes()
         assert restored == 0
 
-    def test_save_and_restore_cycle(self, tmp_path):
+    def test_save_and_restore_cycle(self, tmp_path, persistence_backend):
         """Should save and restore hot prefixes."""
-        mock_backend = MagicMock()
-
-        # Make save_slot actually create the file
-        def mock_save_slot(slot_id, filename):
-            with open(filename, "wb") as f:
-                f.write(b"mock kv cache data")
-            return True
-
-        mock_backend.save_slot.side_effect = mock_save_slot
-        mock_backend.restore_slot.return_value = True
-
         router = PrefixRouter(num_slots=4)
-        caching = CachingBackend(mock_backend, router, cache_dir=str(tmp_path))
+        caching = CachingBackend(persistence_backend, router, cache_dir=str(tmp_path))
 
         # Generate some slot usage with actual hits (same prompt)
         router.get_slot_for_prompt("prefix1 content")  # Miss, allocates slot
@@ -580,7 +582,7 @@ class TestCachingBackendPersistence:
         saved = caching.save_hot_prefixes()
 
         # Restore in new backend
-        caching2 = CachingBackend(mock_backend, PrefixRouter(num_slots=4), cache_dir=str(tmp_path))
+        caching2 = CachingBackend(persistence_backend, PrefixRouter(num_slots=4), cache_dir=str(tmp_path))
         restored = caching2.restore_hot_prefixes()
 
         assert saved > 0

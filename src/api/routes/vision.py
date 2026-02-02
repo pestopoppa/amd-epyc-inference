@@ -7,7 +7,7 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 
 from src.vision.config import VISION_CACHE_DIR, ensure_directories
 from src.vision.models import (
@@ -28,12 +28,18 @@ from src.vision.models import (
     VideoAnalyzeResponse,
     JobStatus,
 )
-from src.vision.pipeline import get_pipeline
-from src.vision.batch import get_batch_processor
-from src.vision.search import get_search
-from src.vision.video import get_video_processor
+from src.vision.pipeline import VisionPipeline
+from src.vision.batch import BatchProcessor
+from src.vision.search import VisionSearch
+from src.vision.video import VideoProcessor
 from src.vision.clustering import cluster_unlabeled_faces
 from src.db.chroma_client import get_collection_stats
+from src.api.dependencies import (
+    dep_vision_pipeline,
+    dep_vision_batch_processor,
+    dep_vision_search,
+    dep_vision_video_processor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +47,10 @@ router = APIRouter(prefix="/vision", tags=["vision"])
 
 
 @router.post("/analyze", response_model=AnalyzeResult)
-async def analyze_image(request: AnalyzeRequest) -> AnalyzeResult:
+async def analyze_image(
+    request: AnalyzeRequest,
+    pipeline: VisionPipeline = Depends(dep_vision_pipeline),
+) -> AnalyzeResult:
     """Analyze a single image.
 
     Provide ONE of:
@@ -84,7 +93,6 @@ async def analyze_image(request: AnalyzeRequest) -> AnalyzeResult:
         )
 
     try:
-        pipeline = get_pipeline()
         if not pipeline.is_initialized:
             pipeline.initialize(request.analyzers)
 
@@ -105,7 +113,10 @@ async def analyze_image(request: AnalyzeRequest) -> AnalyzeResult:
 
 
 @router.post("/batch", response_model=BatchJobResponse)
-async def start_batch_job(request: BatchRequest) -> BatchJobResponse:
+async def start_batch_job(
+    request: BatchRequest,
+    processor: BatchProcessor = Depends(dep_vision_batch_processor),
+) -> BatchJobResponse:
     """Start a batch processing job.
 
     Provide either:
@@ -117,8 +128,6 @@ async def start_batch_job(request: BatchRequest) -> BatchJobResponse:
             status_code=400,
             detail="Provide input_directory or input_paths"
         )
-
-    processor = get_batch_processor()
 
     job = processor.create_job(
         input_directory=request.input_directory,
@@ -139,9 +148,11 @@ async def start_batch_job(request: BatchRequest) -> BatchJobResponse:
 
 
 @router.get("/batch/{job_id}", response_model=BatchStatusResponse)
-async def get_batch_status(job_id: str) -> BatchStatusResponse:
+async def get_batch_status(
+    job_id: str,
+    processor: BatchProcessor = Depends(dep_vision_batch_processor),
+) -> BatchStatusResponse:
     """Get batch job status."""
-    processor = get_batch_processor()
     status = processor.get_job_status(job_id)
 
     if not status:
@@ -151,10 +162,11 @@ async def get_batch_status(job_id: str) -> BatchStatusResponse:
 
 
 @router.delete("/batch/{job_id}")
-async def cancel_batch_job(job_id: str) -> dict:
+async def cancel_batch_job(
+    job_id: str,
+    processor: BatchProcessor = Depends(dep_vision_batch_processor),
+) -> dict:
     """Cancel a running batch job."""
-    processor = get_batch_processor()
-
     if processor.cancel_job(job_id):
         return {"status": "cancelled", "job_id": job_id}
     else:
@@ -162,7 +174,10 @@ async def cancel_batch_job(job_id: str) -> dict:
 
 
 @router.post("/search", response_model=SearchResponse)
-async def search_images(request: SearchRequest) -> SearchResponse:
+async def search_images(
+    request: SearchRequest,
+    search: VisionSearch = Depends(dep_vision_search),
+) -> SearchResponse:
     """Search indexed images.
 
     Search types:
@@ -170,8 +185,6 @@ async def search_images(request: SearchRequest) -> SearchResponse:
     - face: Find images with similar faces (query = face_id)
     - visual: Visual similarity via CLIP
     """
-    search = get_search()
-
     result = search.search(
         query=request.query,
         search_type=request.search_type,
@@ -183,9 +196,10 @@ async def search_images(request: SearchRequest) -> SearchResponse:
 
 
 @router.get("/faces", response_model=PersonListResponse)
-async def list_persons() -> PersonListResponse:
+async def list_persons(
+    search: VisionSearch = Depends(dep_vision_search),
+) -> PersonListResponse:
     """List all known persons."""
-    search = get_search()
     persons = search.list_persons()
 
     return PersonListResponse(
@@ -240,10 +254,12 @@ async def cluster_faces(request: FaceClusterRequest) -> ClusterResult:
 
 
 @router.put("/faces/{person_id}")
-async def update_person(person_id: str, request: PersonUpdateRequest) -> dict:
+async def update_person(
+    person_id: str,
+    request: PersonUpdateRequest,
+    search: VisionSearch = Depends(dep_vision_search),
+) -> dict:
     """Update person name or merge with another person."""
-    search = get_search()
-
     success = search.update_person(
         person_id=person_id,
         name=request.name,
@@ -257,13 +273,14 @@ async def update_person(person_id: str, request: PersonUpdateRequest) -> dict:
 
 
 @router.post("/video/analyze", response_model=VideoAnalyzeResponse)
-async def analyze_video(request: VideoAnalyzeRequest) -> VideoAnalyzeResponse:
+async def analyze_video(
+    request: VideoAnalyzeRequest,
+    processor: VideoProcessor = Depends(dep_vision_video_processor),
+) -> VideoAnalyzeResponse:
     """Analyze a video by extracting and processing frames."""
     video_path = Path(request.video_path)
     if not video_path.exists():
         raise HTTPException(status_code=404, detail=f"Video not found: {video_path}")
-
-    processor = get_video_processor()
 
     result = processor.analyze(
         video_path=video_path,

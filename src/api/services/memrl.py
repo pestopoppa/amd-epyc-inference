@@ -120,12 +120,29 @@ def _do_score(state: "AppState", task_id: str, mode: str | None = None) -> None:
         logger.warning(f"Q-scoring failed for task {task_id}: {e}", exc_info=True)
 
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 # Bounded thread pool for Q-scoring. Prevents unbounded thread accumulation
 # when embedder (port 8090) is slow or unresponsive. Threads that can't
 # acquire a slot are silently dropped (scoring is non-critical).
-_score_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="q-scorer")
+#
+# The pool is lazily created and can be recreated after shutdown, solving
+# the test-leaking bug where lifespan teardown permanently killed the pool.
+_score_pool: ThreadPoolExecutor | None = None
+_score_pool_lock = threading.Lock()
+
+
+def _get_score_pool() -> ThreadPoolExecutor:
+    """Get or create the Q-scorer thread pool (thread-safe, lazy)."""
+    global _score_pool
+    if _score_pool is None:
+        with _score_pool_lock:
+            if _score_pool is None:
+                _score_pool = ThreadPoolExecutor(
+                    max_workers=4, thread_name_prefix="q-scorer"
+                )
+    return _score_pool
 
 
 def score_completed_task(state: "AppState", task_id: str) -> None:
@@ -140,7 +157,7 @@ def score_completed_task(state: "AppState", task_id: str) -> None:
     """
     if not state.q_scorer or not state.q_scorer_enabled:
         return
-    _score_pool.submit(_do_score, state, task_id)
+    _get_score_pool().submit(_do_score, state, task_id)
 
 
 def score_completed_task_with_mode(
@@ -157,12 +174,20 @@ def score_completed_task_with_mode(
     """
     if not state.q_scorer or not state.q_scorer_enabled:
         return
-    _score_pool.submit(_do_score, state, task_id, mode)
+    _get_score_pool().submit(_do_score, state, task_id, mode)
 
 
 def shutdown_scoring() -> None:
-    """Shutdown the Q-scorer thread pool. Called during app lifespan shutdown."""
-    _score_pool.shutdown(wait=False)
+    """Shutdown the Q-scorer thread pool. Called during app lifespan shutdown.
+
+    The pool will be lazily recreated on the next submit call, making this
+    safe across multiple test lifespan cycles.
+    """
+    global _score_pool
+    with _score_pool_lock:
+        if _score_pool is not None:
+            _score_pool.shutdown(wait=False)
+            _score_pool = None
 
 
 def store_external_reward(

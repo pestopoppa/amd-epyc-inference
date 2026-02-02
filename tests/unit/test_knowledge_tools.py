@@ -7,7 +7,10 @@ All external API calls are mocked — no network access required.
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -21,32 +24,142 @@ from src.tools.knowledge import (
 )
 
 
+# Stub classes for external API responses
+@dataclass
+class ArxivAuthor:
+    """Stub arXiv author."""
+    name: str
+
+
+@dataclass
+class ArxivPaper:
+    """Stub arXiv paper result."""
+    title: str
+    authors: list[ArxivAuthor]
+    summary: str
+    entry_id: str
+    published: datetime
+    updated: datetime
+    pdf_url: str
+    categories: list[str]
+
+
+@dataclass
+class SemanticScholarAuthor:
+    """Stub Semantic Scholar author."""
+    name: str
+
+
+@dataclass
+class SemanticScholarPaper:
+    """Stub Semantic Scholar paper result."""
+    title: str
+    authors: list[SemanticScholarAuthor]
+    abstract: str | None
+    citationCount: int
+    year: int
+    externalIds: dict | None
+    url: str
+    venue: str
+    paperId: str
+
+
+class StubArxivSearch:
+    """Stub arXiv search object."""
+    def __init__(self, query: str, max_results: int, sort_by: Any):
+        self.query = query
+        self.max_results = max_results
+        self.sort_by = sort_by
+
+
+class StubArxivClient:
+    """Stub arXiv client."""
+    def __init__(self, results: list = None):
+        self._results = results or []
+
+    def results(self, search: StubArxivSearch):
+        """Return stub results."""
+        return self._results
+
+
+class StubSemanticScholar:
+    """Stub Semantic Scholar client."""
+    def __init__(self, results: list = None):
+        self._results = results or []
+
+    def search_paper(self, query: str, limit: int = 10, year: str | None = None,
+                     fields_of_study: list | None = None, fields: list | None = None):
+        """Return stub search results."""
+        return self._results
+
+
+class StubWikipediaPage:
+    """Stub Wikipedia page."""
+    def __init__(self, exists: bool = True, name: str = "", text_content: str = "",
+                 categories_list: list = None):
+        self.exists = exists
+        self.name = name
+        self._text_content = text_content
+        self._categories = categories_list or []
+
+    def text(self, section: int | None = None):
+        """Return page text."""
+        return self._text_content
+
+    def categories(self):
+        """Return page categories."""
+        return self._categories
+
+
+class StubWikipediaCategory:
+    """Stub Wikipedia category."""
+    def __init__(self, name: str):
+        self.name = name
+
+
+class StubWikipediaSite:
+    """Stub Wikipedia site."""
+    def __init__(self, search_results: list = None, pages_dict: dict = None):
+        self._search_results = search_results or []
+        self._pages_dict = pages_dict or {}
+
+    def search(self, query: str, namespace: int = 0, limit: int = 5):
+        """Return search results."""
+        return self._search_results
+
+    @property
+    def pages(self):
+        """Return pages dict."""
+        return self._pages_dict
+
+
 # ============ search_arxiv ============
 
 
 class TestSearchArxiv:
     def test_success(self):
         """Returns formatted results on success."""
-        mock_paper = MagicMock()
-        mock_paper.title = "Attention Is All You Need"
-        mock_paper.authors = [MagicMock(name="Vaswani")]
-        mock_paper.summary = "We propose a new architecture..."
-        mock_paper.entry_id = "http://arxiv.org/abs/1706.03762"
-        mock_paper.published = MagicMock()
-        mock_paper.published.isoformat.return_value = "2017-06-12T00:00:00"
-        mock_paper.updated = MagicMock()
-        mock_paper.updated.isoformat.return_value = "2017-06-12T00:00:00"
-        mock_paper.pdf_url = "http://arxiv.org/pdf/1706.03762"
-        mock_paper.categories = ["cs.CL"]
+        paper = ArxivPaper(
+            title="Attention Is All You Need",
+            authors=[ArxivAuthor(name="Vaswani")],
+            summary="We propose a new architecture...",
+            entry_id="http://arxiv.org/abs/1706.03762",
+            published=datetime(2017, 6, 12),
+            updated=datetime(2017, 6, 12),
+            pdf_url="http://arxiv.org/pdf/1706.03762",
+            categories=["cs.CL"],
+        )
 
-        mock_client = MagicMock()
-        mock_client.results.return_value = [mock_paper]
+        client = StubArxivClient(results=[paper])
 
-        mock_arxiv = MagicMock()
-        mock_arxiv.Client.return_value = mock_client
-        mock_arxiv.SortCriterion.Relevance = "relevance"
+        # Create stub arxiv module
+        stub_arxiv = type('module', (), {
+            'Client': lambda: client,
+            'Search': StubArxivSearch,
+            'SortCriterion': type('obj', (), {'Relevance': 'relevance'}),
+        })
 
-        with patch.dict(sys.modules, {"arxiv": mock_arxiv}):
+        with patch.dict(sys.modules, {"arxiv": stub_arxiv}):
             result = search_arxiv("transformer attention")
 
         assert result["success"] is True
@@ -58,14 +171,15 @@ class TestSearchArxiv:
 
     def test_empty_results(self):
         """Returns empty list when no papers match."""
-        mock_client = MagicMock()
-        mock_client.results.return_value = []
+        client = StubArxivClient(results=[])
 
-        mock_arxiv = MagicMock()
-        mock_arxiv.Client.return_value = mock_client
-        mock_arxiv.SortCriterion.Relevance = "relevance"
+        stub_arxiv = type('module', (), {
+            'Client': lambda: client,
+            'Search': StubArxivSearch,
+            'SortCriterion': type('obj', (), {'Relevance': 'relevance'}),
+        })
 
-        with patch.dict(sys.modules, {"arxiv": mock_arxiv}):
+        with patch.dict(sys.modules, {"arxiv": stub_arxiv}):
             result = search_arxiv("zzzznonexistentquery")
 
         assert result["success"] is True
@@ -74,11 +188,15 @@ class TestSearchArxiv:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
-        mock_arxiv = MagicMock()
-        mock_arxiv.Client.side_effect = ConnectionError("Network unreachable")
-        mock_arxiv.SortCriterion.Relevance = "relevance"
+        def failing_client():
+            raise ConnectionError("Network unreachable")
 
-        with patch.dict(sys.modules, {"arxiv": mock_arxiv}):
+        stub_arxiv = type('module', (), {
+            'Client': failing_client,
+            'SortCriterion': type('obj', (), {'Relevance': 'relevance'}),
+        })
+
+        with patch.dict(sys.modules, {"arxiv": stub_arxiv}):
             result = search_arxiv("test")
 
         assert result["success"] is False
@@ -91,24 +209,25 @@ class TestSearchArxiv:
 class TestSearchPapers:
     def test_success(self):
         """Returns formatted results on success."""
-        mock_paper = MagicMock()
-        mock_paper.title = "Speculative Decoding"
-        mock_paper.authors = [MagicMock(name="Leviathan")]
-        mock_paper.abstract = "We introduce speculative decoding..."
-        mock_paper.citationCount = 150
-        mock_paper.year = 2023
-        mock_paper.externalIds = {"DOI": "10.1234/test"}
-        mock_paper.url = "https://semanticscholar.org/paper/abc"
-        mock_paper.venue = "ICML"
-        mock_paper.paperId = "abc123"
+        paper = SemanticScholarPaper(
+            title="Speculative Decoding",
+            authors=[SemanticScholarAuthor(name="Leviathan")],
+            abstract="We introduce speculative decoding...",
+            citationCount=150,
+            year=2023,
+            externalIds={"DOI": "10.1234/test"},
+            url="https://semanticscholar.org/paper/abc",
+            venue="ICML",
+            paperId="abc123",
+        )
 
-        mock_ss = MagicMock()
-        mock_ss.search_paper.return_value = [mock_paper]
+        ss = StubSemanticScholar(results=[paper])
 
-        mock_ss_module = MagicMock()
-        mock_ss_module.SemanticScholar.return_value = mock_ss
+        stub_ss_module = type('module', (), {
+            'SemanticScholar': lambda: ss,
+        })
 
-        with patch.dict(sys.modules, {"semanticscholar": mock_ss_module}):
+        with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             result = search_papers("speculative decoding")
 
         assert result["success"] is True
@@ -119,39 +238,43 @@ class TestSearchPapers:
 
     def test_with_year_range(self):
         """Passes year_range to API."""
-        mock_ss = MagicMock()
-        mock_ss.search_paper.return_value = []
+        call_args = {}
 
-        mock_ss_module = MagicMock()
-        mock_ss_module.SemanticScholar.return_value = mock_ss
+        class TrackingSemanticScholar:
+            def search_paper(self, query, limit=10, year=None, fields_of_study=None, fields=None):
+                call_args["year"] = year
+                return []
 
-        with patch.dict(sys.modules, {"semanticscholar": mock_ss_module}):
+        stub_ss_module = type('module', (), {
+            'SemanticScholar': TrackingSemanticScholar,
+        })
+
+        with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             search_papers("test", year_range="2023-2025")
 
-        mock_ss.search_paper.assert_called_once()
-        _, kwargs = mock_ss.search_paper.call_args
-        assert kwargs.get("year") == "2023-2025"
+        assert call_args.get("year") == "2023-2025"
 
     def test_no_doi(self):
         """Handles papers without DOI."""
-        mock_paper = MagicMock()
-        mock_paper.title = "No DOI Paper"
-        mock_paper.authors = []
-        mock_paper.abstract = None
-        mock_paper.citationCount = 0
-        mock_paper.year = 2024
-        mock_paper.externalIds = None
-        mock_paper.url = ""
-        mock_paper.venue = ""
-        mock_paper.paperId = "xyz"
+        paper = SemanticScholarPaper(
+            title="No DOI Paper",
+            authors=[],
+            abstract=None,
+            citationCount=0,
+            year=2024,
+            externalIds=None,
+            url="",
+            venue="",
+            paperId="xyz",
+        )
 
-        mock_ss = MagicMock()
-        mock_ss.search_paper.return_value = [mock_paper]
+        ss = StubSemanticScholar(results=[paper])
 
-        mock_ss_module = MagicMock()
-        mock_ss_module.SemanticScholar.return_value = mock_ss
+        stub_ss_module = type('module', (), {
+            'SemanticScholar': lambda: ss,
+        })
 
-        with patch.dict(sys.modules, {"semanticscholar": mock_ss_module}):
+        with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             result = search_papers("test")
 
         assert result["success"] is True
@@ -159,10 +282,14 @@ class TestSearchPapers:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
-        mock_ss_module = MagicMock()
-        mock_ss_module.SemanticScholar.side_effect = ConnectionError("timeout")
+        def failing_init():
+            raise ConnectionError("timeout")
 
-        with patch.dict(sys.modules, {"semanticscholar": mock_ss_module}):
+        stub_ss_module = type('module', (), {
+            'SemanticScholar': failing_init,
+        })
+
+        with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             result = search_papers("test")
 
         assert result["success"] is False
@@ -175,20 +302,23 @@ class TestSearchPapers:
 class TestSearchWikipedia:
     def test_success(self):
         """Returns formatted search results."""
-        mock_page = MagicMock()
-        mock_page.exists = True
-        mock_page.text.return_value = "'''Machine learning''' is a subset of [[artificial intelligence]]."
+        page = StubWikipediaPage(
+            exists=True,
+            name="Machine learning",
+            text_content="'''Machine learning''' is a subset of [[artificial intelligence]].",
+        )
 
-        mock_site = MagicMock()
-        mock_site.search.return_value = [
-            {"title": "Machine learning", "pageid": 12345},
-        ]
-        mock_site.pages.__getitem__ = MagicMock(return_value=mock_page)
+        pages_dict = {"Machine learning": page}
+        site = StubWikipediaSite(
+            search_results=[{"title": "Machine learning", "pageid": 12345}],
+            pages_dict=pages_dict,
+        )
 
-        mock_mw = MagicMock()
-        mock_mw.Site.return_value = mock_site
+        stub_mw = type('module', (), {
+            'Site': lambda host: site,
+        })
 
-        with patch.dict(sys.modules, {"mwclient": mock_mw}):
+        with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = search_wikipedia("machine learning")
 
         assert result["success"] is True
@@ -199,23 +329,31 @@ class TestSearchWikipedia:
 
     def test_language_param(self):
         """Uses correct language site."""
-        mock_site = MagicMock()
-        mock_site.search.return_value = []
+        call_args = {}
 
-        mock_mw = MagicMock()
-        mock_mw.Site.return_value = mock_site
+        def tracking_site(host):
+            call_args["host"] = host
+            return StubWikipediaSite(search_results=[])
 
-        with patch.dict(sys.modules, {"mwclient": mock_mw}):
+        stub_mw = type('module', (), {
+            'Site': tracking_site,
+        })
+
+        with patch.dict(sys.modules, {"mwclient": stub_mw}):
             search_wikipedia("test", language="de")
 
-        mock_mw.Site.assert_called_once_with("de.wikipedia.org")
+        assert call_args["host"] == "de.wikipedia.org"
 
     def test_api_error(self):
         """Gracefully handles API errors."""
-        mock_mw = MagicMock()
-        mock_mw.Site.side_effect = ConnectionError("DNS resolution failed")
+        def failing_site(host):
+            raise ConnectionError("DNS resolution failed")
 
-        with patch.dict(sys.modules, {"mwclient": mock_mw}):
+        stub_mw = type('module', (), {
+            'Site': failing_site,
+        })
+
+        with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = search_wikipedia("test")
 
         assert result["success"] is False
@@ -228,26 +366,26 @@ class TestSearchWikipedia:
 class TestGetWikipediaArticle:
     def test_success(self):
         """Returns full article text."""
-        mock_category = MagicMock()
-        mock_category.name = "Category:Programming languages"
-
-        mock_page = MagicMock()
-        mock_page.exists = True
-        mock_page.name = "Python (programming language)"
-        mock_page.text.return_value = (
-            "'''Python''' is a programming language.\n\n"
-            "== History ==\nCreated by Guido.\n\n"
-            "== Features ==\nDynamic typing."
+        category = StubWikipediaCategory(name="Category:Programming languages")
+        page = StubWikipediaPage(
+            exists=True,
+            name="Python (programming language)",
+            text_content=(
+                "'''Python''' is a programming language.\n\n"
+                "== History ==\nCreated by Guido.\n\n"
+                "== Features ==\nDynamic typing."
+            ),
+            categories_list=[category],
         )
-        mock_page.categories.return_value = [mock_category]
 
-        mock_site = MagicMock()
-        mock_site.pages.__getitem__ = MagicMock(return_value=mock_page)
+        pages_dict = {"Python (programming language)": page}
+        site = StubWikipediaSite(pages_dict=pages_dict)
 
-        mock_mw = MagicMock()
-        mock_mw.Site.return_value = mock_site
+        stub_mw = type('module', (), {
+            'Site': lambda host: site,
+        })
 
-        with patch.dict(sys.modules, {"mwclient": mock_mw}):
+        with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = get_wikipedia_article("Python (programming language)")
 
         assert result["success"] is True
@@ -259,16 +397,16 @@ class TestGetWikipediaArticle:
 
     def test_article_not_found(self):
         """Returns error for non-existent article."""
-        mock_page = MagicMock()
-        mock_page.exists = False
+        page = StubWikipediaPage(exists=False)
 
-        mock_site = MagicMock()
-        mock_site.pages.__getitem__ = MagicMock(return_value=mock_page)
+        pages_dict = {"Nonexistent Article XYZ": page}
+        site = StubWikipediaSite(pages_dict=pages_dict)
 
-        mock_mw = MagicMock()
-        mock_mw.Site.return_value = mock_site
+        stub_mw = type('module', (), {
+            'Site': lambda host: site,
+        })
 
-        with patch.dict(sys.modules, {"mwclient": mock_mw}):
+        with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = get_wikipedia_article("Nonexistent Article XYZ")
 
         assert result["success"] is False
@@ -276,10 +414,14 @@ class TestGetWikipediaArticle:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
-        mock_mw = MagicMock()
-        mock_mw.Site.side_effect = TimeoutError("Connection timed out")
+        def failing_site(host):
+            raise TimeoutError("Connection timed out")
 
-        with patch.dict(sys.modules, {"mwclient": mock_mw}):
+        stub_mw = type('module', (), {
+            'Site': failing_site,
+        })
+
+        with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = get_wikipedia_article("Test")
 
         assert result["success"] is False
@@ -292,8 +434,7 @@ class TestGetWikipediaArticle:
 class TestSearchBooks:
     def test_success(self):
         """Returns formatted book results."""
-        mock_service = MagicMock()
-        mock_service.volumes.return_value.list.return_value.execute.return_value = {
+        response_data = {
             "items": [
                 {
                     "volumeInfo": {
@@ -313,10 +454,27 @@ class TestSearchBooks:
             ]
         }
 
-        mock_api_module = MagicMock()
-        mock_api_module.build.return_value = mock_service
+        class StubVolumes:
+            def list(self, **kwargs):
+                self.list_kwargs = kwargs
+                return self
 
-        with patch.dict(sys.modules, {"googleapiclient": mock_api_module, "googleapiclient.discovery": mock_api_module}):
+            def execute(self):
+                return response_data
+
+        class StubService:
+            def volumes(self):
+                return StubVolumes()
+
+        stub_api_module = type('module', (), {
+            'build': lambda service, version, developerKey: StubService(),
+            'discovery': type('obj', (), {}),
+        })
+
+        with patch.dict(sys.modules, {
+            "googleapiclient": stub_api_module,
+            "googleapiclient.discovery": stub_api_module,
+        }):
             result = search_books("deep learning")
 
         assert result["success"] is True
@@ -327,8 +485,7 @@ class TestSearchBooks:
 
     def test_no_isbn(self):
         """Handles books without ISBN."""
-        mock_service = MagicMock()
-        mock_service.volumes.return_value.list.return_value.execute.return_value = {
+        response_data = {
             "items": [
                 {
                     "volumeInfo": {
@@ -339,10 +496,26 @@ class TestSearchBooks:
             ]
         }
 
-        mock_api_module = MagicMock()
-        mock_api_module.build.return_value = mock_service
+        class StubVolumes:
+            def list(self, **kwargs):
+                return self
 
-        with patch.dict(sys.modules, {"googleapiclient": mock_api_module, "googleapiclient.discovery": mock_api_module}):
+            def execute(self):
+                return response_data
+
+        class StubService:
+            def volumes(self):
+                return StubVolumes()
+
+        stub_api_module = type('module', (), {
+            'build': lambda service, version, developerKey: StubService(),
+            'discovery': type('obj', (), {}),
+        })
+
+        with patch.dict(sys.modules, {
+            "googleapiclient": stub_api_module,
+            "googleapiclient.discovery": stub_api_module,
+        }):
             result = search_books("test")
 
         assert result["success"] is True
@@ -350,25 +523,47 @@ class TestSearchBooks:
 
     def test_with_filter(self):
         """Passes filter parameter to API."""
-        mock_service = MagicMock()
-        mock_list = mock_service.volumes.return_value.list
-        mock_list.return_value.execute.return_value = {"items": []}
+        call_kwargs = {}
 
-        mock_api_module = MagicMock()
-        mock_api_module.build.return_value = mock_service
+        class StubVolumes:
+            def list(self, **kwargs):
+                call_kwargs.update(kwargs)
+                return self
 
-        with patch.dict(sys.modules, {"googleapiclient": mock_api_module, "googleapiclient.discovery": mock_api_module}):
+            def execute(self):
+                return {"items": []}
+
+        class StubService:
+            def volumes(self):
+                return StubVolumes()
+
+        stub_api_module = type('module', (), {
+            'build': lambda service, version, developerKey: StubService(),
+            'discovery': type('obj', (), {}),
+        })
+
+        with patch.dict(sys.modules, {
+            "googleapiclient": stub_api_module,
+            "googleapiclient.discovery": stub_api_module,
+        }):
             search_books("test", filter="free-ebooks")
 
-        _, kwargs = mock_list.call_args
-        assert kwargs.get("filter") == "free-ebooks"
+        assert call_kwargs.get("filter") == "free-ebooks"
 
     def test_api_error(self):
         """Gracefully handles API errors."""
-        mock_api_module = MagicMock()
-        mock_api_module.build.side_effect = Exception("API quota exceeded")
+        def failing_build(service, version, developerKey):
+            raise Exception("API quota exceeded")
 
-        with patch.dict(sys.modules, {"googleapiclient": mock_api_module, "googleapiclient.discovery": mock_api_module}):
+        stub_api_module = type('module', (), {
+            'build': failing_build,
+            'discovery': type('obj', (), {}),
+        })
+
+        with patch.dict(sys.modules, {
+            "googleapiclient": stub_api_module,
+            "googleapiclient.discovery": stub_api_module,
+        }):
             result = search_books("test")
 
         assert result["success"] is False

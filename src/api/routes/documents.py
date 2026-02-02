@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel, Field
 
 from src.models.document import (
@@ -21,7 +21,6 @@ from src.services.document_preprocessor import (
     DocumentPreprocessor,
     PreprocessingConfig,
     PreprocessingResult,
-    get_document_preprocessor,
     preprocess_documents,
 )
 from src.services.document_client import (
@@ -32,6 +31,7 @@ from src.services.document_client import (
 )
 from src.api.routes.path_validation import validate_api_path
 from src.services.document_chunker import get_document_chunker
+from src.api.dependencies import dep_document_preprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,10 @@ async def check_ocr_health() -> OCRHealthResponse:
 
 
 @router.post("/process", response_model=DocumentProcessResponse)
-async def process_document_endpoint(request: DocumentProcessRequest) -> DocumentProcessResponse:
+async def process_document_endpoint(
+    request: DocumentProcessRequest,
+    preprocessor: DocumentPreprocessor = Depends(dep_document_preprocessor),
+) -> DocumentProcessResponse:
     """Process a document and return structured sections and figures.
 
     Provide ONE of:
@@ -186,10 +189,12 @@ async def process_document_endpoint(request: DocumentProcessRequest) -> Document
             extract_figures=request.extract_figures,
             describe_figures=request.describe_figures,
         )
-        preprocessor = DocumentPreprocessor(config=config)
+        # Create a new preprocessor instance with custom config
+        # (The injected one is the default singleton, but we need custom config here)
+        preprocessor_with_config = DocumentPreprocessor(config=config)
 
         # Run preprocessing
-        result = await preprocessor.preprocess(task_ir)
+        result = await preprocessor_with_config.preprocess(task_ir)
 
         if not result.success:
             return DocumentProcessResponse(
@@ -307,7 +312,10 @@ async def process_uploaded_document(
 
 
 @router.post("/preprocess-taskir", response_model=TaskIRPreprocessResponse)
-async def preprocess_task_ir(request: TaskIRPreprocessRequest) -> TaskIRPreprocessResponse:
+async def preprocess_task_ir(
+    request: TaskIRPreprocessRequest,
+    preprocessor: DocumentPreprocessor = Depends(dep_document_preprocessor),
+) -> TaskIRPreprocessResponse:
     """Preprocess documents in a TaskIR and return enriched version.
 
     This endpoint:
@@ -315,7 +323,6 @@ async def preprocess_task_ir(request: TaskIRPreprocessRequest) -> TaskIRPreproce
     2. Runs OCR and chunking if needed
     3. Returns the TaskIR enriched with ocr_result field
     """
-    preprocessor = get_document_preprocessor()
 
     # Check if preprocessing is needed
     if not preprocessor.needs_preprocessing(request.task_ir):

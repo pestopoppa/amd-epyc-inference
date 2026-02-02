@@ -35,10 +35,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(Path(__file__).parent))
 
 # Suites that have dataset adapters (vs YAML-only)
-ADAPTER_SUITES = {"general", "math", "coder", "thinking", "instruction_precision", "vl"}
+ADAPTER_SUITES = {
+    "general", "math", "coder", "thinking", "instruction_precision", "vl",
+    "gaia", "cruxeval", "bigcodebench",
+}
 
 # Suites that stay YAML-based (no public dataset or intentionally synthetic)
-YAML_ONLY_SUITES = {"agentic", "long_context"}
+YAML_ONLY_SUITES = {"agentic", "long_context", "mode_advantage"}
 
 
 def get_adapter(suite: str) -> Optional["BaseAdapter"]:
@@ -50,6 +53,9 @@ def get_adapter(suite: str) -> Optional["BaseAdapter"]:
         "thinking": ThinkingAdapter,
         "instruction_precision": IFEvalAdapter,
         "vl": VLAdapter,
+        "gaia": GaiaAdapter,
+        "cruxeval": CRUXEvalAdapter,
+        "bigcodebench": BigCodeBenchAdapter,
     }
     cls = adapters.get(suite)
     if cls is None:
@@ -692,3 +698,292 @@ class VLAdapter(BaseAdapter):
 
     def _row_to_prompt(self, idx: int, row: dict) -> dict:
         return {}  # Not used — sample() delegates directly
+
+
+# ── GAIA (Multi-step tool use) ───────────────────────────────────────────
+
+
+class GaiaAdapter(BaseAdapter):
+    """GAIA: 165 dev questions requiring multi-step reasoning and tool use.
+
+    Source: gaia-benchmark/GAIA on HuggingFace (CC-BY-4.0).
+    Questions have exact-match answers (number, name, or short string).
+    Levels 1-3 map to tiers T1-T3.
+
+    File attachments are staged to /mnt/raid0/llm/tmp/gaia/{question_id}/
+    so REPL mode can access them.
+    """
+
+    suite_name = "gaia"
+    has_real_tiers = True
+    _STAGING_DIR = Path("/mnt/raid0/llm/tmp/gaia")
+    # Skip questions requiring audio/video processing
+    _SKIP_EXTENSIONS = {".mp3", ".wav", ".mp4", ".avi", ".mov", ".flac", ".ogg"}
+
+    def _ensure_loaded(self):
+        if self._dataset is not None:
+            return
+        try:
+            import datasets as hf
+            ds = hf.load_dataset(
+                "gaia-benchmark/GAIA", "2023_all", split="validation",
+            )
+            # Filter out questions with unsupported file types
+            filtered = []
+            for i, row in enumerate(ds):
+                file_name = row.get("file_name", "") or ""
+                if file_name:
+                    ext = Path(file_name).suffix.lower()
+                    if ext in self._SKIP_EXTENSIONS:
+                        continue
+                filtered.append(row)
+            self._dataset = filtered
+        except Exception as e:
+            print(f"  [adapter] GAIA load failed: {e}")
+            self._dataset = []
+
+    def _get_tier_for_index(self, idx: int) -> int:
+        level = self._dataset[idx].get("Level", 1)
+        return min(max(int(level), 1), 3)
+
+    def _stage_file(self, question_id: str, row: dict) -> str:
+        """Stage attached file to temp dir. Returns path hint or empty string."""
+        file_name = row.get("file_name", "") or ""
+        file_bytes = row.get("file_path", "") or ""
+        if not file_name:
+            return ""
+
+        staging = self._STAGING_DIR / question_id
+        staging.mkdir(parents=True, exist_ok=True)
+        dest = staging / file_name
+
+        if not dest.exists():
+            # file_path in GAIA dataset is the actual path to the file
+            # In HF datasets, this may be a local cache path
+            try:
+                if isinstance(file_bytes, (str, Path)) and Path(file_bytes).exists():
+                    import shutil
+                    shutil.copy2(file_bytes, dest)
+                elif isinstance(file_bytes, bytes):
+                    dest.write_bytes(file_bytes)
+            except Exception:
+                return ""
+
+        return f"\nThe file is available at: {dest}"
+
+    def _row_to_prompt(self, idx: int, row: dict) -> dict:
+        question = row.get("Question", "")
+        answer = row.get("Final answer", "") or row.get("answer", "")
+        level = row.get("Level", 1)
+        task_id = row.get("task_id", f"gaia_{idx:04d}")
+
+        # Clean question ID for filesystem
+        clean_id = re.sub(r"[^a-zA-Z0-9_-]", "_", str(task_id))
+
+        # Stage any attached files
+        file_hint = self._stage_file(clean_id, row)
+
+        prompt = question.strip()
+        if file_hint:
+            prompt += file_hint
+
+        prompt += (
+            "\n\nGive a short, precise answer. "
+            "If the answer is a number, give just the number. "
+            "Put your final answer after ####."
+        )
+
+        return {
+            "id": f"gaia_{clean_id}",
+            "suite": "gaia",
+            "prompt": prompt,
+            "context": "",
+            "expected": str(answer).strip(),
+            "scoring": [],
+            "image_path": "",
+            "tier": min(max(int(level), 1), 3),
+            "scoring_method": "exact_match",
+            "scoring_config": {
+                "extract_pattern": r"####\s*(.+)",
+                "normalize": True,
+            },
+        }
+
+
+# ── CRUXEval (Code output/input prediction) ─────────────────────────────
+
+
+class CRUXEvalAdapter(BaseAdapter):
+    """CRUXEval: 800 functions × 2 tasks (output + input prediction).
+
+    Source: cruxeval-org/cruxeval on HuggingFace.
+    Output prediction is the pure REPL-advantage case: "just run the code."
+    Input prediction tests reasoning: "what input gives this output?"
+
+    Scoring: code_execution (assertion-based).
+    """
+
+    suite_name = "cruxeval"
+    _raw_dataset = None
+
+    def _ensure_loaded(self):
+        if self._dataset is not None:
+            return
+        try:
+            import datasets as hf
+            self._raw_dataset = hf.load_dataset(
+                "cruxeval-org/cruxeval", split="test",
+            )
+            # Each row becomes 2 questions (output pred + input pred)
+            self._dataset = list(range(len(self._raw_dataset) * 2))
+        except Exception as e:
+            print(f"  [adapter] CRUXEval load failed: {e}")
+            self._dataset = []
+
+    def _row_to_prompt(self, idx: int, row: dict) -> dict:
+        # idx 0..N-1 = output prediction, N..2N-1 = input prediction
+        raw_len = len(self._raw_dataset) if self._raw_dataset else 0
+        if idx < raw_len:
+            return self._output_prompt(idx)
+        return self._input_prompt(idx - raw_len)
+
+    def _output_prompt(self, idx: int) -> dict:
+        row = self._raw_dataset[idx]
+        code = row.get("code", "")
+        input_val = row.get("input", "")
+        output_val = row.get("output", "")
+
+        prompt = (
+            f"What does the following Python code print when called with "
+            f"the given input?\n\n"
+            f"```python\n{code}\n```\n\n"
+            f"Input: `{input_val}`\n\n"
+            f"Give the exact output after ####."
+        )
+
+        return {
+            "id": f"cruxeval_output_{idx:04d}",
+            "suite": "cruxeval",
+            "prompt": prompt,
+            "context": "",
+            "expected": str(output_val).strip(),
+            "scoring": [],
+            "image_path": "",
+            "tier": 1,  # Output prediction = just run it
+            "scoring_method": "exact_match",
+            "scoring_config": {
+                "extract_pattern": r"####\s*(.+)",
+                "normalize": True,
+            },
+        }
+
+    def _input_prompt(self, idx: int) -> dict:
+        row = self._raw_dataset[idx]
+        code = row.get("code", "")
+        input_val = row.get("input", "")
+        output_val = row.get("output", "")
+
+        prompt = (
+            f"Given the following Python code and its output, determine what "
+            f"input was provided.\n\n"
+            f"```python\n{code}\n```\n\n"
+            f"Output: `{output_val}`\n\n"
+            f"Give the exact input value after ####."
+        )
+
+        return {
+            "id": f"cruxeval_input_{idx:04d}",
+            "suite": "cruxeval",
+            "prompt": prompt,
+            "context": "",
+            "expected": str(input_val).strip(),
+            "scoring": [],
+            "image_path": "",
+            "tier": 2,  # Input prediction = harder reasoning
+            "scoring_method": "exact_match",
+            "scoring_config": {
+                "extract_pattern": r"####\s*(.+)",
+                "normalize": True,
+            },
+        }
+
+
+# ── BigCodeBench (Multi-library coding) ──────────────────────────────────
+
+
+class BigCodeBenchAdapter(BaseAdapter):
+    """BigCodeBench: 1,140 coding tasks requiring 139 Python libraries.
+
+    Source: bigcode/bigcodebench on HuggingFace (Apache 2.0).
+    Scoring: code_execution (5.6 test cases per task, 99% branch coverage).
+
+    Multi-library composition (pandas + matplotlib + scipy in one task) is
+    where REPL + specialized coder >> direct frontdoor.
+    """
+
+    suite_name = "bigcodebench"
+
+    def _ensure_loaded(self):
+        if self._dataset is not None:
+            return
+        try:
+            import datasets as hf
+            self._dataset = hf.load_dataset(
+                "bigcode/bigcodebench", split="v0.1.2",
+            )
+        except Exception:
+            try:
+                import datasets as hf
+                # Fallback to default split
+                self._dataset = hf.load_dataset(
+                    "bigcode/bigcodebench", split="default",
+                )
+            except Exception as e:
+                print(f"  [adapter] BigCodeBench load failed: {e}")
+                self._dataset = []
+
+    def _row_to_prompt(self, idx: int, row: dict) -> dict:
+        task_id = row.get("task_id", f"bcb_{idx:04d}")
+        instruct_prompt = row.get("instruct_prompt", "")
+        complete_prompt = row.get("complete_prompt", "")
+        test_code = row.get("test", "")
+        canonical = row.get("canonical_solution", "")
+        entry_point = row.get("entry_point", "")
+        libs = row.get("libs", [])
+
+        # Use instruct prompt if available, else complete_prompt
+        prompt_text = instruct_prompt or complete_prompt
+        if not prompt_text:
+            prompt_text = f"Implement the function `{entry_point}`."
+
+        # Determine tier based on library complexity
+        lib_count = len(libs) if isinstance(libs, list) else 0
+        if lib_count >= 3:
+            tier = 3  # Multi-library = hard
+        elif lib_count >= 2:
+            tier = 2
+        else:
+            tier = 1
+
+        # Build test assertions from test field
+        scoring_config: dict = {
+            "language": "python",
+            "timeout": 30,  # BigCodeBench tasks can be complex
+        }
+        if test_code:
+            scoring_config["test_code"] = test_code
+        elif entry_point:
+            scoring_config["entry_point"] = entry_point
+
+        return {
+            "id": f"bcb_{task_id}",
+            "suite": "bigcodebench",
+            "prompt": prompt_text.strip(),
+            "context": "",
+            "expected": entry_point,
+            "scoring": [],
+            "image_path": "",
+            "tier": tier,
+            "scoring_method": "code_execution",
+            "scoring_config": scoring_config,
+        }

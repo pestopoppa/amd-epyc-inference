@@ -404,7 +404,7 @@ async def _vision_react_mode_answer(
     mime_type: str,
     context: str = "",
     vl_port: int = 8086,
-    max_turns: int = 5,
+    max_turns: int = 2,
 ) -> tuple[str, int]:
     """Vision-aware ReAct loop using direct VL backend calls.
 
@@ -422,7 +422,8 @@ async def _vision_react_mode_answer(
         mime_type: Image MIME type (e.g. "image/png").
         context: Optional text context.
         vl_port: VL backend port (8086=worker_vision, 8087=vision_escalation).
-        max_turns: Maximum Thought/Action/Observation cycles.
+        max_turns: Maximum Thought/Action/Observation cycles (capped at 2
+            to stay within 300s overall timeout at 120s/turn).
 
     Returns:
         Tuple of (final_answer, tools_used_count).

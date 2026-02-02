@@ -6,6 +6,8 @@ The Memory-augmented Reinforcement Learning (MemRL) system enables the orchestra
 
 As of 2026-01-31, the system contains 2,714 memories (1,213 canonical seeds + 1,501 non-seed) with FAISS-accelerated retrieval providing 35x speedup over NumPy baseline (70ms → ~2ms at 500K scale). A contamination cleanup on 2026-01-31 surgically removed 6,506 entries from buggy validation script runs while preserving the original Jan 28 seed corpus.
 
+As of 2026-02-02, the seeding pipeline was enriched with 90 mode-advantage tasks (see [Chapter 24](24-benchmark-suite-construction.md)) specifically designed to produce strong comparative rewards. Prior to this, the debug suite (327 single-turn QA) produced weak routing signal — all tasks were solvable by direct inference, so MemRL learned cost-awareness but not routing quality. The mode-advantage tasks shift +1.0 rewards from ~5% to ~25-35% of episodes. Three external HuggingFace dataset adapters (GAIA 165q, CRUXEval 1600q, BigCodeBench 1140q) further expand the evaluation pool.
+
 ## Episodic Memory Architecture
 
 ### Storage Layout

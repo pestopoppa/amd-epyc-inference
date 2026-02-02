@@ -23,26 +23,29 @@ def client(tmp_path):
     # Reset API state
     reset_state()
 
-    # Clear pending permissions and reset session store
+    # Clear pending permissions
     _pending_permissions.clear()
-    import src.api.routes.sessions as sess_mod
-    sess_mod._session_store = None  # Force re-initialization
 
     # Create a fresh SQLiteSessionStore in a temp directory for test isolation.
-    # We must instantiate with explicit paths because Python default args are
-    # evaluated at definition time — patching the module constant is too late.
     from src.session import SQLiteSessionStore
+    from src.api.dependencies import dep_session_store
+
     temp_store = SQLiteSessionStore(
         db_path=tmp_path / "sessions.db",
         embeddings_path=tmp_path / "session_embeddings.npy",
     )
 
-    with patch.object(sess_mod, "get_session_store", return_value=temp_store):
+    # Override the dependency to use our temp store
+    app.dependency_overrides[dep_session_store] = lambda: temp_store
+
+    try:
         with TestClient(app) as c:
             yield c
-
-    # Cleanup
-    sess_mod._session_store = None
+    finally:
+        # Cleanup: Remove override and reset state
+        app.dependency_overrides.pop(dep_session_store, None)
+        state = get_state()
+        state.session_store = None
 
 
 class TestSSEStreaming:

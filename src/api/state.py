@@ -73,6 +73,18 @@ class AppState:
     # Registry loader (for role defaults)
     registry: RegistryLoaderProtocol | None = None
 
+    # Document preprocessor (for OCR and chunking)
+    document_preprocessor: Any | None = None  # DocumentPreprocessor (avoid circular import)
+
+    # Vision pipeline components
+    vision_pipeline: Any | None = None  # VisionPipeline (avoid circular import)
+    vision_batch_processor: Any | None = None  # BatchProcessor (avoid circular import)
+    vision_search: Any | None = None  # VisionSearch (avoid circular import)
+    vision_video_processor: Any | None = None  # VideoProcessor (avoid circular import)
+
+    # Session store (persistent SQLite storage)
+    session_store: Any | None = None  # SQLiteSessionStore (avoid circular import)
+
     # Backend health tracking (circuit breaker)
     health_tracker: BackendHealthTracker = field(default_factory=BackendHealthTracker)
 

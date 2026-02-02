@@ -1,14 +1,18 @@
 """Runtime configuration endpoint for hot-reloading feature flags."""
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 
-from src.features import features, set_features, Features
+from src.features import set_features, Features
+from src.api.dependencies import dep_features
 
 router = APIRouter()
 
 
 @router.post("/config")
-async def update_config(request: Request):
+async def update_config(
+    request: Request,
+    current: Features = Depends(dep_features),
+):
     """Update feature flags at runtime without restarting the API.
 
     Restricted to localhost only to prevent unauthorized remote configuration
@@ -25,7 +29,6 @@ async def update_config(request: Request):
             detail="Config changes only allowed from localhost",
         )
     body = await request.json()
-    current = features()
     current_summary = current.summary()
     overrides = {k: bool(v) for k, v in body.items() if k in current_summary}
     new = Features(**{**current_summary, **overrides})

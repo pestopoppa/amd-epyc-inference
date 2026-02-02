@@ -82,7 +82,6 @@ class BatchProcessor:
         """
         self.max_workers = max_workers
         self._jobs: dict[str, BatchJob] = {}
-        self._executor: ThreadPoolExecutor | None = None
 
     def create_job(
         self,
@@ -162,6 +161,13 @@ class BatchProcessor:
             estimated_remaining_seconds=job.estimated_remaining_seconds,
             errors=job.errors[:10],  # Limit errors returned
         )
+
+    def shutdown(self) -> None:
+        """Shutdown the batch processor, cancelling all running jobs."""
+        for job in self._jobs.values():
+            if job.status == JobStatus.RUNNING:
+                job.status = JobStatus.CANCELLED
+        self._jobs.clear()
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel a running job."""

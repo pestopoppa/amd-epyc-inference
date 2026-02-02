@@ -136,9 +136,9 @@ The orchestrator benchmark pipeline compares orchestrated responses against dire
 | `scripts/benchmark/run_orchestrator_benchmark.py` | Full 4-phase benchmark runner (smoke, compare, optimize, verify) |
 | `scripts/benchmark/compare_orchestrator_direct.py` | Per-suite orchestrator vs baseline comparison |
 
-### On-the-Fly Dataset Sampling (January 2026)
+### On-the-Fly Dataset Sampling (January–February 2026)
 
-Six suites now sample fresh questions from real HuggingFace datasets on each run, totaling 31,820 questions:
+Nine suites now sample fresh questions from real HuggingFace datasets on each run, totaling 35,560+ questions:
 
 | Suite | Dataset(s) | Pool Size |
 |-------|-----------|-----------|
@@ -148,8 +148,25 @@ Six suites now sample fresh questions from real HuggingFace datasets on each run
 | thinking | ARC-Challenge + HellaSwag | 11,214 |
 | instruction_precision | IFEval (google/IFEval) | 541 |
 | vl | OCRBench + ChartQA | 3,500 |
+| gaia | GAIA (gaia-benchmark/GAIA) | 165 |
+| cruxeval | CRUXEval (cruxeval-org/cruxeval) | 1,600 |
+| bigcodebench | BigCodeBench (bigcode/bigcodebench) | 1,140 |
 
-Adapters in `scripts/benchmark/dataset_adapters.py`. Falls back to static YAML for `agentic` and `long_context` (no public datasets).
+Adapters in `scripts/benchmark/dataset_adapters.py`. Falls back to static YAML for `agentic`, `long_context`, and `mode_advantage`.
+
+### Mode-Advantage Suite (February 2026)
+
+A dedicated `mode_advantage` suite (90 YAML questions) specifically designed to produce strong routing signal for MemRL. Unlike existing suites where all tasks are solvable by direct inference, mode-advantage tasks structurally require specific execution modes:
+
+| Category | Count | Mode Signal | Example |
+|----------|-------|-------------|---------|
+| Computation-gated | 15 | react >> direct | `7^13 mod 97` — model hallucinates, Python gets 38 |
+| Iterative-fix | 15 | repl >> direct | Bug fix with test suite — REPL runs tests iteratively |
+| Multi-step composition | 15 | delegation >> direct | Chained calculations requiring 3+ sequential steps |
+| Escalation-gated | 15 | specialist >> frontdoor | A*, trie, Union-Find — 30B can't decompose |
+| Mini-SWE | 30 | repl+delegation >> direct | Broken code + failing tests + known fix |
+
+This shifts MemRL reward distribution from ~5% specialist-wins (+1.0) to ~25-35%, enabling the router to learn *when* to route, not just *that* routing has a cost.
 
 **Stratified sampling**: `--stratify-tiers` draws equal questions per difficulty tier for suites with real tier metadata (MMLU, Math, IFEval). Other suites silently fall through to uniform random.
 

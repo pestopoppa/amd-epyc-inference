@@ -8,10 +8,90 @@ without requiring a live LLM backend.
 import pytest
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from src.features import Features
+
+
+# Lightweight test stub for LLMPrimitives (replaces MagicMock)
+class StubLLMPrimitives:
+    """Test stub for LLMPrimitives that replaces MagicMock.
+
+    Only mocks the external LLM call - all internal state is real.
+    """
+
+    def __init__(self, responses=None):
+        """Initialize stub with predefined responses.
+
+        Args:
+            responses: Either a single string response or a list of responses
+                      (for side_effect-like behavior)
+        """
+        if responses is None:
+            self.responses = []
+        elif isinstance(responses, str):
+            self.responses = [responses]
+        else:
+            self.responses = list(responses)
+        self.call_count = 0
+        self.call_log = []
+
+    def llm_call(self, prompt, role=None, n_tokens=None, skip_suffix=None, stop_sequences=None, **kwargs):
+        """Mock llm_call that returns predefined responses."""
+        if self.call_count < len(self.responses):
+            response = self.responses[self.call_count]
+        elif self.responses:
+            # If we run out of responses, repeat the last one
+            response = self.responses[-1]
+        else:
+            response = "Mock response"
+
+        self.call_count += 1
+        self.call_log.append({
+            'prompt': prompt,
+            'role': role,
+            'n_tokens': n_tokens,
+            'skip_suffix': skip_suffix,
+            'stop_sequences': stop_sequences,
+        })
+        return response
+
+
+# Lightweight test stub for ToolRegistry (replaces MagicMock)
+class StubToolRegistry:
+    """Test stub for ToolRegistry that replaces MagicMock."""
+
+    def __init__(self, tool_results=None):
+        """Initialize stub with predefined tool results.
+
+        Args:
+            tool_results: Dict mapping tool names to their return values
+        """
+        self.tool_results = tool_results or {}
+        self.invocations = []
+
+    def invoke(self, tool_name, role, **kwargs):
+        """Mock tool invocation."""
+        self.invocations.append({
+            'tool_name': tool_name,
+            'role': role,
+            'kwargs': kwargs,
+        })
+        return self.tool_results.get(tool_name, f"Result from {tool_name}")
+
+    def list_tools(self):
+        """Mock tool listing - returns list of tool info dicts."""
+        return [
+            {
+                "name": name,
+                "description": f"Mock tool {name}",
+                "parameters": {}
+            }
+            for name in self.tool_results.keys()
+        ]
 
 
 class TestParseReactArgs:
@@ -61,41 +141,47 @@ class TestParseReactArgs:
 class TestShouldUseReactMode:
     """Tests for _should_use_react_mode()."""
 
-    @patch("src.api.routes.chat_react.features")
-    def test_disabled_by_feature_flag(self, mock_features):
+    def test_disabled_by_feature_flag(self):
         from src.api.routes.chat_react import _should_use_react_mode
-        mock_features.return_value = MagicMock(react_mode=False)
-        assert _should_use_react_mode("search for quantum computing") is False
+        # Use real Features object instead of MagicMock
+        with patch("src.api.routes.chat_react.features") as mock_features:
+            mock_features.return_value = Features(react_mode=False)
+            assert _should_use_react_mode("search for quantum computing") is False
 
-    @patch("src.api.routes.chat_react.features")
-    def test_enabled_with_search_keyword(self, mock_features):
+    def test_enabled_with_search_keyword(self):
         from src.api.routes.chat_react import _should_use_react_mode
-        mock_features.return_value = MagicMock(react_mode=True)
-        assert _should_use_react_mode("search for quantum computing papers") is True
+        # Use real Features object instead of MagicMock
+        with patch("src.api.routes.chat_react.features") as mock_features:
+            mock_features.return_value = Features(react_mode=True)
+            assert _should_use_react_mode("search for quantum computing papers") is True
 
-    @patch("src.api.routes.chat_react.features")
-    def test_enabled_with_calculate(self, mock_features):
+    def test_enabled_with_calculate(self):
         from src.api.routes.chat_react import _should_use_react_mode
-        mock_features.return_value = MagicMock(react_mode=True)
-        assert _should_use_react_mode("calculate the area of a circle with radius 5") is True
+        # Use real Features object instead of MagicMock
+        with patch("src.api.routes.chat_react.features") as mock_features:
+            mock_features.return_value = Features(react_mode=True)
+            assert _should_use_react_mode("calculate the area of a circle with radius 5") is True
 
-    @patch("src.api.routes.chat_react.features")
-    def test_enabled_with_date_query(self, mock_features):
+    def test_enabled_with_date_query(self):
         from src.api.routes.chat_react import _should_use_react_mode
-        mock_features.return_value = MagicMock(react_mode=True)
-        assert _should_use_react_mode("what is the current date?") is True
+        # Use real Features object instead of MagicMock
+        with patch("src.api.routes.chat_react.features") as mock_features:
+            mock_features.return_value = Features(react_mode=True)
+            assert _should_use_react_mode("what is the current date?") is True
 
-    @patch("src.api.routes.chat_react.features")
-    def test_no_match_on_plain_question(self, mock_features):
+    def test_no_match_on_plain_question(self):
         from src.api.routes.chat_react import _should_use_react_mode
-        mock_features.return_value = MagicMock(react_mode=True)
-        assert _should_use_react_mode("explain the theory of relativity") is False
+        # Use real Features object instead of MagicMock
+        with patch("src.api.routes.chat_react.features") as mock_features:
+            mock_features.return_value = Features(react_mode=True)
+            assert _should_use_react_mode("explain the theory of relativity") is False
 
-    @patch("src.api.routes.chat_react.features")
-    def test_large_context_prevents_react(self, mock_features):
+    def test_large_context_prevents_react(self):
         from src.api.routes.chat_react import _should_use_react_mode
-        mock_features.return_value = MagicMock(react_mode=True)
-        assert _should_use_react_mode("search for info", "x" * 6000) is False
+        # Use real Features object instead of MagicMock
+        with patch("src.api.routes.chat_react.features") as mock_features:
+            mock_features.return_value = Features(react_mode=True)
+            assert _should_use_react_mode("search for info", "x" * 6000) is False
 
 
 class TestReactModeAnswer:
@@ -105,8 +191,8 @@ class TestReactModeAnswer:
         """LLM immediately produces a Final Answer."""
         from src.api.routes.chat_react import _react_mode_answer
 
-        mock_primitives = MagicMock()
-        mock_primitives.llm_call.return_value = (
+        # Use real stub instead of MagicMock
+        primitives = StubLLMPrimitives(
             "Thought: I know the answer without tools.\n"
             "Final Answer: 42"
         )
@@ -114,7 +200,7 @@ class TestReactModeAnswer:
         result, tools, _ = _react_mode_answer(
             prompt="What is 6 times 7?",
             context="",
-            primitives=mock_primitives,
+            primitives=primitives,
             role="frontdoor",
             tool_registry=None,
         )
@@ -125,48 +211,48 @@ class TestReactModeAnswer:
         """LLM calls a tool then produces Final Answer."""
         from src.api.routes.chat_react import _react_mode_answer
 
-        mock_primitives = MagicMock()
-        # First call: Action
-        # Second call: Final Answer after observation
-        mock_primitives.llm_call.side_effect = [
+        # Use real stub with multiple responses instead of MagicMock side_effect
+        primitives = StubLLMPrimitives([
             'Thought: I need to calculate this.\nAction: calculate(expression="6*7")',
             "Thought: The calculation returned 42.\nFinal Answer: 42",
-        ]
+        ])
 
-        mock_registry = MagicMock()
-        mock_registry.invoke.return_value = "42"
-        mock_registry.list_tools.return_value = []
+        # Use real stub instead of MagicMock
+        registry = StubToolRegistry({"calculate": "42"})
 
         result, tools, _ = _react_mode_answer(
             prompt="What is 6 times 7?",
             context="",
-            primitives=mock_primitives,
+            primitives=primitives,
             role="frontdoor",
-            tool_registry=mock_registry,
+            tool_registry=registry,
         )
         assert result == "42"
         assert tools == 1
-        mock_registry.invoke.assert_called_once_with("calculate", "frontdoor", expression="6*7")
+        # Verify tool was called with correct args
+        assert len(registry.invocations) == 1
+        assert registry.invocations[0]['tool_name'] == "calculate"
+        assert registry.invocations[0]['kwargs']['expression'] == "6*7"
 
     def test_disallowed_tool_rejected(self):
         """Tool not in whitelist is rejected."""
         from src.api.routes.chat_react import _react_mode_answer
 
-        mock_primitives = MagicMock()
-        mock_primitives.llm_call.side_effect = [
+        # Use real stub with multiple responses
+        primitives = StubLLMPrimitives([
             'Thought: Let me run a shell command.\nAction: run_shell(cmd="ls -la")',
             "Thought: That tool is not available.\nFinal Answer: Cannot access shell.",
-        ]
+        ])
 
-        mock_registry = MagicMock()
-        mock_registry.list_tools.return_value = []
+        # Use real stub
+        registry = StubToolRegistry()
 
         result, tools, _ = _react_mode_answer(
             prompt="list my files",
             context="",
-            primitives=mock_primitives,
+            primitives=primitives,
             role="frontdoor",
-            tool_registry=mock_registry,
+            tool_registry=registry,
         )
         assert "Cannot access shell" in result
         assert tools == 0  # Disallowed tool not counted
@@ -175,15 +261,15 @@ class TestReactModeAnswer:
         """Response with no Action and no Final Answer is treated as answer."""
         from src.api.routes.chat_react import _react_mode_answer
 
-        mock_primitives = MagicMock()
-        mock_primitives.llm_call.return_value = (
+        # Use real stub
+        primitives = StubLLMPrimitives(
             "Thought: The answer is simply 42."
         )
 
         result, tools, _ = _react_mode_answer(
             prompt="What is the meaning of life?",
             context="",
-            primitives=mock_primitives,
+            primitives=primitives,
             role="frontdoor",
         )
         assert "42" in result
@@ -193,22 +279,20 @@ class TestReactModeAnswer:
         """Test behavior when max turns are reached."""
         from src.api.routes.chat_react import _react_mode_answer
 
-        mock_primitives = MagicMock()
-        # Always produce an action without final answer
-        mock_primitives.llm_call.return_value = (
+        # Use real stub that always produces an action
+        primitives = StubLLMPrimitives(
             'Thought: Still searching.\nAction: calculate(expression="1+1")'
         )
 
-        mock_registry = MagicMock()
-        mock_registry.invoke.return_value = "2"
-        mock_registry.list_tools.return_value = []
+        # Use real stub
+        registry = StubToolRegistry({"calculate": "2"})
 
         result, tools, _ = _react_mode_answer(
             prompt="infinite loop test",
             context="",
-            primitives=mock_primitives,
+            primitives=primitives,
             role="frontdoor",
-            tool_registry=mock_registry,
+            tool_registry=registry,
             max_turns=2,
         )
         assert "max turns" in result.lower() or "Still searching" in result

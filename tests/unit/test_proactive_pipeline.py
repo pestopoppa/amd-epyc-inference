@@ -11,6 +11,12 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from src.api.routes.chat_pipeline import _parse_plan_steps
+from src.proactive_delegation import (
+    ComplexitySignals,
+    IterationContext,
+    ReviewDecision,
+    TaskComplexity,
+)
 
 
 # ── _parse_plan_steps tests ───────────────────────────────────────────
@@ -297,15 +303,15 @@ class TestCustomExceptions:
 
 
 class TestIterationContext:
-    """Test iteration tracking and limits."""
+    """Test iteration tracking and limits using real IterationContext objects."""
 
     def test_can_iterate_fresh(self):
-        from src.proactive_delegation import IterationContext
+        """New context should allow iteration."""
         ctx = IterationContext(max_iterations=3, max_total_iterations=10)
         assert ctx.can_iterate("sub1") is True
 
     def test_can_iterate_at_limit(self):
-        from src.proactive_delegation import IterationContext, ReviewDecision
+        """Should block iteration at per-subtask limit."""
         ctx = IterationContext(max_iterations=2, max_total_iterations=10)
         ctx.record_iteration("sub1", ReviewDecision.REQUEST_CHANGES, "fix X")
         assert ctx.can_iterate("sub1") is True
@@ -313,7 +319,7 @@ class TestIterationContext:
         assert ctx.can_iterate("sub1") is False
 
     def test_total_iterations_limit(self):
-        from src.proactive_delegation import IterationContext, ReviewDecision
+        """Should block iteration at global limit."""
         ctx = IterationContext(max_iterations=5, max_total_iterations=3)
         ctx.record_iteration("s1", ReviewDecision.REQUEST_CHANGES)
         ctx.record_iteration("s2", ReviewDecision.REQUEST_CHANGES)
@@ -321,7 +327,7 @@ class TestIterationContext:
         assert ctx.can_iterate("s4") is False
 
     def test_record_iteration_history(self):
-        from src.proactive_delegation import IterationContext, ReviewDecision
+        """Should track iteration history correctly."""
         ctx = IterationContext(max_iterations=5, max_total_iterations=10)
         ctx.record_iteration("sub1", ReviewDecision.APPROVE, "looks good")
         assert len(ctx.iteration_history) == 1
@@ -330,7 +336,7 @@ class TestIterationContext:
         assert ctx.iteration_history[0]["feedback"] == "looks good"
 
     def test_get_summary(self):
-        from src.proactive_delegation import IterationContext, ReviewDecision
+        """Should provide accurate summary statistics."""
         ctx = IterationContext(max_iterations=3, max_total_iterations=10)
         ctx.record_iteration("s1", ReviewDecision.APPROVE)
         ctx.record_iteration("s2", ReviewDecision.REJECT)
@@ -344,22 +350,24 @@ class TestIterationContext:
 
 
 class TestComplexitySignals:
-    """Test complexity signal detection."""
+    """Test complexity signal detection using real ComplexitySignals objects."""
 
     def test_default_signals(self):
-        from src.proactive_delegation import ComplexitySignals
+        """Default signals should have sensible values."""
         signals = ComplexitySignals()
         assert signals.word_count == 0
         assert signals.has_code_keywords is False
         assert signals.question_type == "unknown"
 
     def test_classify_trivial(self):
-        from src.proactive_delegation import classify_task_complexity, TaskComplexity
+        """Simple questions should classify as TRIVIAL or SIMPLE."""
+        from src.proactive_delegation import classify_task_complexity
         complexity, signals = classify_task_complexity("What is 2+2?")
         assert complexity in (TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE)
 
     def test_classify_complex_triggers(self):
-        from src.proactive_delegation import classify_task_complexity, TaskComplexity
+        """Complex architecture prompts should classify as MODERATE or COMPLEX."""
+        from src.proactive_delegation import classify_task_complexity
         complexity, signals = classify_task_complexity(
             "Design and implement a distributed caching system with "
             "consistency guarantees, sharding, and replication across "

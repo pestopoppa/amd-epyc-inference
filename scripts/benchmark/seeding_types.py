@@ -37,6 +37,7 @@ DEFAULT_TIMEOUT = 120
 DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
     "coder", "instruction_precision", "vl",
+    "mode_advantage",
 ]
 DEFAULT_ROLES = [
     "frontdoor", "coder_primary", "coder_escalation",
@@ -62,6 +63,10 @@ SUITE_TIMEOUTS: dict[str, int] = {
     "long_context": 600,
     "coder": 180,
     "vl": 180,
+    "mode_advantage": 180,
+    "gaia": 300,
+    "cruxeval": 120,
+    "bigcodebench": 300,
 }
 
 

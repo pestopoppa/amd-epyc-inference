@@ -167,6 +167,10 @@ async def lifespan(app: FastAPI):
     if state.progress_logger:
         state.progress_logger.flush()
 
+    # Shutdown vision batch processor if initialized
+    if state.vision_batch_processor is not None:
+        state.vision_batch_processor.shutdown()
+
     # Clear state
     state.llm_primitives = None
     state.gate_runner = None
@@ -178,6 +182,7 @@ async def lifespan(app: FastAPI):
     state.tool_registry = None
     state.script_registry = None
     state.registry = None
+    state.vision_batch_processor = None
     state.health_tracker.reset()
 
 

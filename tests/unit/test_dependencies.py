@@ -152,3 +152,134 @@ class TestDepOptionalComponents:
         state = get_state()
         state.registry = None
         assert dep_registry_loader() is None
+
+
+class TestDepFeatures:
+    """Tests for dep_features — returns current feature flags."""
+
+    def test_returns_features_instance(self):
+        from src.api.dependencies import dep_features
+        from src.features import Features
+
+        result = dep_features()
+        assert isinstance(result, Features)
+
+    def test_returns_current_features(self):
+        from src.api.dependencies import dep_features
+
+        result = dep_features()
+        # Should return a Features object with some default values
+        assert hasattr(result, "summary")
+        assert isinstance(result.summary(), dict)
+
+
+class TestDepDocumentPreprocessor:
+    """Tests for dep_document_preprocessor — lazy initialization."""
+
+    def test_lazy_initialization(self):
+        from src.api.dependencies import dep_document_preprocessor
+        from src.api.state import get_state
+        from src.services.document_preprocessor import DocumentPreprocessor
+
+        state = get_state()
+        state.document_preprocessor = None
+
+        result = dep_document_preprocessor()
+        assert isinstance(result, DocumentPreprocessor)
+        assert state.document_preprocessor is result
+
+    def test_returns_existing_instance(self):
+        from src.api.dependencies import dep_document_preprocessor
+        from src.api.state import get_state
+
+        state = get_state()
+        mock = MagicMock()
+        state.document_preprocessor = mock
+
+        try:
+            result = dep_document_preprocessor()
+            assert result is mock
+        finally:
+            state.document_preprocessor = None
+
+
+class TestDepVisionComponents:
+    """Tests for vision pipeline dependency functions."""
+
+    def test_vision_pipeline_lazy_init(self):
+        from src.api.dependencies import dep_vision_pipeline
+        from src.api.state import get_state
+        from src.vision.pipeline import VisionPipeline
+
+        state = get_state()
+        state.vision_pipeline = None
+
+        result = dep_vision_pipeline()
+        assert isinstance(result, VisionPipeline)
+        assert state.vision_pipeline is result
+
+    def test_vision_batch_processor_lazy_init(self):
+        from src.api.dependencies import dep_vision_batch_processor
+        from src.api.state import get_state
+        from src.vision.batch import BatchProcessor
+
+        state = get_state()
+        state.vision_batch_processor = None
+
+        result = dep_vision_batch_processor()
+        assert isinstance(result, BatchProcessor)
+        assert state.vision_batch_processor is result
+
+    def test_vision_search_lazy_init(self):
+        from src.api.dependencies import dep_vision_search
+        from src.api.state import get_state
+        from src.vision.search import VisionSearch
+
+        state = get_state()
+        state.vision_search = None
+
+        result = dep_vision_search()
+        assert isinstance(result, VisionSearch)
+        assert state.vision_search is result
+
+    def test_vision_video_processor_lazy_init(self):
+        from src.api.dependencies import dep_vision_video_processor
+        from src.api.state import get_state
+        from src.vision.video import VideoProcessor
+
+        state = get_state()
+        state.vision_video_processor = None
+
+        result = dep_vision_video_processor()
+        assert isinstance(result, VideoProcessor)
+        assert state.vision_video_processor is result
+
+
+class TestDepSessionStore:
+    """Tests for dep_session_store — lazy initialization."""
+
+    def test_lazy_initialization(self):
+        from src.api.dependencies import dep_session_store
+        from src.api.state import get_state
+        from src.session import SQLiteSessionStore
+
+        state = get_state()
+        state.session_store = None
+
+        result = dep_session_store()
+        assert isinstance(result, SQLiteSessionStore)
+        assert state.session_store is result
+
+    def test_returns_existing_instance(self):
+        from src.api.dependencies import dep_session_store
+        from src.api.state import get_state
+
+        state = get_state()
+        mock = MagicMock()
+        state.session_store = mock
+
+        try:
+            result = dep_session_store()
+            assert result is mock
+        finally:
+            state.session_store = None

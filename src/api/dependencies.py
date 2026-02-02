@@ -32,6 +32,13 @@ if TYPE_CHECKING:
     from src.api.state import AppState
     from src.gate_runner import GateRunner
     from src.llm_primitives import LLMPrimitives
+    from src.features import Features
+    from src.services.document_preprocessor import DocumentPreprocessor
+    from src.vision.pipeline import VisionPipeline
+    from src.vision.batch import BatchProcessor
+    from src.vision.search import VisionSearch
+    from src.vision.video import VideoProcessor
+    from src.session import SQLiteSessionStore
     from src.api.protocols import (
         HybridRouterProtocol,
         ProgressLoggerProtocol,
@@ -105,3 +112,77 @@ def dep_script_registry() -> "ScriptRegistryProtocol | None":
 def dep_registry_loader() -> "RegistryLoaderProtocol | None":
     """Get RegistryLoader if available."""
     return get_state().registry
+
+
+# ── Feature flags ─────────────────────────────────────────────────────────
+
+
+def dep_features() -> "Features":
+    """Get the current feature flags configuration."""
+    from src.features import features
+    return features()
+
+
+# ── Document processing ───────────────────────────────────────────────────
+
+
+def dep_document_preprocessor() -> "DocumentPreprocessor":
+    """Get or lazily initialize the document preprocessor."""
+    state = get_state()
+    if state.document_preprocessor is None:
+        from src.services.document_preprocessor import DocumentPreprocessor
+        state.document_preprocessor = DocumentPreprocessor()
+    return state.document_preprocessor
+
+
+# ── Vision processing ─────────────────────────────────────────────────────
+
+
+def dep_vision_pipeline() -> "VisionPipeline":
+    """Get or lazily initialize the vision pipeline."""
+    state = get_state()
+    if state.vision_pipeline is None:
+        from src.vision.pipeline import VisionPipeline
+        state.vision_pipeline = VisionPipeline()
+    return state.vision_pipeline
+
+
+def dep_vision_batch_processor() -> "BatchProcessor":
+    """Get or lazily initialize the vision batch processor."""
+    state = get_state()
+    if state.vision_batch_processor is None:
+        from src.vision.batch import BatchProcessor
+        state.vision_batch_processor = BatchProcessor()
+    return state.vision_batch_processor
+
+
+def dep_vision_search() -> "VisionSearch":
+    """Get or lazily initialize the vision search engine."""
+    state = get_state()
+    if state.vision_search is None:
+        from src.vision.search import VisionSearch
+        state.vision_search = VisionSearch()
+    return state.vision_search
+
+
+def dep_vision_video_processor() -> "VideoProcessor":
+    """Get or lazily initialize the vision video processor."""
+    state = get_state()
+    if state.vision_video_processor is None:
+        from src.vision.video import VideoProcessor
+        state.vision_video_processor = VideoProcessor()
+    return state.vision_video_processor
+
+
+# ── Session management ────────────────────────────────────────────────────
+
+
+def dep_session_store() -> "SQLiteSessionStore":
+    """Get or lazily initialize the session store."""
+    state = get_state()
+    if state.session_store is None:
+        from src.session import SQLiteSessionStore
+        import logging
+        state.session_store = SQLiteSessionStore()
+        logging.getLogger(__name__).info("Initialized SQLiteSessionStore")
+    return state.session_store

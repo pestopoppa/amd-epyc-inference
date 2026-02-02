@@ -8,12 +8,11 @@ Replaces in-memory session store with SQLiteSessionStore for:
 """
 
 import logging
-import threading
 import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 
 from src.api.models import (
     CheckpointInfo,
@@ -26,28 +25,14 @@ from src.api.models import (
     SessionResumeResponse,
 )
 from src.session import SQLiteSessionStore, Session, Finding, FindingSource
+from src.api.dependencies import dep_session_store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Persistent session store (initialized lazily)
-_session_store: SQLiteSessionStore | None = None
-_session_store_lock = threading.Lock()
-
 # In-memory pending permissions (not persisted - short-lived)
 _pending_permissions: dict[str, dict] = {}
-
-
-def get_session_store() -> SQLiteSessionStore:
-    """Get or initialize the session store (thread-safe)."""
-    global _session_store
-    if _session_store is None:
-        with _session_store_lock:
-            if _session_store is None:
-                _session_store = SQLiteSessionStore()
-                logger.info("Initialized SQLiteSessionStore")
-    return _session_store
 
 
 def _session_to_info(session: Session) -> SessionInfo:
@@ -79,9 +64,9 @@ async def list_sessions(
     project: str | None = Query(None, description="Filter by project"),
     limit: int = Query(50, description="Maximum results"),
     offset: int = Query(0, description="Skip first N results"),
+    store: SQLiteSessionStore = Depends(dep_session_store),
 ) -> SessionListResponse:
     """List available sessions with optional filtering."""
-    store = get_session_store()
 
     # Build filter
     where = {}
@@ -100,9 +85,11 @@ async def list_sessions(
 
 
 @router.post("/sessions", response_model=SessionInfo)
-async def create_session(request: SessionCreateRequest) -> SessionInfo:
+async def create_session(
+    request: SessionCreateRequest,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> SessionInfo:
     """Create a new session."""
-    store = get_session_store()
 
     session = Session.create(
         name=request.name,
@@ -117,9 +104,11 @@ async def create_session(request: SessionCreateRequest) -> SessionInfo:
 
 
 @router.get("/sessions/{session_id}", response_model=SessionInfo)
-async def get_session(session_id: str) -> SessionInfo:
+async def get_session(
+    session_id: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> SessionInfo:
     """Get session details."""
-    store = get_session_store()
     session = store.get_session(session_id)
 
     if not session:
@@ -129,10 +118,11 @@ async def get_session(session_id: str) -> SessionInfo:
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str) -> dict[str, str]:
+async def delete_session(
+    session_id: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> dict[str, str]:
     """Delete a session and all associated data."""
-    store = get_session_store()
-
     if not store.delete_session(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
@@ -145,7 +135,10 @@ async def delete_session(session_id: str) -> dict[str, str]:
 
 
 @router.post("/sessions/{session_id}/resume", response_model=SessionResumeResponse)
-async def resume_session(session_id: str) -> SessionResumeResponse:
+async def resume_session(
+    session_id: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> SessionResumeResponse:
     """Resume a previous session with full context.
 
     Returns context injection payload for the LLM including:
@@ -153,8 +146,6 @@ async def resume_session(session_id: str) -> SessionResumeResponse:
     - Document change warnings
     - Session summary
     """
-    store = get_session_store()
-
     # Build full resume context
     context = store.build_resume_context(session_id)
     if not context:
@@ -195,10 +186,12 @@ async def resume_session(session_id: str) -> SessionResumeResponse:
 
 
 @router.post("/sessions/current/rename")
-async def rename_session(name: str, session_id: str | None = None) -> dict[str, str]:
+async def rename_session(
+    name: str,
+    session_id: str | None = None,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> dict[str, str]:
     """Rename current or specified session."""
-    store = get_session_store()
-
     if session_id:
         session = store.get_session(session_id)
         if not session:
@@ -223,10 +216,11 @@ async def rename_session(name: str, session_id: str | None = None) -> dict[str, 
 
 
 @router.get("/sessions/{session_id}/findings", response_model=list[FindingInfo])
-async def get_findings(session_id: str) -> list[FindingInfo]:
+async def get_findings(
+    session_id: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> list[FindingInfo]:
     """Get key findings for a session."""
-    store = get_session_store()
-
     # Verify session exists
     if not store.get_session(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
@@ -249,10 +243,12 @@ async def get_findings(session_id: str) -> list[FindingInfo]:
 
 
 @router.post("/sessions/{session_id}/findings", response_model=FindingInfo)
-async def add_finding(session_id: str, request: FindingCreateRequest) -> FindingInfo:
+async def add_finding(
+    session_id: str,
+    request: FindingCreateRequest,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> FindingInfo:
     """Add a key finding to a session."""
-    store = get_session_store()
-
     # Verify session exists
     if not store.get_session(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
@@ -284,10 +280,12 @@ async def add_finding(session_id: str, request: FindingCreateRequest) -> Finding
 
 
 @router.delete("/sessions/{session_id}/findings/{finding_id}")
-async def delete_finding(session_id: str, finding_id: str) -> dict[str, str]:
+async def delete_finding(
+    session_id: str,
+    finding_id: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> dict[str, str]:
     """Delete a finding."""
-    store = get_session_store()
-
     if not store.delete_finding(finding_id):
         raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
 
@@ -303,9 +301,9 @@ async def delete_finding(session_id: str, finding_id: str) -> dict[str, str]:
 async def search_sessions(
     q: str = Query(..., description="Search query"),
     limit: int = Query(10, description="Maximum results"),
+    store: SQLiteSessionStore = Depends(dep_session_store),
 ) -> list[SessionInfo]:
     """Search sessions by name, summary, or last topic."""
-    store = get_session_store()
     sessions = store.search_sessions(q, limit=limit)
     return [_session_to_info(s) for s in sessions]
 
@@ -315,9 +313,9 @@ async def search_findings(
     session_id: str,
     q: str = Query(..., description="Search query"),
     limit: int = Query(10, description="Maximum results"),
+    store: SQLiteSessionStore = Depends(dep_session_store),
 ) -> list[FindingInfo]:
     """Search findings in a session."""
-    store = get_session_store()
     findings = store.search_findings(q, session_id=session_id, limit=limit)
 
     return [
@@ -341,10 +339,12 @@ async def search_findings(
 
 
 @router.post("/sessions/{session_id}/tags/{tag}")
-async def add_tag(session_id: str, tag: str) -> dict[str, Any]:
+async def add_tag(
+    session_id: str,
+    tag: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> dict[str, Any]:
     """Add a tag to a session."""
-    store = get_session_store()
-
     if not store.get_session(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
@@ -353,10 +353,12 @@ async def add_tag(session_id: str, tag: str) -> dict[str, Any]:
 
 
 @router.delete("/sessions/{session_id}/tags/{tag}")
-async def remove_tag(session_id: str, tag: str) -> dict[str, Any]:
+async def remove_tag(
+    session_id: str,
+    tag: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> dict[str, Any]:
     """Remove a tag from a session."""
-    store = get_session_store()
-
     if not store.remove_tag(session_id, tag):
         raise HTTPException(status_code=404, detail=f"Tag '{tag}' not found")
 
@@ -372,10 +374,9 @@ async def remove_tag(session_id: str, tag: str) -> dict[str, Any]:
 async def get_checkpoints(
     session_id: str,
     limit: int = Query(10, description="Maximum results"),
+    store: SQLiteSessionStore = Depends(dep_session_store),
 ) -> list[CheckpointInfo]:
     """Get recent checkpoints for a session."""
-    store = get_session_store()
-
     if not store.get_session(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 
@@ -399,10 +400,11 @@ async def get_checkpoints(
 
 
 @router.post("/sessions/{session_id}/archive")
-async def archive_session(session_id: str) -> dict[str, str]:
+async def archive_session(
+    session_id: str,
+    store: SQLiteSessionStore = Depends(dep_session_store),
+) -> dict[str, str]:
     """Archive a session to cold storage."""
-    store = get_session_store()
-
     if not store.archive_session(session_id):
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
 

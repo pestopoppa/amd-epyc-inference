@@ -304,13 +304,12 @@ class TestWorkerPoolBatch:
     def test_worker_pool_batch_routes_correctly(self):
         """Test worker pool batch routes to correct task type."""
         mock_pool = Mock()
-        mock_pool.batch = Mock()
 
-        # Make batch() awaitable
+        # mock_pool.batch returns a coroutine when called by production code
         async def mock_batch_async(prompts, task_type):
             return [f"Pool response: {p}" for p in prompts]
 
-        mock_pool.batch.return_value = mock_batch_async([], "explore")
+        mock_pool.batch = mock_batch_async
 
         prims = LLMPrimitives(
             mock_mode=False,
@@ -320,7 +319,13 @@ class TestWorkerPoolBatch:
 
         prompts = ["Explore this", "Analyze that"]
 
-        with patch("asyncio.run") as mock_run:
+        # Patch get_event_loop to return a non-running loop so we always
+        # hit the asyncio.run() branch (event loop state varies in full suite).
+        mock_loop = Mock()
+        mock_loop.is_running.return_value = False
+
+        with patch("asyncio.get_event_loop", return_value=mock_loop), \
+             patch("asyncio.run") as mock_run:
             mock_run.return_value = ["Result 1", "Result 2"]
             results = prims._worker_pool_batch(prompts, "worker_explore")
 
