@@ -26,6 +26,17 @@ _WORKSPACE_LOG_PATH = Path("/workspace/logs/progress")
 DEFAULT_LOG_PATH = _RAID_LOG_PATH if _RAID_LOG_PATH.parent.exists() else _WORKSPACE_LOG_PATH
 
 
+def _get_fallback_log_dir() -> Path:
+    """Get a fallback log directory when default paths aren't writable.
+
+    Returns a temp directory that will be cleaned up on process exit.
+    Used in CI environments where neither RAID nor workspace paths exist.
+    """
+    import tempfile
+
+    return Path(tempfile.mkdtemp(prefix="progress_logs_"))
+
+
 class EventType(str, Enum):
     """Types of orchestration events."""
 
@@ -142,9 +153,19 @@ class ProgressLogger:
         self.log_dir = log_dir
         self.buffer_size = buffer_size
         self._buffer: List[ProgressEntry] = []
+        self._disabled = False
 
-        # Ensure log directory exists
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure log directory exists (fall back to temp dir if not writable)
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            # Fall back to temp directory (e.g., in CI environment)
+            self.log_dir = _get_fallback_log_dir()
+            try:
+                self.log_dir.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                # Can't create any directory - disable logging
+                self._disabled = True
 
     def _get_log_path(self, dt: datetime) -> Path:
         """Get log file path for a given datetime."""
@@ -158,6 +179,9 @@ class ProgressLogger:
         Args:
             entry: Progress entry to log
         """
+        if self._disabled:
+            return
+
         self._buffer.append(entry)
 
         if len(self._buffer) >= self.buffer_size:
@@ -165,7 +189,7 @@ class ProgressLogger:
 
     def flush(self) -> None:
         """Flush buffered entries to disk."""
-        if not self._buffer:
+        if self._disabled or not self._buffer:
             return
 
         # Group entries by date
