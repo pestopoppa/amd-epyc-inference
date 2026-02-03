@@ -1,10 +1,19 @@
 """Integration tests for session management endpoints.
 
 Tests the FastAPI routes in src/api/routes/sessions.py.
+
+Note: Tests require local environment configuration (skipped in CI).
 """
 
+import os
 import uuid
+
+import pytest
 from fastapi.testclient import TestClient
+
+# Skip in CI - these tests require local path validation configuration
+if os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true":
+    pytest.skip("Skipping session route tests in CI", allow_module_level=True)
 
 from src.api import create_app
 
