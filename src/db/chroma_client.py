@@ -4,15 +4,15 @@ Manages three collections:
 - faces: 512-dim ArcFace embeddings for face matching
 - descriptions: Text embeddings from descriptions for semantic search
 - images: CLIP embeddings for visual similarity
+
+Note: chromadb is an optional dependency. Functions will raise ImportError
+if chromadb is not installed when called.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
-
-import chromadb
-from chromadb.config import Settings
+from typing import TYPE_CHECKING, Any
 
 from src.vision.config import (
     CHROMA_PATH,
@@ -24,11 +24,36 @@ from src.vision.config import (
 
 logger = logging.getLogger(__name__)
 
-_client: chromadb.PersistentClient | None = None
+# Optional chromadb import - not required for CI tests
+try:
+    import chromadb
+    from chromadb.config import Settings
+
+    CHROMADB_AVAILABLE = True
+except ImportError:
+    chromadb = None  # type: ignore[assignment]
+    Settings = None  # type: ignore[assignment,misc]
+    CHROMADB_AVAILABLE = False
+    logger.debug("chromadb not installed - face embedding features disabled")
+
+if TYPE_CHECKING:
+    import chromadb as chromadb_types
+
+_client: "chromadb_types.PersistentClient | None" = None
 
 
-def get_chroma_client() -> chromadb.PersistentClient:
+def _require_chromadb() -> None:
+    """Raise ImportError if chromadb is not available."""
+    if not CHROMADB_AVAILABLE:
+        raise ImportError(
+            "chromadb is required for face embedding features. "
+            "Install with: pip install chromadb"
+        )
+
+
+def get_chroma_client() -> "chromadb_types.PersistentClient":
     """Get or create the ChromaDB persistent client."""
+    _require_chromadb()
     global _client
     if _client is None:
         CHROMA_PATH.mkdir(parents=True, exist_ok=True)
@@ -43,7 +68,7 @@ def get_chroma_client() -> chromadb.PersistentClient:
     return _client
 
 
-def get_faces_collection() -> chromadb.Collection:
+def get_faces_collection() -> "chromadb_types.Collection":
     """Get or create the faces collection for ArcFace embeddings."""
     client = get_chroma_client()
     return client.get_or_create_collection(
@@ -52,7 +77,7 @@ def get_faces_collection() -> chromadb.Collection:
     )
 
 
-def get_descriptions_collection() -> chromadb.Collection:
+def get_descriptions_collection() -> "chromadb_types.Collection":
     """Get or create the descriptions collection for text embeddings."""
     client = get_chroma_client()
     return client.get_or_create_collection(
@@ -61,7 +86,7 @@ def get_descriptions_collection() -> chromadb.Collection:
     )
 
 
-def get_images_collection() -> chromadb.Collection:
+def get_images_collection() -> "chromadb_types.Collection":
     """Get or create the images collection for CLIP embeddings."""
     client = get_chroma_client()
     return client.get_or_create_collection(

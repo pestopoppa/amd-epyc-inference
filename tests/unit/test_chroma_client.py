@@ -39,16 +39,17 @@ def mock_chroma():
 
     mock_client.get_or_create_collection.side_effect = get_or_create
 
-    with patch("src.db.chroma_client.chromadb") as mock_chromadb:
-        mock_chromadb.PersistentClient.return_value = mock_client
-        with patch("src.db.chroma_client.CHROMA_PATH") as mock_path:
-            mock_path.mkdir = MagicMock()
-            yield {
-                "client": mock_client,
-                "faces": mock_faces,
-                "descriptions": mock_descriptions,
-                "images": mock_images,
-            }
+    with patch("src.db.chroma_client.CHROMADB_AVAILABLE", True):
+        with patch("src.db.chroma_client.chromadb") as mock_chromadb:
+            mock_chromadb.PersistentClient.return_value = mock_client
+            with patch("src.db.chroma_client.CHROMA_PATH") as mock_path:
+                mock_path.mkdir = MagicMock()
+                yield {
+                    "client": mock_client,
+                    "faces": mock_faces,
+                    "descriptions": mock_descriptions,
+                    "images": mock_images,
+                }
 
 
 class TestGetChromaClient:
@@ -62,6 +63,13 @@ class TestGetChromaClient:
         client1 = chroma_client.get_chroma_client()
         client2 = chroma_client.get_chroma_client()
         assert client1 is client2
+
+    def test_raises_when_chromadb_unavailable(self):
+        """Should raise ImportError when chromadb is not installed."""
+        with patch("src.db.chroma_client.CHROMADB_AVAILABLE", False):
+            with pytest.raises(ImportError) as exc_info:
+                chroma_client.get_chroma_client()
+            assert "chromadb is required" in str(exc_info.value)
 
 
 class TestCollections:
