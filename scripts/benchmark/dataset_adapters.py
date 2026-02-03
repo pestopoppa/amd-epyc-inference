@@ -40,10 +40,12 @@ ADAPTER_SUITES = {
     "gaia", "cruxeval", "bigcodebench",
     # Phase 1 hard benchmarks (mode-advantage signal)
     "gpqa", "simpleqa", "hotpotqa", "livecodebench",
+    # Phase 2 hard benchmarks
+    "debugbench", "usaco",
 }
 
 # Suites that stay YAML-based (no public dataset or intentionally synthetic)
-YAML_ONLY_SUITES = {"agentic", "long_context", "mode_advantage"}
+YAML_ONLY_SUITES = {"agentic", "long_context", "mode_advantage", "mode_advantage_hard"}
 
 
 def get_adapter(suite: str) -> Optional["BaseAdapter"]:
@@ -63,6 +65,9 @@ def get_adapter(suite: str) -> Optional["BaseAdapter"]:
         "simpleqa": SimpleQAAdapter,
         "hotpotqa": HotpotQAAdapter,
         "livecodebench": LiveCodeBenchAdapter,
+        # Phase 2 hard benchmarks
+        "debugbench": DebugBenchAdapter,
+        "usaco": USACOAdapter,
     }
     cls = adapters.get(suite)
     if cls is None:
@@ -1420,6 +1425,291 @@ class LiveCodeBenchAdapter(BaseAdapter):
             return [self._row_to_prompt(i, self._dataset[i]) for i in indices]
 
         # Default sampling
+        if stratify and self.has_real_tiers:
+            return self._stratified_sample(n, seed)
+
+        rng = random.Random(seed)
+        indices = rng.sample(range(len(self._dataset)), min(n, len(self._dataset)))
+        return [self._row_to_prompt(i, self._dataset[i]) for i in indices]
+
+
+# ── DebugBench (Bug Finding/Fixing) ───────────────────────────────────────
+
+
+class DebugBenchAdapter(BaseAdapter):
+    """DebugBench: 4,253 buggy code instances across 3 languages.
+
+    Source: Rtian/DebugBench on HuggingFace.
+    Contains buggy code with explanations, solutions, and bug categories.
+    Perfect for REPL mode-advantage: iterative debugging >> direct inference.
+
+    Scoring: code_execution (run fixed code against test cases).
+    Tiers: easy=T1, medium=T2, hard=T3 (from LeetCode difficulty).
+    """
+
+    suite_name = "debugbench"
+    has_real_tiers = True
+
+    LEVEL_MAP = {"easy": 1, "medium": 2, "hard": 3}
+
+    def _ensure_loaded(self):
+        if self._dataset is not None:
+            return
+        try:
+            import datasets as hf
+            self._dataset = hf.load_dataset("Rtian/DebugBench", split="test")
+        except Exception as e:
+            print(f"  [adapter] DebugBench load failed: {e}")
+            self._dataset = []
+
+    def _get_tier_for_index(self, idx: int) -> int:
+        row = self._dataset[idx]
+        level = row.get("level", "medium").lower()
+        return self.LEVEL_MAP.get(level, 2)
+
+    def _row_to_prompt(self, idx: int, row: dict) -> dict:
+        question = row.get("question", "")
+        buggy_code = row.get("buggy_code", "")
+        solution = row.get("solution", "")
+        bug_explanation = row.get("bug_explanation", "")
+        examples = row.get("examples", [])
+        constraints = row.get("constraints", "")
+        language = row.get("language", "python3")
+        level = row.get("level", "medium")
+        slug = row.get("slug", f"debug_{idx:04d}")
+        category = row.get("category", "")
+
+        # Map language to standard names
+        lang_map = {"python3": "python", "cpp": "cpp", "java": "java"}
+        lang = lang_map.get(language, language)
+
+        # Build prompt
+        prompt_lines = [
+            f"# Bug Fixing Task ({lang.upper()})",
+            "",
+            f"## Problem Description",
+            question[:500] if len(question) > 500 else question,
+            "",
+        ]
+
+        if examples:
+            prompt_lines.append("## Examples")
+            for i, ex in enumerate(examples[:2]):
+                prompt_lines.append(f"```")
+                prompt_lines.append(str(ex)[:200])
+                prompt_lines.append(f"```")
+            prompt_lines.append("")
+
+        if constraints:
+            prompt_lines.append(f"## Constraints")
+            prompt_lines.append(constraints[:200])
+            prompt_lines.append("")
+
+        prompt_lines.extend([
+            f"## Buggy Code",
+            f"```{lang}",
+            buggy_code[:1000] if len(buggy_code) > 1000 else buggy_code,
+            "```",
+            "",
+            "Find and fix the bug(s) in the code above. "
+            "Provide the corrected code.",
+        ])
+
+        tier = self._get_tier_for_index(idx)
+
+        # For Python, we can do code_execution scoring
+        scoring_method = "code_execution" if lang == "python" else "substring"
+        scoring_config = {"language": lang, "timeout": 30}
+
+        if lang != "python":
+            # For non-Python, check that key parts of solution appear
+            scoring_config = {"case_sensitive": True}
+
+        return {
+            "id": f"debugbench_{slug}_{lang}",
+            "suite": "debugbench",
+            "prompt": "\n".join(prompt_lines),
+            "context": "",
+            "expected": solution[:100] if solution else "def ",
+            "scoring": [],
+            "image_path": "",
+            "tier": tier,
+            "scoring_method": scoring_method,
+            "scoring_config": scoring_config,
+            "metadata": {
+                "language": lang,
+                "category": category,
+                "bug_explanation": bug_explanation[:200],
+            },
+        }
+
+    def sample(
+        self,
+        n: int = 10,
+        seed: int = 42,
+        stratify: bool = False,
+        filter_language: str | None = None,
+        filter_category: str | None = None,
+    ) -> list[dict]:
+        """Sample with optional language/category filter.
+
+        Args:
+            n: Number of samples.
+            seed: Random seed.
+            stratify: Whether to stratify by tier.
+            filter_language: "python3", "cpp", "java", or None for all.
+            filter_category: Bug category filter or None for all.
+        """
+        self._ensure_loaded()
+        if not self._dataset:
+            return []
+
+        # Apply filters
+        filtered_indices = list(range(len(self._dataset)))
+
+        if filter_language:
+            filtered_indices = [
+                i for i in filtered_indices
+                if self._dataset[i].get("language", "") == filter_language
+            ]
+
+        if filter_category:
+            filtered_indices = [
+                i for i in filtered_indices
+                if filter_category.lower() in self._dataset[i].get("category", "").lower()
+            ]
+
+        if not filtered_indices:
+            return []
+
+        rng = random.Random(seed)
+        indices = rng.sample(filtered_indices, min(n, len(filtered_indices)))
+        return [self._row_to_prompt(i, self._dataset[i]) for i in indices]
+
+
+# ── USACO (Olympiad Programming) ──────────────────────────────────────────
+
+
+class USACOAdapter(BaseAdapter):
+    """USACO: Olympiad-level competitive programming problems.
+
+    Source: codegenning/usacobench_formatted on HuggingFace.
+    307 problems across Bronze/Silver/Gold/Platinum divisions.
+    GPT-4 scores 8.7% zero-shot — ideal for REPL + specialist escalation.
+
+    Scoring: code_execution (against test cases).
+    Tiers: Bronze=T1, Silver=T2, Gold/Platinum=T3.
+    """
+
+    suite_name = "usaco"
+    has_real_tiers = True
+
+    DIVISION_MAP = {
+        "bronze": 1,
+        "silver": 2,
+        "gold": 3,
+        "platinum": 3,
+    }
+
+    def _ensure_loaded(self):
+        if self._dataset is not None:
+            return
+        try:
+            import datasets as hf
+            # Use streaming to avoid timeout on large dataset
+            self._dataset = hf.load_dataset(
+                "codegenning/usacobench_formatted",
+                split="test",
+                streaming=False,
+            )
+        except Exception as e:
+            print(f"  [adapter] USACO load failed: {e}")
+            self._dataset = []
+
+    def _get_tier_for_index(self, idx: int) -> int:
+        row = self._dataset[idx]
+        division = row.get("division", row.get("level", "silver")).lower()
+        return self.DIVISION_MAP.get(division, 2)
+
+    def _row_to_prompt(self, idx: int, row: dict) -> dict:
+        # Schema varies — try multiple field names
+        problem = row.get("problem", row.get("question", row.get("prompt", "")))
+        problem_id = row.get("problem_id", row.get("id", f"usaco_{idx:04d}"))
+        division = row.get("division", row.get("level", "silver"))
+        solution = row.get("solution", row.get("code", ""))
+        test_cases = row.get("test_cases", row.get("tests", []))
+
+        # Build prompt
+        prompt_lines = [
+            f"# USACO Problem ({division.title()} Division)",
+            "",
+            problem[:2000] if len(problem) > 2000 else problem,
+            "",
+            "Write a Python solution that reads from stdin and writes to stdout.",
+            "Your solution should handle all test cases within time limits.",
+        ]
+
+        tier = self._get_tier_for_index(idx)
+
+        # Build test code if available
+        test_code = ""
+        if test_cases and isinstance(test_cases, list):
+            test_cases_str = []
+            for tc in test_cases[:5]:
+                if isinstance(tc, dict):
+                    inp = repr(tc.get("input", ""))
+                    out = repr(tc.get("output", tc.get("expected", "")))
+                    test_cases_str.append(f"({inp}, {out})")
+            if test_cases_str:
+                test_code = f"TEST_CASES = [{', '.join(test_cases_str)}]"
+
+        return {
+            "id": f"usaco_{division}_{problem_id}",
+            "suite": "usaco",
+            "prompt": "\n".join(prompt_lines),
+            "context": "",
+            "expected": "",  # Code execution determines correctness
+            "scoring": [],
+            "image_path": "",
+            "tier": tier,
+            "scoring_method": "code_execution",
+            "scoring_config": {
+                "language": "python",
+                "timeout": 120,  # USACO problems need more time
+                "test_code": test_code,
+            },
+        }
+
+    def sample(
+        self,
+        n: int = 10,
+        seed: int = 42,
+        stratify: bool = False,
+        filter_division: str | None = None,
+    ) -> list[dict]:
+        """Sample with optional division filter.
+
+        Args:
+            n: Number of samples.
+            seed: Random seed.
+            stratify: Whether to stratify by tier.
+            filter_division: "bronze", "silver", "gold", "platinum", or None.
+        """
+        self._ensure_loaded()
+        if not self._dataset:
+            return []
+
+        if filter_division:
+            filtered_indices = [
+                i for i in range(len(self._dataset))
+                if self._dataset[i].get("division", "").lower() == filter_division.lower()
+            ]
+            if not filtered_indices:
+                return []
+            rng = random.Random(seed)
+            indices = rng.sample(filtered_indices, min(n, len(filtered_indices)))
+            return [self._row_to_prompt(i, self._dataset[i]) for i in indices]
+
         if stratify and self.has_real_tiers:
             return self._stratified_sample(n, seed)
 

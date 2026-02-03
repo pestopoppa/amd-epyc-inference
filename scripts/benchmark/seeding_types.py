@@ -40,6 +40,10 @@ DEFAULT_SUITES = [
     "mode_advantage",
     # Phase 1 hard benchmarks (strong mode-advantage signal)
     "gpqa", "simpleqa", "hotpotqa", "livecodebench",
+    # Phase 2 hard benchmarks
+    "debugbench", "usaco",
+    # Phase 3: Hard hand-written tasks (60 tasks, 4 categories)
+    "mode_advantage_hard",
 ]
 DEFAULT_ROLES = [
     "frontdoor", "coder_primary", "coder_escalation",
@@ -74,6 +78,11 @@ SUITE_TIMEOUTS: dict[str, int] = {
     "simpleqa": 120,  # Factual lookup — should be quick
     "hotpotqa": 180,  # Multi-hop reasoning
     "livecodebench": 300,  # Competition code — needs iteration
+    # Phase 2 hard benchmarks
+    "debugbench": 180,  # Bug fixing — iterative debugging
+    "usaco": 300,  # Olympiad — complex algorithms
+    # Phase 3: Hard hand-written
+    "mode_advantage_hard": 240,  # Expert-level tasks — need more time
 }
 
 

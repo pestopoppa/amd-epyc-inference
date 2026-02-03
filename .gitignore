@@ -75,4 +75,9 @@ benchmarks/results/reviews/*.csv
 benchmarks/results/orchestrator/
 
 # Benchmark question pools (reconstructible from public sources — see Ch24)
-benchmarks/prompts/
+# Use wildcard pattern to allow negation of specific files
+benchmarks/prompts/*
+# EXCEPT: Hand-written mode-advantage tasks (custom, not from public benchmarks)
+!benchmarks/prompts/debug/
+benchmarks/prompts/debug/*
+!benchmarks/prompts/debug/mode_advantage_hard.yaml
