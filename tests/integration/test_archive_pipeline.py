@@ -10,16 +10,23 @@ These tests validate the complete archive processing workflow:
 
 To run all tests:
     pytest tests/integration/test_archive_pipeline.py -v
+
+Note: Requires local filesystem paths (skipped in CI).
 """
 
 import io
 import json
+import os
 import tarfile
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+# Skip in CI - these tests require local filesystem paths (/mnt/raid0)
+if os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true":
+    pytest.skip("Skipping archive tests in CI (require local paths)", allow_module_level=True)
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
