@@ -127,7 +127,9 @@ class Dispatcher:
             progress_logger: Optional ProgressLogger for MemRL integration.
             hybrid_router: Optional HybridRouter for learned routing.
         """
-        self.registry = registry or RegistryLoader(validate_paths=validate_paths)
+        self.registry = registry or RegistryLoader(
+            validate_paths=validate_paths, allow_missing=True
+        )
         self.progress_logger = progress_logger
         self.hybrid_router = hybrid_router
         self._warnings: list[str] = []
