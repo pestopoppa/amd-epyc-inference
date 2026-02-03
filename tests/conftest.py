@@ -11,6 +11,10 @@ Memory Safety:
     model). The lazy loading in src/api.py prevents this for mock mode tests,
     but this guard provides an additional safety net.
 
+    The memory check is SKIPPED in CI environments (detected via CI or
+    ORCHESTRATOR_MOCK_MODE env vars) since CI runners have limited RAM but
+    only run mock-mode tests that don't load models.
+
 Usage:
     pytest tests/              # Normal test run with memory check
     pytest tests/ -n 4         # Safe parallel execution (max 4 workers)
@@ -21,6 +25,7 @@ See also:
     - research/ESCALATION_FLOW.md for memory pool architecture
 """
 
+import os
 import warnings
 
 import pytest
@@ -30,6 +35,9 @@ from src.config import reset_config
 
 # Memory threshold in GB (fail if less available)
 MEMORY_THRESHOLD_GB = 100
+
+# Check if running in CI environment (GitHub Actions, etc.)
+IS_CI = os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true"
 
 # Maximum safe parallel workers for this machine
 MAX_SAFE_WORKERS = 4
@@ -61,32 +69,35 @@ def pytest_configure(config):
     )
     config.addinivalue_line("markers", "integration: marks integration tests")
 
-    # Check available memory
-    try:
-        import psutil
+    # Check available memory (skip in CI - mock mode tests don't load models)
+    if IS_CI:
+        pass  # Skip memory check in CI environments
+    else:
+        try:
+            import psutil
 
-        free_gb = psutil.virtual_memory().available / (1024**3)
+            free_gb = psutil.virtual_memory().available / (1024**3)
 
-        if free_gb < MEMORY_THRESHOLD_GB:
-            # Hard fail if memory is critically low
-            pytest.exit(
-                f"DANGER: Only {free_gb:.0f}GB free RAM. "
-                f"Need {MEMORY_THRESHOLD_GB}GB+ for safe testing.\n"
-                "This machine can crash if tests load too many models.\n"
-                "Free up memory or wait for other processes to complete.",
-                returncode=1,
-            )
-        elif free_gb < MEMORY_THRESHOLD_GB * 2:
-            # Warn if memory is getting low
+            if free_gb < MEMORY_THRESHOLD_GB:
+                # Hard fail if memory is critically low
+                pytest.exit(
+                    f"DANGER: Only {free_gb:.0f}GB free RAM. "
+                    f"Need {MEMORY_THRESHOLD_GB}GB+ for safe testing.\n"
+                    "This machine can crash if tests load too many models.\n"
+                    "Free up memory or wait for other processes to complete.",
+                    returncode=1,
+                )
+            elif free_gb < MEMORY_THRESHOLD_GB * 2:
+                # Warn if memory is getting low
+                warnings.warn(
+                    f"Low memory: {free_gb:.0f}GB free. Tests may be slow. Consider freeing memory.",
+                    UserWarning,
+                )
+        except ImportError:
             warnings.warn(
-                f"Low memory: {free_gb:.0f}GB free. Tests may be slow. Consider freeing memory.",
+                "psutil not installed - cannot check memory. Install with: pip install psutil",
                 UserWarning,
             )
-    except ImportError:
-        warnings.warn(
-            "psutil not installed - cannot check memory. Install with: pip install psutil",
-            UserWarning,
-        )
 
 
 @pytest.fixture(autouse=True)
