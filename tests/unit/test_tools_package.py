@@ -539,16 +539,10 @@ class TestRunTestsTool:
         mock_result.stderr = ""
 
         with (
-            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests._validate_path", return_value=(True, None)),
             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result),
-            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
             patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
-            mock_dir = MagicMock()
-            mock_path.return_value = mock_dir
-            mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/claude"
-
             result = run_tests(test_path="tests/")
 
         assert result["success"] is True
@@ -565,16 +559,10 @@ class TestRunTestsTool:
         mock_result.stderr = ""
 
         with (
-            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests._validate_path", return_value=(True, None)),
             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result),
-            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
             patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
-            mock_dir = MagicMock()
-            mock_path.return_value = mock_dir
-            mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/claude"
-
             result = run_tests(test_path="tests/")
 
         assert result["success"] is False
@@ -598,19 +586,13 @@ class TestRunTestsTool:
         from src.tools.code.run_tests import run_tests
 
         with (
-            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests._validate_path", return_value=(True, None)),
             patch(
                 "src.tools.code.run_tests.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("pytest", 300),
             ),
-            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
             patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
-            mock_dir = MagicMock()
-            mock_path.return_value = mock_dir
-            mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/claude"
-
             result = run_tests(test_path="tests/")
 
         assert result["success"] is False
@@ -626,16 +608,10 @@ class TestRunTestsTool:
         mock_result.stderr = ""
 
         with (
-            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests._validate_path", return_value=(True, None)),
             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result) as mock_run,
-            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
             patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
-            mock_dir = MagicMock()
-            mock_path.return_value = mock_dir
-            mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/claude"
-
             result = run_tests(
                 test_path="tests/",
                 test_pattern="test_api",
