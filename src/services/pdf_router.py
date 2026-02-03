@@ -92,12 +92,19 @@ class PDFRouter:
             temp_dir: Directory for temporary files
             pdftotext_path: Path to pdftotext binary
         """
+        import tempfile
+
         from src.config import get_config
 
         _cfg = get_config()
         self.lightonocr_url = lightonocr_url or _cfg.server_urls.ocr_server
         self.temp_dir = Path(temp_dir or str(_cfg.services.pdf_router_temp_dir))
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            self.temp_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, FileNotFoundError):
+            # Fallback to system temp for CI
+            self.temp_dir = Path(tempfile.gettempdir()) / "pdf_router"
+            self.temp_dir.mkdir(parents=True, exist_ok=True)
         self.pdftotext_path = pdftotext_path
 
         # Check for PyMuPDF
