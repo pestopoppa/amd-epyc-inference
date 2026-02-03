@@ -8,34 +8,40 @@
 #   ./start_servers.sh [model_path] [port] [slots]
 #   ./start_servers.sh  # Uses defaults for test model
 #
-# Environment variables:
-#   LLAMA_CPP_PATH  - Path to llama.cpp build (default: /mnt/raid0/llm/llama.cpp/build/bin)
-#   MODELS_PATH     - Path to models directory (default: /mnt/raid0/llm/models)
-#   LOG_DIR         - Directory for server logs (default: /mnt/raid0/llm/claude/logs)
+# Environment variables (sourced from env.sh):
+#   LLAMA_CPP_BIN   - Path to llama.cpp build
+#   MODELS_DIR      - Path to models directory
+#   LOG_DIR         - Directory for server logs
 #
 # Examples:
 #   # Start test server with Qwen2.5-Coder-0.5B
 #   ./start_servers.sh
 #
 #   # Start production server with specific model
-#   ./start_servers.sh /mnt/raid0/llm/models/Qwen2.5-Coder-32B-Q4_K_M.gguf 8080 4
+#   ./start_servers.sh /path/to/model.gguf 8080 4
 #
 #   # Start on different port
 #   PORT=8081 ./start_servers.sh
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 # =============================================================================
-# Configuration
+# Configuration (using env vars from env.sh with env override support)
 # =============================================================================
 
-LLAMA_CPP_PATH="${LLAMA_CPP_PATH:-/mnt/raid0/llm/llama.cpp/build/bin}"
-MODELS_PATH="${MODELS_PATH:-/mnt/raid0/llm/models}"
-LOG_DIR="${LOG_DIR:-/mnt/raid0/llm/claude/logs}"
+LLAMA_CPP_PATH="${LLAMA_CPP_PATH:-${LLAMA_CPP_BIN}}"
+MODELS_PATH="${MODELS_PATH:-${MODELS_DIR}}"
+# LOG_DIR already set by env.sh
 
 # Default test model (small, fast for development)
 DEFAULT_MODEL="${MODELS_PATH}/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
-ALT_MODEL_PATH="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+ALT_MODEL_PATH="${MODEL_BASE}/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
 
 # Server settings
 DEFAULT_PORT="${PORT:-8080}"

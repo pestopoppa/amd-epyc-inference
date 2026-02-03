@@ -17,14 +17,19 @@ set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOGS_DIR="/mnt/raid0/llm/LOGS"
-REPORT_FILE="$LOGS_DIR/research_report.md"
-AUDIT_LOG="$LOGS_DIR/agent_audit.log"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LOGS_DIR="${LOG_DIR}"
+REPORT_FILE="${PROJECT_ROOT}/docs/reference/benchmarks/RESULTS.md"
+AUDIT_LOG="${LOG_DIR}/agent_audit.log"
 TEMP_DATA="/tmp/report_update_$$"
 
 # Source logging if available
-if [[ -f /mnt/raid0/llm/UTILS/agent_log.sh ]]; then
-  source /mnt/raid0/llm/UTILS/agent_log.sh
+if [[ -f "${SCRIPT_DIR}/agent_log.sh" ]]; then
+  source "${SCRIPT_DIR}/agent_log.sh"
 else
   # Fallback
   agent_task_start() { echo "[TASK] $1"; }

@@ -92,6 +92,21 @@ class Constraints:
 
 
 @dataclass
+class BackendConfig:
+    """Backend routing configuration for a role.
+
+    Supports routing to different inference backends:
+    - local: llama.cpp (default for all existing roles)
+    - anthropic: Anthropic Claude API
+    - openai: OpenAI API (or compatible endpoints)
+    """
+
+    backend_type: str = "local"  # local, anthropic, openai
+    api_model: str | None = None  # Model name for API backends (e.g., "claude-3-5-sonnet-20241022")
+    fallback_role: str | None = None  # Local role to fall back to if API unavailable
+
+
+@dataclass
 class RoleConfig:
     """Complete configuration for an agent role."""
 
@@ -107,6 +122,7 @@ class RoleConfig:
     notes: str | None = None
     generation_defaults: GenerationDefaults | None = None
     system_prompt_suffix: str | None = None
+    backend_config: BackendConfig = field(default_factory=BackendConfig)
 
 
 @dataclass
@@ -337,6 +353,14 @@ class RegistryLoader:
                 context_length=gen_data.get("context_length"),
             )
 
+        # Build backend config
+        backend_data = data.get("backend", {})
+        backend_config = BackendConfig(
+            backend_type=backend_data.get("type", "local"),
+            api_model=backend_data.get("api_model"),
+            fallback_role=backend_data.get("fallback_role"),
+        )
+
         return RoleConfig(
             name=name,
             tier=data.get("tier", "C"),
@@ -350,6 +374,7 @@ class RegistryLoader:
             notes=data.get("notes"),
             generation_defaults=gen_defaults,
             system_prompt_suffix=data.get("system_prompt_suffix"),
+            backend_config=backend_config,
         )
 
     def _validate_model_path(self, role: RoleConfig) -> None:
@@ -463,6 +488,79 @@ class RegistryLoader:
             return chain.get_next_role(role_name)
         return None
 
+    def get_roles_by_backend(self, backend_type: str) -> list[RoleConfig]:
+        """Get all roles using a specific backend type.
+
+        Args:
+            backend_type: The backend type (local, anthropic, openai).
+
+        Returns:
+            List of roles configured for that backend.
+        """
+        return [
+            r for r in self._roles.values()
+            if r.backend_config.backend_type == backend_type
+        ]
+
+    def get_local_roles(self) -> list[RoleConfig]:
+        """Get all roles using local llama.cpp inference."""
+        return self.get_roles_by_backend("local")
+
+    def get_external_roles(self) -> list[RoleConfig]:
+        """Get all roles using external API backends (anthropic, openai)."""
+        return [
+            r for r in self._roles.values()
+            if r.backend_config.backend_type in ("anthropic", "openai")
+        ]
+
+    def get_fallback_role(self, role_name: str) -> RoleConfig | None:
+        """Get the local fallback role for an external API role.
+
+        Args:
+            role_name: The role to get fallback for.
+
+        Returns:
+            The fallback RoleConfig, or None if no fallback configured.
+        """
+        role = self.get_role(role_name)
+        fallback_name = role.backend_config.fallback_role
+        if fallback_name and fallback_name in self._roles:
+            return self._roles[fallback_name]
+        return None
+
+    def get_timeout(
+        self,
+        key: str,
+        category: str = "roles",
+    ) -> int | float:
+        """Get a timeout value from the registry.
+
+        Single source of truth for all timeouts in the system.
+
+        Args:
+            key: The timeout key (e.g., "architect_general", "request", "warm_keepalive").
+            category: The timeout category: "roles", "server", "services", "pools", "benchmark".
+                     Default is "roles" for per-role inference timeouts.
+
+        Returns:
+            Timeout value in seconds. Falls back to runtime_defaults.timeouts.default (600).
+
+        Examples:
+            registry.get_timeout("architect_general")  # Role timeout
+            registry.get_timeout("request", "server")  # Server request timeout
+            registry.get_timeout("warm_keepalive", "pools")  # Pool timeout
+        """
+        timeouts = self._runtime_defaults.get("timeouts", {})
+        default = timeouts.get("default", 600)
+
+        # Look up in specified category
+        category_timeouts = timeouts.get(category, {})
+        if key in category_timeouts:
+            return category_timeouts[key]
+
+        # Fall back to default
+        return default
+
     def generate_command(
         self,
         role_name: str,
@@ -549,9 +647,12 @@ class RegistryLoader:
         """Determine which roles to use based on TaskIR.
 
         Uses the routing_hints from the registry to match task properties.
+        Supports backend_preference to filter by backend type.
 
         Args:
-            task_ir: Parsed TaskIR JSON.
+            task_ir: Parsed TaskIR JSON. May include:
+                - backend_preference: "local", "anthropic", or "openai"
+                  to filter roles by backend type
 
         Returns:
             List of role names to use.
@@ -564,8 +665,10 @@ class RegistryLoader:
         inputs = task_ir.get("inputs", [])
         input_types = [i.get("type", "") for i in inputs]
         escalation = task_ir.get("escalation", {})
+        backend_preference = task_ir.get("backend_preference")
 
         # Check each routing hint
+        matched_roles: list[str] = []
         for hint in self._routing_hints:
             condition = hint.condition
 
@@ -584,12 +687,27 @@ class RegistryLoader:
 
                 # Evaluate condition (limited, safe subset)
                 if self._eval_condition(condition, ctx):
-                    return hint.use
+                    matched_roles = hint.use
+                    break
             except Exception:
                 continue
 
         # Default: frontdoor only
-        return ["frontdoor"]
+        if not matched_roles:
+            matched_roles = ["frontdoor"]
+
+        # Filter by backend preference if specified
+        if backend_preference:
+            filtered = [
+                role_name for role_name in matched_roles
+                if role_name in self._roles
+                and self._roles[role_name].backend_config.backend_type == backend_preference
+            ]
+            # Fall back to matched roles if no backend match
+            if filtered:
+                return filtered
+
+        return matched_roles
 
     def _eval_condition(self, condition: str, ctx: dict[str, Any]) -> bool:
         """Safely evaluate a routing condition.

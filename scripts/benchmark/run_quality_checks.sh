@@ -4,8 +4,14 @@ set -x
 # Quality evaluation for optimization techniques
 # Compares baseline vs optimized outputs for quality degradation
 
-LLAMA_CPP="/mnt/raid0/llm/llama.cpp/build/bin"
-LOG_DIR="/mnt/raid0/llm/LOGS/quality"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LLAMA_CPP="${LLAMA_CPP_BIN}"
+LOG_DIR="${LOG_DIR}/quality"
 mkdir -p "$LOG_DIR"
 
 PROMPT_FACTUAL="What is the capital of France? Answer in one word."
@@ -21,7 +27,7 @@ get_output() {
 
   local tmpfile
 
-  tmpfile=$(mktemp /mnt/raid0/llm/tmp/prompt_XXXXXX.txt)
+  tmpfile=$(mktemp "${LLM_ROOT}/tmp/prompt_XXXXXX.txt")
   echo -e "$prompt" >"$tmpfile"
 
   local raw_output

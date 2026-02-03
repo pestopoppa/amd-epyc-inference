@@ -14,15 +14,22 @@
 #   arch        - Architecture: dense, qwen3moe, qwen3next, glm4moe, etc.
 #
 # Examples:
-#   ./add_model_to_benchmark.sh /mnt/raid0/llm/models/Qwen3-30B.gguf Qwen3-30B qwen3moe
-#   ./add_model_to_benchmark.sh /mnt/raid0/llm/models/Llama-70B.gguf Llama-70B dense
+#   ./add_model_to_benchmark.sh /path/to/model.gguf Qwen3-30B qwen3moe
+#   ./add_model_to_benchmark.sh /path/to/model.gguf Llama-70B dense
 #
 # =============================================================================
 set -euo pipefail
 
-QUEUE_FILE="/mnt/raid0/llm/tmp/benchmark_queue.txt"
-QUEUE_LOCK="/mnt/raid0/llm/tmp/benchmark_queue.lock"
-LLAMA_COMPLETION="/mnt/raid0/llm/llama.cpp/build/bin/llama-completion"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+# Configuration (using env vars from env.sh)
+QUEUE_FILE="${LLM_ROOT}/tmp/benchmark_queue.txt"
+QUEUE_LOCK="${LLM_ROOT}/tmp/benchmark_queue.lock"
+LLAMA_COMPLETION="${LLAMA_CPP_BIN}/llama-completion"
 HEALTH_CHECK_TIMEOUT=15
 HEALTH_CHECK_PROMPT="Hello, please respond with a single word."
 

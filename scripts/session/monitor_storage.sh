@@ -1,9 +1,15 @@
 #!/bin/bash
 # monitor_storage.sh - Monitor root FS and alert on high usage
-# Usage: bash /mnt/raid0/llm/UTILS/monitor_storage.sh
-# Run in background: bash /mnt/raid0/llm/UTILS/monitor_storage.sh &
+# Usage: ./scripts/session/monitor_storage.sh
+# Run in background: ./scripts/session/monitor_storage.sh &
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
 
 THRESHOLD_WARN=70
 THRESHOLD_CRITICAL=85
@@ -33,8 +39,8 @@ while true; do
     echo "   ACTION REQUIRED: Run emergency_cleanup.sh"
 
     # Log to agent audit
-    if [ -f /mnt/raid0/llm/UTILS/agent_log.sh ]; then
-      source /mnt/raid0/llm/UTILS/agent_log.sh
+    if [ -f "${PROJECT_ROOT}/scripts/utils/agent_log.sh" ]; then
+      source "${PROJECT_ROOT}/scripts/utils/agent_log.sh"
       agent_error "Root FS CRITICAL" "usage=${ROOT_USAGE}%, /tmp/claude=${TMP_CLAUDE_SIZE}"
     fi
 
@@ -46,8 +52,8 @@ while true; do
     echo "   /tmp/claude: $TMP_CLAUDE_SIZE"
 
     # Log warning
-    if [ -f /mnt/raid0/llm/UTILS/agent_log.sh ]; then
-      source /mnt/raid0/llm/UTILS/agent_log.sh
+    if [ -f "${PROJECT_ROOT}/scripts/utils/agent_log.sh" ]; then
+      source "${PROJECT_ROOT}/scripts/utils/agent_log.sh"
       agent_warn "Root FS high usage" "usage=${ROOT_USAGE}%, /tmp/claude=${TMP_CLAUDE_SIZE}"
     fi
   else

@@ -534,9 +534,18 @@ worker_pool:
     Integration: src/services/worker_pool.py
 
 roles:
+  # =============================================================================
+  # LOCAL ROLES (llama.cpp inference)
+  # =============================================================================
+  # All local roles use backend.type: local (default if not specified)
+  # External API roles (anthropic, openai) defined at end of roles section
+  # =============================================================================
+
   frontdoor:
     tier: A
     description: Primary interactive orchestrator - high quality, always resident
+    backend:
+      type: local
     model:
       name: Qwen3-Coder-30B-A3B-Instruct
       huggingface_id: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF
@@ -2709,6 +2718,125 @@ roles:
     memory:
       residency: cold
       pinned: false
+
+  # =============================================================================
+  # EXTERNAL API BACKENDS
+  # =============================================================================
+  # These roles use external APIs (Anthropic, OpenAI) instead of local inference.
+  # Requires environment variables: ANTHROPIC_API_KEY, OPENAI_API_KEY
+  # See src/backends/anthropic.py and src/backends/openai.py for implementation.
+  # =============================================================================
+
+  external_claude_sonnet:
+    tier: B
+    description: Anthropic Claude 3.5 Sonnet - external API backend
+    backend:
+      type: anthropic
+      api_model: claude-3-5-sonnet-20241022
+      fallback_role: coder_escalation  # Local fallback if API unavailable
+    model:
+      name: Claude-3.5-Sonnet
+      path: ""  # No local path - API only
+      quant: API
+      size_gb: 0
+      architecture: external_api
+    candidate_roles:
+    - coder
+    - general
+    - architect
+    acceleration:
+      type: none  # API handles optimization
+    performance:
+      baseline_tps: 80  # Typical API throughput
+    memory:
+      residency: external
+      pinned: false
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.2
+
+  external_claude_opus:
+    tier: B
+    description: Anthropic Claude Opus 4.5 - external API backend for hard tasks
+    backend:
+      type: anthropic
+      api_model: claude-opus-4-5-20251101
+      fallback_role: architect_general  # Local fallback if API unavailable
+    model:
+      name: Claude-Opus-4.5
+      path: ""  # No local path - API only
+      quant: API
+      size_gb: 0
+      architecture: external_api
+    candidate_roles:
+    - architect
+    - coder
+    - general
+    acceleration:
+      type: none  # API handles optimization
+    performance:
+      baseline_tps: 40  # Typical API throughput
+    memory:
+      residency: external
+      pinned: false
+    generation_defaults:
+      n_tokens: 8192
+      temperature: 0.2
+
+  external_gpt4o:
+    tier: B
+    description: OpenAI GPT-4o - external API backend
+    backend:
+      type: openai
+      api_model: gpt-4o
+      fallback_role: coder_escalation  # Local fallback if API unavailable
+    model:
+      name: GPT-4o
+      path: ""  # No local path - API only
+      quant: API
+      size_gb: 0
+      architecture: external_api
+    candidate_roles:
+    - coder
+    - general
+    acceleration:
+      type: none  # API handles optimization
+    performance:
+      baseline_tps: 100  # Typical API throughput
+    memory:
+      residency: external
+      pinned: false
+    generation_defaults:
+      n_tokens: 4096
+      temperature: 0.2
+
+  external_gpt4o_mini:
+    tier: C
+    description: OpenAI GPT-4o-mini - external API backend (faster, cheaper)
+    backend:
+      type: openai
+      api_model: gpt-4o-mini
+      fallback_role: worker_general  # Local fallback if API unavailable
+    model:
+      name: GPT-4o-mini
+      path: ""  # No local path - API only
+      quant: API
+      size_gb: 0
+      architecture: external_api
+    candidate_roles:
+    - worker
+    - general
+    acceleration:
+      type: none  # API handles optimization
+    performance:
+      baseline_tps: 150  # Typical API throughput
+    memory:
+      residency: external
+      pinned: false
+    generation_defaults:
+      n_tokens: 2048
+      temperature: 0.2
+
 process_layout:
   hot_resident:
   - frontdoor

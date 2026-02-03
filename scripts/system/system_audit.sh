@@ -6,12 +6,16 @@
 
 set -euo pipefail
 
-# Source logging library
+# Script location and environment setup
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$SCRIPT_DIR/agent_log.sh" ]]; then
-  source "$SCRIPT_DIR/agent_log.sh"
-elif [[ -f "/mnt/raid0/llm/UTILS/agent_log.sh" ]]; then
-  source "/mnt/raid0/llm/UTILS/agent_log.sh"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+# Source logging library
+if [[ -f "${SCRIPT_DIR}/../utils/agent_log.sh" ]]; then
+  source "${SCRIPT_DIR}/../utils/agent_log.sh"
 else
   # Fallback: define no-op functions if logging not available
   agent_session_start() { echo "Session: $1"; }
@@ -23,8 +27,8 @@ fi
 
 agent_session_start "System audit for Zen 5 optimization baseline"
 
-LOG_FILE="/mnt/raid0/llm/LOGS/system_audit_$(date +%Y%m%d_%H%M%S).log"
-mkdir -p /mnt/raid0/llm/LOGS
+LOG_FILE="${LOG_DIR}/system_audit_$(date +%Y%m%d_%H%M%S).log"
+mkdir -p "${LOG_DIR}"
 
 agent_task_start "Collect system state" "Capturing baseline before any optimization changes"
 

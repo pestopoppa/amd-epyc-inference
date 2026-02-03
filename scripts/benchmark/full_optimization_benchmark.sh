@@ -11,15 +11,21 @@ set -uo pipefail
 #   --force    Re-run all tests even if results exist in research report
 ###############################################################################
 
-# Configuration
-LLAMA_DIR="/mnt/raid0/llm/llama.cpp/build/bin"
-LOG_DIR="/mnt/raid0/llm/LOGS/benchmarks"
-RESEARCH_REPORT="/mnt/raid0/llm/LOGS/research_report.md"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+# Configuration (using env vars from env.sh)
+LLAMA_DIR="${LLAMA_CPP_BIN}"
+LOG_DIR="${LOG_DIR}/benchmarks"
+RESEARCH_REPORT="${PROJECT_ROOT}/docs/reference/benchmarks/RESULTS.md"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_FILE="$LOG_DIR/optimization_results_${TIMESTAMP}.csv"
 SUMMARY_FILE="$LOG_DIR/optimization_summary_${TIMESTAMP}.md"
-CACHE_DIR="/mnt/raid0/llm/tmp/bench_cache"
-REGISTRY_PATH="/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+CACHE_DIR="${LLM_ROOT}/tmp/bench_cache"
+REGISTRY_PATH="${PROJECT_ROOT}/orchestration/model_registry.yaml"
 
 # Helper function to read timeouts from model_registry.yaml
 read_registry_timeout() {

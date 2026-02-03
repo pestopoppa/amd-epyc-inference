@@ -9,6 +9,11 @@ set -euo pipefail
 # stack without requiring agent interpretation.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 STACK_PY="$SCRIPT_DIR/orchestrator_stack.py"
 
 # Validate script exists
@@ -16,13 +21,6 @@ if [[ ! -f "$STACK_PY" ]]; then
     echo "ERROR: orchestrator_stack.py not found at $STACK_PY"
     exit 1
 fi
-
-# Set required environment variables
-export HF_HOME=/mnt/raid0/llm/cache/huggingface
-export TMPDIR=/mnt/raid0/llm/tmp
-export XDG_CACHE_HOME=/mnt/raid0/llm/claude/cache
-export XDG_DATA_HOME=/mnt/raid0/llm/claude/share
-export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
 
 # Parse mode
 MODE="${1:---full}"

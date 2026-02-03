@@ -1,9 +1,15 @@
 #!/bin/bash
 # claude_safe_start.sh - Safe startup wrapper for Claude Code
 # Enforces storage constraints BEFORE Claude Code initializes
-# Usage: bash /mnt/raid0/llm/UTILS/claude_safe_start.sh
+# Usage: ./scripts/session/claude_safe_start.sh
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables (this sets all the env vars we need)
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
 
 echo "=============================================="
 echo "Claude Code Safe Startup Wrapper"
@@ -11,23 +17,17 @@ echo "=============================================="
 echo ""
 
 # ============================================
-# 1. FORCE ALL WRITES TO /mnt/raid0/
+# 1. FORCE ALL WRITES TO /mnt/raid0/ (from env.sh)
 # ============================================
 
-export TMPDIR=/mnt/raid0/llm/tmp
-export TEMP=/mnt/raid0/llm/tmp
-export TMP=/mnt/raid0/llm/tmp
-
-# Python/HuggingFace
-export HF_HOME=/mnt/raid0/llm/cache/huggingface
-export TRANSFORMERS_CACHE=/mnt/raid0/llm/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/raid0/llm/cache/huggingface/datasets
-export TORCH_HOME=/mnt/raid0/llm/cache/torch
+# Additional vars not in env.sh
+export TEMP="${TMPDIR}"
+export TMP="${TMPDIR}"
 
 # Package managers
-export PIP_CACHE_DIR=/mnt/raid0/llm/cache/pip
-export npm_config_cache=/mnt/raid0/llm/cache/npm
-export CARGO_HOME=/mnt/raid0/llm/cache/cargo
+export TORCH_HOME="${LLM_ROOT}/cache/torch"
+export npm_config_cache="${LLM_ROOT}/cache/npm"
+export CARGO_HOME="${LLM_ROOT}/cache/cargo"
 
 # XDG
 export XDG_CACHE_HOME=/mnt/raid0/llm/cache
@@ -107,12 +107,12 @@ echo "ALL writes will go to /mnt/raid0/ - root FS is protected."
 echo ""
 
 # Source logging library
-source /mnt/raid0/llm/UTILS/agent_log.sh
+source "${SCRIPT_DIR}/../utils/agent_log.sh"
 agent_session_start "Claude Code session with enforced storage constraints"
 agent_observe "tmpdir" "$TMPDIR"
 agent_observe "hf_home" "$HF_HOME"
-agent_observe "bind_mount" "/tmp/claude -> /mnt/raid0/llm/tmp/claude"
+agent_observe "bind_mount" "/tmp/claude -> ${LLM_ROOT}/tmp/claude"
 
 # Start Claude Code in the project directory
-cd /mnt/raid0/llm
+cd "${LLM_ROOT}"
 exec claude "$@"

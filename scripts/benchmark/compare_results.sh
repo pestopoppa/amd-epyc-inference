@@ -13,7 +13,13 @@
 # =============================================================================
 set -euo pipefail
 
-BENCHMARK_BASE="/mnt/raid0/llm/claude/benchmarks"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+BENCHMARK_BASE="${PROJECT_ROOT}/benchmarks"
 RESULTS_DIR="$BENCHMARK_BASE/results"
 INDEX_FILE="$RESULTS_DIR/index.jsonl"
 
