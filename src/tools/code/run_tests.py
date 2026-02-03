@@ -19,9 +19,30 @@ from src.tools.base import truncate_output
 
 logger = logging.getLogger(__name__)
 
-# Allowed working directories
+
+def _get_project_root() -> str:
+    """Get project root from config with fallback."""
+    import os
+    from pathlib import Path
+
+    try:
+        from src.config import get_config
+
+        root = str(get_config().paths.project_root)
+        if Path(root).exists():
+            return root
+    except Exception:
+        pass
+
+    # Fallback: try hardcoded path, then cwd
+    if Path("/mnt/raid0/llm/claude").exists():
+        return "/mnt/raid0/llm/claude"
+    return os.getcwd()
+
+
+# Allowed working directories (computed at module load)
 ALLOWED_PATHS = [
-    "/mnt/raid0/llm/claude",
+    _get_project_root(),
 ]
 
 
@@ -42,7 +63,7 @@ def run_tests(
     test_pattern: str | None = None,
     verbose: bool = False,
     timeout: int = 300,
-    working_dir: str = "/mnt/raid0/llm/claude",
+    working_dir: str | None = None,
 ) -> dict[str, Any]:
     """Run pytest tests.
 
@@ -51,11 +72,15 @@ def run_tests(
         test_pattern: Specific test pattern (-k flag).
         verbose: Enable verbose output.
         timeout: Maximum execution time in seconds.
-        working_dir: Working directory for test execution.
+        working_dir: Working directory for test execution. Defaults to project root.
 
     Returns:
         Dict with success, output, and test results.
     """
+    # Default to project root
+    if working_dir is None:
+        working_dir = _get_project_root()
+
     # Validate paths
     is_valid, error = _validate_path(working_dir)
     if not is_valid:

@@ -20,9 +20,30 @@ from src.tools.base import truncate_output
 
 logger = logging.getLogger(__name__)
 
-# Allowed paths
+
+def _get_project_root() -> str:
+    """Get project root from config with fallback."""
+    import os
+    from pathlib import Path
+
+    try:
+        from src.config import get_config
+
+        root = str(get_config().paths.project_root)
+        if Path(root).exists():
+            return root
+    except Exception:
+        pass
+
+    # Fallback: try hardcoded path, then cwd
+    if Path("/mnt/raid0/llm/claude").exists():
+        return "/mnt/raid0/llm/claude"
+    return os.getcwd()
+
+
+# Allowed paths (computed at module load)
 ALLOWED_PATHS = [
-    "/mnt/raid0/llm/claude",
+    _get_project_root(),
 ]
 
 
@@ -97,7 +118,7 @@ def lint_python(
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd="/mnt/raid0/llm/claude",
+            cwd=_get_project_root(),
         )
 
         # Parse JSON output

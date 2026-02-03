@@ -12,6 +12,26 @@ import shlex
 logger = logging.getLogger(__name__)
 
 
+def _get_project_root() -> str:
+    """Get project root from config with fallback."""
+    import os
+    from pathlib import Path
+
+    try:
+        from src.config import get_config
+
+        root = str(get_config().paths.project_root)
+        if Path(root).exists():
+            return root
+    except Exception:
+        pass
+
+    # Fallback: try hardcoded path, then cwd
+    if Path("/mnt/raid0/llm/claude").exists():
+        return "/mnt/raid0/llm/claude"
+    return os.getcwd()
+
+
 class _ExternalAccessMixin:
     """Mixin providing network and shell access tools (_web_fetch, _run_shell).
 
@@ -181,7 +201,7 @@ class _ExternalAccessMixin:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                cwd="/mnt/raid0/llm/claude",  # Always run from project root
+                cwd=_get_project_root(),  # Always run from project root
             )
 
             output = result.stdout

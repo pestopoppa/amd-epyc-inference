@@ -28,9 +28,28 @@ _fetch_cache: dict[str, tuple[str, float]] = {}
 _CACHE_TTL_SECONDS = 900  # 15 minutes
 
 
+def _get_project_root() -> Path:
+    """Get project root from config with fallback."""
+    import os
+
+    try:
+        from src.config import get_config
+
+        root = get_config().paths.project_root
+        if root.exists():
+            return root
+    except Exception:
+        pass
+
+    # Fallback: try hardcoded path, then cwd
+    if Path("/mnt/raid0/llm/claude").exists():
+        return Path("/mnt/raid0/llm/claude")
+    return Path(os.getcwd())
+
+
 def _load_source_registry() -> dict[str, Any]:
     """Load the source registry configuration."""
-    registry_path = Path("/mnt/raid0/llm/claude/orchestration/source_registry.yaml")
+    registry_path = _get_project_root() / "orchestration" / "source_registry.yaml"
     if not registry_path.exists():
         return {}
 

@@ -13,12 +13,21 @@ logger = logging.getLogger(__name__)
 
 def _get_project_root() -> Path:
     """Get project root from config with fallback."""
+    import os
+
     try:
         from src.config import get_config
 
-        return get_config().paths.project_root
+        root = get_config().paths.project_root
+        if root.exists():
+            return root
     except Exception:
+        pass
+
+    # Fallback: try hardcoded path, then cwd
+    if Path("/mnt/raid0/llm/claude").exists():
         return Path("/mnt/raid0/llm/claude")
+    return Path(os.getcwd())
 
 
 class _FileMutationMixin:
