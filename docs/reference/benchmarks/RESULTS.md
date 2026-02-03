@@ -1,7 +1,29 @@
 # Research Results Summary
 
-**Last Updated:** 2026-01-27 (Added valid VL benchmark results - 4B beats 235B on OCR!)
+**Last Updated:** 2026-02-03 (Added hard benchmark suites for MemRL mode-advantage)
 **System:** AMD EPYC 9655 (96 cores, 1.13TB DDR5), llama.cpp
+
+---
+
+## Hard Benchmark Suites (2026-02-03)
+
+New HuggingFace benchmark adapters added for stronger MemRL mode-advantage signal:
+
+| Suite | Source | Questions | Scoring | Expected Frontdoor |
+|-------|--------|-----------|---------|-------------------|
+| `gpqa` | ankner/gpqa (Diamond) | 448 | multiple_choice | ~30% (graduate science) |
+| `simpleqa` | MAISAAI/openai_simple_qa_test_set | 4,326 | exact_match | ~35% (factual lookup) |
+| `hotpotqa` | hotpotqa/hotpot_qa (hard) | 7,405 | f1 (≥0.5) | ~40% (multi-hop QA) |
+| `livecodebench` | greengerong/leetcode | 2,360 | code_execution | ~20% (competition code) |
+| `debugbench` | Rtian/DebugBench | 4,253 | code_execution | ~40% (bug fixing) |
+| `usaco` | codegenning/usacobench_formatted | 520 | code_execution | ~8% (olympiad) |
+| `mode_advantage_hard` | Hand-written YAML | 60 | mixed | <50% by design |
+
+**Total:** 19,372 questions across 7 hard suites for overnight MemRL seeding.
+
+**Expected Impact:** Frontdoor pass rate <50%, specialist pass rate >70%, +1.0 comparative rewards in 25-35% of episodes.
+
+See [Chapter 24](../../chapters/24-benchmark-suite-construction.md) for suite construction details.
 
 ---
 

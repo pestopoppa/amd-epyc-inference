@@ -1,10 +1,16 @@
 # Orchestration System Architecture
 
-**Version**: 2.2 (Updated Tier Residency)
-**Last Updated**: 2026-01-29
+**Version**: 2.3 (MemRL Hard Benchmarks)
+**Last Updated**: 2026-02-03
 
 > **This is the living technical reference** — updated continuously as the system evolves.
 > For narrative explanations of each subsystem, see the [Research Chapters](chapters/INDEX.md).
+
+### Recent Updates (2026-02-03)
+
+- **MemRL Enrichment**: Added 6 hard HuggingFace benchmark adapters (GPQA, SimpleQA, HotpotQA, LiveCodeBench, DebugBench, USACO) + 60 hand-written mode-advantage tasks for stronger routing signal
+- **Test Coverage**: 2463 tests, 79.5% coverage
+- See [Chapter 15 (MemRL)](chapters/15-memrl-system.md) and [Chapter 24 (Benchmark Suite)](chapters/24-benchmark-suite-construction.md) for details
 
 ## Table of Contents
 

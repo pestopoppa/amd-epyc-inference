@@ -61,6 +61,38 @@ When using Claude Code (Opus/Sonnet/Haiku):
 3. On second failure → escalate one tier
 4. On third failure → escalate to architect
 
+## MemRL-Informed Routing
+
+The orchestrator uses **learned routing** via MemRL (Memory-based Reinforcement Learning) when enabled:
+
+1. **Episodic Memory**: Embeds incoming tasks and retrieves similar past experiences
+2. **Q-Value Scoring**: Ranks candidate roles by expected success (reward history)
+3. **Comparative Rewards**: When specialist outperforms frontdoor, +1.0 reward signal
+
+### Routing Strategy Types
+
+| Strategy | When Used | How It Works |
+|----------|-----------|--------------|
+| `learned` | MemRL enabled, sufficient history | Q-values from episodic memory retrieval |
+| `rules` | MemRL disabled or cold start | Deterministic rules from escalation chains |
+| `default` | Fallback | Route to frontdoor |
+
+### Hard Benchmark Suites (2026-02-03)
+
+Mode-advantage signal is strongest on these suites (30B frontdoor <50%, specialist >70%):
+
+| Suite | Questions | Expected Mode-Advantage |
+|-------|-----------|------------------------|
+| `gpqa` | 448 | Graduate science → react/delegation |
+| `simpleqa` | 4,326 | Factual lookup → search tools |
+| `hotpotqa` | 7,405 | Multi-hop QA → search + reasoning |
+| `livecodebench` | 2,360 | Competition code → REPL iteration |
+| `debugbench` | 4,253 | Bug fixing → REPL + tests |
+| `usaco` | 520 | Olympiad code → REPL + specialist |
+| `mode_advantage_hard` | 60 | Hand-written hard tasks |
+
+See [Chapter 15](../chapters/15-memrl-system.md) for MemRL architecture details.
+
 ---
 
 *See [MODELS.md](../reference/models/MODELS.md) for detailed model specifications.*
