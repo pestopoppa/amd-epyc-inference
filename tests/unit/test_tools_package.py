@@ -541,6 +541,8 @@ class TestRunTestsTool:
         with (
             patch("src.tools.code.run_tests.Path") as mock_path,
             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result),
+            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
+            patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
@@ -565,6 +567,8 @@ class TestRunTestsTool:
         with (
             patch("src.tools.code.run_tests.Path") as mock_path,
             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result),
+            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
+            patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
@@ -599,6 +603,8 @@ class TestRunTestsTool:
                 "src.tools.code.run_tests.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("pytest", 300),
             ),
+            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
+            patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
@@ -622,6 +628,8 @@ class TestRunTestsTool:
         with (
             patch("src.tools.code.run_tests.Path") as mock_path,
             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result) as mock_run,
+            patch("src.tools.code.run_tests.ALLOWED_PATHS", ["/mnt/raid0/llm/claude"]),
+            patch("src.tools.code.run_tests._get_project_root", return_value="/mnt/raid0/llm/claude"),
         ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
