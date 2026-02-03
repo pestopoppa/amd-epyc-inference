@@ -203,6 +203,13 @@ class TestDepDocumentPreprocessor:
             state.document_preprocessor = None
 
 
+def _sqlalchemy_available() -> bool:
+    """Check if sqlalchemy is available."""
+    import importlib.util
+    return importlib.util.find_spec("sqlalchemy") is not None
+
+
+@pytest.mark.skipif(not _sqlalchemy_available(), reason="sqlalchemy required for vision tests")
 class TestDepVisionComponents:
     """Tests for vision pipeline dependency functions."""
 
