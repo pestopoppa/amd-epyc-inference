@@ -39,7 +39,13 @@ from typing import Any, Optional
 
 import aiohttp
 
+from src.config import _registry_timeout
+
 logger = logging.getLogger(__name__)
+
+# Worker pool HTTP client timeouts from registry
+_POOL_CLIENT_TOTAL = int(_registry_timeout("pools", "client_total", 300))
+_POOL_CLIENT_CONNECT = int(_registry_timeout("pools", "client_connect", 10))
 
 
 class WorkerTier(Enum):
@@ -132,11 +138,16 @@ def _wp_default_log_dir() -> str:
 
 @dataclass
 class WorkerPoolConfig:
-    """Configuration for the entire worker pool."""
+    """Configuration for the entire worker pool.
+
+    Timeout defaults from model_registry.yaml (runtime_defaults.timeouts).
+    """
 
     enabled: bool = True
     prompt_lookup: bool = True
-    warm_timeout_seconds: int = 300  # 5 minutes
+    warm_timeout_seconds: int = field(
+        default_factory=lambda: int(_registry_timeout("pools", "warm_keepalive", 300))
+    )
     expansion_threshold: int = 4  # Concurrent tasks to trigger WARM expansion
     health_check_interval: int = 30
     llama_server_path: str = field(default_factory=_wp_default_server_path)
@@ -211,8 +222,8 @@ class WorkerPoolManager:
         if self._initialized:
             return
 
-        # Create HTTP session
-        timeout = aiohttp.ClientTimeout(total=300, connect=10)
+        # Create HTTP session with registry-configured timeouts
+        timeout = aiohttp.ClientTimeout(total=_POOL_CLIENT_TOTAL, connect=_POOL_CLIENT_CONNECT)
         self._http_session = aiohttp.ClientSession(timeout=timeout)
 
         # Create worker instances (not started yet)
@@ -341,12 +352,14 @@ class WorkerPoolManager:
 
         return cmd
 
-    async def _wait_for_health(self, port: int, timeout: int = 120) -> bool:
+    async def _wait_for_health(
+        self, port: int, timeout: int = int(_registry_timeout("health", "server_startup", 120))
+    ) -> bool:
         """Wait for worker health endpoint.
 
         Args:
             port: Worker port.
-            timeout: Timeout in seconds.
+            timeout: Timeout in seconds (from registry).
 
         Returns:
             True if healthy within timeout.

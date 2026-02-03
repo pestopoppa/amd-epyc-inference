@@ -19,13 +19,31 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_FILE="$LOG_DIR/optimization_results_${TIMESTAMP}.csv"
 SUMMARY_FILE="$LOG_DIR/optimization_summary_${TIMESTAMP}.md"
 CACHE_DIR="/mnt/raid0/llm/tmp/bench_cache"
+REGISTRY_PATH="/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
 
-# Timeouts (seconds)
-TIMEOUT_SMALL=120  # <2B models
-TIMEOUT_MEDIUM=180 # 2B-14B models
-TIMEOUT_LARGE=300  # 14B-72B models
-TIMEOUT_HUGE=600   # 72B-100B models
-TIMEOUT_GIANT=1200 # >100B models (235B, 480B)
+# Helper function to read timeouts from model_registry.yaml
+read_registry_timeout() {
+  local category="$1"
+  local key="$2"
+  local default="$3"
+  python3 -c "
+import yaml
+try:
+    with open('$REGISTRY_PATH') as f:
+        data = yaml.safe_load(f)
+    val = data.get('runtime_defaults', {}).get('timeouts', {}).get('$category', {}).get('$key', $default)
+    print(int(val))
+except Exception:
+    print($default)
+" 2>/dev/null || echo "$default"
+}
+
+# Timeouts from model_registry.yaml (runtime_defaults.timeouts.benchmark.*)
+TIMEOUT_SMALL=$(read_registry_timeout benchmark timeout_small 120)   # <2B models
+TIMEOUT_MEDIUM=$(read_registry_timeout benchmark timeout_medium 180) # 2B-14B models
+TIMEOUT_LARGE=$(read_registry_timeout benchmark timeout_large 300)   # 14B-72B models
+TIMEOUT_HUGE=$(read_registry_timeout benchmark timeout_huge 600)     # 72B-100B models
+TIMEOUT_GIANT=$(read_registry_timeout benchmark timeout_giant 1200)  # >100B models (235B, 480B)
 
 # Test parameters
 THREADS=96

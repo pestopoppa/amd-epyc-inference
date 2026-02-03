@@ -27,17 +27,31 @@ from typing import Any, TYPE_CHECKING
 
 import yaml
 
+from src.config import _registry_timeout
+
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
+
+# Default gate timeout from registry
+_GATE_TIMEOUT = int(_registry_timeout("tools", "gate_runner", 60))
+
+# Per-gate timeouts from registry
+_GATE_FORMAT_TIMEOUT = int(_registry_timeout("gates", "format", 30))
+_GATE_LINT_TIMEOUT = int(_registry_timeout("gates", "lint", 60))
+_GATE_TYPECHECK_TIMEOUT = int(_registry_timeout("gates", "typecheck", 120))
+_GATE_UNIT_TIMEOUT = int(_registry_timeout("gates", "unit", 180))
 
 
 @dataclass
 class GateConfig:
-    """Configuration for a single gate."""
+    """Configuration for a single gate.
+
+    Timeout default from model_registry.yaml (runtime_defaults.timeouts.tools.gate_runner).
+    """
 
     name: str
     command: str
-    timeout: int = 60
+    timeout: int = _GATE_TIMEOUT
     required: bool = True
     retry_count: int = 0
     description: str = ""
@@ -49,7 +63,7 @@ class GateConfig:
         return cls(
             name=data["name"],
             command=data["command"],
-            timeout=data.get("timeout", 60),
+            timeout=data.get("timeout", _GATE_TIMEOUT),
             required=data.get("required", True),
             retry_count=data.get("retry_count", 0),
             description=data.get("description", ""),
@@ -141,12 +155,15 @@ class GateRunner:
             raise GateRunnerError(f"Failed to load config: {e}")
 
     def _get_default_gates(self) -> list[GateConfig]:
-        """Get default gate configuration."""
+        """Get default gate configuration.
+
+        Timeouts from model_registry.yaml (runtime_defaults.timeouts.gates.*).
+        """
         return [
             GateConfig(
                 name="format",
                 command="make format-check",
-                timeout=30,
+                timeout=_GATE_FORMAT_TIMEOUT,
                 required=True,
                 description="Check code formatting",
                 parallelizable=True,
@@ -154,7 +171,7 @@ class GateRunner:
             GateConfig(
                 name="lint",
                 command="make lint",
-                timeout=60,
+                timeout=_GATE_LINT_TIMEOUT,
                 required=True,
                 description="Run linters",
                 parallelizable=True,
@@ -162,14 +179,14 @@ class GateRunner:
             GateConfig(
                 name="typecheck",
                 command="make typecheck",
-                timeout=120,
+                timeout=_GATE_TYPECHECK_TIMEOUT,
                 required=False,
                 description="Run type checker",
             ),
             GateConfig(
                 name="unit",
                 command="make test-unit",
-                timeout=180,
+                timeout=_GATE_UNIT_TIMEOUT,
                 required=True,
                 description="Run unit tests",
             ),

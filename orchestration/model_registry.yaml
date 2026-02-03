@@ -42,7 +42,7 @@ runtime_defaults:
     port: 8080
     context_length: 65536
     startup_timeout: 600
-    request_timeout: 300
+    request_timeout: 600  # Increased from 300 - architect_general needs ~300s on hard questions
     parallel_slots: 4
     flash_attention: true
     ubatch_size: 8192
@@ -61,7 +61,108 @@ runtime_defaults:
     deepseek_r1: 65536
     gemma3: 131072
   timeouts:
-    default: 600  # Max from calibration: architect_general takes ~300s on hard questions
+    # Single source of truth for ALL timeouts in the system
+    default: 600  # Fallback for any unspecified timeout
+
+    # Per-role inference timeouts (seconds)
+    roles:
+      worker_explore: 30
+      worker_math: 30
+      worker_vision: 30
+      worker_summarize: 120
+      worker_general: 60
+      worker_code: 60
+      worker_fast: 30
+      frontdoor: 60
+      coder_primary: 60
+      coder_escalation: 120
+      vision_escalation: 60
+      ingest_long_context: 120
+      architect_general: 600  # Hard questions take ~300s
+      architect_coding: 600
+
+    # Server/connection timeouts
+    server:
+      request: 600
+      connect: 5
+      health_check: 5
+      stack_startup: 300  # Wait for orchestrator stack
+
+    # Service timeouts
+    services:
+      ocr_single_page: 120
+      ocr_pdf: 600
+      vision_inference: 120
+      vision_figure: 60
+      gradio_client: 300
+      ffmpeg_version: 5
+      ffmpeg_probe: 30
+      ffmpeg_extract: 600
+      exiftool: 30
+
+    # Worker pool timeouts
+    pools:
+      warm_keepalive: 300  # 5 minutes warm pool timeout
+      client_total: 300  # HTTP client total timeout
+      client_connect: 10  # HTTP client connect timeout
+
+    # Benchmark/optimization timeouts
+    benchmark:
+      test_execution: 300
+      optuna_trial: 300
+      seeding_default: 600
+      # Model-size based timeouts for full_optimization_benchmark.sh
+      timeout_small: 120  # <2B models
+      timeout_medium: 180  # 2B-14B models
+      timeout_large: 300  # 14B-72B models
+      timeout_huge: 600  # 72B-100B models
+      timeout_giant: 1200  # >100B models (235B, 480B)
+
+    # REPL environment timeouts
+    repl:
+      session: 600  # REPL session timeout (document processing can be slow)
+      tool_execution: 30  # Per-tool execution limit
+      shell_command: 30  # External shell command timeout
+      restricted_executor: 120  # Sandboxed code execution
+
+    # Gate-specific timeouts (quality gates)
+    gates:
+      format: 30  # Code formatting check
+      lint: 60  # Linting (ruff, etc.)
+      typecheck: 120  # Type checking (mypy, pyright)
+      unit: 180  # Unit test execution
+
+    # Tool-specific timeouts
+    tools:
+      web_fetch: 30  # HTTP fetch for external URLs
+      lint: 60  # Code linting
+      base_default: 60  # Default tool timeout
+      formalizer: 60  # Input formalization
+      gate_runner: 60  # Gate execution (default per-gate)
+
+    # External service timeouts
+    external:
+      mcp_client: 30  # MCP server communication
+      review_service: 15  # Proactive review checks
+
+    # Health check timeouts
+    health:
+      server_startup: 120  # Wait for server to become healthy
+      quick_check: 10  # Fast health probe
+      vision_server: 120  # Vision model startup (larger)
+      worker_server: 90  # Worker model startup
+
+    # Script/CLI timeouts
+    scripts:
+      executor_default: 180  # Default script execution
+      onboard_health: 60  # Model onboarding health check
+      temperature_opt: 180  # Temperature optimization trial
+      orchestrator_phase: 3600  # Full benchmark phase
+
+    # Backend protocol defaults
+    backends:
+      inference_default: 120  # Default inference request timeout
+      document_page: 120  # Per-page document processing
   paged_attention:
     description: "CPU paged attention for memory-bound large models (70B+)"
     enabled_threshold_gb: 39  # Models >= 39GB benefit from paged attention
