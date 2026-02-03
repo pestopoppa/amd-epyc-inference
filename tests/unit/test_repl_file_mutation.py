@@ -16,6 +16,12 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+# Skip entire module in CI - tests require /mnt/raid0/llm/ paths
+if os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true":
+    pytest.skip("REPL file mutation tests require local paths", allow_module_level=True)
+
+import pytest
+
 from src.repl_environment import REPLEnvironment
 
 
