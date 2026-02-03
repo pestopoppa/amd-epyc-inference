@@ -93,7 +93,7 @@ class TestInferenceRequest:
         assert request.prompt == "Hello"
         assert request.n_tokens == 512
         assert request.temperature == 0.0
-        assert request.timeout == 300
+        assert request.timeout == 600
 
     def test_max_tokens_alias_sets_n_tokens(self):
         """Test that max_tokens overrides n_tokens."""

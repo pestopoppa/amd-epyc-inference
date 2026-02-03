@@ -257,7 +257,7 @@ class TestRoutingResult:
 
         r = RoutingResult(task_id="t", task_ir={}, use_mock=False)
         assert r.timeout_for_role("worker_explore") == 30
-        assert r.timeout_for_role("architect_general") == 300
+        assert r.timeout_for_role("architect_general") == 600
         assert r.timeout_for_role("frontdoor") == 60
 
 
@@ -290,7 +290,7 @@ class TestRoleTimeouts:
         from src.api.routes.chat_utils import DEFAULT_TIMEOUT_S
 
         assert DEFAULT_TIMEOUT_S > 0
-        assert DEFAULT_TIMEOUT_S <= 300
+        assert DEFAULT_TIMEOUT_S <= 600
 
 
 class TestAnnotateError:

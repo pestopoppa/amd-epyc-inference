@@ -265,7 +265,7 @@ class TestExecutorConfig:
         config = ExecutorConfig()
 
         assert config.max_parallel_workers == 2
-        assert config.step_timeout == 300
+        assert config.step_timeout == 600
         assert config.retry_failed_steps is True  # Enabled by default
         assert config.max_retries == 2  # 2 retries = 3 total attempts
         assert config.retry_backoff_base == 1.0

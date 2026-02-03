@@ -98,7 +98,12 @@ def _load_registry_timeouts() -> dict[str, int | float]:
 
         # Flatten nested structure to "category.key" format
         flat: dict[str, int | float] = {"default": raw_timeouts.get("default", 600)}
-        for category in ["roles", "server", "services", "pools", "benchmark"]:
+        # All timeout categories defined in model_registry.yaml
+        categories = [
+            "roles", "server", "services", "pools", "benchmark",
+            "repl", "tools", "external", "health", "scripts", "backends",
+        ]
+        for category in categories:
             cat_data = raw_timeouts.get(category, {})
             for key, value in cat_data.items():
                 flat[f"{category}.{key}"] = value
@@ -571,7 +576,7 @@ class TimeoutsConfig:
         default_factory=lambda: int(_registry_timeout("roles", "architect_coding", 600))
     )
     default_request: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "default_request", 120))
+        default_factory=lambda: int(_registry_timeout("", "default", 600))
     )
     """Fallback for unknown roles."""
 
@@ -1074,7 +1079,7 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         ingest_long_context: int = 120
         architect_general: int = 600
         architect_coding: int = 600
-        default_request: int = 120
+        default_request: int = 600
         server_request: int = 600
         server_connect: int = 5
         ocr_single_page: float = 120.0

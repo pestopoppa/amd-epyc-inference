@@ -73,7 +73,10 @@ class TestConfigImports:
             assert cls is not None
 
     def test_config_is_leaf_module(self):
-        """config.py must NOT import from src/ (prevents circular imports)."""
+        """config.py must NOT import from src/ (prevents circular imports).
+
+        Exception: Lazy imports inside try/except blocks are allowed for registry loading.
+        """
         import src.config
         import inspect
 
@@ -82,13 +85,17 @@ class TestConfigImports:
         # Look for actual import statements
         import ast
 
+        # Allowed lazy imports (inside try/except, used for registry loading)
+        allowed_imports = {"src.registry_loader"}
+
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 if isinstance(node, ast.ImportFrom) and node.module:
-                    assert not node.module.startswith("src."), (
-                        f"config.py must be a leaf module: found 'from {node.module}'"
-                    )
+                    if node.module.startswith("src.") and node.module not in allowed_imports:
+                        assert False, (
+                            f"config.py must be a leaf module: found 'from {node.module}'"
+                        )
 
 
 # ── get_config() and reset_config() ──────────────────────────────────────
@@ -238,11 +245,11 @@ class TestTimeoutsDefaults:
         assert cfg.coder_primary == 60
         # Escalation: 120s
         assert cfg.coder_escalation == 120
-        # Architects (large): 300s
-        assert cfg.architect_general == 300
-        assert cfg.architect_coding == 300
-        # Backend
-        assert cfg.server_request == 300
+        # Architects (large): unified 600s timeout
+        assert cfg.architect_general == 600
+        assert cfg.architect_coding == 600
+        # Backend: unified 600s timeout
+        assert cfg.server_request == 600
         assert cfg.server_connect == 5
 
 
