@@ -467,7 +467,9 @@ class ModelServer:
         models: Currently tracked model statuses.
     """
 
-    registry: RegistryLoader = field(default_factory=RegistryLoader)
+    registry: RegistryLoader = field(
+        default_factory=lambda: RegistryLoader(allow_missing=True)
+    )
     backend: ModelBackend | None = None
     models: dict[str, ModelStatus] = field(default_factory=dict)
 
