@@ -98,7 +98,7 @@ def executor(test_registry: RegistryLoader) -> Executor:
     """Create an executor with dry run config."""
     server = ModelServer(registry=test_registry)
     config = ExecutorConfig(dry_run=True)
-    return Executor(model_server=server, config=config)
+    return Executor(model_server=server, config=config, registry=test_registry)
 
 
 class TestDispatchExecuteFlow:
