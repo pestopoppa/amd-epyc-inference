@@ -243,8 +243,8 @@ class Executor:
         self.server = model_server or ModelServer()
         self.config = config or ExecutorConfig()
         self.context = ContextManager(context_config)  # Rich context management
-        # For escalation lookups - don't validate paths by default (tests run without models)
-        self.registry = registry or RegistryLoader(validate_paths=False)
+        # For escalation lookups - don't validate paths, allow missing in tests/CI
+        self.registry = registry or RegistryLoader(validate_paths=False, allow_missing=True)
         self._retry_info: dict[str, RetryInfo] = {}  # Track retries per step
         self._escalation_counts: dict[str, int] = {}  # Track escalations per step
 

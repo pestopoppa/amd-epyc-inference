@@ -173,13 +173,16 @@ class RegistryLoader:
         self,
         registry_path: Path | str | None = None,
         validate_paths: bool = True,
+        allow_missing: bool = False,
     ):
         """Initialize the registry loader.
 
         Args:
             registry_path: Path to model_registry.yaml. Uses default if None.
             validate_paths: If True, verify model files exist on disk.
+            allow_missing: If True, don't error if registry file doesn't exist.
         """
+        self._allow_missing = allow_missing
         if registry_path is not None:
             self.registry_path = Path(registry_path)
         else:
@@ -208,6 +211,9 @@ class RegistryLoader:
     def _load(self, validate_paths: bool) -> None:
         """Load and parse the registry YAML."""
         if not self.registry_path.exists():
+            if self._allow_missing:
+                # Return empty registry without error (for testing/CI)
+                return
             raise RegistryError(f"Registry not found: {self.registry_path}")
 
         try:
