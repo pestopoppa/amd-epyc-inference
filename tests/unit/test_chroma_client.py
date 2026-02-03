@@ -27,6 +27,7 @@ def mock_chroma():
     mock_faces = MagicMock()
     mock_descriptions = MagicMock()
     mock_images = MagicMock()
+    mock_settings = MagicMock()
 
     def get_or_create(name, **kwargs):
         if name == "faces":
@@ -42,14 +43,15 @@ def mock_chroma():
     with patch("src.db.chroma_client.CHROMADB_AVAILABLE", True):
         with patch("src.db.chroma_client.chromadb") as mock_chromadb:
             mock_chromadb.PersistentClient.return_value = mock_client
-            with patch("src.db.chroma_client.CHROMA_PATH") as mock_path:
-                mock_path.mkdir = MagicMock()
-                yield {
-                    "client": mock_client,
-                    "faces": mock_faces,
-                    "descriptions": mock_descriptions,
-                    "images": mock_images,
-                }
+            with patch("src.db.chroma_client.Settings", mock_settings):
+                with patch("src.db.chroma_client.CHROMA_PATH") as mock_path:
+                    mock_path.mkdir = MagicMock()
+                    yield {
+                        "client": mock_client,
+                        "faces": mock_faces,
+                        "descriptions": mock_descriptions,
+                        "images": mock_images,
+                    }
 
 
 class TestGetChromaClient:
