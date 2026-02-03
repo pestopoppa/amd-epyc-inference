@@ -1,12 +1,20 @@
 #!/bin/bash
 # agent_log.sh — Append-only audit logging for AI agent actions
-# Source this file in scripts: source /mnt/raid0/llm/UTILS/agent_log.sh
-# All logs are append-only to /mnt/raid0/llm/LOGS/agent_audit.log
+# Source this file in scripts: source /path/to/scripts/utils/agent_log.sh
+# All logs are append-only to ${LOG_DIR}/agent_audit.log
 
-# Configuration
-AGENT_LOG_DIR="/mnt/raid0/llm/LOGS"
-AGENT_LOG_FILE="$AGENT_LOG_DIR/agent_audit.log"
-AGENT_SESSION_FILE="$AGENT_LOG_DIR/.current_session"
+set -euo pipefail
+
+# Source environment library for path variables
+_AGENT_LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/env.sh
+source "${_AGENT_LOG_DIR}/../lib/env.sh"
+unset _AGENT_LOG_DIR
+
+# Configuration (use LOG_DIR from env.sh)
+AGENT_LOG_DIR="${LOG_DIR}"
+AGENT_LOG_FILE="${AGENT_LOG_DIR}/agent_audit.log"
+AGENT_SESSION_FILE="${AGENT_LOG_DIR}/.current_session"
 
 # Ensure log directory exists
 mkdir -p "$AGENT_LOG_DIR"

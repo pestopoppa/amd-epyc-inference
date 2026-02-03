@@ -8,24 +8,17 @@
 
 set -euo pipefail
 
-# Source logging library (optional but recommended)
+# Source environment and logging libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$SCRIPT_DIR/agent_log.sh" ]]; then
-  source "$SCRIPT_DIR/agent_log.sh"
-elif [[ -f "/mnt/raid0/llm/UTILS/agent_log.sh" ]]; then
-  source "/mnt/raid0/llm/UTILS/agent_log.sh"
-else
-  # No-op fallbacks
-  agent_task_start() { :; }
-  agent_task_end() { :; }
-  agent_observe() { :; }
-  agent_decision() { :; }
-fi
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+# shellcheck source=../utils/agent_log.sh
+source "${SCRIPT_DIR}/../utils/agent_log.sh"
 
-# Default configuration
-MODEL_MAIN="/mnt/raid0/llm/models/DeepSeek-R1-32B-Q4_K_M.gguf"
-MODEL_DRAFT="/mnt/raid0/llm/models/Qwen2.5-0.5B-Draft-Q4_K_M.gguf"
-LLAMA_CLI="/mnt/raid0/llm/llama.cpp/build/bin/llama-cli"
+# Default configuration (use variables from env.sh)
+MODEL_MAIN="${MODELS_DIR}/DeepSeek-R1-32B-Q4_K_M.gguf"
+MODEL_DRAFT="${MODELS_DIR}/Qwen2.5-0.5B-Draft-Q4_K_M.gguf"
+LLAMA_CLI="${LLAMA_CPP_BIN}/llama-cli"
 THREADS=96
 CONTEXT=32768
 SPECULATIVE=0

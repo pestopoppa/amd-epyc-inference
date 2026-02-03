@@ -1,8 +1,9 @@
 """Backend modules for model inference.
 
 This package provides different inference backends:
-- LlamaCppBackend: Per-inference subprocess via llama.cpp CLI tools
-- LlamaServerBackend: Persistent HTTP server mode with prefix caching
+- LlamaServerBackend: Persistent HTTP server mode with prefix caching (local)
+- AnthropicBackend: Anthropic Claude API backend (external)
+- OpenAIBackend: OpenAI API backend (external)
 - MockBackend: Mock backend for testing
 
 Protocols:
@@ -24,6 +25,8 @@ from src.backends.protocol import (
     is_caching_backend,
 )
 from src.backends.llama_server import LlamaServerBackend
+from src.backends.anthropic import AnthropicBackend
+from src.backends.openai import OpenAIBackend
 
 __all__ = [
     # Protocols
@@ -35,9 +38,12 @@ __all__ = [
     "InferenceResult",
     "StreamToken",
     "BackendStats",
-    # Backends
+    # Local backends
     "LlamaServerBackend",
     "MockBackend",
+    # External API backends
+    "AnthropicBackend",
+    "OpenAIBackend",
     # Utilities
     "is_streaming_backend",
     "is_caching_backend",

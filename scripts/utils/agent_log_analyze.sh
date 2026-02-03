@@ -9,7 +9,12 @@
 
 set -euo pipefail
 
-LOG_FILE="/mnt/raid0/llm/LOGS/agent_audit.log"
+# Source environment library for path variables
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LOG_FILE="${LOG_DIR}/agent_audit.log"
 
 if [[ ! -f "$LOG_FILE" ]]; then
   echo "No audit log found at $LOG_FILE"

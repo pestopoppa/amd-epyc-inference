@@ -76,6 +76,62 @@ def _env_str(name: str, default: str) -> str:
     return os.environ.get(name, default)
 
 
+# Registry timeout cache (avoids repeated YAML parsing)
+_REGISTRY_TIMEOUTS_CACHE: dict[str, int | float] | None = None
+
+
+def _load_registry_timeouts() -> dict[str, int | float]:
+    """Load all timeouts from the registry (single source of truth).
+
+    Returns a flat dict with keys like:
+        "roles.architect_general", "server.request", "services.ocr_pdf"
+    """
+    global _REGISTRY_TIMEOUTS_CACHE
+    if _REGISTRY_TIMEOUTS_CACHE is not None:
+        return _REGISTRY_TIMEOUTS_CACHE
+
+    try:
+        from src.registry_loader import RegistryLoader
+
+        registry = RegistryLoader(validate_paths=False, allow_missing=True)
+        raw_timeouts = registry._runtime_defaults.get("timeouts", {})
+
+        # Flatten nested structure to "category.key" format
+        flat: dict[str, int | float] = {"default": raw_timeouts.get("default", 600)}
+        for category in ["roles", "server", "services", "pools", "benchmark"]:
+            cat_data = raw_timeouts.get(category, {})
+            for key, value in cat_data.items():
+                flat[f"{category}.{key}"] = value
+
+        _REGISTRY_TIMEOUTS_CACHE = flat
+        return flat
+    except Exception:
+        # Registry unavailable - return empty, will use hardcoded fallbacks
+        _REGISTRY_TIMEOUTS_CACHE = {}
+        return {}
+
+
+def _registry_timeout(category: str, key: str, fallback: int | float) -> int | float:
+    """Get timeout from registry, falling back to hardcoded default.
+
+    Args:
+        category: Timeout category (roles, server, services, pools, benchmark).
+        key: Timeout key within category.
+        fallback: Hardcoded fallback if registry unavailable.
+
+    Returns:
+        Timeout value from registry, or fallback.
+    """
+    timeouts = _load_registry_timeouts()
+    full_key = f"{category}.{key}"
+    if full_key in timeouts:
+        return timeouts[full_key]
+    # Try just the key for backward compat
+    if key in timeouts:
+        return timeouts[key]
+    return timeouts.get("default", fallback)
+
+
 # ============================================================================
 # Configuration Dataclasses
 # ============================================================================
@@ -91,7 +147,7 @@ class LLMConfig:
     batch_parallelism: int = 4
     """Maximum parallel calls in llm_batch."""
 
-    call_timeout: int = 300
+    call_timeout: int = 600  # Increased from 300 - architect calls can take ~300s
     """Timeout per call in seconds (matches LlamaServerBackend)."""
 
     mock_response_prefix: str = "[MOCK]"
@@ -204,8 +260,8 @@ class ServerConfigData:
     default_url: str = "http://localhost:8080"
     """Default server URL."""
 
-    timeout: int = 300
-    """Request timeout in seconds."""
+    timeout: int = 600
+    """Request timeout in seconds (increased for architect models)."""
 
     num_slots: int = 4
     """Number of parallel slots."""
@@ -474,38 +530,90 @@ class ServerURLsConfig:
 
 @dataclass
 class TimeoutsConfig:
-    """All timeout values in seconds."""
+    """All timeout values in seconds.
 
-    # Role-specific request timeouts (mirrors ROLE_TIMEOUTS in chat_utils.py)
-    worker_explore: int = 30
-    worker_math: int = 30
-    worker_vision: int = 30
-    worker_summarize: int = 120
-    frontdoor: int = 60
-    coder_primary: int = 60
-    coder_escalation: int = 120
-    vision_escalation: int = 60
-    ingest_long_context: int = 120
-    architect_general: int = 300
-    architect_coding: int = 300
-    default_request: int = 120
+    Source of truth: orchestration/model_registry.yaml (runtime_defaults.timeouts)
+    Hardcoded defaults here are fallbacks only - registry values take precedence.
+    """
+
+    # Role-specific request timeouts (read from registry.timeouts.roles.*)
+    worker_explore: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "worker_explore", 30))
+    )
+    worker_math: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "worker_math", 30))
+    )
+    worker_vision: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "worker_vision", 30))
+    )
+    worker_summarize: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "worker_summarize", 120))
+    )
+    frontdoor: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "frontdoor", 60))
+    )
+    coder_primary: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "coder_primary", 60))
+    )
+    coder_escalation: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "coder_escalation", 120))
+    )
+    vision_escalation: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "vision_escalation", 60))
+    )
+    ingest_long_context: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "ingest_long_context", 120))
+    )
+    architect_general: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "architect_general", 600))
+    )
+    architect_coding: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "architect_coding", 600))
+    )
+    default_request: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "default_request", 120))
+    )
     """Fallback for unknown roles."""
 
-    # Backend timeouts
-    server_request: int = 300
-    server_connect: int = 5
+    # Backend timeouts (read from registry.timeouts.server.*)
+    server_request: int = field(
+        default_factory=lambda: int(_registry_timeout("server", "request", 600))
+    )
+    server_connect: int = field(
+        default_factory=lambda: int(_registry_timeout("server", "connect", 5))
+    )
 
-    # Service timeouts
-    ocr_single_page: float = 120.0
-    ocr_pdf: float = 600.0
-    health_check: float = 5.0
-    vision_inference: int = 120
-    vision_figure: float = 60.0
-    ffmpeg_version: int = 5
-    ffmpeg_probe: int = 30
-    ffmpeg_extract: int = 600
-    exiftool: int = 30
-    gradio_client: float = 300.0
+    # Service timeouts (read from registry.timeouts.services.*)
+    ocr_single_page: float = field(
+        default_factory=lambda: float(_registry_timeout("services", "ocr_single_page", 120.0))
+    )
+    ocr_pdf: float = field(
+        default_factory=lambda: float(_registry_timeout("services", "ocr_pdf", 600.0))
+    )
+    health_check: float = field(
+        default_factory=lambda: float(_registry_timeout("server", "health_check", 5.0))
+    )
+    vision_inference: int = field(
+        default_factory=lambda: int(_registry_timeout("services", "vision_inference", 120))
+    )
+    vision_figure: float = field(
+        default_factory=lambda: float(_registry_timeout("services", "vision_figure", 60.0))
+    )
+    ffmpeg_version: int = field(
+        default_factory=lambda: int(_registry_timeout("services", "ffmpeg_version", 5))
+    )
+    ffmpeg_probe: int = field(
+        default_factory=lambda: int(_registry_timeout("services", "ffmpeg_probe", 30))
+    )
+    ffmpeg_extract: int = field(
+        default_factory=lambda: int(_registry_timeout("services", "ffmpeg_extract", 600))
+    )
+    exiftool: int = field(
+        default_factory=lambda: int(_registry_timeout("services", "exiftool", 30))
+    )
+    gradio_client: float = field(
+        default_factory=lambda: float(_registry_timeout("services", "gradio_client", 300.0))
+    )
 
     def for_role(self, role: str) -> int:
         """Get timeout for a specific role, falling back to default."""
@@ -545,20 +653,35 @@ class TimeoutsConfig:
 class VisionConfig:
     """Vision pipeline configuration."""
 
-    base_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/vision"))
+    base_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("ORCHESTRATOR_PATHS_VISION_DIR", f"{_get_default_llm_root()}/vision")
+        )
+    )
     llama_mtmd_cli: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_LLAMA_MTMD",
+                f"{_get_default_llm_root()}/llama.cpp/build/bin/llama-mtmd-cli",
+            )
+        )
     )
     vl_model_path: Path = field(
         default_factory=lambda: Path(
-            "/mnt/raid0/llm/lmstudio/models/lmstudio-community/"
-            "Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_VL_MODEL",
+                f"{_get_default_llm_root()}/lmstudio/models/lmstudio-community/"
+                "Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf",
+            )
         )
     )
     vl_mmproj_path: Path = field(
         default_factory=lambda: Path(
-            "/mnt/raid0/llm/lmstudio/models/lmstudio-community/"
-            "Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf"
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_VL_MMPROJ",
+                f"{_get_default_llm_root()}/lmstudio/models/lmstudio-community/"
+                "Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf",
+            )
         )
     )
     vl_server_port: int = 8086
@@ -650,22 +773,50 @@ class ServicesConfig:
     """Configuration for services (OCR, PDF, archives, drafts)."""
 
     lightonocr_model: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_LIGHTONOCR_MODEL",
+                f"{_get_default_llm_root()}/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf",
+            )
+        )
     )
     lightonocr_mmproj: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-mmproj-F16.gguf")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_LIGHTONOCR_MMPROJ",
+                f"{_get_default_llm_root()}/models/LightOnOCR-2-1B-bbox-mmproj-F16.gguf",
+            )
+        )
     )
     lightonocr_max_tokens: int = 2048
 
-    draft_cache_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/cache/drafts"))
+    draft_cache_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_DRAFT_CACHE", f"{_get_default_llm_root()}/cache/drafts"
+            )
+        )
+    )
     draft_cache_ttl_hours: float = 24.0
 
-    archive_extract_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/tmp/archives"))
+    archive_extract_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_ARCHIVE_EXTRACT", f"{_get_default_llm_root()}/tmp/archives"
+            )
+        )
+    )
     max_archive_size: int = 500 * 1024 * 1024  # 500 MB
     max_extracted_size: int = 1024 * 1024 * 1024  # 1 GB
     max_archive_files: int = 1000
 
-    pdf_router_temp_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/tmp/pdf_router"))
+    pdf_router_temp_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_PDF_ROUTER_TEMP", f"{_get_default_llm_root()}/tmp/pdf_router"
+            )
+        )
+    )
 
 
 @dataclass
@@ -690,6 +841,71 @@ class ApiConfig:
 
     rate_limit_burst: int = 10
     """Maximum burst size above the sustained rate."""
+
+
+@dataclass
+class ExternalAPIConfig:
+    """Configuration for a single external API backend."""
+
+    api_key: str = ""
+    """API key (loaded from environment)."""
+
+    base_url: str = ""
+    """Base URL for the API."""
+
+    default_model: str = ""
+    """Default model name to use."""
+
+    timeout: int = 120
+    """Request timeout in seconds."""
+
+    max_retries: int = 3
+    """Maximum retries on transient failures."""
+
+
+@dataclass
+class ExternalBackendsConfig:
+    """Configuration for external API backends (Anthropic, OpenAI, etc.).
+
+    API keys are loaded from environment variables:
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+
+    Usage:
+        config = get_config()
+        if config.external_backends.anthropic.api_key:
+            backend = AnthropicBackend(config.external_backends.anthropic)
+    """
+
+    anthropic: ExternalAPIConfig = field(
+        default_factory=lambda: ExternalAPIConfig(
+            api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+            base_url="https://api.anthropic.com",
+            default_model="claude-3-5-sonnet-20241022",
+            timeout=120,
+            max_retries=3,
+        )
+    )
+    """Anthropic API configuration."""
+
+    openai: ExternalAPIConfig = field(
+        default_factory=lambda: ExternalAPIConfig(
+            api_key=os.environ.get("OPENAI_API_KEY", ""),
+            base_url="https://api.openai.com/v1",
+            default_model="gpt-4o",
+            timeout=120,
+            max_retries=3,
+        )
+    )
+    """OpenAI API configuration."""
+
+    def has_anthropic(self) -> bool:
+        """Check if Anthropic API key is configured."""
+        return bool(self.anthropic.api_key)
+
+    def has_openai(self) -> bool:
+        """Check if OpenAI API key is configured."""
+        return bool(self.openai.api_key)
 
 
 @dataclass
@@ -765,6 +981,7 @@ class OrchestratorConfigData:
     services: ServicesConfig = field(default_factory=ServicesConfig)
     worker_pool: WorkerPoolPathsConfig = field(default_factory=WorkerPoolPathsConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    external_backends: ExternalBackendsConfig = field(default_factory=ExternalBackendsConfig)
 
 
 # ============================================================================
@@ -776,7 +993,7 @@ if PYDANTIC_SETTINGS_AVAILABLE:
     class LLMSettings(BaseSettings):
         output_cap: int = 8192
         batch_parallelism: int = 4
-        call_timeout: int = 300
+        call_timeout: int = 600  # Increased from 300 - architect calls can take ~300s
         mock_response_prefix: str = "[MOCK]"
         max_recursion_depth: int = 5
         default_prompt_rate: float = 0.50
@@ -808,7 +1025,7 @@ if PYDANTIC_SETTINGS_AVAILABLE:
 
     class ServerSettings(BaseSettings):
         default_url: str = "http://localhost:8080"
-        timeout: int = 300
+        timeout: int = 600
         num_slots: int = 4
         connect_timeout: int = 5
         retry_count: int = 3
@@ -855,10 +1072,10 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         coder_escalation: int = 120
         vision_escalation: int = 60
         ingest_long_context: int = 120
-        architect_general: int = 300
-        architect_coding: int = 300
+        architect_general: int = 600
+        architect_coding: int = 600
         default_request: int = 120
-        server_request: int = 300
+        server_request: int = 600
         server_connect: int = 5
         ocr_single_page: float = 120.0
         ocr_pdf: float = 600.0
@@ -967,7 +1184,9 @@ def _load_from_env() -> OrchestratorConfigData:
         llm=LLMConfig(
             output_cap=_env_int(f"{P}LLM_OUTPUT_CAP", 8192),
             batch_parallelism=_env_int(f"{P}LLM_BATCH_PARALLELISM", 4),
-            call_timeout=_env_int(f"{P}LLM_CALL_TIMEOUT", 300),
+            call_timeout=_env_int(
+                f"{P}LLM_CALL_TIMEOUT", int(_registry_timeout("server", "request", 600))
+            ),
             max_recursion_depth=_env_int(f"{P}LLM_MAX_RECURSION_DEPTH", 5),
             default_prompt_rate=_env_float(f"{P}LLM_DEFAULT_PROMPT_RATE", 0.50),
             default_completion_rate=_env_float(f"{P}LLM_DEFAULT_COMPLETION_RATE", 1.50),
@@ -983,7 +1202,9 @@ def _load_from_env() -> OrchestratorConfigData:
         ),
         server=ServerConfigData(
             default_url=_env_str(f"{P}SERVER_DEFAULT_URL", "http://localhost:8080"),
-            timeout=_env_int(f"{P}SERVER_TIMEOUT", 300),
+            timeout=_env_int(
+                f"{P}SERVER_TIMEOUT", int(_registry_timeout("server", "request", 600))
+            ),
             num_slots=_env_int(f"{P}SERVER_NUM_SLOTS", 4),
             connect_timeout=_env_int(f"{P}SERVER_CONNECT_TIMEOUT", 5),
             retry_count=_env_int(f"{P}SERVER_RETRY_COUNT", 3),
@@ -1030,20 +1251,63 @@ def _load_from_env() -> OrchestratorConfigData:
             ),
         ),
         timeouts=TimeoutsConfig(
-            worker_explore=_env_int(f"{P}TIMEOUTS_WORKER_EXPLORE", 30),
-            worker_math=_env_int(f"{P}TIMEOUTS_WORKER_MATH", 30),
-            worker_vision=_env_int(f"{P}TIMEOUTS_WORKER_VISION", 30),
-            worker_summarize=_env_int(f"{P}TIMEOUTS_WORKER_SUMMARIZE", 120),
-            frontdoor=_env_int(f"{P}TIMEOUTS_FRONTDOOR", 60),
-            coder_primary=_env_int(f"{P}TIMEOUTS_CODER_PRIMARY", 60),
-            coder_escalation=_env_int(f"{P}TIMEOUTS_CODER_ESCALATION", 120),
-            vision_escalation=_env_int(f"{P}TIMEOUTS_VISION_ESCALATION", 60),
-            ingest_long_context=_env_int(f"{P}TIMEOUTS_INGEST_LONG_CONTEXT", 120),
-            architect_general=_env_int(f"{P}TIMEOUTS_ARCHITECT_GENERAL", 300),
-            architect_coding=_env_int(f"{P}TIMEOUTS_ARCHITECT_CODING", 300),
-            default_request=_env_int(f"{P}TIMEOUTS_DEFAULT_REQUEST", 120),
-            server_request=_env_int(f"{P}TIMEOUTS_SERVER_REQUEST", 300),
-            server_connect=_env_int(f"{P}TIMEOUTS_SERVER_CONNECT", 5),
+            # All defaults come from registry; env vars can override
+            worker_explore=_env_int(
+                f"{P}TIMEOUTS_WORKER_EXPLORE",
+                int(_registry_timeout("roles", "worker_explore", 30)),
+            ),
+            worker_math=_env_int(
+                f"{P}TIMEOUTS_WORKER_MATH",
+                int(_registry_timeout("roles", "worker_math", 30)),
+            ),
+            worker_vision=_env_int(
+                f"{P}TIMEOUTS_WORKER_VISION",
+                int(_registry_timeout("roles", "worker_vision", 30)),
+            ),
+            worker_summarize=_env_int(
+                f"{P}TIMEOUTS_WORKER_SUMMARIZE",
+                int(_registry_timeout("roles", "worker_summarize", 120)),
+            ),
+            frontdoor=_env_int(
+                f"{P}TIMEOUTS_FRONTDOOR",
+                int(_registry_timeout("roles", "frontdoor", 60)),
+            ),
+            coder_primary=_env_int(
+                f"{P}TIMEOUTS_CODER_PRIMARY",
+                int(_registry_timeout("roles", "coder_primary", 60)),
+            ),
+            coder_escalation=_env_int(
+                f"{P}TIMEOUTS_CODER_ESCALATION",
+                int(_registry_timeout("roles", "coder_escalation", 120)),
+            ),
+            vision_escalation=_env_int(
+                f"{P}TIMEOUTS_VISION_ESCALATION",
+                int(_registry_timeout("roles", "vision_escalation", 60)),
+            ),
+            ingest_long_context=_env_int(
+                f"{P}TIMEOUTS_INGEST_LONG_CONTEXT",
+                int(_registry_timeout("roles", "ingest_long_context", 120)),
+            ),
+            architect_general=_env_int(
+                f"{P}TIMEOUTS_ARCHITECT_GENERAL",
+                int(_registry_timeout("roles", "architect_general", 600)),
+            ),
+            architect_coding=_env_int(
+                f"{P}TIMEOUTS_ARCHITECT_CODING",
+                int(_registry_timeout("roles", "architect_coding", 600)),
+            ),
+            default_request=_env_int(
+                f"{P}TIMEOUTS_DEFAULT_REQUEST",
+                int(_registry_timeout("roles", "default_request", 120)),
+            ),
+            server_request=_env_int(
+                f"{P}TIMEOUTS_SERVER_REQUEST",
+                int(_registry_timeout("server", "request", 600)),
+            ),
+            server_connect=_env_int(
+                f"{P}TIMEOUTS_SERVER_CONNECT",
+                int(_registry_timeout("server", "connect", 5)),
+            ),
         ),
         chat=ChatPipelineConfig(
             summarization_threshold_tokens=_env_int(

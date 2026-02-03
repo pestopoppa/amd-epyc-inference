@@ -5,29 +5,19 @@
 
 set -euo pipefail
 
-# Source logging library
+# Source environment and logging libraries
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "$SCRIPT_DIR/agent_log.sh" ]]; then
-  source "$SCRIPT_DIR/agent_log.sh"
-elif [[ -f "/mnt/raid0/llm/UTILS/agent_log.sh" ]]; then
-  source "/mnt/raid0/llm/UTILS/agent_log.sh"
-else
-  agent_session_start() { echo "Session: $1"; }
-  agent_task_start() { echo "Task: $1"; }
-  agent_task_end() { :; }
-  agent_observe() { :; }
-  agent_cmd_intent() { :; }
-  agent_cmd_result() { :; }
-  agent_decision() { :; }
-  agent_error() { echo "ERROR: $1" >&2; }
-fi
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+# shellcheck source=../utils/agent_log.sh
+source "${SCRIPT_DIR}/../utils/agent_log.sh"
 
 agent_session_start "Zen 5 systematic benchmarking"
 
-# Configuration
-MODEL_PATH="${1:-/mnt/raid0/llm/models/DeepSeek-R1-32B-Q4_K_M.gguf}"
-LLAMA_BENCH="/mnt/raid0/llm/llama.cpp/build/bin/llama-bench"
-RESULTS_DIR="/mnt/raid0/llm/LOGS"
+# Configuration (use variables from env.sh)
+MODEL_PATH="${1:-${MODELS_DIR}/DeepSeek-R1-32B-Q4_K_M.gguf}"
+LLAMA_BENCH="${LLAMA_CPP_BIN}/llama-bench"
+RESULTS_DIR="${LOG_DIR}"
 RESULTS_FILE="$RESULTS_DIR/zen5_benchmark_$(date +%Y%m%d_%H%M%S).csv"
 
 # Test parameters
