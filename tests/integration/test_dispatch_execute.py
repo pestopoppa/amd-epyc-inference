@@ -300,7 +300,7 @@ class TestDispatchExecuteWithContext:
         """Test that context is passed between steps."""
         server = ModelServer(registry=test_registry)
         config = ExecutorConfig(dry_run=True)
-        executor = Executor(model_server=server, config=config)
+        executor = Executor(model_server=server, config=config, registry=test_registry)
 
         task_ir = {
             "task_id": "context-task",
@@ -345,7 +345,7 @@ class TestDispatchExecuteWithContext:
         # Create components
         server = ModelServer(registry=test_registry)
         config = ExecutorConfig(dry_run=True)
-        executor = Executor(model_server=server, config=config)
+        executor = Executor(model_server=server, config=config, registry=test_registry)
         ctx = ContextManager()
 
         task_ir = {
