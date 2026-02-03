@@ -1,6 +1,13 @@
-"""Tests for the vision pipeline."""
+"""Tests for the vision pipeline.
+
+Note: Requires sqlalchemy for database models.
+"""
 
 import pytest
+
+# Skip entire module if sqlalchemy is not available (required by vision pipeline)
+pytest.importorskip("sqlalchemy", reason="sqlalchemy required for vision pipeline tests")
+
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from PIL import Image

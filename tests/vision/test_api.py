@@ -1,6 +1,13 @@
-"""Tests for vision API endpoints."""
+"""Tests for vision API endpoints.
+
+Note: Requires sqlalchemy for database models.
+"""
 
 import pytest
+
+# Skip entire module if sqlalchemy is not available (required by vision pipeline)
+pytest.importorskip("sqlalchemy", reason="sqlalchemy required for vision API tests")
+
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
