@@ -113,7 +113,7 @@ class TestExecuteVisionTool:
     @pytest.mark.asyncio
     async def test_execute_ocr_extract_success(self):
         """Test OCR extract tool with successful response."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"text": "Extracted text from image"}
 
@@ -131,7 +131,7 @@ class TestExecuteVisionTool:
     @pytest.mark.asyncio
     async def test_execute_ocr_extract_http_error(self):
         """Test OCR extract tool with HTTP error."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 500
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -217,7 +217,7 @@ class TestVisionReActMode:
     @pytest.mark.asyncio
     async def test_vision_react_direct_answer(self):
         """Test ReAct mode with immediate final answer."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "choices": [
@@ -271,7 +271,7 @@ class TestVisionReActMode:
             },
         ]
 
-        mock_ocr_response = AsyncMock()
+        mock_ocr_response = MagicMock()
         mock_ocr_response.status_code = 200
         mock_ocr_response.json.return_value = {"text": "Hello World"}
 
@@ -282,7 +282,7 @@ class TestVisionReActMode:
             if "ocr" in url:
                 return mock_ocr_response
             else:
-                response = AsyncMock()
+                response = MagicMock()
                 response.status_code = 200
                 response.json.return_value = responses[call_count]
                 call_count += 1
@@ -307,7 +307,7 @@ class TestVisionReActMode:
     @pytest.mark.asyncio
     async def test_vision_react_max_turns_exhausted(self):
         """Test ReAct mode hitting max turns limit."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "choices": [
@@ -338,7 +338,7 @@ class TestVisionReActMode:
     @pytest.mark.asyncio
     async def test_vision_react_http_error(self):
         """Test ReAct mode with HTTP error."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 500
 
         with patch("httpx.AsyncClient") as mock_client_class:
@@ -359,7 +359,7 @@ class TestVisionReActMode:
     @pytest.mark.asyncio
     async def test_vision_react_no_action_no_final_answer(self):
         """Test ReAct mode with response that has neither action nor final answer."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "choices": [
@@ -509,7 +509,7 @@ class TestHandleVisionRequest:
         mock_ocr_result = Mock()
         mock_ocr_result.text = ""
 
-        mock_vl_response = AsyncMock()
+        mock_vl_response = MagicMock()
         mock_vl_response.status_code = 200
         mock_vl_response.json.return_value = {
             "choices": [{"message": {"content": "The image is blue"}}]
@@ -549,7 +549,7 @@ class TestHandleVisionRequest:
         mock_ocr_result = Mock()
         mock_ocr_result.text = ""
 
-        mock_vl_response = AsyncMock()
+        mock_vl_response = MagicMock()
         mock_vl_response.status_code = 500
         mock_vl_response.text = "Server error"
 

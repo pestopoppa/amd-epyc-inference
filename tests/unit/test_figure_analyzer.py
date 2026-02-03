@@ -13,7 +13,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from src.models.document import BBox, FigureRef
+from src.models.document import BoundingBox, FigureRef
 from src.services.figure_analyzer import (
     FigureAnalyzer,
     analyze_figures,
@@ -165,7 +165,7 @@ class TestAnalyzeSingleFigure:
         """Test successful figure analysis."""
         analyzer = FigureAnalyzer(vision_api_url="http://test:8000/vision")
 
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "description": "A bar chart showing quarterly revenue"
@@ -189,7 +189,7 @@ class TestAnalyzeSingleFigure:
         """Test figure analysis with HTTP error."""
         analyzer = FigureAnalyzer()
 
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Internal server error"
 
@@ -236,7 +236,7 @@ class TestAnalyzeSingleFigure:
         """Test figure analysis returning empty description."""
         analyzer = FigureAnalyzer()
 
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"description": ""}
 
@@ -264,14 +264,14 @@ class TestAnalyzeFigures:
     async def test_analyze_figures_pdf_not_found(self):
         """Test analyzing figures with non-existent PDF."""
         analyzer = FigureAnalyzer()
-        bbox = BBox(x1=0, y1=0, x2=100, y2=100, normalized=True)
+        bbox = BoundingBox(id=0, x1=0, y1=0, x2=100, y2=100)
         figures = [FigureRef(id="fig1", page=1, bbox=bbox)]
 
         result = await analyzer.analyze_figures("/nonexistent/path.pdf", figures)
 
         # Should return figures unchanged (logged error)
         assert len(result) == 1
-        assert result[0].description is None
+        assert result[0].description == ""
 
     @pytest.mark.asyncio
     async def test_analyze_figures_success(self):
@@ -279,8 +279,8 @@ class TestAnalyzeFigures:
         analyzer = FigureAnalyzer()
 
         # Create mock figures
-        bbox1 = BBox(x1=0, y1=0, x2=500, y2=500, normalized=True)
-        bbox2 = BBox(x1=500, y1=0, x2=1000, y2=500, normalized=True)
+        bbox1 = BoundingBox(id=0, x1=0, y1=0, x2=500, y2=500)
+        bbox2 = BoundingBox(id=1, x1=500, y1=0, x2=1000, y2=500)
         figures = [
             FigureRef(id="fig1", page=1, bbox=bbox1),
             FigureRef(id="fig2", page=1, bbox=bbox2),
@@ -290,7 +290,7 @@ class TestAnalyzeFigures:
         mock_image = Image.new("RGB", (1000, 1000), color="white")
 
         # Mock vision API responses
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"description": "A test figure"}
 
@@ -314,7 +314,7 @@ class TestAnalyzeFigures:
         """Test figure analysis when page rendering fails."""
         analyzer = FigureAnalyzer()
 
-        bbox = BBox(x1=0, y1=0, x2=100, y2=100, normalized=True)
+        bbox = BoundingBox(id=0, x1=0, y1=0, x2=100, y2=100)
         figures = [FigureRef(id="fig1", page=1, bbox=bbox)]
 
         with patch.object(analyzer, "_render_pdf_page", side_effect=Exception("Render failed")):
@@ -323,7 +323,7 @@ class TestAnalyzeFigures:
 
                 # Should handle error gracefully
                 assert len(result) == 1
-                assert result[0].description is None
+                assert result[0].description == ""
 
 
 class TestConvenienceFunctions:
@@ -338,11 +338,11 @@ class TestConvenienceFunctions:
     @pytest.mark.asyncio
     async def test_analyze_figures_function_default_prompt(self):
         """Test analyze_figures convenience function with default prompt."""
-        bbox = BBox(x1=0, y1=0, x2=100, y2=100, normalized=True)
+        bbox = BoundingBox(id=0, x1=0, y1=0, x2=100, y2=100)
         figures = [FigureRef(id="fig1", page=1, bbox=bbox)]
 
         mock_image = Image.new("RGB", (1000, 1000), color="white")
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"description": "Test description"}
 
@@ -361,11 +361,11 @@ class TestConvenienceFunctions:
     @pytest.mark.asyncio
     async def test_analyze_figures_function_custom_prompt(self):
         """Test analyze_figures convenience function with custom prompt."""
-        bbox = BBox(x1=0, y1=0, x2=100, y2=100, normalized=True)
+        bbox = BoundingBox(id=0, x1=0, y1=0, x2=100, y2=100)
         figures = [FigureRef(id="fig1", page=1, bbox=bbox)]
 
         mock_image = Image.new("RGB", (1000, 1000), color="white")
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"description": "Custom description"}
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -22,6 +23,46 @@ from src.mcp_server import (
 )
 
 
+# Mock role config objects for testing
+@dataclass
+class MockPerformance:
+    optimized_tps: float | None = None
+    baseline_tps: float | None = None
+    speedup: str | None = None
+
+
+@dataclass
+class MockAcceleration:
+    type: str = "none"
+
+
+@dataclass
+class MockModel:
+    name: str = ""
+    quant: str = ""
+    size_gb: float = 0.0
+
+
+@dataclass
+class MockRoleConfig:
+    name: str = ""
+    tier: str = "A"
+    description: str = ""
+    model: MockModel = None
+    acceleration: MockAcceleration = None
+    performance: MockPerformance = None
+    constraints: None = None
+    notes: None = None
+
+    def __post_init__(self):
+        if self.model is None:
+            self.model = MockModel()
+        if self.acceleration is None:
+            self.acceleration = MockAcceleration()
+        if self.performance is None:
+            self.performance = MockPerformance()
+
+
 # ============ lookup_model ============
 
 
@@ -29,19 +70,22 @@ class TestLookupModel:
     @patch("src.registry_loader.RegistryLoader", autospec=False)
     def test_success(self, mock_loader_class):
         """Returns formatted role config."""
-        mock_role = MagicMock()
-        mock_role.name = "coder_primary"
-        mock_role.tier = "B"
-        mock_role.description = "Primary code generation"
-        mock_role.model.name = "Qwen2.5-Coder-32B"
-        mock_role.model.quant = "Q4_K_M"
-        mock_role.model.size_gb = 20.0
-        mock_role.acceleration.type = "speculative_decoding"
-        mock_role.performance.optimized_tps = 33.0
-        mock_role.performance.baseline_tps = 3.0
-        mock_role.performance.speedup = "11x"
-        mock_role.constraints = None
-        mock_role.notes = None
+        mock_role = MockRoleConfig(
+            name="coder_primary",
+            tier="B",
+            description="Primary code generation",
+            model=MockModel(
+                name="Qwen2.5-Coder-32B",
+                quant="Q4_K_M",
+                size_gb=20.0,
+            ),
+            acceleration=MockAcceleration(type="speculative_decoding"),
+            performance=MockPerformance(
+                optimized_tps=33.0,
+                baseline_tps=3.0,
+                speedup="11x",
+            ),
+        )
 
         mock_registry = MagicMock()
         mock_registry.get_role.return_value = mock_role
@@ -71,19 +115,21 @@ class TestListRoles:
     @patch("src.registry_loader.RegistryLoader", autospec=False)
     def test_success(self, mock_loader_class):
         """Returns roles grouped by tier."""
-        mock_role_a = MagicMock()
-        mock_role_a.name = "frontdoor"
-        mock_role_a.model.name = "Qwen3-Coder-30B"
-        mock_role_a.acceleration.type = "moe_expert_reduction"
-        mock_role_a.performance.optimized_tps = 18.0
-        mock_role_a.performance.baseline_tps = 10.0
+        mock_role_a = MockRoleConfig(
+            name="frontdoor",
+            tier="A",
+            model=MockModel(name="Qwen3-Coder-30B"),
+            acceleration=MockAcceleration(type="moe_expert_reduction"),
+            performance=MockPerformance(optimized_tps=18.0, baseline_tps=10.0),
+        )
 
-        mock_role_b = MagicMock()
-        mock_role_b.name = "coder_primary"
-        mock_role_b.model.name = "Qwen2.5-Coder-32B"
-        mock_role_b.acceleration.type = "speculative_decoding"
-        mock_role_b.performance.optimized_tps = 33.0
-        mock_role_b.performance.baseline_tps = 3.0
+        mock_role_b = MockRoleConfig(
+            name="coder_primary",
+            tier="B",
+            model=MockModel(name="Qwen2.5-Coder-32B"),
+            acceleration=MockAcceleration(type="speculative_decoding"),
+            performance=MockPerformance(optimized_tps=33.0, baseline_tps=3.0),
+        )
 
         mock_registry = MagicMock()
 

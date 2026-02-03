@@ -162,49 +162,60 @@ class TestExtractText:
 class TestCallMCPTool:
     """Tests for call_mcp_tool() and _call_async()."""
 
-    @patch("mcp.client.stdio.stdio_client")
-    def test_success(self, mock_stdio_client):
-        """Successful MCP tool call should return text result."""
+    @pytest.fixture
+    def test_config(self):
+        """Create a test server config."""
+        return MCPServerConfig(name="test", command="echo", timeout=5)
+
+    @pytest.fixture
+    def mock_mcp_session(self):
+        """Create a mock MCP session with successful call_tool."""
         from mcp.types import TextContent
 
-        # Build mock result
         mock_result = MagicMock()
         mock_result.isError = False
         mock_result.content = [TextContent(type="text", text="result text")]
 
-        # Build mock session
         mock_session = AsyncMock()
         mock_session.initialize = AsyncMock()
         mock_session.call_tool = AsyncMock(return_value=mock_result)
 
-        # Build mock context managers
         mock_session_cm = AsyncMock()
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cm.__aexit__ = AsyncMock(return_value=False)
 
+        return mock_session_cm
+
+    @pytest.fixture
+    def mock_stdio_transport(self):
+        """Create a mock stdio transport."""
         mock_rw = (MagicMock(), MagicMock())
         mock_client_cm = AsyncMock()
         mock_client_cm.__aenter__ = AsyncMock(return_value=mock_rw)
         mock_client_cm.__aexit__ = AsyncMock(return_value=False)
+        return mock_client_cm
 
-        mock_stdio_client.return_value = mock_client_cm
+    @patch("mcp.client.stdio.stdio_client")
+    def test_success(self, mock_stdio_client, test_config, mock_mcp_session, mock_stdio_transport):
+        """Successful MCP tool call should return text result."""
+        mock_stdio_client.return_value = mock_stdio_transport
 
-        config = MCPServerConfig(name="test", command="echo", timeout=5)
-
-        with patch("mcp.ClientSession", return_value=mock_session_cm):
-            result = call_mcp_tool(config, "my_tool", {"key": "value"})
+        with patch("mcp.ClientSession", return_value=mock_mcp_session):
+            result = call_mcp_tool(test_config, "my_tool", {"key": "value"})
 
         assert result == "result text"
 
     @patch("mcp.client.stdio.stdio_client")
-    def test_error_result_raises(self, mock_stdio_client):
+    def test_error_result_raises(self, mock_stdio_client, test_config, mock_stdio_transport):
         """MCP tool returning isError=True should raise RuntimeError."""
         from mcp.types import TextContent
 
+        # Create error result
         mock_result = MagicMock()
         mock_result.isError = True
         mock_result.content = [TextContent(type="text", text="tool failed")]
 
+        # Create session that returns error
         mock_session = AsyncMock()
         mock_session.initialize = AsyncMock()
         mock_session.call_tool = AsyncMock(return_value=mock_result)
@@ -213,18 +224,11 @@ class TestCallMCPTool:
         mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_cm.__aexit__ = AsyncMock(return_value=False)
 
-        mock_rw = (MagicMock(), MagicMock())
-        mock_client_cm = AsyncMock()
-        mock_client_cm.__aenter__ = AsyncMock(return_value=mock_rw)
-        mock_client_cm.__aexit__ = AsyncMock(return_value=False)
-
-        mock_stdio_client.return_value = mock_client_cm
-
-        config = MCPServerConfig(name="test", command="echo", timeout=5)
+        mock_stdio_client.return_value = mock_stdio_transport
 
         with patch("mcp.ClientSession", return_value=mock_session_cm):
             with pytest.raises(RuntimeError, match="returned error"):
-                call_mcp_tool(config, "failing_tool", {})
+                call_mcp_tool(test_config, "failing_tool", {})
 
     def test_server_not_found_raises(self):
         """Non-existent command should raise FileNotFoundError."""
