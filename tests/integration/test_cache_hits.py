@@ -443,6 +443,10 @@ class TestLiveServerCaching:
 # =============================================================================
 
 
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true",
+    reason="Performance benchmarks unreliable on CI runners",
+)
 class TestCachePerformanceBenchmarks:
     """Performance benchmarks for cache operations."""
 
