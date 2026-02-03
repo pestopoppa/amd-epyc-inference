@@ -134,7 +134,8 @@ def _registry_timeout(category: str, key: str, fallback: int | float) -> int | f
     # Try just the key for backward compat
     if key in timeouts:
         return timeouts[key]
-    return timeouts.get("default", fallback)
+    # Use hardcoded fallback (registry default only used for unknown keys without fallback)
+    return fallback
 
 
 # ============================================================================
