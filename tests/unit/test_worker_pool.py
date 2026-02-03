@@ -5,11 +5,16 @@ Tests cover:
 - Task type routing
 - Round-robin load balancing
 - HOT/WARM tier management
+
+Note: Requires aiohttp for WorkerPoolManager async HTTP operations.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+# Skip entire module if aiohttp is not available (used by worker_pool)
+pytest.importorskip("aiohttp", reason="aiohttp required for worker_pool tests")
 
 from src.services.worker_pool import (
     TaskType,

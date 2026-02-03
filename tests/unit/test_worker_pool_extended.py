@@ -7,14 +7,18 @@ Tests uncovered paths:
 - Round-robin distribution
 - Warm shutdown cancellation
 - HTTP error paths
+
+Note: Requires aiohttp for WorkerPoolManager async HTTP operations.
 """
 
 import asyncio
 import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiohttp
 import pytest
+
+# Skip entire module if aiohttp is not available
+aiohttp = pytest.importorskip("aiohttp", reason="aiohttp required for worker_pool tests")
 
 from src.services.worker_pool import (
     WorkerConfig,
