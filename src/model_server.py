@@ -33,6 +33,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from src.config import _registry_timeout
 from src.registry_loader import RegistryLoader, RoleConfig
 
 
@@ -73,7 +74,10 @@ class ModelStatus:
 
 @dataclass
 class InferenceRequest:
-    """Request for model inference."""
+    """Request for model inference.
+
+    Timeout default comes from model_registry.yaml (runtime_defaults.timeouts.default).
+    """
 
     role: str
     prompt: str | None = None
@@ -81,7 +85,9 @@ class InferenceRequest:
     n_tokens: int = 512
     temperature: float = 0.0
     context_length: int = 8192
-    timeout: int = 300  # seconds
+    timeout: int = field(
+        default_factory=lambda: int(_registry_timeout("server", "request", 600))
+    )
     stop_sequences: list[str] | None = None
     cache_prompt: bool | None = (
         None  # Override cache_prompt for this request (None = use backend default)
