@@ -629,3 +629,52 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 {"ts":"2026-02-03T10:53:31+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"SESSION_START","msg":"Session 3: CI lint fix — 688 ruff errors resolved, pre-commit hook installed","details":"new_session=ses_20260203_105331_47932"}
 {"ts":"2026-02-03T10:53:34+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"TASK_START","msg":"CI lint fix","details":"Resolved 688 ruff errors (F401, E501, F821, E402, E741), reformatted 199 files, installed pre-commit hook, updated CI workflow"}
 {"ts":"2026-02-03T10:56:00+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"TASK_END","msg":"CI lint fix","details":"outcome=success"}
+{"ts":"2026-02-03T11:15:49+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"TASK_START","msg":"Phase 2: DebugBench + USACO adapters","details":"Add DebugBench (4253 bugs), USACO (olympiad) adapters for REPL mode-advantage"}
+{"ts":"2026-02-03T11:15:49+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"TASK_END","msg":"Phase 2: DebugBench + USACO adapters","details":"outcome=success"}
+{"ts":"2026-02-03T11:15:49+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"TASK_START","msg":"Phase 3: Hard hand-written tasks","details":"Created mode_advantage_hard.yaml with 60 genuinely hard tasks in 4 categories"}
+{"ts":"2026-02-03T11:15:49+01:00","session":"ses_20260203_105331_47932","level":"INFO","cat":"TASK_END","msg":"Phase 3: Hard hand-written tasks","details":"outcome=success"}
+{"ts":"2026-02-03T13:45:14+01:00","session":"ses_20260203_134514_156603","level":"INFO","cat":"SESSION_START","msg":"Session: CI fix completion — run_tests ALLOWED_PATHS mocks, all 2538 tests passing","details":"new_session=ses_20260203_134514_156603"}
+{"ts":"2026-02-03T13:45:24+01:00","session":"ses_20260203_134514_156603","level":"INFO","cat":"TASK_START","msg":"CI fix completion","details":"Fixed TestRunTestsTool with ALLOWED_PATHS + _get_project_root mocks, CI now fully passing (2538 tests)"}
+{"ts":"2026-02-03T13:47:03+01:00","session":"ses_20260203_134514_156603","level":"INFO","cat":"TASK_END","msg":"CI fix completion","details":"outcome=success"}
+
+[2026-02-03T$(date +%H:%M:%S)] SESSION_START purpose="Repo Resilience Phases 4-5 Implementation"
+[2026-02-03T$(date +%H:%M:%S)] TASK_START task="Migrate Python files to config-based paths" reasoning="Primary goal: disaster recovery requires portable paths"
+[2026-02-03T$(date +%H:%M:%S)] OBSERVE category="path_migration" details="13 Python files migrated with _get_*() helper pattern"
+[2026-02-03T$(date +%H:%M:%S)] TASK_END task="Migrate Python files to config-based paths" status="success"
+[2026-02-03T$(date +%H:%M:%S)] TASK_START task="Migrate shell scripts to use env.sh" reasoning="Critical session scripts need portable paths"
+[2026-02-03T$(date +%H:%M:%S)] OBSERVE category="shell_migration" details="4 critical scripts: session_init.sh, health_check.sh, verify_llama_cpp.sh, emergency_cleanup.sh"
+[2026-02-03T$(date +%H:%M:%S)] TASK_END task="Migrate shell scripts to use env.sh" status="success"
+[2026-02-03T$(date +%H:%M:%S)] TASK_START task="Add CI path linting" reasoning="Prevent regression of hardcoded paths"
+[2026-02-03T$(date +%H:%M:%S)] OBSERVE category="ci_update" details="Added grep check to test.yml, threshold=13 (current fallback count)"
+[2026-02-03T$(date +%H:%M:%S)] TASK_END task="Add CI path linting" status="success"
+[2026-02-03T$(date +%H:%M:%S)] TASK_START task="Update README.md" reasoning="Document setup process for contributors"
+[2026-02-03T$(date +%H:%M:%S)] OBSERVE category="docs_update" details="Added Setup section, updated Quick Start with env vars"
+[2026-02-03T$(date +%H:%M:%S)] TASK_END task="Update README.md" status="success"
+[2026-02-03T$(date +%H:%M:%S)] OBSERVE category="verification" details="Config imports work, env override works (tested with ORCHESTRATOR_PATHS_LLM_ROOT=/tmp/test-llm)"
+[2026-02-03T$(date +%H:%M:%S)] SESSION_END summary="Phases 4-5 complete. 13 Python files + 4 shell scripts migrated. CI path linting added. README updated. Deferred: external API backends, full shell script migration, Docker/Nix."
+{"ts":"2026-02-03T14:44:22+01:00","session":"ses_20260203_134514_156603","level":"INFO","cat":"TASK_END","msg":"Fix CI test failure in test_run_tests_success","details":"outcome=success"}
+[2026-02-03T14:45:08+01:00] TASK_END | session=ses_20260203_ci_fix | task=Fix CI test_run_tests_success failure | result=success | details=MagicMock __str__ doesn't work as expected; mocked _validate_path directly instead of Path
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"SESSION_START","msg":"Three-task implementation: shell migration, external backends, benchmark manifest","details":"new_session=ses_20260203_160636_235692"}
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"TASK_START","msg":"Shell script migration","details":"Fixed agent_log.sh bug, migrated 4 priority scripts to env.sh"}
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"TASK_END","msg":"Shell script migration","details":"outcome=success"}
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"TASK_START","msg":"External API backends","details":"Created AnthropicBackend and OpenAIBackend classes with 26 tests"}
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"TASK_END","msg":"External API backends","details":"outcome=success"}
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"TASK_START","msg":"Benchmark manifest","details":"Created MANIFEST.yaml and reconstruct_suite.py"}
+{"ts":"2026-02-03T16:06:36+01:00","session":"ses_20260203_160636_235692","level":"INFO","cat":"TASK_END","msg":"Benchmark manifest","details":"outcome=success"}
+
+2026-02-03T15:10:00Z [SESSION] Session 10 start: Simplify timeout configuration
+2026-02-03T15:10:01Z [TASK] Simplify timeout config - replace per-suite SUITE_TIMEOUTS with single DEFAULT_TIMEOUT
+2026-02-03T15:10:02Z [EDIT] orchestration/model_registry.yaml - simplified timeouts (7 lines → 1 line)
+2026-02-03T15:10:03Z [EDIT] scripts/benchmark/seeding_types.py - DEFAULT_TIMEOUT=600, removed SUITE_TIMEOUTS dict
+2026-02-03T15:10:04Z [EDIT] scripts/benchmark/seed_specialist_routing.py - removed SUITE_TIMEOUTS import/usage
+2026-02-03T15:10:05Z [EDIT] scripts/benchmark/calibrate_timeouts.py - updated to use DEFAULT_TIMEOUT
+2026-02-03T15:10:06Z [VERIFY] All Python syntax checks pass, YAML validates
+2026-02-03T15:15:00Z [TASK] Clean corrupted episodic memory from architect timeout issues
+2026-02-03T15:15:01Z [QUERY] Found 199 memories in corrupted time range (2026-02-03T10:52 to 12:53)
+2026-02-03T15:15:02Z [BACKUP] Created episodic.db.bak_pre_timeout_cleanup
+2026-02-03T15:15:03Z [DELETE] Deleted 199 corrupted memories from episodic.db
+2026-02-03T15:15:04Z [DELETE] Deleted seeding_20260203_113053.jsonl (15 timeout errors)
+2026-02-03T15:15:05Z [EDIT] Removed 6 GPQA question IDs from seen_questions.jsonl
+2026-02-03T15:15:06Z [VERIFY] FAISS index clean - no orphaned embeddings
+2026-02-03T15:20:00Z [VERIFY] All 9 llama-server ports healthy (8080-8090)
+2026-02-03T15:20:01Z [TASK_END] Session 10 complete - timeout simplified, episodic memory cleaned

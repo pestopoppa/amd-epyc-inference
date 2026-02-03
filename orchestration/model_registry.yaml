@@ -1,3 +1,20 @@
+# =============================================================================
+# Model Registry Configuration
+# =============================================================================
+#
+# Path Configuration:
+#   All paths are relative to the base paths defined here or can be overridden
+#   via environment variables (see .env.example):
+#     - ORCHESTRATOR_PATHS_LLM_ROOT (default: /mnt/raid0/llm)
+#     - ORCHESTRATOR_PATHS_MODEL_BASE (default: ${LLM_ROOT}/lmstudio/models)
+#     - ORCHESTRATOR_PATHS_LLAMA_CPP_BIN (default: ${LLM_ROOT}/llama.cpp/build/bin)
+#
+# Model Downloads:
+#   Models with huggingface_id can be downloaded via:
+#     python scripts/setup/download_models.py --tier hot
+#
+# =============================================================================
+
 runtime_defaults:
   quantization: Q4_K_M
   draft_quantization: Q8_0
@@ -5,8 +22,10 @@ runtime_defaults:
   temperature: 0.2
   threads: 96
   numa_policy: interleave=all
+  # Base path for models - override with ORCHESTRATOR_PATHS_MODEL_BASE env var
   model_base_path: /mnt/raid0/llm/lmstudio/models
   binaries:
+    # Binary path - override with ORCHESTRATOR_PATHS_LLAMA_CPP_BIN env var
     base_dir: /mnt/raid0/llm/llama.cpp/build/bin
     completion: llama-completion
     speculative: llama-speculative
@@ -42,12 +61,7 @@ runtime_defaults:
     deepseek_r1: 65536
     gemma3: 131072
   timeouts:
-    default: 180
-    tier_a: 120
-    tier_b: 300
-    tier_c: 180
-    tier_d: 60
-    long_context: 600
+    default: 600  # Max from calibration: architect_general takes ~300s on hard questions
   paged_attention:
     description: "CPU paged attention for memory-bound large models (70B+)"
     enabled_threshold_gb: 39  # Models >= 39GB benefit from paged attention
@@ -424,6 +438,7 @@ roles:
     description: Primary interactive orchestrator - high quality, always resident
     model:
       name: Qwen3-Coder-30B-A3B-Instruct
+      huggingface_id: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF
       path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 17.5
@@ -504,6 +519,7 @@ roles:
     description: Coding escalation target - dense coder with spec decode + prompt lookup
     model:
       name: Qwen2.5-Coder-32B-Instruct
+      huggingface_id: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF
       path: lmstudio-community/Qwen2.5-Coder-32B-Instruct-GGUF/Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 20
@@ -544,6 +560,7 @@ roles:
     description: Large document ingestion, synthesis & summarization - SSM+MoE hybrid
     model:
       name: Qwen3-Next-80B-A3B-Instruct
+      huggingface_id: lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF
       path: lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf
       quant: Q4_K_M
       size_gb: 45
@@ -583,6 +600,7 @@ roles:
     description: System architecture, invariants, acceptance tests - emits IR only
     model:
       name: Qwen3-235B-A22B
+      huggingface_id: lmstudio-community/Qwen3-235B-A22B-GGUF
       path: lmstudio-community/Qwen3-235B-A22B-GGUF/Qwen3-235B-A22B-Q4_K_M-00001-of-00004.gguf
       quant: Q4_K_M
       size_gb: 133
@@ -622,6 +640,7 @@ roles:
     description: Hardest coding/architecture escalation - IR-first
     model:
       name: Qwen3-Coder-480B-A35B-Instruct
+      huggingface_id: lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF
       path: lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00008.gguf
       quant: Q4_K_M
       size_gb: 271

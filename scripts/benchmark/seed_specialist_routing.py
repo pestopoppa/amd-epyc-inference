@@ -80,7 +80,6 @@ from seeding_types import (  # noqa: E402, F401
     ROLE_PORT,
     RoleResult,
     SEEN_FILE,
-    SUITE_TIMEOUTS,
     VISION_MODES,
     VISION_ROLES,
     state,
@@ -558,7 +557,6 @@ def evaluate_question(
 
     SLOW_ROLES = {"architect_general", "architect_coding"}
     SLOW_ROLE_TIMEOUT = max(timeout, 300)
-    suite_timeout = SUITE_TIMEOUTS.get(suite, timeout)
 
     for combo_idx, (role, mode) in enumerate(active_combos):
         if state.shutdown:
@@ -572,7 +570,7 @@ def evaluate_question(
         key = f"{role}:{mode}"
         if target_port in HEAVY_PORTS:
             logger.info(f"  → {key} (heavy model, expect 30-120s)...")
-        role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else max(timeout, suite_timeout)
+        role_timeout = SLOW_ROLE_TIMEOUT if role in SLOW_ROLES else timeout
         q_start = time.perf_counter()
         response = call_orchestrator_forced(
             prompt, role, mode, url, role_timeout,

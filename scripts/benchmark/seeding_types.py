@@ -16,7 +16,7 @@ __all__ = [
     "ESCALATION_REWARD", "EVAL_DIR", "HEAVY_PORTS",
     "HealthCheckError", "MODEL_PORTS", "PROJECT_ROOT",
     "ROLE_COST_TIER", "ROLE_PORT", "RoleResult",
-    "SEEN_FILE", "STACK_SCRIPT", "SUITE_TIMEOUTS",
+    "SEEN_FILE", "STACK_SCRIPT",
     "VISION_MODES", "VISION_ROLES", "state",
 ]
 
@@ -33,7 +33,7 @@ DEBUG_PROMPTS_DIR = PROJECT_ROOT / "benchmarks" / "prompts" / "debug"
 # ── Orchestrator defaults ─────────────────────────────────────────────
 
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:8000"
-DEFAULT_TIMEOUT = 120
+DEFAULT_TIMEOUT = 600  # Max from calibration: architect_general takes ~300s on hard questions
 DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
     "coder", "instruction_precision", "vl",
@@ -63,28 +63,6 @@ VISION_MODES: dict[str, set[str]] = {
     "worker_vision": {"direct", "react"},
     "vision_escalation": {"direct"},
 }
-
-# Per-suite timeout overrides (seconds)
-SUITE_TIMEOUTS: dict[str, int] = {
-    "long_context": 600,
-    "coder": 180,
-    "vl": 180,
-    "mode_advantage": 180,
-    "gaia": 300,
-    "cruxeval": 120,
-    "bigcodebench": 300,
-    # Phase 1 hard benchmarks
-    "gpqa": 180,  # Graduate science — reasoning time
-    "simpleqa": 120,  # Factual lookup — should be quick
-    "hotpotqa": 180,  # Multi-hop reasoning
-    "livecodebench": 300,  # Competition code — needs iteration
-    # Phase 2 hard benchmarks
-    "debugbench": 180,  # Bug fixing — iterative debugging
-    "usaco": 300,  # Olympiad — complex algorithms
-    # Phase 3: Hard hand-written
-    "mode_advantage_hard": 240,  # Expert-level tasks — need more time
-}
-
 
 # ── Cost / escalation constants ──────────────────────────────────────
 
