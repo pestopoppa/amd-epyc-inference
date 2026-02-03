@@ -262,6 +262,13 @@ class TestDepVisionComponents:
         assert state.vision_video_processor is result
 
 
+def _is_ci() -> bool:
+    """Check if running in CI environment."""
+    import os
+    return os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true"
+
+
+@pytest.mark.skipif(_is_ci(), reason="Session store tests require local paths (skipped in CI)")
 class TestDepSessionStore:
     """Tests for dep_session_store — lazy initialization."""
 
