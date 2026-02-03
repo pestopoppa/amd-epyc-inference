@@ -1,5 +1,7 @@
 """Route modules for the orchestrator API."""
 
+import logging
+
 from fastapi import APIRouter
 
 from src.api.routes.health import router as health_router
@@ -8,10 +10,21 @@ from src.api.routes.gates import router as gates_router
 from src.api.routes.stats import router as stats_router
 from src.api.routes.openai_compat import router as openai_router
 from src.api.routes.sessions import router as sessions_router
-from src.api.routes.vision import router as vision_router
 from src.api.routes.documents import router as documents_router
 from src.api.routes.config import router as config_router
 from src.api.routes.delegate import router as delegate_router
+
+logger = logging.getLogger(__name__)
+
+# Vision router requires sqlalchemy + chromadb - optional for CI
+try:
+    from src.api.routes.vision import router as vision_router
+
+    VISION_AVAILABLE = True
+except ImportError as e:
+    vision_router = None  # type: ignore[assignment]
+    VISION_AVAILABLE = False
+    logger.debug("Vision router unavailable (missing %s) - vision endpoints disabled", e.name)
 
 
 def create_api_router() -> APIRouter:
@@ -29,7 +42,8 @@ def create_api_router() -> APIRouter:
     router.include_router(stats_router, tags=["stats"])
     router.include_router(openai_router, prefix="/v1", tags=["openai"])
     router.include_router(sessions_router, tags=["sessions"])
-    router.include_router(vision_router, prefix="/v1", tags=["vision"])
+    if VISION_AVAILABLE:
+        router.include_router(vision_router, prefix="/v1", tags=["vision"])
     router.include_router(documents_router, prefix="/v1", tags=["documents"])
     router.include_router(config_router, tags=["config"])
     router.include_router(delegate_router, tags=["delegate"])
@@ -49,4 +63,5 @@ __all__ = [
     "documents_router",
     "config_router",
     "delegate_router",
+    "VISION_AVAILABLE",
 ]
