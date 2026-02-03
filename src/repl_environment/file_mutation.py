@@ -6,8 +6,19 @@ Log appending, safe file writes, and patch preparation/approval workflow.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _get_project_root() -> Path:
+    """Get project root from config with fallback."""
+    try:
+        from src.config import get_config
+
+        return get_config().paths.project_root
+    except Exception:
+        return Path("/mnt/raid0/llm/claude")
 
 
 class _FileMutationMixin:
@@ -33,7 +44,7 @@ class _FileMutationMixin:
         from datetime import datetime
 
         try:
-            log_path = f"/mnt/raid0/llm/claude/logs/{log_name}"
+            log_path = str(_get_project_root() / "logs" / log_name)
 
             # Validate path
             is_valid, error = self._validate_file_path(log_path)
@@ -121,10 +132,9 @@ class _FileMutationMixin:
         self._exploration_calls += 1
         import subprocess
         from datetime import datetime
-        from pathlib import Path
 
         try:
-            patches_dir = Path("/mnt/raid0/llm/claude/orchestration/patches/pending")
+            patches_dir = _get_project_root() / "orchestration" / "patches" / "pending"
             patches_dir.mkdir(parents=True, exist_ok=True)
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -137,7 +147,7 @@ class _FileMutationMixin:
                 ["git", "diff", "--"] + files,
                 capture_output=True,
                 text=True,
-                cwd="/mnt/raid0/llm/claude",
+                cwd=str(_get_project_root()),
             )
 
             if not result.stdout.strip():
@@ -169,10 +179,9 @@ class _FileMutationMixin:
         """
         self._exploration_calls += 1
         import json
-        from pathlib import Path
 
         try:
-            patches_base = Path("/mnt/raid0/llm/claude/orchestration/patches")
+            patches_base = _get_project_root() / "orchestration" / "patches"
             results = []
 
             statuses = ["pending", "approved", "rejected"] if status == "all" else [status]
@@ -220,10 +229,9 @@ class _FileMutationMixin:
         import shutil
         import subprocess
         from datetime import datetime
-        from pathlib import Path
 
         try:
-            patches_base = Path("/mnt/raid0/llm/claude/orchestration/patches")
+            patches_base = _get_project_root() / "orchestration" / "patches"
             pending_path = patches_base / "pending" / patch_name
             approved_path = patches_base / "approved" / patch_name
 
@@ -235,7 +243,7 @@ class _FileMutationMixin:
                 ["git", "apply", "--check", str(pending_path)],
                 capture_output=True,
                 text=True,
-                cwd="/mnt/raid0/llm/claude",
+                cwd=str(_get_project_root()),
             )
 
             if result.returncode != 0:
@@ -246,7 +254,7 @@ class _FileMutationMixin:
                 ["git", "apply", str(pending_path)],
                 capture_output=True,
                 text=True,
-                cwd="/mnt/raid0/llm/claude",
+                cwd=str(_get_project_root()),
             )
 
             if result.returncode != 0:
@@ -278,10 +286,9 @@ class _FileMutationMixin:
         self._exploration_calls += 1
         import shutil
         from datetime import datetime
-        from pathlib import Path
 
         try:
-            patches_base = Path("/mnt/raid0/llm/claude/orchestration/patches")
+            patches_base = _get_project_root() / "orchestration" / "patches"
             pending_path = patches_base / "pending" / patch_name
             rejected_path = patches_base / "rejected" / patch_name
 

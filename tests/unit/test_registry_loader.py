@@ -342,6 +342,14 @@ class TestValidation:
         assert len(loader.missing_models) == 0
 
 
+def _is_ci() -> bool:
+    """Check if running in CI environment."""
+    import os
+
+    return os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true"
+
+
+@pytest.mark.skipif(_is_ci(), reason="Production registry tests require local paths")
 class TestProductionRegistry:
     """Tests against the production registry."""
 

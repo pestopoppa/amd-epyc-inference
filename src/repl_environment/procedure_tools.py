@@ -5,7 +5,18 @@ Provides mixin with self-management procedure tools for the REPL environment.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+
+def _get_project_root() -> Path:
+    """Get project root from config with fallback."""
+    try:
+        from src.config import get_config
+
+        return get_config().paths.project_root
+    except Exception:
+        return Path("/mnt/raid0/llm/claude")
 
 
 class _ProcedureToolsMixin:
@@ -100,10 +111,9 @@ class _ProcedureToolsMixin:
         """
         self._exploration_calls += 1
         import json
-        from pathlib import Path
 
         try:
-            state_dir = Path("/mnt/raid0/llm/claude/orchestration/procedures/state")
+            state_dir = _get_project_root() / "orchestration" / "procedures" / "state"
             if not state_dir.exists():
                 return json.dumps({"status": "never_run", "procedure_id": procedure_id})
 
@@ -143,10 +153,9 @@ class _ProcedureToolsMixin:
         """
         self._exploration_calls += 1
         import json
-        from pathlib import Path
 
         try:
-            checkpoint_dir = Path("/mnt/raid0/llm/claude/orchestration/checkpoints")
+            checkpoint_dir = _get_project_root() / "orchestration" / "checkpoints"
             checkpoint_path = checkpoint_dir / f"{checkpoint_id}.json"
 
             if not checkpoint_path.exists():
@@ -181,7 +190,7 @@ class _ProcedureToolsMixin:
 
         try:
             # Try yaml first, fall back to json parsing
-            registry_path = "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
+            registry_path = str(_get_project_root() / "orchestration" / "model_registry.yaml")
             try:
                 import yaml
 
@@ -263,7 +272,7 @@ class _ProcedureToolsMixin:
         from pathlib import Path
 
         try:
-            results_dir = Path("/mnt/raid0/llm/claude/benchmarks/results/runs")
+            results_dir = _get_project_root() / "benchmarks" / "results" / "runs"
 
             # Find results for both models
             results = {}
