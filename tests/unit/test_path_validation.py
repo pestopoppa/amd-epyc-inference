@@ -3,7 +3,7 @@
 import pytest
 from fastapi import HTTPException
 
-from src.api.routes.path_validation import validate_api_path, ALLOWED_PREFIXES
+from src.api.routes.path_validation import validate_api_path, _get_allowed_prefixes
 
 
 def test_allowed_raid_path():
@@ -44,7 +44,14 @@ def test_rejects_home_path():
 
 
 def test_allowed_prefixes_are_correct():
-    """Verify the allowlist matches CLAUDE.md requirements (all on /mnt/raid0/)."""
-    assert "/mnt/raid0/llm/" in ALLOWED_PREFIXES
-    assert "/mnt/raid0/llm/tmp/" in ALLOWED_PREFIXES
-    assert len(ALLOWED_PREFIXES) == 2
+    """Verify the allowlist includes required prefixes."""
+    import tempfile
+
+    allowed = _get_allowed_prefixes()
+    # Must include LLM root and tmp
+    assert "/mnt/raid0/llm/" in allowed
+    assert "/mnt/raid0/llm/tmp/" in allowed
+    # Must include system temp for CI/tests
+    sys_tmp = tempfile.gettempdir()
+    sys_tmp_prefix = sys_tmp if sys_tmp.endswith("/") else f"{sys_tmp}/"
+    assert sys_tmp_prefix in allowed
