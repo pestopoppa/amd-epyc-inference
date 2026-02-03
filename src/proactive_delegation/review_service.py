@@ -9,7 +9,6 @@ from typing import Any, TYPE_CHECKING
 
 from src.proactive_delegation.types import (
     ArchitectReview,
-    AggregatedResult,
     PlanReviewResult,
     ReviewDecision,
     SubtaskResult,
@@ -79,8 +78,7 @@ class AggregationService:
 
             if current_block:
                 code_blocks.append(
-                    f"# From {result.subtask_id} ({result.role})\n"
-                    + "\n".join(current_block)
+                    f"# From {result.subtask_id} ({result.role})\n" + "\n".join(current_block)
                 )
 
         # Combine imports at top, then code blocks
@@ -301,13 +299,15 @@ Rules:
             steps = taskir_data.get("steps", [])
             normalized_steps = []
             for i, step in enumerate(steps):
-                normalized_steps.append({
-                    "id": step.get("id", f"S{i+1}"),
-                    "actor": step.get("actor", "worker"),
-                    "action": step.get("action", ""),
-                    "outputs": step.get("out", step.get("outputs", [])),
-                    "inputs": step.get("in", step.get("inputs", [])),
-                })
+                normalized_steps.append(
+                    {
+                        "id": step.get("id", f"S{i + 1}"),
+                        "actor": step.get("actor", "worker"),
+                        "action": step.get("action", ""),
+                        "outputs": step.get("out", step.get("outputs", [])),
+                        "inputs": step.get("in", step.get("inputs", [])),
+                    }
+                )
 
             return {
                 "task_id": f"arch-{uuid.uuid4().hex[:8]}",
@@ -323,7 +323,12 @@ Rules:
                 "objective": objective,
                 "plan": {
                     "steps": [
-                        {"id": "S1", "actor": "coder", "action": objective[:50], "outputs": ["output.txt"]}
+                        {
+                            "id": "S1",
+                            "actor": "coder",
+                            "action": objective[:50],
+                            "outputs": ["output.txt"],
+                        }
                     ]
                 },
             }

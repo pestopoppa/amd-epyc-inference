@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, Iterator
+from typing import Iterator
 
 from src.vision.config import (
     DEFAULT_BATCH_SIZE,
@@ -20,7 +19,6 @@ from src.vision.config import (
 from src.vision.models import (
     AnalyzerType,
     JobStatus,
-    BatchJobResponse,
     BatchStatusResponse,
 )
 from src.vision.pipeline import VisionPipeline, get_pipeline
@@ -31,6 +29,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class BatchJob:
     """Tracks state of a batch processing job."""
+
     job_id: str
     status: JobStatus = JobStatus.PENDING
     total_items: int = 0
@@ -113,12 +112,14 @@ class BatchProcessor:
         job = BatchJob(job_id=job_id)
 
         # Collect input files
-        files = list(self._collect_files(
-            input_directory=Path(input_directory) if input_directory else None,
-            input_paths=[Path(p) for p in input_paths] if input_paths else None,
-            recursive=recursive,
-            extensions=extensions or ["jpg", "jpeg", "png", "heic", "webp"],
-        ))
+        files = list(
+            self._collect_files(
+                input_directory=Path(input_directory) if input_directory else None,
+                input_paths=[Path(p) for p in input_paths] if input_paths else None,
+                recursive=recursive,
+                extensions=extensions or ["jpg", "jpeg", "png", "heic", "webp"],
+            )
+        )
 
         job.total_items = len(files)
 

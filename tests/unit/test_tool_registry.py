@@ -246,14 +246,16 @@ class TestToolRegistryMCP:
 
     def test_invoke_mcp_tool(self):
         """_invoke_mcp should delegate to call_mcp_tool."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
         from src.mcp_client import MCPServerConfig
 
         registry = ToolRegistry()
         # Pre-load a config so it doesn't hit disk
         registry._mcp_configs = {
             "test-server": MCPServerConfig(
-                name="test-server", command="echo", timeout=5,
+                name="test-server",
+                command="echo",
+                timeout=5,
             )
         }
 

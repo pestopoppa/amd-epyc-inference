@@ -7,7 +7,6 @@ thread safety, and status snapshots.
 
 import threading
 import time
-from unittest.mock import patch
 
 import pytest
 

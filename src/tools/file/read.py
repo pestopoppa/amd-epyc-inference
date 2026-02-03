@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.tool_registry import Tool, ToolCategory, ToolRegistry
-from src.tools.base import ToolResult, truncate_output
+from src.tools.base import truncate_output
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ def read_file(
             all_lines = f.readlines()
 
         total_lines = len(all_lines)
-        selected_lines = all_lines[offset:offset + limit]
+        selected_lines = all_lines[offset : offset + limit]
 
         # Format with line numbers if requested
         if show_line_numbers:

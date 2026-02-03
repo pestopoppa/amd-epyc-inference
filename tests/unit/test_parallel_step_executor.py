@@ -8,15 +8,12 @@ Covers:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.parallel_step_executor import (
-    BURST_WORKER_ROLES,
     StepExecutor,
-    Wave,
     compute_waves,
 )
 
@@ -169,7 +166,9 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves, {"worker": "worker_general"},
+            {"objective": "test"},
+            waves,
+            {"worker": "worker_general"},
         )
 
         assert len(results) == 2
@@ -190,7 +189,9 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves, {"worker": "worker_general"},
+            {"objective": "test"},
+            waves,
+            {"worker": "worker_general"},
         )
 
         assert results[0].success
@@ -210,7 +211,9 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves, {"worker": "worker_general"},
+            {"objective": "test"},
+            waves,
+            {"worker": "worker_general"},
         )
 
         assert not results[0].success
@@ -225,6 +228,7 @@ class TestStepExecutor:
 
         def slow_llm_call(prompt, role="worker_fast", n_tokens=1024, **kw):
             import time
+
             call_times.append(time.monotonic())
             time.sleep(0.05)
             return f"result from {role}"
@@ -239,7 +243,8 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves,
+            {"objective": "test"},
+            waves,
             {"burst": "worker_fast"},
         )
 
@@ -268,7 +273,8 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves,
+            {"objective": "test"},
+            waves,
             {"coder": "coder_primary", "worker": "worker_general"},
         )
 
@@ -286,7 +292,9 @@ class TestStepExecutor:
         steps = [{"id": "S1", "action": "test"}]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves, {"worker": "worker_general"},
+            {"objective": "test"},
+            waves,
+            {"worker": "worker_general"},
         )
 
         assert len(results) == 1
@@ -311,7 +319,8 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         await executor.execute_plan(
-            {"objective": "test"}, waves,
+            {"objective": "test"},
+            waves,
             {"coder": "coder_primary", "worker": "worker_explore"},
         )
 
@@ -329,7 +338,8 @@ class TestStepExecutor:
         ]
         waves = compute_waves(steps)
         results = await executor.execute_plan(
-            {"objective": "test"}, waves,
+            {"objective": "test"},
+            waves,
             {"coder": "coder_primary", "fast": "worker_fast"},
         )
 
@@ -357,7 +367,8 @@ class TestDelegateEndpoint:
             "task_id": "test-123",
             "objective": "Test objective",
             "plan": {
-                "steps": steps or [
+                "steps": steps
+                or [
                     {"id": "S1", "action": "do first", "actor": "worker", "outputs": ["result"]},
                 ],
             },
@@ -375,10 +386,12 @@ class TestDelegateEndpoint:
     @patch("src.api.routes.delegate.features")
     def test_dry_run_returns_wave_plan(self, mock_features, client):
         mock_features.return_value = MagicMock(parallel_execution=True)
-        task_ir = self._make_task_ir([
-            {"id": "S1", "action": "first", "actor": "worker", "outputs": ["a"]},
-            {"id": "S2", "action": "second", "actor": "worker", "depends_on": ["S1"]},
-        ])
+        task_ir = self._make_task_ir(
+            [
+                {"id": "S1", "action": "first", "actor": "worker", "outputs": ["a"]},
+                {"id": "S2", "action": "second", "actor": "worker", "depends_on": ["S1"]},
+            ]
+        )
         response = client.post(
             "/api/delegate",
             json={"task_ir": task_ir, "dry_run": True},
@@ -401,10 +414,12 @@ class TestDelegateEndpoint:
     @patch("src.api.routes.delegate.features")
     def test_circular_deps_returns_422(self, mock_features, client):
         mock_features.return_value = MagicMock(parallel_execution=True)
-        task_ir = self._make_task_ir([
-            {"id": "S1", "action": "a", "depends_on": ["S2"]},
-            {"id": "S2", "action": "b", "depends_on": ["S1"]},
-        ])
+        task_ir = self._make_task_ir(
+            [
+                {"id": "S1", "action": "a", "depends_on": ["S2"]},
+                {"id": "S2", "action": "b", "depends_on": ["S1"]},
+            ]
+        )
         response = client.post(
             "/api/delegate",
             json={"task_ir": task_ir},
@@ -440,17 +455,20 @@ class TestFeatureFlag:
 
     def test_default_disabled(self):
         from src.features import Features
+
         f = Features()
         assert f.parallel_execution is False
 
     def test_dependency_on_architect_delegation(self):
         from src.features import Features
+
         f = Features(parallel_execution=True, architect_delegation=False)
         errors = f.validate()
         assert any("parallel_execution" in e for e in errors)
 
     def test_valid_with_all_deps(self):
         from src.features import Features
+
         f = Features(
             parallel_execution=True,
             architect_delegation=True,
@@ -461,6 +479,7 @@ class TestFeatureFlag:
 
     def test_in_summary(self):
         from src.features import Features
+
         f = Features(parallel_execution=True)
         assert "parallel_execution" in f.summary()
         assert f.summary()["parallel_execution"] is True

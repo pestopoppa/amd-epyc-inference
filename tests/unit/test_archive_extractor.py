@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import io
 import tarfile
-import tempfile
 import zipfile
 from pathlib import Path
 
@@ -24,10 +23,8 @@ from src.services.archive_extractor import (
     ArchiveExtractor,
     ArchiveManifest,
     ArchiveType,
-    ExtractionResult,
     ExtractionStrategy,
     FileEntry,
-    ValidationResult,
     ValidationStatus,
 )
 
@@ -43,7 +40,7 @@ def sample_zip(tmp_path):
     """Create a sample ZIP archive with test files."""
     archive_path = tmp_path / "test_archive.zip"
 
-    with zipfile.ZipFile(archive_path, 'w') as zf:
+    with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("readme.md", "# Test Archive\n\nThis is a test.")
         zf.writestr("src/main.py", "print('hello world')")
         zf.writestr("src/utils.py", "def helper(): pass")
@@ -58,7 +55,7 @@ def sample_tar_gz(tmp_path):
     """Create a sample tar.gz archive."""
     archive_path = tmp_path / "test_archive.tar.gz"
 
-    with tarfile.open(archive_path, 'w:gz') as tf:
+    with tarfile.open(archive_path, "w:gz") as tf:
         # Add string content
         for name, content in [
             ("readme.txt", b"Test readme content"),
@@ -78,12 +75,12 @@ def nested_archive(tmp_path):
     """Create an archive containing another archive."""
     # Create inner archive
     inner_path = tmp_path / "inner.zip"
-    with zipfile.ZipFile(inner_path, 'w') as zf:
+    with zipfile.ZipFile(inner_path, "w") as zf:
         zf.writestr("inner_file.txt", "content from inner archive")
 
     # Create outer archive containing inner
     outer_path = tmp_path / "outer.zip"
-    with zipfile.ZipFile(outer_path, 'w') as zf:
+    with zipfile.ZipFile(outer_path, "w") as zf:
         zf.writestr("outer_file.txt", "content from outer archive")
         zf.write(inner_path, "nested/inner.zip")
 
@@ -239,7 +236,7 @@ class TestValidation:
         small_extractor = ArchiveExtractor(max_archive_size=100)
 
         archive_path = tmp_path / "large.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             zf.writestr("big_file.txt", "x" * 1000)
 
         result = small_extractor.validate(archive_path)
@@ -251,7 +248,7 @@ class TestValidation:
         small_extractor = ArchiveExtractor(max_files=3)
 
         archive_path = tmp_path / "many_files.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             for i in range(10):
                 zf.writestr(f"file_{i}.txt", f"content {i}")
 
@@ -339,7 +336,7 @@ class TestSecurity:
         """Test that path traversal is prevented."""
         # Create archive with path traversal attempt
         archive_path = tmp_path / "evil.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             zf.writestr("../../../etc/passwd", "malicious content")
 
         dest = tmp_path / "extracted"
@@ -357,7 +354,7 @@ class TestSecurity:
         small_extractor.MAX_SINGLE_FILE = 100  # 100 bytes
 
         archive_path = tmp_path / "big_file.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             zf.writestr("small.txt", "ok")
             zf.writestr("big.txt", "x" * 1000)
 
@@ -390,6 +387,7 @@ class TestCleanup:
 
         # Make old_dir appear old by modifying mtime
         import os
+
         old_time = time.time() - (48 * 3600)  # 48 hours ago
         os.utime(old_dir, (old_time, old_time))
 

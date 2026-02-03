@@ -46,7 +46,11 @@ def _register_code_tools(registry: ToolRegistry) -> None:
         category=ToolCategory.CODE,
         parameters={
             "code": {"type": "string", "description": "Python code to lint", "required": False},
-            "file_path": {"type": "string", "description": "Path to Python file", "required": False},
+            "file_path": {
+                "type": "string",
+                "description": "Path to Python file",
+                "required": False,
+            },
         },
     )
     def lint_python(code: str | None = None, file_path: str | None = None) -> dict[str, Any]:
@@ -108,7 +112,11 @@ def _register_code_tools(registry: ToolRegistry) -> None:
         description="Run pytest tests on a file or directory",
         category=ToolCategory.CODE,
         parameters={
-            "path": {"type": "string", "description": "Path to test file or directory", "required": True},
+            "path": {
+                "type": "string",
+                "description": "Path to test file or directory",
+                "required": True,
+            },
             "verbose": {"type": "boolean", "description": "Verbose output", "required": False},
         },
     )
@@ -155,7 +163,7 @@ def _register_code_tools(registry: ToolRegistry) -> None:
                 temp_path = f.name
 
             # Try ruff format first
-            proc = subprocess.run(
+            subprocess.run(
                 [sys.executable, "-m", "ruff", "format", temp_path],
                 capture_output=True,
                 text=True,
@@ -209,6 +217,7 @@ def _register_data_tools(registry: ToolRegistry) -> None:
         """Write data to a JSON file."""
         # Security: only allow writing to RAID array
         from src.config import get_config
+
         _raid_prefix = get_config().paths.raid_prefix
         if not path.startswith(_raid_prefix):
             return {"error": f"Can only write to {_raid_prefix}", "success": False}
@@ -230,7 +239,11 @@ def _register_file_tools(registry: ToolRegistry) -> None:
         category=ToolCategory.FILE,
         parameters={
             "path": {"type": "string", "description": "Path to file", "required": True},
-            "max_lines": {"type": "integer", "description": "Maximum lines to read", "required": False},
+            "max_lines": {
+                "type": "integer",
+                "description": "Maximum lines to read",
+                "required": False,
+            },
         },
     )
     def read_file(path: str, max_lines: int | None = None) -> dict[str, Any]:
@@ -263,7 +276,11 @@ def _register_file_tools(registry: ToolRegistry) -> None:
         category=ToolCategory.FILE,
         parameters={
             "path": {"type": "string", "description": "Directory path", "required": True},
-            "pattern": {"type": "string", "description": "Glob pattern to filter", "required": False},
+            "pattern": {
+                "type": "string",
+                "description": "Glob pattern to filter",
+                "required": False,
+            },
         },
     )
     def list_files(path: str, pattern: str = "*") -> dict[str, Any]:

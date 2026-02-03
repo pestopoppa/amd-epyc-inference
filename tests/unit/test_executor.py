@@ -696,9 +696,7 @@ class TestExecutorBuildPrompt:
         assert "previous_output" in prompt
         assert "Previous step result" in prompt
 
-    def test_build_prompt_truncates_long_context(
-        self, mock_model_server: ModelServer
-    ):
+    def test_build_prompt_truncates_long_context(self, mock_model_server: ModelServer):
         """Test that long context is truncated."""
         executor = Executor(model_server=mock_model_server)
         executor.context.set("long_output", "x" * 5000, step_id="S1")
@@ -794,7 +792,9 @@ class TestErrorCategory:
         executor = Executor(model_server=mock_model_server)
 
         assert executor._categorize_error("Connection refused") == ErrorCategory.RETRYABLE
-        assert executor._categorize_error("Service temporarily unavailable") == ErrorCategory.RETRYABLE
+        assert (
+            executor._categorize_error("Service temporarily unavailable") == ErrorCategory.RETRYABLE
+        )
 
     def test_categorize_internal(self, mock_model_server: ModelServer):
         """Test categorizing internal errors."""
@@ -823,9 +823,7 @@ class TestExecutorRetry:
         assert "S2" in executor._retry_info
         assert executor._retry_info["S1"].max_attempts == 3  # 2 retries + 1 initial
 
-    def test_step_result_includes_retry_count(
-        self, mock_model_server: ModelServer
-    ):
+    def test_step_result_includes_retry_count(self, mock_model_server: ModelServer):
         """Test that step result to_dict includes retry count when > 0."""
         result = StepResult(
             step_id="S1",

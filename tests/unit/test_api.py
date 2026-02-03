@@ -16,7 +16,7 @@ def client():
     """Create a test client."""
     # Reset state before each test
     reset_state()
-    state = get_state()
+    get_state()
 
     with TestClient(app) as client:
         yield client
@@ -107,10 +107,7 @@ class TestChatEndpoint:
 
     def test_chat_mock_mode_default(self, client):
         """Test that chat defaults to mock mode."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Hello"}
-        )
+        response = client.post("/chat", json={"prompt": "Hello"})
 
         assert response.status_code == 200
         data = response.json()
@@ -119,10 +116,7 @@ class TestChatEndpoint:
 
     def test_chat_returns_answer(self, client):
         """Test that chat returns an answer."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "What is 2+2?", "mock_mode": True}
-        )
+        response = client.post("/chat", json={"prompt": "What is 2+2?", "mock_mode": True})
 
         data = response.json()
         assert "answer" in data
@@ -131,8 +125,7 @@ class TestChatEndpoint:
     def test_chat_includes_prompt_in_mock_response(self, client):
         """Test that mock response includes part of the prompt."""
         response = client.post(
-            "/chat",
-            json={"prompt": "Unique test prompt xyz", "mock_mode": True}
+            "/chat", json={"prompt": "Unique test prompt xyz", "mock_mode": True}
         )
 
         data = response.json()
@@ -140,10 +133,7 @@ class TestChatEndpoint:
 
     def test_chat_tracks_turns(self, client):
         """Test that turns are tracked."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Test"}
-        )
+        response = client.post("/chat", json={"prompt": "Test"})
 
         data = response.json()
         assert "turns" in data
@@ -151,10 +141,7 @@ class TestChatEndpoint:
 
     def test_chat_includes_elapsed_time(self, client):
         """Test that elapsed time is included."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Test"}
-        )
+        response = client.post("/chat", json={"prompt": "Test"})
 
         data = response.json()
         assert "elapsed_seconds" in data
@@ -167,8 +154,8 @@ class TestChatEndpoint:
             json={
                 "prompt": "Summarize",
                 "context": "This is some context text.",
-                "mock_mode": True
-            }
+                "mock_mode": True,
+            },
         )
 
         data = response.json()
@@ -177,19 +164,13 @@ class TestChatEndpoint:
 
     def test_chat_validates_max_turns(self, client):
         """Test that max_turns is validated."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Test", "max_turns": 0}
-        )
+        response = client.post("/chat", json={"prompt": "Test", "max_turns": 0})
 
         assert response.status_code == 422  # Validation error
 
     def test_chat_max_turns_upper_bound(self, client):
         """Test that max_turns upper bound is enforced."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Test", "max_turns": 100}
-        )
+        response = client.post("/chat", json={"prompt": "Test", "max_turns": 100})
 
         assert response.status_code == 422  # Validation error
 
@@ -219,10 +200,7 @@ class TestGatesEndpoint:
 
     def test_run_gates_returns_results(self, client_with_mock_gates):
         """Test that running gates returns results."""
-        response = client_with_mock_gates.post(
-            "/gates",
-            json={}
-        )
+        response = client_with_mock_gates.post("/gates", json={})
 
         assert response.status_code == 200
         data = response.json()
@@ -232,10 +210,7 @@ class TestGatesEndpoint:
 
     def test_run_specific_gates(self, client_with_mock_gates):
         """Test running specific gates by name."""
-        response = client_with_mock_gates.post(
-            "/gates",
-            json={"gate_names": ["format"]}
-        )
+        response = client_with_mock_gates.post("/gates", json={"gate_names": ["format"]})
 
         assert response.status_code == 200
         data = response.json()
@@ -244,10 +219,7 @@ class TestGatesEndpoint:
 
     def test_gate_results_have_required_fields(self, client_with_mock_gates):
         """Test that gate results have required fields."""
-        response = client_with_mock_gates.post(
-            "/gates",
-            json={"gate_names": ["format"]}
-        )
+        response = client_with_mock_gates.post("/gates", json={"gate_names": ["format"]})
 
         data = response.json()
         if data["results"]:
@@ -331,10 +303,7 @@ class TestValidation:
 
     def test_chat_validates_role(self, client):
         """Test that role field is accepted."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Test", "role": "coder"}
-        )
+        response = client.post("/chat", json={"prompt": "Test", "role": "coder"})
 
         # Should succeed (role is just a string)
         assert response.status_code == 200
@@ -345,10 +314,7 @@ class TestCORSHeaders:
 
     def test_cors_headers_present(self, client):
         """Test that CORS headers are present."""
-        response = client.options(
-            "/health",
-            headers={"Origin": "http://localhost:3000"}
-        )
+        response = client.options("/health", headers={"Origin": "http://localhost:3000"})
 
         # FastAPI handles OPTIONS requests for CORS
         assert response.status_code in [200, 405]
@@ -360,9 +326,7 @@ class TestErrorHandling:
     def test_invalid_json(self, client):
         """Test handling of invalid JSON."""
         response = client.post(
-            "/chat",
-            content="not json",
-            headers={"Content-Type": "application/json"}
+            "/chat", content="not json", headers={"Content-Type": "application/json"}
         )
 
         assert response.status_code == 422

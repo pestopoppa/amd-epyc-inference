@@ -336,6 +336,30 @@ def sample_unseen_questions(
 # ── Core functions ────────────────────────────────────────────────────
 
 
+def _erase_slots(port: int) -> None:
+    """Force-cancel in-progress inference on a llama-server port.
+
+    After a timeout the server may still be grinding on the old request.
+    Erasing slots prevents cascading timeouts on subsequent requests.
+    """
+    import httpx
+
+    try:
+        resp = httpx.get(f"http://localhost:{port}/slots", timeout=5)
+        if resp.status_code != 200:
+            return
+        for slot in resp.json():
+            if slot.get("is_processing"):
+                slot_id = slot.get("id", 0)
+                httpx.post(
+                    f"http://localhost:{port}/slots/{slot_id}?action=erase",
+                    timeout=5,
+                )
+                logger.info(f"  → erased slot {slot_id} on port {port}")
+    except Exception:
+        pass  # best-effort cleanup
+
+
 def call_orchestrator_forced(
     prompt: str,
     force_role: str,
@@ -579,6 +603,10 @@ def evaluate_question(
 
         if error:
             passed = False
+            # After a timeout/error on a heavy port, erase its slots so the
+            # server isn't still grinding when the next combo arrives.
+            if target_port in HEAVY_PORTS and tokens_generated == 0:
+                _erase_slots(target_port)
         else:
             passed = score_answer_deterministic(answer, expected, scoring_method, scoring_config)
 

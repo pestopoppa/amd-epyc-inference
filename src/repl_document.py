@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.models.document import DocumentPreprocessResult, FigureRef, Section
-from src.repl_environment import REPLEnvironment, REPLConfig, ExecutionResult
+from src.repl_environment import REPLEnvironment, REPLConfig
 
 
 @dataclass
@@ -238,12 +238,14 @@ class DocumentREPLEnvironment(REPLEnvironment):
                 title_matches = s.title.lower().count(query_lower)
                 content_matches = s.content.lower().count(query_lower)
 
-                results.append({
-                    "section": i + 1,
-                    "title": s.title,
-                    "matches": title_matches + content_matches,
-                    "pages": f"{s.page_start}-{s.page_end}",
-                })
+                results.append(
+                    {
+                        "section": i + 1,
+                        "title": s.title,
+                        "matches": title_matches + content_matches,
+                        "pages": f"{s.page_start}-{s.page_end}",
+                    }
+                )
 
         # Sort by match count
         results.sort(key=lambda x: x["matches"], reverse=True)

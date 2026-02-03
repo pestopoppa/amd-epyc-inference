@@ -37,7 +37,9 @@ class StatsMixin:
             total_hits = 0
             for role_stats in cache_stats.values():
                 total_routes += role_stats.get("router_total_routes", 0)
-                total_hits += role_stats.get("router_hit_rate", 0) * role_stats.get("router_total_routes", 0)
+                total_hits += role_stats.get("router_hit_rate", 0) * role_stats.get(
+                    "router_total_routes", 0
+                )
             if total_routes > 0:
                 stats["aggregate_cache_hit_rate"] = total_hits / total_routes
 

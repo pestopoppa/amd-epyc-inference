@@ -60,13 +60,27 @@ def _needs_structured_analysis(prompt: str) -> bool:
     """
     prompt_lower = prompt.lower()
     structured_keywords = [
-        "analyze", "architecture", "diagram", "protocol",
-        "economic model", "security audit", "security analysis",
-        "whitepaper", "smart contract", "incentive",
-        "trust assumption", "attack vector", "forensic",
-        "entity extraction", "business relationship",
-        "flow chart", "flowchart", "sequence diagram",
-        "system design", "data flow", "state machine",
+        "analyze",
+        "architecture",
+        "diagram",
+        "protocol",
+        "economic model",
+        "security audit",
+        "security analysis",
+        "whitepaper",
+        "smart contract",
+        "incentive",
+        "trust assumption",
+        "attack vector",
+        "forensic",
+        "entity extraction",
+        "business relationship",
+        "flow chart",
+        "flowchart",
+        "sequence diagram",
+        "system design",
+        "data flow",
+        "state machine",
     ]
     return any(kw in prompt_lower for kw in structured_keywords)
 
@@ -111,6 +125,7 @@ async def _handle_vision_request(
     image_b64 = request.image_base64
     if not image_b64 and request.image_path:
         from src.api.routes.path_validation import validate_api_path
+
         img_path = validate_api_path(request.image_path)
         if not img_path.exists():
             raise RuntimeError(f"Image not found: {request.image_path}")
@@ -123,6 +138,7 @@ async def _handle_vision_request(
     ocr_text = ""
     try:
         from src.services.document_client import get_document_client
+
         client = get_document_client()
         ocr_result = await client.ocr_image(
             image=image_b64,
@@ -187,9 +203,9 @@ async def _handle_vision_request(
     mime_type = "image/jpeg"  # default
     try:
         raw = base64.b64decode(image_b64[:32])
-        if raw[:4] == b'\x89PNG':
+        if raw[:4] == b"\x89PNG":
             mime_type = "image/png"
-        elif raw[:4] == b'RIFF':
+        elif raw[:4] == b"RIFF":
             mime_type = "image/webp"
     except Exception as exc:
         logger.debug("MIME type detection from b64 header failed: %s", exc)
@@ -308,7 +324,7 @@ _SAFE_OPS = {
 
 def _safe_eval_math(expr: str) -> float | int:
     """Evaluate arithmetic expression safely — no function calls, imports, or attribute access."""
-    tree = _ast.parse(expr, mode='eval')
+    tree = _ast.parse(expr, mode="eval")
 
     def _eval(node):
         if isinstance(node, _ast.Expression):
@@ -378,7 +394,7 @@ async def _execute_vision_tool(
             # Parse expression from args
             expr_match = _re.search(r'expression\s*=\s*"([^"]*)"', args_str)
             if not expr_match:
-                expr_match = _re.search(r'expression\s*=\s*\'([^\']*)\'', args_str)
+                expr_match = _re.search(r"expression\s*=\s*\'([^\']*)\'", args_str)
             if expr_match:
                 result = _safe_eval_math(expr_match.group(1))
                 return str(result)
@@ -388,6 +404,7 @@ async def _execute_vision_tool(
 
     elif tool_name in ("get_current_date", "get_current_time"):
         from datetime import datetime
+
         now = datetime.utcnow()
         if tool_name == "get_current_date":
             return now.strftime("%Y-%m-%d (%A)")
@@ -526,7 +543,7 @@ Important rules:
         # Check for Final Answer
         if "Final Answer:" in response_text:
             idx = response_text.index("Final Answer:")
-            answer = response_text[idx + len("Final Answer:"):].strip()
+            answer = response_text[idx + len("Final Answer:") :].strip()
             logger.info(f"Vision ReAct completed in {turn + 1} turns, {tools_used} tools")
             return answer, tools_used, tools_called
 
@@ -535,7 +552,7 @@ Important rules:
         for line in response_text.split("\n"):
             line = line.strip()
             if line.startswith("Action:"):
-                action_match = line[len("Action:"):].strip()
+                action_match = line[len("Action:") :].strip()
                 break
 
         if not action_match:
@@ -547,12 +564,13 @@ Important rules:
             for line in lines:
                 stripped = line.strip()
                 if stripped.startswith("Thought:"):
-                    stripped = stripped[len("Thought:"):].strip()
+                    stripped = stripped[len("Thought:") :].strip()
                 answer_lines.append(stripped)
             return "\n".join(answer_lines).strip(), tools_used, tools_called
 
         # Execute the tool — extract name for tracking
         import re as _re_vt
+
         _vt_match = _re_vt.match(r"(\w+)\(", action_match)
         _vt_name = _vt_match.group(1) if _vt_match else action_match
         tools_used += 1
@@ -561,18 +579,22 @@ Important rules:
         logger.info(f"Vision ReAct turn {turn}: {action_match[:50]} → {len(observation)} chars")
 
         # Append observation as user message (text-only — no image re-send)
-        messages.append({
-            "role": "user",
-            "content": f"Observation: {observation}",
-        })
+        messages.append(
+            {
+                "role": "user",
+                "content": f"Observation: {observation}",
+            }
+        )
 
     # Max turns exhausted — synthesize from conversation
     logger.warning(f"Vision ReAct exhausted {max_turns} turns")
     # Ask for final answer
-    messages.append({
-        "role": "user",
-        "content": "You have used all available turns. Please provide your Final Answer now.",
-    })
+    messages.append(
+        {
+            "role": "user",
+            "content": "You have used all available turns. Please provide your Final Answer now.",
+        }
+    )
 
     try:
         async with httpx.AsyncClient(timeout=_get_config().timeouts.vision_inference) as client:
@@ -592,7 +614,7 @@ Important rules:
                 content = choices[0].get("message", {}).get("content", "").strip()
                 if "Final Answer:" in content:
                     idx = content.index("Final Answer:")
-                    return content[idx + len("Final Answer:"):].strip(), tools_used, tools_called
+                    return content[idx + len("Final Answer:") :].strip(), tools_used, tools_called
                 return content, tools_used, tools_called
     except Exception as e:
         logger.warning(f"Vision ReAct final synthesis failed: {e}")
@@ -644,6 +666,7 @@ async def _handle_multi_file_vision(
         if suffix in archive_extensions or p.suffix.lower() in archive_extensions:
             try:
                 from src.services.archive_extractor import ArchiveExtractor
+
                 extractor = ArchiveExtractor()
                 manifest = extractor.list_contents(fpath)
                 logger.info(
@@ -670,21 +693,20 @@ async def _handle_multi_file_vision(
             if p.suffix.lower() == ".pdf":
                 # Multi-page PDF via DocumentFormalizerClient
                 from src.services.document_client import get_document_client
+
                 client = get_document_client()
                 ocr_result = await client.ocr_pdf_with_partial_success(fpath)
-                file_results.append(
-                    f"[File: {p.name}]\n{ocr_result.text or '[OCR failed]'}"
-                )
+                file_results.append(f"[File: {p.name}]\n{ocr_result.text or '[OCR failed]'}")
             elif p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}:
                 # Single image — OCR + VL
                 import base64
+
                 img_b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
                 from src.services.document_client import get_document_client
+
                 client = get_document_client()
                 ocr_result = await client.ocr_image(image=img_b64, output_format="text")
-                file_results.append(
-                    f"[File: {p.name}]\n{ocr_result.text or '[No text extracted]'}"
-                )
+                file_results.append(f"[File: {p.name}]\n{ocr_result.text or '[No text extracted]'}")
             else:
                 # Text files
                 content = p.read_text(errors="replace")[:10000]
@@ -696,13 +718,14 @@ async def _handle_multi_file_vision(
     all_content = "\n\n".join(file_results)
     if len(all_content) > 20000:
         answer, _stats = await _run_two_stage_summarization(
-            request.prompt, all_content, primitives, state, task_id,
+            request.prompt,
+            all_content,
+            primitives,
+            state,
+            task_id,
         )
     else:
-        synthesis_prompt = (
-            f"{all_content}\n\n"
-            f"Based on the files above, answer:\n{request.prompt}"
-        )
+        synthesis_prompt = f"{all_content}\n\nBased on the files above, answer:\n{request.prompt}"
         answer = primitives.llm_call(
             synthesis_prompt,
             role="frontdoor",

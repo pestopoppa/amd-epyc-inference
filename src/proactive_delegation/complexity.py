@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 # Architect escalation triggers - force architect model for TASK PLANNING
 # Use when you need the task broken down into subtasks
 ARCHITECT_TRIGGERS = [
-    "/architect",           # Explicit command
-    "/plan",                # Request planning
-    "[PLAN]",               # Tag-style
-    "[ARCHITECT]",          # Tag-style
-    "architect this",       # Natural language
+    "/architect",  # Explicit command
+    "/plan",  # Request planning
+    "[PLAN]",  # Tag-style
+    "[ARCHITECT]",  # Tag-style
+    "architect this",  # Natural language
     "plan this carefully",
     "break this down",
     "decompose this task",
@@ -30,10 +30,10 @@ ARCHITECT_TRIGGERS = [
 # Equivalent to Claude Code's "ultrathink" - routes to thinking_reasoning role
 # Use when you need more thorough analysis, not task decomposition
 THINKING_TRIGGERS = [
-    "/think",               # Explicit command
-    "ultrathink",           # Claude Code compatibility
-    "[THINK]",              # Tag-style
-    "think deeply",         # Natural language
+    "/think",  # Explicit command
+    "ultrathink",  # Claude Code compatibility
+    "[THINK]",  # Tag-style
+    "think deeply",  # Natural language
     "think carefully",
     "reason through",
     "analyze carefully",
@@ -113,9 +113,18 @@ def classify_task_complexity(objective: str) -> tuple[TaskComplexity, Complexity
 
     # Trivial indicators (answer directly)
     trivial_patterns = [
-        "what is", "who is", "when did", "how many", "define ",
-        "hello", "hi ", "thanks", "thank you", "help",
-        "what's the weather", "tell me about",
+        "what is",
+        "who is",
+        "when did",
+        "how many",
+        "define ",
+        "hello",
+        "hi ",
+        "thanks",
+        "thank you",
+        "help",
+        "what's the weather",
+        "tell me about",
     ]
     if any(p in objective_lower for p in trivial_patterns) and len(words) < 15:
         signals.question_type = "factual"
@@ -123,33 +132,70 @@ def classify_task_complexity(objective: str) -> tuple[TaskComplexity, Complexity
 
     # Code keywords
     code_keywords = [
-        "implement", "code", "function", "class", "method",
-        "write", "create", "build", "fix", "debug", "refactor",
-        "add", "remove", "update", "modify", "change",
+        "implement",
+        "code",
+        "function",
+        "class",
+        "method",
+        "write",
+        "create",
+        "build",
+        "fix",
+        "debug",
+        "refactor",
+        "add",
+        "remove",
+        "update",
+        "modify",
+        "change",
     ]
     signals.has_code_keywords = any(k in objective_lower for k in code_keywords)
 
     # Multi-step keywords
     multi_step_keywords = [
-        "and then", "after that", "followed by", "steps",
-        "first", "second", "third", "finally",
-        "multiple", "several", "all the", "each",
+        "and then",
+        "after that",
+        "followed by",
+        "steps",
+        "first",
+        "second",
+        "third",
+        "finally",
+        "multiple",
+        "several",
+        "all the",
+        "each",
     ]
     signals.has_multi_step_keywords = any(k in objective_lower for k in multi_step_keywords)
 
     # Architecture keywords (likely needs architect)
     architecture_keywords = [
-        "architecture", "design", "system", "distributed",
-        "scalable", "fault-tolerant", "consensus", "protocol",
-        "api design", "database schema", "microservice",
-        "trade-off", "compare", "evaluate", "pros and cons",
+        "architecture",
+        "design",
+        "system",
+        "distributed",
+        "scalable",
+        "fault-tolerant",
+        "consensus",
+        "protocol",
+        "api design",
+        "database schema",
+        "microservice",
+        "trade-off",
+        "compare",
+        "evaluate",
+        "pros and cons",
     ]
     signals.has_architecture_keywords = any(k in objective_lower for k in architecture_keywords)
 
     # File count estimation
     file_patterns = [
-        ("files", 3), ("modules", 3), ("components", 3),
-        ("services", 4), ("endpoints", 2), ("tests", 2),
+        ("files", 3),
+        ("modules", 3),
+        ("components", 3),
+        ("services", 4),
+        ("endpoints", 2),
+        ("tests", 2),
     ]
     for pattern, count in file_patterns:
         if pattern in objective_lower:

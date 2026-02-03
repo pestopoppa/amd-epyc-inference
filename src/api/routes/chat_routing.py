@@ -49,11 +49,22 @@ def _should_use_direct_mode(prompt: str, context: str = "") -> bool:
 
     # Keep REPL when prompt explicitly needs file/tool operations
     repl_indicators = [
-        "read the file", "list files", "list the files", "look at the file",
-        "open the file", "read from", "write to", "save to",
-        "execute", "run the", "run this",
-        "search the codebase", "find in the", "grep for",
-        "explore the", "scan the",
+        "read the file",
+        "list files",
+        "list the files",
+        "look at the file",
+        "open the file",
+        "read from",
+        "write to",
+        "save to",
+        "execute",
+        "run the",
+        "run this",
+        "search the codebase",
+        "find in the",
+        "grep for",
+        "explore the",
+        "scan the",
     ]
     if any(ind in prompt_lower for ind in repl_indicators):
         return False
@@ -84,7 +95,7 @@ def _select_mode(
     from src.api.routes.chat_react import _should_use_react_mode
 
     # Try MemRL-based mode selection if available
-    if hasattr(state, 'hybrid_router') and state.hybrid_router is not None:
+    if hasattr(state, "hybrid_router") and state.hybrid_router is not None:
         try:
             task_ir = {
                 "task_type": "chat",
@@ -134,26 +145,48 @@ def _classify_and_route(prompt: str, context: str = "", has_image: bool = False)
 
         # Code generation / debugging → 32B coder (39 t/s with spec decode)
         code_keywords = [
-            "implement", "write code", "function", "class ", "debug",
-            "refactor", "fix the bug", "code review", "unit test",
-            "algorithm", "data structure", "regex", "parse",
+            "implement",
+            "write code",
+            "function",
+            "class ",
+            "debug",
+            "refactor",
+            "fix the bug",
+            "code review",
+            "unit test",
+            "algorithm",
+            "data structure",
+            "regex",
+            "parse",
         ]
         if any(kw in prompt_lower for kw in code_keywords):
             return str(Role.CODER_PRIMARY), "classified"
 
         # Complex code requiring escalation → 32B coder escalation
         complex_code_keywords = [
-            "concurrent", "lock-free", "distributed", "optimize performance",
-            "memory leak", "race condition", "deadlock",
+            "concurrent",
+            "lock-free",
+            "distributed",
+            "optimize performance",
+            "memory leak",
+            "race condition",
+            "deadlock",
         ]
         if any(kw in prompt_lower for kw in complex_code_keywords):
             return str(Role.CODER_ESCALATION), "classified"
 
         # Architecture / system design → 235B architect (6.75 t/s)
         arch_keywords = [
-            "architecture", "system design", "design pattern",
-            "scalab", "microservice", "trade-off", "tradeoff",
-            "invariant", "constraint", "cap theorem",
+            "architecture",
+            "system design",
+            "design pattern",
+            "scalab",
+            "microservice",
+            "trade-off",
+            "tradeoff",
+            "invariant",
+            "constraint",
+            "cap theorem",
         ]
         if any(kw in prompt_lower for kw in arch_keywords):
             return str(Role.ARCHITECT_GENERAL), "classified"

@@ -10,10 +10,8 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.mcp_server import (
     list_roles,
@@ -221,10 +219,13 @@ class TestQueryBenchmarks:
     def test_all_models(self, tmp_path, monkeypatch):
         """Returns all models when no filter."""
         monkeypatch.setattr("src.mcp_server.PROJECT_ROOT", tmp_path)
-        self._write_csv(tmp_path, [
-            {"model": "Qwen2.5-7B", "thinking": "8/10", "pct_str": "80%", "avg_tps": "15.0"},
-            {"model": "Qwen3-235B", "thinking": "9/10", "pct_str": "90%", "avg_tps": "6.7"},
-        ])
+        self._write_csv(
+            tmp_path,
+            [
+                {"model": "Qwen2.5-7B", "thinking": "8/10", "pct_str": "80%", "avg_tps": "15.0"},
+                {"model": "Qwen3-235B", "thinking": "9/10", "pct_str": "90%", "avg_tps": "6.7"},
+            ],
+        )
 
         result = query_benchmarks()
         assert "Qwen2.5-7B" in result
@@ -233,10 +234,13 @@ class TestQueryBenchmarks:
     def test_filter_by_model(self, tmp_path, monkeypatch):
         """Filters by model name substring."""
         monkeypatch.setattr("src.mcp_server.PROJECT_ROOT", tmp_path)
-        self._write_csv(tmp_path, [
-            {"model": "Qwen2.5-7B", "pct_str": "80%", "avg_tps": "15.0"},
-            {"model": "Qwen3-235B", "pct_str": "90%", "avg_tps": "6.7"},
-        ])
+        self._write_csv(
+            tmp_path,
+            [
+                {"model": "Qwen2.5-7B", "pct_str": "80%", "avg_tps": "15.0"},
+                {"model": "Qwen3-235B", "pct_str": "90%", "avg_tps": "6.7"},
+            ],
+        )
 
         result = query_benchmarks(model_name="235B")
         assert "Qwen3-235B" in result
@@ -245,9 +249,18 @@ class TestQueryBenchmarks:
     def test_filter_by_suite(self, tmp_path, monkeypatch):
         """Shows suite-specific scores when suite filter applied."""
         monkeypatch.setattr("src.mcp_server.PROJECT_ROOT", tmp_path)
-        self._write_csv(tmp_path, [
-            {"model": "TestModel", "thinking": "9/10", "coder": "7/10", "pct_str": "85%", "avg_tps": "10.0"},
-        ])
+        self._write_csv(
+            tmp_path,
+            [
+                {
+                    "model": "TestModel",
+                    "thinking": "9/10",
+                    "coder": "7/10",
+                    "pct_str": "85%",
+                    "avg_tps": "10.0",
+                },
+            ],
+        )
 
         result = query_benchmarks(suite="thinking")
         assert "thinking=9/10" in result
@@ -261,9 +274,12 @@ class TestQueryBenchmarks:
     def test_no_match(self, tmp_path, monkeypatch):
         """Returns message when no models match filter."""
         monkeypatch.setattr("src.mcp_server.PROJECT_ROOT", tmp_path)
-        self._write_csv(tmp_path, [
-            {"model": "Qwen2.5-7B", "pct_str": "80%", "avg_tps": "15.0"},
-        ])
+        self._write_csv(
+            tmp_path,
+            [
+                {"model": "Qwen2.5-7B", "pct_str": "80%", "avg_tps": "15.0"},
+            ],
+        )
 
         result = query_benchmarks(model_name="NonexistentModel")
         assert "No results matching" in result

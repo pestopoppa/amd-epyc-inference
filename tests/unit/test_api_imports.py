@@ -13,8 +13,6 @@ The orchestrator.py facade that caused that bug was deleted in Phase 1.
 
 import inspect
 
-import pytest
-
 
 class TestChatImportsResolve:
     """Verify all imports in chat.py and decomposed modules resolve without errors."""
@@ -119,8 +117,9 @@ class TestSignatureCompatibility:
         from src.prompt_builders import build_root_lm_prompt
 
         sig = inspect.signature(build_root_lm_prompt)
-        assert "routing_context" in sig.parameters, \
+        assert "routing_context" in sig.parameters, (
             "routing_context missing from build_root_lm_prompt"
+        )
 
 
 class TestChatRouteImportSource:
@@ -147,7 +146,9 @@ class TestChatRouteImportSource:
         """Verify orchestrator.py facade no longer exists."""
         from pathlib import Path
 
-        facade_path = Path(__file__).parent.parent.parent / "src" / "api" / "services" / "orchestrator.py"
+        facade_path = (
+            Path(__file__).parent.parent.parent / "src" / "api" / "services" / "orchestrator.py"
+        )
         assert not facade_path.exists(), (
             "src/api/services/orchestrator.py still exists — it should have been deleted "
             "during Phase 1 decomposition."
@@ -216,6 +217,7 @@ class TestChatPipelineImports:
     def test_routing_result_importable(self):
         """RoutingResult dataclass is importable from chat_utils."""
         from src.api.routes.chat_utils import RoutingResult
+
         assert RoutingResult is not None
 
 
@@ -237,7 +239,9 @@ class TestRoutingResult:
         from src.api.routes.chat_utils import RoutingResult
 
         r = RoutingResult(
-            task_id="t", task_ir={}, use_mock=False,
+            task_id="t",
+            task_ir={},
+            use_mock=False,
             routing_decision=["architect_general"],
         )
         assert r.role == "architect_general"
@@ -264,9 +268,14 @@ class TestRoleTimeouts:
         from src.api.routes.chat_utils import ROLE_TIMEOUTS
 
         expected_roles = [
-            "worker_explore", "worker_math", "worker_vision",
-            "frontdoor", "coder_primary", "coder_escalation",
-            "architect_general", "architect_coding",
+            "worker_explore",
+            "worker_math",
+            "worker_vision",
+            "frontdoor",
+            "coder_primary",
+            "coder_escalation",
+            "architect_general",
+            "architect_coding",
         ]
         for role in expected_roles:
             assert role in ROLE_TIMEOUTS, f"Missing timeout for {role}"
@@ -398,9 +407,14 @@ class TestProtocolImports:
         )
 
         for proto in (
-            QScorerProtocol, EpisodicStoreProtocol, HybridRouterProtocol,
-            ProgressLoggerProtocol, ToolRegistryProtocol, ScriptRegistryProtocol,
-            RegistryLoaderProtocol, FailureGraphProtocol,
+            QScorerProtocol,
+            EpisodicStoreProtocol,
+            HybridRouterProtocol,
+            ProgressLoggerProtocol,
+            ToolRegistryProtocol,
+            ScriptRegistryProtocol,
+            RegistryLoaderProtocol,
+            FailureGraphProtocol,
         ):
             # runtime_checkable protocols support isinstance()
             assert isinstance(proto, type), f"{proto} is not a type"

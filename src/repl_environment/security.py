@@ -14,28 +14,74 @@ class ASTSecurityVisitor(ast.NodeVisitor):
     """
 
     # Forbidden module imports
-    FORBIDDEN_MODULES = frozenset({
-        "os", "sys", "subprocess", "socket", "shutil", "pathlib",
-        "tempfile", "multiprocessing", "threading", "ctypes", "pickle",
-        "importlib", "builtins", "code", "codeop", "runpy", "pkgutil",
-    })
+    FORBIDDEN_MODULES = frozenset(
+        {
+            "os",
+            "sys",
+            "subprocess",
+            "socket",
+            "shutil",
+            "pathlib",
+            "tempfile",
+            "multiprocessing",
+            "threading",
+            "ctypes",
+            "pickle",
+            "importlib",
+            "builtins",
+            "code",
+            "codeop",
+            "runpy",
+            "pkgutil",
+        }
+    )
 
     # Forbidden built-in function calls
-    FORBIDDEN_CALLS = frozenset({
-        "__import__", "eval", "exec", "compile", "open",
-        "getattr", "setattr", "delattr", "hasattr",
-        "globals", "locals", "vars", "dir",
-        "input", "breakpoint", "memoryview",
-    })
+    FORBIDDEN_CALLS = frozenset(
+        {
+            "__import__",
+            "eval",
+            "exec",
+            "compile",
+            "open",
+            "getattr",
+            "setattr",
+            "delattr",
+            "hasattr",
+            "globals",
+            "locals",
+            "vars",
+            "dir",
+            "input",
+            "breakpoint",
+            "memoryview",
+        }
+    )
 
     # Forbidden attribute accesses (dunder attributes for escaping sandbox)
-    FORBIDDEN_ATTRS = frozenset({
-        "__class__", "__bases__", "__subclasses__", "__mro__",
-        "__dict__", "__globals__", "__locals__", "__code__",
-        "__builtins__", "__closure__", "__func__", "__self__",
-        "__module__", "__qualname__", "__annotations__",
-        "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__",
-    })
+    FORBIDDEN_ATTRS = frozenset(
+        {
+            "__class__",
+            "__bases__",
+            "__subclasses__",
+            "__mro__",
+            "__dict__",
+            "__globals__",
+            "__locals__",
+            "__code__",
+            "__builtins__",
+            "__closure__",
+            "__func__",
+            "__self__",
+            "__module__",
+            "__qualname__",
+            "__annotations__",
+            "__reduce__",
+            "__reduce_ex__",
+            "__getstate__",
+            "__setstate__",
+        }
+    )
 
     def __init__(self):
         self.violations: list[str] = []

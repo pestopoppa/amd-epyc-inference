@@ -20,9 +20,7 @@ async def health(
     when any circuit is open or half-open.
     """
     backend_health = tracker.get_status() if tracker else {}
-    backends_healthy = sum(
-        1 for s in backend_health.values() if s["state"] == "closed"
-    )
+    backends_healthy = sum(1 for s in backend_health.values() if s["state"] == "closed")
     backends_total = len(backend_health)
 
     if backends_total == 0:

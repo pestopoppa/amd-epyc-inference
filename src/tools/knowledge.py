@@ -40,16 +40,18 @@ def search_arxiv(query: str, max_results: int = 10) -> dict[str, Any]:
 
         results = []
         for paper in client.results(search):
-            results.append({
-                "title": paper.title,
-                "authors": [a.name for a in paper.authors],
-                "abstract": paper.summary,
-                "arxiv_id": paper.entry_id.split("/abs/")[-1],
-                "published": paper.published.isoformat() if paper.published else None,
-                "updated": paper.updated.isoformat() if paper.updated else None,
-                "pdf_url": paper.pdf_url,
-                "categories": paper.categories,
-            })
+            results.append(
+                {
+                    "title": paper.title,
+                    "authors": [a.name for a in paper.authors],
+                    "abstract": paper.summary,
+                    "arxiv_id": paper.entry_id.split("/abs/")[-1],
+                    "published": paper.published.isoformat() if paper.published else None,
+                    "updated": paper.updated.isoformat() if paper.updated else None,
+                    "pdf_url": paper.pdf_url,
+                    "categories": paper.categories,
+                }
+            )
 
         return {"success": True, "results": results, "count": len(results), "error": None}
 
@@ -85,8 +87,14 @@ def search_papers(
             year=year_range,
             fields_of_study=fields_of_study,
             fields=[
-                "title", "authors", "abstract", "citationCount",
-                "year", "externalIds", "url", "venue",
+                "title",
+                "authors",
+                "abstract",
+                "citationCount",
+                "year",
+                "externalIds",
+                "url",
+                "venue",
             ],
         )
 
@@ -96,17 +104,19 @@ def search_papers(
             if paper.externalIds:
                 doi = paper.externalIds.get("DOI")
 
-            results.append({
-                "title": paper.title,
-                "authors": [a.name for a in (paper.authors or [])],
-                "abstract": paper.abstract,
-                "citation_count": paper.citationCount,
-                "year": paper.year,
-                "doi": doi,
-                "url": paper.url,
-                "venue": paper.venue,
-                "paper_id": paper.paperId,
-            })
+            results.append(
+                {
+                    "title": paper.title,
+                    "authors": [a.name for a in (paper.authors or [])],
+                    "abstract": paper.abstract,
+                    "citation_count": paper.citationCount,
+                    "year": paper.year,
+                    "doi": doi,
+                    "url": paper.url,
+                    "venue": paper.venue,
+                    "paper_id": paper.paperId,
+                }
+            )
 
         return {"success": True, "results": results, "count": len(results), "error": None}
 
@@ -146,12 +156,14 @@ def search_wikipedia(
             # Strip wikitext markup (basic cleanup)
             summary = _strip_wikitext(text)
 
-            results.append({
-                "title": title,
-                "summary": summary[:500] if summary else "",
-                "url": f"https://{language}.wikipedia.org/wiki/{title.replace(' ', '_')}",
-                "page_id": result.get("pageid"),
-            })
+            results.append(
+                {
+                    "title": title,
+                    "summary": summary[:500] if summary else "",
+                    "url": f"https://{language}.wikipedia.org/wiki/{title.replace(' ', '_')}",
+                    "page_id": result.get("pageid"),
+                }
+            )
 
         return {"success": True, "results": results, "count": len(results), "error": None}
 
@@ -270,17 +282,19 @@ def search_books(
                     isbn = ident.get("identifier")
                     break
 
-            results.append({
-                "title": info.get("title", ""),
-                "authors": info.get("authors", []),
-                "publisher": info.get("publisher", ""),
-                "published_date": info.get("publishedDate", ""),
-                "description": (info.get("description", "") or "")[:300],
-                "isbn": isbn,
-                "page_count": info.get("pageCount"),
-                "preview_link": info.get("previewLink", ""),
-                "language": info.get("language", ""),
-            })
+            results.append(
+                {
+                    "title": info.get("title", ""),
+                    "authors": info.get("authors", []),
+                    "publisher": info.get("publisher", ""),
+                    "published_date": info.get("publishedDate", ""),
+                    "description": (info.get("description", "") or "")[:300],
+                    "isbn": isbn,
+                    "page_count": info.get("pageCount"),
+                    "preview_link": info.get("previewLink", ""),
+                    "language": info.get("language", ""),
+                }
+            )
 
         return {"success": True, "results": results, "count": len(results), "error": None}
 

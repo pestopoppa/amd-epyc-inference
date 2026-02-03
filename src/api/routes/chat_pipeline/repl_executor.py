@@ -96,7 +96,8 @@ async def _execute_repl(
         )
         log.info(
             "Using DocumentREPLEnvironment: %d sections, %d figures",
-            len(doc_context.sections), len(doc_context.figures),
+            len(doc_context.sections),
+            len(doc_context.figures),
             extra=task_extra(task_id=task_id, stage="execute", mode="repl_document"),
         )
     else:
@@ -173,8 +174,7 @@ async def _execute_repl(
 
     if use_long_context_exploration:
         logging.info(
-            f"Long context detected ({context_chars:,} chars). "
-            f"Using REPL exploration strategy."
+            f"Long context detected ({context_chars:,} chars). Using REPL exploration strategy."
         )
 
     # Run Root LM orchestration loop with escalation support
@@ -189,9 +189,7 @@ async def _execute_repl(
     escalation_prompt = ""
 
     max_turns = (
-        LONG_CONTEXT_CONFIG["max_turns"]
-        if use_long_context_exploration
-        else request.max_turns
+        LONG_CONTEXT_CONFIG["max_turns"] if use_long_context_exploration else request.max_turns
     )
 
     for turn in range(max_turns):
@@ -314,6 +312,7 @@ async def _execute_repl(
             )
         except asyncio.TimeoutError:
             from src.repl_environment.types import ExecutionResult
+
             result = ExecutionResult(
                 output="",
                 is_final=False,
@@ -356,12 +355,14 @@ async def _execute_repl(
                         error_category="early_abort",
                         task_id=task_id,
                     ),
-                    decision=EscalationPolicy().decide(EscalationContext(
-                        current_role=role_history[-2],
-                        error_category="early_abort",
-                        error_message=reason,
-                        task_id=task_id,
-                    )),
+                    decision=EscalationPolicy().decide(
+                        EscalationContext(
+                            current_role=role_history[-2],
+                            error_category="early_abort",
+                            error_message=reason,
+                            task_id=task_id,
+                        )
+                    ),
                 )
                 if state.progress_logger:
                     state.progress_logger.log_escalation(
@@ -393,7 +394,9 @@ async def _execute_repl(
             # MemRL-informed quality review gate
             if request.real_mode and _should_review(state, task_id, current_role, answer):
                 log.info(
-                    "Review gate triggered for %s (task %s)", current_role, task_id,
+                    "Review gate triggered for %s (task %s)",
+                    current_role,
+                    task_id,
                     extra=task_extra(task_id=task_id, role=current_role, stage="review"),
                 )
                 verdict = _architect_verdict(
@@ -404,7 +407,8 @@ async def _execute_repl(
                 if verdict and verdict.upper().startswith("WRONG"):
                     corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
                     log.info(
-                        "Review verdict: WRONG — revising (%.80s)", corrections,
+                        "Review verdict: WRONG — revising (%.80s)",
+                        corrections,
                         extra=task_extra(task_id=task_id, role=current_role, stage="review"),
                     )
                     answer = _fast_revise(
@@ -496,7 +500,9 @@ async def _execute_repl(
         if cleaned_output and len(cleaned_output) > 20:
             answer = f"[Max turns ({max_turns}) reached without FINAL()]\n\n{cleaned_output}"
         elif last_output:
-            answer = f"[Max turns ({max_turns}) reached without FINAL()]\n\nLast output:\n{last_output}"
+            answer = (
+                f"[Max turns ({max_turns}) reached without FINAL()]\n\nLast output:\n{last_output}"
+            )
         else:
             answer = f"[Max turns ({max_turns}) reached without FINAL()]"
 
@@ -536,7 +542,8 @@ async def _execute_repl(
         tools_used=repl._tool_invocations,
         tools_called=(
             [inv.tool_name for inv in repl.tool_registry.get_invocation_log()]
-            if repl.tool_registry else []
+            if repl.tool_registry
+            else []
         ),
         prompt_eval_ms=primitives.total_prompt_eval_ms,
         generation_ms=primitives.total_generation_ms,

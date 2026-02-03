@@ -4,11 +4,9 @@ Tests the FastAPI routes in src/api/routes/sessions.py.
 """
 
 import uuid
-from datetime import datetime
 from fastapi.testclient import TestClient
 
 from src.api import create_app
-from src.session import Session, Finding, FindingSource
 
 
 # Create test client
@@ -53,11 +51,14 @@ class TestSessionEndpoints:
     def test_get_session(self):
         """Test retrieving a specific session."""
         # Create a session first
-        create_response = client.post("/sessions", json={
-            "name": "Test Get Session",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Get Session",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Now get it
@@ -81,11 +82,14 @@ class TestSessionEndpoints:
     def test_delete_session(self):
         """Test deleting a session."""
         # Create a session
-        create_response = client.post("/sessions", json={
-            "name": "Test Delete",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Delete",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Delete it
@@ -100,11 +104,14 @@ class TestSessionEndpoints:
     def test_filter_sessions_by_status(self):
         """Test filtering sessions by status parameter."""
         # Create an active session
-        create_response = client.post("/sessions", json={
-            "name": "Active Session",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Active Session",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # List with status filter
@@ -119,11 +126,14 @@ class TestSessionEndpoints:
     def test_filter_sessions_by_project(self):
         """Test filtering sessions by project parameter."""
         # Create a session with specific project
-        create_response = client.post("/sessions", json={
-            "name": "Project Session",
-            "project": "special-project",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Project Session",
+                "project": "special-project",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # List with project filter
@@ -144,11 +154,14 @@ class TestSessionEndpoints:
         This is a known limitation of the current route structure.
         """
         # Create a session with searchable name
-        create_response = client.post("/sessions", json={
-            "name": "Searchable Unique Name 12345",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Searchable Unique Name 12345",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Attempt to search for it
@@ -170,11 +183,14 @@ class TestFindingEndpoints:
     def test_get_findings_empty(self):
         """Test getting findings for a session with none."""
         # Create a session
-        create_response = client.post("/sessions", json={
-            "name": "Test Findings",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Findings",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Get findings
@@ -188,11 +204,14 @@ class TestFindingEndpoints:
     def test_add_finding(self):
         """Test adding a finding to a session."""
         # Create a session
-        create_response = client.post("/sessions", json={
-            "name": "Test Add Finding",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Add Finding",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Add a finding
@@ -218,17 +237,23 @@ class TestFindingEndpoints:
     def test_delete_finding(self):
         """Test deleting a finding."""
         # Create session and finding
-        create_response = client.post("/sessions", json={
-            "name": "Test Delete Finding",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Delete Finding",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
-        finding_response = client.post(f"/sessions/{session_id}/findings", json={
-            "content": "Finding to delete",
-            "tags": [],
-        })
+        finding_response = client.post(
+            f"/sessions/{session_id}/findings",
+            json={
+                "content": "Finding to delete",
+                "tags": [],
+            },
+        )
         finding_id = finding_response.json()["id"]
 
         # Delete the finding
@@ -246,11 +271,14 @@ class TestTagEndpoints:
     def test_add_tag(self):
         """Test adding a tag to a session."""
         # Create a session
-        create_response = client.post("/sessions", json={
-            "name": "Test Tags",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Tags",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Add a tag
@@ -266,11 +294,14 @@ class TestTagEndpoints:
     def test_remove_tag(self):
         """Test removing a tag from a session."""
         # Create session and add tag
-        create_response = client.post("/sessions", json={
-            "name": "Test Remove Tag",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Remove Tag",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         client.post(f"/sessions/{session_id}/tags/temp-tag")
@@ -290,11 +321,14 @@ class TestCheckpointEndpoints:
     def test_get_checkpoints_empty(self):
         """Test getting checkpoints for a session with none."""
         # Create a session
-        create_response = client.post("/sessions", json={
-            "name": "Test Checkpoints",
-            "project": "test",
-            "working_directory": "/tmp",
-        })
+        create_response = client.post(
+            "/sessions",
+            json={
+                "name": "Test Checkpoints",
+                "project": "test",
+                "working_directory": "/tmp",
+            },
+        )
         session_id = create_response.json()["id"]
 
         # Get checkpoints

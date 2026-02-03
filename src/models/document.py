@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 
@@ -411,9 +410,7 @@ class DocumentPreprocessResult:
             status=ProcessingStatus(data.get("status", "completed")),
             error=data.get("error"),
             ocr_result=(
-                OCRResult.from_cache_dict(data["ocr_result"])
-                if data.get("ocr_result")
-                else None
+                OCRResult.from_cache_dict(data["ocr_result"]) if data.get("ocr_result") else None
             ),
         )
 
@@ -584,23 +581,27 @@ class MultiDocumentResult:
                     if end < len(section.content):
                         context = context + "..."
 
-                    results.append(SearchHit(
-                        source_file=filename,
-                        section_id=section.id,
-                        line=None,
-                        match=context,
-                    ))
+                    results.append(
+                        SearchHit(
+                            source_file=filename,
+                            section_id=section.id,
+                            line=None,
+                            match=context,
+                        )
+                    )
 
         # Search in text files
         for filename, content in self.text_files.items():
             for i, line in enumerate(content.splitlines(), 1):
                 if pattern.search(line):
-                    results.append(SearchHit(
-                        source_file=filename,
-                        section_id=None,
-                        line=i,
-                        match=line[:200],  # Truncate long lines
-                    ))
+                    results.append(
+                        SearchHit(
+                            source_file=filename,
+                            section_id=None,
+                            line=i,
+                            match=line[:200],  # Truncate long lines
+                        )
+                    )
 
         return results
 
@@ -620,9 +621,13 @@ class MultiDocumentResult:
             "total_pages": self.total_pages,
             "processing_time": round(self.processing_time, 2),
             "files": {
-                **{f: {"type": "document", "sections": len(d.sections), "pages": d.total_pages}
-                   for f, d in self.documents.items()},
-                **{f: {"type": "text", "lines": content.count("\n") + 1}
-                   for f, content in self.text_files.items()},
+                **{
+                    f: {"type": "document", "sections": len(d.sections), "pages": d.total_pages}
+                    for f, d in self.documents.items()
+                },
+                **{
+                    f: {"type": "text", "lines": content.count("\n") + 1}
+                    for f, content in self.text_files.items()
+                },
             },
         }

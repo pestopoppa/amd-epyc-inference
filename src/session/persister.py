@@ -12,10 +12,10 @@ import hashlib
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable
 
-from src.session.models import Checkpoint, Finding, FindingSource, Session, SessionStatus
+from src.session.models import Checkpoint, Finding, FindingSource, Session
 
 if TYPE_CHECKING:
     from src.session.sqlite_store import SQLiteSessionStore
@@ -281,12 +281,14 @@ class SessionPersister:
             for match in re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE):
                 content = match.group(1).strip()
                 if len(content) >= 10:  # Skip very short matches
-                    findings.append({
-                        "content": content,
-                        "confidence": confidence,
-                        "source": source_context or {},
-                        "pattern": pattern[:30],  # For debugging
-                    })
+                    findings.append(
+                        {
+                            "content": content,
+                            "confidence": confidence,
+                            "source": source_context or {},
+                            "pattern": pattern[:30],  # For debugging
+                        }
+                    )
 
         # Deduplicate by content
         seen = set()
@@ -343,9 +345,7 @@ class SessionPersister:
             added += 1
 
         if added > 0:
-            logger.info(
-                f"Added {added} heuristic findings to session {self.session_id[:8]}"
-            )
+            logger.info(f"Added {added} heuristic findings to session {self.session_id[:8]}")
 
         return added
 
@@ -564,9 +564,7 @@ class IdleMonitor:
             SessionPersister for the session.
         """
         if session_id not in self._persisters:
-            self._persisters[session_id] = SessionPersister(
-                self.session_store, session_id
-            )
+            self._persisters[session_id] = SessionPersister(self.session_store, session_id)
         return self._persisters[session_id]
 
     def check_all_sessions(self) -> list[dict[str, Any]]:
@@ -595,11 +593,13 @@ class IdleMonitor:
             # Check for idle actions
             result = persister.check_idle()
             if result.get("actions"):
-                results.append({
-                    "session_id": session.id,
-                    "session_name": session.name,
-                    **result,
-                })
+                results.append(
+                    {
+                        "session_id": session.id,
+                        "session_name": session.name,
+                        **result,
+                    }
+                )
 
         return results
 
@@ -617,9 +617,7 @@ class IdleMonitor:
             )
         }
 
-        to_remove = [
-            sid for sid in self._persisters if sid not in active_sessions
-        ]
+        to_remove = [sid for sid in self._persisters if sid not in active_sessions]
 
         for sid in to_remove:
             del self._persisters[sid]

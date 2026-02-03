@@ -22,12 +22,15 @@ from typing import Any
 import yaml
 
 # Default registry location (static fallback; config preferred in __init__)
-DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "orchestration" / "model_registry.yaml"
+DEFAULT_REGISTRY_PATH = (
+    Path(__file__).resolve().parent.parent / "orchestration" / "model_registry.yaml"
+)
 
 
 @dataclass
 class ModelConfig:
     """Model file configuration."""
+
     name: str
     path: str  # Relative to model_base_path
     quant: str
@@ -41,6 +44,7 @@ class ModelConfig:
 @dataclass
 class AccelerationConfig:
     """Acceleration strategy configuration."""
+
     type: str  # speculative_decoding, moe_expert_reduction, prompt_lookup, none
     draft_role: str | None = None
     k: int | None = None  # Draft tokens for speculative
@@ -53,6 +57,7 @@ class AccelerationConfig:
 @dataclass
 class PerformanceMetrics:
     """Performance metrics from benchmarks."""
+
     baseline_tps: float | None = None
     optimized_tps: float | None = None
     speedup: str | None = None
@@ -63,6 +68,7 @@ class PerformanceMetrics:
 @dataclass
 class MemoryConfig:
     """Memory residency configuration."""
+
     residency: str  # hot, warm
     pinned: bool = False
     max_instances: int = 1
@@ -71,6 +77,7 @@ class MemoryConfig:
 @dataclass
 class GenerationDefaults:
     """Default generation parameters for a role."""
+
     n_tokens: int = 512
     temperature: float | None = None  # None = use global default
     context_length: int | None = None
@@ -79,6 +86,7 @@ class GenerationDefaults:
 @dataclass
 class Constraints:
     """Acceleration constraints for a role."""
+
     forbid: list[str] = field(default_factory=list)
     reason: str | None = None
 
@@ -86,6 +94,7 @@ class Constraints:
 @dataclass
 class RoleConfig:
     """Complete configuration for an agent role."""
+
     name: str
     tier: str
     description: str
@@ -103,6 +112,7 @@ class RoleConfig:
 @dataclass
 class RoutingHint:
     """Deterministic routing rule."""
+
     condition: str
     use: list[str]
 
@@ -110,6 +120,7 @@ class RoutingHint:
 @dataclass
 class EscalationChain:
     """Escalation chain configuration."""
+
     name: str
     description: str
     chain: list[str]  # Ordered list of role names
@@ -151,6 +162,7 @@ class EscalationChain:
 
 class RegistryError(Exception):
     """Error loading or validating the registry."""
+
     pass
 
 
@@ -173,6 +185,7 @@ class RegistryLoader:
         else:
             try:
                 from src.config import get_config
+
                 self.registry_path = get_config().paths.registry_path
             except Exception:
                 self.registry_path = DEFAULT_REGISTRY_PATH
@@ -183,6 +196,7 @@ class RegistryLoader:
         self._escalation_chains: dict[str, EscalationChain] = {}
         try:
             from src.config import get_config
+
             self._model_base_path: Path = get_config().paths.model_base
         except Exception:
             self._model_base_path: Path = Path("/mnt/raid0/llm/lmstudio/models")
@@ -228,10 +242,12 @@ class RegistryLoader:
         # Load routing hints
         hints_data = self._raw.get("routing_hints", [])
         for hint in hints_data:
-            self._routing_hints.append(RoutingHint(
-                condition=hint.get("if", ""),
-                use=hint.get("use", []),
-            ))
+            self._routing_hints.append(
+                RoutingHint(
+                    condition=hint.get("if", ""),
+                    use=hint.get("use", []),
+                )
+            )
 
         # Load command templates
         self._command_templates = self._raw.get("command_templates", {})
@@ -632,7 +648,11 @@ class RegistryLoader:
             if tier_roles:
                 lines.append(f"Tier {tier}:")
                 for r in tier_roles:
-                    status = "OK" if r.model.full_path and Path(r.model.full_path).exists() else "MISSING"
+                    status = (
+                        "OK"
+                        if r.model.full_path and Path(r.model.full_path).exists()
+                        else "MISSING"
+                    )
                     lines.append(f"  {r.name}: {r.model.name} [{status}]")
                 lines.append("")
 
@@ -666,4 +686,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

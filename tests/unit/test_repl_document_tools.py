@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for the REPL document tools (_DocumentToolsMixin)."""
 
-from unittest.mock import Mock, MagicMock, patch, mock_open
-import pytest
+from unittest.mock import Mock, patch, mock_open
 
-from src.repl_environment import REPLEnvironment, REPLConfig
+from src.repl_environment import REPLEnvironment
 
 
 class TestOcrDocument:
@@ -29,8 +28,8 @@ class TestOcrDocument:
         assert "ERROR" in result.output
         assert "PDF" in result.output
 
-    @patch('requests.post')
-    @patch('builtins.open', new_callable=mock_open, read_data=b'fake pdf content')
+    @patch("requests.post")
+    @patch("builtins.open", new_callable=mock_open, read_data=b"fake pdf content")
     def test_ocr_document_success(self, mock_file, mock_post):
         """Test ocr_document() successfully processes PDF."""
         mock_response = Mock()
@@ -41,15 +40,11 @@ class TestOcrDocument:
                 {
                     "page": 1,
                     "text": "Page 1 content",
-                    "bboxes": [{"id": "fig1", "x1": 0, "y1": 0, "x2": 100, "y2": 100}]
+                    "bboxes": [{"id": "fig1", "x1": 0, "y1": 0, "x2": 100, "y2": 100}],
                 },
-                {
-                    "page": 2,
-                    "text": "Page 2 content",
-                    "bboxes": []
-                }
+                {"page": 2, "text": "Page 2 content", "bboxes": []},
             ],
-            "elapsed_sec": 0.5
+            "elapsed_sec": 0.5,
         }
         mock_post.return_value = mock_response
 
@@ -65,8 +60,8 @@ print(len(data['figures']))
         assert "3" in result.output
         assert "1" in result.output  # 1 figure
 
-    @patch('builtins.open', new_callable=mock_open, read_data=b'fake pdf')
-    @patch('requests.post')
+    @patch("builtins.open", new_callable=mock_open, read_data=b"fake pdf")
+    @patch("requests.post")
     def test_ocr_document_server_error(self, mock_post, mock_file):
         """Test ocr_document() handles server errors."""
         mock_response = Mock()
@@ -81,11 +76,12 @@ print(len(data['figures']))
         assert "ERROR" in result.output
         assert "500" in result.output
 
-    @patch('builtins.open', new_callable=mock_open, read_data=b'fake pdf')
-    @patch('requests.post')
+    @patch("builtins.open", new_callable=mock_open, read_data=b"fake pdf")
+    @patch("requests.post")
     def test_ocr_document_connection_error(self, mock_post, mock_file):
         """Test ocr_document() handles connection errors."""
         import requests
+
         mock_post.side_effect = requests.exceptions.ConnectionError()
 
         repl = REPLEnvironment(context="test")
@@ -117,7 +113,7 @@ class TestAnalyzeFigure:
         assert "ERROR" in result.output
         assert "not in allowed" in result.output or "Path" in result.output
 
-    @patch('requests.post')
+    @patch("requests.post")
     def test_analyze_figure_success(self, mock_post):
         """Test analyze_figure() successfully analyzes image."""
         mock_response = Mock()
@@ -133,14 +129,12 @@ class TestAnalyzeFigure:
         assert result.error is None
         assert "bar chart" in result.output or "sales data" in result.output
 
-    @patch('requests.post')
+    @patch("requests.post")
     def test_analyze_figure_with_custom_prompt(self, mock_post):
         """Test analyze_figure() with custom prompt."""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "vl_description": "The chart shows an upward trend."
-        }
+        mock_response.json.return_value = {"vl_description": "The chart shows an upward trend."}
         mock_post.return_value = mock_response
 
         repl = REPLEnvironment(context="test")
@@ -152,10 +146,11 @@ print('trend' in output.lower())
         assert result.error is None
         assert "True" in result.output
 
-    @patch('requests.post')
+    @patch("requests.post")
     def test_analyze_figure_connection_error(self, mock_post):
         """Test analyze_figure() handles connection errors."""
         import requests
+
         mock_post.side_effect = requests.exceptions.ConnectionError()
 
         repl = REPLEnvironment(context="test")
@@ -198,7 +193,9 @@ class TestExtractFigure:
     def test_extract_figure_returns_error_for_missing_file(self):
         """Test extract_figure() returns error for nonexistent file."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(extract_figure('/mnt/raid0/llm/nonexistent.pdf', 1, [0, 0, 100, 100]))")
+        result = repl.execute(
+            "print(extract_figure('/mnt/raid0/llm/nonexistent.pdf', 1, [0, 0, 100, 100]))"
+        )
 
         assert result.error is None
         assert "ERROR" in result.output

@@ -26,6 +26,7 @@ class BackendMixin:
         except ImportError as e:
             # If RadixAttention modules not available, log and continue
             import logging
+
             logging.warning(f"CachingBackend not available: {e}. Using legacy mode.")
 
     def get_backend(self, role: str) -> Any | None:

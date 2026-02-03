@@ -9,8 +9,7 @@ Tests cover:
 """
 
 import pytest
-import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from src.prefix_cache import (
     canonicalize_prompt,
@@ -19,7 +18,7 @@ from src.prefix_cache import (
     SlotState,
     CachingBackend,
 )
-from src.radix_cache import RadixCache, RadixNode, CacheEntry, TokenizedRadixCache
+from src.radix_cache import RadixCache, RadixNode, TokenizedRadixCache
 from src.model_server import InferenceRequest
 
 
@@ -44,31 +43,19 @@ class TestCanonicalizePrompt:
 
     def test_normalizes_iso_timestamps(self):
         """Should normalize ISO timestamps to [TIMESTAMP]."""
-        assert canonicalize_prompt(
-            "Time: 2024-01-15T10:30:00Z"
-        ) == "Time: [TIMESTAMP]"
-        assert canonicalize_prompt(
-            "Time: 2024-01-15T10:30:00.123Z"
-        ) == "Time: [TIMESTAMP]"
-        assert canonicalize_prompt(
-            "Time: 2024-01-15T10:30:00+05:30"
-        ) == "Time: [TIMESTAMP]"
+        assert canonicalize_prompt("Time: 2024-01-15T10:30:00Z") == "Time: [TIMESTAMP]"
+        assert canonicalize_prompt("Time: 2024-01-15T10:30:00.123Z") == "Time: [TIMESTAMP]"
+        assert canonicalize_prompt("Time: 2024-01-15T10:30:00+05:30") == "Time: [TIMESTAMP]"
 
     def test_normalizes_dates(self):
         """Should normalize dates to [DATE]."""
         assert canonicalize_prompt("Date: 2024-01-15") == "Date: [DATE]"
-        assert canonicalize_prompt(
-            "From 2024-01-15 to 2024-02-20"
-        ) == "From [DATE] to [DATE]"
+        assert canonicalize_prompt("From 2024-01-15 to 2024-02-20") == "From [DATE] to [DATE]"
 
     def test_normalizes_uuids(self):
         """Should normalize UUIDs to [UUID]."""
-        assert canonicalize_prompt(
-            "ID: 550e8400-e29b-41d4-a716-446655440000"
-        ) == "ID: [UUID]"
-        assert canonicalize_prompt(
-            "ids: ABC12345-DEF6-7890-ABCD-EF1234567890"
-        ) == "ids: [UUID]"
+        assert canonicalize_prompt("ID: 550e8400-e29b-41d4-a716-446655440000") == "ID: [UUID]"
+        assert canonicalize_prompt("ids: ABC12345-DEF6-7890-ABCD-EF1234567890") == "ids: [UUID]"
 
     def test_collapses_multiple_blank_lines(self):
         """Should collapse multiple blank lines to single."""
@@ -85,12 +72,7 @@ class TestCanonicalizePrompt:
             "\r\n"
             "Done   "
         )
-        expected = (
-            "Request at [TIMESTAMP]\n"
-            "ID: [UUID]\n"
-            "\n"
-            "Done"
-        )
+        expected = "Request at [TIMESTAMP]\nID: [UUID]\n\nDone"
         assert canonicalize_prompt(input_prompt) == expected
 
 
@@ -104,10 +86,12 @@ class TestCreatePrefixFilter:
 
     def test_multiple_patterns(self):
         """Should filter multiple patterns."""
-        filter_fn = create_prefix_filter([
-            r"password=\S+",
-            r"token=\S+",
-        ])
+        filter_fn = create_prefix_filter(
+            [
+                r"password=\S+",
+                r"token=\S+",
+            ]
+        )
         result = filter_fn("password=secret123 token=abc456")
         assert result == "[FILTERED] [FILTERED]"
 
@@ -182,7 +166,7 @@ class TestPrefixRouter:
 
         # Fill both slots
         slot_a = router.get_slot_for_prompt("AAAAAAAA first")
-        slot_b = router.get_slot_for_prompt("BBBBBBBB second")
+        router.get_slot_for_prompt("BBBBBBBB second")
 
         # Third prompt should evict LRU (slot_a)
         slot_c = router.get_slot_for_prompt("CCCCCCCC third")
@@ -194,7 +178,7 @@ class TestPrefixRouter:
         router = PrefixRouter(num_slots=2, prefix_length=8)
 
         # Fill both slots
-        slot_a = router.get_slot_for_prompt("AAAAAAAA first")
+        router.get_slot_for_prompt("AAAAAAAA first")
         slot_b = router.get_slot_for_prompt("BBBBBBBB second")
 
         # Access slot_a again (moves to end of LRU)
@@ -433,6 +417,7 @@ class TestTokenizedRadixCache:
 
     def test_with_tokenizer(self):
         """Should work with tokenizer function."""
+
         # Simple tokenizer that returns byte values
         def tokenize(text):
             return list(text.encode("utf-8"))
@@ -582,7 +567,9 @@ class TestCachingBackendPersistence:
         saved = caching.save_hot_prefixes()
 
         # Restore in new backend
-        caching2 = CachingBackend(persistence_backend, PrefixRouter(num_slots=4), cache_dir=str(tmp_path))
+        caching2 = CachingBackend(
+            persistence_backend, PrefixRouter(num_slots=4), cache_dir=str(tmp_path)
+        )
         restored = caching2.restore_hot_prefixes()
 
         assert saved > 0

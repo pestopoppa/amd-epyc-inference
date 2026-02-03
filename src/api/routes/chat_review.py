@@ -21,6 +21,7 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from src.api.state import AppState
     from src.llm_primitives import LLMPrimitives
+    from src.proactive_delegation.types import PlanReviewResult
 
 
 def _detect_output_quality_issue(answer: str) -> str | None:
@@ -49,7 +50,7 @@ def _detect_output_quality_issue(answer: str) -> str | None:
 
     # 1. High n-gram repetition (degeneration loops)
     if n_words >= 20:
-        trigrams = [" ".join(words[i:i+3]) for i in range(n_words - 2)]
+        trigrams = [" ".join(words[i : i + 3]) for i in range(n_words - 2)]
         if trigrams:
             unique_ratio = len(set(trigrams)) / len(trigrams)
             if unique_ratio < _chat_thresholds.repetition_unique_ratio:
@@ -60,9 +61,12 @@ def _detect_output_quality_issue(answer: str) -> str | None:
     if n_words >= 50:
         # Check for confused analysis: very short non-empty lines mixed with long ones
         # indicates garbled/confused trace
-        short_lines = sum(1 for l in lines if 0 < len(l.strip()) < 10)
-        total_lines = sum(1 for l in lines if l.strip())
-        if total_lines > 5 and short_lines / total_lines > _chat_thresholds.garbled_short_line_ratio:
+        short_lines = sum(1 for line in lines if 0 < len(line.strip()) < 10)
+        total_lines = sum(1 for line in lines if line.strip())
+        if (
+            total_lines > 5
+            and short_lines / total_lines > _chat_thresholds.garbled_short_line_ratio
+        ):
             return "garbled_output (mostly very short lines)"
 
     # 3. Empty or near-empty after stripping common prefixes
@@ -138,7 +142,8 @@ def _architect_verdict(
         None if answer is OK, or "WRONG: ..." string if corrections needed.
     """
     prompt = build_review_verdict_prompt(
-        question, answer,
+        question,
+        answer,
         context_digest=context_digest,
         worker_digests=worker_digests,
     )
@@ -298,7 +303,7 @@ def _architect_plan_review(
     if not plan_steps and routing_decision:
         plan_steps = [
             {
-                "id": f"S{i+1}",
+                "id": f"S{i + 1}",
                 "actor": str(role),
                 "action": objective[:50],
                 "outputs": [],
@@ -390,6 +395,7 @@ def _store_plan_review_episode(
     # Log to progress JSONL
     if state.progress_logger:
         from orchestration.repl_memory.progress_logger import ProgressEntry, EventType
+
         state.progress_logger.log(
             ProgressEntry(
                 event_type=EventType.PLAN_REVIEWED,

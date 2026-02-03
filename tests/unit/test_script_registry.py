@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from src.script_registry import Script, ScriptMatch, ScriptRegistry, get_registry
+from src.script_registry import Script, ScriptRegistry, get_registry
 
 
 class TestScript:
@@ -100,14 +100,10 @@ class TestScriptRegistry:
             "description": "Loaded from JSON",
             "category": "test",
             "tags": ["json", "test"],
-            "parameters": {
-                "value": {"type": "string", "required": True}
-            },
+            "parameters": {"value": {"type": "string", "required": True}},
         }
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(script_data, f)
             temp_path = f.name
 
@@ -257,12 +253,12 @@ class TestScriptRegistry:
         """get_categories should return all categories."""
         registry = ScriptRegistry()
 
-        registry.register_script(Script(
-            id="web1", description="W", category="web", tags=[], parameters={}
-        ))
-        registry.register_script(Script(
-            id="code1", description="C", category="code", tags=[], parameters={}
-        ))
+        registry.register_script(
+            Script(id="web1", description="W", category="web", tags=[], parameters={})
+        )
+        registry.register_script(
+            Script(id="code1", description="C", category="code", tags=[], parameters={})
+        )
 
         categories = registry.get_categories()
         assert "web" in categories
@@ -280,7 +276,9 @@ class TestScriptRegistryMCP:
         registry = ScriptRegistry()
         registry._mcp_configs = {
             "@anthropic/fetch": MCPServerConfig(
-                name="@anthropic/fetch", command="npx", timeout=10,
+                name="@anthropic/fetch",
+                command="npx",
+                timeout=10,
             )
         }
 

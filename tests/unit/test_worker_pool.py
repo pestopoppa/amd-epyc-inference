@@ -7,7 +7,6 @@ Tests cover:
 - HOT/WARM tier management
 """
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

@@ -26,7 +26,6 @@ from src.vision.models import (
     PersonInfo,
     VideoAnalyzeRequest,
     VideoAnalyzeResponse,
-    JobStatus,
 )
 from src.vision.pipeline import VisionPipeline
 from src.vision.batch import BatchProcessor
@@ -88,8 +87,7 @@ async def analyze_image(
 
     else:
         raise HTTPException(
-            status_code=400,
-            detail="Provide image_path, image_base64, or image_url"
+            status_code=400, detail="Provide image_path, image_base64, or image_url"
         )
 
     try:
@@ -124,10 +122,7 @@ async def start_batch_job(
     - input_paths: List of specific file paths
     """
     if not request.input_directory and not request.input_paths:
-        raise HTTPException(
-            status_code=400,
-            detail="Provide input_directory or input_paths"
-        )
+        raise HTTPException(status_code=400, detail="Provide input_directory or input_paths")
 
     job = processor.create_job(
         input_directory=request.input_directory,
@@ -212,10 +207,7 @@ async def list_persons(
 async def identify_faces(request: FaceIdentifyRequest) -> AnalyzeResult:
     """Identify faces in an image against known persons."""
     if not request.image_path and not request.image_base64:
-        raise HTTPException(
-            status_code=400,
-            detail="Provide image_path or image_base64"
-        )
+        raise HTTPException(status_code=400, detail="Provide image_path or image_base64")
 
     # Use analyze endpoint with face analyzers
     from src.vision.models import AnalyzerType

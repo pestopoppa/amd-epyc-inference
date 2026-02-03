@@ -31,6 +31,7 @@ def register_all_tools(registry: ToolRegistry) -> int:
     # Import and register web tools
     try:
         from src.tools.web import register_web_tools
+
         count += register_web_tools(registry)
     except ImportError:
         pass
@@ -38,6 +39,7 @@ def register_all_tools(registry: ToolRegistry) -> int:
     # Import and register file tools
     try:
         from src.tools.file import register_file_tools
+
         count += register_file_tools(registry)
     except ImportError:
         pass
@@ -45,6 +47,7 @@ def register_all_tools(registry: ToolRegistry) -> int:
     # Import and register code tools
     try:
         from src.tools.code import register_code_tools
+
         count += register_code_tools(registry)
     except ImportError:
         pass
@@ -52,6 +55,7 @@ def register_all_tools(registry: ToolRegistry) -> int:
     # Import and register data tools
     try:
         from src.tools.data import register_data_tools
+
         count += register_data_tools(registry)
     except ImportError:
         pass

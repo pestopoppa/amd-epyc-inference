@@ -2,13 +2,12 @@
 
 from unittest.mock import patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import dep_features
 from src.api.routes.config import router
-from src.features import Features, set_features
+from src.features import Features
 
 
 def _make_app():
@@ -87,7 +86,7 @@ class TestUpdateConfig:
         app.dependency_overrides[dep_features] = lambda: test_features
         app = _LocalhostMiddleware(app)
 
-        with patch("src.api.routes.config.set_features") as mock_set:
+        with patch("src.api.routes.config.set_features"):
             client = TestClient(app)
             response = client.post(
                 "/config",

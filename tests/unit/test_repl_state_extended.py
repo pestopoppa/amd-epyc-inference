@@ -4,9 +4,8 @@ Tests coverage for src/repl_environment/state.py (58% coverage).
 Focus on uncovered checkpoint/restore logic and edge cases.
 """
 
-import json
 import time
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 import pytest
 
@@ -177,9 +176,7 @@ class TestSuggestExploration:
 
         retriever.retrieve_for_exploration.return_value = [mock_result]
 
-        suggestions = env.suggest_exploration(
-            "Task description", retriever=retriever
-        )
+        suggestions = env.suggest_exploration("Task description", retriever=retriever)
 
         # Should include episodic suggestions from similar tasks
         assert len(suggestions) > 0
@@ -242,9 +239,7 @@ class TestCheckpoint:
     def test_checkpoint_with_nested_artifacts(self):
         """Test checkpoint handles nested artifact structures."""
         env = MockREPLEnvironment()
-        env.artifacts["nested"] = {
-            "level1": {"level2": "value", "list": [1, 2, 3]}
-        }
+        env.artifacts["nested"] = {"level1": {"level2": "value", "list": [1, 2, 3]}}
 
         checkpoint = env.checkpoint()
 
@@ -391,9 +386,7 @@ class TestReset:
     def test_reset_creates_new_exploration_log(self):
         """Test reset creates fresh exploration log."""
         env = MockREPLEnvironment()
-        env._exploration_log.events.append(
-            ExplorationEvent("test", {}, 0, time.time(), 0)
-        )
+        env._exploration_log.events.append(ExplorationEvent("test", {}, 0, time.time(), 0))
 
         env.reset()
 

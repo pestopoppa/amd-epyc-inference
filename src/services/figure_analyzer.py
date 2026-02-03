@@ -82,9 +82,7 @@ class FigureAnalyzer:
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the HTTP client."""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(self.timeout, connect=10.0)
-            )
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, connect=10.0))
         return self._client
 
     async def close(self) -> None:
@@ -245,9 +243,7 @@ class FigureAnalyzer:
         for idx, fig in enumerate(figures):
             figures_by_page[fig.page].append((idx, fig))
 
-        logger.info(
-            f"Analyzing {len(figures)} figures across {len(figures_by_page)} pages"
-        )
+        logger.info(f"Analyzing {len(figures)} figures across {len(figures_by_page)} pages")
 
         # Prepare analysis tasks
         async def analyze_with_semaphore(
@@ -291,9 +287,7 @@ class FigureAnalyzer:
 
             # Create tasks for all figures on this page
             for idx, fig in page_figures:
-                task = asyncio.create_task(
-                    analyze_with_semaphore(semaphore, page_image, fig, idx)
-                )
+                task = asyncio.create_task(analyze_with_semaphore(semaphore, page_image, fig, idx))
                 tasks.append(task)
 
         # Wait for all analyses to complete

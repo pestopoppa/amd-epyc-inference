@@ -15,12 +15,11 @@ extracted into focused modules during Phase 1 decomposition:
 
 from __future__ import annotations
 
-import json
 import time
 import uuid
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from src.api.dependencies import dep_app_state
@@ -29,7 +28,6 @@ from src.api.state import AppState
 from src.config import get_config
 from src.prompt_builders import (
     build_root_lm_prompt,
-    build_long_context_exploration_prompt,
     build_routing_context,
     extract_code_from_response,
     auto_wrap_final,
@@ -49,7 +47,6 @@ from src.escalation import (
     EscalationContext,
     EscalationAction,
 )
-from src.generation_monitor import GenerationMonitor, MonitorConfig
 from src.roles import Role
 from src.sse_utils import (
     create_sse_response,
@@ -64,45 +61,17 @@ from src.sse_utils import (
 
 # Decomposed modules (Phase 1 — extract-and-move, no behavior changes)
 from src.api.routes.chat_utils import (
-    TWO_STAGE_CONFIG,
-    QWEN_STOP,
-    LONG_CONTEXT_CONFIG,
-    RoutingResult,
     _resolve_answer,
-    _strip_tool_outputs,
-    _truncate_looped_answer,
-    _should_formalize,
-    _formalize_output,
-)
-from src.api.routes.chat_vision import (
-    _handle_vision_request,
-    _vision_react_mode_answer,
-    _handle_multi_file_vision,
-)
-from src.api.routes.chat_summarization import (
-    _should_use_two_stage,
-    _run_two_stage_summarization,
 )
 from src.api.routes.chat_review import (
-    _detect_output_quality_issue,
     _should_review,
     _architect_verdict,
     _fast_revise,
-    _needs_plan_review,
-    _architect_plan_review,
-    _apply_plan_review,
-    _store_plan_review_episode,
-)
-from src.api.routes.chat_react import (
-    _react_mode_answer,
-)
-from src.api.routes.chat_delegation import (
-    _architect_delegated_answer,
 )
 from src.api.routes.chat_routing import (
     _select_mode,
-    _classify_and_route,
 )
+
 # Phase 1b: Pipeline stage functions (extracted from _handle_chat)
 from src.api.routes.chat_pipeline import (
     _route_request,
@@ -212,7 +181,11 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
 
     # Stage 6.5: Proactive delegation for COMPLEX tasks
     proactive_result = await _execute_proactive(
-        request, routing, primitives, state, start_time,
+        request,
+        routing,
+        primitives,
+        state,
+        start_time,
     )
     if proactive_result is not None:
         return _annotate_error(proactive_result)
@@ -239,8 +212,13 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
         and features().architect_delegation
     ):
         result = _execute_delegated(
-            request, routing, primitives, state, start_time,
-            initial_role, execution_mode,
+            request,
+            routing,
+            primitives,
+            state,
+            start_time,
+            initial_role,
+            execution_mode,
         )
         if result is not None:
             return _annotate_error(result)
@@ -248,7 +226,12 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
     # 8b: ReAct tool loop mode
     if execution_mode == "react":
         result = _execute_react(
-            request, routing, primitives, state, start_time, initial_role,
+            request,
+            routing,
+            primitives,
+            state,
+            start_time,
+            initial_role,
         )
         if result is not None:
             return _annotate_error(result)
@@ -335,7 +318,9 @@ async def chat_stream(
                 yield turn_end_event(tokens=len(analysis), elapsed_ms=elapsed_ms)
                 # Log completion (MemRL)
                 if state.progress_logger:
-                    state.progress_logger.log_task_completed(task_id, success=True, details="Plan mode")
+                    state.progress_logger.log_task_completed(
+                        task_id, success=True, details="Plan mode"
+                    )
                     score_completed_task(state, task_id)
                 yield done_event()
                 return
@@ -351,7 +336,9 @@ async def chat_stream(
 
             # Log completion (MemRL)
             if state.progress_logger:
-                state.progress_logger.log_task_completed(task_id, success=True, details="Mock stream")
+                state.progress_logger.log_task_completed(
+                    task_id, success=True, details="Mock stream"
+                )
                 score_completed_task(state, task_id)
             yield done_event()
             return
@@ -361,7 +348,9 @@ async def chat_stream(
 
         server_urls = request.server_urls or get_config().server_urls.as_dict()
         try:
-            primitives = LLMPrimitives(mock_mode=False, server_urls=server_urls, registry=state.registry)
+            primitives = LLMPrimitives(
+                mock_mode=False, server_urls=server_urls, registry=state.registry
+            )
         except Exception as e:
             # Log failure (MemRL)
             if state.progress_logger:
@@ -433,7 +422,9 @@ async def chat_stream(
             except Exception as e:
                 # Log failure (MemRL)
                 if state.progress_logger:
-                    state.progress_logger.log_task_completed(task_id, success=False, details=f"Root LM failed: {e}")
+                    state.progress_logger.log_task_completed(
+                        task_id, success=False, details=f"Root LM failed: {e}"
+                    )
                     score_completed_task(state, task_id)
                 yield error_event(f"Root LM call failed: {e}")
                 yield done_event()
@@ -489,12 +480,14 @@ async def chat_stream(
                             error_category="early_abort",
                             task_id=task_id,
                         ),
-                        decision=EscalationPolicy().decide(EscalationContext(
-                            current_role=role_history[-2],
-                            error_category="early_abort",
-                            error_message=reason,
-                            task_id=task_id,
-                        )),
+                        decision=EscalationPolicy().decide(
+                            EscalationContext(
+                                current_role=role_history[-2],
+                                error_category="early_abort",
+                                error_message=reason,
+                                task_id=task_id,
+                            )
+                        ),
                     )
                     if state.progress_logger:
                         state.progress_logger.log_escalation(
@@ -534,7 +527,9 @@ async def chat_stream(
                         primitives=primitives,
                     )
                     if verdict and verdict.upper().startswith("WRONG"):
-                        corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+                        corrections = (
+                            verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+                        )
                         stream_answer = _fast_revise(
                             question=request.prompt,
                             original_answer=stream_answer,
@@ -589,9 +584,14 @@ async def chat_stream(
         # Log completion (MemRL) - success if we got a final answer
         if state.progress_logger:
             success = result is not None and result.is_final
-            role_info = f", roles: {' -> '.join(str(r) for r in role_history)}" if len(role_history) > 1 else ""
+            role_info = (
+                f", roles: {' -> '.join(str(r) for r in role_history)}"
+                if len(role_history) > 1
+                else ""
+            )
             state.progress_logger.log_task_completed(
-                task_id, success=success,
+                task_id,
+                success=success,
                 details=f"Stream complete{role_info}",
             )
             score_completed_task(state, task_id)

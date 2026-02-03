@@ -8,7 +8,6 @@ from __future__ import annotations
 import logging
 import subprocess
 import shlex
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +51,7 @@ class _ExternalAccessMixin:
             if "text/html" in content_type:
                 try:
                     from bs4 import BeautifulSoup
+
                     soup = BeautifulSoup(resp.text, "html.parser")
                     # Remove script and style elements
                     for elem in soup(["script", "style", "nav", "footer"]):
@@ -60,6 +60,7 @@ class _ExternalAccessMixin:
                 except ImportError:
                     # Fallback: basic tag stripping
                     import re
+
                     text = re.sub(r"<[^>]+>", "", resp.text)
             else:
                 text = resp.text
@@ -102,19 +103,57 @@ class _ExternalAccessMixin:
 
         # Allowlist of safe commands
         SAFE_COMMANDS = {
-            "ls", "find", "wc", "du", "file", "head", "tail", "cat",
-            "grep", "awk", "sed", "sort", "uniq", "tr", "cut",
-            "git", "pwd", "whoami", "date", "echo", "printf",
-            "python", "python3",
+            "ls",
+            "find",
+            "wc",
+            "du",
+            "file",
+            "head",
+            "tail",
+            "cat",
+            "grep",
+            "awk",
+            "sed",
+            "sort",
+            "uniq",
+            "tr",
+            "cut",
+            "git",
+            "pwd",
+            "whoami",
+            "date",
+            "echo",
+            "printf",
+            "python",
+            "python3",
         }
 
         # Commands that are always blocked
         BLOCKED_COMMANDS = {
-            "rm", "mv", "cp", "chmod", "chown", "chgrp", "dd", "mkfs",
-            "mount", "umount", "kill", "pkill", "killall",
-            "sudo", "su", "bash", "sh", "zsh", "csh",
-            "wget", "curl",  # Blocked to prevent downloads
-            "nc", "netcat", "ncat",  # Network tools
+            "rm",
+            "mv",
+            "cp",
+            "chmod",
+            "chown",
+            "chgrp",
+            "dd",
+            "mkfs",
+            "mount",
+            "umount",
+            "kill",
+            "pkill",
+            "killall",
+            "sudo",
+            "su",
+            "bash",
+            "sh",
+            "zsh",
+            "csh",
+            "wget",
+            "curl",  # Blocked to prevent downloads
+            "nc",
+            "netcat",
+            "ncat",  # Network tools
         }
 
         base_cmd = parts[0].split("/")[-1]  # Handle /usr/bin/ls -> ls
@@ -151,7 +190,7 @@ class _ExternalAccessMixin:
 
             # Cap output
             if len(output) > 8000:
-                output = output[:8000] + f"\n[... truncated at 8000 chars]"
+                output = output[:8000] + "\n[... truncated at 8000 chars]"
 
             self._exploration_log.add_event("run_shell", {"cmd": cmd}, output)
             return output

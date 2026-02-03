@@ -18,6 +18,7 @@ class AnalyzerResult:
     Analyzers return this structure with their specific output in the `data` dict.
     The pipeline aggregates results from all enabled analyzers.
     """
+
     analyzer_name: str
     success: bool = True
     data: dict[str, Any] = field(default_factory=dict)
@@ -84,6 +85,7 @@ class Analyzer(ABC):
             AnalyzerResult with success=False and error details.
         """
         import time
+
         return AnalyzerResult(
             analyzer_name=self.name,
             success=False,
@@ -106,6 +108,7 @@ class Analyzer(ABC):
             AnalyzerResult with success=True and data.
         """
         import time
+
         return AnalyzerResult(
             analyzer_name=self.name,
             success=True,

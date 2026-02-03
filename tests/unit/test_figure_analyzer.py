@@ -3,11 +3,8 @@
 Tests coverage for src/services/figure_analyzer.py (currently under-tested).
 """
 
-import asyncio
 import base64
-import io
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -167,9 +164,7 @@ class TestAnalyzeSingleFigure:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "description": "A bar chart showing quarterly revenue"
-        }
+        mock_response.json.return_value = {"description": "A bar chart showing quarterly revenue"}
 
         with patch.object(analyzer, "_get_client") as mock_get_client:
             mock_client = AsyncMock()
@@ -346,8 +341,12 @@ class TestConvenienceFunctions:
         mock_response.status_code = 200
         mock_response.json.return_value = {"description": "Test description"}
 
-        with patch("src.services.figure_analyzer.FigureAnalyzer._render_pdf_page", return_value=mock_image):
-            with patch("src.services.figure_analyzer.FigureAnalyzer._get_client") as mock_get_client:
+        with patch(
+            "src.services.figure_analyzer.FigureAnalyzer._render_pdf_page", return_value=mock_image
+        ):
+            with patch(
+                "src.services.figure_analyzer.FigureAnalyzer._get_client"
+            ) as mock_get_client:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = mock_response
                 mock_get_client.return_value = mock_client
@@ -369,8 +368,12 @@ class TestConvenienceFunctions:
         mock_response.status_code = 200
         mock_response.json.return_value = {"description": "Custom description"}
 
-        with patch("src.services.figure_analyzer.FigureAnalyzer._render_pdf_page", return_value=mock_image):
-            with patch("src.services.figure_analyzer.FigureAnalyzer._get_client") as mock_get_client:
+        with patch(
+            "src.services.figure_analyzer.FigureAnalyzer._render_pdf_page", return_value=mock_image
+        ):
+            with patch(
+                "src.services.figure_analyzer.FigureAnalyzer._get_client"
+            ) as mock_get_client:
                 mock_client = AsyncMock()
                 mock_client.post.return_value = mock_response
                 mock_get_client.return_value = mock_client

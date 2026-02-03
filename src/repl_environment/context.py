@@ -77,13 +77,15 @@ class _ContextMixin:
                     end = ws
 
             chunk_text = text[start:end]
-            chunks.append({
-                "index": i,
-                "start": start,
-                "end": end,
-                "text": chunk_text,
-                "char_count": len(chunk_text),
-            })
+            chunks.append(
+                {
+                    "index": i,
+                    "start": start,
+                    "end": end,
+                    "text": chunk_text,
+                    "char_count": len(chunk_text),
+                }
+            )
 
         self._exploration_log.add_event(
             "chunk_context",
@@ -134,20 +136,24 @@ class _ContextMixin:
         # Dispatch to workers in batch
         try:
             summaries = self.llm_primitives.llm_batch(
-                prompts, role=role, n_tokens=512,
+                prompts,
+                role=role,
+                n_tokens=512,
             )
         except Exception as e:
             return [{"error": f"Batch call failed: {e}"}]
 
         results = []
         for i, (chunk, summary) in enumerate(zip(chunks, summaries)):
-            results.append({
-                "index": i,
-                "chunk_start": chunk["start"],
-                "chunk_end": chunk["end"],
-                "chunk_chars": chunk["char_count"],
-                "summary": summary,
-            })
+            results.append(
+                {
+                    "index": i,
+                    "chunk_start": chunk["start"],
+                    "chunk_end": chunk["end"],
+                    "chunk_chars": chunk["char_count"],
+                    "summary": summary,
+                }
+            )
 
         self._exploration_log.add_event(
             "summarize_chunks",
@@ -345,6 +351,7 @@ class _ContextMixin:
             JSON-serialized string of the tool result.
         """
         import json as _json
+
         result = self._invoke_tool(tool_name, **kwargs)
         try:
             return _json.dumps(result, indent=2, default=str)

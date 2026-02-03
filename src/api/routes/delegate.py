@@ -28,7 +28,8 @@ class DelegateRequest(BaseModel):
     """Request body for the delegate endpoint."""
 
     task_ir: dict[str, Any] = Field(
-        ..., description="TaskIR JSON with at least 'objective' and 'plan.steps'",
+        ...,
+        description="TaskIR JSON with at least 'objective' and 'plan.steps'",
     )
     dry_run: bool = Field(
         default=False,
@@ -81,9 +82,7 @@ async def delegate(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    wave_dicts = [
-        {"index": w.index, "step_ids": w.step_ids} for w in waves
-    ]
+    wave_dicts = [{"index": w.index, "step_ids": w.step_ids} for w in waves]
 
     # Dry run: return wave plan only
     if request.dry_run:

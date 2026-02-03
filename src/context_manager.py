@@ -80,13 +80,12 @@ class ContextConfig:
     max_total_size: int = 100000  # Max total context size
     auto_summarize: bool = True  # Auto-summarize large entries
     summary_threshold: int = 5000  # Summarize entries larger than this
-    artifact_base_path: Path = field(
-        default_factory=lambda: _ctx_artifacts_path()
-    )
+    artifact_base_path: Path = field(default_factory=lambda: _ctx_artifacts_path())
 
 
 def _ctx_artifacts_path() -> Path:
     from src.config import get_config
+
     return get_config().paths.artifacts_dir
 
 
@@ -275,9 +274,7 @@ class ContextManager:
             Dictionary of key-value pairs from that step.
         """
         return {
-            key: entry.value
-            for key, entry in self._entries.items()
-            if entry.step_id == step_id
+            key: entry.value for key, entry in self._entries.items() if entry.step_id == step_id
         }
 
     def get_inputs(self, input_keys: list[str]) -> dict[str, Any]:

@@ -62,6 +62,7 @@ def load_optional_imports() -> None:
             RuleBasedRouter as _RBR,
             RetrievalConfig as _RC,
         )
+
         ProgressLogger = _PL
         ProgressReader = _PR
         EpisodicStore = _ES
@@ -78,17 +79,20 @@ def load_optional_imports() -> None:
             ProgressLogger as _PL,
             ProgressReader as _PR,
         )
+
         ProgressLogger = _PL
         ProgressReader = _PR
 
     # Tool registry
     if f.tools:
         from src.tool_registry import ToolRegistry as _TR
+
         ToolRegistry = _TR
 
     # Script registry (requires tools)
     if f.scripts:
         from src.script_registry import ScriptRegistry as _SR
+
         ScriptRegistry = _SR
 
 
@@ -139,9 +143,7 @@ def _get_score_pool() -> ThreadPoolExecutor:
     if _score_pool is None:
         with _score_pool_lock:
             if _score_pool is None:
-                _score_pool = ThreadPoolExecutor(
-                    max_workers=4, thread_name_prefix="q-scorer"
-                )
+                _score_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="q-scorer")
     return _score_pool
 
 
@@ -362,6 +364,7 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
         # Reuse existing registry if loaded at startup, otherwise load it
         if state.registry is None:
             from src.registry_loader import RegistryLoader
+
             state.registry = RegistryLoader(validate_paths=False)
         rule_router = RuleBasedRouter(routing_hints=state.registry.routing_hints)
         state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)

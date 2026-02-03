@@ -11,8 +11,10 @@ class PersonaMixin:
         """
         if persona:
             from src.features import features as _get_features
+
             if _get_features().personas:
                 from src.persona_loader import get_persona_registry
+
                 persona_cfg = get_persona_registry().get(persona)
                 if persona_cfg:
                     return f"{persona_cfg.system_prompt.strip()}\n\n{prompt}"

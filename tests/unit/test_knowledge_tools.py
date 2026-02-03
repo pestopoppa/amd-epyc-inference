@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import pytest
 
 from src.tools.knowledge import (
     _strip_wikitext,
@@ -28,12 +27,14 @@ from src.tools.knowledge import (
 @dataclass
 class ArxivAuthor:
     """Stub arXiv author."""
+
     name: str
 
 
 @dataclass
 class ArxivPaper:
     """Stub arXiv paper result."""
+
     title: str
     authors: list[ArxivAuthor]
     summary: str
@@ -47,12 +48,14 @@ class ArxivPaper:
 @dataclass
 class SemanticScholarAuthor:
     """Stub Semantic Scholar author."""
+
     name: str
 
 
 @dataclass
 class SemanticScholarPaper:
     """Stub Semantic Scholar paper result."""
+
     title: str
     authors: list[SemanticScholarAuthor]
     abstract: str | None
@@ -66,6 +69,7 @@ class SemanticScholarPaper:
 
 class StubArxivSearch:
     """Stub arXiv search object."""
+
     def __init__(self, query: str, max_results: int, sort_by: Any):
         self.query = query
         self.max_results = max_results
@@ -74,6 +78,7 @@ class StubArxivSearch:
 
 class StubArxivClient:
     """Stub arXiv client."""
+
     def __init__(self, results: list = None):
         self._results = results or []
 
@@ -84,19 +89,32 @@ class StubArxivClient:
 
 class StubSemanticScholar:
     """Stub Semantic Scholar client."""
+
     def __init__(self, results: list = None):
         self._results = results or []
 
-    def search_paper(self, query: str, limit: int = 10, year: str | None = None,
-                     fields_of_study: list | None = None, fields: list | None = None):
+    def search_paper(
+        self,
+        query: str,
+        limit: int = 10,
+        year: str | None = None,
+        fields_of_study: list | None = None,
+        fields: list | None = None,
+    ):
         """Return stub search results."""
         return self._results
 
 
 class StubWikipediaPage:
     """Stub Wikipedia page."""
-    def __init__(self, exists: bool = True, name: str = "", text_content: str = "",
-                 categories_list: list = None):
+
+    def __init__(
+        self,
+        exists: bool = True,
+        name: str = "",
+        text_content: str = "",
+        categories_list: list = None,
+    ):
         self.exists = exists
         self.name = name
         self._text_content = text_content
@@ -113,12 +131,14 @@ class StubWikipediaPage:
 
 class StubWikipediaCategory:
     """Stub Wikipedia category."""
+
     def __init__(self, name: str):
         self.name = name
 
 
 class StubWikipediaSite:
     """Stub Wikipedia site."""
+
     def __init__(self, search_results: list = None, pages_dict: dict = None):
         self._search_results = search_results or []
         self._pages_dict = pages_dict or {}
@@ -153,11 +173,15 @@ class TestSearchArxiv:
         client = StubArxivClient(results=[paper])
 
         # Create stub arxiv module
-        stub_arxiv = type('module', (), {
-            'Client': lambda: client,
-            'Search': StubArxivSearch,
-            'SortCriterion': type('obj', (), {'Relevance': 'relevance'}),
-        })
+        stub_arxiv = type(
+            "module",
+            (),
+            {
+                "Client": lambda: client,
+                "Search": StubArxivSearch,
+                "SortCriterion": type("obj", (), {"Relevance": "relevance"}),
+            },
+        )
 
         with patch.dict(sys.modules, {"arxiv": stub_arxiv}):
             result = search_arxiv("transformer attention")
@@ -173,11 +197,15 @@ class TestSearchArxiv:
         """Returns empty list when no papers match."""
         client = StubArxivClient(results=[])
 
-        stub_arxiv = type('module', (), {
-            'Client': lambda: client,
-            'Search': StubArxivSearch,
-            'SortCriterion': type('obj', (), {'Relevance': 'relevance'}),
-        })
+        stub_arxiv = type(
+            "module",
+            (),
+            {
+                "Client": lambda: client,
+                "Search": StubArxivSearch,
+                "SortCriterion": type("obj", (), {"Relevance": "relevance"}),
+            },
+        )
 
         with patch.dict(sys.modules, {"arxiv": stub_arxiv}):
             result = search_arxiv("zzzznonexistentquery")
@@ -188,13 +216,18 @@ class TestSearchArxiv:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
+
         def failing_client():
             raise ConnectionError("Network unreachable")
 
-        stub_arxiv = type('module', (), {
-            'Client': failing_client,
-            'SortCriterion': type('obj', (), {'Relevance': 'relevance'}),
-        })
+        stub_arxiv = type(
+            "module",
+            (),
+            {
+                "Client": failing_client,
+                "SortCriterion": type("obj", (), {"Relevance": "relevance"}),
+            },
+        )
 
         with patch.dict(sys.modules, {"arxiv": stub_arxiv}):
             result = search_arxiv("test")
@@ -223,9 +256,13 @@ class TestSearchPapers:
 
         ss = StubSemanticScholar(results=[paper])
 
-        stub_ss_module = type('module', (), {
-            'SemanticScholar': lambda: ss,
-        })
+        stub_ss_module = type(
+            "module",
+            (),
+            {
+                "SemanticScholar": lambda: ss,
+            },
+        )
 
         with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             result = search_papers("speculative decoding")
@@ -245,9 +282,13 @@ class TestSearchPapers:
                 call_args["year"] = year
                 return []
 
-        stub_ss_module = type('module', (), {
-            'SemanticScholar': TrackingSemanticScholar,
-        })
+        stub_ss_module = type(
+            "module",
+            (),
+            {
+                "SemanticScholar": TrackingSemanticScholar,
+            },
+        )
 
         with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             search_papers("test", year_range="2023-2025")
@@ -270,9 +311,13 @@ class TestSearchPapers:
 
         ss = StubSemanticScholar(results=[paper])
 
-        stub_ss_module = type('module', (), {
-            'SemanticScholar': lambda: ss,
-        })
+        stub_ss_module = type(
+            "module",
+            (),
+            {
+                "SemanticScholar": lambda: ss,
+            },
+        )
 
         with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             result = search_papers("test")
@@ -282,12 +327,17 @@ class TestSearchPapers:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
+
         def failing_init():
             raise ConnectionError("timeout")
 
-        stub_ss_module = type('module', (), {
-            'SemanticScholar': failing_init,
-        })
+        stub_ss_module = type(
+            "module",
+            (),
+            {
+                "SemanticScholar": failing_init,
+            },
+        )
 
         with patch.dict(sys.modules, {"semanticscholar": stub_ss_module}):
             result = search_papers("test")
@@ -314,9 +364,13 @@ class TestSearchWikipedia:
             pages_dict=pages_dict,
         )
 
-        stub_mw = type('module', (), {
-            'Site': lambda host: site,
-        })
+        stub_mw = type(
+            "module",
+            (),
+            {
+                "Site": lambda host: site,
+            },
+        )
 
         with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = search_wikipedia("machine learning")
@@ -335,9 +389,13 @@ class TestSearchWikipedia:
             call_args["host"] = host
             return StubWikipediaSite(search_results=[])
 
-        stub_mw = type('module', (), {
-            'Site': tracking_site,
-        })
+        stub_mw = type(
+            "module",
+            (),
+            {
+                "Site": tracking_site,
+            },
+        )
 
         with patch.dict(sys.modules, {"mwclient": stub_mw}):
             search_wikipedia("test", language="de")
@@ -346,12 +404,17 @@ class TestSearchWikipedia:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
+
         def failing_site(host):
             raise ConnectionError("DNS resolution failed")
 
-        stub_mw = type('module', (), {
-            'Site': failing_site,
-        })
+        stub_mw = type(
+            "module",
+            (),
+            {
+                "Site": failing_site,
+            },
+        )
 
         with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = search_wikipedia("test")
@@ -381,9 +444,13 @@ class TestGetWikipediaArticle:
         pages_dict = {"Python (programming language)": page}
         site = StubWikipediaSite(pages_dict=pages_dict)
 
-        stub_mw = type('module', (), {
-            'Site': lambda host: site,
-        })
+        stub_mw = type(
+            "module",
+            (),
+            {
+                "Site": lambda host: site,
+            },
+        )
 
         with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = get_wikipedia_article("Python (programming language)")
@@ -402,9 +469,13 @@ class TestGetWikipediaArticle:
         pages_dict = {"Nonexistent Article XYZ": page}
         site = StubWikipediaSite(pages_dict=pages_dict)
 
-        stub_mw = type('module', (), {
-            'Site': lambda host: site,
-        })
+        stub_mw = type(
+            "module",
+            (),
+            {
+                "Site": lambda host: site,
+            },
+        )
 
         with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = get_wikipedia_article("Nonexistent Article XYZ")
@@ -414,12 +485,17 @@ class TestGetWikipediaArticle:
 
     def test_api_error(self):
         """Gracefully handles API errors."""
+
         def failing_site(host):
             raise TimeoutError("Connection timed out")
 
-        stub_mw = type('module', (), {
-            'Site': failing_site,
-        })
+        stub_mw = type(
+            "module",
+            (),
+            {
+                "Site": failing_site,
+            },
+        )
 
         with patch.dict(sys.modules, {"mwclient": stub_mw}):
             result = get_wikipedia_article("Test")
@@ -466,15 +542,22 @@ class TestSearchBooks:
             def volumes(self):
                 return StubVolumes()
 
-        stub_api_module = type('module', (), {
-            'build': lambda service, version, developerKey: StubService(),
-            'discovery': type('obj', (), {}),
-        })
+        stub_api_module = type(
+            "module",
+            (),
+            {
+                "build": lambda service, version, developerKey: StubService(),
+                "discovery": type("obj", (), {}),
+            },
+        )
 
-        with patch.dict(sys.modules, {
-            "googleapiclient": stub_api_module,
-            "googleapiclient.discovery": stub_api_module,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "googleapiclient": stub_api_module,
+                "googleapiclient.discovery": stub_api_module,
+            },
+        ):
             result = search_books("deep learning")
 
         assert result["success"] is True
@@ -507,15 +590,22 @@ class TestSearchBooks:
             def volumes(self):
                 return StubVolumes()
 
-        stub_api_module = type('module', (), {
-            'build': lambda service, version, developerKey: StubService(),
-            'discovery': type('obj', (), {}),
-        })
+        stub_api_module = type(
+            "module",
+            (),
+            {
+                "build": lambda service, version, developerKey: StubService(),
+                "discovery": type("obj", (), {}),
+            },
+        )
 
-        with patch.dict(sys.modules, {
-            "googleapiclient": stub_api_module,
-            "googleapiclient.discovery": stub_api_module,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "googleapiclient": stub_api_module,
+                "googleapiclient.discovery": stub_api_module,
+            },
+        ):
             result = search_books("test")
 
         assert result["success"] is True
@@ -537,33 +627,48 @@ class TestSearchBooks:
             def volumes(self):
                 return StubVolumes()
 
-        stub_api_module = type('module', (), {
-            'build': lambda service, version, developerKey: StubService(),
-            'discovery': type('obj', (), {}),
-        })
+        stub_api_module = type(
+            "module",
+            (),
+            {
+                "build": lambda service, version, developerKey: StubService(),
+                "discovery": type("obj", (), {}),
+            },
+        )
 
-        with patch.dict(sys.modules, {
-            "googleapiclient": stub_api_module,
-            "googleapiclient.discovery": stub_api_module,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "googleapiclient": stub_api_module,
+                "googleapiclient.discovery": stub_api_module,
+            },
+        ):
             search_books("test", filter="free-ebooks")
 
         assert call_kwargs.get("filter") == "free-ebooks"
 
     def test_api_error(self):
         """Gracefully handles API errors."""
+
         def failing_build(service, version, developerKey):
             raise Exception("API quota exceeded")
 
-        stub_api_module = type('module', (), {
-            'build': failing_build,
-            'discovery': type('obj', (), {}),
-        })
+        stub_api_module = type(
+            "module",
+            (),
+            {
+                "build": failing_build,
+                "discovery": type("obj", (), {}),
+            },
+        )
 
-        with patch.dict(sys.modules, {
-            "googleapiclient": stub_api_module,
-            "googleapiclient.discovery": stub_api_module,
-        }):
+        with patch.dict(
+            sys.modules,
+            {
+                "googleapiclient": stub_api_module,
+                "googleapiclient.discovery": stub_api_module,
+            },
+        ):
             result = search_books("test")
 
         assert result["success"] is False

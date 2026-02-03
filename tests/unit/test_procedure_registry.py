@@ -12,9 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -124,11 +122,21 @@ def temp_schema_path(tmp_path: Path) -> Path:
         schema_content = actual_schema.read_text()
     else:
         # Minimal schema for testing
-        schema_content = json.dumps({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "required": ["id", "name", "version", "description", "category", "steps", "verification"],
-        })
+        schema_content = json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "version",
+                    "description",
+                    "category",
+                    "steps",
+                    "verification",
+                ],
+            }
+        )
 
     schema_path = tmp_path / "procedure.schema.json"
     schema_path.write_text(schema_content)
@@ -391,7 +399,7 @@ class TestProcedureScheduler:
 
     def test_job_dependencies(self, registry):
         """Test job dependency handling."""
-        from orchestration.procedure_scheduler import ProcedureScheduler, JobStatus
+        from orchestration.procedure_scheduler import ProcedureScheduler
 
         scheduler = ProcedureScheduler(registry, persist_state=False)
 
@@ -462,7 +470,7 @@ class TestIntegration:
 
         # Schedule multiple procedures
         job1 = scheduler.schedule("test_echo", priority=1, message="high priority")
-        job2 = scheduler.schedule("test_echo", priority=0, message="low priority")
+        scheduler.schedule("test_echo", priority=0, message="low priority")
 
         # High priority should run first
         ready = scheduler.get_ready_jobs()

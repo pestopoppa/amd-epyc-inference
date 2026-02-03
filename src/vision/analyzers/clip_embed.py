@@ -53,12 +53,15 @@ class ClipEmbedAnalyzer(Analyzer):
 
             # Set cache directory
             import os
+
             os.environ["TRANSFORMERS_CACHE"] = str(VISION_CACHE_DIR)
 
             self._model = SentenceTransformer(self.model_name)
             logger.info(f"CLIP model '{self.model_name}' loaded")
         except ImportError:
-            logger.error("sentence-transformers not installed. Run: pip install sentence-transformers")
+            logger.error(
+                "sentence-transformers not installed. Run: pip install sentence-transformers"
+            )
             raise
         except Exception as e:
             logger.error(f"Failed to load CLIP model: {e}")
@@ -176,6 +179,7 @@ class TextEmbedAnalyzer(Analyzer):
             from sentence_transformers import SentenceTransformer
 
             import os
+
             os.environ["TRANSFORMERS_CACHE"] = str(VISION_CACHE_DIR)
 
             self._model = SentenceTransformer(self.model_name)

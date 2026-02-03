@@ -26,7 +26,7 @@ import logging
 import re
 import subprocess
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -105,16 +105,17 @@ def should_formalize_input(prompt: str) -> tuple[bool, str]:
 # 4.1b: Result dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class FormalizationResult:
     """Result of formalizer invocation."""
 
     success: bool
     ir_json: dict[str, Any] | None = None  # Parsed FormalizationIR
-    raw_output: str = ""                     # Raw model output
+    raw_output: str = ""  # Raw model output
     elapsed_seconds: float = 0.0
-    model_role: str = ""                     # Which formalizer role was used
-    error: str = ""                          # Error message on failure
+    model_role: str = ""  # Which formalizer role was used
+    error: str = ""  # Error message on failure
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +171,7 @@ def _parse_formalizer_output(raw: str) -> dict[str, Any] | None:
     brace_end = text.rfind("}")
     if brace_start != -1 and brace_end > brace_start:
         try:
-            obj = json.loads(text[brace_start:brace_end + 1])
+            obj = json.loads(text[brace_start : brace_end + 1])
             if isinstance(obj, dict) and "problem_type" in obj:
                 return obj
         except json.JSONDecodeError:
@@ -204,7 +205,7 @@ def formalize_prompt(
 
     for role_name in roles_to_try:
         try:
-            role = registry.get_role(role_name)
+            registry.get_role(role_name)
         except KeyError:
             log.debug("Formalizer role '%s' not in registry, skipping", role_name)
             continue
@@ -219,6 +220,7 @@ def formalize_prompt(
             log.info("Running formalizer (%s): %s", role_name, cmd[:120])
 
             import shlex
+
             proc = subprocess.run(
                 shlex.split(cmd),
                 capture_output=True,
@@ -231,7 +233,10 @@ def formalize_prompt(
             if proc.returncode != 0:
                 log.warning(
                     "Formalizer %s exited %d (%.1fs): %s",
-                    role_name, proc.returncode, elapsed, (proc.stderr or "")[:200],
+                    role_name,
+                    proc.returncode,
+                    elapsed,
+                    (proc.stderr or "")[:200],
                 )
                 continue
 
@@ -247,7 +252,8 @@ def formalize_prompt(
             else:
                 log.warning(
                     "Formalizer %s output not valid JSON (%.1fs), trying next",
-                    role_name, elapsed,
+                    role_name,
+                    elapsed,
                 )
 
         except subprocess.TimeoutExpired:
@@ -268,6 +274,7 @@ def formalize_prompt(
 # ---------------------------------------------------------------------------
 # 4.1d: Context injection
 # ---------------------------------------------------------------------------
+
 
 def inject_formalization(
     prompt: str,

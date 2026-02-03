@@ -23,11 +23,7 @@ from __future__ import annotations
 
 import logging
 import math
-import os
-import re
-import shutil
 import subprocess
-import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -97,6 +93,7 @@ class PDFRouter:
             pdftotext_path: Path to pdftotext binary
         """
         from src.config import get_config
+
         _cfg = get_config()
         self.lightonocr_url = lightonocr_url or _cfg.server_urls.ocr_server
         self.temp_dir = Path(temp_dir or str(_cfg.services.pdf_router_temp_dir))
@@ -105,7 +102,7 @@ class PDFRouter:
 
         # Check for PyMuPDF
         try:
-            import fitz
+            import fitz  # noqa: F401
 
             self._has_pymupdf = True
         except ImportError:
@@ -136,11 +133,7 @@ class PDFRouter:
             return 1.0
 
         # Count printable ASCII + common unicode
-        printable = sum(
-            1
-            for c in text
-            if c.isprintable() or c in "\n\t\r"
-        )
+        printable = sum(1 for c in text if c.isprintable() or c in "\n\t\r")
 
         return 1.0 - (printable / len(text))
 
@@ -170,9 +163,7 @@ class PDFRouter:
         word_len_score = min(1.0, avg_word_len / 5.0)
 
         # Weighted average
-        quality_score = (
-            entropy_score * 0.4 + garbage_score * 0.4 + word_len_score * 0.2
-        )
+        quality_score = entropy_score * 0.4 + garbage_score * 0.4 + word_len_score * 0.2
 
         # Determine if OCR needed
         needs_ocr = (
@@ -468,9 +459,7 @@ class PDFRouter:
         """
         import asyncio
 
-        return asyncio.run(
-            self.extract(pdf_path, force_ocr, extract_figures, save_figures)
-        )
+        return asyncio.run(self.extract(pdf_path, force_ocr, extract_figures, save_figures))
 
 
 # Convenience function

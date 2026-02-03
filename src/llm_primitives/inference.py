@@ -12,7 +12,10 @@ class InferenceMixin:
     """Mixin for real inference methods."""
 
     def _real_call(
-        self, prompt: str, role: str, n_tokens: int = 512,
+        self,
+        prompt: str,
+        role: str,
+        n_tokens: int = 512,
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Make a real inference call via CachingBackend or legacy ModelServer.
@@ -37,8 +40,7 @@ class InferenceMixin:
         # Fall back to legacy ModelServer
         if self.model_server is None:
             raise RuntimeError(
-                f"No backend configured for role '{role}'. "
-                "Provide server_urls or model_server."
+                f"No backend configured for role '{role}'. Provide server_urls or model_server."
             )
 
         from src.model_server import InferenceRequest
@@ -61,7 +63,11 @@ class InferenceMixin:
         return result.output
 
     def _call_caching_backend(
-        self, backend: Any, prompt: str, role: str, n_tokens: int = 512,
+        self,
+        backend: Any,
+        prompt: str,
+        role: str,
+        n_tokens: int = 512,
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Call a CachingBackend with RadixAttention prefix caching.
@@ -114,9 +120,7 @@ class InferenceMixin:
         backend_url = self.server_urls.get(role, "") if self.server_urls else ""
         if backend_url and self.health_tracker:
             if not self.health_tracker.is_available(backend_url):
-                raise RuntimeError(
-                    f"Backend unavailable (circuit open): {backend_url}"
-                )
+                raise RuntimeError(f"Backend unavailable (circuit open): {backend_url}")
 
         result = backend.infer(role_config, request)
 
@@ -156,8 +160,7 @@ class InferenceMixin:
         backend = self._backends.get(role)
         if backend is None and self.model_server is None:
             raise RuntimeError(
-                f"No backend configured for role '{role}'. "
-                "Provide server_urls or model_server."
+                f"No backend configured for role '{role}'. Provide server_urls or model_server."
             )
 
         results: list[str | None] = [None] * len(prompts)
@@ -203,14 +206,13 @@ class InferenceMixin:
             if loop.is_running():
                 # If we're already in an async context, create a new task
                 import nest_asyncio
+
                 nest_asyncio.apply()
                 results = loop.run_until_complete(
                     self.worker_pool.batch(prompts, task_type=task_type)
                 )
             else:
-                results = asyncio.run(
-                    self.worker_pool.batch(prompts, task_type=task_type)
-                )
+                results = asyncio.run(self.worker_pool.batch(prompts, task_type=task_type))
             return results
         except Exception as e:
             # Fall back to standard batch if worker pool fails

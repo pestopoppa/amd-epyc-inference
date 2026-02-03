@@ -25,6 +25,7 @@ from PIL import Image
 # Try importing pypdfium2 for PDF support
 try:
     import pypdfium2 as pdfium
+
     HAS_PDFIUM = True
 except ImportError:
     HAS_PDFIUM = False
@@ -34,6 +35,7 @@ logger = logging.getLogger("lightonocr-llama-server")
 
 # Configuration — centralized defaults, env vars take priority
 from src.config import get_config as _get_config
+
 _svc = _get_config().services
 _vis = _get_config().vision
 
@@ -60,6 +62,7 @@ TIMEOUT_SEC = int(os.environ.get("LIGHTONOCR_TIMEOUT", "300"))  # 5 min for comp
 @dataclass
 class BoundingBox:
     """Bounding box for an embedded figure/image."""
+
     id: int  # image number (1, 2, 3...)
     x1: int  # normalized 0-1000
     y1: int
@@ -70,6 +73,7 @@ class BoundingBox:
 @dataclass
 class OCRResult:
     """Result from a single OCR operation."""
+
     text: str
     elapsed_sec: float
     vision_ms: float = 0.0
@@ -104,12 +108,18 @@ class LlamaOCRWorker:
         """Execute llama-mtmd-cli subprocess."""
         cmd = [
             CLI_PATH,
-            "-m", MODEL_PATH,
-            "--mmproj", MMPROJ_PATH,
-            "--image", image_path,
-            "-p", "Extract text",
-            "-t", str(self.threads),
-            "-n", str(MAX_TOKENS),
+            "-m",
+            MODEL_PATH,
+            "--mmproj",
+            MMPROJ_PATH,
+            "--image",
+            image_path,
+            "-p",
+            "Extract text",
+            "-t",
+            str(self.threads),
+            "-n",
+            str(MAX_TOKENS),
             "--no-warmup",
         ]
 
@@ -123,10 +133,7 @@ class LlamaOCRWorker:
                 env={**os.environ, "OMP_NUM_THREADS": str(self.threads)},
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=TIMEOUT_SEC
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=TIMEOUT_SEC)
             # OCR text is on stdout, timing stats are on stderr
             text_output = stdout.decode("utf-8", errors="replace")
             stats_output = stderr.decode("utf-8", errors="replace")
@@ -174,11 +181,15 @@ class LlamaOCRWorker:
         """
         bboxes = []
         # Pattern: ![image](image_N.png) followed by coordinates
-        pattern = r'!\[image\]\(image_(\d+)\.png\)\s*(\d+),(\d+),(\d+),(\d+)'
+        pattern = r"!\[image\]\(image_(\d+)\.png\)\s*(\d+),(\d+),(\d+),(\d+)"
         for match in re.finditer(pattern, text):
             img_id = int(match.group(1))
-            x1, y1, x2, y2 = int(match.group(2)), int(match.group(3)), \
-                             int(match.group(4)), int(match.group(5))
+            x1, y1, x2, y2 = (
+                int(match.group(2)),
+                int(match.group(3)),
+                int(match.group(4)),
+                int(match.group(5)),
+            )
             bboxes.append(BoundingBox(id=img_id, x1=x1, y1=y1, x2=x2, y2=y2))
         return bboxes
 
@@ -187,10 +198,7 @@ class WorkerPool:
     """Pool of LlamaOCRWorker instances for parallel processing."""
 
     def __init__(self, num_workers: int = NUM_WORKERS):
-        self.workers = [
-            LlamaOCRWorker(i, THREADS_PER_WORKER)
-            for i in range(num_workers)
-        ]
+        self.workers = [LlamaOCRWorker(i, THREADS_PER_WORKER) for i in range(num_workers)]
         self.num_workers = num_workers
         # Semaphore to limit concurrent processing
         self._semaphore = asyncio.Semaphore(num_workers)
@@ -223,9 +231,7 @@ class WorkerPool:
         """Process multiple pages in parallel with controlled concurrency."""
         # Create all tasks but semaphore limits actual concurrency
         tasks = [
-            asyncio.create_task(
-                self._process_with_semaphore(path, i + 1)
-            )
+            asyncio.create_task(self._process_with_semaphore(path, i + 1))
             for i, path in enumerate(image_paths)
         ]
 
@@ -249,8 +255,9 @@ app = FastAPI(
 async def startup():
     """Initialize worker pool on startup."""
     global worker_pool
-    logger.info(f"Initializing worker pool with {NUM_WORKERS} workers, "
-                f"{THREADS_PER_WORKER} threads each")
+    logger.info(
+        f"Initializing worker pool with {NUM_WORKERS} workers, {THREADS_PER_WORKER} threads each"
+    )
     worker_pool = WorkerPool(NUM_WORKERS)
     logger.info("Server ready")
 
@@ -296,8 +303,7 @@ async def ocr_endpoint(
         "vision_ms": result.vision_ms,
         "gen_tps": result.gen_tps,
         "bboxes": [
-            {"id": b.id, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
-            for b in result.bboxes
+            {"id": b.id, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2} for b in result.bboxes
         ],
     }
 
@@ -367,8 +373,7 @@ async def pdf_endpoint(
                 "vision_ms": r.vision_ms,
                 "gen_tps": r.gen_tps,
                 "bboxes": [
-                    {"id": b.id, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2}
-                    for b in r.bboxes
+                    {"id": b.id, "x1": b.x1, "y1": b.y1, "x2": b.x2, "y2": b.y2} for b in r.bboxes
                 ],
             }
             for r in results
@@ -387,10 +392,10 @@ def main():
     )
     parser.add_argument("--port", type=int, default=9001)
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--workers", type=int, default=8,
-                        help="Number of parallel workers (default: 8)")
-    parser.add_argument("--threads", type=int, default=12,
-                        help="Threads per worker (default: 12)")
+    parser.add_argument(
+        "--workers", type=int, default=8, help="Number of parallel workers (default: 8)"
+    )
+    parser.add_argument("--threads", type=int, default=12, help="Threads per worker (default: 12)")
     args = parser.parse_args()
 
     NUM_WORKERS = args.workers

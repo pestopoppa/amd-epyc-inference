@@ -30,19 +30,18 @@ import hashlib
 import logging
 import shutil
 import tarfile
-import tempfile
 import time
 import zipfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import BinaryIO
 
 logger = logging.getLogger(__name__)
 
 
 class ArchiveType(str, Enum):
     """Supported archive types."""
+
     ZIP = "zip"
     TAR = "tar"
     TAR_GZ = "tar.gz"
@@ -53,6 +52,7 @@ class ArchiveType(str, Enum):
 
 class ExtractionStrategy(str, Enum):
     """Strategy for handling different archive sizes."""
+
     AUTO_ALL = "auto_all"  # <20 files, <5MB: extract everything
     MANIFEST_THEN_ASK = "manifest_then_ask"  # 20-100 files: show manifest first
     SUMMARY_WITH_RECOMMENDATIONS = "summary_with_recommendations"  # >100 files
@@ -60,6 +60,7 @@ class ExtractionStrategy(str, Enum):
 
 class ValidationStatus(str, Enum):
     """Archive validation status."""
+
     VALID = "valid"
     SUSPICIOUS = "suspicious"  # High compression ratio
     INVALID = "invalid"  # Corrupted or unsupported
@@ -70,6 +71,7 @@ class ValidationStatus(str, Enum):
 @dataclass
 class FileEntry:
     """Entry in an archive manifest."""
+
     name: str
     size: int
     compressed_size: int | None
@@ -88,6 +90,7 @@ class FileEntry:
 @dataclass
 class ArchiveManifest:
     """Manifest describing archive contents."""
+
     path: str
     archive_type: ArchiveType
     total_files: int
@@ -117,10 +120,7 @@ class ArchiveManifest:
 
     def files_matching(self, pattern: str) -> list[FileEntry]:
         """Get files matching a glob pattern."""
-        return [
-            f for f in self.file_tree
-            if not f.is_dir and fnmatch.fnmatch(f.name, pattern)
-        ]
+        return [f for f in self.file_tree if not f.is_dir and fnmatch.fnmatch(f.name, pattern)]
 
     def to_summary_dict(self) -> dict:
         """Convert to summary dict for LLM context (token-efficient)."""
@@ -138,6 +138,7 @@ class ArchiveManifest:
 @dataclass
 class ValidationResult:
     """Result of archive validation."""
+
     status: ValidationStatus
     issues: list[str] = field(default_factory=list)
     archive_type: ArchiveType | None = None
@@ -153,6 +154,7 @@ class ValidationResult:
 @dataclass
 class ExtractionResult:
     """Result of archive extraction."""
+
     success: bool
     extracted_files: dict[str, Path]  # original_name -> extracted_path
     skipped_files: list[str]
@@ -195,8 +197,19 @@ class ArchiveExtractor:
     }
 
     # Archive extensions (for detecting nested archives)
-    ARCHIVE_EXTENSIONS = {".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2",
-                          ".tar.xz", ".7z", ".rar", ".gz", ".bz2", ".xz"}
+    ARCHIVE_EXTENSIONS = {
+        ".zip",
+        ".tar",
+        ".tar.gz",
+        ".tgz",
+        ".tar.bz2",
+        ".tar.xz",
+        ".7z",
+        ".rar",
+        ".gz",
+        ".bz2",
+        ".xz",
+    }
 
     # Security limits
     MAX_ARCHIVE_SIZE = 500 * 1024 * 1024  # 500MB
@@ -220,6 +233,7 @@ class ArchiveExtractor:
             max_files: Max number of files in archive.
         """
         from src.config import get_config
+
         _svc = get_config().services
         self.max_archive_size = max_archive_size or _svc.max_archive_size
         self.max_extracted_size = max_extracted_size or _svc.max_extracted_size
@@ -283,7 +297,9 @@ class ArchiveExtractor:
         if file_size > self.max_archive_size:
             return ValidationResult(
                 status=ValidationStatus.TOO_LARGE,
-                issues=[f"Archive too large: {_format_size(file_size)} > {_format_size(self.max_archive_size)}"],
+                issues=[
+                    f"Archive too large: {_format_size(file_size)} > {_format_size(self.max_archive_size)}"
+                ],
                 archive_type=archive_type,
             )
 
@@ -363,8 +379,12 @@ class ArchiveExtractor:
 
         if archive_type == ArchiveType.ZIP:
             return self._list_zip(path)
-        elif archive_type in (ArchiveType.TAR, ArchiveType.TAR_GZ,
-                              ArchiveType.TAR_BZ2, ArchiveType.TAR_XZ):
+        elif archive_type in (
+            ArchiveType.TAR,
+            ArchiveType.TAR_GZ,
+            ArchiveType.TAR_BZ2,
+            ArchiveType.TAR_XZ,
+        ):
             return self._list_tar(path, archive_type)
         elif archive_type == ArchiveType.SEVEN_Z:
             return self._list_7z(path)
@@ -380,7 +400,7 @@ class ArchiveExtractor:
         compressed_size = 0
         total_dirs = 0
 
-        with zipfile.ZipFile(path, 'r') as zf:
+        with zipfile.ZipFile(path, "r") as zf:
             for info in zf.infolist():
                 is_dir = info.is_dir()
                 if is_dir:
@@ -425,12 +445,12 @@ class ArchiveExtractor:
     def _list_tar(self, path: Path, archive_type: ArchiveType) -> ArchiveManifest:
         """List contents of a TAR archive (optionally compressed)."""
         mode_map = {
-            ArchiveType.TAR: 'r',
-            ArchiveType.TAR_GZ: 'r:gz',
-            ArchiveType.TAR_BZ2: 'r:bz2',
-            ArchiveType.TAR_XZ: 'r:xz',
+            ArchiveType.TAR: "r",
+            ArchiveType.TAR_GZ: "r:gz",
+            ArchiveType.TAR_BZ2: "r:bz2",
+            ArchiveType.TAR_XZ: "r:xz",
         }
-        mode = mode_map.get(archive_type, 'r')
+        mode = mode_map.get(archive_type, "r")
 
         entries = []
         type_summary: dict[str, int] = {}
@@ -485,8 +505,7 @@ class ArchiveExtractor:
             import py7zr
         except ImportError:
             raise ImportError(
-                "py7zr package required for 7z support. "
-                "Install with: pip install py7zr"
+                "py7zr package required for 7z support. Install with: pip install py7zr"
             )
 
         entries = []
@@ -495,7 +514,7 @@ class ArchiveExtractor:
         total_size = 0
         total_dirs = 0
 
-        with py7zr.SevenZipFile(path, 'r') as szf:
+        with py7zr.SevenZipFile(path, "r") as szf:
             for name, info in szf.archiveinfo().files.items():
                 is_dir = info.is_directory
                 if is_dir:
@@ -540,8 +559,7 @@ class ArchiveExtractor:
     def _compute_manifest_hash(self, entries: list[FileEntry]) -> str:
         """Compute hash of manifest for change detection."""
         content = "|".join(
-            f"{e.name}:{e.size}:{e.modified or 0}"
-            for e in sorted(entries, key=lambda x: x.name)
+            f"{e.name}:{e.size}:{e.modified or 0}" for e in sorted(entries, key=lambda x: x.name)
         )
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
@@ -564,6 +582,7 @@ class ArchiveExtractor:
             ExtractionResult with extracted file paths.
         """
         from src.config import get_config
+
         start_time = time.perf_counter()
 
         # Determine destination
@@ -592,8 +611,12 @@ class ArchiveExtractor:
         try:
             if archive_type == ArchiveType.ZIP:
                 result = self._extract_zip_files(path, files, dest)
-            elif archive_type in (ArchiveType.TAR, ArchiveType.TAR_GZ,
-                                  ArchiveType.TAR_BZ2, ArchiveType.TAR_XZ):
+            elif archive_type in (
+                ArchiveType.TAR,
+                ArchiveType.TAR_GZ,
+                ArchiveType.TAR_BZ2,
+                ArchiveType.TAR_XZ,
+            ):
                 result = self._extract_tar_files(path, files, dest, archive_type)
             elif archive_type == ArchiveType.SEVEN_Z:
                 result = self._extract_7z_files(path, files, dest)
@@ -635,7 +658,7 @@ class ArchiveExtractor:
 
         files_set = set(files)
 
-        with zipfile.ZipFile(path, 'r') as zf:
+        with zipfile.ZipFile(path, "r") as zf:
             for info in zf.infolist():
                 if info.filename not in files_set:
                     continue
@@ -689,12 +712,12 @@ class ArchiveExtractor:
     ) -> ExtractionResult:
         """Extract specific files from a TAR archive."""
         mode_map = {
-            ArchiveType.TAR: 'r',
-            ArchiveType.TAR_GZ: 'r:gz',
-            ArchiveType.TAR_BZ2: 'r:bz2',
-            ArchiveType.TAR_XZ: 'r:xz',
+            ArchiveType.TAR: "r",
+            ArchiveType.TAR_GZ: "r:gz",
+            ArchiveType.TAR_BZ2: "r:bz2",
+            ArchiveType.TAR_XZ: "r:xz",
         }
-        mode = mode_map.get(archive_type, 'r')
+        mode = mode_map.get(archive_type, "r")
 
         extracted = {}
         skipped = []
@@ -731,7 +754,7 @@ class ArchiveExtractor:
                 try:
                     extracted_path = dest / member.name
                     extracted_path.parent.mkdir(parents=True, exist_ok=True)
-                    tf.extract(member, dest, filter='data')
+                    tf.extract(member, dest, filter="data")
                     extracted[member.name] = extracted_path
                     total_bytes += member.size
                 except Exception as e:
@@ -778,7 +801,7 @@ class ArchiveExtractor:
         total_bytes = 0
 
         # py7zr extracts to dict of BytesIO, need to write to files
-        with py7zr.SevenZipFile(path, 'r') as szf:
+        with py7zr.SevenZipFile(path, "r") as szf:
             # Get only the files we want
             targets = [f for f in files if f in szf.getnames()]
             not_found = set(files) - set(targets)
@@ -913,6 +936,7 @@ class ArchiveExtractor:
             Number of directories cleaned up.
         """
         from src.config import get_config
+
         cleaned = 0
         cutoff = time.time() - (max_age_hours * 3600)
 
@@ -938,7 +962,7 @@ class ArchiveExtractor:
 
 def _format_size(size_bytes: int) -> str:
     """Format size in human-readable form."""
-    for unit in ['B', 'KB', 'MB', 'GB']:
+    for unit in ["B", "KB", "MB", "GB"]:
         if size_bytes < 1024:
             return f"{size_bytes:.1f} {unit}"
         size_bytes /= 1024
@@ -949,6 +973,7 @@ def _zipinfo_to_timestamp(info: zipfile.ZipInfo) -> float | None:
     """Convert ZipInfo date_time to Unix timestamp."""
     try:
         import datetime
+
         dt = datetime.datetime(*info.date_time)
         return dt.timestamp()
     except Exception:

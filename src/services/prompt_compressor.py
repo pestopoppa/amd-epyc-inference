@@ -87,9 +87,7 @@ class PromptCompressor:
         try:
             from llmlingua import PromptCompressor as LLMLinguaCompressor
         except ImportError as e:
-            raise ImportError(
-                "llmlingua not installed. Run: pip install llmlingua"
-            ) from e
+            raise ImportError("llmlingua not installed. Run: pip install llmlingua") from e
 
         logger.info(f"Loading LLMLingua-2 model: {self.model_name}")
         start = time.perf_counter()

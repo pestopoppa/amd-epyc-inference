@@ -117,7 +117,9 @@ class VisionSearch:
         for i, image_id in enumerate(chroma_results["ids"][0]):
             metadata = chroma_results["metadatas"][0][i] if chroma_results["metadatas"] else {}
             distance = chroma_results["distances"][0][i] if chroma_results["distances"] else 0
-            document = chroma_results["documents"][0][i] if chroma_results.get("documents") else None
+            document = (
+                chroma_results["documents"][0][i] if chroma_results.get("documents") else None
+            )
 
             # Convert distance to similarity score (cosine distance)
             score = 1 - distance
@@ -133,6 +135,7 @@ class VisionSearch:
             # Check for thumbnail
             if result.path:
                 from pathlib import Path
+
                 thumb_path = VISION_THUMBS_DIR / f"{Path(result.path).stem}_thumb.jpg"
                 if thumb_path.exists():
                     result.thumbnail_path = str(thumb_path)
@@ -160,6 +163,7 @@ class VisionSearch:
         if isinstance(face_id_or_embedding, str):
             # Get face embedding from database
             from src.db.chroma_client import get_faces_collection
+
             collection = get_faces_collection()
             try:
                 result = collection.get(ids=[face_id_or_embedding], include=["embeddings"])

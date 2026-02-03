@@ -25,6 +25,7 @@ class ClusteringResult:
         noise_faces: Faces that couldn't be clustered (outliers).
         new_person_ids: List of newly created person IDs.
     """
+
     clusters_created: int
     faces_clustered: int
     noise_faces: int

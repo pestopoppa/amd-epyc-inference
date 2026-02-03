@@ -16,10 +16,11 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.repl_environment import REPLConfig, REPLEnvironment, ExecutionResult
+from src.repl_environment import REPLEnvironment
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def repl():
@@ -46,6 +47,7 @@ def patches_base(tmp_path):
 
 
 # ── log_append tests ─────────────────────────────────────────────────────
+
 
 class TestLogAppend:
     """Test _log_append() method."""
@@ -85,6 +87,7 @@ class TestLogAppend:
 
 
 # ── file_write_safe tests ───────────────────────────────────────────────
+
 
 class TestFileWriteSafe:
     """Test _file_write_safe() method."""
@@ -130,14 +133,13 @@ class TestFileWriteSafe:
 
 # ── _prepare_patch tests ────────────────────────────────────────────────
 
+
 class TestPreparePatch:
     """Test _prepare_patch() method (called directly, not via REPL globals)."""
 
     @patch("subprocess.run")
     def test_prepare_patch_creates_file(self, mock_run, repl, patches_base):
-        mock_run.return_value = MagicMock(
-            stdout="diff --git a/file.py b/file.py\n+new line\n"
-        )
+        mock_run.return_value = MagicMock(stdout="diff --git a/file.py b/file.py\n+new line\n")
 
         result = repl._prepare_patch(["src/file.py"], "add feature")
         assert "Patch created:" in result
@@ -171,6 +173,7 @@ class TestPreparePatch:
 
 
 # ── _list_patches tests ─────────────────────────────────────────────────
+
 
 class TestListPatches:
     """Test _list_patches() method."""
@@ -217,6 +220,7 @@ class TestListPatches:
 
 # ── _apply_approved_patch tests ──────────────────────────────────────────
 
+
 class TestApplyApprovedPatch:
     """Test _apply_approved_patch() method."""
 
@@ -256,6 +260,7 @@ class TestApplyApprovedPatch:
 
 
 # ── _reject_patch tests ─────────────────────────────────────────────────
+
 
 class TestRejectPatch:
     """Test _reject_patch() method."""

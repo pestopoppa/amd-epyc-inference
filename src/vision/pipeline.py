@@ -13,7 +13,6 @@ from PIL import Image
 
 from src.vision.config import (
     MAX_IMAGE_DIMENSION,
-    MAX_IMAGE_SIZE_MB,
     THUMB_SIZE,
     THUMB_QUALITY,
     VISION_THUMBS_DIR,
@@ -160,11 +159,13 @@ class VisionPipeline:
                 if face_result.success:
                     face_detections = face_result.data.get("faces", [])
                     for fd in face_detections:
-                        result.faces.append(FaceResult(
-                            bbox=BoundingBox(**fd["bbox"]),
-                            confidence=fd["confidence"],
-                            crop_base64=fd.get("crop"),
-                        ))
+                        result.faces.append(
+                            FaceResult(
+                                bbox=BoundingBox(**fd["bbox"]),
+                                confidence=fd["confidence"],
+                                crop_base64=fd.get("crop"),
+                            )
+                        )
                 elif face_result.error:
                     errors.append(f"Face detect: {face_result.error}")
 
@@ -307,6 +308,7 @@ class VisionPipeline:
                 photo.location_lon = result.exif.gps_lon
                 if result.exif.taken_at:
                     from datetime import datetime
+
                     try:
                         photo.taken_at = datetime.fromisoformat(str(result.exif.taken_at))
                     except ValueError:
@@ -332,7 +334,7 @@ class VisionPipeline:
             session.commit()
             logger.debug(f"Stored results for {path}")
 
-        except Exception as e:
+        except Exception:
             session.rollback()
             raise
         finally:

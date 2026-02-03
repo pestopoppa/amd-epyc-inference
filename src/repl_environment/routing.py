@@ -5,7 +5,6 @@ Provides mixin with: escalate, my_role, route_advice, delegate, recall.
 
 from __future__ import annotations
 
-from typing import Any
 
 from src.repl_environment.types import wrap_tool_output
 
@@ -36,7 +35,6 @@ class _RoutingMixin:
             JSON string with similar past tasks and routing advice.
         """
         self._exploration_calls += 1
-        import json
 
         # Use retriever if available (reuses shared MemRL components)
         if self._retriever is not None:
@@ -58,15 +56,17 @@ class _RoutingMixin:
             results = []
             for r in results_raw[:limit]:
                 ctx = r.memory.context or {}
-                results.append({
-                    "task": ctx.get("objective", r.memory.action)[:200],
-                    "outcome": r.memory.outcome or "pending",
-                    "action": r.memory.action[:100],
-                    "q_value": round(r.q_value, 3),
-                    "similarity": round(r.similarity, 3),
-                    "combined_score": round(r.combined_score, 3),
-                    "role_used": ctx.get("role", "unknown"),
-                })
+                results.append(
+                    {
+                        "task": ctx.get("objective", r.memory.action)[:200],
+                        "outcome": r.memory.outcome or "pending",
+                        "action": r.memory.action[:100],
+                        "q_value": round(r.q_value, 3),
+                        "similarity": round(r.similarity, 3),
+                        "combined_score": round(r.combined_score, 3),
+                        "role_used": ctx.get("role", "unknown"),
+                    }
+                )
 
             # Get best action recommendation
             best = self._retriever.get_best_action(results_raw)
@@ -88,6 +88,7 @@ class _RoutingMixin:
 
             if self.config.use_toon_encoding and len(results) >= 3:
                 from src.services.toon_encoder import encode
+
                 output = encode(response)
             else:
                 output = json.dumps(response, indent=2)
@@ -95,7 +96,9 @@ class _RoutingMixin:
             return wrap_tool_output(output)
 
         except Exception as e:
-            output = json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+            output = json.dumps(
+                {"results": [], "best_action": None, "confidence": None, "error": str(e)}
+            )
             self.artifacts.setdefault("_tool_outputs", []).append(output)
             return wrap_tool_output(output)
 
@@ -107,7 +110,14 @@ class _RoutingMixin:
             from orchestration.repl_memory.episodic_store import EpisodicStore
             from orchestration.repl_memory.embedder import TaskEmbedder
         except ImportError:
-            return json.dumps({"results": [], "best_action": None, "confidence": None, "error": "Episodic memory not available"})
+            return json.dumps(
+                {
+                    "results": [],
+                    "best_action": None,
+                    "confidence": None,
+                    "error": "Episodic memory not available",
+                }
+            )
 
         try:
             store = EpisodicStore()
@@ -122,21 +132,28 @@ class _RoutingMixin:
 
             results = []
             for mem in memories:
-                results.append({
-                    "task": mem.task_description[:200] if mem.task_description else "",
-                    "outcome": mem.outcome,
-                    "action": mem.action[:100] if hasattr(mem, "action") else "unknown",
-                    "q_value": round(mem.q_value, 3) if hasattr(mem, "q_value") else 0.5,
-                    "similarity": round(mem.similarity, 3) if hasattr(mem, "similarity") else 0.0,
-                    "combined_score": 0.0,
-                    "role_used": mem.context.get("role", "unknown") if mem.context else "unknown",
-                })
+                results.append(
+                    {
+                        "task": mem.task_description[:200] if mem.task_description else "",
+                        "outcome": mem.outcome,
+                        "action": mem.action[:100] if hasattr(mem, "action") else "unknown",
+                        "q_value": round(mem.q_value, 3) if hasattr(mem, "q_value") else 0.5,
+                        "similarity": round(mem.similarity, 3)
+                        if hasattr(mem, "similarity")
+                        else 0.0,
+                        "combined_score": 0.0,
+                        "role_used": mem.context.get("role", "unknown")
+                        if mem.context
+                        else "unknown",
+                    }
+                )
 
             response = {"results": results, "best_action": None, "confidence": None}
             self._exploration_log.add_event("recall", {"query": query}, response)
 
             if self.config.use_toon_encoding and len(results) >= 3:
                 from src.services.toon_encoder import encode
+
                 output = encode(response)
             else:
                 output = json.dumps(response, indent=2)
@@ -144,7 +161,9 @@ class _RoutingMixin:
             return wrap_tool_output(output)
 
         except Exception as e:
-            output = json.dumps({"results": [], "best_action": None, "confidence": None, "error": str(e)})
+            output = json.dumps(
+                {"results": [], "best_action": None, "confidence": None, "error": str(e)}
+            )
             self.artifacts.setdefault("_tool_outputs", []).append(output)
             return wrap_tool_output(output)
 
@@ -175,7 +194,7 @@ class _RoutingMixin:
             JSON string with role metadata.
         """
         import json
-        from src.roles import Tier, get_tier, get_escalation_chain
+        from src.roles import get_tier, get_escalation_chain
 
         try:
             tier = get_tier(self.role)
@@ -192,8 +211,10 @@ class _RoutingMixin:
 
         # Workers that Tier A/B can delegate to
         WORKER_ROLES = [
-            "worker_general", "worker_math",
-            "worker_summarize", "worker_vision",
+            "worker_general",
+            "worker_math",
+            "worker_summarize",
+            "worker_vision",
         ]
 
         delegate_targets: list[str] = []
@@ -217,6 +238,7 @@ class _RoutingMixin:
 
         if self.config.use_toon_encoding:
             from src.services.toon_encoder import encode
+
             output = encode(result)
         else:
             output = json.dumps(result, indent=2)
@@ -238,13 +260,15 @@ class _RoutingMixin:
         import json
 
         if self._hybrid_router is None:
-            output = json.dumps({
-                "recommended_role": None,
-                "confidence": 0.0,
-                "strategy": "unavailable",
-                "similar_tasks": [],
-                "warnings": ["MemRL routing not initialized"],
-            })
+            output = json.dumps(
+                {
+                    "recommended_role": None,
+                    "confidence": 0.0,
+                    "strategy": "unavailable",
+                    "similar_tasks": [],
+                    "warnings": ["MemRL routing not initialized"],
+                }
+            )
             self.artifacts.setdefault("_tool_outputs", []).append(output)
             return wrap_tool_output(output)
 
@@ -275,11 +299,13 @@ class _RoutingMixin:
                 key=lambda x: x[1]["q_sum"] / max(x[1]["count"], 1),
                 reverse=True,
             ):
-                similar_tasks.append({
-                    "role": role,
-                    "q_value": round(stats["q_sum"] / max(stats["count"], 1), 3),
-                    "count": stats["count"],
-                })
+                similar_tasks.append(
+                    {
+                        "role": role,
+                        "q_value": round(stats["q_sum"] / max(stats["count"], 1), 3),
+                        "count": stats["count"],
+                    }
+                )
 
             # Collect warnings from graph-enhanced results
             all_warnings: list[str] = []
@@ -299,11 +325,14 @@ class _RoutingMixin:
             }
 
             self._exploration_log.add_event(
-                "route_advice", {"task": task_description[:100]}, response,
+                "route_advice",
+                {"task": task_description[:100]},
+                response,
             )
 
             if self.config.use_toon_encoding:
                 from src.services.toon_encoder import encode
+
                 output = encode(response)
             else:
                 output = json.dumps(response, indent=2)
@@ -311,13 +340,15 @@ class _RoutingMixin:
             return wrap_tool_output(output)
 
         except Exception as e:
-            output = json.dumps({
-                "recommended_role": None,
-                "confidence": 0.0,
-                "strategy": "error",
-                "similar_tasks": [],
-                "warnings": [str(e)],
-            })
+            output = json.dumps(
+                {
+                    "recommended_role": None,
+                    "confidence": 0.0,
+                    "strategy": "error",
+                    "similar_tasks": [],
+                    "warnings": [str(e)],
+                }
+            )
             self.artifacts.setdefault("_tool_outputs", []).append(output)
             return wrap_tool_output(output)
 
@@ -365,13 +396,13 @@ class _RoutingMixin:
             The delegated model's response, or error message.
         """
         self._exploration_calls += 1
-        import json
 
         # Resolve role aliases (e.g., "researcher_agent" -> "worker_explore")
         target_role = self._resolve_role_alias(target_role)
 
         # Tier guard: workers cannot delegate to other models
         from src.roles import get_tier, Tier
+
         try:
             tier = get_tier(self.role)
             if tier == Tier.C:
@@ -383,6 +414,7 @@ class _RoutingMixin:
             return "[ERROR: No LLM primitives available for delegation]"
 
         import time
+
         start = time.perf_counter()
 
         # Initialize delegation tracking list in artifacts
@@ -400,7 +432,9 @@ class _RoutingMixin:
 
         try:
             result = self.llm_primitives.llm_call(
-                prompt, role=target_role, persona=persona or None,
+                prompt,
+                role=target_role,
+                persona=persona or None,
             )
             elapsed = time.perf_counter() - start
 

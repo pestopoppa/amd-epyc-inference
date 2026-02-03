@@ -9,7 +9,7 @@ from pathlib import Path
 # Skip if kuzu not available
 kuzu = pytest.importorskip("kuzu")
 
-from orchestration.repl_memory.failure_graph import FailureGraph, FailureMode
+from orchestration.repl_memory.failure_graph import FailureGraph
 
 
 @pytest.fixture

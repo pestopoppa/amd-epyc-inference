@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for REPL context management tools (_ContextMixin)."""
 
-import pytest
 from unittest.mock import MagicMock
 
-from src.repl_environment import REPLConfig, REPLEnvironment, ExecutionResult, FinalSignal
+from src.repl_environment import REPLConfig, REPLEnvironment
 
 
 class TestBasicContextTools:
@@ -39,7 +38,9 @@ class TestBasicContextTools:
     def test_mark_finding_adds_to_findings_buffer(self):
         """Test MARK_FINDING() adds to findings buffer."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute('artifacts["f"] = mark_finding("Important discovery", tags=["critical"])')
+        result = repl.execute(
+            'artifacts["f"] = mark_finding("Important discovery", tags=["critical"])'
+        )
 
         assert result.error is None
         findings = repl.get_findings()
@@ -112,7 +113,7 @@ class TestBasicContextTools:
     def test_mark_finding_with_source_metadata(self):
         """Test mark_finding with source metadata."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute('''
+        result = repl.execute("""
 artifacts["f"] = mark_finding(
     "Finding text",
     tags=["tag1", "tag2"],
@@ -120,7 +121,7 @@ artifacts["f"] = mark_finding(
     source_page=42,
     source_section="Section 3"
 )
-''')
+""")
 
         assert result.error is None
         findings = repl.get_findings()
@@ -152,7 +153,7 @@ artifacts["f"] = mark_finding(
         assert "Premature FINAL" in result.error
 
         # After exploration, should succeed
-        repl.execute('peek(10)')
+        repl.execute("peek(10)")
         repl.execute('grep("test")')
         result = repl.execute('FINAL("answer")')
         assert result.is_final is True
@@ -169,7 +170,7 @@ artifacts["f"] = mark_finding(
 
         # Verify overlap exists (each chunk except first should start before previous ends)
         for i in range(1, len(chunks)):
-            assert chunks[i]["start"] < chunks[i-1]["end"]
+            assert chunks[i]["start"] < chunks[i - 1]["end"]
 
     def test_list_tools_without_registry(self):
         """Test list_tools is not defined when no registry."""

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _server_cfg():
     from src.config import get_config
+
     return get_config().server
 
 
@@ -279,8 +280,10 @@ class LlamaServerBackend(ModelBackend):
                 self.cache_stats.cache_misses += 1
 
             # Use clean predicted_per_second if available, else fall back to elapsed
-            speed = predicted_per_second if predicted_per_second > 0 else (
-                tokens_generated / elapsed if elapsed > 0 else 0.0
+            speed = (
+                predicted_per_second
+                if predicted_per_second > 0
+                else (tokens_generated / elapsed if elapsed > 0 else 0.0)
             )
 
             # Log cache performance

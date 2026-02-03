@@ -6,7 +6,6 @@ Archive extraction, document processing, and search across compressed files.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +51,13 @@ class _ArchiveToolsMixin:
             # Validate archive first
             validation = extractor.validate(archive_path)
             if not validation.is_safe:
-                return json.dumps({
-                    "error": f"Archive validation failed: {validation.status.value}",
-                    "issues": validation.issues,
-                }, indent=2)
+                return json.dumps(
+                    {
+                        "error": f"Archive validation failed: {validation.status.value}",
+                        "issues": validation.issues,
+                    },
+                    indent=2,
+                )
 
             # Get manifest
             manifest = extractor.list_contents(archive_path)
@@ -123,7 +125,9 @@ class _ArchiveToolsMixin:
                     archive_name = current
                 else:
                     # Fall back to last opened archive (excluding "current" key)
-                    real_archives = [k for k in self.artifacts["_archives"].keys() if k != "current"]
+                    real_archives = [
+                        k for k in self.artifacts["_archives"].keys() if k != "current"
+                    ]
                     if not real_archives:
                         return "[ERROR: No archive opened. Call archive_open() first.]"
                     archive_name = real_archives[-1]
@@ -136,7 +140,7 @@ class _ArchiveToolsMixin:
             if not isinstance(archive_info, dict):
                 return f"[ERROR: Invalid archive info for: {archive_name}]"
             archive_path = Path(archive_info["path"])
-            manifest = archive_info["manifest"]
+            archive_info["manifest"]
 
             extractor = ArchiveExtractor()
 
@@ -150,15 +154,20 @@ class _ArchiveToolsMixin:
                 result = extractor.extract_all(archive_path)
 
             if not result.success and not result.extracted_files:
-                return json.dumps({
-                    "error": "Extraction failed",
-                    "errors": result.errors,
-                }, indent=2)
+                return json.dumps(
+                    {
+                        "error": "Extraction failed",
+                        "errors": result.errors,
+                    },
+                    indent=2,
+                )
 
             # Update artifacts with extracted files
-            archive_info["extracted_to"] = str(result.extracted_files.get(
-                list(result.extracted_files.keys())[0], ""
-            ).parent if result.extracted_files else None)
+            archive_info["extracted_to"] = str(
+                result.extracted_files.get(list(result.extracted_files.keys())[0], "").parent
+                if result.extracted_files
+                else None
+            )
 
             # Process documents if requested
             sections_total = 0
@@ -187,7 +196,9 @@ class _ArchiveToolsMixin:
                                 sections_total += ocr_data.get("total_pages", 0)
                                 figures_total += len(ocr_data.get("figures", []))
                         except Exception:
-                            logger.debug("Archive document processing failed: %s", filename, exc_info=True)
+                            logger.debug(
+                                "Archive document processing failed: %s", filename, exc_info=True
+                            )
                             # Store as unprocessed document
                             archive_info["processed_files"][filename] = {
                                 "type": "document",
@@ -203,7 +214,9 @@ class _ArchiveToolsMixin:
                                 "lines": content.count("\n") + 1,
                             }
                         except Exception:
-                            logger.debug("Archive binary processing failed: %s", filename, exc_info=True)
+                            logger.debug(
+                                "Archive binary processing failed: %s", filename, exc_info=True
+                            )
                             archive_info["processed_files"][filename] = {
                                 "type": "binary",
                                 "size": file_path.stat().st_size,
@@ -219,11 +232,15 @@ class _ArchiveToolsMixin:
                 "stored_in": f"artifacts['_archives']['{archive_name}']",
             }
 
-            self._exploration_log.add_event("archive_extract", {
-                "archive_name": archive_name,
-                "pattern": pattern,
-                "files": files,
-            }, summary)
+            self._exploration_log.add_event(
+                "archive_extract",
+                {
+                    "archive_name": archive_name,
+                    "pattern": pattern,
+                    "files": files,
+                },
+                summary,
+            )
 
             return json.dumps(summary, indent=2)
 
@@ -250,7 +267,9 @@ class _ArchiveToolsMixin:
             return "[ERROR: No archives opened]"
 
         # Find the file
-        archives_to_search = [archive_name] if archive_name else list(self.artifacts["_archives"].keys())
+        archives_to_search = (
+            [archive_name] if archive_name else list(self.artifacts["_archives"].keys())
+        )
 
         for arch_name in archives_to_search:
             if arch_name not in self.artifacts["_archives"]:
@@ -313,12 +332,14 @@ class _ArchiveToolsMixin:
                     content = file_info.get("content", "")
                     for i, line in enumerate(content.splitlines(), 1):
                         if pattern.search(line):
-                            results.append({
-                                "archive": arch_name,
-                                "file": filename,
-                                "line": i,
-                                "match": line[:200],
-                            })
+                            results.append(
+                                {
+                                    "archive": arch_name,
+                                    "file": filename,
+                                    "line": i,
+                                    "match": line[:200],
+                                }
+                            )
                             if len(results) >= 50:  # Cap results
                                 break
 
@@ -330,12 +351,14 @@ class _ArchiveToolsMixin:
                         if match:
                             start = max(0, match.start() - 50)
                             end = min(len(text), match.end() + 50)
-                            results.append({
-                                "archive": arch_name,
-                                "file": filename,
-                                "section": "document",
-                                "match": text[start:end],
-                            })
+                            results.append(
+                                {
+                                    "archive": arch_name,
+                                    "file": filename,
+                                    "section": "document",
+                                    "match": text[start:end],
+                                }
+                            )
 
                 if len(results) >= 50:
                     break

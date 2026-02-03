@@ -5,7 +5,6 @@ Tests the ReAct mode detection, argument parsing, and answer extraction
 without requiring a live LLM backend.
 """
 
-import pytest
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -39,7 +38,9 @@ class StubLLMPrimitives:
         self.call_count = 0
         self.call_log = []
 
-    def llm_call(self, prompt, role=None, n_tokens=None, skip_suffix=None, stop_sequences=None, **kwargs):
+    def llm_call(
+        self, prompt, role=None, n_tokens=None, skip_suffix=None, stop_sequences=None, **kwargs
+    ):
         """Mock llm_call that returns predefined responses."""
         if self.call_count < len(self.responses):
             response = self.responses[self.call_count]
@@ -50,13 +51,15 @@ class StubLLMPrimitives:
             response = "Mock response"
 
         self.call_count += 1
-        self.call_log.append({
-            'prompt': prompt,
-            'role': role,
-            'n_tokens': n_tokens,
-            'skip_suffix': skip_suffix,
-            'stop_sequences': stop_sequences,
-        })
+        self.call_log.append(
+            {
+                "prompt": prompt,
+                "role": role,
+                "n_tokens": n_tokens,
+                "skip_suffix": skip_suffix,
+                "stop_sequences": stop_sequences,
+            }
+        )
         return response
 
 
@@ -75,21 +78,19 @@ class StubToolRegistry:
 
     def invoke(self, tool_name, role, **kwargs):
         """Mock tool invocation."""
-        self.invocations.append({
-            'tool_name': tool_name,
-            'role': role,
-            'kwargs': kwargs,
-        })
+        self.invocations.append(
+            {
+                "tool_name": tool_name,
+                "role": role,
+                "kwargs": kwargs,
+            }
+        )
         return self.tool_results.get(tool_name, f"Result from {tool_name}")
 
     def list_tools(self):
         """Mock tool listing - returns list of tool info dicts."""
         return [
-            {
-                "name": name,
-                "description": f"Mock tool {name}",
-                "parameters": {}
-            }
+            {"name": name, "description": f"Mock tool {name}", "parameters": {}}
             for name in self.tool_results.keys()
         ]
 
@@ -99,40 +100,48 @@ class TestParseReactArgs:
 
     def test_empty_string(self):
         from src.api.routes.chat_react import _parse_react_args
+
         assert _parse_react_args("") == {}
 
     def test_single_string_arg(self):
         from src.api.routes.chat_react import _parse_react_args
+
         result = _parse_react_args('query="quantum computing"')
         assert result == {"query": "quantum computing"}
 
     def test_multiple_args(self):
         from src.api.routes.chat_react import _parse_react_args
+
         result = _parse_react_args('query="machine learning", max_results=5')
         assert result == {"query": "machine learning", "max_results": 5}
 
     def test_numeric_arg(self):
         from src.api.routes.chat_react import _parse_react_args
-        result = _parse_react_args("expression=\"2+2\"")
+
+        result = _parse_react_args('expression="2+2"')
         assert result == {"expression": "2+2"}
 
     def test_single_quotes(self):
         from src.api.routes.chat_react import _parse_react_args
+
         result = _parse_react_args("query='test value'")
         assert result == {"query": "test value"}
 
     def test_boolean_arg(self):
         from src.api.routes.chat_react import _parse_react_args
+
         result = _parse_react_args("verbose=True")
         assert result == {"verbose": True}
 
     def test_comma_in_quoted_string(self):
         from src.api.routes.chat_react import _parse_react_args
+
         result = _parse_react_args('query="hello, world"')
         assert result == {"query": "hello, world"}
 
     def test_no_equals(self):
         from src.api.routes.chat_react import _parse_react_args
+
         # Should skip parts without =
         result = _parse_react_args("orphan_value")
         assert result == {}
@@ -143,6 +152,7 @@ class TestShouldUseReactMode:
 
     def test_disabled_by_feature_flag(self):
         from src.api.routes.chat_react import _should_use_react_mode
+
         # Use real Features object instead of MagicMock
         with patch("src.api.routes.chat_react.features") as mock_features:
             mock_features.return_value = Features(react_mode=False)
@@ -150,6 +160,7 @@ class TestShouldUseReactMode:
 
     def test_enabled_with_search_keyword(self):
         from src.api.routes.chat_react import _should_use_react_mode
+
         # Use real Features object instead of MagicMock
         with patch("src.api.routes.chat_react.features") as mock_features:
             mock_features.return_value = Features(react_mode=True)
@@ -157,6 +168,7 @@ class TestShouldUseReactMode:
 
     def test_enabled_with_calculate(self):
         from src.api.routes.chat_react import _should_use_react_mode
+
         # Use real Features object instead of MagicMock
         with patch("src.api.routes.chat_react.features") as mock_features:
             mock_features.return_value = Features(react_mode=True)
@@ -164,6 +176,7 @@ class TestShouldUseReactMode:
 
     def test_enabled_with_date_query(self):
         from src.api.routes.chat_react import _should_use_react_mode
+
         # Use real Features object instead of MagicMock
         with patch("src.api.routes.chat_react.features") as mock_features:
             mock_features.return_value = Features(react_mode=True)
@@ -171,6 +184,7 @@ class TestShouldUseReactMode:
 
     def test_no_match_on_plain_question(self):
         from src.api.routes.chat_react import _should_use_react_mode
+
         # Use real Features object instead of MagicMock
         with patch("src.api.routes.chat_react.features") as mock_features:
             mock_features.return_value = Features(react_mode=True)
@@ -178,6 +192,7 @@ class TestShouldUseReactMode:
 
     def test_large_context_prevents_react(self):
         from src.api.routes.chat_react import _should_use_react_mode
+
         # Use real Features object instead of MagicMock
         with patch("src.api.routes.chat_react.features") as mock_features:
             mock_features.return_value = Features(react_mode=True)
@@ -193,8 +208,7 @@ class TestReactModeAnswer:
 
         # Use real stub instead of MagicMock
         primitives = StubLLMPrimitives(
-            "Thought: I know the answer without tools.\n"
-            "Final Answer: 42"
+            "Thought: I know the answer without tools.\nFinal Answer: 42"
         )
 
         result, tools, _ = _react_mode_answer(
@@ -212,10 +226,12 @@ class TestReactModeAnswer:
         from src.api.routes.chat_react import _react_mode_answer
 
         # Use real stub with multiple responses instead of MagicMock side_effect
-        primitives = StubLLMPrimitives([
-            'Thought: I need to calculate this.\nAction: calculate(expression="6*7")',
-            "Thought: The calculation returned 42.\nFinal Answer: 42",
-        ])
+        primitives = StubLLMPrimitives(
+            [
+                'Thought: I need to calculate this.\nAction: calculate(expression="6*7")',
+                "Thought: The calculation returned 42.\nFinal Answer: 42",
+            ]
+        )
 
         # Use real stub instead of MagicMock
         registry = StubToolRegistry({"calculate": "42"})
@@ -231,18 +247,20 @@ class TestReactModeAnswer:
         assert tools == 1
         # Verify tool was called with correct args
         assert len(registry.invocations) == 1
-        assert registry.invocations[0]['tool_name'] == "calculate"
-        assert registry.invocations[0]['kwargs']['expression'] == "6*7"
+        assert registry.invocations[0]["tool_name"] == "calculate"
+        assert registry.invocations[0]["kwargs"]["expression"] == "6*7"
 
     def test_disallowed_tool_rejected(self):
         """Tool not in whitelist is rejected."""
         from src.api.routes.chat_react import _react_mode_answer
 
         # Use real stub with multiple responses
-        primitives = StubLLMPrimitives([
-            'Thought: Let me run a shell command.\nAction: run_shell(cmd="ls -la")',
-            "Thought: That tool is not available.\nFinal Answer: Cannot access shell.",
-        ])
+        primitives = StubLLMPrimitives(
+            [
+                'Thought: Let me run a shell command.\nAction: run_shell(cmd="ls -la")',
+                "Thought: That tool is not available.\nFinal Answer: Cannot access shell.",
+            ]
+        )
 
         # Use real stub
         registry = StubToolRegistry()
@@ -262,9 +280,7 @@ class TestReactModeAnswer:
         from src.api.routes.chat_react import _react_mode_answer
 
         # Use real stub
-        primitives = StubLLMPrimitives(
-            "Thought: The answer is simply 42."
-        )
+        primitives = StubLLMPrimitives("Thought: The answer is simply 42.")
 
         result, tools, _ = _react_mode_answer(
             prompt="What is the meaning of life?",
@@ -304,6 +320,7 @@ class TestBuildReactPrompt:
 
     def test_basic_prompt_structure(self):
         from src.prompt_builders import build_react_prompt
+
         result = build_react_prompt("What is 2+2?")
         assert "Question: What is 2+2?" in result
         assert "Final Answer:" in result
@@ -312,12 +329,14 @@ class TestBuildReactPrompt:
 
     def test_with_context(self):
         from src.prompt_builders import build_react_prompt
+
         result = build_react_prompt("Summarize this", context="Some text here")
         assert "Context:" in result
         assert "Some text here" in result
 
     def test_static_tool_descriptions(self):
         from src.prompt_builders import build_react_prompt
+
         result = build_react_prompt("Calculate something")
         assert "calculate" in result
 
@@ -327,12 +346,14 @@ class TestStripToolOutputs:
 
     def test_strip_delimited_output(self):
         from src.api.routes.chat_utils import _strip_tool_outputs
-        text = "Hello <<<TOOL_OUTPUT>>>{\"role\": \"frontdoor\"}<<<END_TOOL_OUTPUT>>> World"
+
+        text = 'Hello <<<TOOL_OUTPUT>>>{"role": "frontdoor"}<<<END_TOOL_OUTPUT>>> World'
         result = _strip_tool_outputs(text, [])
         assert result == "Hello  World"
 
     def test_strip_multiline_delimited_output(self):
         from src.api.routes.chat_utils import _strip_tool_outputs
+
         text = "Before\n<<<TOOL_OUTPUT>>>line1\nline2\nline3<<<END_TOOL_OUTPUT>>>\nAfter"
         result = _strip_tool_outputs(text, [])
         assert "Before" in result
@@ -341,12 +362,14 @@ class TestStripToolOutputs:
 
     def test_legacy_fallback(self):
         from src.api.routes.chat_utils import _strip_tool_outputs
+
         text = 'Hello {"role": "frontdoor"} World'
         result = _strip_tool_outputs(text, ['{"role": "frontdoor"}'])
         assert result == "Hello  World"
 
     def test_empty_text(self):
         from src.api.routes.chat_utils import _strip_tool_outputs
+
         assert _strip_tool_outputs("", []) == ""
 
 
@@ -355,30 +378,36 @@ class TestDetectFormatConstraints:
 
     def test_word_count(self):
         from src.prompt_builders import detect_format_constraints
+
         result = detect_format_constraints("Answer in exactly 5 words")
         assert any("5 words" in c for c in result)
 
     def test_json_format(self):
         from src.prompt_builders import detect_format_constraints
+
         result = detect_format_constraints("Respond in JSON format")
         assert any("JSON" in c for c in result)
 
     def test_numbered_list(self):
         from src.prompt_builders import detect_format_constraints
+
         result = detect_format_constraints("Give me a numbered list of items")
         assert any("numbered list" in c for c in result)
 
     def test_no_constraints(self):
         from src.prompt_builders import detect_format_constraints
+
         result = detect_format_constraints("Tell me about quantum physics")
         assert result == []
 
     def test_uppercase(self):
         from src.prompt_builders import detect_format_constraints
+
         result = detect_format_constraints("Write the answer in UPPER case")
         assert any("uppercase" in c for c in result)
 
     def test_comma_separated(self):
         from src.prompt_builders import detect_format_constraints
+
         result = detect_format_constraints("List them comma-separated")
         assert any("comma-separated" in c for c in result)

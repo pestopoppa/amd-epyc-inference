@@ -95,8 +95,7 @@ class DocumentCache:
         # Check cache
         with sqlite3.connect(self.cache_db_path) as conn:
             row = conn.execute(
-                "SELECT result_json FROM document_cache WHERE file_hash = ?",
-                (current_hash,)
+                "SELECT result_json FROM document_cache WHERE file_hash = ?", (current_hash,)
             ).fetchone()
 
         if row is None:
@@ -147,11 +146,13 @@ class DocumentCache:
                 (file_hash, file_path, cached_at, total_pages, result_json)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (file_hash, str(file_path), cached_at, result.total_pages, result_json)
+                (file_hash, str(file_path), cached_at, result.total_pages, result_json),
             )
             conn.commit()
 
-        logger.info(f"Cached {file_path.name} ({result.total_pages} pages, {len(result_json)} bytes)")
+        logger.info(
+            f"Cached {file_path.name} ({result.total_pages} pages, {len(result_json)} bytes)"
+        )
 
         # Track in session store if requested
         if track_in_session and self.session_store:
@@ -182,9 +183,7 @@ class DocumentCache:
         changes = []
 
         with sqlite3.connect(self.cache_db_path) as conn:
-            rows = conn.execute(
-                "SELECT file_hash, file_path FROM document_cache"
-            ).fetchall()
+            rows = conn.execute("SELECT file_hash, file_path FROM document_cache").fetchall()
 
         for cached_hash, file_path in rows:
             path = Path(file_path)
@@ -197,13 +196,15 @@ class DocumentCache:
                 current_hash = None
                 changed = True
 
-            changes.append({
-                "file_path": file_path,
-                "cached_hash": cached_hash,
-                "current_hash": current_hash,
-                "changed": changed,
-                "exists": exists,
-            })
+            changes.append(
+                {
+                    "file_path": file_path,
+                    "cached_hash": cached_hash,
+                    "current_hash": current_hash,
+                    "changed": changed,
+                    "exists": exists,
+                }
+            )
 
         return changes
 
@@ -219,10 +220,7 @@ class DocumentCache:
         file_path = str(file_path)
 
         with sqlite3.connect(self.cache_db_path) as conn:
-            cursor = conn.execute(
-                "DELETE FROM document_cache WHERE file_path = ?",
-                (file_path,)
-            )
+            cursor = conn.execute("DELETE FROM document_cache WHERE file_path = ?", (file_path,))
             conn.commit()
             return cursor.rowcount > 0
 
@@ -240,10 +238,7 @@ class DocumentCache:
     def _remove_entry(self, file_hash: str) -> None:
         """Remove a cache entry by hash."""
         with sqlite3.connect(self.cache_db_path) as conn:
-            conn.execute(
-                "DELETE FROM document_cache WHERE file_hash = ?",
-                (file_hash,)
-            )
+            conn.execute("DELETE FROM document_cache WHERE file_hash = ?", (file_hash,))
             conn.commit()
 
     def get_stats(self) -> dict[str, Any]:
@@ -295,7 +290,9 @@ class DocumentCache:
         ]
 
 
-def get_document_cache(session_id: str, session_store: SQLiteSessionStore | None = None) -> DocumentCache:
+def get_document_cache(
+    session_id: str, session_store: SQLiteSessionStore | None = None
+) -> DocumentCache:
     """Get or create document cache for a session.
 
     This is the main entry point for document caching.

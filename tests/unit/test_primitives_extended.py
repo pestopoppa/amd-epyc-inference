@@ -38,8 +38,15 @@ class TestRecursionDepthLimit:
         # We'll do this by patching the implementation to recurse
         original_impl = prims._llm_call_impl
 
-        def recursive_impl(prompt, context_slice="", role="worker", n_tokens=None,
-                          skip_suffix=False, stop_sequences=None, persona=None):
+        def recursive_impl(
+            prompt,
+            context_slice="",
+            role="worker",
+            n_tokens=None,
+            skip_suffix=False,
+            stop_sequences=None,
+            persona=None,
+        ):
             # Call llm_call again (which will check recursion depth)
             if prims._recursion_depth < 5:  # Try to exceed limit of 2
                 return prims.llm_call("Nested call", role=role)
@@ -66,7 +73,7 @@ class TestRecursionDepthLimit:
 
     def test_recursion_depth_resets_after_error(self):
         """Test recursion depth resets even after error."""
-        config = LLMPrimitivesConfig(max_recursion_depth=3)
+        LLMPrimitivesConfig(max_recursion_depth=3)
         prims = LLMPrimitives(mock_mode=False)  # No backend - will error
 
         try:
@@ -154,9 +161,7 @@ class TestLLMBatchMockMode:
 
         # Should be called for each prompt
         assert mock_persona.call_count == 2
-        assert all(
-            call[0][1] == "security" for call in mock_persona.call_args_list
-        )
+        assert all(call[0][1] == "security" for call in mock_persona.call_args_list)
 
     def test_llm_batch_updates_stats(self):
         """Test llm_batch updates batch call counter."""

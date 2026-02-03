@@ -178,12 +178,14 @@ class FaceEmbedAnalyzer(Analyzer):
                 "image_path": image_path or "",
             }
             if bbox:
-                metadata.update({
-                    "bbox_x": bbox["x"],
-                    "bbox_y": bbox["y"],
-                    "bbox_w": bbox["width"],
-                    "bbox_h": bbox["height"],
-                })
+                metadata.update(
+                    {
+                        "bbox_x": bbox["x"],
+                        "bbox_y": bbox["y"],
+                        "bbox_w": bbox["width"],
+                        "bbox_h": bbox["height"],
+                    }
+                )
             if "identified_as" in result:
                 metadata["person_id"] = result["identified_as"]
 

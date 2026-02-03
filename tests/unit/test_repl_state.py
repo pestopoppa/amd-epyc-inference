@@ -51,6 +51,7 @@ class TestREPLStateCheckpoint:
 
     def test_checkpoint_non_serializable_artifacts(self, repl):
         """Test checkpoint handles non-serializable artifacts."""
+
         # Add a non-serializable object
         class CustomClass:
             pass

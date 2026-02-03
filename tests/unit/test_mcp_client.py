@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Tests for the MCP client module."""
 
-import asyncio
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import yaml
 from src.mcp_client import (
     MCPServerConfig,
-    _call_async,
     _extract_text,
     call_mcp_tool,
     load_server_configs,

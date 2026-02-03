@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -49,7 +48,7 @@ class TaskComplexity(Enum):
     """Task complexity level determining delegation path."""
 
     TRIVIAL = "trivial"  # Frontdoor answers directly (factual, chat)
-    SIMPLE = "simple"    # Frontdoor executes in REPL (single code task)
+    SIMPLE = "simple"  # Frontdoor executes in REPL (single code task)
     MODERATE = "moderate"  # Frontdoor delegates to single specialist
     COMPLEX = "complex"  # Architect generates TaskIR, multi-specialist
 
@@ -71,6 +70,7 @@ class ComplexitySignals:
 
 def _deleg_cfg():
     from src.config import get_config
+
     return get_config().delegation
 
 
@@ -108,9 +108,7 @@ class IterationContext:
         feedback: str | None = None,
     ) -> None:
         """Record an iteration for tracking."""
-        self.subtask_iterations[subtask_id] = (
-            self.subtask_iterations.get(subtask_id, 0) + 1
-        )
+        self.subtask_iterations[subtask_id] = self.subtask_iterations.get(subtask_id, 0) + 1
         self.total_iterations += 1
         self.current_iteration = self.subtask_iterations[subtask_id]
 

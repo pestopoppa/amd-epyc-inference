@@ -32,7 +32,6 @@ import os
 from dataclasses import dataclass, field, asdict
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
 
 
 # Try to use pydantic-settings if available, fall back to basic dataclass
@@ -138,26 +137,62 @@ class REPLConfigData:
     """Execution timeout."""
 
     forbidden_modules: frozenset[str] = field(
-        default_factory=lambda: frozenset({
-            "os", "sys", "subprocess", "shutil", "pathlib",
-            "socket", "http", "urllib", "ftplib", "smtplib",
-            "pickle", "marshal", "shelve", "dbm",
-            "ctypes", "multiprocessing", "threading",
-            "importlib", "builtins", "__builtins__",
-            "code", "codeop", "compile", "exec", "eval",
-        })
+        default_factory=lambda: frozenset(
+            {
+                "os",
+                "sys",
+                "subprocess",
+                "shutil",
+                "pathlib",
+                "socket",
+                "http",
+                "urllib",
+                "ftplib",
+                "smtplib",
+                "pickle",
+                "marshal",
+                "shelve",
+                "dbm",
+                "ctypes",
+                "multiprocessing",
+                "threading",
+                "importlib",
+                "builtins",
+                "__builtins__",
+                "code",
+                "codeop",
+                "compile",
+                "exec",
+                "eval",
+            }
+        )
     )
     """Modules blocked from import."""
 
     forbidden_builtins: frozenset[str] = field(
-        default_factory=lambda: frozenset({
-            "__import__", "eval", "exec", "compile",
-            "open", "input", "breakpoint",
-            "globals", "locals", "vars",
-            "getattr", "setattr", "delattr", "hasattr",
-            "type", "object", "__build_class__",
-            "memoryview", "bytearray",
-        })
+        default_factory=lambda: frozenset(
+            {
+                "__import__",
+                "eval",
+                "exec",
+                "compile",
+                "open",
+                "input",
+                "breakpoint",
+                "globals",
+                "locals",
+                "vars",
+                "getattr",
+                "setattr",
+                "delattr",
+                "hasattr",
+                "type",
+                "object",
+                "__build_class__",
+                "memoryview",
+                "bytearray",
+            }
+        )
     )
     """Builtins blocked from use."""
 
@@ -220,84 +255,173 @@ class MonitorConfigData:
     combined_threshold: float = 0.7
     """Weighted score for combined signals."""
 
-    tier_overrides: dict[str, dict[str, float]] = field(default_factory=lambda: {
-        "worker": {"entropy_threshold": 4.5, "entropy_spike_threshold": 2.5, "min_tokens_before_abort": 50},
-        "coder": {"entropy_threshold": 5.0, "entropy_spike_threshold": 3.0, "min_tokens_before_abort": 100, "repetition_threshold": 0.2},
-        "architect": {"entropy_threshold": 6.0, "entropy_spike_threshold": 4.0, "min_tokens_before_abort": 200, "repetition_threshold": 0.4},
-        "ingest": {"entropy_threshold": 5.5, "entropy_spike_threshold": 3.5, "min_tokens_before_abort": 100},
-    })
+    tier_overrides: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "worker": {
+                "entropy_threshold": 4.5,
+                "entropy_spike_threshold": 2.5,
+                "min_tokens_before_abort": 50,
+            },
+            "coder": {
+                "entropy_threshold": 5.0,
+                "entropy_spike_threshold": 3.0,
+                "min_tokens_before_abort": 100,
+                "repetition_threshold": 0.2,
+            },
+            "architect": {
+                "entropy_threshold": 6.0,
+                "entropy_spike_threshold": 4.0,
+                "min_tokens_before_abort": 200,
+                "repetition_threshold": 0.4,
+            },
+            "ingest": {
+                "entropy_threshold": 5.5,
+                "entropy_spike_threshold": 3.5,
+                "min_tokens_before_abort": 100,
+            },
+        }
+    )
     """Per-tier threshold overrides. Keys are tier names, values are dicts of field→value."""
 
-    task_overrides: dict[str, dict[str, float]] = field(default_factory=lambda: {
-        "code": {"min_tokens_before_abort": 100, "repetition_threshold": 0.2, "ngram_size": 4},
-        "reasoning": {"entropy_threshold": 4.5, "min_tokens_before_abort": 30, "perplexity_window": 15},
-    })
+    task_overrides: dict[str, dict[str, float]] = field(
+        default_factory=lambda: {
+            "code": {"min_tokens_before_abort": 100, "repetition_threshold": 0.2, "ngram_size": 4},
+            "reasoning": {
+                "entropy_threshold": 4.5,
+                "min_tokens_before_abort": 30,
+                "perplexity_window": 15,
+            },
+        }
+    )
     """Per-task threshold overrides. Keys are task types, values are dicts of field→value."""
+
+
+def _get_default_llm_root() -> str:
+    """Get LLM root from environment or default."""
+    return os.environ.get("ORCHESTRATOR_PATHS_LLM_ROOT", "/mnt/raid0/llm")
+
+
+def _get_default_project_root() -> str:
+    """Get project root from environment or default."""
+    llm_root = _get_default_llm_root()
+    return os.environ.get("ORCHESTRATOR_PATHS_PROJECT_ROOT", f"{llm_root}/claude")
 
 
 @dataclass
 class PathsConfig:
     """Configuration for file paths.
 
-    All paths MUST be on /mnt/raid0/ per project rules.
+    All paths can be overridden via ORCHESTRATOR_PATHS_* environment variables.
+    Default values assume /mnt/raid0/llm layout but can be reconfigured.
     """
 
-    models_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/models"))
+    # Base paths (configure these to relocate everything)
+    llm_root: Path = field(default_factory=lambda: Path(_get_default_llm_root()))
+    """Root directory for all LLM-related files."""
+
+    project_root: Path = field(default_factory=lambda: Path(_get_default_project_root()))
+    """Project root directory (claude repo)."""
+
+    # Derived paths - these use llm_root/project_root as base
+    models_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("ORCHESTRATOR_PATHS_MODELS_DIR", f"{_get_default_llm_root()}/models")
+        )
+    )
     """Directory for GGUF models."""
 
-    cache_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/cache"))
+    cache_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("ORCHESTRATOR_PATHS_CACHE_DIR", f"{_get_default_llm_root()}/cache")
+        )
+    )
     """Cache directory."""
 
-    tmp_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/tmp"))
+    tmp_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get("ORCHESTRATOR_PATHS_TMP_DIR", f"{_get_default_llm_root()}/tmp")
+        )
+    )
     """Temporary files directory."""
 
     registry_path: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/model_registry.yaml")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_REGISTRY_PATH",
+                f"{_get_default_project_root()}/orchestration/model_registry.yaml",
+            )
+        )
     )
     """Path to model registry YAML."""
 
     tool_registry_path: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/tool_registry.yaml")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_TOOL_REGISTRY_PATH",
+                f"{_get_default_project_root()}/orchestration/tool_registry.yaml",
+            )
+        )
     )
     """Path to tool registry YAML."""
 
     script_registry_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/script_registry")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_SCRIPT_REGISTRY_DIR",
+                f"{_get_default_project_root()}/orchestration/script_registry",
+            )
+        )
     )
     """Directory for script registry."""
 
-    project_root: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude")
-    )
-    """Project root directory."""
-
     sessions_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude/orchestration/repl_memory/sessions")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_SESSIONS_DIR",
+                f"{_get_default_project_root()}/orchestration/repl_memory/sessions",
+            )
+        )
     )
     """Session storage directory."""
 
     artifacts_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/tmp/claude/artifacts")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_ARTIFACTS_DIR", f"{_get_default_llm_root()}/tmp/claude/artifacts"
+            )
+        )
     )
     """Artifacts directory for context manager."""
 
     llama_cpp_bin: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/llama.cpp/build/bin")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_LLAMA_CPP_BIN", f"{_get_default_llm_root()}/llama.cpp/build/bin"
+            )
+        )
     )
     """llama.cpp binary directory."""
 
     model_base: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/lmstudio/models")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_MODEL_BASE", f"{_get_default_llm_root()}/lmstudio/models"
+            )
+        )
     )
     """Base directory for LM Studio models."""
 
     log_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude/logs")
+        default_factory=lambda: Path(
+            os.environ.get("ORCHESTRATOR_PATHS_LOG_DIR", f"{_get_default_project_root()}/logs")
+        )
     )
     """Log files directory."""
 
-    raid_prefix: str = "/mnt/raid0/"
-    """Required prefix for all data paths (security)."""
+    raid_prefix: str = field(
+        default_factory=lambda: os.environ.get("ORCHESTRATOR_PATHS_RAID_PREFIX", "/mnt/raid0/")
+    )
+    """Required prefix for all data paths (security). Set to empty string to disable check."""
 
 
 @dataclass
@@ -463,9 +587,7 @@ class VisionConfig:
     arcface_model_name: str = "buffalo_l"
     clip_model_name: str = "ViT-B/32"
     sentence_transformer_model: str = "all-MiniLM-L6-v2"
-    onnx_providers: list[str] = field(
-        default_factory=lambda: ["CPUExecutionProvider"]
-    )
+    onnx_providers: list[str] = field(default_factory=lambda: ["CPUExecutionProvider"])
     supported_image_extensions: list[str] = field(
         default_factory=lambda: ["jpg", "jpeg", "png", "heic", "webp", "bmp", "tiff"]
     )
@@ -535,21 +657,15 @@ class ServicesConfig:
     )
     lightonocr_max_tokens: int = 2048
 
-    draft_cache_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/cache/drafts")
-    )
+    draft_cache_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/cache/drafts"))
     draft_cache_ttl_hours: float = 24.0
 
-    archive_extract_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/tmp/archives")
-    )
+    archive_extract_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/tmp/archives"))
     max_archive_size: int = 500 * 1024 * 1024  # 500 MB
     max_extracted_size: int = 1024 * 1024 * 1024  # 1 GB
     max_archive_files: int = 1000
 
-    pdf_router_temp_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/tmp/pdf_router")
-    )
+    pdf_router_temp_dir: Path = field(default_factory=lambda: Path("/mnt/raid0/llm/tmp/pdf_router"))
 
 
 @dataclass
@@ -581,13 +697,24 @@ class WorkerPoolPathsConfig:
     """Paths for worker pool management."""
 
     llama_server_path: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-server")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_LLAMA_SERVER",
+                f"{_get_default_llm_root()}/llama.cpp/build/bin/llama-server",
+            )
+        )
     )
     log_dir: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/claude/logs")
+        default_factory=lambda: Path(
+            os.environ.get("ORCHESTRATOR_PATHS_LOG_DIR", f"{_get_default_project_root()}/logs")
+        )
     )
     model_base: Path = field(
-        default_factory=lambda: Path("/mnt/raid0/llm/lmstudio/models")
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_MODEL_BASE", f"{_get_default_llm_root()}/lmstudio/models"
+            )
+        )
     )
 
 
@@ -657,7 +784,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         qwen_stop_token: str = "<|im_end|>"
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_LLM_", extra="ignore",
+            env_prefix="ORCHESTRATOR_LLM_",
+            extra="ignore",
         )
 
     class EscalationSettings(BaseSettings):
@@ -665,7 +793,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         max_escalations: int = 2
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_ESCALATION_", extra="ignore",
+            env_prefix="ORCHESTRATOR_ESCALATION_",
+            extra="ignore",
         )
 
     class REPLSettings(BaseSettings):
@@ -673,7 +802,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         timeout_seconds: int = 30
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_REPL_", extra="ignore",
+            env_prefix="ORCHESTRATOR_REPL_",
+            extra="ignore",
         )
 
     class ServerSettings(BaseSettings):
@@ -685,7 +815,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         retry_backoff: float = 0.5
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_SERVER_", extra="ignore",
+            env_prefix="ORCHESTRATOR_SERVER_",
+            extra="ignore",
         )
 
     class ServerURLsSettings(BaseSettings):
@@ -710,7 +841,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         vision_api: str = "http://localhost:8000/v1/vision/analyze"
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_SERVER_URLS_", extra="ignore",
+            env_prefix="ORCHESTRATOR_SERVER_URLS_",
+            extra="ignore",
         )
 
     class TimeoutsSettings(BaseSettings):
@@ -740,7 +872,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         gradio_client: float = 300.0
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_TIMEOUTS_", extra="ignore",
+            env_prefix="ORCHESTRATOR_TIMEOUTS_",
+            extra="ignore",
         )
 
     class ChatPipelineSettings(BaseSettings):
@@ -766,7 +899,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         plan_review_phase_c_skip_rate: float = 0.90
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_CHAT_", extra="ignore",
+            env_prefix="ORCHESTRATOR_CHAT_",
+            extra="ignore",
         )
 
     class MonitorSettings(BaseSettings):
@@ -781,7 +915,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         combined_threshold: float = 0.7
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_MONITOR_", extra="ignore",
+            env_prefix="ORCHESTRATOR_MONITOR_",
+            extra="ignore",
         )
 
     class FeaturesSettings(BaseSettings):
@@ -794,7 +929,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         caching: bool = True
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_", extra="ignore",
+            env_prefix="ORCHESTRATOR_",
+            extra="ignore",
         )
 
     class OrchestratorSettings(BaseSettings):
@@ -812,7 +948,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         chat: ChatPipelineSettings = PydanticField(default_factory=ChatPipelineSettings)
 
         model_config = SettingsConfigDict(
-            env_prefix="ORCHESTRATOR_", extra="ignore",
+            env_prefix="ORCHESTRATOR_",
+            extra="ignore",
         )
 
 
@@ -873,16 +1010,24 @@ def _load_from_env() -> OrchestratorConfigData:
             worker_explore=_env_str(f"{P}SERVER_URLS_WORKER_EXPLORE", "http://localhost:8082"),
             worker_math=_env_str(f"{P}SERVER_URLS_WORKER_MATH", "http://localhost:8082"),
             worker_vision=_env_str(f"{P}SERVER_URLS_WORKER_VISION", "http://localhost:8086"),
-            vision_escalation=_env_str(f"{P}SERVER_URLS_VISION_ESCALATION", "http://localhost:8087"),
+            vision_escalation=_env_str(
+                f"{P}SERVER_URLS_VISION_ESCALATION", "http://localhost:8087"
+            ),
             worker_code=_env_str(f"{P}SERVER_URLS_WORKER_CODE", "http://localhost:8092"),
             worker_fast=_env_str(f"{P}SERVER_URLS_WORKER_FAST", "http://localhost:8102"),
             worker_summarize=_env_str(f"{P}SERVER_URLS_WORKER_SUMMARIZE", "http://localhost:8081"),
-            architect_general=_env_str(f"{P}SERVER_URLS_ARCHITECT_GENERAL", "http://localhost:8083"),
+            architect_general=_env_str(
+                f"{P}SERVER_URLS_ARCHITECT_GENERAL", "http://localhost:8083"
+            ),
             architect_coding=_env_str(f"{P}SERVER_URLS_ARCHITECT_CODING", "http://localhost:8084"),
-            ingest_long_context=_env_str(f"{P}SERVER_URLS_INGEST_LONG_CONTEXT", "http://localhost:8085"),
+            ingest_long_context=_env_str(
+                f"{P}SERVER_URLS_INGEST_LONG_CONTEXT", "http://localhost:8085"
+            ),
             api_url=_env_str(f"{P}SERVER_URLS_API_URL", "http://localhost:8000"),
             ocr_server=_env_str(f"{P}SERVER_URLS_OCR_SERVER", "http://localhost:9001"),
-            vision_api=_env_str(f"{P}SERVER_URLS_VISION_API", "http://localhost:8000/v1/vision/analyze"),
+            vision_api=_env_str(
+                f"{P}SERVER_URLS_VISION_API", "http://localhost:8000/v1/vision/analyze"
+            ),
         ),
         timeouts=TimeoutsConfig(
             worker_explore=_env_int(f"{P}TIMEOUTS_WORKER_EXPLORE", 30),
@@ -901,7 +1046,9 @@ def _load_from_env() -> OrchestratorConfigData:
             server_connect=_env_int(f"{P}TIMEOUTS_SERVER_CONNECT", 5),
         ),
         chat=ChatPipelineConfig(
-            summarization_threshold_tokens=_env_int(f"{P}CHAT_SUMMARIZATION_THRESHOLD_TOKENS", 5000),
+            summarization_threshold_tokens=_env_int(
+                f"{P}CHAT_SUMMARIZATION_THRESHOLD_TOKENS", 5000
+            ),
             multi_doc_discount=_env_float(f"{P}CHAT_MULTI_DOC_DISCOUNT", 0.7),
             compression_enabled=_env_bool(f"{P}CHAT_COMPRESSION_ENABLED", False),
             compression_min_chars=_env_int(f"{P}CHAT_COMPRESSION_MIN_CHARS", 30000),

@@ -10,7 +10,6 @@ from src.backends.llama_server import (
     LlamaServerBackend,
     LlamaServerError,
     ServerConfig,
-    SlotInfo,
 )
 from src.model_server import InferenceRequest
 from src.registry_loader import (
@@ -231,7 +230,9 @@ class TestLlamaServerBackend:
         request = InferenceRequest(role="test", prompt="Hello")
 
         # Simulate network error
-        with patch.object(backend.client, "post", side_effect=httpx.RequestError("Connection failed")):
+        with patch.object(
+            backend.client, "post", side_effect=httpx.RequestError("Connection failed")
+        ):
             result = backend.infer(role_config, request)
 
         assert result.success is False
@@ -254,7 +255,9 @@ class TestLlamaServerBackend:
         """Test health check with unreachable server."""
         backend = LlamaServerBackend(base_url="http://test:8080")
 
-        with patch.object(backend.client, "get", side_effect=httpx.RequestError("Connection failed")):
+        with patch.object(
+            backend.client, "get", side_effect=httpx.RequestError("Connection failed")
+        ):
             healthy = backend.health_check(0)
 
         assert healthy is False

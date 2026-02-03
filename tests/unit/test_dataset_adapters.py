@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Ensure project root is on path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -16,7 +15,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "scripts" / "benchm
 from scripts.benchmark.dataset_adapters import (
     ADAPTER_SUITES,
     YAML_ONLY_SUITES,
-    BaseAdapter,
     IFEvalAdapter,
     MathAdapter,
     MMLUAdapter,
@@ -49,7 +47,9 @@ class TestGetAdapter:
         """Every ADAPTER_SUITES entry produces a non-None adapter."""
         for suite in ADAPTER_SUITES:
             adapter = get_adapter(suite)
-            assert adapter is not None, f"ADAPTER_SUITES contains '{suite}' but factory returned None"
+            assert adapter is not None, (
+                f"ADAPTER_SUITES contains '{suite}' but factory returned None"
+            )
 
 
 # ── Mock dataset helpers ───────────────────────────────────────────────────
@@ -60,12 +60,14 @@ def _make_mock_mmlu_dataset(n: int = 20):
     rows = []
     subjects = ["abstract_algebra", "high_school_geography", "anatomy", "miscellaneous"]
     for i in range(n):
-        rows.append({
-            "question": f"Question {i}?",
-            "choices": ["Alpha", "Beta", "Gamma", "Delta"],
-            "answer": i % 4,
-            "subject": subjects[i % len(subjects)],
-        })
+        rows.append(
+            {
+                "question": f"Question {i}?",
+                "choices": ["Alpha", "Beta", "Gamma", "Delta"],
+                "answer": i % 4,
+                "subject": subjects[i % len(subjects)],
+            }
+        )
     mock_ds = MagicMock()
     mock_ds.__len__ = lambda self: len(rows)
     mock_ds.__getitem__ = lambda self, idx: rows[idx]
@@ -77,10 +79,12 @@ def _make_mock_gsm8k_dataset(n: int = 10):
     """Build a mock GSM8K-like dataset."""
     rows = []
     for i in range(n):
-        rows.append({
-            "question": f"Math problem {i}?",
-            "answer": f"Step 1: ...\nStep 2: ...\n#### {100 + i}",
-        })
+        rows.append(
+            {
+                "question": f"Math problem {i}?",
+                "answer": f"Step 1: ...\nStep 2: ...\n#### {100 + i}",
+            }
+        )
     mock_ds = MagicMock()
     mock_ds.__len__ = lambda self: len(rows)
     mock_ds.__getitem__ = lambda self, idx: rows[idx]
@@ -92,12 +96,14 @@ def _make_mock_math500_dataset(n: int = 5):
     """Build a mock MATH-500-like dataset."""
     rows = []
     for i in range(n):
-        rows.append({
-            "problem": f"Hard math problem {i}?",
-            "answer": f"\\boxed{{{i * 10}}}",
-            "level": 2 + (i % 4),
-            "subject": "algebra",
-        })
+        rows.append(
+            {
+                "problem": f"Hard math problem {i}?",
+                "answer": f"\\boxed{{{i * 10}}}",
+                "level": 2 + (i % 4),
+                "subject": "algebra",
+            }
+        )
     mock_ds = MagicMock()
     mock_ds.__len__ = lambda self: len(rows)
     mock_ds.__getitem__ = lambda self, idx: rows[idx]
@@ -116,12 +122,14 @@ def _make_mock_ifeval_dataset(n: int = 10):
     ]
     for i in range(n):
         c_ids, c_kwargs = constraints[i % len(constraints)]
-        rows.append({
-            "prompt": f"Instruction {i}: write something",
-            "key": i,
-            "instruction_id_list": c_ids,
-            "kwargs": c_kwargs,
-        })
+        rows.append(
+            {
+                "prompt": f"Instruction {i}: write something",
+                "key": i,
+                "instruction_id_list": c_ids,
+                "kwargs": c_kwargs,
+            }
+        )
     mock_ds = MagicMock()
     mock_ds.__len__ = lambda self: len(rows)
     mock_ds.__getitem__ = lambda self, idx: rows[idx]
@@ -174,7 +182,7 @@ class TestMMLUAdapter:
 
         # Subjects rotate: abstract_algebra(hard=3), high_school_geography(easy=1),
         # anatomy(hard=3), miscellaneous(easy=1)
-        tiers = {q["id"].split("_")[1]: q["tier"] for q in samples}
+        {q["id"].split("_")[1]: q["tier"] for q in samples}
         # Check at least one hard and one easy tier assignment
         tier_values = set(q["tier"] for q in samples)
         assert 1 in tier_values or 3 in tier_values  # at least some differentiation

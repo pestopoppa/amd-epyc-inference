@@ -7,11 +7,10 @@ WI-2: Verifies token-bucket rate limiter behavior.
 from __future__ import annotations
 
 import time
-from unittest.mock import patch
 
 import pytest
 
-from src.config import ApiConfig, OrchestratorConfigData, get_config, reset_config
+from src.config import ApiConfig, OrchestratorConfigData, reset_config
 
 
 @pytest.fixture(autouse=True)
@@ -127,6 +126,7 @@ class TestRateLimitMiddleware:
 
     def test_middleware_importable(self):
         from src.api.rate_limit import RateLimitMiddleware
+
         assert RateLimitMiddleware is not None
 
     def test_default_config_values(self):
@@ -152,7 +152,7 @@ class TestRateLimitMiddleware:
     @pytest.mark.anyio
     async def test_rate_limit_returns_429(self):
         """Requests exceeding rate limit get 429 response."""
-        from src.api.rate_limit import RateLimitMiddleware, TokenBucket
+        from src.api.rate_limit import RateLimitMiddleware
 
         from starlette.applications import Starlette
         from starlette.responses import PlainTextResponse
@@ -166,6 +166,7 @@ class TestRateLimitMiddleware:
         test_app.add_middleware(RateLimitMiddleware, rpm=1, burst=0)
 
         from httpx import ASGITransport, AsyncClient
+
         transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # First request should succeed
@@ -193,6 +194,7 @@ class TestRateLimitMiddleware:
         test_app.add_middleware(RateLimitMiddleware, rpm=1, burst=0)
 
         from httpx import ASGITransport, AsyncClient
+
         transport = ASGITransport(app=test_app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             await client.get("/")  # consume token
@@ -205,10 +207,12 @@ class TestRateLimitMiddleware:
         from src.api.rate_limit import RateLimitMiddleware
 
         from starlette.applications import Starlette
+
         middleware = RateLimitMiddleware(Starlette(), rpm=60, burst=10)
 
         # Simulate stale bucket
         from src.api.rate_limit import TokenBucket
+
         stale_bucket = TokenBucket(70, 1.0)
         stale_bucket.last_refill = time.monotonic() - 700  # 11+ min idle
         middleware._buckets["192.168.1.100"] = stale_bucket

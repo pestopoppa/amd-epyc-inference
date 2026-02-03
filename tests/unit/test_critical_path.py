@@ -184,6 +184,7 @@ class TestExtractStepTimings:
 
     def _make_result(self, subtask_id: str, elapsed: float):
         from src.proactive_delegation import SubtaskResult
+
         return SubtaskResult(
             subtask_id=subtask_id,
             role="worker_general",

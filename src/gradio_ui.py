@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
 from typing import Any, Generator
 
 import gradio as gr
@@ -217,7 +216,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
 
                 with gr.Row():
                     clear_btn = gr.Button("Clear", size="sm")
-                    undo_btn = gr.Button("Undo", size="sm")
+                    gr.Button("Undo", size="sm")
 
             # Right column: Artifacts + Routing
             with gr.Column(scale=1):

@@ -21,7 +21,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.features import features
-from src.api.state import get_state, AppState
+from src.api.state import get_state, AppState as AppState
 from src.api.routes import create_api_router
 from src.api.services.memrl import (
     load_optional_imports,
@@ -66,6 +66,7 @@ async def lifespan(app: FastAPI):
     # Load registry for role-based generation defaults (YAML parsing only, no models)
     try:
         from src.registry_loader import RegistryLoader
+
         state.registry = RegistryLoader(validate_paths=False)
     except Exception as e:
         logger.info(f"Registry file not found or invalid, using defaults: {e}")
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
 
             # Load tools from YAML registry (22 tools in orchestration/tool_registry.yaml)
             from src.config import get_config as _get_config
+
             _paths = _get_config().paths
             loaded = load_tools_from_yaml(
                 state.tool_registry,
@@ -113,6 +115,7 @@ async def lifespan(app: FastAPI):
             # These may overlap with YAML tools - duplicates are skipped
             try:
                 from src.builtin_tools import register_builtin_tools
+
                 register_builtin_tools(state.tool_registry)
             except ImportError:
                 logger.debug("No builtin_tools module found")
@@ -201,6 +204,7 @@ def create_app() -> FastAPI:
 
     # Middleware (order matters: last added = first executed)
     from src.config import get_config as _get_config
+
     _api_cfg = _get_config().api
 
     # CORS — explicit origins required when credentials are enabled
@@ -214,6 +218,7 @@ def create_app() -> FastAPI:
 
     # Rate limiting — per-IP token bucket
     from src.api.rate_limit import RateLimitMiddleware
+
     app.add_middleware(
         RateLimitMiddleware,
         rpm=_api_cfg.rate_limit_rpm,

@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for LLM primitives."""
 
-import pytest
-
 from src.llm_primitives import (
     LLMPrimitives,
     LLMPrimitivesConfig,
-    CallLogEntry,
 )
 
 
@@ -159,7 +156,7 @@ class TestContextSlice:
     def test_context_slice_appended_to_prompt(self):
         """Test that context_slice is appended to prompt."""
         primitives = LLMPrimitives(mock_mode=True)
-        result = primitives.llm_call("Summarize:", context_slice="Some long text here")
+        primitives.llm_call("Summarize:", context_slice="Some long text here")
 
         # Check that the call was logged with context_slice
         assert primitives.call_log[0].context_slice is not None
@@ -167,7 +164,7 @@ class TestContextSlice:
     def test_empty_context_slice(self):
         """Test that empty context_slice doesn't affect prompt."""
         primitives = LLMPrimitives(mock_mode=True)
-        result = primitives.llm_call("Summarize:", context_slice="")
+        primitives.llm_call("Summarize:", context_slice="")
 
         assert primitives.call_log[0].context_slice is None
 

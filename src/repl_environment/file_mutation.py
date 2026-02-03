@@ -6,7 +6,6 @@ Log appending, safe file writes, and patch preparation/approval workflow.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +95,9 @@ class _FileMutationMixin:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            self._exploration_log.add_event("file_write_safe", {"path": path, "size": len(content)}, "success")
+            self._exploration_log.add_event(
+                "file_write_safe", {"path": path, "size": len(content)}, "success"
+            )
             return f"Wrote {len(content)} bytes to {path}"
 
         except Exception as e:
@@ -136,7 +137,7 @@ class _FileMutationMixin:
                 ["git", "diff", "--"] + files,
                 capture_output=True,
                 text=True,
-                cwd="/mnt/raid0/llm/claude"
+                cwd="/mnt/raid0/llm/claude",
             )
 
             if not result.stdout.strip():
@@ -147,7 +148,7 @@ class _FileMutationMixin:
                 f.write(f"# Patch: {description}\n")
                 f.write(f"# Created: {datetime.now().isoformat()}\n")
                 f.write(f"# Files: {', '.join(files)}\n")
-                f.write(f"# Status: PENDING APPROVAL\n")
+                f.write("# Status: PENDING APPROVAL\n")
                 f.write("#\n")
                 f.write(result.stdout)
 
@@ -234,7 +235,7 @@ class _FileMutationMixin:
                 ["git", "apply", "--check", str(pending_path)],
                 capture_output=True,
                 text=True,
-                cwd="/mnt/raid0/llm/claude"
+                cwd="/mnt/raid0/llm/claude",
             )
 
             if result.returncode != 0:
@@ -245,7 +246,7 @@ class _FileMutationMixin:
                 ["git", "apply", str(pending_path)],
                 capture_output=True,
                 text=True,
-                cwd="/mnt/raid0/llm/claude"
+                cwd="/mnt/raid0/llm/claude",
             )
 
             if result.returncode != 0:

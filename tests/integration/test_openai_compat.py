@@ -72,9 +72,7 @@ class TestChatCompletionsNonStreaming:
         """Test basic chat completion request."""
         request = {
             "model": "orchestrator",
-            "messages": [
-                {"role": "user", "content": "Hello, how are you?"}
-            ],
+            "messages": [{"role": "user", "content": "Hello, how are you?"}],
             "temperature": 0.0,
             "max_tokens": 100,
         }
@@ -113,7 +111,7 @@ class TestChatCompletionsNonStreaming:
             "model": "frontdoor",
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "What is 2+2?"}
+                {"role": "user", "content": "What is 2+2?"},
             ],
         }
 
@@ -130,7 +128,7 @@ class TestChatCompletionsNonStreaming:
             "messages": [
                 {"role": "user", "content": "Hello"},
                 {"role": "assistant", "content": "Hi there!"},
-                {"role": "user", "content": "How are you?"}
+                {"role": "user", "content": "How are you?"},
             ],
         }
 
@@ -168,9 +166,7 @@ class TestChatCompletionsNonStreaming:
         """Test error when no user message provided."""
         request = {
             "model": "orchestrator",
-            "messages": [
-                {"role": "system", "content": "You are helpful."}
-            ],
+            "messages": [{"role": "system", "content": "You are helpful."}],
         }
 
         response = client.post("/v1/chat/completions", json=request)
@@ -235,7 +231,6 @@ class TestChatCompletionsStreaming:
         }
 
         with client.stream("POST", "/v1/chat/completions", json=request) as response:
-
             assert response.status_code == 200
             assert "text/event-stream" in response.headers.get("content-type", "")
 
@@ -351,7 +346,7 @@ class TestRequestValidation:
             "messages": [{"role": "invalid_role", "content": "Test"}],
         }
 
-        response = client.post("/v1/chat/completions", json=request)
+        client.post("/v1/chat/completions", json=request)
 
         # May still process but extract no user messages
         # Depends on implementation - at minimum should not crash

@@ -84,9 +84,7 @@ class TestAddOperations:
     """Test add operations."""
 
     def test_add_face_embedding(self, mock_chroma):
-        chroma_client.add_face_embedding(
-            "face1", [0.1] * 512, {"person": "alice"}
-        )
+        chroma_client.add_face_embedding("face1", [0.1] * 512, {"person": "alice"})
         mock_chroma["faces"].add.assert_called_once_with(
             ids=["face1"],
             embeddings=[[0.1] * 512],
@@ -113,9 +111,7 @@ class TestAddOperations:
         )
 
     def test_add_image_embedding(self, mock_chroma):
-        chroma_client.add_image_embedding(
-            "img2", [0.4] * 512, {"taken_at": "2026-01-01"}
-        )
+        chroma_client.add_image_embedding("img2", [0.4] * 512, {"taken_at": "2026-01-01"})
         mock_chroma["images"].add.assert_called_once_with(
             ids=["img2"],
             embeddings=[[0.4] * 512],
@@ -127,9 +123,7 @@ class TestSearchOperations:
     """Test search operations."""
 
     def test_search_faces(self, mock_chroma):
-        mock_chroma["faces"].query.return_value = {
-            "ids": [["face1"]], "distances": [[0.1]]
-        }
+        mock_chroma["faces"].query.return_value = {"ids": [["face1"]], "distances": [[0.1]]}
         result = chroma_client.search_faces([0.1] * 512, n_results=5)
         mock_chroma["faces"].query.assert_called_once_with(
             query_embeddings=[[0.1] * 512],
@@ -139,9 +133,7 @@ class TestSearchOperations:
         assert result["ids"] == [["face1"]]
 
     def test_search_faces_with_filter(self, mock_chroma):
-        chroma_client.search_faces(
-            [0.1] * 512, n_results=3, where={"person": "alice"}
-        )
+        chroma_client.search_faces([0.1] * 512, n_results=3, where={"person": "alice"})
         mock_chroma["faces"].query.assert_called_once_with(
             query_embeddings=[[0.1] * 512],
             n_results=3,
@@ -150,15 +142,14 @@ class TestSearchOperations:
 
     def test_search_descriptions(self, mock_chroma):
         mock_chroma["descriptions"].query.return_value = {
-            "ids": [["img1"]], "documents": [["A blue sky"]]
+            "ids": [["img1"]],
+            "documents": [["A blue sky"]],
         }
         result = chroma_client.search_descriptions([0.3] * 384, n_results=10)
         assert result["ids"] == [["img1"]]
 
     def test_search_images(self, mock_chroma):
-        mock_chroma["images"].query.return_value = {
-            "ids": [["img2"]], "distances": [[0.2]]
-        }
+        mock_chroma["images"].query.return_value = {"ids": [["img2"]], "distances": [[0.2]]}
         result = chroma_client.search_images([0.4] * 512, n_results=20)
         assert result["ids"] == [["img2"]]
 

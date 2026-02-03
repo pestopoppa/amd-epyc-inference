@@ -27,6 +27,7 @@ def _get_toon():
     if _toon_format is None:
         try:
             import toon_format
+
             _toon_format = toon_format
         except ImportError:
             logger.warning("toon_format not installed, falling back to JSON")
@@ -138,10 +139,7 @@ def _is_uniform_object_array(arr: list) -> bool:
         return False
 
     keys = set(first.keys())
-    return all(
-        isinstance(item, dict) and set(item.keys()) == keys
-        for item in arr[1:]
-    )
+    return all(isinstance(item, dict) and set(item.keys()) == keys for item in arr[1:])
 
 
 def encode_list_dir(path: str, files: list[dict], total: int) -> str:

@@ -7,7 +7,6 @@ import io
 import logging
 import re
 import time
-from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -104,16 +103,14 @@ def ocr_image(image: Image.Image, output_format: str = "bbox") -> dict:
         output_ids = mdl.generate(**inputs, max_new_tokens=4096)
 
     # Extract only generated tokens (skip input)
-    generated_ids = output_ids[0, inputs["input_ids"].shape[1]:]
+    generated_ids = output_ids[0, inputs["input_ids"].shape[1] :]
     text = proc.decode(generated_ids, skip_special_tokens=True)
     elapsed = time.time() - start
 
     # Parse bounding boxes from text (format: ![image](image_N.png) x1,y1,x2,y2)
     bboxes = []
     if output_format in ("bbox", "json"):
-        for match in re.finditer(
-            r"!\[image\]\(image_(\d+)\.png\)\s+(\d+),(\d+),(\d+),(\d+)", text
-        ):
+        for match in re.finditer(r"!\[image\]\(image_(\d+)\.png\)\s+(\d+),(\d+),(\d+),(\d+)", text):
             bboxes.append(
                 {
                     "id": int(match.group(1)),

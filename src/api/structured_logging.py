@@ -27,10 +27,20 @@ from typing import Any
 
 
 # Structured field names that are recognized by the JSON formatter
-STRUCTURED_FIELDS = frozenset({
-    "task_id", "role", "latency_ms", "stage", "strategy",
-    "mode", "turn", "error_type", "tokens", "prompt_len",
-})
+STRUCTURED_FIELDS = frozenset(
+    {
+        "task_id",
+        "role",
+        "latency_ms",
+        "stage",
+        "strategy",
+        "mode",
+        "turn",
+        "error_type",
+        "tokens",
+        "prompt_len",
+    }
+)
 
 
 def task_extra(

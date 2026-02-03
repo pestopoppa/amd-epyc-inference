@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Unit tests for the REPL archive tools (_ArchiveToolsMixin)."""
 
-from unittest.mock import Mock, MagicMock, patch, mock_open
-import pytest
+from unittest.mock import Mock, patch
 from pathlib import Path
 
-from src.repl_environment import REPLEnvironment, REPLConfig
+from src.repl_environment import REPLEnvironment
 
 
 class TestArchiveOpen:
@@ -21,7 +20,7 @@ class TestArchiveOpen:
         assert "ERROR" in result.output
         assert "not in allowed" in result.output or "Path" in result.output
 
-    @patch('src.services.archive_extractor.ArchiveExtractor')
+    @patch("src.services.archive_extractor.ArchiveExtractor")
     def test_archive_open_success(self, mock_extractor_class):
         """Test archive_open() successfully opens an archive."""
         mock_extractor = Mock()
@@ -38,7 +37,7 @@ class TestArchiveOpen:
         mock_manifest.to_summary_dict.return_value = {
             "total_files": 5,
             "total_size": 1024,
-            "file_types": {"txt": 3, "pdf": 2}
+            "file_types": {"txt": 3, "pdf": 2},
         }
         mock_extractor.list_contents.return_value = mock_manifest
 
@@ -54,7 +53,7 @@ print(data['total_files'])
         # Should store in artifacts
         assert "_archives" in repl.artifacts
 
-    @patch('src.services.archive_extractor.ArchiveExtractor')
+    @patch("src.services.archive_extractor.ArchiveExtractor")
     def test_archive_open_unsafe_archive(self, mock_extractor_class):
         """Test archive_open() rejects unsafe archives."""
         mock_extractor = Mock()
@@ -98,7 +97,7 @@ class TestArchiveExtract:
         assert "ERROR" in result.output
         assert "No archive opened" in result.output
 
-    @patch('src.services.archive_extractor.ArchiveExtractor')
+    @patch("src.services.archive_extractor.ArchiveExtractor")
     def test_archive_extract_all(self, mock_extractor_class):
         """Test archive_extract() extracts all files."""
         mock_extractor = Mock()
@@ -136,7 +135,7 @@ print(data.get('extracted', 0))
         assert result.error is None
         assert "2" in result.output
 
-    @patch('src.services.archive_extractor.ArchiveExtractor')
+    @patch("src.services.archive_extractor.ArchiveExtractor")
     def test_archive_extract_pattern(self, mock_extractor_class):
         """Test archive_extract() with pattern matching."""
         mock_extractor = Mock()
@@ -239,11 +238,7 @@ print(data.get('sections'))
     def test_archive_file_not_found(self):
         """Test archive_file() handles missing files."""
         repl = REPLEnvironment(context="test")
-        repl.artifacts["_archives"] = {
-            "test.zip": {
-                "processed_files": {}
-            }
-        }
+        repl.artifacts["_archives"] = {"test.zip": {"processed_files": {}}}
 
         result = repl.execute("print(archive_file('missing.txt', 'test.zip'))")
 
@@ -289,7 +284,7 @@ print(len(results))
                     "file2.txt": {
                         "type": "text",
                         "content": "Another file\nNo match here",
-                    }
+                    },
                 }
             }
         }

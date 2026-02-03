@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from src.formalizer import (
     FormalizationResult,
@@ -27,6 +26,7 @@ from src.formalizer import (
 # should_formalize_input tests
 # ---------------------------------------------------------------------------
 
+
 class TestShouldFormalizeInput:
     """Tests for keyword-based formalization detection."""
 
@@ -37,12 +37,16 @@ class TestShouldFormalizeInput:
         assert hint == "optimization"
 
     def test_maximize_keyword(self):
-        should, hint = should_formalize_input("Maximize throughput while keeping latency under 100ms")
+        should, hint = should_formalize_input(
+            "Maximize throughput while keeping latency under 100ms"
+        )
         assert should is True
         assert hint == "optimization"
 
     def test_constraint_keyword(self):
-        should, hint = should_formalize_input("Find a feasible solution given the constraint that x + y <= 10")
+        should, hint = should_formalize_input(
+            "Find a feasible solution given the constraint that x + y <= 10"
+        )
         assert should is True
         assert hint == "optimization"
 
@@ -52,22 +56,30 @@ class TestShouldFormalizeInput:
         assert hint == "proof"
 
     def test_theorem_keyword(self):
-        should, hint = should_formalize_input("Verify the following theorem about group homomorphisms")
+        should, hint = should_formalize_input(
+            "Verify the following theorem about group homomorphisms"
+        )
         assert should is True
         assert hint == "proof"
 
     def test_invariant_keyword(self):
-        should, hint = should_formalize_input("Show the loop invariant holds: sum equals partial sum of array")
+        should, hint = should_formalize_input(
+            "Show the loop invariant holds: sum equals partial sum of array"
+        )
         assert should is True
         assert hint == "proof"
 
     def test_algorithm_keywords(self):
-        should, hint = should_formalize_input("Implement a lock-free concurrent queue with O(1) amortized enqueue")
+        should, hint = should_formalize_input(
+            "Implement a lock-free concurrent queue with O(1) amortized enqueue"
+        )
         assert should is True
         assert hint == "algorithm"
 
     def test_complexity_keyword(self):
-        should, hint = should_formalize_input("What is the complexity of this algorithm using dynamic programming?")
+        should, hint = should_formalize_input(
+            "What is the complexity of this algorithm using dynamic programming?"
+        )
         assert should is True
         assert hint == "algorithm"
 
@@ -123,6 +135,7 @@ class TestShouldFormalizeInput:
 # _parse_formalizer_output tests
 # ---------------------------------------------------------------------------
 
+
 class TestParseFormalizer:
     """Tests for JSON parsing of formalizer output."""
 
@@ -159,6 +172,7 @@ class TestParseFormalizer:
 # ---------------------------------------------------------------------------
 # inject_formalization tests
 # ---------------------------------------------------------------------------
+
 
 class TestInjectFormalization:
     """Tests for context augmentation with formal spec."""
@@ -207,6 +221,7 @@ class TestInjectFormalization:
 # FormalizationResult tests
 # ---------------------------------------------------------------------------
 
+
 class TestFormalizationResult:
     """Tests for result dataclass behavior."""
 
@@ -242,6 +257,7 @@ class TestFormalizationResult:
 # ---------------------------------------------------------------------------
 # formalize_prompt tests (mocked subprocess)
 # ---------------------------------------------------------------------------
+
 
 class TestFormalizePrompt:
     """Tests for formalizer invocation with mocked subprocess."""
@@ -305,6 +321,7 @@ class TestFormalizePrompt:
     @patch("src.formalizer.subprocess.run")
     def test_timeout_handled(self, mock_run):
         import subprocess
+
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=60)
         registry = self._make_mock_registry()
         result = formalize_prompt("minimize x", "optimization", registry, timeout=60)
@@ -315,11 +332,13 @@ class TestFormalizePrompt:
 # Feature flag gating test
 # ---------------------------------------------------------------------------
 
+
 class TestFeatureFlagGating:
     """Verify formalization respects the input_formalizer feature flag."""
 
     def test_feature_flag_off_skips_formalization(self):
         from src.features import Features
+
         f = Features(input_formalizer=False)
         assert f.input_formalizer is False
         assert "input_formalizer" in f.summary()
@@ -327,6 +346,7 @@ class TestFeatureFlagGating:
 
     def test_feature_flag_on_enables_formalization(self):
         from src.features import Features
+
         f = Features(input_formalizer=True)
         assert f.input_formalizer is True
         assert f.summary()["input_formalizer"] is True
@@ -335,6 +355,7 @@ class TestFeatureFlagGating:
 # ---------------------------------------------------------------------------
 # _build_formalizer_prompt test
 # ---------------------------------------------------------------------------
+
 
 class TestBuildFormalizerPrompt:
     """Tests for prompt construction."""

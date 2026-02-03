@@ -1,14 +1,12 @@
 """Tests for vision API endpoints."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
 from src.vision.models import (
-    AnalyzerType,
     JobStatus,
     AnalyzeResult,
-    BatchJobResponse,
     SearchResponse,
 )
 

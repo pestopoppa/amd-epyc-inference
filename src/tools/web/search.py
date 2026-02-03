@@ -62,7 +62,7 @@ def _search_duckduckgo(
     result_pattern = re.compile(
         r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)</a>'
         r'.*?<a[^>]*class="result__snippet"[^>]*>([^<]*)</a>',
-        re.DOTALL
+        re.DOTALL,
     )
 
     for match in result_pattern.finditer(html):
@@ -76,17 +76,20 @@ def _search_duckduckgo(
         # Clean up DuckDuckGo redirect URLs
         if "uddg=" in url_match:
             # Extract actual URL from DDG redirect
-            actual_url_match = re.search(r'uddg=([^&]+)', url_match)
+            actual_url_match = re.search(r"uddg=([^&]+)", url_match)
             if actual_url_match:
                 from urllib.parse import unquote
+
                 url_match = unquote(actual_url_match.group(1))
 
         if url_match and title:
-            results.append({
-                "title": title,
-                "url": url_match,
-                "snippet": snippet,
-            })
+            results.append(
+                {
+                    "title": title,
+                    "url": url_match,
+                    "snippet": snippet,
+                }
+            )
 
     # Fallback: try simpler pattern if no results
     if not results:
@@ -97,11 +100,13 @@ def _search_duckduckgo(
             url_match = match.group(1)
             title = match.group(2).strip()
             if url_match and title and "duckduckgo" not in url_match.lower():
-                results.append({
-                    "title": title,
-                    "url": url_match,
-                    "snippet": "",
-                })
+                results.append(
+                    {
+                        "title": title,
+                        "url": url_match,
+                        "snippet": "",
+                    }
+                )
 
     return results
 

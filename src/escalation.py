@@ -29,9 +29,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from src.roles import Role, Tier, get_escalation_chain, get_tier
+from src.roles import Role, get_escalation_chain
 
 if TYPE_CHECKING:
     pass
@@ -49,11 +49,11 @@ class ErrorCategory(str, Enum):
     - EARLY_ABORT: Immediate escalation (model showed failure signs)
     """
 
-    CODE = "code"        # Syntax errors, type errors, test failures
-    LOGIC = "logic"      # Wrong output, failed assertions
+    CODE = "code"  # Syntax errors, type errors, test failures
+    LOGIC = "logic"  # Wrong output, failed assertions
     TIMEOUT = "timeout"  # Gate or execution timeout
-    SCHEMA = "schema"    # IR/JSON schema violations
-    FORMAT = "format"    # Style/format issues
+    SCHEMA = "schema"  # IR/JSON schema violations
+    FORMAT = "format"  # Style/format issues
     EARLY_ABORT = "early_abort"  # Generation aborted due to predicted failure
     UNKNOWN = "unknown"  # Unclassified errors
 
@@ -61,12 +61,12 @@ class ErrorCategory(str, Enum):
 class EscalationAction(str, Enum):
     """Actions that can result from an escalation decision."""
 
-    RETRY = "retry"      # Retry with same role
+    RETRY = "retry"  # Retry with same role
     ESCALATE = "escalate"  # Escalate to next tier
     DELEGATE = "delegate"  # Route DOWN to a specific lower-tier role
-    REVIEW = "review"    # Quality check by higher-tier model
-    FAIL = "fail"        # Terminal failure
-    SKIP = "skip"        # Skip the gate/step (for optional gates)
+    REVIEW = "review"  # Quality check by higher-tier model
+    FAIL = "fail"  # Terminal failure
+    SKIP = "skip"  # Skip the gate/step (for optional gates)
     EXPLORE = "explore"  # Fall back to REPL exploration (for terminal roles)
 
 
@@ -151,6 +151,7 @@ class EscalationDecision:
 
 def _esc_cfg():
     from src.config import get_config
+
     return get_config().escalation
 
 
@@ -167,14 +168,14 @@ class EscalationConfig:
 
     max_retries: int = field(default_factory=lambda: _esc_cfg().max_retries)
     max_escalations: int = field(default_factory=lambda: _esc_cfg().max_escalations)
-    optional_gates: frozenset[str] = field(
-        default_factory=lambda: _esc_cfg().optional_gates
-    )
+    optional_gates: frozenset[str] = field(default_factory=lambda: _esc_cfg().optional_gates)
     no_escalate_categories: frozenset[ErrorCategory] = field(
-        default_factory=lambda: frozenset({
-            ErrorCategory.FORMAT,
-            ErrorCategory.SCHEMA,
-        })
+        default_factory=lambda: frozenset(
+            {
+                ErrorCategory.FORMAT,
+                ErrorCategory.SCHEMA,
+            }
+        )
     )
 
 
@@ -216,7 +217,6 @@ class EscalationPolicy:
         # Get the role's escalation target
         if isinstance(context.current_role, Role):
             target = context.current_role.escalates_to()
-            tier = context.current_role.tier
         else:
             # Unknown role - default to fail
             return EscalationDecision(

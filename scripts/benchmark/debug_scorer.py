@@ -61,6 +61,7 @@ def score_answer(
         "code_execution": _score_code_execution,
         "programmatic": _score_programmatic,
         "substring": _score_substring,
+        "f1": _score_f1,
     }
 
     scorer = scorers.get(scoring_method)
@@ -356,6 +357,81 @@ def _score_substring(
         return expected.strip() in answer
     else:
         return expected.strip().lower() in answer.lower()
+
+
+def _score_f1(
+    answer: str, expected: str, config: dict[str, Any]
+) -> bool:
+    """Token-level F1 scoring for QA tasks.
+
+    Used for: HotpotQA, SQuAD-style reading comprehension.
+
+    Computes precision/recall/F1 at the token level after normalization.
+    A prediction is considered correct if F1 >= threshold.
+
+    Config:
+        extract_pattern: Regex to extract answer (default: #### pattern).
+        threshold: Minimum F1 to count as correct (default: 0.5).
+        normalize: Whether to normalize text (default: True).
+    """
+    pattern = config.get("extract_pattern", r"####\s*(.+)")
+    threshold = config.get("threshold", 0.5)
+    normalize = config.get("normalize", True)
+
+    # Extract answer if pattern provided
+    extracted = _extract_answer(answer, pattern)
+    if extracted is None:
+        # Fallback: use last line
+        extracted = answer.strip().split("\n")[-1].strip()
+
+    if normalize:
+        extracted = _normalize_text(extracted)
+        expected = _normalize_text(expected)
+
+    # Tokenize
+    pred_tokens = extracted.split()
+    gold_tokens = expected.split()
+
+    if not gold_tokens:
+        return len(pred_tokens) == 0
+
+    if not pred_tokens:
+        return False
+
+    # Compute token overlap
+    common = set(pred_tokens) & set(gold_tokens)
+
+    if not common:
+        return False
+
+    precision = len(common) / len(pred_tokens)
+    recall = len(common) / len(gold_tokens)
+
+    if precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = 2 * precision * recall / (precision + recall)
+
+    return f1 >= threshold
+
+
+def _normalize_text(text: str) -> str:
+    """Normalize text for F1 scoring (SQuAD-style)."""
+    import string
+
+    # Lowercase
+    text = text.lower()
+
+    # Remove punctuation
+    text = text.translate(str.maketrans("", "", string.punctuation))
+
+    # Remove articles
+    text = re.sub(r"\b(a|an|the)\b", " ", text)
+
+    # Collapse whitespace
+    text = " ".join(text.split())
+
+    return text
 
 
 # ── Helpers ────────────────────────────────────────────────────────────

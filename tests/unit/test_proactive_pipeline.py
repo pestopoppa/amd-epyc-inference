@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 from src.api.routes.chat_pipeline import _parse_plan_steps
 from src.proactive_delegation import (
@@ -26,20 +26,28 @@ class TestParsePlanSteps:
     """Test JSON plan parsing with various formats."""
 
     def test_valid_json_array(self):
-        raw = json.dumps([
-            {"id": "S1", "action": "analyze code", "actor": "worker"},
-            {"id": "S2", "action": "write tests", "actor": "coder", "depends_on": ["S1"]},
-        ])
+        raw = json.dumps(
+            [
+                {"id": "S1", "action": "analyze code", "actor": "worker"},
+                {"id": "S2", "action": "write tests", "actor": "coder", "depends_on": ["S1"]},
+            ]
+        )
         steps = _parse_plan_steps(raw)
         assert len(steps) == 2
         assert steps[0]["id"] == "S1"
         assert steps[1]["depends_on"] == ["S1"]
 
     def test_markdown_fenced_json(self):
-        raw = "```json\n" + json.dumps([
-            {"id": "S1", "action": "step one"},
-            {"id": "S2", "action": "step two"},
-        ]) + "\n```"
+        raw = (
+            "```json\n"
+            + json.dumps(
+                [
+                    {"id": "S1", "action": "step one"},
+                    {"id": "S2", "action": "step two"},
+                ]
+            )
+            + "\n```"
+        )
         steps = _parse_plan_steps(raw)
         assert len(steps) == 2
 
@@ -55,12 +63,14 @@ class TestParsePlanSteps:
         assert _parse_plan_steps('{"id": "S1"}') == []
 
     def test_missing_required_fields_filtered(self):
-        raw = json.dumps([
-            {"id": "S1", "action": "valid step"},
-            {"action": "missing id"},
-            {"id": "S3"},  # missing action
-            {"id": "S4", "action": "also valid"},
-        ])
+        raw = json.dumps(
+            [
+                {"id": "S1", "action": "valid step"},
+                {"action": "missing id"},
+                {"id": "S3"},  # missing action
+                {"id": "S4", "action": "also valid"},
+            ]
+        )
         steps = _parse_plan_steps(raw)
         assert len(steps) == 2
         assert steps[0]["id"] == "S1"
@@ -78,12 +88,14 @@ class TestParsePlanSteps:
         assert _parse_plan_steps("   ") == []
 
     def test_non_dict_items_filtered(self):
-        raw = json.dumps([
-            {"id": "S1", "action": "valid"},
-            "not a dict",
-            42,
-            {"id": "S2", "action": "also valid"},
-        ])
+        raw = json.dumps(
+            [
+                {"id": "S1", "action": "valid"},
+                "not a dict",
+                42,
+                {"id": "S2", "action": "also valid"},
+            ]
+        )
         steps = _parse_plan_steps(raw)
         assert len(steps) == 2
 
@@ -133,20 +145,32 @@ class TestExecuteProactiveGating:
 
     @pytest.mark.asyncio
     async def test_returns_none_when_feature_disabled(
-        self, mock_request, mock_routing, mock_primitives, mock_state,
+        self,
+        mock_request,
+        mock_routing,
+        mock_primitives,
+        mock_state,
     ):
         from src.api.routes.chat_pipeline import _execute_proactive
 
         with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=False)
             result = await _execute_proactive(
-                mock_request, mock_routing, mock_primitives, mock_state, 0.0,
+                mock_request,
+                mock_routing,
+                mock_primitives,
+                mock_state,
+                0.0,
             )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_when_not_real_mode(
-        self, mock_request, mock_routing, mock_primitives, mock_state,
+        self,
+        mock_request,
+        mock_routing,
+        mock_primitives,
+        mock_state,
     ):
         from src.api.routes.chat_pipeline import _execute_proactive
 
@@ -154,13 +178,21 @@ class TestExecuteProactiveGating:
         with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=True)
             result = await _execute_proactive(
-                mock_request, mock_routing, mock_primitives, mock_state, 0.0,
+                mock_request,
+                mock_routing,
+                mock_primitives,
+                mock_state,
+                0.0,
             )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_for_non_complex_tasks(
-        self, mock_request, mock_routing, mock_primitives, mock_state,
+        self,
+        mock_request,
+        mock_routing,
+        mock_primitives,
+        mock_state,
     ):
         from src.api.routes.chat_pipeline import _execute_proactive
         from src.proactive_delegation import TaskComplexity
@@ -172,13 +204,21 @@ class TestExecuteProactiveGating:
                 return_value=(TaskComplexity.SIMPLE, MagicMock()),
             ):
                 result = await _execute_proactive(
-                    mock_request, mock_routing, mock_primitives, mock_state, 0.0,
+                    mock_request,
+                    mock_routing,
+                    mock_primitives,
+                    mock_state,
+                    0.0,
                 )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_when_architect_already_selected(
-        self, mock_request, mock_routing, mock_primitives, mock_state,
+        self,
+        mock_request,
+        mock_routing,
+        mock_primitives,
+        mock_state,
     ):
         from src.api.routes.chat_pipeline import _execute_proactive
         from src.proactive_delegation import TaskComplexity
@@ -192,21 +232,33 @@ class TestExecuteProactiveGating:
                 return_value=(TaskComplexity.COMPLEX, MagicMock()),
             ):
                 result = await _execute_proactive(
-                    mock_request, mock_routing, mock_primitives, mock_state, 0.0,
+                    mock_request,
+                    mock_routing,
+                    mock_primitives,
+                    mock_state,
+                    0.0,
                 )
         assert result is None
 
     @pytest.mark.asyncio
     async def test_returns_none_when_plan_too_short(
-        self, mock_request, mock_routing, mock_primitives, mock_state,
+        self,
+        mock_request,
+        mock_routing,
+        mock_primitives,
+        mock_state,
     ):
         from src.api.routes.chat_pipeline import _execute_proactive
         from src.proactive_delegation import TaskComplexity
 
         # Architect returns single-step plan
-        mock_primitives.llm_call = MagicMock(return_value=json.dumps([
-            {"id": "S1", "action": "do everything"},
-        ]))
+        mock_primitives.llm_call = MagicMock(
+            return_value=json.dumps(
+                [
+                    {"id": "S1", "action": "do everything"},
+                ]
+            )
+        )
 
         with patch("src.api.routes.chat_pipeline.stages.features") as mock_feat:
             mock_feat.return_value = MagicMock(parallel_execution=True)
@@ -215,7 +267,11 @@ class TestExecuteProactiveGating:
                 return_value=(TaskComplexity.COMPLEX, MagicMock()),
             ):
                 result = await _execute_proactive(
-                    mock_request, mock_routing, mock_primitives, mock_state, 0.0,
+                    mock_request,
+                    mock_routing,
+                    mock_primitives,
+                    mock_state,
+                    0.0,
                 )
         assert result is None
 
@@ -256,12 +312,14 @@ class TestCustomExceptions:
 
     def test_delegation_error_is_exception(self):
         from src.proactive_delegation import DelegationError
+
         assert issubclass(DelegationError, Exception)
         e = DelegationError("test failure")
         assert str(e) == "test failure"
 
     def test_architect_plan_error_inherits(self):
         from src.proactive_delegation import ArchitectPlanError, DelegationError
+
         assert issubclass(ArchitectPlanError, DelegationError)
         e = ArchitectPlanError("bad plan")
         assert isinstance(e, DelegationError)
@@ -269,10 +327,12 @@ class TestCustomExceptions:
 
     def test_step_execution_error_inherits(self):
         from src.proactive_delegation import StepExecutionError, DelegationError
+
         assert issubclass(StepExecutionError, DelegationError)
 
     def test_step_execution_error_fields(self):
         from src.proactive_delegation import StepExecutionError
+
         cause = ValueError("bad input")
         e = StepExecutionError("S1", "coder_primary", cause=cause)
         assert e.step_id == "S1"
@@ -284,6 +344,7 @@ class TestCustomExceptions:
 
     def test_step_execution_error_no_cause(self):
         from src.proactive_delegation import StepExecutionError
+
         e = StepExecutionError("S2", "worker_general")
         assert e.cause is None
         assert "S2" in str(e)
@@ -291,8 +352,11 @@ class TestCustomExceptions:
 
     def test_exceptions_catchable_by_base(self):
         from src.proactive_delegation import (
-            DelegationError, ArchitectPlanError, StepExecutionError,
+            DelegationError,
+            ArchitectPlanError,
+            StepExecutionError,
         )
+
         with pytest.raises(DelegationError):
             raise ArchitectPlanError("plan failed")
         with pytest.raises(DelegationError):
@@ -362,12 +426,14 @@ class TestComplexitySignals:
     def test_classify_trivial(self):
         """Simple questions should classify as TRIVIAL or SIMPLE."""
         from src.proactive_delegation import classify_task_complexity
+
         complexity, signals = classify_task_complexity("What is 2+2?")
         assert complexity in (TaskComplexity.TRIVIAL, TaskComplexity.SIMPLE)
 
     def test_classify_complex_triggers(self):
         """Complex architecture prompts should classify as MODERATE or COMPLEX."""
         from src.proactive_delegation import classify_task_complexity
+
         complexity, signals = classify_task_complexity(
             "Design and implement a distributed caching system with "
             "consistency guarantees, sharding, and replication across "

@@ -10,7 +10,7 @@ Tests the full flow of:
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -344,7 +344,9 @@ class TestGraphEnhancedRetriever:
 class TestLatencyBudget:
     """Tests for latency expectations."""
 
-    def test_retrieval_under_100ms(self, episodic_store, failure_graph, hypothesis_graph, mock_embedder):
+    def test_retrieval_under_100ms(
+        self, episodic_store, failure_graph, hypothesis_graph, mock_embedder
+    ):
         """Full retrieval completes in <100ms with both graph queries."""
         import time
 
@@ -375,7 +377,7 @@ class TestLatencyBudget:
         elapsed = (time.perf_counter() - start) / 10
 
         # Should be under 100ms on average
-        assert elapsed < 0.1, f"Retrieval took {elapsed*1000:.1f}ms, expected <100ms"
+        assert elapsed < 0.1, f"Retrieval took {elapsed * 1000:.1f}ms, expected <100ms"
 
 
 class TestRecordMitigation:
@@ -401,7 +403,7 @@ class TestRecordMitigation:
         )
 
         # Record mitigation
-        mitigation_id = store.record_mitigation(
+        store.record_mitigation(
             failure_memory_id=memory_id,
             action="increase_timeout",
             worked=True,

@@ -8,7 +8,7 @@ Focuses on uncovered paths in LlamaCppBackend:
 """
 
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -20,12 +20,7 @@ from src.model_server import (
     ModelServerError,
 )
 from src.registry_loader import (
-    AccelerationConfig,
-    MemoryConfig,
-    ModelConfig,
-    PerformanceMetrics,
     RegistryLoader,
-    RoleConfig,
 )
 
 
@@ -142,7 +137,7 @@ class TestLlamaCppBackendBuildCommand:
         assert "test-model.gguf" in cmd
         assert "-n 128" in cmd
         assert "-t 96" in cmd
-        assert '--temp 0.0' in cmd
+        assert "--temp 0.0" in cmd
         assert '-p "Hello"' in cmd
         # Should NOT have spec/moe/lookup flags
         assert "-md" not in cmd

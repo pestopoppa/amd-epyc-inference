@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 class TestToonEncoder:
@@ -11,6 +11,7 @@ class TestToonEncoder:
     def test_is_available(self):
         """Test TOON availability check."""
         from src.services.toon_encoder import is_available
+
         # Should return True if toon_format is installed
         result = is_available()
         assert isinstance(result, bool)
@@ -33,8 +34,8 @@ class TestToonEncoder:
         from src.services import toon_encoder
 
         # Mock toon_format as unavailable
-        with patch.object(toon_encoder, '_toon_format', None):
-            with patch.object(toon_encoder, '_get_toon', return_value=None):
+        with patch.object(toon_encoder, "_toon_format", None):
+            with patch.object(toon_encoder, "_get_toon", return_value=None):
                 result = toon_encoder.encode({"test": 123}, fallback_to_json=True)
                 assert json.loads(result) == {"test": 123}
 
@@ -103,7 +104,7 @@ class TestToonEncoder:
 
     def test_encode_grep_hits(self):
         """Test grep hits encoding."""
-        from src.services.toon_encoder import encode_grep_hits, is_available
+        from src.services.toon_encoder import encode_grep_hits
 
         grep_hits = [
             {
@@ -113,7 +114,7 @@ class TestToonEncoder:
                     {"line_num": 10, "match": "def main():"},
                     {"line_num": 20, "match": "def main_loop():"},
                     {"line_num": 30, "match": "def main_entry():"},
-                ]
+                ],
             }
         ]
         result = encode_grep_hits(grep_hits)
@@ -140,7 +141,7 @@ class TestToonEncoder:
             previous_attempts=[
                 {"role": "coder", "error": "Parse error", "tokens": 100},
                 {"role": "coder", "error": "Schema error", "tokens": 150},
-            ]
+            ],
         )
         assert isinstance(result, str)
         assert "task-123" in result
@@ -171,11 +172,8 @@ class TestToonRoundTrip:
 
         original = {
             "path": "/test/dir",
-            "files": [
-                {"name": f"file{i}.py", "type": "file", "size": i * 100}
-                for i in range(10)
-            ],
-            "total": 10
+            "files": [{"name": f"file{i}.py", "type": "file", "size": i * 100} for i in range(10)],
+            "total": 10,
         }
         encoded = encode(original)
         decoded = decode(encoded)
@@ -196,7 +194,7 @@ class TestToonRoundTrip:
             "previous_attempts": [
                 {"role": "coder", "error": "Error 1", "tokens": 1000},
                 {"role": "coder", "error": "Error 2", "tokens": 1200},
-            ]
+            ],
         }
         encoded = encode(original)
         decoded = decode(encoded)
@@ -222,6 +220,7 @@ class TestToonNewEncoders:
 
         # Should be shorter with TOON if available
         import json
+
         json_len = len(json.dumps(procedures, indent=2))
         if is_available() and len(procedures) >= 3:
             assert len(result) < json_len
@@ -231,9 +230,24 @@ class TestToonNewEncoders:
         from src.services.toon_encoder import encode_memory_results, is_available
 
         results = [
-            {"task": "Fix authentication bug", "outcome": "success", "strategy": "direct", "similarity": 0.85},
-            {"task": "Implement caching", "outcome": "success", "strategy": "decomposition", "similarity": 0.78},
-            {"task": "Refactor API layer", "outcome": "failure", "strategy": "direct", "similarity": 0.72},
+            {
+                "task": "Fix authentication bug",
+                "outcome": "success",
+                "strategy": "direct",
+                "similarity": 0.85,
+            },
+            {
+                "task": "Implement caching",
+                "outcome": "success",
+                "strategy": "decomposition",
+                "similarity": 0.78,
+            },
+            {
+                "task": "Refactor API layer",
+                "outcome": "failure",
+                "strategy": "direct",
+                "similarity": 0.72,
+            },
         ]
         result = encode_memory_results(results)
         assert isinstance(result, str)
@@ -241,6 +255,7 @@ class TestToonNewEncoders:
 
         # Should be shorter with TOON if available
         import json
+
         json_result = json.dumps({"results": results}, indent=2)
         if is_available() and len(results) >= 3:
             assert len(result) < len(json_result)
@@ -258,11 +273,8 @@ class TestToonTokenReduction:
 
         data = {
             "path": "/mnt/raid0/llm/claude",
-            "files": [
-                {"name": f"file{i}.py", "type": "file", "size": i * 100}
-                for i in range(20)
-            ],
-            "total": 20
+            "files": [{"name": f"file{i}.py", "type": "file", "size": i * 100} for i in range(20)],
+            "total": 20,
         }
 
         json_str = json.dumps(data, indent=2)

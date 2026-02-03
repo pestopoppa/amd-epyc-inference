@@ -171,7 +171,7 @@ class _StateMixin:
                             )
                         if function_counts.get("llm_call", 0) > 0:
                             episodic_suggestions.append(
-                                f"llm_call('summarize key points')  # Similar task delegated effectively"
+                                "llm_call('summarize key points')  # Similar task delegated effectively"
                             )
                         if strategy_type == "scan" and function_counts.get("peek", 0) > 0:
                             peek_count = function_counts["peek"]
@@ -244,13 +244,15 @@ class _StateMixin:
         # Sanitize exploration log events for serialization
         exploration_events = []
         for event in self._exploration_log.events:
-            exploration_events.append({
-                "function": event.function,
-                "args": sanitize_artifacts(event.args) if isinstance(event.args, dict) else {},
-                "result_size": event.result_size,
-                "timestamp": event.timestamp,
-                "token_estimate": event.token_estimate,
-            })
+            exploration_events.append(
+                {
+                    "function": event.function,
+                    "args": sanitize_artifacts(event.args) if isinstance(event.args, dict) else {},
+                    "result_size": event.result_size,
+                    "timestamp": event.timestamp,
+                    "token_estimate": event.token_estimate,
+                }
+            )
 
         return {
             "version": 1,  # Schema version for future compatibility

@@ -11,7 +11,7 @@ Tests uncovered paths:
 
 import asyncio
 import socket
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest

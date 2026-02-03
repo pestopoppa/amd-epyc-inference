@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -28,9 +27,8 @@ from src.vision.models import (
     VideoAnalyzeResponse,
     VideoFrameResult,
     FaceResult,
-    BoundingBox,
 )
-from src.vision.pipeline import VisionPipeline, get_pipeline
+from src.vision.pipeline import get_pipeline
 from src.db.models.vision import Video, VideoFrame, get_session
 
 logger = logging.getLogger(__name__)
@@ -76,8 +74,10 @@ class VideoProcessor:
             result = subprocess.run(
                 [
                     "ffprobe",
-                    "-v", "quiet",
-                    "-print_format", "json",
+                    "-v",
+                    "quiet",
+                    "-print_format",
+                    "json",
                     "-show_format",
                     "-show_streams",
                     str(video_path),
@@ -91,6 +91,7 @@ class VideoProcessor:
                 return None
 
             import json
+
             data = json.loads(result.stdout)
 
             # Find video stream
@@ -151,9 +152,12 @@ class VideoProcessor:
         frame_pattern = str(output_dir / "frame_%06d.jpg")
         cmd = [
             "ffmpeg",
-            "-i", str(video_path),
-            "-vf", f"fps={fps}",
-            "-q:v", "2",  # High quality JPEG
+            "-i",
+            str(video_path),
+            "-vf",
+            f"fps={fps}",
+            "-q:v",
+            "2",  # High quality JPEG
             frame_pattern,
             "-y",  # Overwrite
         ]
@@ -264,12 +268,14 @@ class VideoProcessor:
 
                 # Copy face results
                 for face in result.faces:
-                    frame_result.faces.append(FaceResult(
-                        face_id=face.face_id,
-                        bbox=face.bbox,
-                        confidence=face.confidence,
-                        person_id=face.person_id,
-                    ))
+                    frame_result.faces.append(
+                        FaceResult(
+                            face_id=face.face_id,
+                            bbox=face.bbox,
+                            confidence=face.confidence,
+                            person_id=face.person_id,
+                        )
+                    )
 
                 # Save thumbnail
                 if store_thumbnails:
@@ -284,10 +290,12 @@ class VideoProcessor:
 
             except Exception as e:
                 logger.error(f"Failed to process frame at {timestamp_ms}ms: {e}")
-                frame_results.append(VideoFrameResult(
-                    frame_id=frame_id,
-                    timestamp_ms=timestamp_ms,
-                ))
+                frame_results.append(
+                    VideoFrameResult(
+                        frame_id=frame_id,
+                        timestamp_ms=timestamp_ms,
+                    )
+                )
 
             finally:
                 # Clean up extracted frame

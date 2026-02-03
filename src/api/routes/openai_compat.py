@@ -30,7 +30,6 @@ from src.prompt_builders import (
     extract_code_from_response,
     auto_wrap_final,
 )
-from src.llm_primitives import LLMPrimitives
 from src.repl_environment import REPLEnvironment
 from src.roles import Role
 
@@ -39,17 +38,17 @@ router = APIRouter()
 # Available roles/models
 AVAILABLE_ROLES = [
     "orchestrator",  # Auto-routing via frontdoor
-    "frontdoor",     # Tier A - Root LM
-    "coder_primary", # Tier A - Coder primary (same as frontdoor)
-    "coder",         # Tier B - Coder specialist
+    "frontdoor",  # Tier A - Root LM
+    "coder_primary",  # Tier A - Coder primary (same as frontdoor)
+    "coder",  # Tier B - Coder specialist
     "coder_escalation",  # Tier B - Coder escalation
-    "architect",     # Tier B - Architecture specialist
-    "architect_general", # Tier B - General architect
+    "architect",  # Tier B - Architecture specialist
+    "architect_general",  # Tier B - General architect
     "architect_coding",  # Tier B - Coding architect
-    "worker",        # Tier C - General worker
-    "worker_general",    # Tier C - General worker
-    "worker_math",       # Tier C - Math worker
-    "worker_vision",     # Tier C - Vision worker
+    "worker",  # Tier C - General worker
+    "worker_general",  # Tier C - General worker
+    "worker_math",  # Tier C - Math worker
+    "worker_vision",  # Tier C - Vision worker
     "ingest_long_context",  # Tier B - Long context ingestion
 ]
 
@@ -57,12 +56,7 @@ AVAILABLE_ROLES = [
 @router.get("/models", response_model=OpenAIModelsResponse)
 async def list_models() -> OpenAIModelsResponse:
     """List available models (roles) in OpenAI format."""
-    return OpenAIModelsResponse(
-        data=[
-            OpenAIModelInfo(id=role)
-            for role in AVAILABLE_ROLES
-        ]
-    )
+    return OpenAIModelsResponse(data=[OpenAIModelInfo(id=role) for role in AVAILABLE_ROLES])
 
 
 @router.post("/chat/completions", response_model=None)
@@ -104,7 +98,8 @@ async def openai_chat_completions(
 
     # Map model to role
     role = request.x_orchestrator_role or (
-        Role.FRONTDOOR if request.model in ("orchestrator", "gpt-4", "gpt-3.5-turbo", "claude-3")
+        Role.FRONTDOOR
+        if request.model in ("orchestrator", "gpt-4", "gpt-3.5-turbo", "claude-3")
         else request.model
     )
 
@@ -115,10 +110,10 @@ async def openai_chat_completions(
     # Real mode requires: registry loaded AND at least one backend available
     # For testing without live servers, we always fall back to mock mode
     from src.features import features
+
     f = features()
     use_real_mode = (
-        state.registry is not None
-        and not f.mock_mode  # Respect mock_mode feature flag
+        state.registry is not None and not f.mock_mode  # Respect mock_mode feature flag
     )
 
     if request.stream:
@@ -137,11 +132,15 @@ async def openai_chat_completions(
                         "object": "chat.completion.chunk",
                         "created": created,
                         "model": request.model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"content": char} if i > 0 else {"role": "assistant", "content": char},
-                            "finish_reason": None,
-                        }],
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": char}
+                                if i > 0
+                                else {"role": "assistant", "content": char},
+                                "finish_reason": None,
+                            }
+                        ],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n"
                 response_text = mock_response
@@ -154,11 +153,13 @@ async def openai_chat_completions(
                         "object": "chat.completion.chunk",
                         "created": created,
                         "model": request.model,
-                        "choices": [{
-                            "index": 0,
-                            "delta": {"role": "assistant", "content": error_msg},
-                            "finish_reason": None,
-                        }],
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"role": "assistant", "content": error_msg},
+                                "finish_reason": None,
+                            }
+                        ],
                     }
                     yield f"data: {json.dumps(chunk)}\n\n"
                     response_text = error_msg
@@ -224,11 +225,15 @@ async def openai_chat_completions(
                             "object": "chat.completion.chunk",
                             "created": created,
                             "model": request.model,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"role": "assistant", "content": char} if first_chunk else {"content": char},
-                                "finish_reason": None,
-                            }],
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"role": "assistant", "content": char}
+                                    if first_chunk
+                                    else {"content": char},
+                                    "finish_reason": None,
+                                }
+                            ],
                         }
                         first_chunk = False
                         if request.x_show_routing:
@@ -241,11 +246,13 @@ async def openai_chat_completions(
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": request.model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": "stop",
-                }],
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop",
+                    }
+                ],
             }
             if request.x_show_routing:
                 final_chunk["x_orchestrator_metadata"] = {
@@ -346,7 +353,9 @@ async def openai_chat_completions(
             x_orchestrator_metadata={
                 "role": role,
                 "elapsed_seconds": elapsed,
-            } if request.x_show_routing else None,
+            }
+            if request.x_show_routing
+            else None,
         )
 
 

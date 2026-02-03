@@ -21,9 +21,16 @@ class TestTaskExtra:
 
     def test_all_fields(self):
         result = task_extra(
-            task_id="t1", role="coder", latency_ms=42.567,
-            stage="execute", strategy="rules", mode="direct",
-            turn=3, error_type="TimeoutError", tokens=150, prompt_len=500,
+            task_id="t1",
+            role="coder",
+            latency_ms=42.567,
+            stage="execute",
+            strategy="rules",
+            mode="direct",
+            turn=3,
+            error_type="TimeoutError",
+            tokens=150,
+            prompt_len=500,
         )
         assert result["task_id"] == "t1"
         assert result["latency_ms"] == 42.6  # rounded to 1 decimal
@@ -41,8 +48,13 @@ class TestJSONFormatter:
     def test_basic_format(self):
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="hello world", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="hello world",
+            args=(),
+            exc_info=None,
         )
         output = formatter.format(record)
         parsed = json.loads(output)
@@ -54,8 +66,13 @@ class TestJSONFormatter:
     def test_structured_fields_included(self):
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="routed", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="routed",
+            args=(),
+            exc_info=None,
         )
         record.task_id = "chat-abc"
         record.role = "frontdoor"
@@ -67,8 +84,13 @@ class TestJSONFormatter:
     def test_unrecognized_fields_excluded(self):
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="test", args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="test",
+            args=(),
+            exc_info=None,
         )
         record.random_field = "should not appear"
         output = formatter.format(record)
@@ -78,8 +100,13 @@ class TestJSONFormatter:
     def test_format_with_args(self):
         formatter = JSONFormatter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg="user %s did %d things", args=("alice", 3), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="user %s did %d things",
+            args=("alice", 3),
+            exc_info=None,
         )
         output = formatter.format(record)
         parsed = json.loads(output)

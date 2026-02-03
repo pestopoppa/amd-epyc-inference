@@ -2,15 +2,11 @@
 """Unit tests for gate runner."""
 
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import subprocess
 
 from src.gate_runner import (
     GateRunner,
     GateConfig,
     GateResult,
-    GateRunnerError,
 )
 
 
@@ -433,6 +429,7 @@ gates:
 """)
         runner = GateRunner(config_path=config_file, working_dir=tmp_path)
         import time
+
         start = time.perf_counter()
         results = await runner.run_all_gates_parallel()
         elapsed = time.perf_counter() - start

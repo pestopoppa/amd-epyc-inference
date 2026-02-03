@@ -12,14 +12,12 @@ To run all tests:
     pytest tests/integration/test_archive_pipeline.py -v
 """
 
-import asyncio
 import io
 import json
 import tarfile
-import tempfile
 import zipfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -37,7 +35,7 @@ def sample_document_archive(tmp_path):
     """Create a sample ZIP archive with documents and code files."""
     archive_path = tmp_path / "documents.zip"
 
-    with zipfile.ZipFile(archive_path, 'w') as zf:
+    with zipfile.ZipFile(archive_path, "w") as zf:
         # Text files
         zf.writestr("readme.md", "# Project Documentation\n\nThis is the readme.")
         zf.writestr("notes.txt", "Meeting notes from 2026-01-15\n\nDiscussed architecture.")
@@ -59,7 +57,7 @@ def sample_tar_gz_archive(tmp_path):
     """Create a sample tar.gz archive."""
     archive_path = tmp_path / "code_bundle.tar.gz"
 
-    with tarfile.open(archive_path, 'w:gz') as tf:
+    with tarfile.open(archive_path, "w:gz") as tf:
         for name, content in [
             ("src/app.py", b"# Main application\nclass App:\n    pass"),
             ("src/models.py", b"# Database models\nclass User:\n    pass"),
@@ -80,13 +78,13 @@ def nested_archive(tmp_path):
     """Create an archive containing another archive."""
     # Create inner archive
     inner_path = tmp_path / "inner.zip"
-    with zipfile.ZipFile(inner_path, 'w') as zf:
+    with zipfile.ZipFile(inner_path, "w") as zf:
         zf.writestr("inner_doc.txt", "Content from inner archive")
         zf.writestr("inner_code.py", "def inner(): pass")
 
     # Create outer archive
     outer_path = tmp_path / "outer.zip"
-    with zipfile.ZipFile(outer_path, 'w') as zf:
+    with zipfile.ZipFile(outer_path, "w") as zf:
         zf.writestr("outer_doc.txt", "Content from outer archive")
         zf.write(inner_path, "archives/inner.zip")
 
@@ -180,7 +178,7 @@ class TestArchiveExtractionIntegration:
 
         assert len(text_files) == 3  # readme.md, notes.txt, config.json
         assert len(code_files) == 2  # main.py, utils.py
-        assert len(doc_files) == 2   # report.pdf, guide.pdf
+        assert len(doc_files) == 2  # report.pdf, guide.pdf
 
     def test_extract_pattern_filtering(self, sample_document_archive, tmp_path):
         """Test pattern-based extraction."""
@@ -239,14 +237,12 @@ class TestArchivePreprocessing:
     ):
         """Test archive preprocessing with mocked OCR."""
         from src.services.document_preprocessor import DocumentPreprocessor
-        from src.models.document import OCRResult, ProcessingStatus
+        from src.models.document import OCRResult
 
         preprocessor = DocumentPreprocessor()
 
         # Mock OCR processing
-        with patch(
-            "src.services.document_preprocessor.process_document"
-        ) as mock_process:
+        with patch("src.services.document_preprocessor.process_document") as mock_process:
             # Return mock OCR result for PDF files
             mock_process.return_value = OCRResult.from_dict(mock_ocr_result)
 
@@ -297,9 +293,7 @@ class TestArchivePreprocessing:
 class TestREPLArchiveFunctions:
     """Tests for REPL archive functions."""
 
-    def test_archive_open_creates_manifest(
-        self, sample_document_archive, repl_environment
-    ):
+    def test_archive_open_creates_manifest(self, sample_document_archive, repl_environment):
         """Test archive_open returns manifest and stores handle."""
         result = repl_environment.execute(
             f"result = archive_open('{sample_document_archive}')\nprint(result)"
@@ -309,11 +303,11 @@ class TestREPLArchiveFunctions:
 
         # Parse the JSON output to verify structure
         # The output contains the printed result, which should be JSON
-        output_lines = result.output.strip().split('\n')
+        output_lines = result.output.strip().split("\n")
         # Find the line with JSON (may have other output before it)
         json_line = None
         for line in output_lines:
-            if 'total_files' in line:
+            if "total_files" in line:
                 json_line = line
                 break
 
@@ -322,15 +316,15 @@ class TestREPLArchiveFunctions:
         # Parse and verify the manifest structure
         try:
             manifest_data = json.loads(json_line)
-            assert manifest_data['total_files'] == 7  # Matches sample_document_archive fixture
-            assert 'types' in manifest_data
+            assert manifest_data["total_files"] == 7  # Matches sample_document_archive fixture
+            assert "types" in manifest_data
             # Verify specific file types from the fixture
-            types = manifest_data['types']
-            assert '.md' in types  # readme.md
-            assert '.py' in types  # main.py, utils.py
-            assert '.pdf' in types  # report.pdf, guide.pdf
-            assert '.json' in types  # config.json
-            assert '.txt' in types  # notes.txt
+            types = manifest_data["types"]
+            assert ".md" in types  # readme.md
+            assert ".py" in types  # main.py, utils.py
+            assert ".pdf" in types  # report.pdf, guide.pdf
+            assert ".json" in types  # config.json
+            assert ".txt" in types  # notes.txt
         except json.JSONDecodeError:
             # If not valid JSON, check it's a dict-like string representation
             assert "total_files" in json_line
@@ -339,17 +333,13 @@ class TestREPLArchiveFunctions:
         # Check artifacts storage
         assert "_archives" in repl_environment.artifacts
 
-    def test_archive_extract_pattern(
-        self, sample_document_archive, repl_environment
-    ):
+    def test_archive_extract_pattern(self, sample_document_archive, repl_environment):
         """Test archive_extract with pattern."""
         # First open
         repl_environment.execute(f"archive_open('{sample_document_archive}')")
 
         # Extract Python files
-        result = repl_environment.execute(
-            "result = archive_extract(pattern='*.py')\nprint(result)"
-        )
+        result = repl_environment.execute("result = archive_extract(pattern='*.py')\nprint(result)")
 
         assert result.error is None
 
@@ -367,18 +357,14 @@ class TestREPLArchiveFunctions:
         if "utils.py" in result.output:
             assert "utils.py" in result.output
 
-    def test_archive_file_retrieval(
-        self, sample_document_archive, repl_environment
-    ):
+    def test_archive_file_retrieval(self, sample_document_archive, repl_environment):
         """Test archive_file retrieves specific file content."""
         # Open and extract
         repl_environment.execute(f"archive_open('{sample_document_archive}')")
         repl_environment.execute("archive_extract(pattern='*.md')")
 
         # Get specific file
-        result = repl_environment.execute(
-            "content = archive_file('readme.md')\nprint(content)"
-        )
+        result = repl_environment.execute("content = archive_file('readme.md')\nprint(content)")
 
         assert result.error is None
 
@@ -386,9 +372,7 @@ class TestREPLArchiveFunctions:
         # The readme.md fixture contains: "# Project Documentation\n\nThis is the readme."
         assert "Project Documentation" in result.output or "readme" in result.output.lower()
 
-    def test_archive_search_across_files(
-        self, sample_document_archive, repl_environment
-    ):
+    def test_archive_search_across_files(self, sample_document_archive, repl_environment):
         """Test archive_search finds content across multiple files."""
         # Open and extract all text files
         open_result = repl_environment.execute(f"print(archive_open('{sample_document_archive}'))")
@@ -398,9 +382,7 @@ class TestREPLArchiveFunctions:
         assert extract_result.error is None
 
         # Search for "Project" which appears in readme.md: "# Project Documentation"
-        result = repl_environment.execute(
-            "result = archive_search('Project')\nprint(result)"
-        )
+        result = repl_environment.execute("result = archive_search('Project')\nprint(result)")
 
         assert result.error is None
 
@@ -418,9 +400,7 @@ class TestREPLArchiveFunctions:
     def test_archive_functions_error_handling(self, repl_environment):
         """Test archive functions handle errors gracefully."""
         # Try to extract without opening
-        result = repl_environment.execute(
-            "result = archive_extract(pattern='*.py')\nprint(result)"
-        )
+        result = repl_environment.execute("result = archive_extract(pattern='*.py')\nprint(result)")
 
         assert result.error is None
         assert "no archive" in result.output.lower() or "error" in result.output.lower()
@@ -565,7 +545,7 @@ class TestArchiveSecurityIntegration:
 
         # Create malicious archive
         archive_path = tmp_path / "evil.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             zf.writestr("../../../etc/passwd", "malicious content")
             zf.writestr("normal.txt", "safe content")
 
@@ -590,7 +570,7 @@ class TestArchiveSecurityIntegration:
 
         # Create archive with one small file
         archive_path = tmp_path / "test.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             zf.writestr("test.txt", "x" * 1000)
 
         # Create extractor with very low limit
@@ -610,7 +590,7 @@ class TestArchiveSecurityIntegration:
 
         # Create archive with many files
         archive_path = tmp_path / "many.zip"
-        with zipfile.ZipFile(archive_path, 'w') as zf:
+        with zipfile.ZipFile(archive_path, "w") as zf:
             for i in range(20):
                 zf.writestr(f"file_{i}.txt", f"content {i}")
 
@@ -659,9 +639,7 @@ class TestEndToEndArchiveWorkflow:
             result = extractor.extract_all(sample_document_archive, dest)
         else:
             # For larger archives, might extract selectively
-            result = extractor.extract_pattern(
-                sample_document_archive, "*.py", dest
-            )
+            result = extractor.extract_pattern(sample_document_archive, "*.py", dest)
 
         assert result.success
         assert len(result.extracted_files) > 0
@@ -695,16 +673,14 @@ class TestEndToEndArchiveWorkflow:
         """Test complete workflow through REPL functions."""
         # Open archive - returns JSON string
         open_result = repl_environment.execute(
-            f"result = archive_open('{sample_document_archive}')\n"
-            "print(result)"
+            f"result = archive_open('{sample_document_archive}')\nprint(result)"
         )
         assert open_result.error is None
         assert "total_files" in open_result.output
 
         # Extract code files - returns JSON string
         extract_result = repl_environment.execute(
-            "result = archive_extract(pattern='*.py')\n"
-            "print(result)"
+            "result = archive_extract(pattern='*.py')\nprint(result)"
         )
         assert extract_result.error is None
 
@@ -801,7 +777,7 @@ class TestArchiveErrorScenarios:
 
         # Create empty ZIP
         empty_path = tmp_path / "empty.zip"
-        with zipfile.ZipFile(empty_path, 'w') as zf:
+        with zipfile.ZipFile(empty_path, "w"):
             pass  # Empty archive
 
         extractor = ArchiveExtractor()

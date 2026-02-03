@@ -47,8 +47,7 @@ from __future__ import annotations
 
 import os
 import threading
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 # Environment variable prefix for all feature flags
 ENV_PREFIX = "ORCHESTRATOR_"
@@ -349,7 +348,9 @@ def get_features(
         "openai_compat": _env_bool("OPENAI_COMPAT", defaults["openai_compat"]),
         "repl": _env_bool("REPL", defaults["repl"]),
         "caching": _env_bool("CACHING", defaults["caching"]),
-        "structured_delimiters": _env_bool("STRUCTURED_DELIMITERS", defaults["structured_delimiters"]),
+        "structured_delimiters": _env_bool(
+            "STRUCTURED_DELIMITERS", defaults["structured_delimiters"]
+        ),
         "react_mode": _env_bool("REACT_MODE", defaults["react_mode"]),
         "output_formalizer": _env_bool("OUTPUT_FORMALIZER", defaults["output_formalizer"]),
         "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),

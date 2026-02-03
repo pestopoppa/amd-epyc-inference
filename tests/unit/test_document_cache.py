@@ -3,9 +3,7 @@
 Tests hash-based cache hit/miss logic and statistics in src/session/document_cache.py.
 """
 
-import tempfile
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -24,6 +22,7 @@ def temp_cache(temp_session_id, tmp_path, monkeypatch):
     """Create a temporary document cache."""
     # Monkeypatch SESSION_STATE_DIR to use tmp_path
     import src.session.document_cache as dc_module
+
     monkeypatch.setattr(dc_module, "SESSION_STATE_DIR", tmp_path / "sessions" / "state")
 
     cache = DocumentCache(temp_session_id, session_store=None)
@@ -92,7 +91,9 @@ class TestDocumentCache:
         assert len(cached_result.sections) == 1
         assert cached_result.sections[0].title == "Introduction"
 
-    def test_cache_invalidation_on_file_change(self, temp_cache, tmp_path, sample_preprocess_result):
+    def test_cache_invalidation_on_file_change(
+        self, temp_cache, tmp_path, sample_preprocess_result
+    ):
         """Test that cache is invalidated when file changes."""
         # Create and cache a file
         test_file = tmp_path / "mutable_doc.txt"

@@ -113,19 +113,20 @@ def lint_python(
         formatted_issues = []
         for issue in issues:
             if isinstance(issue, dict):
-                formatted_issues.append({
-                    "file": issue.get("filename", ""),
-                    "line": issue.get("location", {}).get("row", 0),
-                    "code": issue.get("code", ""),
-                    "message": issue.get("message", ""),
-                    "fix_available": issue.get("fix") is not None,
-                })
+                formatted_issues.append(
+                    {
+                        "file": issue.get("filename", ""),
+                        "line": issue.get("location", {}).get("row", 0),
+                        "code": issue.get("code", ""),
+                        "message": issue.get("message", ""),
+                        "fix_available": issue.get("fix") is not None,
+                    }
+                )
 
         output = ""
         if formatted_issues:
             output = "\n".join(
-                f"{i['file']}:{i['line']} [{i['code']}] {i['message']}"
-                for i in formatted_issues
+                f"{i['file']}:{i['line']} [{i['code']}] {i['message']}" for i in formatted_issues
             )
         elif result.stderr:
             output = result.stderr

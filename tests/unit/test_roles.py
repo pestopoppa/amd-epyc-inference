@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for src/roles.py."""
 
-import pytest
-
 from src.roles import (
     Role,
     Tier,

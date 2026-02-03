@@ -2,19 +2,11 @@
 
 from __future__ import annotations
 
-import ast
-import io
-import re
-import signal
-import sys
-import uuid
-from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import dataclass, field
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from orchestration.repl_memory.progress_logger import ProgressLogger
-    from orchestration.repl_memory.retriever import TwoPhaseRetriever
+    pass
 
 
 # Structured delimiters for tool output isolation.
@@ -172,7 +164,9 @@ class REPLConfig:
     require_exploration_before_final: bool = False
     min_exploration_calls: int = 1  # Minimum peek/grep/llm_call before FINAL
     # TOON encoding for tool outputs (reduces tokens by ~55% on structured data)
-    use_toon_encoding: bool = True  # Enabled after TTFT benchmark: 55.6% token reduction, 41.8% latency improvement
+    use_toon_encoding: bool = (
+        True  # Enabled after TTFT benchmark: 55.6% token reduction, 41.8% latency improvement
+    )
     allowed_builtins: frozenset[str] = field(
         default_factory=lambda: frozenset(
             {

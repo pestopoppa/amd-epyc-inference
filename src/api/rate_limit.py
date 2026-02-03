@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import time
 from collections import defaultdict
-from typing import Any
 
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -103,10 +102,7 @@ class RateLimitMiddleware:
             return
         self._last_cleanup = now
         stale_threshold = now - 600.0  # 10 min idle
-        stale_keys = [
-            k for k, v in self._buckets.items()
-            if v.last_refill < stale_threshold
-        ]
+        stale_keys = [k for k, v in self._buckets.items() if v.last_refill < stale_threshold]
         for k in stale_keys:
             del self._buckets[k]
 
@@ -129,18 +125,22 @@ class RateLimitMiddleware:
 
         if not bucket.consume():
             # Send 429 response directly
-            await send({
-                "type": "http.response.start",
-                "status": 429,
-                "headers": [
-                    [b"content-type", b"application/json"],
-                    [b"retry-after", self._retry_after],
-                ],
-            })
-            await send({
-                "type": "http.response.body",
-                "body": _RATE_LIMIT_BODY,
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 429,
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"retry-after", self._retry_after],
+                    ],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": _RATE_LIMIT_BODY,
+                }
+            )
             return
 
         await self.app(scope, receive, send)

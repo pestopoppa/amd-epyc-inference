@@ -21,33 +21,31 @@ from pydantic import BaseModel, Field
 
 class ParsingMode(str, Enum):
     """Parsing strategy for model outputs."""
+
     INSTRUCTOR = "instructor"  # Pydantic + retries (for high-quality models)
-    GBNF = "gbnf"             # llama.cpp grammar constraint (guaranteed compliance)
-    REGEX = "regex"           # Simple pattern extraction
-    NONE = "none"             # Plain text, no parsing
+    GBNF = "gbnf"  # llama.cpp grammar constraint (guaranteed compliance)
+    REGEX = "regex"  # Simple pattern extraction
+    NONE = "none"  # Plain text, no parsing
 
 
 # Role → Parsing mode mapping
 PARSING_CONFIG: dict[str, ParsingMode] = {
     # Tier A - High quality models, use Instructor
     "frontdoor": ParsingMode.INSTRUCTOR,
-
     # Tier B - Mixed based on model size and schema complexity
-    "formalizer": ParsingMode.GBNF,        # 8B model, ensure compliance
+    "formalizer": ParsingMode.GBNF,  # 8B model, ensure compliance
     "coder_primary": ParsingMode.INSTRUCTOR,
     "coder_escalation": ParsingMode.INSTRUCTOR,
     "architect_general": ParsingMode.INSTRUCTOR,
     "architect_coding": ParsingMode.INSTRUCTOR,
     "ingest_long_context": ParsingMode.NONE,  # Returns summaries
-    "thinking_reasoning": ParsingMode.NONE,   # Returns reasoning chains
-
+    "thinking_reasoning": ParsingMode.NONE,  # Returns reasoning chains
     # Tier C - Workers, mostly plain text
     "worker_general": ParsingMode.NONE,
     "worker_math": ParsingMode.NONE,
     "worker_vision": ParsingMode.NONE,
     "worker_summarize": ParsingMode.NONE,
     "toolrunner": ParsingMode.REGEX,  # Extract tool names/status
-
     # Tier D - Draft models, no parsing
     "draft_coder": ParsingMode.NONE,
     "draft_general": ParsingMode.NONE,
@@ -74,9 +72,11 @@ def get_parsing_mode(role: str) -> ParsingMode:
 
 # --- Pydantic schemas for Instructor ---
 
+
 class ToolCall(BaseModel):
     """Single tool invocation."""
-    tool: Annotated[str, Field(pattern=r'^[a-z][a-z0-9_]*$')]
+
+    tool: Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*$")]
     args: dict[str, str]
 
 
@@ -86,12 +86,13 @@ class TaskIR(BaseModel):
     Emitted by the frontdoor model to specify what task to perform,
     which agents to use, and what gates must pass.
     """
+
     task_id: str
     task_type: Literal["code", "doc", "ingest", "manage", "chat"]
     priority: Literal["interactive", "batch"]
     objective: str
     agents: list[dict]  # Agent specifications
-    gates: list[str]    # Required gates (e.g., ["lint", "typecheck"])
+    gates: list[str]  # Required gates (e.g., ["lint", "typecheck"])
     tool_sequence: list[ToolCall] | None = None
     definition_of_done: list[str] | None = None
     escalation: dict | None = None
@@ -103,13 +104,8 @@ class FormalizationIR(BaseModel):
     Converts natural language requirements into formal constraints,
     edge cases, and acceptance criteria.
     """
-    problem_type: Literal[
-        "algorithm",
-        "proof",
-        "optimization",
-        "validation",
-        "tool_orchestration"
-    ]
+
+    problem_type: Literal["algorithm", "proof", "optimization", "validation", "tool_orchestration"]
     variables: list[dict]  # {name: str, type: str, constraints: list[str]}
     constraints: list[str]
     objective: str | None = None
@@ -124,6 +120,7 @@ class ArchitectureIR(BaseModel):
 
     Describes system design, component relationships, and invariants.
     """
+
     components: list[dict]  # {name: str, responsibility: str, interfaces: list}
     relationships: list[dict]  # {from: str, to: str, type: str}
     invariants: list[str]  # System-wide invariants

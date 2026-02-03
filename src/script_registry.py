@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Script:
     """A prepared script that can be invoked by ID."""
+
     id: str
     description: str
     category: str
@@ -112,6 +113,7 @@ class Script:
 @dataclass
 class ScriptMatch:
     """Result from fuzzy script search."""
+
     script: Script
     score: float
     matched_on: str  # What triggered the match
@@ -244,7 +246,7 @@ class ScriptRegistry:
             List of ScriptMatch sorted by relevance.
         """
         query_lower = query.lower()
-        query_words = set(re.split(r'\W+', query_lower))
+        query_words = set(re.split(r"\W+", query_lower))
         matches: list[ScriptMatch] = []
 
         # Filter candidates
@@ -281,7 +283,7 @@ class ScriptRegistry:
                         matched_on = f"tag:{tag}"
 
             # Boost for word overlap with description
-            desc_words = set(re.split(r'\W+', desc_lower))
+            desc_words = set(re.split(r"\W+", desc_lower))
             overlap = query_words & desc_words
             if overlap:
                 word_score = len(overlap) / max(len(query_words), 1) * 0.8
@@ -290,11 +292,13 @@ class ScriptRegistry:
                     matched_on = f"words:{','.join(overlap)}"
 
             if best_score > 0.3:  # Minimum threshold
-                matches.append(ScriptMatch(
-                    script=script,
-                    score=best_score,
-                    matched_on=matched_on,
-                ))
+                matches.append(
+                    ScriptMatch(
+                        script=script,
+                        score=best_score,
+                        matched_on=matched_on,
+                    )
+                )
 
         # Sort by score and limit
         matches.sort(key=lambda m: m.score, reverse=True)
@@ -413,6 +417,7 @@ class ScriptRegistry:
         if self._mcp_configs is None:
             try:
                 from src.config import get_config
+
                 config_path = get_config().paths.project_root / "orchestration" / "mcp_servers.yaml"
             except Exception:
                 config_path = Path(__file__).parent.parent / "orchestration" / "mcp_servers.yaml"
@@ -421,8 +426,7 @@ class ScriptRegistry:
         server_id = script.mcp_server
         if server_id not in self._mcp_configs:
             raise RuntimeError(
-                f"Unknown MCP server: {server_id}. "
-                f"Configure in orchestration/mcp_servers.yaml"
+                f"Unknown MCP server: {server_id}. Configure in orchestration/mcp_servers.yaml"
             )
 
         tool_name = script.mcp_tool or script.id
@@ -447,6 +451,7 @@ class ScriptRegistry:
 
         # Execute (with safety constraints, no shell injection)
         import shlex
+
         result = subprocess.run(
             shlex.split(command),
             capture_output=True,
@@ -481,14 +486,16 @@ class ScriptRegistry:
             if tags and not (set(tags) & set(script.tags)):
                 continue
 
-            result.append({
-                "id": script.id,
-                "description": script.description,
-                "category": script.category,
-                "tags": script.tags,
-                "parameters": script.parameters,
-                "token_savings": script.token_savings,
-            })
+            result.append(
+                {
+                    "id": script.id,
+                    "description": script.description,
+                    "category": script.category,
+                    "tags": script.tags,
+                    "parameters": script.parameters,
+                    "token_savings": script.token_savings,
+                }
+            )
 
         return result
 

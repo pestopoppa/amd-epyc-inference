@@ -31,7 +31,6 @@ from src.repl_environment.state import _StateMixin
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
-    from orchestration.repl_memory.retriever import TwoPhaseRetriever
 
 
 class REPLEnvironment(
@@ -133,21 +132,37 @@ class REPLEnvironment(
         # This ensures all required attributes exist before mixin methods are called
         required_attrs = [
             # Core state
-            'config', 'context', 'artifacts', 'role', 'task_id',
+            "config",
+            "context",
+            "artifacts",
+            "role",
+            "task_id",
             # Counters
-            '_exploration_calls', '_execution_count', '_tool_invocations',
+            "_exploration_calls",
+            "_execution_count",
+            "_tool_invocations",
             # Logs and buffers
-            '_exploration_log', '_grep_hits_buffer', '_findings_buffer',
+            "_exploration_log",
+            "_grep_hits_buffer",
+            "_findings_buffer",
             # State
-            '_final_answer', '_globals',
+            "_final_answer",
+            "_globals",
             # Optional dependencies
-            'llm_primitives', 'tool_registry', 'script_registry',
-            'progress_logger', '_retriever', '_hybrid_router',
+            "llm_primitives",
+            "tool_registry",
+            "script_registry",
+            "progress_logger",
+            "_retriever",
+            "_hybrid_router",
             # Methods
-            '_validate_file_path', '_build_globals',
+            "_validate_file_path",
+            "_build_globals",
         ]
         for attr in required_attrs:
-            assert hasattr(self, attr), f"Mixin contract violated: missing required attribute '{attr}'"
+            assert hasattr(self, attr), (
+                f"Mixin contract violated: missing required attribute '{attr}'"
+            )
 
     def _build_globals(self) -> dict[str, Any]:
         """Build the restricted globals dict for exec()."""
@@ -247,6 +262,7 @@ class REPLEnvironment(
             Tuple of (is_valid, error_message).
         """
         import os
+
         resolved = os.path.realpath(path)
         for allowed in self.ALLOWED_FILE_PATHS:
             if resolved.startswith(allowed):
@@ -275,9 +291,7 @@ class REPLEnvironment(
 
         if visitor.violations:
             # Report first violation (avoids info disclosure about all checks)
-            raise REPLSecurityError(
-                f"Dangerous operation not allowed: {visitor.violations[0]}"
-            )
+            raise REPLSecurityError(f"Dangerous operation not allowed: {visitor.violations[0]}")
 
     def execute(self, code: str) -> ExecutionResult:
         """Execute Python code in the sandboxed environment.
@@ -334,7 +348,10 @@ class REPLEnvironment(
 
                 # Cap output
                 if len(output) > self.config.output_cap:
-                    output = output[: self.config.output_cap] + f"\n[... truncated at {self.config.output_cap} chars]"
+                    output = (
+                        output[: self.config.output_cap]
+                        + f"\n[... truncated at {self.config.output_cap} chars]"
+                    )
 
                 return ExecutionResult(
                     output=output,
@@ -406,12 +423,13 @@ def create_repl_environment(
     # Check feature flag if not explicitly set
     if use_restricted_python is None:
         from src.features import features
+
         use_restricted_python = features().restricted_python
 
     # Try to use RestrictedPython if requested
     if use_restricted_python:
         try:
-            from src.restricted_executor import is_available, RestrictedExecutor
+            from src.restricted_executor import is_available, RestrictedExecutor  # noqa: F401
 
             if is_available():
                 # Create a wrapped environment that uses RestrictedExecutor
@@ -477,7 +495,6 @@ class _RestrictedREPLEnvironment(REPLEnvironment):
             ExecutionResult with output, is_final flag, and optional error.
         """
         # Use the restricted executor
-        from src.restricted_executor import ExecutionResult as RestrictedResult
 
         result = self._restricted_executor.execute(code)
 

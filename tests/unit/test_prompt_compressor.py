@@ -1,7 +1,7 @@
 """Unit tests for PromptCompressor (LLMLingua-2 wrapper)."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 from src.services.prompt_compressor import PromptCompressor, CompressionResult
 
@@ -37,7 +37,10 @@ class TestPromptCompressorInit:
         """Test initialization with default parameters."""
         compressor = PromptCompressor()
 
-        assert compressor.model_name == "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank"
+        assert (
+            compressor.model_name
+            == "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank"
+        )
         assert compressor.device == "cpu"
         assert compressor._model is None
         assert not compressor.is_loaded
@@ -105,7 +108,7 @@ class TestPromptCompressorCompress:
         }
         compressor._model = mock_model
 
-        result = compressor.compress(
+        compressor.compress(
             "The important term should be preserved in the output",
             target_ratio=0.5,
             force_tokens=["important term"],

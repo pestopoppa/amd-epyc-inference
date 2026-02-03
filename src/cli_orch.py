@@ -99,7 +99,6 @@ Examples:
 
 def cmd_status() -> int:
     """Show quick system status."""
-    import json
     import urllib.request
     import urllib.error
 

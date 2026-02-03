@@ -15,7 +15,6 @@ The preprocessor:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -26,7 +25,6 @@ from src.models.document import (
     DocumentPreprocessResult,
     DocumentProcessRequest,
     FigureRef,
-    OCRResult,
     ProcessingStatus,
     Section,
 )
@@ -58,24 +56,28 @@ DOCUMENT_EXTENSIONS = frozenset({".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp
 ARCHIVE_EXTENSIONS = frozenset({".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".7z"})
 
 # MIME types that trigger OCR
-DOCUMENT_MIME_TYPES = frozenset({
-    "application/pdf",
-    "image/png",
-    "image/jpeg",
-    "image/tiff",
-    "image/bmp",
-})
+DOCUMENT_MIME_TYPES = frozenset(
+    {
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/tiff",
+        "image/bmp",
+    }
+)
 
 # Phrases that indicate OCR intent
-OCR_TRIGGER_PHRASES = frozenset({
-    "ocr",
-    "scan",
-    "extract text",
-    "read pdf",
-    "transcribe document",
-    "document text",
-    "pdf text",
-})
+OCR_TRIGGER_PHRASES = frozenset(
+    {
+        "ocr",
+        "scan",
+        "extract text",
+        "read pdf",
+        "transcribe document",
+        "document text",
+        "pdf text",
+    }
+)
 
 # Maximum characters for document summary context passed to VL model
 MAX_SUMMARY_CONTEXT_CHARS = 8000
@@ -189,8 +191,14 @@ class DocumentPreprocessor:
 
         # Priority section titles (case-insensitive partial match)
         priority_keywords = [
-            "abstract", "summary", "executive", "introduction",
-            "overview", "background", "main thesis", "key"
+            "abstract",
+            "summary",
+            "executive",
+            "introduction",
+            "overview",
+            "background",
+            "main thesis",
+            "key",
         ]
 
         priority_sections: list[Section] = []
@@ -354,9 +362,7 @@ class DocumentPreprocessor:
 
             # Check for partial success
             if ocr_result.status == ProcessingStatus.PARTIAL:
-                warnings.append(
-                    f"Partial OCR success: {len(ocr_result.failed_pages)} pages failed"
-                )
+                warnings.append(f"Partial OCR success: {len(ocr_result.failed_pages)} pages failed")
             elif ocr_result.status == ProcessingStatus.FAILED:
                 return PreprocessingResult(
                     success=False,
@@ -462,11 +468,11 @@ class DocumentPreprocessor:
 
                     # Detect format from magic bytes
                     ext = ".png"
-                    if img_bytes[:2] == b'\xff\xd8':
+                    if img_bytes[:2] == b"\xff\xd8":
                         ext = ".jpg"
-                    elif img_bytes[:4] == b'RIFF':
+                    elif img_bytes[:4] == b"RIFF":
                         ext = ".webp"
-                    elif img_bytes[:4] == b'%PDF':
+                    elif img_bytes[:4] == b"%PDF":
                         ext = ".pdf"
 
                     tmp_dir = Path("/mnt/raid0/llm/tmp")
@@ -525,7 +531,8 @@ class DocumentPreprocessor:
 
             # Find document files
             doc_files = [
-                f.name for f in manifest.file_tree
+                f.name
+                for f in manifest.file_tree
                 if not f.is_dir and f.extension in DOCUMENT_EXTENSIONS
             ]
 

@@ -242,9 +242,7 @@ class SessionStore(Protocol):
         """
         ...
 
-    def get_checkpoints(
-        self, session_id: str, limit: int = 10
-    ) -> list[Checkpoint]:
+    def get_checkpoints(self, session_id: str, limit: int = 10) -> list[Checkpoint]:
         """Get recent checkpoints for a session.
 
         Args:
@@ -451,6 +449,7 @@ class BaseSessionStore(ABC):
         if not session:
             return False
         from src.session.models import SessionStatus
+
         session.status = SessionStatus.ARCHIVED
         self.update_session(session)
         return True

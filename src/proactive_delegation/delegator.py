@@ -195,7 +195,8 @@ class ProactiveDelegator:
             used_parallel = True
             waves = compute_waves(steps)
             max_concurrent = plan.get("parallelism", {}).get(
-                "max_concurrent_steps", 2,
+                "max_concurrent_steps",
+                2,
             )
             executor = StepExecutor(
                 primitives=self.primitives,
@@ -205,7 +206,9 @@ class ProactiveDelegator:
                 max_burst_concurrent=max_concurrent,
             )
             subtask_results = await executor.execute_plan(
-                task_ir, waves, ROLE_MAPPING,
+                task_ir,
+                waves,
+                ROLE_MAPPING,
             )
             for sr in subtask_results:
                 result.subtask_results.append(sr)
@@ -228,7 +231,8 @@ class ProactiveDelegator:
 
                 timings = extract_step_timings(result.subtask_results, steps)
                 cp_report = compute_critical_path(
-                    timings, wall_clock_seconds=plan_elapsed,
+                    timings,
+                    wall_clock_seconds=plan_elapsed,
                 )
                 logger.info(
                     "Critical path: %.1fs (%d steps), parallelism ratio: %.2f, "
@@ -269,7 +273,7 @@ class ProactiveDelegator:
         """Execute a subtask with architect review loop."""
         subtask_id = step.get("id", f"S{uuid.uuid4().hex[:4]}")
         actor = step.get("actor", "worker")
-        action = step.get("action", "")
+        step.get("action", "")
 
         # Map actor to registry role
         role = ROLE_MAPPING.get(actor, "worker_general")
@@ -381,7 +385,7 @@ class ProactiveDelegator:
         prompt_parts = [
             f"# Task: {action}",
             "",
-            f"## Overall Objective",
+            "## Overall Objective",
             objective,
             "",
         ]

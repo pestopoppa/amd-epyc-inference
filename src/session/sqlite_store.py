@@ -13,19 +13,20 @@ import json
 import logging
 import sqlite3
 import threading
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+if TYPE_CHECKING:
+    from src.models.document import DocumentPreprocessResult
+    from src.session.document_cache import DocumentCache
+
 from src.session.models import (
     Checkpoint,
-    DocumentChangeInfo,
     Finding,
     FindingSource,
-    ResumeContext,
     Session,
     SessionDocument,
     SessionStatus,
@@ -174,15 +175,11 @@ class SQLiteSessionStore(BaseSessionStore):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status, last_active DESC)"
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project)"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project)")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_documents_session ON session_documents(session_id)"
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_findings_session ON findings(session_id)"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_findings_session ON findings(session_id)")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id, created_at DESC)"
             )
@@ -205,9 +202,7 @@ class SQLiteSessionStore(BaseSessionStore):
 
         # Create new embeddings array (start with 1000 slots)
         initial_size = 1000
-        self._embeddings = np.zeros(
-            (initial_size, self.embedding_dim), dtype=np.float32
-        )
+        self._embeddings = np.zeros((initial_size, self.embedding_dim), dtype=np.float32)
         np.save(self.embeddings_path, self._embeddings)
         self._embeddings = np.load(self.embeddings_path, mmap_mode="r+")
         self._next_embedding_idx = 0
@@ -313,9 +308,7 @@ class SQLiteSessionStore(BaseSessionStore):
                     session.status.value,
                     session.created_at.isoformat(),
                     session.last_active.isoformat(),
-                    session.last_checkpoint_at.isoformat()
-                    if session.last_checkpoint_at
-                    else None,
+                    session.last_checkpoint_at.isoformat() if session.last_checkpoint_at else None,
                     session.message_count,
                     session.working_directory,
                     session.task_id,
@@ -342,9 +335,7 @@ class SQLiteSessionStore(BaseSessionStore):
     def get_session(self, session_id: str) -> Session | None:
         """Get a session by ID."""
         with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM sessions WHERE id = ?", (session_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
 
             if not row:
                 return None
@@ -407,9 +398,7 @@ class SQLiteSessionStore(BaseSessionStore):
                     session.project,
                     session.status.value,
                     session.last_active.isoformat(),
-                    session.last_checkpoint_at.isoformat()
-                    if session.last_checkpoint_at
-                    else None,
+                    session.last_checkpoint_at.isoformat() if session.last_checkpoint_at else None,
                     session.message_count,
                     session.working_directory,
                     session.task_id,
@@ -423,9 +412,7 @@ class SQLiteSessionStore(BaseSessionStore):
             )
 
             # Update tags
-            conn.execute(
-                "DELETE FROM session_tags WHERE session_id = ?", (session.id,)
-            )
+            conn.execute("DELETE FROM session_tags WHERE session_id = ?", (session.id,))
             for tag in session.tags:
                 conn.execute(
                     "INSERT INTO session_tags (session_id, tag) VALUES (?, ?)",
@@ -453,11 +440,22 @@ class SQLiteSessionStore(BaseSessionStore):
         return True
 
     # Valid column names for ORDER BY (whitelist to prevent SQL injection)
-    _VALID_ORDER_COLUMNS = frozenset({
-        "id", "name", "project", "status", "created_at", "last_active",
-        "last_checkpoint_at", "message_count", "working_directory",
-        "task_id", "resume_count", "last_topic",
-    })
+    _VALID_ORDER_COLUMNS = frozenset(
+        {
+            "id",
+            "name",
+            "project",
+            "status",
+            "created_at",
+            "last_active",
+            "last_checkpoint_at",
+            "message_count",
+            "working_directory",
+            "task_id",
+            "resume_count",
+            "last_topic",
+        }
+    )
 
     def list_sessions(
         self,
@@ -929,9 +927,7 @@ class SQLiteSessionStore(BaseSessionStore):
         with self._get_connection() as conn:
             session_ids = [
                 r["session_id"]
-                for r in conn.execute(
-                    "SELECT session_id FROM session_tags WHERE tag = ?", (tag,)
-                )
+                for r in conn.execute("SELECT session_id FROM session_tags WHERE tag = ?", (tag,))
             ]
 
         return [self.get_session(sid) for sid in session_ids if self.get_session(sid)]
@@ -950,6 +946,7 @@ class SQLiteSessionStore(BaseSessionStore):
             DocumentCache instance configured for this session.
         """
         from src.session.document_cache import DocumentCache
+
         return DocumentCache(session_id, session_store=self)
 
     def get_cached_preprocess_result(
@@ -968,7 +965,6 @@ class SQLiteSessionStore(BaseSessionStore):
             Cached result if valid, None if not cached or stale.
         """
         from src.session.document_cache import DocumentCache
-        from src.models.document import DocumentPreprocessResult
 
         cache = DocumentCache(session_id, session_store=self)
         return cache.get_cached(file_path)
@@ -993,7 +989,6 @@ class SQLiteSessionStore(BaseSessionStore):
             File hash used as cache key.
         """
         from src.session.document_cache import DocumentCache
-        from src.models.document import DocumentPreprocessResult
 
         cache = DocumentCache(session_id, session_store=self)
         return cache.cache_result(file_path, result, track_in_session=True)

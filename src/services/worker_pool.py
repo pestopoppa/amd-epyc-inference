@@ -44,22 +44,24 @@ logger = logging.getLogger(__name__)
 
 class WorkerTier(Enum):
     """Worker availability tier."""
-    HOT = "hot"    # Always resident
+
+    HOT = "hot"  # Always resident
     WARM = "warm"  # Load on demand
 
 
 class TaskType(Enum):
     """Task types for routing."""
-    EXPLORE = "explore"       # Understanding, summarization
-    CODE = "code"             # Code implementation
-    FAST = "fast"             # Simple transformations
-    SUMMARIZE = "summarize"   # Alias for explore
-    UNDERSTAND = "understand" # Alias for explore
-    CODE_IMPL = "code_impl"   # Alias for code
-    REFACTOR = "refactor"     # Alias for code
-    TEST_GEN = "test_gen"     # Alias for code
+
+    EXPLORE = "explore"  # Understanding, summarization
+    CODE = "code"  # Code implementation
+    FAST = "fast"  # Simple transformations
+    SUMMARIZE = "summarize"  # Alias for explore
+    UNDERSTAND = "understand"  # Alias for explore
+    CODE_IMPL = "code_impl"  # Alias for code
+    REFACTOR = "refactor"  # Alias for code
+    TEST_GEN = "test_gen"  # Alias for code
     BOILERPLATE = "boilerplate"  # Alias for fast
-    TRANSFORM = "transform"   # Alias for fast
+    TRANSFORM = "transform"  # Alias for fast
 
 
 # Task type to worker role mapping
@@ -80,6 +82,7 @@ TASK_ROUTING = {
 @dataclass
 class WorkerConfig:
     """Configuration for a single worker instance."""
+
     name: str
     port: int
     model_path: str
@@ -93,6 +96,7 @@ class WorkerConfig:
 @dataclass
 class WorkerInstance:
     """Running worker instance state."""
+
     config: WorkerConfig
     process: Optional[subprocess.Popen] = None
     started_at: Optional[datetime] = None
@@ -116,17 +120,20 @@ class WorkerInstance:
 
 def _wp_default_server_path() -> str:
     from src.config import get_config
+
     return str(get_config().worker_pool.llama_server_path)
 
 
 def _wp_default_log_dir() -> str:
     from src.config import get_config
+
     return str(get_config().worker_pool.log_dir)
 
 
 @dataclass
 class WorkerPoolConfig:
     """Configuration for the entire worker pool."""
+
     enabled: bool = True
     prompt_lookup: bool = True
     warm_timeout_seconds: int = 300  # 5 minutes
@@ -165,6 +172,7 @@ class WorkerPoolManager:
     def _load_default_config(self) -> WorkerPoolConfig:
         """Load default configuration (can be overridden by registry)."""
         from src.config import get_config
+
         model_base = str(get_config().paths.model_base)
         return WorkerPoolConfig(
             workers={
@@ -224,8 +232,10 @@ class WorkerPoolManager:
         self._semaphore = asyncio.Semaphore(total_slots * 2)  # 2x for buffering
 
         self._initialized = True
-        logger.info(f"WorkerPool initialized: {len(self._hot_workers)} HOT, "
-                    f"{len(self._warm_workers)} WARM workers")
+        logger.info(
+            f"WorkerPool initialized: {len(self._hot_workers)} HOT, "
+            f"{len(self._warm_workers)} WARM workers"
+        )
 
     async def start_hot_workers(self) -> dict[str, bool]:
         """Start all HOT tier workers.
@@ -306,13 +316,20 @@ class WorkerPoolManager:
         """Build llama-server launch command."""
         cmd = [
             self.config.llama_server_path,
-            "-m", config.model_path,
-            "--host", "0.0.0.0",
-            "--port", str(config.port),
-            "-np", str(config.slots),
-            "-c", "8192",  # 4K per slot with np=2
-            "-t", str(config.threads),
-            "--flash-attn", "on",
+            "-m",
+            config.model_path,
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(config.port),
+            "-np",
+            str(config.slots),
+            "-c",
+            "8192",  # 4K per slot with np=2
+            "-t",
+            str(config.threads),
+            "--flash-attn",
+            "on",
         ]
 
         # Add prompt lookup for all workers
@@ -351,6 +368,7 @@ class WorkerPoolManager:
     async def _check_port_in_use(self, port: int) -> bool:
         """Check if a port is in use."""
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             return s.connect_ex(("localhost", port)) == 0
 
@@ -367,7 +385,9 @@ class WorkerPoolManager:
                     try:
                         os.kill(int(pid_str), signal.SIGKILL)
                     except Exception:
-                        logger.debug("Failed to kill PID %s on port %s", pid_str, port, exc_info=True)
+                        logger.debug(
+                            "Failed to kill PID %s on port %s", pid_str, port, exc_info=True
+                        )
         except Exception:
             logger.debug("Port kill lookup failed for port %s", port, exc_info=True)
 
@@ -601,8 +621,7 @@ class WorkerPoolManager:
 
         # Execute all calls in parallel
         tasks = [
-            asyncio.create_task(_call_with_worker(prompt, i))
-            for i, prompt in enumerate(prompts)
+            asyncio.create_task(_call_with_worker(prompt, i)) for i, prompt in enumerate(prompts)
         ]
 
         results_unordered = await asyncio.gather(*tasks, return_exceptions=True)
@@ -709,9 +728,7 @@ class WorkerPoolManager:
         results = {}
         for name, instance in self._workers.items():
             if instance.is_running:
-                instance._healthy = await self._wait_for_health(
-                    instance.config.port, timeout=5
-                )
+                instance._healthy = await self._wait_for_health(instance.config.port, timeout=5)
             else:
                 instance._healthy = False
             results[name] = instance._healthy

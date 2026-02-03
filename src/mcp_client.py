@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MCPServerConfig:
     """Configuration for launching an MCP server subprocess."""
+
     name: str
     command: str
     args: list[str] = field(default_factory=list)

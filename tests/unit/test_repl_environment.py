@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Unit tests for the REPL environment."""
 
-import pytest
-
 from src.repl_environment import (
     REPLConfig,
     REPLEnvironment,
     REPLSecurityError,
-    ExecutionResult,
 )
 
 
@@ -485,7 +482,7 @@ class TestREPLTypes:
 
     def test_repl_security_error_inheritance(self):
         """Test REPLSecurityError inherits from REPLError."""
-        from src.repl_environment import REPLSecurityError, REPLError
+        from src.repl_environment import REPLError
 
         error = REPLSecurityError("dangerous code")
         assert str(error) == "dangerous code"
@@ -723,7 +720,7 @@ class TestRoutingMixin:
     def test_escalate_sets_artifacts(self):
         """Test escalate() sets escalation artifacts."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute("escalate('need help', 'architect_general')")
+        repl.execute("escalate('need help', 'architect_general')")
 
         assert repl.artifacts.get("_escalation_requested") is True
         assert "need help" in repl.artifacts.get("_escalation_reason", "")

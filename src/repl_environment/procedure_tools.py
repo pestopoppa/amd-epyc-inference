@@ -51,7 +51,9 @@ class _ProcedureToolsMixin:
                 "steps_total": len(result.step_results),
             }
 
-            self._exploration_log.add_event("run_procedure", {"procedure_id": procedure_id, **kwargs}, output)
+            self._exploration_log.add_event(
+                "run_procedure", {"procedure_id": procedure_id, **kwargs}, output
+            )
             return json.dumps(output, indent=2)
 
         except Exception as e:
@@ -80,6 +82,7 @@ class _ProcedureToolsMixin:
             # Use TOON encoding for token efficiency if enabled
             if self.config.use_toon_encoding and len(procedures) >= 3:
                 from src.services.toon_encoder import encode
+
                 return encode({"procedures": procedures})
             return json.dumps(procedures, indent=2)
 
@@ -97,7 +100,6 @@ class _ProcedureToolsMixin:
         """
         self._exploration_calls += 1
         import json
-        import os
         from pathlib import Path
 
         try:
@@ -153,11 +155,14 @@ class _ProcedureToolsMixin:
             with open(checkpoint_path, encoding="utf-8") as f:
                 checkpoint = json.load(f)
 
-            return json.dumps({
-                "restored": True,
-                "checkpoint_id": checkpoint_id,
-                "created_at": checkpoint.get("created_at"),
-            }, indent=2)
+            return json.dumps(
+                {
+                    "restored": True,
+                    "checkpoint_id": checkpoint_id,
+                    "created_at": checkpoint.get("created_at"),
+                },
+                indent=2,
+            )
 
         except Exception as e:
             return f"[ERROR: {type(e).__name__}: {e}]"
@@ -179,6 +184,7 @@ class _ProcedureToolsMixin:
             registry_path = "/mnt/raid0/llm/claude/orchestration/model_registry.yaml"
             try:
                 import yaml
+
                 with open(registry_path, encoding="utf-8") as f:
                     registry = yaml.safe_load(f)
             except ImportError:
@@ -272,12 +278,12 @@ class _ProcedureToolsMixin:
 
             comparison = {
                 "models": results,
-                "comparison": {
-                    "note": "Compare 'tps' values for throughput"
-                }
+                "comparison": {"note": "Compare 'tps' values for throughput"},
             }
 
-            self._exploration_log.add_event("benchmark_compare", {"model_a": model_a, "model_b": model_b}, comparison)
+            self._exploration_log.add_event(
+                "benchmark_compare", {"model_a": model_a, "model_b": model_b}, comparison
+            )
             return json.dumps(comparison, indent=2)
 
         except Exception as e:

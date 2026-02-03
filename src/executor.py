@@ -192,6 +192,7 @@ class RetryInfo:
 
 def _exec_defaults():
     from src.config import get_config
+
     return get_config()
 
 
@@ -207,7 +208,9 @@ class ExecutorConfig:
     dry_run: bool = False  # If True, don't actually run inference
     # Escalation settings
     enable_escalation: bool = True  # Escalate to more capable models on failure
-    max_escalations_per_step: int = field(default_factory=lambda: _exec_defaults().escalation.max_escalations)
+    max_escalations_per_step: int = field(
+        default_factory=lambda: _exec_defaults().escalation.max_escalations
+    )
 
 
 class Executor:
@@ -287,9 +290,7 @@ class Executor:
             # Execute steps respecting dependencies
             while len(completed) < len(dispatch_result.steps):
                 # Find steps ready to execute (including failed steps that can retry)
-                ready_steps = self._find_ready_steps(
-                    dispatch_result.steps, completed, result.steps
-                )
+                ready_steps = self._find_ready_steps(dispatch_result.steps, completed, result.steps)
 
                 # Also check for retryable failed steps
                 retryable_steps = self._find_retryable_steps(
@@ -299,19 +300,14 @@ class Executor:
 
                 if not ready_steps:
                     # Check if we're stuck due to failed dependencies
-                    pending = [
-                        s for s in dispatch_result.steps
-                        if s.step_id not in completed
-                    ]
+                    pending = [s for s in dispatch_result.steps if s.step_id not in completed]
                     if pending:
                         for step in pending:
                             step_result = result.steps[step.step_id]
                             # Only mark as skipped if not already failed
                             if step_result.status != StepStatus.FAILED:
                                 step_result.status = StepStatus.SKIPPED
-                                step_result.error_message = (
-                                    "Skipped due to failed dependencies"
-                                )
+                                step_result.error_message = "Skipped due to failed dependencies"
                                 step_result.error_category = ErrorCategory.DEPENDENCY_ERROR.value
                             completed.add(step.step_id)
                     break
@@ -416,9 +412,7 @@ class Executor:
 
         return retryable
 
-    def _execute_step_with_retry(
-        self, step: StepExecution, result: ExecutionResult
-    ) -> StepResult:
+    def _execute_step_with_retry(self, step: StepExecution, result: ExecutionResult) -> StepResult:
         """Execute a step with retry and escalation logic.
 
         Order of operations:
@@ -474,7 +468,9 @@ class Executor:
                     step_result.executed_role = escalated_role
 
                     # Reset retry info for the escalated model
-                    max_attempts = self.config.max_retries + 1 if self.config.retry_failed_steps else 1
+                    max_attempts = (
+                        self.config.max_retries + 1 if self.config.retry_failed_steps else 1
+                    )
                     self._retry_info[step.step_id] = RetryInfo(
                         max_attempts=max_attempts,
                         backoff_seconds=self.config.retry_backoff_base,
@@ -561,9 +557,7 @@ class Executor:
         # Get the role config for the escalated role
         next_role_config = self.registry.get_role(next_role)
         if not next_role_config:
-            result.warnings.append(
-                f"Escalation target '{next_role}' not found in registry"
-            )
+            result.warnings.append(f"Escalation target '{next_role}' not found in registry")
             return None
 
         # Update the step's role config
@@ -606,10 +600,18 @@ class Executor:
             return ErrorCategory.INFERENCE_ERROR
 
         # Generic retryable errors
-        if any(word in msg_lower for word in [
-            "connection", "network", "temporary", "unavailable",
-            "busy", "overload", "retry"
-        ]):
+        if any(
+            word in msg_lower
+            for word in [
+                "connection",
+                "network",
+                "temporary",
+                "unavailable",
+                "busy",
+                "overload",
+                "retry",
+            ]
+        ):
             return ErrorCategory.RETRYABLE
 
         return ErrorCategory.INTERNAL_ERROR
@@ -626,9 +628,7 @@ class Executor:
             groups[group].append(step)
         return groups
 
-    def _execute_step(
-        self, step: StepExecution, result: ExecutionResult
-    ) -> StepResult:
+    def _execute_step(self, step: StepExecution, result: ExecutionResult) -> StepResult:
         """Execute a single step.
 
         Args:
@@ -703,9 +703,7 @@ class Executor:
         step_result.completed_at = time.time()
         return step_result
 
-    def _execute_parallel(
-        self, steps: list[StepExecution], result: ExecutionResult
-    ) -> None:
+    def _execute_parallel(self, steps: list[StepExecution], result: ExecutionResult) -> None:
         """Execute multiple steps in parallel.
 
         Args:
@@ -714,8 +712,7 @@ class Executor:
         """
         with ThreadPoolExecutor(max_workers=self.config.max_parallel_workers) as pool:
             futures = {
-                pool.submit(self._execute_step_with_retry, step, result): step
-                for step in steps
+                pool.submit(self._execute_step_with_retry, step, result): step for step in steps
             }
 
             for future in as_completed(futures):

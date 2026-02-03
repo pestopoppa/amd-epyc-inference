@@ -36,9 +36,17 @@ def _is_summarization_task(prompt: str) -> bool:
         True if this looks like a summarization request.
     """
     summarization_keywords = [
-        "summarize", "summary", "summarise", "summarisation",
-        "executive summary", "overview", "key points",
-        "main ideas", "tl;dr", "tldr", "synopsis",
+        "summarize",
+        "summary",
+        "summarise",
+        "summarisation",
+        "executive summary",
+        "overview",
+        "key points",
+        "main ideas",
+        "tl;dr",
+        "tldr",
+        "synopsis",
     ]
     prompt_lower = prompt.lower()
     return any(kw in prompt_lower for kw in summarization_keywords)
@@ -138,7 +146,7 @@ async def _run_two_stage_summarization(
     worker_prompts = []
     for chunk in chunks:
         worker_prompt = (
-            f"Analyze this section ({chunk['index']+1}/{n_chunks}) of a larger document.\n"
+            f"Analyze this section ({chunk['index'] + 1}/{n_chunks}) of a larger document.\n"
             f"Task context: {prompt[:200]}\n\n"
             f"## Section Content\n{chunk['text'][:6000]}\n\n"
             f"## Instructions\n"
@@ -164,7 +172,9 @@ async def _run_two_stage_summarization(
     try:
         digests = primitives.llm_batch(worker_prompts, role=worker_role, n_tokens=500)
     except Exception as exc:
-        log.warning("llm_batch failed for role=%s, falling back to sequential: %s", worker_role, exc)
+        log.warning(
+            "llm_batch failed for role=%s, falling back to sequential: %s", worker_role, exc
+        )
         # Fallback: sequential calls with worker_explore (always HOT)
         digests = []
         for wp in worker_prompts:
@@ -182,8 +192,7 @@ async def _run_two_stage_summarization(
     stage2_start = time.perf_counter()
 
     digest_text = "\n\n".join(
-        f"[Section {i+1}/{len(digests)}]\n{d}"
-        for i, d in enumerate(digests)
+        f"[Section {i + 1}/{len(digests)}]\n{d}" for i, d in enumerate(digests)
     )
 
     if is_summarization:
@@ -214,7 +223,7 @@ async def _run_two_stage_summarization(
             role=TWO_STAGE_CONFIG["stage1_role"],  # frontdoor
             n_tokens=4096,
         )
-    except Exception as e:
+    except Exception:
         # Use digest text directly as fallback
         answer = f"Worker findings:\n{digest_text}"
 
@@ -233,8 +242,7 @@ async def _run_two_stage_summarization(
 
     # Store digests for potential review gate use (Step 6)
     stats["worker_digests"] = [
-        {"section": i + 1, "summary": d[:500]}
-        for i, d in enumerate(digests)
+        {"section": i + 1, "summary": d[:500]} for i, d in enumerate(digests)
     ]
 
     return answer.strip(), stats

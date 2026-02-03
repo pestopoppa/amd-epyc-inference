@@ -34,7 +34,6 @@ import json
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -82,9 +81,9 @@ def format_status_icon(status: str) -> str:
     """Get icon for status."""
     icons = {
         "active": "\033[92m●\033[0m",  # Green
-        "idle": "\033[93m○\033[0m",    # Yellow
-        "stale": "\033[91m◌\033[0m",   # Red
-        "archived": "\033[90m◦\033[0m", # Gray
+        "idle": "\033[93m○\033[0m",  # Yellow
+        "stale": "\033[91m◌\033[0m",  # Red
+        "archived": "\033[90m◦\033[0m",  # Gray
     }
     return icons.get(status, "?")
 
@@ -97,6 +96,7 @@ def format_status_icon(status: str) -> str:
 def get_store():
     """Get session store (direct access, not via API)."""
     from src.session import SQLiteSessionStore
+
     return SQLiteSessionStore()
 
 
@@ -127,7 +127,9 @@ def cmd_list(args: argparse.Namespace) -> int:
 
     # Table header
     print()
-    print(f"{'ST':<3} {'ID':<12} {'NAME':<25} {'PROJECT':<15} {'LAST ACTIVE':<12} {'MSGS':<5} {'TOPIC'}")
+    print(
+        f"{'ST':<3} {'ID':<12} {'NAME':<25} {'PROJECT':<15} {'LAST ACTIVE':<12} {'MSGS':<5} {'TOPIC'}"
+    )
     print("-" * 100)
 
     for s in sessions:
@@ -139,7 +141,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         msgs = s.message_count
         topic = truncate(s.last_topic, 30) or "-"
 
-        print(f"{status_icon:<3} {session_id:<12} {name:<25} {project:<15} {last_active:<12} {msgs:<5} {topic}")
+        print(
+            f"{status_icon:<3} {session_id:<12} {name:<25} {project:<15} {last_active:<12} {msgs:<5} {topic}"
+        )
 
     print()
     print(f"Total: {len(sessions)} session(s)")
@@ -214,7 +218,9 @@ def cmd_show(args: argparse.Namespace) -> int:
     print(f"  Task ID:        {session.task_id}")
     print()
     print(f"  Created:        {session.created_at.strftime('%Y-%m-%d %H:%M')}")
-    print(f"  Last Active:    {session.last_active.strftime('%Y-%m-%d %H:%M')} ({format_datetime(session.last_active.isoformat())})")
+    print(
+        f"  Last Active:    {session.last_active.strftime('%Y-%m-%d %H:%M')} ({format_datetime(session.last_active.isoformat())})"
+    )
     print(f"  Resume Count:   {session.resume_count}")
     print(f"  Message Count:  {session.message_count}")
     print()
@@ -254,7 +260,9 @@ def cmd_show(args: argparse.Namespace) -> int:
             print(f"RECENT CHECKPOINTS ({len(checkpoints)})")
             print("-" * 60)
             for c in checkpoints:
-                print(f"  {c.created_at.strftime('%Y-%m-%d %H:%M')} - {c.trigger} (msgs: {c.message_count})")
+                print(
+                    f"  {c.created_at.strftime('%Y-%m-%d %H:%M')} - {c.trigger} (msgs: {c.message_count})"
+                )
             print()
 
     # Documents (if any)
@@ -265,7 +273,9 @@ def cmd_show(args: argparse.Namespace) -> int:
         print("-" * 60)
         for d in docs:
             path = Path(d.file_path).name
-            print(f"  {path} ({d.total_pages or '?'} pages) - {format_datetime(d.processed_at.isoformat())}")
+            print(
+                f"  {path} ({d.total_pages or '?'} pages) - {format_datetime(d.processed_at.isoformat())}"
+            )
         print()
 
     return 0
@@ -497,7 +507,7 @@ def cmd_delete(args: argparse.Namespace) -> int:
         print(f"Session '{session.id[:10]}' deleted")
         return 0
     else:
-        print(f"Failed to delete session")
+        print("Failed to delete session")
         return 1
 
 
@@ -517,7 +527,9 @@ def main() -> int:
 
     # List command
     list_parser = subparsers.add_parser("list", help="List sessions")
-    list_parser.add_argument("--status", choices=["active", "idle", "stale", "archived"], help="Filter by status")
+    list_parser.add_argument(
+        "--status", choices=["active", "idle", "stale", "archived"], help="Filter by status"
+    )
     list_parser.add_argument("--project", help="Filter by project")
     list_parser.add_argument("--limit", type=int, default=50, help="Maximum results")
 
@@ -535,7 +547,9 @@ def main() -> int:
     # Resume command
     resume_parser = subparsers.add_parser("resume", help="Resume session with context")
     resume_parser.add_argument("session_id", help="Session ID (or prefix)")
-    resume_parser.add_argument("--output", choices=["text", "json"], default="text", help="Output format")
+    resume_parser.add_argument(
+        "--output", choices=["text", "json"], default="text", help="Output format"
+    )
 
     # Archive command
     archive_parser = subparsers.add_parser("archive", help="Archive a session")
@@ -544,7 +558,9 @@ def main() -> int:
     # Findings command
     findings_parser = subparsers.add_parser("findings", help="List session findings")
     findings_parser.add_argument("session_id", help="Session ID (or prefix)")
-    findings_parser.add_argument("--output", choices=["text", "json"], default="text", help="Output format")
+    findings_parser.add_argument(
+        "--output", choices=["text", "json"], default="text", help="Output format"
+    )
 
     # Delete command
     delete_parser = subparsers.add_parser("delete", help="Delete a session")

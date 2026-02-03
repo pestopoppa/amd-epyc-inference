@@ -75,34 +75,38 @@ Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); summary = llm_call(
 # ── ReAct Tool Loop Constants ──────────────────────────────────────────────
 
 # Read-only tools safe for ReAct mode (no shell, no filesystem writes)
-REACT_TOOL_WHITELIST = frozenset({
-    "web_search",
-    "search_arxiv",
-    "search_papers",
-    "search_wikipedia",
-    "get_wikipedia_article",
-    "search_books",
-    "calculate",
-    "python_eval",
-    "get_current_date",
-    "get_current_time",
-    "json_query",
-    "fetch_wikipedia",
-    # File tools — read-only access for investigation
-    "read_file",
-    "list_directory",
-})
+REACT_TOOL_WHITELIST = frozenset(
+    {
+        "web_search",
+        "search_arxiv",
+        "search_papers",
+        "search_wikipedia",
+        "get_wikipedia_article",
+        "search_books",
+        "calculate",
+        "python_eval",
+        "get_current_date",
+        "get_current_time",
+        "json_query",
+        "fetch_wikipedia",
+        # File tools — read-only access for investigation
+        "read_file",
+        "list_directory",
+    }
+)
 
 # Vision-aware ReAct whitelist: standard tools + OCR extraction
 VISION_REACT_TOOL_WHITELIST = REACT_TOOL_WHITELIST | frozenset({"ocr_extract"})
 
 # Tools that _execute_vision_tool() actually handles — single source of truth
-VISION_REACT_EXECUTABLE_TOOLS: frozenset[str] = frozenset({
-    "ocr_extract",
-    "calculate",
-    "get_current_date",
-    "get_current_time",
-})
+VISION_REACT_EXECUTABLE_TOOLS: frozenset[str] = frozenset(
+    {
+        "ocr_extract",
+        "calculate",
+        "get_current_date",
+        "get_current_time",
+    }
+)
 
 # Tool descriptions for the vision ReAct system prompt
 VISION_TOOL_DESCRIPTIONS: dict[str, str] = {
@@ -178,17 +182,17 @@ def build_react_prompt(
     else:
         # Static fallback descriptions for common tools
         tool_descriptions = [
-            "- calculate(expression=\"...\"): Evaluate a math expression",
+            '- calculate(expression="..."): Evaluate a math expression',
             "- get_current_date(): Get today's date",
             "- get_current_time(): Get current time",
-            "- web_search(query=\"...\"): Search the web",
-            "- search_arxiv(query=\"...\", max_results=5): Search arXiv papers",
-            "- search_wikipedia(query=\"...\"): Search Wikipedia articles",
-            "- get_wikipedia_article(title=\"...\"): Get full Wikipedia article",
-            "- python_eval(code=\"...\"): Evaluate Python expression safely",
-            "- json_query(data=\"...\", query=\"...\"): Query JSON data with JMESPath",
-            "- read_file(path=\"...\"): Read file contents (text files only)",
-            "- list_directory(path=\"...\"): List directory contents",
+            '- web_search(query="..."): Search the web',
+            '- search_arxiv(query="...", max_results=5): Search arXiv papers',
+            '- search_wikipedia(query="..."): Search Wikipedia articles',
+            '- get_wikipedia_article(title="..."): Get full Wikipedia article',
+            '- python_eval(code="..."): Evaluate Python expression safely',
+            '- json_query(data="...", query="..."): Query JSON data with JMESPath',
+            '- read_file(path="..."): Read file contents (text files only)',
+            '- list_directory(path="..."): List directory contents',
         ]
 
     tool_desc_str = "\n".join(tool_descriptions)

@@ -3,15 +3,14 @@
 
 import subprocess
 from unittest.mock import patch, MagicMock
-import pytest
 
-from src.repl_environment import REPLConfig, REPLEnvironment, ExecutionResult
+from src.repl_environment import REPLEnvironment
 
 
 class TestWebFetchTool:
     """Test the web_fetch() tool (_web_fetch)."""
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_web_fetch_successful_response(self, mock_get):
         """Test web_fetch with successful response."""
         mock_response = MagicMock()
@@ -26,7 +25,7 @@ class TestWebFetchTool:
         assert result.error is None
         assert "This is the fetched content" in repl.artifacts["result"]
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_web_fetch_html_content(self, mock_get):
         """Test web_fetch handles HTML content (extracts text)."""
         html_content = """
@@ -61,10 +60,11 @@ class TestWebFetchTool:
         assert result.error is None
         assert "[ERROR: Only http/https URLs are allowed]" in repl.artifacts["result"]
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_web_fetch_handles_timeout(self, mock_get):
         """Test web_fetch handles timeout error."""
         import requests
+
         mock_get.side_effect = requests.exceptions.Timeout("Timeout")
 
         repl = REPLEnvironment(context="test")
@@ -73,10 +73,11 @@ class TestWebFetchTool:
         assert result.error is None
         assert "[ERROR: Request timed out after 30s]" in repl.artifacts["result"]
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_web_fetch_handles_request_error(self, mock_get):
         """Test web_fetch handles request error."""
         import requests
+
         mock_get.side_effect = requests.exceptions.RequestException("Connection error")
 
         repl = REPLEnvironment(context="test")
@@ -85,7 +86,7 @@ class TestWebFetchTool:
         assert result.error is None
         assert "[ERROR: Request failed:" in repl.artifacts["result"]
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_web_fetch_truncates_at_max_chars(self, mock_get):
         """Test web_fetch truncates at max_chars."""
         long_content = "X" * 15000
@@ -96,7 +97,9 @@ class TestWebFetchTool:
         mock_get.return_value = mock_response
 
         repl = REPLEnvironment(context="test")
-        result = repl.execute('artifacts["result"] = web_fetch("https://example.com", max_chars=10000)')
+        result = repl.execute(
+            'artifacts["result"] = web_fetch("https://example.com", max_chars=10000)'
+        )
 
         assert result.error is None
         assert "truncated at 10000 chars" in repl.artifacts["result"]
@@ -163,7 +166,7 @@ class TestRunShellTool:
         assert result.error is None
         assert "[ERROR: Empty command]" in repl.artifacts["result"]
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_run_shell_timeout(self, mock_run):
         """Test run_shell handles timeout."""
         mock_run.side_effect = subprocess.TimeoutExpired("cmd", 30)

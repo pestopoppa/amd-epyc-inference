@@ -15,10 +15,8 @@ To run with live OCR server:
     pytest tests/integration/test_document_pipeline.py -v --run-ocr-server
 """
 
-import asyncio
 import base64
 import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Mark all tests in this module as integration tests
@@ -55,9 +53,7 @@ The results show significant improvement.
 
 More detailed results here.
 """,
-        "bboxes": [
-            {"id": 0, "x1": 100, "y1": 200, "x2": 300, "y2": 400, "normalized": True}
-        ],
+        "bboxes": [{"id": 0, "x1": 100, "y1": 200, "x2": 300, "y2": 400, "normalized": True}],
         "elapsed_sec": 5.8,
     }
 
@@ -77,17 +73,79 @@ def mock_ocr_result(mock_ocr_page_result):
 def sample_image_base64():
     """Create a minimal valid PNG image as base64."""
     # 1x1 white PNG
-    png_data = bytes([
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xFF, 0xFF, 0xFF,
-        0x00, 0x05, 0xFE, 0x02, 0xFE, 0xDC, 0xCC, 0x59,
-        0xE7, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
-        0x44, 0xAE, 0x42, 0x60, 0x82
-    ])
+    png_data = bytes(
+        [
+            0x89,
+            0x50,
+            0x4E,
+            0x47,
+            0x0D,
+            0x0A,
+            0x1A,
+            0x0A,
+            0x00,
+            0x00,
+            0x00,
+            0x0D,
+            0x49,
+            0x48,
+            0x44,
+            0x52,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x08,
+            0x02,
+            0x00,
+            0x00,
+            0x00,
+            0x90,
+            0x77,
+            0x53,
+            0xDE,
+            0x00,
+            0x00,
+            0x00,
+            0x0C,
+            0x49,
+            0x44,
+            0x41,
+            0x54,
+            0x08,
+            0xD7,
+            0x63,
+            0xF8,
+            0xFF,
+            0xFF,
+            0xFF,
+            0x00,
+            0x05,
+            0xFE,
+            0x02,
+            0xFE,
+            0xDC,
+            0xCC,
+            0x59,
+            0xE7,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x49,
+            0x45,
+            0x4E,
+            0x44,
+            0xAE,
+            0x42,
+            0x60,
+            0x82,
+        ]
+    )
     return base64.b64encode(png_data).decode()
 
 
@@ -179,7 +237,6 @@ class TestDocumentModels:
             Section,
             FigureRef,
             BoundingBox,
-            ProcessingStatus,
         )
 
         section = Section(id="s1", title="Intro", level=1, content="Text")
@@ -312,7 +369,7 @@ This is level three content with enough text to pass the filter.
 
     def test_process_complete(self, mock_ocr_result):
         """Test complete document processing."""
-        from src.services.document_chunker import DocumentChunker, chunk_document
+        from src.services.document_chunker import chunk_document
         from src.models.document import OCRResult
 
         ocr_result = OCRResult.from_dict(mock_ocr_result)
@@ -501,9 +558,25 @@ class TestDocumentREPL:
         from src.models.document import Section, FigureRef, BoundingBox
 
         sections = [
-            Section(id="s0", title="Introduction", level=1, content="Intro content.", page_start=1, page_end=1),
-            Section(id="s1", title="Methods", level=2, content="Method content.", page_start=2, page_end=3),
-            Section(id="s2", title="Results", level=2, content="Results here.", page_start=4, page_end=5),
+            Section(
+                id="s0",
+                title="Introduction",
+                level=1,
+                content="Intro content.",
+                page_start=1,
+                page_end=1,
+            ),
+            Section(
+                id="s1",
+                title="Methods",
+                level=2,
+                content="Method content.",
+                page_start=2,
+                page_end=3,
+            ),
+            Section(
+                id="s2", title="Results", level=2, content="Results here.", page_start=4, page_end=5
+            ),
         ]
 
         figures = [
@@ -682,6 +755,7 @@ class TestFigureAnalyzer:
 
         # Verify it's valid base64
         import base64
+
         decoded = base64.b64decode(b64)
         assert len(decoded) > 0
 
@@ -832,21 +906,17 @@ class TestFigureAnalyzerIntegration:
             PreprocessingConfig,
         )
         from src.models.document import OCRResult
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import patch
 
         config = PreprocessingConfig(describe_figures=True)
         preprocessor = DocumentPreprocessor(config=config)
 
         # Mock the process_document to return our mock OCR result
-        with patch(
-            "src.services.document_preprocessor.process_document"
-        ) as mock_process:
+        with patch("src.services.document_preprocessor.process_document") as mock_process:
             mock_process.return_value = OCRResult.from_dict(mock_ocr_result)
 
             # Mock the figure analyzer
-            with patch(
-                "src.services.document_preprocessor.analyze_figures_async"
-            ) as mock_analyze:
+            with patch("src.services.document_preprocessor.analyze_figures_async") as mock_analyze:
                 # Return figures with descriptions filled in
                 async def fill_descriptions(pdf_path, figures):
                     for fig in figures:
@@ -874,6 +944,7 @@ class TestFigureAnalyzerIntegration:
 
                 finally:
                     import os
+
                     os.unlink(temp_path)
 
     def test_preprocessor_figure_analyzer_injection(self):

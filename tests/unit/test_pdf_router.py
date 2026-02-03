@@ -2,8 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
+from unittest.mock import patch, MagicMock
 
 from src.services.pdf_router import (
     PDFRouter,
@@ -18,10 +17,7 @@ class TestBoundingBox:
     """Tests for BoundingBox dataclass."""
 
     def test_bounding_box_fields(self):
-        bbox = BoundingBox(
-            x0=0.1, y0=0.2, x1=0.9, y1=0.8,
-            page=1, width_px=100, height_px=200
-        )
+        bbox = BoundingBox(x0=0.1, y0=0.2, x1=0.9, y1=0.8, page=1, width_px=100, height_px=200)
         assert bbox.x0 == 0.1
         assert bbox.y0 == 0.2
         assert bbox.x1 == 0.9
@@ -36,12 +32,7 @@ class TestExtractedFigure:
 
     def test_extracted_figure_fields(self):
         bbox = BoundingBox(x0=0.1, y0=0.2, x1=0.9, y1=0.8, page=1)
-        figure = ExtractedFigure(
-            index=1,
-            bbox=bbox,
-            image_path="/tmp/fig1.png",
-            format="png"
-        )
+        figure = ExtractedFigure(index=1, bbox=bbox, image_path="/tmp/fig1.png", format="png")
         assert figure.index == 1
         assert figure.bbox == bbox
         assert figure.image_path == "/tmp/fig1.png"
@@ -137,9 +128,7 @@ class TestPDFRouterExtraction:
 
         # Mock successful pdftotext output
         mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="This is extracted PDF text.",
-            stderr=""
+            returncode=0, stdout="This is extracted PDF text.", stderr=""
         )
 
         text, latency = router._extract_with_pdftotext(Path("/fake/test.pdf"))
@@ -152,11 +141,7 @@ class TestPDFRouterExtraction:
     def test_pdftotext_failure(self, mock_run):
         router = PDFRouter()
 
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stdout="",
-            stderr="Error"
-        )
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="Error")
 
         text, latency = router._extract_with_pdftotext(Path("/fake/test.pdf"))
 

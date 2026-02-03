@@ -23,10 +23,15 @@ if TYPE_CHECKING:
 
 
 # Valid delegation targets for architect briefs
-_VALID_DELEGATE_ROLES = frozenset({
-    "coder_primary", "coder_escalation", "worker_explore",
-    "worker_general", "worker_math",
-})
+_VALID_DELEGATE_ROLES = frozenset(
+    {
+        "coder_primary",
+        "coder_escalation",
+        "worker_explore",
+        "worker_general",
+        "worker_math",
+    }
+)
 
 
 def _parse_architect_decision(response: str) -> dict:
@@ -89,6 +94,7 @@ def _parse_architect_decision(response: str) -> dict:
 
     # ── JSON (possibly markdown-wrapped) ──
     import re as _re
+
     json_match = _re.search(r"```(?:json)?\s*\n?(.*?)```", text, _re.DOTALL)
     json_text = json_match.group(1).strip() if json_match else text
 
@@ -181,6 +187,7 @@ def _architect_delegated_answer(
     if context:
         try:
             from src.services.toon_encoder import encode, is_available
+
             if is_available() and len(context) > 100:
                 toon_context = encode({"ctx": context[:3000]})
         except Exception as exc:
@@ -199,7 +206,10 @@ def _architect_delegated_answer(
         else:
             report = reports[-1] if reports else ""
             prompt_text = build_architect_synthesis_prompt(
-                question, report, loop, max_loops,
+                question,
+                report,
+                loop,
+                max_loops,
             )
             n_tokens = 2048  # Synthesis needs more room
 
@@ -219,27 +229,23 @@ def _architect_delegated_answer(
 
         phase_a_ms = (time.perf_counter() - phase_start) * 1000
         decision = _parse_architect_decision(arch_response)
-        stats["phases"].append({
-            "loop": loop,
-            "phase": "A",
-            "ms": round(phase_a_ms),
-            "decision": decision["mode"],
-        })
-
-        log.info(
-            f"Architect loop {loop}: {decision['mode']} "
-            f"({phase_a_ms:.0f}ms)"
+        stats["phases"].append(
+            {
+                "loop": loop,
+                "phase": "A",
+                "ms": round(phase_a_ms),
+                "decision": decision["mode"],
+            }
         )
+
+        log.info(f"Architect loop {loop}: {decision['mode']} ({phase_a_ms:.0f}ms)")
 
         # ── Direct/final answer ──
         if decision["mode"] == "direct":
             answer = decision["answer"]
             # If architect just says "Approved" and we have specialist output,
             # the specialist's document IS the final answer
-            if (
-                answer.lower().strip() in ("approved", "approved.")
-                and stats["specialist_output"]
-            ):
+            if answer.lower().strip() in ("approved", "approved.") and stats["specialist_output"]:
                 answer = stats["specialist_output"]
             stats["loops"] = loop
             stats["tools_used"] = total_tools
@@ -251,10 +257,7 @@ def _architect_delegated_answer(
         delegate_to = decision["delegate_to"]
         delegate_mode = decision["delegate_mode"]
 
-        log.info(
-            f"Delegating to {delegate_to} (mode={delegate_mode}): "
-            f"{brief[:100]}..."
-        )
+        log.info(f"Delegating to {delegate_to} (mode={delegate_mode}): {brief[:100]}...")
 
         phase_b_start = time.perf_counter()
 
@@ -306,18 +309,17 @@ def _architect_delegated_answer(
         phase_b_ms = (time.perf_counter() - phase_b_start) * 1000
         reports.append(report)
         stats["specialist_output"] = report
-        stats["phases"].append({
-            "loop": loop,
-            "phase": "B",
-            "ms": round(phase_b_ms),
-            "delegate_to": delegate_to,
-            "delegate_mode": delegate_mode,
-        })
-
-        log.info(
-            f"Specialist {delegate_to} done ({phase_b_ms:.0f}ms, "
-            f"{len(report)} chars)"
+        stats["phases"].append(
+            {
+                "loop": loop,
+                "phase": "B",
+                "ms": round(phase_b_ms),
+                "delegate_to": delegate_to,
+                "delegate_mode": delegate_mode,
+            }
         )
+
+        log.info(f"Specialist {delegate_to} done ({phase_b_ms:.0f}ms, {len(report)} chars)")
 
     # ── Cap reached ──
     stats["loops"] = max_loops
@@ -330,8 +332,7 @@ def _architect_delegated_answer(
         forced_prompt = (
             f"You MUST answer now. Synthesize from all available information.\n\n"
             f"Question: {question[:2000]}\n\n"
-            f"Investigation reports:\n"
-            + "\n---\n".join(reports[-3:])  # Last 3 reports
+            f"Investigation reports:\n" + "\n---\n".join(reports[-3:])  # Last 3 reports
         )
         try:
             answer = primitives.llm_call(

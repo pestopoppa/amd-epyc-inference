@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for failure router."""
 
-import pytest
-
 from src.failure_router import (
     FailureRouter,
     FailureContext,
@@ -95,6 +93,7 @@ class TestFailureContext:
     def test_role_enum_object_normalization(self):
         """Test that Role enum objects are normalized to values."""
         from src.roles import Role
+
         context = FailureContext(
             role=Role.WORKER_GENERAL,
             failure_count=1,

@@ -45,6 +45,7 @@ class TestConfigImports:
 
     def test_config_module_imports(self):
         import src.config
+
         assert hasattr(src.config, "get_config")
         assert hasattr(src.config, "reset_config")
 
@@ -59,9 +60,14 @@ class TestConfigImports:
             ServicesConfig,
             WorkerPoolPathsConfig,
         )
+
         for cls in [
-            ServerURLsConfig, TimeoutsConfig, VisionConfig,
-            ChatPipelineConfig, DelegationConfig, ServicesConfig,
+            ServerURLsConfig,
+            TimeoutsConfig,
+            VisionConfig,
+            ChatPipelineConfig,
+            DelegationConfig,
+            ServicesConfig,
             WorkerPoolPathsConfig,
         ]:
             assert cls is not None
@@ -70,10 +76,12 @@ class TestConfigImports:
         """config.py must NOT import from src/ (prevents circular imports)."""
         import src.config
         import inspect
+
         source = inspect.getsource(src.config)
         # Allow 'from src.' only inside docstrings/comments — not as actual imports
         # Look for actual import statements
         import ast
+
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -130,10 +138,21 @@ class TestServerURLsDefaults:
         config_dict = cfg.as_dict()
         # All roles that LLMPrimitives consumers depend on
         expected_roles = {
-            "frontdoor", "coder_primary", "coder", "coder_escalation",
-            "worker", "worker_general", "worker_explore", "worker_math",
-            "worker_vision", "vision_escalation", "worker_code", "worker_fast",
-            "architect_general", "architect_coding", "ingest_long_context",
+            "frontdoor",
+            "coder_primary",
+            "coder",
+            "coder_escalation",
+            "worker",
+            "worker_general",
+            "worker_explore",
+            "worker_math",
+            "worker_vision",
+            "vision_escalation",
+            "worker_code",
+            "worker_fast",
+            "architect_general",
+            "architect_coding",
+            "ingest_long_context",
         }
         for role in expected_roles:
             assert role in config_dict, f"Missing role: {role}"
@@ -429,9 +448,17 @@ class TestPathsDefaults:
     def test_all_paths_on_raid(self):
         cfg = PathsConfig()
         for field_name in [
-            "models_dir", "cache_dir", "tmp_dir", "registry_path",
-            "tool_registry_path", "script_registry_dir", "project_root",
-            "sessions_dir", "artifacts_dir", "llama_cpp_bin", "model_base",
+            "models_dir",
+            "cache_dir",
+            "tmp_dir",
+            "registry_path",
+            "tool_registry_path",
+            "script_registry_dir",
+            "project_root",
+            "sessions_dir",
+            "artifacts_dir",
+            "llama_cpp_bin",
+            "model_base",
             "log_dir",
         ]:
             path = getattr(cfg, field_name)
@@ -527,21 +554,25 @@ class TestWiringChatUtils:
     def test_role_timeouts_from_config(self):
         """ROLE_TIMEOUTS dict must match config timeouts."""
         from src.api.routes.chat_utils import ROLE_TIMEOUTS
+
         cfg = get_config()
         for role, timeout in ROLE_TIMEOUTS.items():
             assert cfg.timeouts.for_role(role) == timeout
 
     def test_default_timeout_s_from_config(self):
         from src.api.routes.chat_utils import DEFAULT_TIMEOUT_S
+
         assert DEFAULT_TIMEOUT_S == get_config().timeouts.default_request
 
     def test_three_stage_config_sourced(self):
         from src.api.routes.chat_utils import THREE_STAGE_CONFIG
+
         cfg = get_config().chat
         assert THREE_STAGE_CONFIG["threshold_tokens"] == cfg.summarization_threshold_tokens
 
     def test_qwen_stop_from_config(self):
         from src.api.routes.chat_utils import QWEN_STOP
+
         assert QWEN_STOP == get_config().llm.qwen_stop_token
 
 
@@ -551,6 +582,7 @@ class TestWiringChatReview:
     def test_compute_plan_review_phase_uses_config(self):
         """_compute_plan_review_phase must use ChatPipelineConfig thresholds."""
         from src.api.routes.chat_review import _compute_plan_review_phase
+
         # Phase A: less than 50 reviews
         assert _compute_plan_review_phase({"total_reviews": 10}) == "A"
         # Phase A: exactly at threshold
@@ -561,6 +593,7 @@ class TestWiringChatReview:
     def test_detect_output_quality_uses_config_thresholds(self):
         """_detect_output_quality_issue uses repetition/garbled thresholds from config."""
         from src.api.routes.chat_review import _detect_output_quality_issue
+
         # A string with high repetition should be detected
         repeated = " ".join(["the same thing"] * 50)
         result = _detect_output_quality_issue(repeated)
@@ -574,6 +607,7 @@ class TestWiringChatVision:
         """chat_vision.py must import get_config."""
         import src.api.routes.chat_vision as cv
         import inspect
+
         source = inspect.getsource(cv)
         assert "get_config" in source
 
@@ -581,6 +615,7 @@ class TestWiringChatVision:
         """_execute_vision_tool references config for OCR URL."""
         import src.api.routes.chat_vision as cv
         import inspect
+
         source = inspect.getsource(cv._execute_vision_tool)
         assert "get_config" in source
 
@@ -613,6 +648,7 @@ class TestWiringBuiltinTools:
         """write_json tool should reference config for raid_prefix."""
         import src.builtin_tools as bt
         import inspect
+
         source = inspect.getsource(bt)
         assert "get_config" in source
 
@@ -623,6 +659,7 @@ class TestWiringBackends:
     def test_server_config_defaults_from_config(self):
         """ServerConfig fields should match config.server defaults."""
         from src.backends.llama_server import ServerConfig
+
         sc = ServerConfig()
         cfg = get_config().server
         assert sc.base_url == cfg.default_url
@@ -632,6 +669,7 @@ class TestWiringBackends:
     def test_monitor_config_defaults_from_config(self):
         """MonitorConfig fields should match config.monitor defaults."""
         from src.generation_monitor import MonitorConfig
+
         mc = MonitorConfig()
         cfg = get_config().monitor
         assert mc.entropy_threshold == cfg.entropy_threshold
@@ -641,6 +679,7 @@ class TestWiringBackends:
     def test_escalation_config_from_config(self):
         """EscalationConfig should match config.escalation."""
         from src.escalation import EscalationConfig
+
         ec = EscalationConfig()
         cfg = get_config().escalation
         assert ec.max_retries == cfg.max_retries
@@ -653,11 +692,13 @@ class TestWiringServices:
     def test_document_client_urls_from_config(self):
         """document_client.py DEFAULT_OCR_URL must match config."""
         from src.services.document_client import DEFAULT_OCR_URL
+
         assert DEFAULT_OCR_URL == get_config().server_urls.ocr_server
 
     def test_vision_config_values_from_config(self):
         """vision/config.py constants must match VisionConfig."""
         from src.vision.config import MAX_IMAGE_SIZE_MB, MAX_IMAGE_DIMENSION
+
         cfg = get_config().vision
         assert MAX_IMAGE_SIZE_MB == cfg.max_image_size_mb
         assert MAX_IMAGE_DIMENSION == cfg.max_image_dimension

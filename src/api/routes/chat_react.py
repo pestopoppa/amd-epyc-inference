@@ -33,6 +33,7 @@ def _parse_react_args(args_str: str) -> dict[str, Any]:
         Dictionary of parsed arguments.
     """
     import ast
+
     result = {}
     if not args_str or not args_str.strip():
         return result
@@ -52,18 +53,18 @@ def _parse_react_args(args_str: str) -> dict[str, Any]:
             in_quotes = False
             quote_char = None
             current.append(ch)
-        elif ch == ',' and not in_quotes:
-            parts.append(''.join(current).strip())
+        elif ch == "," and not in_quotes:
+            parts.append("".join(current).strip())
             current = []
         else:
             current.append(ch)
     if current:
-        parts.append(''.join(current).strip())
+        parts.append("".join(current).strip())
 
     for part in parts:
-        if '=' not in part:
+        if "=" not in part:
             continue
-        key, _, val = part.partition('=')
+        key, _, val = part.partition("=")
         key = key.strip()
         val = val.strip()
         if not key:
@@ -102,12 +103,23 @@ def _should_use_react_mode(prompt: str, context: str = "") -> bool:
 
     # Detect tool-needing keywords
     react_indicators = [
-        "search for", "look up", "find information",
-        "what is the current", "today's date", "what time",
-        "calculate", "compute", "evaluate",
-        "search arxiv", "search papers", "search wikipedia",
-        "look up on wikipedia", "web search",
-        "what year", "when did", "how many",
+        "search for",
+        "look up",
+        "find information",
+        "what is the current",
+        "today's date",
+        "what time",
+        "calculate",
+        "compute",
+        "evaluate",
+        "search arxiv",
+        "search papers",
+        "search wikipedia",
+        "look up on wikipedia",
+        "web search",
+        "what year",
+        "when did",
+        "how many",
     ]
 
     return any(ind in prompt_lower for ind in react_indicators)
@@ -178,7 +190,7 @@ def _react_mode_answer(
         if "Final Answer:" in response:
             # Extract everything after "Final Answer:"
             idx = response.index("Final Answer:")
-            answer = response[idx + len("Final Answer:"):].strip()
+            answer = response[idx + len("Final Answer:") :].strip()
             log.info(f"ReAct completed in {turn + 1} turns, {tools_used} tools used")
             return answer, tools_used, tools_called
 
@@ -187,7 +199,7 @@ def _react_mode_answer(
         for line in response.split("\n"):
             line = line.strip()
             if line.startswith("Action:"):
-                action_match = line[len("Action:"):].strip()
+                action_match = line[len("Action:") :].strip()
                 break
 
         if not action_match:
@@ -199,12 +211,13 @@ def _react_mode_answer(
             for line in lines:
                 stripped = line.strip()
                 if stripped.startswith("Thought:"):
-                    stripped = stripped[len("Thought:"):].strip()
+                    stripped = stripped[len("Thought:") :].strip()
                 answer_lines.append(stripped)
             return "\n".join(answer_lines).strip(), tools_used, tools_called
 
         # Parse tool name and args: "tool_name(arg1="val1", arg2=val2)"
         import re as _re
+
         tool_match = _re.match(r"(\w+)\((.*)\)$", action_match, _re.DOTALL)
         if not tool_match:
             observation = f"[ERROR: Could not parse action: {action_match}]"
@@ -239,7 +252,7 @@ def _react_mode_answer(
     last_thought = ""
     for line in conversation.split("\n"):
         if line.strip().startswith("Thought:"):
-            last_thought = line.strip()[len("Thought:"):].strip()
+            last_thought = line.strip()[len("Thought:") :].strip()
 
     if last_thought:
         return f"[ReAct max turns reached]\n{last_thought}", tools_used, tools_called

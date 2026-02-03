@@ -262,9 +262,7 @@ class TestStepExecution:
             assert step.command != ""
             assert isinstance(step.command, str)
 
-    def test_step_preserves_dependencies(
-        self, minimal_registry: Path, sample_task_ir: dict
-    ):
+    def test_step_preserves_dependencies(self, minimal_registry: Path, sample_task_ir: dict):
         """Test that step dependencies are preserved."""
         registry = RegistryLoader(minimal_registry)
         dispatcher = Dispatcher(registry=registry)
@@ -290,9 +288,7 @@ class TestStepExecution:
 class TestFileDispatch:
     """Tests for file-based dispatch."""
 
-    def test_dispatch_from_file(
-        self, minimal_registry: Path, sample_task_ir: dict, tmp_path: Path
-    ):
+    def test_dispatch_from_file(self, minimal_registry: Path, sample_task_ir: dict, tmp_path: Path):
         """Test dispatching from a JSON file."""
         registry = RegistryLoader(minimal_registry)
         dispatcher = Dispatcher(registry=registry)

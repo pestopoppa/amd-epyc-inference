@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for the REPL routing tools (_RoutingMixin)."""
 
-import json
-from unittest.mock import Mock, MagicMock, patch
-import pytest
+from unittest.mock import Mock
 
-from src.repl_environment import REPLEnvironment, REPLConfig
+from src.repl_environment import REPLEnvironment
 
 
 class TestMyRole:
@@ -126,7 +124,6 @@ class TestEscalate:
     def test_escalate_logs_event(self):
         """Test escalate() is logged as exploration call."""
         repl = REPLEnvironment(context="test")
-        initial_calls = repl._exploration_calls
         repl.execute("escalate('complex task')")
 
         # Escalate does NOT increment exploration_calls (it's a signal, not exploration)
@@ -282,7 +279,9 @@ class TestDelegate:
         mock_llm.llm_call = Mock(return_value="Task completed successfully")
 
         repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_primary")
-        result = repl.execute("output = delegate('summarize this', 'worker_summarize', 'need summary')")
+        result = repl.execute(
+            "output = delegate('summarize this', 'worker_summarize', 'need summary')"
+        )
 
         assert result.error is None
         mock_llm.llm_call.assert_called_once()

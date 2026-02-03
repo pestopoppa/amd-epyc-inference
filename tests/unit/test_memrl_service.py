@@ -11,7 +11,6 @@ from unittest.mock import patch
 from dataclasses import dataclass
 from typing import Any
 
-import pytest
 
 from src.api.services import memrl
 from src.api.state import AppState
@@ -21,6 +20,7 @@ from src.api.state import AppState
 @dataclass
 class StubQScorer:
     """Stub Q-scorer for testing."""
+
     store: Any = None
     embedder: Any = None
     logger: Any = None
@@ -45,18 +45,21 @@ class StubQScorer:
 @dataclass
 class StubEpisodicStore:
     """Stub episodic store for testing."""
+
     pass
 
 
 @dataclass
 class StubTaskEmbedder:
     """Stub task embedder for testing."""
+
     pass
 
 
 @dataclass
 class StubProgressReader:
     """Stub progress reader for testing."""
+
     pass
 
 
@@ -72,6 +75,7 @@ class StubProgressLogger:
 @dataclass
 class StubScoringConfig:
     """Stub scoring config for testing."""
+
     use_claude_judge: bool = False
     min_score_interval_seconds: int = 30
     batch_size: int = 10
@@ -80,6 +84,7 @@ class StubScoringConfig:
 @dataclass
 class StubTwoPhaseRetriever:
     """Stub retriever for testing."""
+
     store: Any = None
     embedder: Any = None
     config: Any = None
@@ -88,6 +93,7 @@ class StubTwoPhaseRetriever:
 @dataclass
 class StubHybridRouter:
     """Stub hybrid router for testing."""
+
     retriever: Any = None
     rule_based_router: Any = None
 
@@ -95,12 +101,14 @@ class StubHybridRouter:
 @dataclass
 class StubRuleBasedRouter:
     """Stub rule-based router for testing."""
+
     routing_hints: dict = None
 
 
 @dataclass
 class StubRetrievalConfig:
     """Stub retrieval config for testing."""
+
     semantic_k: int = 20
     min_similarity: float = 0.3
     q_weight: float = 0.7
@@ -110,6 +118,7 @@ class StubRetrievalConfig:
 @dataclass
 class StubRegistryLoader:
     """Stub registry loader for testing."""
+
     routing_hints: dict = None
 
     def __init__(self, validate_paths: bool = False):
@@ -120,8 +129,11 @@ class StubFeatures:
     """Stub features for testing."""
 
     def __init__(
-        self, memrl: bool = False, tools: bool = False, scripts: bool = False,
-        specialist_routing: bool = False
+        self,
+        memrl: bool = False,
+        tools: bool = False,
+        scripts: bool = False,
+        specialist_routing: bool = False,
     ):
         self.memrl = memrl
         self.tools = tools
@@ -143,28 +155,51 @@ class TestLoadOptionalImports:
             mock_features.return_value = StubFeatures(memrl=True)
 
             # Mock the imports
-            with patch.dict("sys.modules", {
-                "orchestration.repl_memory.progress_logger": type('module', (), {
-                    'ProgressLogger': StubProgressLogger,
-                    'ProgressReader': StubProgressReader,
-                }),
-                "orchestration.repl_memory.episodic_store": type('module', (), {
-                    'EpisodicStore': StubEpisodicStore,
-                }),
-                "orchestration.repl_memory.embedder": type('module', (), {
-                    'TaskEmbedder': StubTaskEmbedder,
-                }),
-                "orchestration.repl_memory.q_scorer": type('module', (), {
-                    'QScorer': StubQScorer,
-                    'ScoringConfig': StubScoringConfig,
-                }),
-                "orchestration.repl_memory.retriever": type('module', (), {
-                    'TwoPhaseRetriever': StubTwoPhaseRetriever,
-                    'HybridRouter': StubHybridRouter,
-                    'RuleBasedRouter': StubRuleBasedRouter,
-                    'RetrievalConfig': StubRetrievalConfig,
-                }),
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "orchestration.repl_memory.progress_logger": type(
+                        "module",
+                        (),
+                        {
+                            "ProgressLogger": StubProgressLogger,
+                            "ProgressReader": StubProgressReader,
+                        },
+                    ),
+                    "orchestration.repl_memory.episodic_store": type(
+                        "module",
+                        (),
+                        {
+                            "EpisodicStore": StubEpisodicStore,
+                        },
+                    ),
+                    "orchestration.repl_memory.embedder": type(
+                        "module",
+                        (),
+                        {
+                            "TaskEmbedder": StubTaskEmbedder,
+                        },
+                    ),
+                    "orchestration.repl_memory.q_scorer": type(
+                        "module",
+                        (),
+                        {
+                            "QScorer": StubQScorer,
+                            "ScoringConfig": StubScoringConfig,
+                        },
+                    ),
+                    "orchestration.repl_memory.retriever": type(
+                        "module",
+                        (),
+                        {
+                            "TwoPhaseRetriever": StubTwoPhaseRetriever,
+                            "HybridRouter": StubHybridRouter,
+                            "RuleBasedRouter": StubRuleBasedRouter,
+                            "RetrievalConfig": StubRetrievalConfig,
+                        },
+                    ),
+                },
+            ):
                 memrl.load_optional_imports()
 
         # Imports should be populated
@@ -179,12 +214,19 @@ class TestLoadOptionalImports:
         with patch("src.api.services.memrl.features") as mock_features:
             mock_features.return_value = StubFeatures(memrl=False)
 
-            with patch.dict("sys.modules", {
-                "orchestration.repl_memory.progress_logger": type('module', (), {
-                    'ProgressLogger': StubProgressLogger,
-                    'ProgressReader': StubProgressReader,
-                }),
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "orchestration.repl_memory.progress_logger": type(
+                        "module",
+                        (),
+                        {
+                            "ProgressLogger": StubProgressLogger,
+                            "ProgressReader": StubProgressReader,
+                        },
+                    ),
+                },
+            ):
                 memrl.load_optional_imports()
 
         # Only ProgressLogger should be loaded
@@ -197,15 +239,26 @@ class TestLoadOptionalImports:
         with patch("src.api.services.memrl.features") as mock_features:
             mock_features.return_value = StubFeatures(tools=True)
 
-            with patch.dict("sys.modules", {
-                "orchestration.repl_memory.progress_logger": type('module', (), {
-                    'ProgressLogger': StubProgressLogger,
-                    'ProgressReader': StubProgressReader,
-                }),
-                "src.tool_registry": type('module', (), {
-                    'ToolRegistry': type('ToolRegistry', (), {}),
-                }),
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "orchestration.repl_memory.progress_logger": type(
+                        "module",
+                        (),
+                        {
+                            "ProgressLogger": StubProgressLogger,
+                            "ProgressReader": StubProgressReader,
+                        },
+                    ),
+                    "src.tool_registry": type(
+                        "module",
+                        (),
+                        {
+                            "ToolRegistry": type("ToolRegistry", (), {}),
+                        },
+                    ),
+                },
+            ):
                 memrl.load_optional_imports()
 
         # No exception should be raised
@@ -217,15 +270,26 @@ class TestLoadOptionalImports:
         with patch("src.api.services.memrl.features") as mock_features:
             mock_features.return_value = StubFeatures(scripts=True)
 
-            with patch.dict("sys.modules", {
-                "orchestration.repl_memory.progress_logger": type('module', (), {
-                    'ProgressLogger': StubProgressLogger,
-                    'ProgressReader': StubProgressReader,
-                }),
-                "src.script_registry": type('module', (), {
-                    'ScriptRegistry': type('ScriptRegistry', (), {}),
-                }),
-            }):
+            with patch.dict(
+                "sys.modules",
+                {
+                    "orchestration.repl_memory.progress_logger": type(
+                        "module",
+                        (),
+                        {
+                            "ProgressLogger": StubProgressLogger,
+                            "ProgressReader": StubProgressReader,
+                        },
+                    ),
+                    "src.script_registry": type(
+                        "module",
+                        (),
+                        {
+                            "ScriptRegistry": type("ScriptRegistry", (), {}),
+                        },
+                    ),
+                },
+            ):
                 memrl.load_optional_imports()
 
         # No exception should be raised
@@ -321,9 +385,7 @@ class TestEnsureMemRLInitialized:
             memrl.RetrievalConfig = StubRetrievalConfig
 
             with patch("src.api.services.memrl.features") as mock_features:
-                mock_features.return_value = StubFeatures(
-                    memrl=True, specialist_routing=False
-                )
+                mock_features.return_value = StubFeatures(memrl=True, specialist_routing=False)
 
                 result = memrl.ensure_memrl_initialized(state)
 
@@ -490,6 +552,7 @@ class TestExternalReward:
 
     def test_store_external_reward_handles_exception(self):
         """Test external reward storage handles exceptions."""
+
         # Create a scorer that raises on score_external_result
         class FailingScorer:
             def score_external_result(self, **kwargs):
@@ -524,6 +587,7 @@ class TestBackgroundCleanup:
 
         # Run cleanup for a short time
         import asyncio
+
         task = asyncio.create_task(memrl.background_cleanup(state))
         await asyncio.sleep(0.1)
         task.cancel()
@@ -544,6 +608,7 @@ class TestBackgroundCleanup:
         state.q_scorer_enabled = True
 
         import asyncio
+
         task = asyncio.create_task(memrl.background_cleanup(state))
 
         # Cancel immediately

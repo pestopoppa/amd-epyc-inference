@@ -16,9 +16,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
-import pytest
 
-from src.tool_registry import Tool, ToolCategory, ToolRegistry
+from src.tool_registry import ToolCategory, ToolRegistry
 
 
 # ============================================================================
@@ -43,7 +42,7 @@ def test_register_all_tools_full():
 
     # At least one from each category should be registered
     assert "read_file" in tool_names  # file
-    assert "list_dir" in tool_names   # file
+    assert "list_dir" in tool_names  # file
     assert "run_tests" in tool_names  # code
     assert "lint_python" in tool_names  # code
     assert "fetch_docs" in tool_names  # web
@@ -60,11 +59,13 @@ def test_register_all_tools_import_errors():
         # Simulate one module failing to import
         def side_effect(reg):
             from src.tools.file import register_file_tools
+
             return register_file_tools(reg)
 
         mock_register.side_effect = side_effect
 
         from src.tools import register_all_tools
+
         count = register_all_tools(registry)
 
         # Should still register available tools
@@ -84,7 +85,7 @@ class TestListDirectoryTool:
         from src.tools.file.list import list_dir
 
         # Create test directory structure
-        test_dir = Path("/mnt/raid0/llm/tmp/test_dir")
+        Path("/mnt/raid0/llm/tmp/test_dir")
 
         # Mock Path operations
         with patch("src.tools.file.list.Path") as mock_path:
@@ -272,9 +273,10 @@ class TestReadFileTool:
 
         file_content = "line 1\nline 2\nline 3\n"
 
-        with patch("src.tools.file.read.Path") as mock_path, \
-             patch("builtins.open", mock_open(read_data=file_content)):
-
+        with (
+            patch("src.tools.file.read.Path") as mock_path,
+            patch("builtins.open", mock_open(read_data=file_content)),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -321,9 +323,10 @@ class TestReadFileTool:
         lines = [f"line {i}\n" for i in range(100)]
         file_content = "".join(lines)
 
-        with patch("src.tools.file.read.Path") as mock_path, \
-             patch("builtins.open", mock_open(read_data=file_content)):
-
+        with (
+            patch("src.tools.file.read.Path") as mock_path,
+            patch("builtins.open", mock_open(read_data=file_content)),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -348,9 +351,10 @@ class TestReadFileTool:
 
         file_content = "line 1\nline 2\n"
 
-        with patch("src.tools.file.read.Path") as mock_path, \
-             patch("builtins.open", mock_open(read_data=file_content)):
-
+        with (
+            patch("src.tools.file.read.Path") as mock_path,
+            patch("builtins.open", mock_open(read_data=file_content)),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -399,9 +403,10 @@ class TestLintCodeTool:
         mock_result.stdout = "[]"
         mock_result.stderr = ""
 
-        with patch("src.tools.code.lint.Path") as mock_path, \
-             patch("src.tools.code.lint.subprocess.run", return_value=mock_result):
-
+        with (
+            patch("src.tools.code.lint.Path") as mock_path,
+            patch("src.tools.code.lint.subprocess.run", return_value=mock_result),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -418,24 +423,27 @@ class TestLintCodeTool:
         """Test linting with issues found."""
         from src.tools.code.lint import lint_python
 
-        issues_json = json.dumps([
-            {
-                "filename": "test.py",
-                "location": {"row": 10, "column": 5},
-                "code": "E501",
-                "message": "Line too long (100 > 88 characters)",
-                "fix": None,
-            }
-        ])
+        issues_json = json.dumps(
+            [
+                {
+                    "filename": "test.py",
+                    "location": {"row": 10, "column": 5},
+                    "code": "E501",
+                    "message": "Line too long (100 > 88 characters)",
+                    "fix": None,
+                }
+            ]
+        )
 
         mock_result = Mock()
         mock_result.returncode = 1
         mock_result.stdout = issues_json
         mock_result.stderr = ""
 
-        with patch("src.tools.code.lint.Path") as mock_path, \
-             patch("src.tools.code.lint.subprocess.run", return_value=mock_result):
-
+        with (
+            patch("src.tools.code.lint.Path") as mock_path,
+            patch("src.tools.code.lint.subprocess.run", return_value=mock_result),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -462,9 +470,13 @@ class TestLintCodeTool:
         """Test linting with timeout."""
         from src.tools.code.lint import lint_python
 
-        with patch("src.tools.code.lint.Path") as mock_path, \
-             patch("src.tools.code.lint.subprocess.run", side_effect=subprocess.TimeoutExpired("ruff", 60)):
-
+        with (
+            patch("src.tools.code.lint.Path") as mock_path,
+            patch(
+                "src.tools.code.lint.subprocess.run",
+                side_effect=subprocess.TimeoutExpired("ruff", 60),
+            ),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -480,9 +492,10 @@ class TestLintCodeTool:
         """Test linting when ruff is not installed."""
         from src.tools.code.lint import lint_python
 
-        with patch("src.tools.code.lint.Path") as mock_path, \
-             patch("src.tools.code.lint.subprocess.run", side_effect=FileNotFoundError):
-
+        with (
+            patch("src.tools.code.lint.Path") as mock_path,
+            patch("src.tools.code.lint.subprocess.run", side_effect=FileNotFoundError),
+        ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
@@ -521,9 +534,10 @@ class TestRunTestsTool:
         mock_result.stdout = "5 passed in 1.23s"
         mock_result.stderr = ""
 
-        with patch("src.tools.code.run_tests.Path") as mock_path, \
-             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result):
-
+        with (
+            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result),
+        ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
@@ -544,9 +558,10 @@ class TestRunTestsTool:
         mock_result.stdout = "3 passed, 2 failed in 2.34s"
         mock_result.stderr = ""
 
-        with patch("src.tools.code.run_tests.Path") as mock_path, \
-             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result):
-
+        with (
+            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result),
+        ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
@@ -574,9 +589,13 @@ class TestRunTestsTool:
         """Test running tests with timeout."""
         from src.tools.code.run_tests import run_tests
 
-        with patch("src.tools.code.run_tests.Path") as mock_path, \
-             patch("src.tools.code.run_tests.subprocess.run", side_effect=subprocess.TimeoutExpired("pytest", 300)):
-
+        with (
+            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch(
+                "src.tools.code.run_tests.subprocess.run",
+                side_effect=subprocess.TimeoutExpired("pytest", 300),
+            ),
+        ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
@@ -596,9 +615,10 @@ class TestRunTestsTool:
         mock_result.stdout = "2 passed in 0.5s"
         mock_result.stderr = ""
 
-        with patch("src.tools.code.run_tests.Path") as mock_path, \
-             patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result) as mock_run:
-
+        with (
+            patch("src.tools.code.run_tests.Path") as mock_path,
+            patch("src.tools.code.run_tests.subprocess.run", return_value=mock_result) as mock_run,
+        ):
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
@@ -660,9 +680,10 @@ class TestWebFetchTool:
         mock_response.__enter__.return_value = mock_response
         mock_response.__exit__.return_value = None
 
-        with patch("urllib.request.urlopen", return_value=mock_response), \
-             patch("src.tools.web.fetch._load_source_registry", return_value={}):
-
+        with (
+            patch("urllib.request.urlopen", return_value=mock_response),
+            patch("src.tools.web.fetch._load_source_registry", return_value={}),
+        ):
             result = fetch_docs(url="https://example.com/docs")
 
         assert result["success"] is True
@@ -681,17 +702,12 @@ class TestWebFetchTool:
         mock_response.__enter__.return_value = mock_response
         mock_response.__exit__.return_value = None
 
-        registry_data = {
-            "coding": {
-                "level1": [
-                    {"domain": "example.com", "trust": 1}
-                ]
-            }
-        }
+        registry_data = {"coding": {"level1": [{"domain": "example.com", "trust": 1}]}}
 
-        with patch("urllib.request.urlopen", return_value=mock_response), \
-             patch("src.tools.web.fetch._load_source_registry", return_value=registry_data):
-
+        with (
+            patch("urllib.request.urlopen", return_value=mock_response),
+            patch("src.tools.web.fetch._load_source_registry", return_value=registry_data),
+        ):
             result = fetch_docs(
                 url="https://example.com/docs",
                 check_trust=True,
@@ -705,9 +721,12 @@ class TestWebFetchTool:
         from src.tools.web.fetch import fetch_docs
         from urllib.error import HTTPError
 
-        with patch("urllib.request.urlopen", side_effect=HTTPError(None, 404, "Not Found", {}, None)), \
-             patch("src.tools.web.fetch._load_source_registry", return_value={}):
-
+        with (
+            patch(
+                "urllib.request.urlopen", side_effect=HTTPError(None, 404, "Not Found", {}, None)
+            ),
+            patch("src.tools.web.fetch._load_source_registry", return_value={}),
+        ):
             result = fetch_docs(url="https://example.com/missing")
 
         assert result["success"] is False
@@ -727,9 +746,10 @@ class TestWebFetchTool:
 
         _fetch_cache.clear()
 
-        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen, \
-             patch("src.tools.web.fetch._load_source_registry", return_value={}):
-
+        with (
+            patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen,
+            patch("src.tools.web.fetch._load_source_registry", return_value={}),
+        ):
             # First call - should hit network
             result1 = fetch_docs(url="https://example.com/docs")
             assert result1["success"] is True
@@ -805,7 +825,9 @@ class TestWebSearchTool:
 
         # Verify site: filter was added
         call_args = mock_urlopen.call_args[0][0]
-        assert "site%3Adocs.python.org" in call_args.full_url or "site:docs.python.org" in str(call_args)
+        assert "site%3Adocs.python.org" in call_args.full_url or "site:docs.python.org" in str(
+            call_args
+        )
 
     def test_web_search_error(self):
         """Test web search with error."""

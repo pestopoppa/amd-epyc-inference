@@ -288,7 +288,7 @@ class TestRealModeIntegration:
         primitives._backends = {"worker": caching_backend}
 
         # Make a call - should route through backend
-        result = primitives.llm_call("Test prompt", role="worker")
+        primitives.llm_call("Test prompt", role="worker")
 
         # Should have called the mock backend's infer
         assert mock_llama_server_backend.infer.called

@@ -9,7 +9,7 @@ from pathlib import Path
 # Skip if kuzu not available
 kuzu = pytest.importorskip("kuzu")
 
-from orchestration.repl_memory.hypothesis_graph import HypothesisGraph, Hypothesis
+from orchestration.repl_memory.hypothesis_graph import HypothesisGraph
 
 
 @pytest.fixture
@@ -54,13 +54,13 @@ class TestCreateHypothesis:
 
     def test_create_hypothesis_custom_confidence(self, hypothesis_graph):
         """Initial confidence can be customized."""
-        hypothesis_id = hypothesis_graph.create_hypothesis(
+        hypothesis_graph.create_hypothesis(
             claim="custom_claim",
             memory_id="mem_001",
             initial_confidence=0.8,
         )
 
-        confidence = hypothesis_graph.get_confidence("custom_claim", "")
+        hypothesis_graph.get_confidence("custom_claim", "")
         # Note: get_confidence uses claim format action|task_type
         # For direct claim lookup, confidence should match
 
@@ -316,7 +316,7 @@ class TestStats:
         """get_stats returns comprehensive statistics."""
         # Create some hypotheses and evidence
         h1 = hypothesis_graph.create_hypothesis("claim1", "mem_001", 0.5)
-        h2 = hypothesis_graph.create_hypothesis("claim2", "mem_002", 0.7)
+        hypothesis_graph.create_hypothesis("claim2", "mem_002", 0.7)
         hypothesis_graph.add_evidence(h1, "success", "evi_001")
 
         stats = hypothesis_graph.get_stats()

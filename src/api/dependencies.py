@@ -120,6 +120,7 @@ def dep_registry_loader() -> "RegistryLoaderProtocol | None":
 def dep_features() -> "Features":
     """Get the current feature flags configuration."""
     from src.features import features
+
     return features()
 
 
@@ -131,6 +132,7 @@ def dep_document_preprocessor() -> "DocumentPreprocessor":
     state = get_state()
     if state.document_preprocessor is None:
         from src.services.document_preprocessor import DocumentPreprocessor
+
         state.document_preprocessor = DocumentPreprocessor()
     return state.document_preprocessor
 
@@ -143,6 +145,7 @@ def dep_vision_pipeline() -> "VisionPipeline":
     state = get_state()
     if state.vision_pipeline is None:
         from src.vision.pipeline import VisionPipeline
+
         state.vision_pipeline = VisionPipeline()
     return state.vision_pipeline
 
@@ -152,6 +155,7 @@ def dep_vision_batch_processor() -> "BatchProcessor":
     state = get_state()
     if state.vision_batch_processor is None:
         from src.vision.batch import BatchProcessor
+
         state.vision_batch_processor = BatchProcessor()
     return state.vision_batch_processor
 
@@ -161,6 +165,7 @@ def dep_vision_search() -> "VisionSearch":
     state = get_state()
     if state.vision_search is None:
         from src.vision.search import VisionSearch
+
         state.vision_search = VisionSearch()
     return state.vision_search
 
@@ -170,6 +175,7 @@ def dep_vision_video_processor() -> "VideoProcessor":
     state = get_state()
     if state.vision_video_processor is None:
         from src.vision.video import VideoProcessor
+
         state.vision_video_processor = VideoProcessor()
     return state.vision_video_processor
 
@@ -183,6 +189,7 @@ def dep_session_store() -> "SQLiteSessionStore":
     if state.session_store is None:
         from src.session import SQLiteSessionStore
         import logging
+
         state.session_store = SQLiteSessionStore()
         logging.getLogger(__name__).info("Initialized SQLiteSessionStore")
     return state.session_store

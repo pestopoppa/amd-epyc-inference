@@ -22,13 +22,14 @@ from src.api.dependencies import (
     dep_script_registry,
     dep_registry_loader,
 )
-from src.gate_runner import GateRunner, GateResult
+from src.gate_runner import GateRunner
 
 
 # Stub classes for testing (lightweight, no external dependencies)
 @dataclass
 class StubLLMPrimitives:
     """Stub LLM primitives for testing."""
+
     def llm_call(self, prompt: str, **kwargs) -> str:
         return "Mocked LLM response"
 
@@ -36,6 +37,7 @@ class StubLLMPrimitives:
 @dataclass
 class StubRegistryLoader:
     """Stub registry loader for testing."""
+
     routing_hints: dict
 
     def __init__(self):
@@ -48,6 +50,7 @@ class StubRegistryLoader:
 @dataclass
 class StubToolRegistry:
     """Stub tool registry for testing."""
+
     def search(self, query: str) -> list:
         return []
 
@@ -55,6 +58,7 @@ class StubToolRegistry:
 @dataclass
 class StubScriptRegistry:
     """Stub script registry for testing."""
+
     def search(self, query: str) -> list:
         return []
 
@@ -62,6 +66,7 @@ class StubScriptRegistry:
 @dataclass
 class StubProgressLogger:
     """Stub progress logger for testing."""
+
     def flush(self) -> None:
         pass
 
@@ -77,6 +82,7 @@ class StubProgressLogger:
 @dataclass
 class StubHybridRouter:
     """Stub hybrid router for testing."""
+
     def route(self, task: str) -> str:
         return "frontdoor"
 
@@ -115,9 +121,12 @@ class TestDIOverrides:
 
         app.dependency_overrides[dep_gate_runner] = lambda: runner
 
-        response = client.post("/gates", json={
-            "gate_names": ["schema"],
-        })
+        response = client.post(
+            "/gates",
+            json={
+                "gate_names": ["schema"],
+            },
+        )
         # The response may succeed or fail depending on actual gate execution
         # We just verify the override worked and didn't crash
         assert response.status_code in (200, 500)  # May fail if gates fail
@@ -174,10 +183,13 @@ class TestDIOverrides:
         app.dependency_overrides[dep_app_state] = lambda: state
 
         # Make a chat request in mock mode to verify no crashes
-        response = client.post("/chat", json={
-            "prompt": "test override",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test override",
+                "mock_mode": True,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -208,10 +220,13 @@ class TestDIOverrides:
         app.dependency_overrides[dep_app_state] = lambda: state
 
         # Make a chat request in mock mode to verify these don't break the pipeline
-        response = client.post("/chat", json={
-            "prompt": "test optional deps",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test optional deps",
+                "mock_mode": True,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -274,10 +289,13 @@ class TestDIOverrides:
         app.dependency_overrides[dep_app_state] = lambda: state
 
         # Chat request in mock mode should work
-        response = client.post("/chat", json={
-            "prompt": "test",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test",
+                "mock_mode": True,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -306,10 +324,13 @@ class TestDIOverrides:
         app.dependency_overrides[dep_app_state] = lambda: state
 
         # Make a chat request to verify the stub registry doesn't crash the pipeline
-        response = client.post("/chat", json={
-            "prompt": "test registry override",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test registry override",
+                "mock_mode": True,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -336,10 +357,13 @@ class TestDIOverrides:
         app.dependency_overrides[dep_app_state] = lambda: state
 
         # Make a chat request to verify the stub script registry doesn't crash the pipeline
-        response = client.post("/chat", json={
-            "prompt": "test script registry override",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test script registry override",
+                "mock_mode": True,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()

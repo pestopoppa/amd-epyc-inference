@@ -6,7 +6,7 @@ uninitialized required components, and return None for optional components.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 

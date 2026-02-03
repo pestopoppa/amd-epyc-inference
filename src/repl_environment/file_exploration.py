@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 
 from src.repl_environment.types import wrap_tool_output
 
@@ -115,11 +114,13 @@ class _FileExplorationMixin:
                 end = min(len(lines), i + context_lines + 1)
                 context_snippet = "\n".join(lines[start:end])
 
-                match_details.append({
-                    "line_num": i + 1,
-                    "match": line[:500],  # Cap line length
-                    "context": context_snippet[:1000],  # Cap context
-                })
+                match_details.append(
+                    {
+                        "line_num": i + 1,
+                        "match": line[:500],  # Cap line length
+                        "context": context_snippet[:1000],  # Cap context
+                    }
+                )
 
                 if len(matches) >= self.config.max_grep_results:
                     matches.append(f"[... truncated at {self.config.max_grep_results} results]")
@@ -127,14 +128,18 @@ class _FileExplorationMixin:
 
         # Store in grep hits buffer for two-stage pipeline
         if match_details:
-            self._grep_hits_buffer.append({
-                "pattern": pattern,
-                "source": source_name,
-                "match_count": len(match_details),
-                "hits": match_details[:20],  # Cap at 20 detailed hits
-            })
+            self._grep_hits_buffer.append(
+                {
+                    "pattern": pattern,
+                    "source": source_name,
+                    "match_count": len(match_details),
+                    "hits": match_details[:20],  # Cap at 20 detailed hits
+                }
+            )
 
-        self._exploration_log.add_event("grep", {"pattern": pattern, "file_path": file_path}, matches)
+        self._exploration_log.add_event(
+            "grep", {"pattern": pattern, "file_path": file_path}, matches
+        )
         return matches
 
     def _list_dir(self, path: str) -> str:
@@ -184,6 +189,7 @@ class _FileExplorationMixin:
             # Use TOON encoding for token efficiency if enabled
             if self.config.use_toon_encoding:
                 from src.services.toon_encoder import encode_list_dir
+
                 output = encode_list_dir(path, entries[:100], len(entries))
             else:
                 output = json.dumps(result, indent=2)

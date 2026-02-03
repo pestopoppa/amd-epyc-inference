@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 import yaml
 
 from src.tool_registry import Tool, ToolCategory, ToolRegistry
-from src.tools.base import ToolResult, safe_execute
+from src.tools.base import safe_execute
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +81,10 @@ def _extract_content(html: str, url: str) -> str:
         from bs4 import BeautifulSoup
     except ImportError:
         # Fallback: strip HTML tags with regex
-        text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
-        text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL)
-        text = re.sub(r'<[^>]+>', ' ', text)
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL)
+        text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = re.sub(r"\s+", " ", text)
         return text.strip()
 
     soup = BeautifulSoup(html, "html.parser")

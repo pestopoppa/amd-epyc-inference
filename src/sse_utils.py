@@ -17,7 +17,7 @@ Usage:
 from __future__ import annotations
 
 import json
-from typing import Any, AsyncIterator, Iterator
+from typing import Any, AsyncIterator
 
 # Try to import sse-starlette
 try:
@@ -140,6 +140,7 @@ def create_sse_response(
         # Check feature flag
         try:
             from src.features import features
+
             use_sse_starlette = features().streaming and SSE_STARLETTE_AVAILABLE
         except ImportError:
             use_sse_starlette = SSE_STARLETTE_AVAILABLE

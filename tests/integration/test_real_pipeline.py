@@ -63,12 +63,15 @@ class TestDirectModePipeline:
     def test_direct_mode_produces_nonempty_answer(self, client_and_primitives):
         """Direct mode should produce a non-empty answer from mock LLM."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "What is the capital of France?",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "What is the capital of France?",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         assert response.status_code == 200
         data = response.json()
         assert len(data["answer"]) > 0
@@ -77,12 +80,15 @@ class TestDirectModePipeline:
     def test_direct_mode_sets_response_metadata(self, client_and_primitives):
         """Direct mode should populate all metadata fields correctly."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "What is 2+2?",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "What is 2+2?",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         assert data["real_mode"] is True
         assert data["mock_mode"] is False
@@ -95,13 +101,16 @@ class TestDirectModePipeline:
     def test_direct_mode_force_role_routes_correctly(self, client_and_primitives):
         """force_role should determine the routed_to field in response."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "test query",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-            "force_role": "coder_primary",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test query",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+                "force_role": "coder_primary",
+            },
+        )
         data = response.json()
         assert data["routed_to"] == "coder_primary"
         assert data["routing_strategy"] == "forced"
@@ -109,13 +118,16 @@ class TestDirectModePipeline:
     def test_direct_mode_explicit_role(self, client_and_primitives):
         """Explicit role should be used for routing."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "test query",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-            "role": "worker_explore",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test query",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+                "role": "worker_explore",
+            },
+        )
         data = response.json()
         assert data["routed_to"] == "worker_explore"
         assert data["routing_strategy"] == "explicit"
@@ -123,12 +135,15 @@ class TestDirectModePipeline:
     def test_direct_mode_tracks_call_log(self, client_and_primitives):
         """LLMPrimitives.call_log should record the direct LLM call."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "What is quantum entanglement?",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "What is quantum entanglement?",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         assert response.status_code == 200
 
         # Verify call_log was populated
@@ -143,25 +158,31 @@ class TestDirectModePipeline:
         client, prims = client_and_primitives
         assert prims.total_calls == 0
 
-        response = client.post("/chat", json={
-            "prompt": "test",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         assert response.status_code == 200
         assert prims.total_calls >= 1
 
     def test_direct_mode_with_context(self, client_and_primitives):
         """Context should be prepended to the prompt in direct mode."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "Summarize the document",
-            "context": "This is a document about cats.",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "Summarize the document",
+                "context": "This is a document about cats.",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         assert response.status_code == 200
         assert len(data["answer"]) > 0
@@ -178,12 +199,15 @@ class TestDirectModePipeline:
         # Set a custom response that will match the prompt
         prims.mock_responses["What is 42?"] = "The answer to life, the universe, and everything."
 
-        response = client.post("/chat", json={
-            "prompt": "What is 42?",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "What is 42?",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         # The mock_responses key matching is exact on the full prompt,
         # so with skip_suffix and no context, the prompt should match
@@ -194,13 +218,16 @@ class TestDirectModePipeline:
     def test_direct_mode_role_history(self, client_and_primitives):
         """role_history should contain the initial role."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "test",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-            "force_role": "worker_explore",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+                "force_role": "worker_explore",
+            },
+        )
         data = response.json()
         assert "role_history" in data
         assert isinstance(data["role_history"], list)
@@ -397,12 +424,15 @@ class TestRealModeRouting:
     def test_default_routing_uses_frontdoor(self, client_and_primitives):
         """Without force_role, simple queries should route to frontdoor."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "hello there",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "hello there",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         # Default routing for simple text goes to frontdoor
         assert data["routed_to"] == "frontdoor"
@@ -411,13 +441,16 @@ class TestRealModeRouting:
     def test_forced_strategy_label(self, client_and_primitives):
         """force_role should set routing_strategy to 'forced'."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "test",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-            "force_role": "architect_general",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+                "force_role": "architect_general",
+            },
+        )
         data = response.json()
         assert data["routing_strategy"] == "forced"
         assert data["routed_to"] == "architect_general"
@@ -425,12 +458,15 @@ class TestRealModeRouting:
     def test_response_has_timing_fields(self, client_and_primitives):
         """Real-mode responses should have timing fields."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "test",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         # These are 0 for mock backend but should exist
         assert "prompt_eval_ms" in data
@@ -443,12 +479,15 @@ class TestRealModeRouting:
     def test_formalization_not_applied_by_default(self, client_and_primitives):
         """Input formalization should not be applied with default features."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "simple question",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "simple question",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         assert data["formalization_applied"] is False
 
@@ -462,6 +501,7 @@ class TestArchitectReviewFunctions:
     def test_should_review_false_for_architect_role(self):
         """Architect roles should never self-review."""
         from src.api.routes.chat_review import _should_review
+
         state = MagicMock()
         state.hybrid_router = MagicMock()
         assert _should_review(state, "task-1", "architect_general", "some answer" * 20) is False
@@ -469,6 +509,7 @@ class TestArchitectReviewFunctions:
     def test_should_review_false_for_short_answer(self):
         """Short answers should skip review."""
         from src.api.routes.chat_review import _should_review
+
         state = MagicMock()
         state.hybrid_router = MagicMock()
         assert _should_review(state, "task-1", "frontdoor", "short") is False
@@ -476,6 +517,7 @@ class TestArchitectReviewFunctions:
     def test_should_review_false_without_hybrid_router(self):
         """Without hybrid_router, should always return False."""
         from src.api.routes.chat_review import _should_review
+
         state = MagicMock()
         state.hybrid_router = None
         long_answer = "This is a detailed answer. " * 10
@@ -484,6 +526,7 @@ class TestArchitectReviewFunctions:
     def test_architect_verdict_returns_none_for_ok(self):
         """Architect verdict should return None when answer is OK."""
         from src.api.routes.chat_review import _architect_verdict
+
         prims = LLMPrimitives(mock_mode=True, mock_responses={})
         # Default mock returns "[MOCK] Response for role='architect_general': ..."
         # which doesn't start with "OK", so let's set a custom response
@@ -496,6 +539,7 @@ class TestArchitectReviewFunctions:
     def test_architect_verdict_handles_exception(self):
         """Architect verdict should return None on LLM error."""
         from src.api.routes.chat_review import _architect_verdict
+
         prims = MagicMock()
         prims.llm_call.side_effect = RuntimeError("Backend down")
         result = _architect_verdict("q", "a", prims)
@@ -504,6 +548,7 @@ class TestArchitectReviewFunctions:
     def test_fast_revise_returns_original_on_error(self):
         """Fast revise should return original answer on LLM error."""
         from src.api.routes.chat_review import _fast_revise
+
         prims = MagicMock()
         prims.llm_call.side_effect = RuntimeError("Backend down")
         result = _fast_revise("q", "original answer", "fix X", prims)
@@ -512,6 +557,7 @@ class TestArchitectReviewFunctions:
     def test_fast_revise_returns_revised_on_success(self):
         """Fast revise should return revised text on success."""
         from src.api.routes.chat_review import _fast_revise
+
         prims = MagicMock()
         prims.llm_call.return_value = "Revised answer with corrections"
         result = _fast_revise("q", "original", "fix X", prims)
@@ -528,12 +574,15 @@ class TestQualityCheckIntegration:
         """Quality check should not trigger when generation_monitor feature is off."""
         client, prims = client_and_primitives
         # Default features have generation_monitor=False
-        response = client.post("/chat", json={
-            "prompt": "test",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         assert response.status_code == 200
         # Should succeed without quality escalation
@@ -549,12 +598,15 @@ class TestQualityCheckIntegration:
         with patch("src.api.routes.chat._init_primitives", return_value=prims):
             with patch.object(prims, "_mock_call", side_effect=failing_mock):
                 client = TestClient(app)
-                response = client.post("/chat", json={
-                    "prompt": "test error capture",
-                    "mock_mode": False,
-                    "real_mode": True,
-                    "force_mode": "direct",
-                })
+                response = client.post(
+                    "/chat",
+                    json={
+                        "prompt": "test error capture",
+                        "mock_mode": False,
+                        "real_mode": True,
+                        "force_mode": "direct",
+                    },
+                )
                 data = response.json()
                 assert response.status_code == 200
                 # llm_call catches exceptions and returns [ERROR:...]
@@ -578,22 +630,28 @@ class TestPipelineStageInteraction:
             client = TestClient(app)
 
             # First request with one role
-            client.post("/chat", json={
-                "prompt": "test1",
-                "mock_mode": False,
-                "real_mode": True,
-                "force_mode": "direct",
-                "force_role": "coder_primary",
-            })
+            client.post(
+                "/chat",
+                json={
+                    "prompt": "test1",
+                    "mock_mode": False,
+                    "real_mode": True,
+                    "force_mode": "direct",
+                    "force_role": "coder_primary",
+                },
+            )
 
             # Second request with different role
-            client.post("/chat", json={
-                "prompt": "test2",
-                "mock_mode": False,
-                "real_mode": True,
-                "force_mode": "direct",
-                "force_role": "worker_explore",
-            })
+            client.post(
+                "/chat",
+                json={
+                    "prompt": "test2",
+                    "mock_mode": False,
+                    "real_mode": True,
+                    "force_mode": "direct",
+                    "force_role": "worker_explore",
+                },
+            )
 
             # Verify both calls recorded with correct roles
             assert len(prims.call_log) >= 2
@@ -605,10 +663,13 @@ class TestPipelineStageInteraction:
         """mock_mode=True should return early without calling _init_primitives."""
         with patch("src.api.routes.chat._init_primitives") as mock_init:
             client = TestClient(app)
-            response = client.post("/chat", json={
-                "prompt": "mock test",
-                "mock_mode": True,
-            })
+            response = client.post(
+                "/chat",
+                json={
+                    "prompt": "mock test",
+                    "mock_mode": True,
+                },
+            )
             assert response.status_code == 200
             data = response.json()
             assert data["mode"] == "mock"
@@ -620,24 +681,30 @@ class TestPipelineStageInteraction:
         prims = LLMPrimitives(mock_mode=True)
         with patch("src.api.routes.chat._init_primitives", return_value=prims) as mock_init:
             client = TestClient(app)
-            response = client.post("/chat", json={
-                "prompt": "real test",
-                "mock_mode": False,
-                "real_mode": True,
-                "force_mode": "direct",
-            })
+            response = client.post(
+                "/chat",
+                json={
+                    "prompt": "real test",
+                    "mock_mode": False,
+                    "real_mode": True,
+                    "force_mode": "direct",
+                },
+            )
             assert response.status_code == 200
             mock_init.assert_called_once()
 
     def test_response_model_validates(self, client_and_primitives):
         """Response should be valid according to ChatResponse pydantic model."""
         client, prims = client_and_primitives
-        response = client.post("/chat", json={
-            "prompt": "validation test",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "validation test",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         # Pydantic should validate — verify by constructing model from response
         chat_resp = ChatResponse(**data)
@@ -657,6 +724,7 @@ class TestNeedsPlanReview:
     def test_trivial_tasks_skip_review(self):
         """TRIVIAL complexity should skip plan review."""
         from src.api.routes.chat_review import _needs_plan_review
+
         state = MagicMock()
         state.plan_review_phase = "A"
         state.hybrid_router = None
@@ -667,6 +735,7 @@ class TestNeedsPlanReview:
     def test_architect_routing_skips_review(self):
         """Architect routing should skip review (no self-review)."""
         from src.api.routes.chat_review import _needs_plan_review
+
         state = MagicMock()
         state.plan_review_phase = "A"
         state.hybrid_router = None
@@ -679,6 +748,7 @@ class TestNeedsPlanReview:
     def test_complex_tasks_skip_review(self):
         """COMPLEX tasks should skip review (architect already owns plan)."""
         from src.api.routes.chat_review import _needs_plan_review
+
         state = MagicMock()
         state.plan_review_phase = "A"
         state.hybrid_router = None
@@ -707,18 +777,21 @@ class TestPlanReviewPhaseComputation:
     def test_phase_a_with_few_reviews(self):
         """Few reviews should stay in Phase A."""
         from src.api.routes.chat_review import _compute_plan_review_phase
+
         stats = {"total_reviews": 10, "task_class_q_values": {"chat": 0.8}}
         assert _compute_plan_review_phase(stats) == "A"
 
     def test_phase_a_with_no_q_values(self):
         """No Q-values should stay in Phase A."""
         from src.api.routes.chat_review import _compute_plan_review_phase
+
         stats = {"total_reviews": 100, "task_class_q_values": {}}
         assert _compute_plan_review_phase(stats) == "A"
 
     def test_phase_b_with_good_q_values(self):
         """High mean Q >= 0.7 and min Q >= 0.5 should reach Phase B."""
         from src.api.routes.chat_review import _compute_plan_review_phase
+
         stats = {
             "total_reviews": 60,
             "task_class_q_values": {"chat": 0.8, "code": 0.75},
@@ -728,6 +801,7 @@ class TestPlanReviewPhaseComputation:
     def test_phase_c_with_excellent_q_values(self):
         """High min Q >= 0.7 and >= 100 reviews should reach Phase C."""
         from src.api.routes.chat_review import _compute_plan_review_phase
+
         stats = {
             "total_reviews": 120,
             "task_class_q_values": {"chat": 0.9, "code": 0.85},
@@ -737,6 +811,7 @@ class TestPlanReviewPhaseComputation:
     def test_phase_stays_a_with_low_q(self):
         """Low Q-values should keep Phase A."""
         from src.api.routes.chat_review import _compute_plan_review_phase
+
         stats = {
             "total_reviews": 100,
             "task_class_q_values": {"chat": 0.4, "code": 0.3},

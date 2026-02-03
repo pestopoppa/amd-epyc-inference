@@ -57,6 +57,7 @@ class AbortReason(str, Enum):
 
 def _monitor_cfg():
     from src.config import get_config
+
     return get_config().monitor
 
 
@@ -83,13 +84,21 @@ class MonitorConfig:
         combined_threshold: Weighted score for combined signals.
     """
 
-    min_tokens_before_abort: int = field(default_factory=lambda: _monitor_cfg().min_tokens_before_abort)
+    min_tokens_before_abort: int = field(
+        default_factory=lambda: _monitor_cfg().min_tokens_before_abort
+    )
     entropy_threshold: float = field(default_factory=lambda: _monitor_cfg().entropy_threshold)
-    entropy_spike_threshold: float = field(default_factory=lambda: _monitor_cfg().entropy_spike_threshold)
+    entropy_spike_threshold: float = field(
+        default_factory=lambda: _monitor_cfg().entropy_spike_threshold
+    )
     repetition_threshold: float = field(default_factory=lambda: _monitor_cfg().repetition_threshold)
     perplexity_window: int = field(default_factory=lambda: _monitor_cfg().perplexity_window)
-    max_length_multiplier: float = field(default_factory=lambda: _monitor_cfg().max_length_multiplier)
-    entropy_sustained_count: int = field(default_factory=lambda: _monitor_cfg().entropy_sustained_count)
+    max_length_multiplier: float = field(
+        default_factory=lambda: _monitor_cfg().max_length_multiplier
+    )
+    entropy_sustained_count: int = field(
+        default_factory=lambda: _monitor_cfg().entropy_sustained_count
+    )
     ngram_size: int = field(default_factory=lambda: _monitor_cfg().ngram_size)
     combined_threshold: float = field(default_factory=lambda: _monitor_cfg().combined_threshold)
 
@@ -110,8 +119,7 @@ class MonitorConfig:
         overrides = cfg.tier_overrides.get(tier, {})
         if not overrides:
             return cls()
-        return cls(**{k: v for k, v in overrides.items()
-                      if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in overrides.items() if k in cls.__dataclass_fields__})
 
     @classmethod
     def for_task(cls, task_type: str) -> MonitorConfig:
@@ -127,8 +135,7 @@ class MonitorConfig:
         overrides = cfg.task_overrides.get(task_type, {})
         if not overrides:
             return cls()
-        return cls(**{k: v for k, v in overrides.items()
-                      if k in cls.__dataclass_fields__})
+        return cls(**{k: v for k, v in overrides.items() if k in cls.__dataclass_fields__})
 
 
 @dataclass
@@ -318,9 +325,8 @@ class GenerationMonitor:
 
         # Compute rolling averages
         avg_entropy = sum(self._entropies) / len(self._entropies)
-        rolling_perplexity = (
-            sum(self._perplexities[-self.config.perplexity_window :])
-            / min(len(self._perplexities), self.config.perplexity_window)
+        rolling_perplexity = sum(self._perplexities[-self.config.perplexity_window :]) / min(
+            len(self._perplexities), self.config.perplexity_window
         )
 
         # Determine abort reason (if any)
@@ -399,7 +405,10 @@ class GenerationMonitor:
 
         elif self._mock_scenario == "runaway":
             # Simulate runaway generation
-            if self.expected_length and n > self.expected_length * self.config.max_length_multiplier:
+            if (
+                self.expected_length
+                and n > self.expected_length * self.config.max_length_multiplier
+            ):
                 abort_reason = AbortReason.RUNAWAY_LENGTH
 
         # Track for averages
@@ -492,12 +501,8 @@ class GenerationMonitor:
             return PerplexityTrend.SPIKING
 
         # Count increasing and decreasing transitions
-        increasing_count = sum(
-            1 for i in range(1, len(recent)) if recent[i] > recent[i - 1]
-        )
-        decreasing_count = sum(
-            1 for i in range(1, len(recent)) if recent[i] < recent[i - 1]
-        )
+        increasing_count = sum(1 for i in range(1, len(recent)) if recent[i] > recent[i - 1])
+        decreasing_count = sum(1 for i in range(1, len(recent)) if recent[i] < recent[i - 1])
 
         # Determine trend direction
         # If mostly stable (neither mostly increasing nor decreasing), return STABLE

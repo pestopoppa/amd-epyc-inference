@@ -6,7 +6,7 @@ Tests routing logic, mode selection, and endpoint behavior.
 
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from src.api import create_app
@@ -38,6 +38,7 @@ class TestClassifyAndRoute:
         finally:
             # Reset features
             from src.features import reset_features
+
             reset_features()
 
     def test_architecture_prompt_routes_to_architect_when_specialist_routing_enabled(self):
@@ -55,6 +56,7 @@ class TestClassifyAndRoute:
         finally:
             # Reset features
             from src.features import reset_features
+
             reset_features()
 
     def test_default_routes_to_frontdoor(self):
@@ -78,6 +80,7 @@ class TestClassifyAndRoute:
         finally:
             # Reset features
             from src.features import reset_features
+
             reset_features()
 
 
@@ -135,6 +138,7 @@ class TestSelectMode:
         finally:
             # Reset features
             from src.features import reset_features
+
             reset_features()
 
     def test_hybrid_router_used_when_available(self):
@@ -161,10 +165,13 @@ class TestChatEndpoint:
 
     def test_mock_mode_returns_200(self, client):
         """Mock mode should return 200 with valid response structure."""
-        response = client.post("/chat", json={
-            "prompt": "Hello world",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "Hello world",
+                "mock_mode": True,
+            },
+        )
         assert response.status_code == 200
         data = response.json()
 
@@ -186,10 +193,13 @@ class TestChatEndpoint:
 
     def test_mock_response_contains_expected_fields(self, client):
         """Mock response should contain all expected fields with correct types."""
-        response = client.post("/chat", json={
-            "prompt": "test query",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test query",
+                "mock_mode": True,
+            },
+        )
         data = response.json()
         assert response.status_code == 200
 
@@ -213,10 +223,13 @@ class TestChatEndpoint:
 
     def test_routing_decision_in_response(self, client):
         """Response should include routing decision with valid values."""
-        response = client.post("/chat", json={
-            "prompt": "test query",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test query",
+                "mock_mode": True,
+            },
+        )
         data = response.json()
 
         assert "routed_to" in data
@@ -231,11 +244,14 @@ class TestChatEndpoint:
 
     def test_force_role_parameter(self, client):
         """force_role parameter should override routing to specified role."""
-        response = client.post("/chat", json={
-            "prompt": "test query",
-            "mock_mode": True,
-            "force_role": "coder_primary",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test query",
+                "mock_mode": True,
+                "force_role": "coder_primary",
+            },
+        )
         data = response.json()
         assert response.status_code == 200
 
@@ -245,11 +261,14 @@ class TestChatEndpoint:
 
     def test_force_mode_parameter(self, client):
         """force_mode parameter should be accepted and reflected in response."""
-        response = client.post("/chat", json={
-            "prompt": "test query",
-            "mock_mode": True,
-            "force_mode": "direct",
-        })
+        response = client.post(
+            "/chat",
+            json={
+                "prompt": "test query",
+                "mock_mode": True,
+                "force_mode": "direct",
+            },
+        )
         data = response.json()
         assert response.status_code == 200
 
@@ -270,11 +289,14 @@ class TestRewardEndpoint:
 
     def test_reward_endpoint_with_valid_data(self, client):
         """Reward endpoint should accept valid reward data."""
-        response = client.post("/chat/reward", json={
-            "task_description": "test task",
-            "action": "frontdoor:direct",
-            "reward": 0.8,
-        })
+        response = client.post(
+            "/chat/reward",
+            json={
+                "task_description": "test task",
+                "action": "frontdoor:direct",
+                "reward": 0.8,
+            },
+        )
         # Should return 200 even without MemRL initialized (graceful degradation)
         assert response.status_code == 200
         data = response.json()
@@ -282,12 +304,15 @@ class TestRewardEndpoint:
 
     def test_reward_endpoint_with_context(self, client):
         """Reward endpoint should accept optional context with proper structure."""
-        response = client.post("/chat/reward", json={
-            "task_description": "test task",
-            "action": "frontdoor:direct",
-            "reward": 0.5,
-            "context": {"suite": "thinking", "tier": 1},
-        })
+        response = client.post(
+            "/chat/reward",
+            json={
+                "task_description": "test task",
+                "action": "frontdoor:direct",
+                "reward": 0.5,
+                "context": {"suite": "thinking", "tier": 1},
+            },
+        )
         assert response.status_code == 200
 
         # Verify response structure
@@ -298,11 +323,14 @@ class TestRewardEndpoint:
     def test_reward_endpoint_validation(self, client):
         """Reward endpoint should validate reward range."""
         # Test out of range reward
-        response = client.post("/chat/reward", json={
-            "task_description": "test task",
-            "action": "frontdoor:direct",
-            "reward": 2.0,  # Out of range
-        })
+        response = client.post(
+            "/chat/reward",
+            json={
+                "task_description": "test task",
+                "action": "frontdoor:direct",
+                "reward": 2.0,  # Out of range
+            },
+        )
         assert response.status_code == 422
 
 
@@ -317,10 +345,13 @@ class TestStreamEndpoint:
 
     def test_stream_mock_mode(self, client):
         """Stream endpoint should return valid SSE events in mock mode."""
-        response = client.post("/chat/stream", json={
-            "prompt": "Hello",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat/stream",
+            json={
+                "prompt": "Hello",
+                "mock_mode": True,
+            },
+        )
         assert response.status_code == 200
 
         # SSE responses have text/event-stream content type
@@ -328,14 +359,13 @@ class TestStreamEndpoint:
 
         # Parse SSE events
         content = response.text
-        lines = content.strip().split('\n')
+        lines = content.strip().split("\n")
 
         # Should have at least one data event
         data_events = [line for line in lines if line.startswith("data:")]
         assert len(data_events) > 0
 
         # Verify at least one event contains valid JSON
-        json_found = False
         for line in data_events:
             if line.startswith("data: "):
                 payload = line[6:]  # Skip "data: "
@@ -343,7 +373,6 @@ class TestStreamEndpoint:
                     continue
                 try:
                     parsed = json.loads(payload)
-                    json_found = True
                     # Verify event has expected structure
                     assert "type" in parsed
                     break
@@ -355,10 +384,13 @@ class TestStreamEndpoint:
 
     def test_stream_returns_sse_format(self, client):
         """Stream endpoint should return properly formatted SSE data."""
-        response = client.post("/chat/stream", json={
-            "prompt": "Hello",
-            "mock_mode": True,
-        })
+        response = client.post(
+            "/chat/stream",
+            json={
+                "prompt": "Hello",
+                "mock_mode": True,
+            },
+        )
         assert response.status_code == 200
 
         # Verify SSE format
@@ -366,7 +398,7 @@ class TestStreamEndpoint:
         assert len(content) > 0
 
         # SSE format verification
-        lines = content.strip().split('\n')
+        lines = content.strip().split("\n")
 
         # Should have "data:" prefixes
         data_lines = [line for line in lines if line.startswith("data:")]
@@ -387,16 +419,19 @@ class TestStreamEndpoint:
 
     def test_stream_with_thinking_budget(self, client):
         """Stream endpoint should accept thinking_budget and return valid SSE."""
-        response = client.post("/chat/stream", json={
-            "prompt": "Hello",
-            "mock_mode": True,
-            "thinking_budget": 1000,
-        })
+        response = client.post(
+            "/chat/stream",
+            json={
+                "prompt": "Hello",
+                "mock_mode": True,
+                "thinking_budget": 1000,
+            },
+        )
         assert response.status_code == 200
 
         # Verify SSE format
         content = response.text
-        lines = content.strip().split('\n')
+        lines = content.strip().split("\n")
         data_lines = [line for line in lines if line.startswith("data:")]
 
         # Should have data events
@@ -407,16 +442,19 @@ class TestStreamEndpoint:
 
     def test_stream_with_permission_mode(self, client):
         """Stream endpoint should accept permission_mode and return valid SSE."""
-        response = client.post("/chat/stream", json={
-            "prompt": "Hello",
-            "mock_mode": True,
-            "permission_mode": "plan",
-        })
+        response = client.post(
+            "/chat/stream",
+            json={
+                "prompt": "Hello",
+                "mock_mode": True,
+                "permission_mode": "plan",
+            },
+        )
         assert response.status_code == 200
 
         # Verify SSE format
         content = response.text
-        lines = content.strip().split('\n')
+        lines = content.strip().split("\n")
         data_lines = [line for line in lines if line.startswith("data:")]
 
         # Should have data events

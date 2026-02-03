@@ -90,6 +90,7 @@ class TestSafeExecute:
 
     def test_successful_execution(self):
         """Test safe_execute with successful function."""
+
         def success_func(x):
             return x * 2
 
@@ -101,6 +102,7 @@ class TestSafeExecute:
 
     def test_function_raises_exception(self):
         """Test safe_execute with function that raises exception."""
+
         def failing_func():
             raise ValueError("Test error")
 
@@ -112,6 +114,7 @@ class TestSafeExecute:
 
     def test_string_output_truncation(self):
         """Test safe_execute truncates long string output."""
+
         def long_output():
             return "x" * 10000
 
@@ -122,6 +125,7 @@ class TestSafeExecute:
 
     def test_non_string_output_not_truncated(self):
         """Test safe_execute doesn't truncate non-string output."""
+
         def dict_output():
             return {"key": "x" * 10000}
 
@@ -132,6 +136,7 @@ class TestSafeExecute:
 
     def test_timing_measurement(self):
         """Test safe_execute measures elapsed time."""
+
         def slow_func():
             time.sleep(0.01)
             return "done"
@@ -144,6 +149,7 @@ class TestSafeExecute:
     @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM not available")
     def test_timeout_handling(self):
         """Test safe_execute handles timeouts (Unix only)."""
+
         def infinite_loop():
             while True:
                 pass
@@ -159,6 +165,7 @@ class TestWithTimeout:
     @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM not available")
     def test_timeout_decorator_success(self):
         """Test with_timeout allows successful completion."""
+
         @with_timeout(5)
         def fast_func():
             return "success"
@@ -169,6 +176,7 @@ class TestWithTimeout:
     @pytest.mark.skipif(not hasattr(signal, "SIGALRM"), reason="SIGALRM not available")
     def test_timeout_decorator_timeout(self):
         """Test with_timeout raises ToolTimeout."""
+
         @with_timeout(1)
         def slow_func():
             time.sleep(2)
@@ -181,6 +189,7 @@ class TestWithTimeout:
     @pytest.mark.skipif(hasattr(signal, "SIGALRM"), reason="Test for non-Unix systems")
     def test_timeout_decorator_no_sigalrm(self):
         """Test with_timeout works without SIGALRM (Windows)."""
+
         @with_timeout(1)
         def func():
             return "no timeout on Windows"
@@ -210,6 +219,7 @@ class TestFormatError:
 
     def test_format_error_custom_exception(self):
         """Test format_error with custom exception."""
+
         class CustomError(Exception):
             pass
 

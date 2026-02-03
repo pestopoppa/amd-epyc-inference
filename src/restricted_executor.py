@@ -26,7 +26,7 @@ import io
 import signal
 from contextlib import redirect_stderr
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 # Try to import RestrictedPython
 try:
@@ -106,9 +106,7 @@ def _restricted_getattr(obj: Any, name: str) -> Any:
     """
     # Block dunder attributes
     if name.startswith("_"):
-        raise RestrictedSecurityError(
-            f"Access to private/dunder attribute '{name}' is not allowed"
-        )
+        raise RestrictedSecurityError(f"Access to private/dunder attribute '{name}' is not allowed")
 
     # Use RestrictedPython's default guard
     return default_guarded_getattr(obj, name)
@@ -129,9 +127,7 @@ def _restricted_getitem(obj: Any, key: Any) -> Any:
     """
     # Block string keys that are dunder names
     if isinstance(key, str) and key.startswith("_"):
-        raise RestrictedSecurityError(
-            f"Access to key '{key}' is not allowed"
-        )
+        raise RestrictedSecurityError(f"Access to key '{key}' is not allowed")
 
     # Use RestrictedPython's default guard
     return default_guarded_getitem(obj, key)
@@ -189,8 +185,7 @@ class RestrictedExecutor:
         """
         if not RESTRICTED_PYTHON_AVAILABLE:
             raise ImportError(
-                "RestrictedPython is not installed. "
-                "Install with: pip install RestrictedPython>=7.0"
+                "RestrictedPython is not installed. Install with: pip install RestrictedPython>=7.0"
             )
 
         self.context = context
@@ -357,7 +352,9 @@ class RestrictedExecutor:
 
                 # Cap output
                 if len(output) > self.output_cap:
-                    output = output[:self.output_cap] + f"\n[... truncated at {self.output_cap} chars]"
+                    output = (
+                        output[: self.output_cap] + f"\n[... truncated at {self.output_cap} chars]"
+                    )
 
                 return ExecutionResult(
                     output=output,

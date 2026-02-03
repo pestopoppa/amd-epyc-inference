@@ -17,9 +17,9 @@ def _strip_import_lines(code: str) -> str:
     """
     lines = code.split("\n")
     filtered = [
-        line for line in lines
-        if not line.strip().startswith("import ")
-        and not line.strip().startswith("from ")
+        line
+        for line in lines
+        if not line.strip().startswith("import ") and not line.strip().startswith("from ")
     ]
     return "\n".join(filtered).strip()
 
@@ -54,13 +54,37 @@ def extract_code_from_response(response: str) -> str:
 
     # Include REPL tool functions as code starters
     code_starters = [
-        "import ", "from ", "def ", "class ", "if ", "for ", "while ",
-        "try:", "except", "with ", "return ", "print(", "FINAL(",
-        "artifacts[", "result =", "answer =", "output =",
+        "import ",
+        "from ",
+        "def ",
+        "class ",
+        "if ",
+        "for ",
+        "while ",
+        "try:",
+        "except",
+        "with ",
+        "return ",
+        "print(",
+        "FINAL(",
+        "artifacts[",
+        "result =",
+        "answer =",
+        "output =",
         # REPL tools
-        "peek(", "grep(", "list_dir(", "file_info(", "ocr_document(",
-        "analyze_figure(", "extract_figure(", "web_fetch(", "run_shell(",
-        "recall(", "escalate(", "llm_call(", "llm_batch(",
+        "peek(",
+        "grep(",
+        "list_dir(",
+        "file_info(",
+        "ocr_document(",
+        "analyze_figure(",
+        "extract_figure(",
+        "web_fetch(",
+        "run_shell(",
+        "recall(",
+        "escalate(",
+        "llm_call(",
+        "llm_batch(",
     ]
 
     for line in lines:
@@ -76,6 +100,7 @@ def extract_code_from_response(response: str) -> str:
         code = "\n".join(code_lines)
         # Dedent the code to remove consistent leading whitespace
         import textwrap
+
         code = textwrap.dedent(code).strip()
         # Strip import lines - modules like json are pre-loaded in REPL globals
         code = _strip_import_lines(code)
@@ -83,6 +108,7 @@ def extract_code_from_response(response: str) -> str:
 
     # Fallback: return the whole response, dedented
     import textwrap
+
     code = textwrap.dedent(response).strip()
     code = _strip_import_lines(code)
     return code
@@ -107,11 +133,11 @@ def auto_wrap_final(code: str) -> str:
 
     # Has exploration/continuation functions - not a final answer
     exploration_patterns = [
-        "peek(",      # Exploring context
-        "grep(",      # Searching context
+        "peek(",  # Exploring context
+        "grep(",  # Searching context
         "llm_call(",  # Delegating to sub-LM
-        "llm_batch(", # Batch delegation
-        "artifacts[", # Storing intermediate results
+        "llm_batch(",  # Batch delegation
+        "artifacts[",  # Storing intermediate results
     ]
     for pattern in exploration_patterns:
         if pattern in code:
@@ -119,7 +145,8 @@ def auto_wrap_final(code: str) -> str:
 
     # Get non-empty, non-comment lines
     lines = [
-        line.strip() for line in code.split("\n")
+        line.strip()
+        for line in code.split("\n")
         if line.strip() and not line.strip().startswith("#")
     ]
     if not lines:
@@ -136,7 +163,13 @@ def auto_wrap_final(code: str) -> str:
     if len(lines) == 1:
         first_line = lines[0]
         non_final_patterns = [
-            "import ", "from ", "for ", "while ", "if ", "try:", "with ",
+            "import ",
+            "from ",
+            "for ",
+            "while ",
+            "if ",
+            "try:",
+            "with ",
         ]
         if not any(first_line.startswith(p) for p in non_final_patterns):
             return f"FINAL({first_line})"
@@ -170,8 +203,13 @@ def classify_error(error_message: str, gate_name: str = "") -> ErrorCategory:
 
     # Code errors (syntax, type, import)
     code_keywords = [
-        "syntaxerror", "indentationerror", "typeerror", "nameerror",
-        "importerror", "modulenotfound", "attributeerror"
+        "syntaxerror",
+        "indentationerror",
+        "typeerror",
+        "nameerror",
+        "importerror",
+        "modulenotfound",
+        "attributeerror",
     ]
     if any(kw in error_lower for kw in code_keywords):
         return ErrorCategory.CODE

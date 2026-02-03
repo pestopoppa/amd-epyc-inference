@@ -500,6 +500,7 @@ class TestIntegrationWithFailureRouter:
     def test_early_abort_category_exists(self):
         """Test EARLY_ABORT error category is available."""
         from src.failure_router import ErrorCategory
+
         assert hasattr(ErrorCategory, "EARLY_ABORT")
         assert ErrorCategory.EARLY_ABORT.value == "early_abort"
 
@@ -555,6 +556,7 @@ class TestIntegrationWithLLMPrimitives:
     def test_llm_result_dataclass_exists(self):
         """Test LLMResult dataclass is available."""
         from src.llm_primitives import LLMResult
+
         result = LLMResult(text="test", aborted=True, abort_reason="high_entropy")
         assert result.text == "test"
         assert result.aborted is True

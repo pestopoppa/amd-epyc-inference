@@ -22,8 +22,9 @@ from src.roles import Role, get_tier
 
 if TYPE_CHECKING:
     from src.context_manager import ContextManager
+
     # Support both legacy and new escalation types
-    from src.failure_router import ErrorCategory, FailureContext, RoutingDecision
+    from src.failure_router import FailureContext, RoutingDecision
     from src.escalation import EscalationContext, EscalationDecision
 
 
@@ -102,26 +103,30 @@ class PromptBuilder:
         # Build context section based on last output/error
         context_parts = []
         if last_error:
-            error_preview = last_error[:self.config.max_error_preview]
+            error_preview = last_error[: self.config.max_error_preview]
             if len(last_error) > self.config.max_error_preview:
                 error_preview += "..."
-            context_parts.extend([
-                "## Last Error",
-                "```",
-                error_preview,
-                "```",
-                "Fix the error and try again.",
-            ])
+            context_parts.extend(
+                [
+                    "## Last Error",
+                    "```",
+                    error_preview,
+                    "```",
+                    "Fix the error and try again.",
+                ]
+            )
         elif last_output:
-            output_preview = last_output[:self.config.max_output_preview]
+            output_preview = last_output[: self.config.max_output_preview]
             if len(last_output) > self.config.max_output_preview:
                 output_preview += "..."
-            context_parts.extend([
-                "## Last Output",
-                "```",
-                output_preview,
-                "```",
-            ])
+            context_parts.extend(
+                [
+                    "## Last Output",
+                    "```",
+                    output_preview,
+                    "```",
+                ]
+            )
 
         if routing_context:
             context_parts.append(f"## Routing Intelligence\n{routing_context}")
@@ -161,7 +166,9 @@ class PromptBuilder:
             Prompt string or EscalationPrompt if as_structured=True
         """
         # Handle both legacy (role) and new (current_role) attribute names
-        role = getattr(failure_context, "current_role", None) or getattr(failure_context, "role", "unknown")
+        role = getattr(failure_context, "current_role", None) or getattr(
+            failure_context, "role", "unknown"
+        )
 
         prompt = EscalationPrompt(
             header=f"# Escalation from {role}",
@@ -184,14 +191,16 @@ class PromptBuilder:
         if failure_context.gate_name:
             error_parts.append(f"Gate: {failure_context.gate_name}")
         if failure_context.error_message:
-            error_preview = failure_context.error_message[:self.config.max_error_preview]
-            error_parts.extend([
-                "",
-                "Error message:",
-                "```",
-                error_preview,
-                "```",
-            ])
+            error_preview = failure_context.error_message[: self.config.max_error_preview]
+            error_parts.extend(
+                [
+                    "",
+                    "Error message:",
+                    "```",
+                    error_preview,
+                    "```",
+                ]
+            )
         prompt.error_details = "\n".join(error_parts)
 
         if as_structured:
@@ -285,28 +294,34 @@ class PromptBuilder:
 
         # Add original task if provided
         if original_task:
-            parts.extend([
-                "## Original Request",
-                original_task,
-                "",
-            ])
+            parts.extend(
+                [
+                    "## Original Request",
+                    original_task,
+                    "",
+                ]
+            )
 
         # Add draft summary
-        parts.extend([
-            "## Draft Summary (to review and refine)",
-            "```",
-            draft_summary[:8000],  # Cap draft length
-            "```",
-            "",
-        ])
+        parts.extend(
+            [
+                "## Draft Summary (to review and refine)",
+                "```",
+                draft_summary[:8000],  # Cap draft length
+                "```",
+                "",
+            ]
+        )
 
         # Add grep excerpts (key source material)
         if grep_hits:
-            parts.extend([
-                "## Key Excerpts from Source Document",
-                "These are search results the draft model found relevant:",
-                "",
-            ])
+            parts.extend(
+                [
+                    "## Key Excerpts from Source Document",
+                    "These are search results the draft model found relevant:",
+                    "",
+                ]
+            )
 
             # NOTE: TOON encoding was tested for grep hits but found to be LESS
             # efficient than Markdown due to pattern repetition. Keeping Markdown.
@@ -315,7 +330,9 @@ class PromptBuilder:
 
             for hit_record in grep_hits:
                 if total_chars >= max_excerpt_chars:
-                    parts.append(f"[... additional excerpts truncated at {max_excerpt_chars} chars]")
+                    parts.append(
+                        f"[... additional excerpts truncated at {max_excerpt_chars} chars]"
+                    )
                     break
 
                 pattern = hit_record.get("pattern", "")
@@ -335,10 +352,12 @@ class PromptBuilder:
 
         # Add figure descriptions
         if figures:
-            parts.extend([
-                "## Figures in Document",
-                "",
-            ])
+            parts.extend(
+                [
+                    "## Figures in Document",
+                    "",
+                ]
+            )
 
             for i, fig in enumerate(figures[:10], 1):  # Cap at 10 figures
                 desc = fig.get("description", fig.get("text", "No description"))
@@ -347,17 +366,19 @@ class PromptBuilder:
             parts.append("")
 
         # Final instruction
-        parts.extend([
-            "## Your Task",
-            "Write a refined, accurate executive summary based on the draft and excerpts above.",
-            "",
-            "IMPORTANT OUTPUT FORMAT:",
-            "- Write the summary directly - no thinking, analysis, or meta-commentary",
-            "- Do not explain your reasoning or discuss terminology",
-            "- Do not include phrases like 'here is' or 'based on the draft'",
-            "- Start directly with the summary content",
-            "- Keep the same structure as the draft but improve accuracy and completeness",
-        ])
+        parts.extend(
+            [
+                "## Your Task",
+                "Write a refined, accurate executive summary based on the draft and excerpts above.",
+                "",
+                "IMPORTANT OUTPUT FORMAT:",
+                "- Write the summary directly - no thinking, analysis, or meta-commentary",
+                "- Do not explain your reasoning or discuss terminology",
+                "- Do not include phrases like 'here is' or 'based on the draft'",
+                "- Start directly with the summary content",
+                "- Keep the same structure as the draft but improve accuracy and completeness",
+            ]
+        )
 
         return "\n".join(parts)
 
@@ -559,11 +580,13 @@ def build_routing_context(
         similar = []
         for r in results[:3]:
             ctx = r.memory.context or {}
-            similar.append({
-                "role": ctx.get("role", r.memory.action),
-                "Q": round(r.q_value, 2),
-                "outcome": r.memory.outcome or "?",
-            })
+            similar.append(
+                {
+                    "role": ctx.get("role", r.memory.action),
+                    "Q": round(r.q_value, 2),
+                    "outcome": r.memory.outcome or "?",
+                }
+            )
 
         best = hybrid_router.retriever.get_best_action(results)
         routing_data = {
@@ -576,6 +599,7 @@ def build_routing_context(
         # TOON encoding: ~50% reduction on uniform similar-tasks array
         try:
             from src.services.toon_encoder import is_available, encode
+
             if is_available() and len(similar) >= 2:
                 return encode(routing_data)[:max_chars]
         except Exception:
@@ -620,12 +644,12 @@ def build_long_context_exploration_prompt(
     is_search = any(kw in original_prompt.lower().split() for kw in search_keywords)
 
     if is_search:
-        first_step = f"""# Step 1: Search for relevant items
+        first_step = """# Step 1: Search for relevant items
 matches = grep(r"key|secret|password|token|credential|api_key")
 for m in matches:
-    print(f"Line {{m['line']}}: {{m['text']}}")"""
+    print(f"Line {m['line']}: {m['text']}")"""
     else:
-        first_step = f"""# Step 1: Inspect document structure
+        first_step = """# Step 1: Inspect document structure
 header = peek(2000)
 print(header)"""
 
@@ -657,7 +681,7 @@ FINAL("your answer here")
 **DO NOT** define your own functions. `peek`, `grep`, `summarize_chunks`, `FINAL` are built-ins.
 **DO NOT** try to read files from disk — the context is already loaded in memory.
 
-{f'## Current State{chr(10)}{state}' if state else ''}
+{f"## Current State{chr(10)}{state}" if state else ""}
 
 ## Rules
 - NEVER import anything — all tools are pre-loaded

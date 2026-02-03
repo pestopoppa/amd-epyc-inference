@@ -25,6 +25,7 @@ T = TypeVar("T")
 @dataclass
 class ToolResult:
     """Result from a tool execution."""
+
     success: bool
     data: Any = None
     error: str | None = None
@@ -34,6 +35,7 @@ class ToolResult:
 
 class ToolTimeout(Exception):
     """Tool execution timed out."""
+
     pass
 
 
@@ -46,6 +48,7 @@ def with_timeout(seconds: int) -> Callable[[Callable[..., T]], Callable[..., T]]
     Returns:
         Decorated function that raises ToolTimeout if time exceeded.
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -65,6 +68,7 @@ def with_timeout(seconds: int) -> Callable[[Callable[..., T]], Callable[..., T]]
                     signal.signal(signal.SIGALRM, old_handler)
 
         return wrapper
+
     return decorator
 
 
@@ -156,6 +160,7 @@ def format_error(error: Exception, include_traceback: bool = False) -> str:
     """
     if include_traceback:
         import traceback
+
         return traceback.format_exc()
 
     return f"{type(error).__name__}: {error}"

@@ -158,10 +158,14 @@ class LLMPrimitives(
             )
 
         self._recursion_depth += 1
-        self._max_recursion_depth_reached = max(self._max_recursion_depth_reached, self._recursion_depth)
+        self._max_recursion_depth_reached = max(
+            self._max_recursion_depth_reached, self._recursion_depth
+        )
 
         try:
-            return self._llm_call_impl(prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences, persona)
+            return self._llm_call_impl(
+                prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences, persona
+            )
         finally:
             self._recursion_depth -= 1
 
@@ -225,7 +229,10 @@ class LLMPrimitives(
 
             # Cap output
             if len(result) > self.config.output_cap:
-                result = result[: self.config.output_cap] + f"\n[... truncated at {self.config.output_cap} chars]"
+                result = (
+                    result[: self.config.output_cap]
+                    + f"\n[... truncated at {self.config.output_cap} chars]"
+                )
 
             log_entry.result = result[:500]  # Truncate for log
             log_entry.elapsed_seconds = time.perf_counter() - start_time
@@ -291,7 +298,10 @@ class LLMPrimitives(
             capped_results = []
             for result in results:
                 if len(result) > self.config.output_cap:
-                    result = result[: self.config.output_cap] + f"\n[... truncated at {self.config.output_cap} chars]"
+                    result = (
+                        result[: self.config.output_cap]
+                        + f"\n[... truncated at {self.config.output_cap} chars]"
+                    )
                 capped_results.append(result)
 
             log_entry.result = [r[:200] for r in capped_results[:3]]  # Truncate for log
@@ -301,7 +311,9 @@ class LLMPrimitives(
             # Track tokens for current query cost
             if self._current_query is not None:
                 total_prompt_tokens = sum(self._estimate_prompt_tokens(p) for p in prompts)
-                total_completion_tokens = sum(self._estimate_completion_tokens(r) for r in capped_results)
+                total_completion_tokens = sum(
+                    self._estimate_completion_tokens(r) for r in capped_results
+                )
                 self._current_query.prompt_tokens += total_prompt_tokens
                 self._current_query.completion_tokens += total_completion_tokens
                 self._current_query.total_tokens += total_prompt_tokens + total_completion_tokens
@@ -359,21 +371,20 @@ class LLMPrimitives(
                 # Real mode: run calls in parallel using asyncio
                 loop = asyncio.get_event_loop()
                 tasks = [
-                    loop.run_in_executor(None, self._real_call, prompt, role)
-                    for prompt in prompts
+                    loop.run_in_executor(None, self._real_call, prompt, role) for prompt in prompts
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 # Convert exceptions to error strings
-                results = [
-                    str(r) if isinstance(r, Exception) else r
-                    for r in results
-                ]
+                results = [str(r) if isinstance(r, Exception) else r for r in results]
 
             # Cap each output
             capped_results = []
             for result in results:
                 if len(result) > self.config.output_cap:
-                    result = result[: self.config.output_cap] + f"\n[... truncated at {self.config.output_cap} chars]"
+                    result = (
+                        result[: self.config.output_cap]
+                        + f"\n[... truncated at {self.config.output_cap} chars]"
+                    )
                 capped_results.append(result)
 
             log_entry.result = [r[:200] for r in capped_results[:3]]  # Truncate for log
@@ -383,7 +394,9 @@ class LLMPrimitives(
             # Track tokens for current query cost
             if self._current_query is not None:
                 total_prompt_tokens = sum(self._estimate_prompt_tokens(p) for p in prompts)
-                total_completion_tokens = sum(self._estimate_completion_tokens(r) for r in capped_results)
+                total_completion_tokens = sum(
+                    self._estimate_completion_tokens(r) for r in capped_results
+                )
                 self._current_query.prompt_tokens += total_prompt_tokens
                 self._current_query.completion_tokens += total_completion_tokens
                 self._current_query.total_tokens += total_prompt_tokens + total_completion_tokens

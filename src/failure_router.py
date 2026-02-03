@@ -32,9 +32,9 @@ Usage:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
@@ -402,9 +402,7 @@ class FailureRouter:
         if self.learned_policy is not None:
             learned_result = self.learned_policy.query(context)
             if learned_result.should_use_learned:
-                decision = self._apply_learned_decision(
-                    context, chain, learned_result
-                )
+                decision = self._apply_learned_decision(context, chain, learned_result)
                 if decision is not None:
                     self._strategy_counts["learned"] += 1
                     self._log_decision(context, decision, "learned", learned_result)
@@ -768,15 +766,17 @@ class FailureRouter:
         if context.error_message:
             lines.append(f"\nError Message:\n{context.error_message[:500]}")
 
-        lines.extend([
-            "",
-            "-" * 50,
-            "DECISION",
-            "-" * 50,
-            f"Action: {decision.action.upper()}",
-            f"Next Role: {decision.next_role or 'N/A'}",
-            f"Reason: {decision.reason}",
-        ])
+        lines.extend(
+            [
+                "",
+                "-" * 50,
+                "DECISION",
+                "-" * 50,
+                f"Action: {decision.action.upper()}",
+                f"Next Role: {decision.next_role or 'N/A'}",
+                f"Reason: {decision.reason}",
+            ]
+        )
 
         if decision.max_retries_remaining > 0:
             lines.append(f"Retries Remaining: {decision.max_retries_remaining}")

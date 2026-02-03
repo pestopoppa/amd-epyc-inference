@@ -99,9 +99,7 @@ def compute_critical_path(
     for t in timings:
         for dep in t.depends_on:
             if dep not in all_ids:
-                raise ValueError(
-                    f"Step {t.step_id} depends on unknown step {dep}"
-                )
+                raise ValueError(f"Step {t.step_id} depends on unknown step {dep}")
 
     # Topological sort via Kahn's algorithm
     in_degree: dict[str, int] = {sid: 0 for sid in all_ids}
@@ -127,8 +125,7 @@ def compute_critical_path(
     if len(topo_order) != len(all_ids):
         cycle_members = all_ids - set(topo_order)
         raise ValueError(
-            f"Circular dependency detected among steps: "
-            f"{', '.join(sorted(cycle_members))}"
+            f"Circular dependency detected among steps: {', '.join(sorted(cycle_members))}"
         )
 
     # DP forward pass: dp[s] = earliest finish time for s
@@ -177,26 +174,16 @@ def compute_critical_path(
             lf[sid] = critical_path_seconds
         else:
             # LF = min(LS[child]) = min(LF[child] - elapsed[child])
-            lf[sid] = min(
-                lf[child] - timing_map[child].elapsed_seconds
-                for child in successors
-            )
+            lf[sid] = min(lf[child] - timing_map[child].elapsed_seconds for child in successors)
 
-    step_slack = {
-        sid: round(lf[sid] - dp[sid], 6)
-        for sid in all_ids
-    }
+    step_slack = {sid: round(lf[sid] - dp[sid], 6) for sid in all_ids}
 
     # Parallelism ratio
     if wall_clock_seconds > 0:
         parallelism_ratio = total_work / wall_clock_seconds
     else:
         # Fallback: use critical path as wall clock estimate
-        parallelism_ratio = (
-            total_work / critical_path_seconds
-            if critical_path_seconds > 0
-            else 1.0
-        )
+        parallelism_ratio = total_work / critical_path_seconds if critical_path_seconds > 0 else 1.0
 
     return CriticalPathReport(
         critical_path_steps=critical_path_steps,

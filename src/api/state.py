@@ -90,12 +90,14 @@ class AppState:
 
     # Plan review state (architect-in-the-loop)
     plan_review_phase: str = "A"  # "A" (bootstrap), "B" (supervised fade), "C" (spot-check)
-    _plan_review_stats: dict = field(default_factory=lambda: {
-        "total_reviews": 0,
-        "approved": 0,
-        "corrected": 0,
-        "task_class_q_values": {},
-    })
+    _plan_review_stats: dict = field(
+        default_factory=lambda: {
+            "total_reviews": 0,
+            "approved": 0,
+            "corrected": 0,
+            "task_class_q_values": {},
+        }
+    )
 
     # Stats tracking (protected by _stats_lock)
     total_requests: int = 0
@@ -116,7 +118,10 @@ class AppState:
     _stats_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def update_plan_review_stats(
-        self, approved: bool, task_class: str = "", q_value: float | None = None,
+        self,
+        approved: bool,
+        task_class: str = "",
+        q_value: float | None = None,
     ) -> dict:
         """Update plan review statistics (thread-safe).
 
@@ -133,17 +138,13 @@ class AppState:
                 self._plan_review_stats.get("total_reviews", 0) + 1
             )
             if approved:
-                self._plan_review_stats["approved"] = (
-                    self._plan_review_stats.get("approved", 0) + 1
-                )
+                self._plan_review_stats["approved"] = self._plan_review_stats.get("approved", 0) + 1
             else:
                 self._plan_review_stats["corrected"] = (
                     self._plan_review_stats.get("corrected", 0) + 1
                 )
             if task_class and q_value is not None:
-                self._plan_review_stats.setdefault(
-                    "task_class_q_values", {}
-                )[task_class] = q_value
+                self._plan_review_stats.setdefault("task_class_q_values", {})[task_class] = q_value
             return dict(self._plan_review_stats)
 
     def get_plan_review_stats(self) -> dict:
@@ -191,9 +192,7 @@ class AppState:
                 "total_requests": self.total_requests,
                 "total_turns": self.total_turns,
                 "average_turns_per_request": (
-                    self.total_turns / self.total_requests
-                    if self.total_requests > 0
-                    else 0.0
+                    self.total_turns / self.total_requests if self.total_requests > 0 else 0.0
                 ),
                 "mock_requests": self.mock_requests,
                 "real_requests": self.real_requests,

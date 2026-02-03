@@ -5,9 +5,8 @@ Focuses on: summarization detection, two-stage context processing,
 chunking strategies, worker dispatch, synthesis.
 """
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from src.api.routes.chat_summarization import (
@@ -452,7 +451,10 @@ class TestTwoStagePipelineExecution:
 
             # Check synthesis prompt for search keywords
             synthesis_prompt = mock_primitives.llm_call.call_args[0][0]
-            assert "specific items" in synthesis_prompt.lower() or "exact values" in synthesis_prompt.lower()
+            assert (
+                "specific items" in synthesis_prompt.lower()
+                or "exact values" in synthesis_prompt.lower()
+            )
 
     @pytest.mark.asyncio
     async def test_run_two_stage_synthesis_failure_uses_digests(self):

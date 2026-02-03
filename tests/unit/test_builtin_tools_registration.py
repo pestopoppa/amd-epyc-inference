@@ -2,11 +2,8 @@
 """Tests for builtin_tools registration module."""
 
 import json
-import tempfile
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from src.builtin_tools import register_builtin_tools
 from src.tool_registry import ToolRegistry, ToolCategory
@@ -299,9 +296,7 @@ class TestWriteJsonTool:
             json_file = tmp_path / "output.json"
             test_data = {"key": "value", "number": 42}
 
-            result = registry._tools["write_json"].handler(
-                path=str(json_file), data=test_data
-            )
+            result = registry._tools["write_json"].handler(path=str(json_file), data=test_data)
 
             assert result["success"] is True
             assert result["path"] == str(json_file)

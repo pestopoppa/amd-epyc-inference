@@ -51,9 +51,7 @@ def valid_architecture_ir() -> dict:
         "non_goals": [],
         "global_invariants": [],
         "repo_layout": {
-            "folders": [
-                {"path": "src/", "owner_role": "coder", "purpose": "Source code"}
-            ]
+            "folders": [{"path": "src/", "owner_role": "coder", "purpose": "Source code"}]
         },
         "modules": [
             {
@@ -204,13 +202,15 @@ class TestTaskIRValidation:
 
     def test_step_depends_on(self, valid_task_ir):
         """Test that depends_on with valid step IDs passes."""
-        valid_task_ir["plan"]["steps"].append({
-            "id": "S2",
-            "actor": "worker",
-            "action": "Follow up",
-            "outputs": ["result.txt"],
-            "depends_on": ["S1"],
-        })
+        valid_task_ir["plan"]["steps"].append(
+            {
+                "id": "S2",
+                "actor": "worker",
+                "action": "Follow up",
+                "outputs": ["result.txt"],
+                "depends_on": ["S1"],
+            }
+        )
 
         code, stdout, stderr = run_validator("task", json.dumps(valid_task_ir))
         assert code == 0

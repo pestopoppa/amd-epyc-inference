@@ -20,8 +20,6 @@ from typing import TYPE_CHECKING
 import httpx
 
 from src.models.document import (
-    BoundingBox,
-    DocumentJobStatus,
     DocumentProcessRequest,
     OCRResult,
     PageOCRResult,
@@ -273,7 +271,9 @@ class DocumentFormalizerClient:
         semaphore = asyncio.Semaphore(max_concurrent)
         results: list[tuple[int, PageOCRResult | Exception]] = []
 
-        async def process_page(page_num: int, image: "Image.Image") -> tuple[int, PageOCRResult | Exception]:
+        async def process_page(
+            page_num: int, image: "Image.Image"
+        ) -> tuple[int, PageOCRResult | Exception]:
             async with semaphore:
                 try:
                     result = await self.ocr_image(image, output_format)

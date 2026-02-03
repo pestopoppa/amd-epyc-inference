@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 
 from fastapi import HTTPException
 
-from src.api.models import ChatRequest, ChatResponse
-from src.api.services.memrl import ensure_memrl_initialized, score_completed_task
+from src.api.models import ChatRequest
+from src.api.services.memrl import ensure_memrl_initialized
 from src.config import get_config
 from src.features import features
 from src.llm_primitives import LLMPrimitives
@@ -69,7 +68,9 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
     else:
         has_image = bool(request.image_path or request.image_base64)
         classified_role, routing_strategy = _classify_and_route(
-            request.prompt, request.context or "", has_image=has_image,
+            request.prompt,
+            request.context or "",
+            has_image=has_image,
         )
         routing_decision = [classified_role]
 
@@ -85,9 +86,14 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
             if risk > 0.5:
                 log.warning(
                     "Failure veto: %s risk=%.2f > 0.5, reverting to frontdoor",
-                    routing_decision[0], risk,
-                    extra=task_extra(task_id=task_id, role=str(routing_decision[0]),
-                                     stage="routing", strategy="failure_vetoed"),
+                    routing_decision[0],
+                    risk,
+                    extra=task_extra(
+                        task_id=task_id,
+                        role=str(routing_decision[0]),
+                        stage="routing",
+                        strategy="failure_vetoed",
+                    ),
                 )
                 routing_decision = [str(Role.FRONTDOOR)]
                 routing_strategy = "failure_vetoed"
@@ -129,11 +135,10 @@ def _preprocess(request: ChatRequest, state, routing: RoutingResult) -> None:
         and routing.routing_strategy not in ("mock",)
     ):
         from src.formalizer import should_formalize_input, formalize_prompt, inject_formalization
+
         should_fml, problem_hint = should_formalize_input(request.prompt)
         if should_fml:
-            fml_result = formalize_prompt(
-                request.prompt, problem_hint, state.registry
-            )
+            fml_result = formalize_prompt(request.prompt, problem_hint, state.registry)
             if fml_result.success:
                 request.context = inject_formalization(
                     request.prompt, request.context or "", fml_result.ir_json
@@ -144,8 +149,11 @@ def _preprocess(request: ChatRequest, state, routing: RoutingResult) -> None:
                     problem_hint,
                     fml_result.elapsed_seconds,
                     fml_result.model_role,
-                    extra=task_extra(task_id=routing.task_id, stage="preprocess",
-                                     latency_ms=fml_result.elapsed_seconds * 1000),
+                    extra=task_extra(
+                        task_id=routing.task_id,
+                        stage="preprocess",
+                        latency_ms=fml_result.elapsed_seconds * 1000,
+                    ),
                 )
 
 
@@ -162,7 +170,7 @@ def _init_primitives(request: ChatRequest, state) -> LLMPrimitives:
         server_urls = request.server_urls or get_config().server_urls.as_dict()
 
         if (
-            hasattr(state, '_real_primitives')
+            hasattr(state, "_real_primitives")
             and state._real_primitives is not None
             and not request.server_urls
         ):

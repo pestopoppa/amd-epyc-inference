@@ -5,8 +5,7 @@ and src/proactive_delegation/review_service.py (34% coverage).
 """
 
 import json
-import uuid
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -70,9 +69,7 @@ class TestComplexityRouting:
         primitives = Mock()
         delegator = ProactiveDelegator(registry, primitives)
 
-        complexity, action, signals, confidence = delegator.route_by_complexity(
-            "What is 2+2?"
-        )
+        complexity, action, signals, confidence = delegator.route_by_complexity("What is 2+2?")
 
         assert complexity == TaskComplexity.TRIVIAL
         assert action == "direct"
@@ -84,9 +81,7 @@ class TestComplexityRouting:
         primitives = Mock()
         delegator = ProactiveDelegator(registry, primitives)
 
-        complexity, action, signals, confidence = delegator.route_by_complexity(
-            "Print hello world"
-        )
+        complexity, action, signals, confidence = delegator.route_by_complexity("Print hello world")
 
         # Should be simple or moderate depending on heuristics
         assert action in ["direct", "repl", "specialist"]
@@ -110,9 +105,7 @@ class TestComplexityRouting:
         primitives = Mock()
         delegator = ProactiveDelegator(registry, primitives, skip_complexity_check=True)
 
-        complexity, action, signals, confidence = delegator.route_by_complexity(
-            "Any task"
-        )
+        complexity, action, signals, confidence = delegator.route_by_complexity("Any task")
 
         assert complexity == TaskComplexity.COMPLEX
         assert action == "architect"
@@ -124,9 +117,7 @@ class TestComplexityRouting:
         hybrid_router = Mock()
         hybrid_router.route.return_value = (["architect_general"], "learned")
 
-        delegator = ProactiveDelegator(
-            registry, primitives, hybrid_router=hybrid_router
-        )
+        delegator = ProactiveDelegator(registry, primitives, hybrid_router=hybrid_router)
 
         task_ir = {"objective": "Complex task", "task_type": "code"}
         complexity, action, signals, confidence = delegator.route_by_complexity(
@@ -253,9 +244,7 @@ class TestDelegateWorkflow:
         primitives.llm_call.return_value = "Task completed"
 
         progress_logger = Mock()
-        delegator = ProactiveDelegator(
-            registry, primitives, progress_logger=progress_logger
-        )
+        delegator = ProactiveDelegator(registry, primitives, progress_logger=progress_logger)
 
         # Mock review service
         delegator.review_service.review = Mock(

@@ -154,9 +154,7 @@ class TestCallCachingBackend:
         mock_health_tracker.is_available.return_value = False
 
         with pytest.raises(RuntimeError, match="circuit open"):
-            prims._call_caching_backend(
-                mock_backend, "Test prompt", "coder", n_tokens=128
-            )
+            prims._call_caching_backend(mock_backend, "Test prompt", "coder", n_tokens=128)
 
         # Should not call backend
         mock_backend.infer.assert_not_called()
@@ -180,9 +178,7 @@ class TestCallCachingBackend:
         )
 
         with pytest.raises(RuntimeError, match="Inference failed"):
-            prims._call_caching_backend(
-                mock_backend, "Test prompt", "coder", n_tokens=128
-            )
+            prims._call_caching_backend(mock_backend, "Test prompt", "coder", n_tokens=128)
 
         mock_health_tracker.record_failure.assert_called_once_with("http://localhost:8081")
 
@@ -324,8 +320,10 @@ class TestWorkerPoolBatch:
         mock_loop = Mock()
         mock_loop.is_running.return_value = False
 
-        with patch("asyncio.get_event_loop", return_value=mock_loop), \
-             patch("asyncio.run") as mock_run:
+        with (
+            patch("asyncio.get_event_loop", return_value=mock_loop),
+            patch("asyncio.run") as mock_run,
+        ):
             mock_run.return_value = ["Result 1", "Result 2"]
             results = prims._worker_pool_batch(prompts, "worker_explore")
 
@@ -345,7 +343,9 @@ class TestWorkerPoolBatch:
         )
 
         # Mock fallback
-        with patch.object(prims, "_fallback_batch", return_value=["Fallback 1", "Fallback 2"]) as mock_fallback:
+        with patch.object(
+            prims, "_fallback_batch", return_value=["Fallback 1", "Fallback 2"]
+        ) as mock_fallback:
             results = prims._worker_pool_batch(["P1", "P2"], "worker_code")
 
         assert results == ["Fallback 1", "Fallback 2"]

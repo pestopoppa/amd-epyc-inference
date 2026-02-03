@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
 class Base(DeclarativeBase):
     """Base class for all SQLAlchemy models."""
+
     pass
 
 
@@ -55,6 +56,7 @@ class Photo(Base):
         indexed_at: When this photo was added to the database.
         faces: List of Face records detected in this photo.
     """
+
     __tablename__ = "photos"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -89,6 +91,7 @@ class Face(Base):
         photo: Parent Photo relationship.
         person: Identified Person relationship (may be None).
     """
+
     __tablename__ = "faces"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -119,6 +122,7 @@ class Person(Base):
         created_at: When this person record was created.
         faces: List of Face records identified as this person.
     """
+
     __tablename__ = "persons"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -146,6 +150,7 @@ class Video(Base):
         indexed_at: When this video was added to the database.
         frames: List of extracted VideoFrame records.
     """
+
     __tablename__ = "videos"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -174,6 +179,7 @@ class VideoFrame(Base):
         description: VL-generated description of frame content.
         video: Parent Video relationship.
     """
+
     __tablename__ = "video_frames"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))

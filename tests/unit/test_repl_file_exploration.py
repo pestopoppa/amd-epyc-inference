@@ -2,10 +2,8 @@
 """Unit tests for REPL file exploration tools (_FileExplorationMixin)."""
 
 import os
-import tempfile
-import pytest
 
-from src.repl_environment import REPLConfig, REPLEnvironment, ExecutionResult
+from src.repl_environment import REPLConfig, REPLEnvironment
 
 
 class TestPeekTool:
@@ -54,7 +52,9 @@ class TestPeekTool:
     def test_peek_from_nonexistent_file(self):
         """Test peek from nonexistent file returns error."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute('artifacts["result"] = peek(file_path="/mnt/raid0/llm/tmp/nonexistent.txt")')
+        result = repl.execute(
+            'artifacts["result"] = peek(file_path="/mnt/raid0/llm/tmp/nonexistent.txt")'
+        )
 
         assert result.error is None
         assert "[ERROR: File not found:" in repl.artifacts["result"]
@@ -156,7 +156,9 @@ class TestGrepTool:
     def test_grep_nonexistent_file(self):
         """Test grep on nonexistent file returns error."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute('artifacts["result"] = grep("pattern", file_path="/mnt/raid0/llm/tmp/nonexistent.txt")')
+        result = repl.execute(
+            'artifacts["result"] = grep("pattern", file_path="/mnt/raid0/llm/tmp/nonexistent.txt")'
+        )
 
         assert result.error is None
         assert "[ERROR: File not found:" in repl.artifacts["result"][0]
@@ -220,6 +222,7 @@ class TestListDirTool:
         finally:
             # Cleanup
             import shutil
+
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
 
@@ -240,6 +243,7 @@ class TestListDirTool:
             assert len(output_list) > 0
             # Parse JSON from output
             import json
+
             output_data = json.loads(output_list[-1])
             files = output_data["files"]
 
@@ -251,6 +255,7 @@ class TestListDirTool:
             assert files[1]["name"] == "afile.txt"
         finally:
             import shutil
+
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
 
@@ -285,12 +290,14 @@ class TestListDirTool:
 
             output_list = repl.artifacts.get("_tool_outputs", [])
             import json
+
             output_data = json.loads(output_list[-1])
 
             assert len(output_data["files"]) == 100
             assert output_data["total"] == 150
         finally:
             import shutil
+
             if os.path.exists(test_dir):
                 shutil.rmtree(test_dir)
 
@@ -313,6 +320,7 @@ class TestFileInfoTool:
 
             assert result.error is None
             import json
+
             info = json.loads(repl.artifacts["result"])
 
             assert info["path"] == test_file
@@ -338,6 +346,7 @@ class TestFileInfoTool:
 
             assert result.error is None
             import json
+
             info = json.loads(repl.artifacts["result"])
 
             assert info["exists"] is True
@@ -350,10 +359,13 @@ class TestFileInfoTool:
     def test_file_info_nonexistent_file(self):
         """Test file_info on nonexistent file returns exists: false."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute('artifacts["result"] = file_info("/mnt/raid0/llm/tmp/nonexistent.txt")')
+        result = repl.execute(
+            'artifacts["result"] = file_info("/mnt/raid0/llm/tmp/nonexistent.txt")'
+        )
 
         assert result.error is None
         import json
+
         info = json.loads(repl.artifacts["result"])
 
         assert info["exists"] is False

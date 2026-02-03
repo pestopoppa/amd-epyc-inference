@@ -38,6 +38,8 @@ DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
     "coder", "instruction_precision", "vl",
     "mode_advantage",
+    # Phase 1 hard benchmarks (strong mode-advantage signal)
+    "gpqa", "simpleqa", "hotpotqa", "livecodebench",
 ]
 DEFAULT_ROLES = [
     "frontdoor", "coder_primary", "coder_escalation",
@@ -67,6 +69,11 @@ SUITE_TIMEOUTS: dict[str, int] = {
     "gaia": 300,
     "cruxeval": 120,
     "bigcodebench": 300,
+    # Phase 1 hard benchmarks
+    "gpqa": 180,  # Graduate science — reasoning time
+    "simpleqa": 120,  # Factual lookup — should be quick
+    "hotpotqa": 180,  # Multi-hop reasoning
+    "livecodebench": 300,  # Competition code — needs iteration
 }
 
 

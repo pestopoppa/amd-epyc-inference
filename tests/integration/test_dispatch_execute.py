@@ -104,9 +104,7 @@ def executor(test_registry: RegistryLoader) -> Executor:
 class TestDispatchExecuteFlow:
     """Integration tests for dispatch-execute flow."""
 
-    def test_simple_single_step_task(
-        self, dispatcher: Dispatcher, executor: Executor
-    ):
+    def test_simple_single_step_task(self, dispatcher: Dispatcher, executor: Executor):
         """Test a simple task with one step."""
         task_ir = {
             "task_id": "simple-task",
@@ -139,9 +137,7 @@ class TestDispatchExecuteFlow:
         assert execution_result.successful_steps == 1
         assert execution_result.failed_steps == 0
 
-    def test_multi_step_sequential_task(
-        self, dispatcher: Dispatcher, executor: Executor
-    ):
+    def test_multi_step_sequential_task(self, dispatcher: Dispatcher, executor: Executor):
         """Test a task with multiple sequential steps."""
         task_ir = {
             "task_id": "sequential-task",
@@ -196,9 +192,7 @@ class TestDispatchExecuteFlow:
         assert s1.completed_at <= s2.started_at
         assert s2.completed_at <= s3.started_at
 
-    def test_parallel_steps_task(
-        self, dispatcher: Dispatcher, executor: Executor
-    ):
+    def test_parallel_steps_task(self, dispatcher: Dispatcher, executor: Executor):
         """Test a task with parallel execution groups."""
         task_ir = {
             "task_id": "parallel-task",
@@ -255,9 +249,7 @@ class TestDispatchExecuteFlow:
         assert s1.completed_at <= s3.started_at
         assert s2.completed_at <= s3.started_at
 
-    def test_unknown_actor_fallback(
-        self, dispatcher: Dispatcher, executor: Executor
-    ):
+    def test_unknown_actor_fallback(self, dispatcher: Dispatcher, executor: Executor):
         """Test that unknown actors fall back to worker_general."""
         task_ir = {
             "task_id": "unknown-actor-task",
@@ -393,9 +385,7 @@ class TestDispatchExecuteWithContext:
 class TestDispatchResultMetadata:
     """Tests for dispatch result metadata."""
 
-    def test_dispatch_result_has_roles_used(
-        self, dispatcher: Dispatcher
-    ):
+    def test_dispatch_result_has_roles_used(self, dispatcher: Dispatcher):
         """Test that dispatch result includes roles used."""
         task_ir = {
             "task_id": "roles-task",
@@ -431,9 +421,7 @@ class TestDispatchResultMetadata:
         assert "coder_primary" in dispatch_result.roles_used
         assert "worker_general" in dispatch_result.roles_used
 
-    def test_dispatch_result_has_timestamp(
-        self, dispatcher: Dispatcher
-    ):
+    def test_dispatch_result_has_timestamp(self, dispatcher: Dispatcher):
         """Test that dispatch result has a timestamp."""
         task_ir = {
             "task_id": "timestamp-task",
@@ -465,9 +453,7 @@ class TestDispatchResultMetadata:
 class TestExecutionTiming:
     """Tests for execution timing and performance."""
 
-    def test_execution_has_timing_info(
-        self, dispatcher: Dispatcher, executor: Executor
-    ):
+    def test_execution_has_timing_info(self, dispatcher: Dispatcher, executor: Executor):
         """Test that execution results include timing information."""
         task_ir = {
             "task_id": "timing-task",

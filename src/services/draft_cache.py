@@ -61,6 +61,7 @@ class DraftCache:
         ttl_hours: float | None = None,
     ):
         from src.config import get_config
+
         _svc = get_config().services
         self.cache_dir = cache_dir or _svc.draft_cache_dir
         if ttl_hours is None:

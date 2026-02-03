@@ -11,26 +11,16 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel, Field
 
-from src.models.document import (
-    DocumentPreprocessResult,
-    ProcessingStatus,
-    Section,
-    FigureRef,
-)
 from src.services.document_preprocessor import (
     DocumentPreprocessor,
     PreprocessingConfig,
-    PreprocessingResult,
-    preprocess_documents,
 )
 from src.services.document_client import (
-    DocumentFormalizerClient,
     OCRServerError,
     OCRServerUnavailable,
     get_document_client,
 )
 from src.api.routes.path_validation import validate_api_path
-from src.services.document_chunker import get_document_chunker
 from src.api.dependencies import dep_document_preprocessor
 
 logger = logging.getLogger(__name__)

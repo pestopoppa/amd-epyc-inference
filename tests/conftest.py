@@ -54,22 +54,17 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     """Check memory and register custom markers before running tests."""
     # Register custom markers
-    config.addinivalue_line(
-        "markers", "heavy: marks tests that load models (may need more memory)"
-    )
-    config.addinivalue_line(
-        "markers", "real_mode: marks tests that require real inference servers"
-    )
+    config.addinivalue_line("markers", "heavy: marks tests that load models (may need more memory)")
+    config.addinivalue_line("markers", "real_mode: marks tests that require real inference servers")
     config.addinivalue_line(
         "markers", "requires_server: marks tests that require a live llama-server"
     )
-    config.addinivalue_line(
-        "markers", "integration: marks integration tests"
-    )
+    config.addinivalue_line("markers", "integration: marks integration tests")
 
     # Check available memory
     try:
         import psutil
+
         free_gb = psutil.virtual_memory().available / (1024**3)
 
         if free_gb < MEMORY_THRESHOLD_GB:
@@ -84,14 +79,12 @@ def pytest_configure(config):
         elif free_gb < MEMORY_THRESHOLD_GB * 2:
             # Warn if memory is getting low
             warnings.warn(
-                f"Low memory: {free_gb:.0f}GB free. "
-                f"Tests may be slow. Consider freeing memory.",
+                f"Low memory: {free_gb:.0f}GB free. Tests may be slow. Consider freeing memory.",
                 UserWarning,
             )
     except ImportError:
         warnings.warn(
-            "psutil not installed - cannot check memory. "
-            "Install with: pip install psutil",
+            "psutil not installed - cannot check memory. Install with: pip install psutil",
             UserWarning,
         )
 

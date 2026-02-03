@@ -19,10 +19,8 @@ To run without server (mocked):
 """
 
 import base64
-import io
 import os
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Mark all tests in this module as integration tests
@@ -57,9 +55,7 @@ def mock_ocr_response():
     """Create a mock OCR response."""
     return {
         "text": "Sample extracted text from document.\n\n![image](image_0.png) 100,200,300,400",
-        "bboxes": [
-            {"id": 0, "x1": 100, "y1": 200, "x2": 300, "y2": 400, "normalized": True}
-        ],
+        "bboxes": [{"id": 0, "x1": 100, "y1": 200, "x2": 300, "y2": 400, "normalized": True}],
         "elapsed_sec": 5.8,
     }
 
@@ -68,17 +64,79 @@ def mock_ocr_response():
 def sample_image_base64():
     """Create a minimal valid PNG image as base64."""
     # 1x1 white PNG
-    png_data = bytes([
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,  # PNG signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,  # IHDR chunk
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,  # IDAT chunk
-        0x54, 0x08, 0xD7, 0x63, 0xF8, 0xFF, 0xFF, 0xFF,
-        0x00, 0x05, 0xFE, 0x02, 0xFE, 0xDC, 0xCC, 0x59,
-        0xE7, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,  # IEND chunk
-        0x44, 0xAE, 0x42, 0x60, 0x82
-    ])
+    png_data = bytes(
+        [
+            0x89,
+            0x50,
+            0x4E,
+            0x47,
+            0x0D,
+            0x0A,
+            0x1A,
+            0x0A,  # PNG signature
+            0x00,
+            0x00,
+            0x00,
+            0x0D,
+            0x49,
+            0x48,
+            0x44,
+            0x52,  # IHDR chunk
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x08,
+            0x02,
+            0x00,
+            0x00,
+            0x00,
+            0x90,
+            0x77,
+            0x53,
+            0xDE,
+            0x00,
+            0x00,
+            0x00,
+            0x0C,
+            0x49,
+            0x44,
+            0x41,  # IDAT chunk
+            0x54,
+            0x08,
+            0xD7,
+            0x63,
+            0xF8,
+            0xFF,
+            0xFF,
+            0xFF,
+            0x00,
+            0x05,
+            0xFE,
+            0x02,
+            0xFE,
+            0xDC,
+            0xCC,
+            0x59,
+            0xE7,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x49,
+            0x45,
+            0x4E,  # IEND chunk
+            0x44,
+            0xAE,
+            0x42,
+            0x60,
+            0x82,
+        ]
+    )
     return base64.b64encode(png_data).decode()
 
 
@@ -99,6 +157,7 @@ class TestDocumentFormalizerHealth:
             )
 
             import httpx
+
             response = httpx.get("http://localhost:9001/health")
 
             assert response.status_code == 200
@@ -129,6 +188,7 @@ class TestDocumentFormalizerOCR:
             )
 
             import httpx
+
             response = httpx.post(
                 "http://localhost:9001/v1/document/ocr",
                 data={"image": sample_image_base64, "output_format": "bbox"},
@@ -186,6 +246,7 @@ class TestDocumentFormalizerPDF:
             )
 
             import httpx
+
             response = httpx.post(
                 "http://localhost:9001/v1/document/pdf",
                 files={"file": ("test.pdf", b"fake pdf content", "application/pdf")},

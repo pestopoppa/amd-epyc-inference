@@ -5,8 +5,6 @@ Provides mixin with: ocr_document, analyze_figure, extract_figure.
 
 from __future__ import annotations
 
-from typing import Any
-
 
 class _DocumentToolsMixin:
     """Mixin providing document processing tools (_ocr_document, _analyze_figure, _extract_figure).
@@ -69,12 +67,18 @@ class _DocumentToolsMixin:
 
                 # Collect figure bounding boxes
                 for bbox in page_data.get("bboxes", []):
-                    all_figures.append({
-                        "page": page_num,
-                        "id": bbox.get("id"),
-                        "bbox": [bbox.get("x1"), bbox.get("y1"),
-                                 bbox.get("x2"), bbox.get("y2")],
-                    })
+                    all_figures.append(
+                        {
+                            "page": page_num,
+                            "id": bbox.get("id"),
+                            "bbox": [
+                                bbox.get("x1"),
+                                bbox.get("y1"),
+                                bbox.get("x2"),
+                                bbox.get("y2"),
+                            ],
+                        }
+                    )
 
             result = {
                 "full_text": full_text.strip()[:50000],  # Cap at 50K chars
@@ -121,7 +125,9 @@ class _DocumentToolsMixin:
                 )
             return f"[ERROR: {type(e).__name__}: {e}]"
 
-    def _analyze_figure(self, image_path: str, prompt: str = "Describe this figure in detail") -> str:
+    def _analyze_figure(
+        self, image_path: str, prompt: str = "Describe this figure in detail"
+    ) -> str:
         """Analyze an image or extracted figure with the vision model.
 
         Args:
@@ -132,7 +138,6 @@ class _DocumentToolsMixin:
             Description of the image content.
         """
         self._exploration_calls += 1
-        import json
         import requests
 
         # Validate path
@@ -158,9 +163,7 @@ class _DocumentToolsMixin:
             description = data.get("vl_description", data.get("description", ""))
 
             self._exploration_log.add_event(
-                "analyze_figure",
-                {"image_path": image_path, "prompt": prompt},
-                description
+                "analyze_figure", {"image_path": image_path, "prompt": prompt}, description
             )
             return description
 
@@ -205,7 +208,7 @@ class _DocumentToolsMixin:
 
         try:
             import pypdfium2 as pdfium
-            from PIL import Image
+            from PIL import Image  # noqa: F401
         except ImportError:
             return "[ERROR: pypdfium2 or Pillow not installed]"
 
@@ -235,6 +238,7 @@ class _DocumentToolsMixin:
                 save_path = output_path
             else:
                 from src.config import get_config
+
                 tmp_dir = str(get_config().paths.tmp_dir)
                 fd, save_path = tempfile.mkstemp(suffix=".png", dir=tmp_dir)
                 os.close(fd)
@@ -242,9 +246,7 @@ class _DocumentToolsMixin:
             cropped.save(save_path, "PNG")
 
             self._exploration_log.add_event(
-                "extract_figure",
-                {"pdf_path": pdf_path, "page": page, "bbox": bbox},
-                save_path
+                "extract_figure", {"pdf_path": pdf_path, "page": page, "bbox": bbox}, save_path
             )
             return save_path
 

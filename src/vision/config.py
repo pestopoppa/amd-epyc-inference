@@ -7,8 +7,6 @@ Values are sourced from the centralized config (src.config) with
 module-level aliases for backward compatibility.
 """
 
-from pathlib import Path
-
 from src.config import get_config
 
 _cfg = get_config().vision

@@ -2,11 +2,9 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 from PIL import Image
-import numpy as np
 
-from src.vision.config import VISION_DATA_DIR, ensure_directories
 from src.vision.models import AnalyzerType, AnalyzeResult
 from src.vision.pipeline import VisionPipeline, get_pipeline
 
@@ -214,12 +212,14 @@ class TestBatchProcessor:
 
         processor = BatchProcessor()
 
-        files = list(processor._collect_files(
-            input_directory=tmp_path,
-            input_paths=None,
-            recursive=False,
-            extensions=["jpg", "png"],
-        ))
+        files = list(
+            processor._collect_files(
+                input_directory=tmp_path,
+                input_paths=None,
+                recursive=False,
+                extensions=["jpg", "png"],
+            )
+        )
 
         assert len(files) == 2
         assert all(f.suffix in [".jpg", ".png"] for f in files)
@@ -236,12 +236,14 @@ class TestBatchProcessor:
 
         processor = BatchProcessor()
 
-        files = list(processor._collect_files(
-            input_directory=tmp_path,
-            input_paths=None,
-            recursive=True,
-            extensions=["jpg"],
-        ))
+        files = list(
+            processor._collect_files(
+                input_directory=tmp_path,
+                input_paths=None,
+                recursive=True,
+                extensions=["jpg"],
+            )
+        )
 
         assert len(files) == 2
 
@@ -294,7 +296,7 @@ class TestVideoProcessor:
 
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='{"format": {"duration": "60.0"}, "streams": [{"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1"}]}'
+            stdout='{"format": {"duration": "60.0"}, "streams": [{"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1"}]}',
         )
 
         processor = VideoProcessor()

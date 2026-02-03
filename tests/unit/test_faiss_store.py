@@ -314,16 +314,12 @@ class TestEpisodicStoreWithFAISS:
         )
 
         # Filter by action_type
-        results = faiss_store.retrieve_by_similarity(
-            embedding, k=10, action_type="routing"
-        )
+        results = faiss_store.retrieve_by_similarity(embedding, k=10, action_type="routing")
         assert len(results) == 1
         assert results[0].action == "action_1"
 
         # Filter by min_q_value
-        results = faiss_store.retrieve_by_similarity(
-            embedding, k=10, min_q_value=0.5
-        )
+        results = faiss_store.retrieve_by_similarity(embedding, k=10, min_q_value=0.5)
         assert len(results) == 1
         assert results[0].q_value >= 0.5
 
@@ -445,4 +441,4 @@ class TestBackendEquivalence:
 
         # Should have significant overlap (>80%)
         overlap = len(faiss_actions & numpy_actions) / 10
-        assert overlap >= 0.8, f"Only {overlap*100}% overlap between backends"
+        assert overlap >= 0.8, f"Only {overlap * 100}% overlap between backends"

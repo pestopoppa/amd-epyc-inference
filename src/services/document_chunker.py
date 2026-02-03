@@ -10,14 +10,11 @@ from __future__ import annotations
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import Any
 
 from src.models.document import (
-    BoundingBox,
     DocumentPreprocessResult,
     FigureRef,
     OCRResult,
-    ProcessingStatus,
     Section,
 )
 

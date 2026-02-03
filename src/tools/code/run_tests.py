@@ -102,16 +102,19 @@ def run_tests(
             line_lower = line.lower()
             if "passed" in line_lower:
                 import re
+
                 match = re.search(r"(\d+)\s+passed", line_lower)
                 if match:
                     passed = int(match.group(1))
             if "failed" in line_lower:
                 import re
+
                 match = re.search(r"(\d+)\s+failed", line_lower)
                 if match:
                     failed = int(match.group(1))
             if "error" in line_lower:
                 import re
+
                 match = re.search(r"(\d+)\s+error", line_lower)
                 if match:
                     errors = int(match.group(1))

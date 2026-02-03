@@ -83,7 +83,9 @@ class InferenceRequest:
     context_length: int = 8192
     timeout: int = 300  # seconds
     stop_sequences: list[str] | None = None
-    cache_prompt: bool | None = None  # Override cache_prompt for this request (None = use backend default)
+    cache_prompt: bool | None = (
+        None  # Override cache_prompt for this request (None = use backend default)
+    )
     max_tokens: int | None = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -232,6 +234,7 @@ class LlamaCppBackend(ModelBackend):
             Shell command string ready for execution.
         """
         from src.config import get_config
+
         accel_type = role_config.acceleration.type
         binary_name = self.BINARY_MAP.get(accel_type, "llama-completion")
         binary_path = get_config().paths.llama_cpp_bin / binary_name
@@ -304,6 +307,7 @@ class LlamaCppBackend(ModelBackend):
         try:
             # Run inference
             import shlex
+
             result = subprocess.run(
                 shlex.split(cmd),
                 capture_output=True,

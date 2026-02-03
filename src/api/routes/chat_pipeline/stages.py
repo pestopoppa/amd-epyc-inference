@@ -41,7 +41,10 @@ log = logging.getLogger(__name__)
 
 
 def _execute_mock(
-    request: ChatRequest, routing: RoutingResult, state, start_time: float,
+    request: ChatRequest,
+    routing: RoutingResult,
+    state,
+    start_time: float,
 ) -> ChatResponse:
     """Handle mock mode requests with simulated response."""
     turns = 1
@@ -111,21 +114,29 @@ async def _execute_vision(
     try:
         if request.image_path:
             log.info(
-                "Vision preprocessing file: %s", request.image_path,
-                extra=task_extra(task_id=routing.task_id, stage="execute", mode="vision_preprocess"),
+                "Vision preprocessing file: %s",
+                request.image_path,
+                extra=task_extra(
+                    task_id=routing.task_id, stage="execute", mode="vision_preprocess"
+                ),
             )
             result = await preprocessor.preprocess_file(request.image_path)
         elif request.image_base64:
             log.info(
                 "Vision preprocessing base64 image",
-                extra=task_extra(task_id=routing.task_id, stage="execute", mode="vision_preprocess"),
+                extra=task_extra(
+                    task_id=routing.task_id, stage="execute", mode="vision_preprocess"
+                ),
             )
             task_ir = {"inputs": [{"type": "base64", "value": request.image_base64}]}
             result = await preprocessor.preprocess(task_ir)
         elif request.files:
             log.info(
-                "Vision preprocessing %d files", len(request.files),
-                extra=task_extra(task_id=routing.task_id, stage="execute", mode="vision_preprocess"),
+                "Vision preprocessing %d files",
+                len(request.files),
+                extra=task_extra(
+                    task_id=routing.task_id, stage="execute", mode="vision_preprocess"
+                ),
             )
             task_ir = {"inputs": [{"type": "path", "value": f} for f in request.files]}
             result = await preprocessor.preprocess(task_ir)
@@ -138,31 +149,42 @@ async def _execute_vision(
                 "Document preprocessing succeeded: %d sections, %d figures",
                 len(result.document_result.sections),
                 len(result.document_result.figures),
-                extra=task_extra(task_id=routing.task_id, stage="execute",
-                                 mode="vision_preprocess"),
+                extra=task_extra(
+                    task_id=routing.task_id, stage="execute", mode="vision_preprocess"
+                ),
             )
             return None  # Fall through to REPL with document context
 
         # Preprocessing returned but without usable document result
         warn_msg = result.error if result else "unknown"
         log.warning(
-            "Document preprocessing failed: %s", warn_msg,
-            extra=task_extra(task_id=routing.task_id, stage="execute",
-                             mode="vision_preprocess", error_type="preprocess_failed"),
+            "Document preprocessing failed: %s",
+            warn_msg,
+            extra=task_extra(
+                task_id=routing.task_id,
+                stage="execute",
+                mode="vision_preprocess",
+                error_type="preprocess_failed",
+            ),
         )
 
     except Exception as e:
         log.warning(
-            "Vision preprocessing exception: %s: %s", type(e).__name__, e,
-            extra=task_extra(task_id=routing.task_id, stage="execute",
-                             mode="vision_preprocess", error_type=type(e).__name__),
+            "Vision preprocessing exception: %s: %s",
+            type(e).__name__,
+            e,
+            extra=task_extra(
+                task_id=routing.task_id,
+                stage="execute",
+                mode="vision_preprocess",
+                error_type=type(e).__name__,
+            ),
         )
 
     # Preprocessing failed — inject context note and fall through to text modes
     image_ref = request.image_path or "(base64 image)"
     request.context = (request.context or "") + (
-        f"\n\n[IMAGE: {image_ref} — Document pipeline failed. "
-        f"Answering without OCR context.]"
+        f"\n\n[IMAGE: {image_ref} — Document pipeline failed. Answering without OCR context.]"
     )
     return None  # Fall through to standard orchestration
 
@@ -182,17 +204,23 @@ def _execute_delegated(
     """Handle architect delegation mode. Returns None if delegation fails (fall through)."""
     is_architect = str(initial_role) in ("architect_general", "architect_coding")
     use_delegation = (
-        (is_architect and features().architect_delegation)
-        or execution_mode == "delegated"
-    )
+        is_architect and features().architect_delegation
+    ) or execution_mode == "delegated"
 
     if not (use_delegation and request.real_mode):
         return None
 
     log.info(
-        "Delegated mode for %s (prompt: %d chars)", initial_role, len(request.prompt),
-        extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                         stage="execute", mode="delegated", prompt_len=len(request.prompt)),
+        "Delegated mode for %s (prompt: %d chars)",
+        initial_role,
+        len(request.prompt),
+        extra=task_extra(
+            task_id=routing.task_id,
+            role=str(initial_role),
+            stage="execute",
+            mode="delegated",
+            prompt_len=len(request.prompt),
+        ),
     )
 
     try:
@@ -208,9 +236,15 @@ def _execute_delegated(
         answer = answer.strip() if answer else ""
     except Exception as e:
         log.warning(
-            "Delegation failed (%s), falling back to direct", e,
-            extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                             stage="execute", mode="delegated", error_type=type(e).__name__),
+            "Delegation failed (%s), falling back to direct",
+            e,
+            extra=task_extra(
+                task_id=routing.task_id,
+                role=str(initial_role),
+                stage="execute",
+                mode="delegated",
+                error_type=type(e).__name__,
+            ),
         )
         return None
 
@@ -245,7 +279,8 @@ def _execute_delegated(
         real_mode=True,
         cache_stats=cache_stats,
         routed_to=str(initial_role),
-        role_history=[str(initial_role)] + [
+        role_history=[str(initial_role)]
+        + [
             p.get("delegate_to", "")
             for p in delegation_stats.get("phases", [])
             if p.get("phase") == "B"
@@ -349,18 +384,26 @@ async def _execute_proactive(
     from src.prompt_builders import build_task_decomposition_prompt
 
     plan_prompt = build_task_decomposition_prompt(
-        request.prompt, request.context or "",
+        request.prompt,
+        request.context or "",
     )
 
     try:
         plan_json_str = primitives.llm_call(
-            plan_prompt, role="architect_general", n_tokens=256,
+            plan_prompt,
+            role="architect_general",
+            n_tokens=256,
         )
     except Exception as e:
         log.warning(
-            "Proactive delegation: architect plan call failed: %s", e,
-            extra=task_extra(task_id=routing.task_id, stage="execute",
-                             mode="proactive", error_type=type(e).__name__),
+            "Proactive delegation: architect plan call failed: %s",
+            e,
+            extra=task_extra(
+                task_id=routing.task_id,
+                stage="execute",
+                mode="proactive",
+                error_type=type(e).__name__,
+            ),
         )
         return None
 
@@ -394,9 +437,14 @@ async def _execute_proactive(
         result = await delegator.delegate(task_ir)
     except Exception as e:
         log.warning(
-            "Proactive delegation: execution failed: %s", e,
-            extra=task_extra(task_id=routing.task_id, stage="execute",
-                             mode="proactive", error_type=type(e).__name__),
+            "Proactive delegation: execution failed: %s",
+            e,
+            extra=task_extra(
+                task_id=routing.task_id,
+                stage="execute",
+                mode="proactive",
+                error_type=type(e).__name__,
+            ),
         )
         return None
 
@@ -455,9 +503,16 @@ def _execute_react(
         return None
 
     log.info(
-        "ReAct mode for %s (prompt: %d chars)", initial_role, len(request.prompt),
-        extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                         stage="execute", mode="react", prompt_len=len(request.prompt)),
+        "ReAct mode for %s (prompt: %d chars)",
+        initial_role,
+        len(request.prompt),
+        extra=task_extra(
+            task_id=routing.task_id,
+            role=str(initial_role),
+            stage="execute",
+            mode="react",
+            prompt_len=len(request.prompt),
+        ),
     )
 
     react_tools_used = 0
@@ -468,15 +523,21 @@ def _execute_react(
             context=request.context or "",
             primitives=primitives,
             role=str(initial_role),
-            tool_registry=state.tool_registry if hasattr(state, 'tool_registry') else None,
+            tool_registry=state.tool_registry if hasattr(state, "tool_registry") else None,
             max_turns=5,
         )
         answer = answer.strip()
     except Exception as e:
         log.warning(
-            "ReAct mode failed (%s), falling back to direct", e,
-            extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                             stage="execute", mode="react", error_type=type(e).__name__),
+            "ReAct mode failed (%s), falling back to direct",
+            e,
+            extra=task_extra(
+                task_id=routing.task_id,
+                role=str(initial_role),
+                stage="execute",
+                mode="react",
+                error_type=type(e).__name__,
+            ),
         )
         return None
 
@@ -549,9 +610,16 @@ def _execute_direct(
 ) -> ChatResponse:
     """Handle direct LLM call mode (no REPL wrapper)."""
     log.info(
-        "Direct-answer mode for %s (prompt: %d chars)", initial_role, len(request.prompt),
-        extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                         stage="execute", mode="direct", prompt_len=len(request.prompt)),
+        "Direct-answer mode for %s (prompt: %d chars)",
+        initial_role,
+        len(request.prompt),
+        extra=task_extra(
+            task_id=routing.task_id,
+            role=str(initial_role),
+            stage="execute",
+            mode="direct",
+            prompt_len=len(request.prompt),
+        ),
     )
 
     direct_prompt = request.prompt
@@ -569,9 +637,15 @@ def _execute_direct(
         answer = answer.strip()
     except Exception as e:
         log.warning(
-            "Direct LLM call failed (%s), retrying once...", e,
-            extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                             stage="execute", mode="direct", error_type=type(e).__name__),
+            "Direct LLM call failed (%s), retrying once...",
+            e,
+            extra=task_extra(
+                task_id=routing.task_id,
+                role=str(initial_role),
+                stage="execute",
+                mode="direct",
+                error_type=type(e).__name__,
+            ),
         )
         try:
             answer = primitives.llm_call(
@@ -601,9 +675,14 @@ def _execute_direct(
         if quality_issue:
             log.info(
                 "Output quality issue detected (%s), escalating from %s to coder_escalation",
-                quality_issue, initial_role,
-                extra=task_extra(task_id=routing.task_id, role=str(initial_role),
-                                 stage="quality_check", error_type=quality_issue),
+                quality_issue,
+                initial_role,
+                extra=task_extra(
+                    task_id=routing.task_id,
+                    role=str(initial_role),
+                    stage="quality_check",
+                    error_type=quality_issue,
+                ),
             )
             try:
                 escalated_answer = primitives.llm_call(
@@ -619,8 +698,10 @@ def _execute_direct(
                 log.debug("Direct mode coder escalation failed: %s", exc)
 
     # MemRL-informed quality review gate
-    if answer and not answer.startswith("[ERROR") and _should_review(
-        state, routing.task_id, initial_role, answer
+    if (
+        answer
+        and not answer.startswith("[ERROR")
+        and _should_review(state, routing.task_id, initial_role, answer)
     ):
         verdict = _architect_verdict(
             question=request.prompt,
@@ -688,10 +769,14 @@ def _annotate_error(response: ChatResponse) -> ChatResponse:
     answer = response.answer
 
     # Timeout / backend failure patterns
-    if answer.startswith("[ERROR:") and ("timed out" in answer.lower() or "timeout" in answer.lower()):
+    if answer.startswith("[ERROR:") and (
+        "timed out" in answer.lower() or "timeout" in answer.lower()
+    ):
         response.error_code = 504
         response.error_detail = answer
-    elif answer.startswith("[ERROR:") and ("backend" in answer.lower() or "failed" in answer.lower()):
+    elif answer.startswith("[ERROR:") and (
+        "backend" in answer.lower() or "failed" in answer.lower()
+    ):
         response.error_code = 502
         response.error_detail = answer
     elif answer.startswith("[ERROR:"):

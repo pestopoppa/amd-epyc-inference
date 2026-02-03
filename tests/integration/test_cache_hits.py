@@ -22,7 +22,7 @@ import json
 import os
 import pytest
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -30,12 +30,8 @@ pytestmark = pytest.mark.integration
 
 def pytest_configure(config):
     """Register custom markers."""
-    config.addinivalue_line(
-        "markers", "integration: mark test as integration test"
-    )
-    config.addinivalue_line(
-        "markers", "requires_server: mark test as requiring live llama-server"
-    )
+    config.addinivalue_line("markers", "integration: mark test as integration test")
+    config.addinivalue_line("markers", "requires_server: mark test as requiring live llama-server")
 
 
 def pytest_addoption(parser):
@@ -312,8 +308,10 @@ class TestHotPrefixPersistence:
         # Make mock_backend.save_slot actually create the file
         def mock_save_slot(slot_id, filename):
             import pathlib
+
             pathlib.Path(filename).write_bytes(b"mock cache data")
             return True
+
         mock_backend.save_slot.side_effect = mock_save_slot
 
         # Generate usage - both queries share "System prompt: " prefix
@@ -384,7 +382,6 @@ class TestLiveServerCaching:
         """Cached prompts should have lower latency."""
         from src.backends.llama_server import LlamaServerBackend, ServerConfig
         from src.model_server import InferenceRequest
-        from src.registry_loader import RoleConfig
 
         config = ServerConfig(base_url=server_url)
         backend = LlamaServerBackend(config)
@@ -402,15 +399,17 @@ class TestLiveServerCaching:
 
         # First request - cold
         request1 = InferenceRequest(role="test", prompt=scaffold + "Query 1", n_tokens=10)
-        result1 = backend.infer(role_config, request1)
+        backend.infer(role_config, request1)
 
         # Second request - should be cached
         request2 = InferenceRequest(role="test", prompt=scaffold + "Query 2", n_tokens=10)
-        result2 = backend.infer(role_config, request2)
+        backend.infer(role_config, request2)
 
         # Cache should show token savings
         stats = backend.get_cache_stats()
-        print(f"Cache stats: hit_rate={stats.hit_rate:.1f}%, savings={stats.token_savings_rate:.1f}%")
+        print(
+            f"Cache stats: hit_rate={stats.hit_rate:.1f}%, savings={stats.token_savings_rate:.1f}%"
+        )
 
         # Second request should benefit from cache
         # (We can't guarantee timing in all cases, but savings should be measurable)

@@ -148,14 +148,10 @@ class PrefixRouter:
         self.prefix_length = prefix_length
 
         # Slot state tracking
-        self.slots: dict[int, SlotState] = {
-            i: SlotState(slot_id=i) for i in range(num_slots)
-        }
+        self.slots: dict[int, SlotState] = {i: SlotState(slot_id=i) for i in range(num_slots)}
 
         # LRU order for eviction (slot_id -> None, ordered by access time)
-        self._lru_order: OrderedDict[int, None] = OrderedDict(
-            (i, None) for i in range(num_slots)
-        )
+        self._lru_order: OrderedDict[int, None] = OrderedDict((i, None) for i in range(num_slots))
 
         # Prefix -> slot mapping for O(1) lookup
         self.prefix_to_slot: dict[str, int] = {}
@@ -373,7 +369,7 @@ class CachingBackend:
         """
         # Get optimal slot
         prompt = request.prompt or ""
-        slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
+        self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
 
         # Add slot_id to request payload
         # Note: This requires modifying the request or backend to support id_slot
@@ -463,22 +459,28 @@ class CachingBackend:
             # Save slot state via backend
             filename = os.path.join(save_dir, f"slot_{slot_id}_{prefix_hash}.bin")
             if self.backend.save_slot(slot_id, filename):
-                manifest.append({
-                    "slot_id": slot_id,
-                    "prefix_hash": prefix_hash,
-                    "hit_count": slot.hit_count,
-                    "filename": filename,
-                })
+                manifest.append(
+                    {
+                        "slot_id": slot_id,
+                        "prefix_hash": prefix_hash,
+                        "hit_count": slot.hit_count,
+                        "filename": filename,
+                    }
+                )
                 saved_count += 1
                 logger.info(f"Saved slot {slot_id} ({prefix_hash[:8]}..., {slot.hit_count} hits)")
 
         # Write manifest for restoration
         manifest_path = os.path.join(save_dir, "manifest.json")
         with open(manifest_path, "w") as f:
-            json.dump({
-                "saved_at": time.time(),
-                "slots": manifest,
-            }, f, indent=2)
+            json.dump(
+                {
+                    "saved_at": time.time(),
+                    "slots": manifest,
+                },
+                f,
+                indent=2,
+            )
 
         logger.info(f"Saved {saved_count} hot prefixes to {save_dir}")
         return saved_count

@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
+    from src.repl_environment.types import ExecutionResult
     from src.services.document_preprocessor import PreprocessingResult
 
 
@@ -63,6 +64,7 @@ class RoutingResult:
         """Get timeout for a specific role (used during escalation)."""
         return ROLE_TIMEOUTS.get(str(role), DEFAULT_TIMEOUT_S)
 
+
 # Three-stage summarization configuration — values sourced from centralized config
 _chat_cfg = _get_config().chat
 THREE_STAGE_CONFIG = {
@@ -93,9 +95,16 @@ LONG_CONTEXT_CONFIG = {
 }
 
 _STUB_PATTERNS = {
-    "complete", "see above", "analysis complete", "estimation complete",
-    "done", "finished", "see results above", "see output above",
-    "see structured output above", "see integrated results above",
+    "complete",
+    "see above",
+    "analysis complete",
+    "estimation complete",
+    "done",
+    "finished",
+    "see results above",
+    "see output above",
+    "see structured output above",
+    "see integrated results above",
     "see the structured output above",
 }
 

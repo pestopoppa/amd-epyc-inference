@@ -80,9 +80,16 @@ class TestScoringConfigDefaults:
     def test_baseline_tps_has_all_production_roles(self):
         cfg = ScoringConfig()
         expected_roles = {
-            "frontdoor", "coder_primary", "coder_escalation",
-            "architect_general", "architect_coding", "ingest_long_context",
-            "worker_explore", "worker_math", "worker_vision", "vision_escalation",
+            "frontdoor",
+            "coder_primary",
+            "coder_escalation",
+            "architect_general",
+            "architect_coding",
+            "ingest_long_context",
+            "worker_explore",
+            "worker_math",
+            "worker_vision",
+            "vision_escalation",
         }
         assert set(cfg.baseline_tps_by_role.keys()) == expected_roles
 
@@ -204,9 +211,7 @@ class TestComputeRewardWithCost:
         s = _scorer()
         # 2x slower + 1 gate failure
         cost = {"tokens_generated": 183, "elapsed_seconds": 20.0, "role": "frontdoor"}
-        r = s._compute_reward(
-            _make_outcome("success"), [_make_gate_fail()], [], cost_metrics=cost
-        )
+        r = s._compute_reward(_make_outcome("success"), [_make_gate_fail()], [], cost_metrics=cost)
         # 1.0 - 0.1 (gate) - 0.15 (cost) = 0.75
         assert r == pytest.approx(0.75)
 
@@ -252,20 +257,30 @@ class TestComparativeRewardsCostAware:
     def _import_fn(self):
         """Import the function (adds scripts/benchmark to path)."""
         import sys
+
         sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "benchmark"))
         from seed_specialist_routing import compute_comparative_rewards, RoleResult
+
         return compute_comparative_rewards, RoleResult
 
     def test_both_correct_cost_aware(self):
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="frontdoor",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
             "coder_primary:direct": RR(
-                role="coder_primary", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="coder_primary",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
         }
         rewards = fn(results)
@@ -276,12 +291,20 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="frontdoor",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
             "architect_general:direct": RR(
-                role="architect_general", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=200.0, tokens_generated=675,
+                role="architect_general",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=200.0,
+                tokens_generated=675,
                 # Expected: 675/6.75 = 100s, actual 200s → cost_ratio=2.0
             ),
         }
@@ -293,12 +316,20 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=0,  # No token data
+                role="frontdoor",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=0,  # No token data
             ),
             "coder_primary:direct": RR(
-                role="coder_primary", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=0,
+                role="coder_primary",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=0,
             ),
         }
         rewards = fn(results)
@@ -309,12 +340,19 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="wrong", passed=False,
+                role="frontdoor",
+                mode="direct",
+                answer="wrong",
+                passed=False,
                 elapsed_seconds=10.0,
             ),
             "coder_primary:direct": RR(
-                role="coder_primary", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="coder_primary",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
         }
         rewards = fn(results)
@@ -324,11 +362,18 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="frontdoor",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
             "coder_primary:direct": RR(
-                role="coder_primary", mode="direct", answer="wrong", passed=False,
+                role="coder_primary",
+                mode="direct",
+                answer="wrong",
+                passed=False,
                 elapsed_seconds=10.0,
             ),
         }
@@ -339,11 +384,17 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="wrong", passed=False,
+                role="frontdoor",
+                mode="direct",
+                answer="wrong",
+                passed=False,
                 elapsed_seconds=10.0,
             ),
             "coder_primary:direct": RR(
-                role="coder_primary", mode="direct", answer="wrong", passed=False,
+                role="coder_primary",
+                mode="direct",
+                answer="wrong",
+                passed=False,
                 elapsed_seconds=10.0,
             ),
         }
@@ -355,7 +406,10 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="wrong", passed=False,
+                role="frontdoor",
+                mode="direct",
+                answer="wrong",
+                passed=False,
                 elapsed_seconds=10.0,
             ),
         }
@@ -366,12 +420,20 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="frontdoor",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
             "coder_primary:direct": RR(
-                role="coder_primary", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=20.0, tokens_generated=183,
+                role="coder_primary",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=20.0,
+                tokens_generated=183,
                 # 2x slower → penalty = 0.5 * 1.0 = 0.5 with custom lambda
             ),
         }
@@ -385,12 +447,20 @@ class TestComparativeRewardsCostAware:
         fn, RR = self._import_fn()
         results = {
             "frontdoor:direct": RR(
-                role="frontdoor", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=10.0, tokens_generated=183,
+                role="frontdoor",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=10.0,
+                tokens_generated=183,
             ),
             "architect_general:direct": RR(
-                role="architect_general", mode="direct", answer="ok", passed=True,
-                elapsed_seconds=1000.0, tokens_generated=675,
+                role="architect_general",
+                mode="direct",
+                answer="ok",
+                passed=True,
+                elapsed_seconds=1000.0,
+                tokens_generated=675,
                 # Expected: 100s, actual 1000s → 10x slower → penalty = 0.15*9 = 1.35
             ),
         }

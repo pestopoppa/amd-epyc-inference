@@ -4,13 +4,10 @@ Tests coverage for src/session/persister.py (16% coverage).
 Focus on checkpoint triggers, finding sync, and lifecycle events.
 """
 
-import hashlib
 import time
-import uuid
 from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 
-import pytest
 
 from src.session.persister import (
     CHECKPOINT_IDLE_MINUTES,
@@ -20,9 +17,6 @@ from src.session.persister import (
     SUMMARY_IDLE_HOURS,
 )
 from src.session.models import (
-    Checkpoint,
-    Finding,
-    FindingSource,
     Session,
     SessionStatus,
 )
@@ -178,9 +172,7 @@ class TestShouldCheckpoint:
         persister = SessionPersister(session_store, "sess_123")
 
         # Simulate idle time
-        persister._last_checkpoint_time = time.time() - (
-            CHECKPOINT_IDLE_MINUTES * 60 + 1
-        )
+        persister._last_checkpoint_time = time.time() - (CHECKPOINT_IDLE_MINUTES * 60 + 1)
 
         assert persister.should_checkpoint() is True
 
@@ -254,9 +246,7 @@ class TestSaveCheckpoint:
         session_store.get_session.return_value = mock_session
 
         progress_logger = Mock()
-        persister = SessionPersister(
-            session_store, "sess_123", progress_logger=progress_logger
-        )
+        persister = SessionPersister(session_store, "sess_123", progress_logger=progress_logger)
 
         repl_env = Mock()
         repl_env.checkpoint.return_value = {"version": 1, "artifacts": {}}
@@ -424,9 +414,7 @@ class TestCheckIdle:
 
         # Simulate idle time exceeding threshold
         persister._last_activity = time.time() - (CHECKPOINT_IDLE_MINUTES * 60 + 1)
-        persister._last_checkpoint_time = time.time() - (
-            CHECKPOINT_IDLE_MINUTES * 60 + 1
-        )
+        persister._last_checkpoint_time = time.time() - (CHECKPOINT_IDLE_MINUTES * 60 + 1)
 
         result = persister.check_idle()
 
@@ -473,9 +461,7 @@ class TestGenerateSummary:
         session_store.get_findings.return_value = []
 
         llm_summarizer = Mock(return_value="LLM-generated summary")
-        persister = SessionPersister(
-            session_store, "sess_123", llm_summarizer=llm_summarizer
-        )
+        persister = SessionPersister(session_store, "sess_123", llm_summarizer=llm_summarizer)
 
         summary = persister._generate_summary()
 
@@ -520,9 +506,7 @@ class TestLifecycleEvents:
         session_store.get_session.return_value = mock_session
 
         progress_logger = Mock()
-        persister = SessionPersister(
-            session_store, "sess_123", progress_logger=progress_logger
-        )
+        persister = SessionPersister(session_store, "sess_123", progress_logger=progress_logger)
 
         persister.emit_session_created()
 
@@ -540,9 +524,7 @@ class TestLifecycleEvents:
         session_store.get_session.return_value = mock_session
 
         progress_logger = Mock()
-        persister = SessionPersister(
-            session_store, "sess_123", progress_logger=progress_logger
-        )
+        persister = SessionPersister(session_store, "sess_123", progress_logger=progress_logger)
 
         persister.emit_session_resumed(previous_task_id="task_456", document_changes=2)
 
@@ -562,9 +544,7 @@ class TestLifecycleEvents:
         session_store.get_findings.return_value = []
 
         progress_logger = Mock()
-        persister = SessionPersister(
-            session_store, "sess_123", progress_logger=progress_logger
-        )
+        persister = SessionPersister(session_store, "sess_123", progress_logger=progress_logger)
 
         persister.emit_session_archived()
 

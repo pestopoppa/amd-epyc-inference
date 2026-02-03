@@ -7,7 +7,6 @@ and session management in mock mode.
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -55,9 +54,7 @@ class TestSSEStreaming:
         """Verify turn_start -> token(s) -> turn_end sequence."""
         events = []
         with client.stream(
-            "POST",
-            "/chat/stream",
-            json={"prompt": "Hello", "mock_mode": True}
+            "POST", "/chat/stream", json={"prompt": "Hello", "mock_mode": True}
         ) as response:
             assert response.status_code == 200
             for line in response.iter_lines():
@@ -76,7 +73,7 @@ class TestSSEStreaming:
         with client.stream(
             "POST",
             "/chat/stream",
-            json={"prompt": "Hello", "mock_mode": True, "thinking_budget": 1000}
+            json={"prompt": "Hello", "mock_mode": True, "thinking_budget": 1000},
         ) as response:
             for line in response.iter_lines():
                 if line.startswith("data: ") and line != "data: [DONE]":
@@ -97,7 +94,7 @@ class TestSSEStreaming:
         with client.stream(
             "POST",
             "/chat/stream",
-            json={"prompt": "Hello", "mock_mode": True, "thinking_budget": 0}
+            json={"prompt": "Hello", "mock_mode": True, "thinking_budget": 0},
         ) as response:
             for line in response.iter_lines():
                 if line.startswith("data: ") and line != "data: [DONE]":
@@ -112,7 +109,7 @@ class TestSSEStreaming:
         with client.stream(
             "POST",
             "/chat/stream",
-            json={"prompt": "Hello", "mock_mode": True, "permission_mode": "plan"}
+            json={"prompt": "Hello", "mock_mode": True, "permission_mode": "plan"},
         ) as response:
             for line in response.iter_lines():
                 if line.startswith("data: ") and line != "data: [DONE]":
@@ -127,9 +124,7 @@ class TestSSEStreaming:
         """Verify stream ends with [DONE]."""
         last_line = None
         with client.stream(
-            "POST",
-            "/chat/stream",
-            json={"prompt": "Hello", "mock_mode": True}
+            "POST", "/chat/stream", json={"prompt": "Hello", "mock_mode": True}
         ) as response:
             for line in response.iter_lines():
                 if line:
@@ -140,9 +135,7 @@ class TestSSEStreaming:
     def test_stream_event_format(self, client):
         """Verify each event is valid JSON with type field."""
         with client.stream(
-            "POST",
-            "/chat/stream",
-            json={"prompt": "Hello", "mock_mode": True}
+            "POST", "/chat/stream", json={"prompt": "Hello", "mock_mode": True}
         ) as response:
             for line in response.iter_lines():
                 if line.startswith("data: ") and line != "data: [DONE]":
@@ -160,8 +153,8 @@ class TestOpenAICompatibility:
             json={
                 "model": "orchestrator",
                 "messages": [{"role": "user", "content": "Hello"}],
-                "stream": False
-            }
+                "stream": False,
+            },
         )
         assert response.status_code == 200
         data = response.json()
@@ -182,8 +175,8 @@ class TestOpenAICompatibility:
             json={
                 "model": "orchestrator",
                 "messages": [{"role": "user", "content": "Hello"}],
-                "stream": True
-            }
+                "stream": True,
+            },
         ) as response:
             assert response.status_code == 200
             for line in response.iter_lines():
@@ -208,8 +201,8 @@ class TestOpenAICompatibility:
                 json={
                     "model": model,
                     "messages": [{"role": "user", "content": "Hello"}],
-                    "stream": False
-                }
+                    "stream": False,
+                },
             )
             assert response.status_code == 200
 
@@ -250,10 +243,7 @@ class TestSessionManagement:
 
     def test_session_rename_creates(self, client):
         """Rename creates session if it doesn't exist."""
-        response = client.post(
-            "/sessions/current/rename",
-            params={"name": "test-session"}
-        )
+        response = client.post("/sessions/current/rename", params={"name": "test-session"})
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "renamed"
@@ -287,10 +277,7 @@ class TestPermissionFlow:
 
     def test_permission_not_found(self, client):
         """Respond to non-existent permission returns 404."""
-        response = client.post(
-            "/permission/nonexistent",
-            params={"approved": True}
-        )
+        response = client.post("/permission/nonexistent", params={"approved": True})
         assert response.status_code == 404
 
 
@@ -317,10 +304,7 @@ class TestChatEndpoint:
 
     def test_chat_mock_mode(self, client):
         """Chat in mock mode returns response."""
-        response = client.post(
-            "/chat",
-            json={"prompt": "Hello", "mock_mode": True}
-        )
+        response = client.post("/chat", json={"prompt": "Hello", "mock_mode": True})
         assert response.status_code == 200
         data = response.json()
         assert "[MOCK]" in data["answer"]
@@ -329,15 +313,13 @@ class TestChatEndpoint:
     def test_chat_with_thinking_budget(self, client):
         """Chat accepts thinking_budget parameter."""
         response = client.post(
-            "/chat",
-            json={"prompt": "Hello", "mock_mode": True, "thinking_budget": 1000}
+            "/chat", json={"prompt": "Hello", "mock_mode": True, "thinking_budget": 1000}
         )
         assert response.status_code == 200
 
     def test_chat_with_permission_mode(self, client):
         """Chat accepts permission_mode parameter."""
         response = client.post(
-            "/chat",
-            json={"prompt": "Hello", "mock_mode": True, "permission_mode": "plan"}
+            "/chat", json={"prompt": "Hello", "mock_mode": True, "permission_mode": "plan"}
         )
         assert response.status_code == 200

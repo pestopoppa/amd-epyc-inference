@@ -23,9 +23,7 @@ Usage:
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -38,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 class ToolCategory(str, Enum):
     """Categories of tools available to models."""
+
     WEB = "web"
     FILE = "file"
     CODE = "code"
@@ -51,6 +50,7 @@ class ToolCategory(str, Enum):
 @dataclass
 class ToolPermissions:
     """Permissions for a specific role's tool access."""
+
     web_access: bool = False
     allowed_categories: list[ToolCategory] = field(default_factory=list)
     allowed_tools: list[str] = field(default_factory=list)
@@ -86,6 +86,7 @@ class ToolPermissions:
 @dataclass
 class Tool:
     """A registered tool that models can invoke."""
+
     name: str
     description: str
     category: ToolCategory
@@ -118,11 +119,17 @@ class Tool:
 
             expected_type = self.parameters[arg_name].get("type", "string")
             if expected_type == "string" and not isinstance(arg_value, str):
-                errors.append(f"Parameter {arg_name} must be string, got {type(arg_value).__name__}")
+                errors.append(
+                    f"Parameter {arg_name} must be string, got {type(arg_value).__name__}"
+                )
             elif expected_type == "integer" and not isinstance(arg_value, int):
-                errors.append(f"Parameter {arg_name} must be integer, got {type(arg_value).__name__}")
+                errors.append(
+                    f"Parameter {arg_name} must be integer, got {type(arg_value).__name__}"
+                )
             elif expected_type == "boolean" and not isinstance(arg_value, bool):
-                errors.append(f"Parameter {arg_name} must be boolean, got {type(arg_value).__name__}")
+                errors.append(
+                    f"Parameter {arg_name} must be boolean, got {type(arg_value).__name__}"
+                )
             elif expected_type == "array" and not isinstance(arg_value, list):
                 errors.append(f"Parameter {arg_name} must be array, got {type(arg_value).__name__}")
 
@@ -132,6 +139,7 @@ class Tool:
 @dataclass
 class ToolInvocation:
     """Record of a tool invocation."""
+
     tool_name: str
     args: dict[str, Any]
     role: str
@@ -202,9 +210,11 @@ class ToolRegistry:
             def fetch_docs(url: str) -> str:
                 ...
         """
+
         def decorator(func: Callable) -> Callable:
             # Compute code hash for integrity
             import inspect
+
             source = inspect.getsource(func)
             code_hash = hashlib.sha256(source.encode()).hexdigest()[:16]
 
@@ -218,6 +228,7 @@ class ToolRegistry:
             )
             self.register_tool(tool, update=update)
             return func
+
         return decorator
 
     def set_role_permissions(self, role: str, permissions: ToolPermissions) -> None:
@@ -329,29 +340,33 @@ class ToolRegistry:
             elapsed = (time.perf_counter() - start) * 1000
 
             # Log invocation
-            self._invocation_log.append(ToolInvocation(
-                tool_name=tool_name,
-                args=kwargs,
-                role=role,
-                success=True,
-                result=result,
-                elapsed_ms=elapsed,
-            ))
+            self._invocation_log.append(
+                ToolInvocation(
+                    tool_name=tool_name,
+                    args=kwargs,
+                    role=role,
+                    success=True,
+                    result=result,
+                    elapsed_ms=elapsed,
+                )
+            )
 
             return result
 
         except Exception as e:
             elapsed = (time.perf_counter() - start) * 1000
 
-            self._invocation_log.append(ToolInvocation(
-                tool_name=tool_name,
-                args=kwargs,
-                role=role,
-                success=False,
-                result=None,
-                error=str(e),
-                elapsed_ms=elapsed,
-            ))
+            self._invocation_log.append(
+                ToolInvocation(
+                    tool_name=tool_name,
+                    args=kwargs,
+                    role=role,
+                    success=False,
+                    result=None,
+                    error=str(e),
+                    elapsed_ms=elapsed,
+                )
+            )
 
             raise RuntimeError(f"Tool execution failed: {e}") from e
 
@@ -382,8 +397,7 @@ class ToolRegistry:
 
         if server not in self._mcp_configs:
             raise RuntimeError(
-                f"Unknown MCP server: {server}. "
-                f"Configure in orchestration/mcp_servers.yaml"
+                f"Unknown MCP server: {server}. Configure in orchestration/mcp_servers.yaml"
             )
 
         return call_mcp_tool(self._mcp_configs[server], tool_name, args)
@@ -400,13 +414,15 @@ class ToolRegistry:
         result = []
         for tool in self._tools.values():
             if role is None or self.can_use_tool(role, tool.name):
-                result.append({
-                    "name": tool.name,
-                    "description": tool.description,
-                    "category": tool.category.value,
-                    "parameters": tool.parameters,
-                    "mcp_backed": tool.mcp_server is not None,
-                })
+                result.append(
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "category": tool.category.value,
+                        "parameters": tool.parameters,
+                        "mcp_backed": tool.mcp_server is not None,
+                    }
+                )
         return result
 
     def get_invocation_log(self) -> list[ToolInvocation]:
@@ -498,14 +514,15 @@ def load_from_yaml(
                         module = importlib.import_module(module_name)
                         handler = getattr(module, func_name)
                     except (ImportError, AttributeError) as e:
-                        logger.warning(
-                            f"Could not load handler for tool '{tool_name}': {e}"
-                        )
+                        logger.warning(f"Could not load handler for tool '{tool_name}': {e}")
+
                         # Create a stub handler that returns an error
                         def make_stub(name: str, error: str):
                             def stub(**kwargs):
                                 return {"error": f"Tool '{name}' handler not available: {error}"}
+
                             return stub
+
                         handler = make_stub(tool_name, str(e))
 
             # Create Tool object

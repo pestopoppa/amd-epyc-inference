@@ -24,7 +24,6 @@ See handoffs/active/model_repl_tool_compliance.md for full requirements.
 
 import re
 import pytest
-from unittest.mock import MagicMock, patch
 
 # Mark all tests in this module as integration tests
 pytestmark = pytest.mark.integration
@@ -314,10 +313,7 @@ def get_compliance_score(response: str, expected_tools: list[str]) -> dict:
     # Compliance requires:
     # 1. No forbidden pattern violations
     # 2. At least one expected tool used (if expected_tools non-empty)
-    is_compliant = (
-        len(violations) == 0 and
-        (len(expected_tools) == 0 or len(tools_used) > 0)
-    )
+    is_compliant = len(violations) == 0 and (len(expected_tools) == 0 or len(tools_used) > 0)
 
     return {
         "tools_used": tools_used,
@@ -459,9 +455,7 @@ class TestREPLToolExecution:
         # Should fail (os not available)
         assert result.error is not None
 
-    def test_compliant_code_succeeds(
-        self, mock_repl_environment, compliant_response_list_dir
-    ):
+    def test_compliant_code_succeeds(self, mock_repl_environment, compliant_response_list_dir):
         """Test that compliant code executes successfully."""
         result = mock_repl_environment.execute(compliant_response_list_dir)
 
@@ -545,8 +539,7 @@ class TestLiveModelCompliance:
 
         # Assert tool was used
         assert tool_name in score["tools_used"], (
-            f"{role} did not use {tool_name} for prompt: {prompt}\n"
-            f"Response: {response[:200]}"
+            f"{role} did not use {tool_name} for prompt: {prompt}\nResponse: {response[:200]}"
         )
 
         # Assert no forbidden patterns
@@ -575,8 +568,10 @@ class TestComplianceDashboard:
 
         metrics = {}
         for name, response in responses.items():
-            role = name.split("_")[0]
-            tool = "_".join(name.split("_")[1:-1]) if "bad" in name else "_".join(name.split("_")[1:])
+            name.split("_")[0]
+            tool = (
+                "_".join(name.split("_")[1:-1]) if "bad" in name else "_".join(name.split("_")[1:])
+            )
 
             score = get_compliance_score(response, [tool, "FINAL"] if "bad" not in name else [tool])
             metrics[name] = {

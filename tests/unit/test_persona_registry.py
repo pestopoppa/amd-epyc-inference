@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -163,6 +163,7 @@ class TestLLMCallPersona:
     def test_persona_disabled_no_change(self):
         """With personas feature disabled, persona param is ignored."""
         from src.features import Features, set_features, reset_features
+
         try:
             set_features(Features(personas=False, mock_mode=True))
             primitives = self._make_primitives()
@@ -176,11 +177,14 @@ class TestLLMCallPersona:
     def test_persona_with_skip_suffix(self):
         """skip_suffix=True also skips persona injection."""
         from src.features import Features, set_features, reset_features
+
         try:
             set_features(Features(personas=True, mock_mode=True))
             primitives = self._make_primitives()
             result = primitives.llm_call(
-                "Hello", persona="security_auditor", skip_suffix=True,
+                "Hello",
+                persona="security_auditor",
+                skip_suffix=True,
             )
             assert isinstance(result, str)
         finally:
@@ -189,6 +193,7 @@ class TestLLMCallPersona:
     def test_nonexistent_persona_noop(self):
         """Unknown persona name is a graceful no-op."""
         from src.features import Features, set_features, reset_features
+
         try:
             set_features(Features(personas=True, mock_mode=True))
             primitives = self._make_primitives()
@@ -223,7 +228,7 @@ class TestDelegatePersona:
     def test_empty_persona_no_kwarg(self):
         """Empty persona string passes None to llm_call."""
         env = self._make_env()
-        result = env._delegate("do something", "worker_general", persona="")
+        env._delegate("do something", "worker_general", persona="")
         env.llm_primitives.llm_call.assert_called_once()
         call_kwargs = env.llm_primitives.llm_call.call_args
         assert call_kwargs.kwargs.get("persona") is None
@@ -231,8 +236,10 @@ class TestDelegatePersona:
     def test_persona_passed_through(self):
         """Named persona is forwarded to llm_call."""
         env = self._make_env()
-        result = env._delegate(
-            "review code", "coder_primary", persona="code_reviewer",
+        env._delegate(
+            "review code",
+            "coder_primary",
+            persona="code_reviewer",
         )
         call_kwargs = env.llm_primitives.llm_call.call_args
         assert call_kwargs.kwargs.get("persona") == "code_reviewer"
@@ -277,23 +284,27 @@ class TestPersonasFeatureFlag:
 
     def test_default_disabled(self):
         from src.features import Features
+
         f = Features()
         assert f.personas is False
 
     def test_dependency_on_memrl(self):
         from src.features import Features
+
         f = Features(personas=True, memrl=False)
         errors = f.validate()
         assert any("personas" in e for e in errors)
 
     def test_valid_with_memrl(self):
         from src.features import Features
+
         f = Features(personas=True, memrl=True)
         errors = f.validate()
         assert not any("personas" in e for e in errors)
 
     def test_in_summary(self):
         from src.features import Features
+
         f = Features(personas=True)
         summary = f.summary()
         assert "personas" in summary
@@ -308,11 +319,13 @@ class TestPersonaSeeds:
 
     def test_returns_nonempty(self):
         from orchestration.repl_memory.seed_loader import _get_persona_seeds
+
         seeds = _get_persona_seeds()
         assert len(seeds) >= 18  # At least one per persona
 
     def test_all_seeds_have_required_keys(self):
         from orchestration.repl_memory.seed_loader import _get_persona_seeds
+
         seeds = _get_persona_seeds()
         for seed in seeds:
             assert "task" in seed, f"Missing 'task' in seed: {seed}"
@@ -325,6 +338,7 @@ class TestPersonaSeeds:
     def test_covers_all_categories(self):
         """Seeds cover engineering, research, and practical personas."""
         from orchestration.repl_memory.seed_loader import _get_persona_seeds
+
         seeds = _get_persona_seeds()
         actions = {s["action"] for s in seeds}
         # Spot-check one from each category

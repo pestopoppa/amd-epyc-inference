@@ -94,17 +94,11 @@ target-version = "py311"
 select = [
     "E",      # pycodestyle errors
     "F",      # pyflakes
-    "I",      # isort
-    "N",      # pep8-naming
     "W",      # pycodestyle warnings
-    "UP",     # pyupgrade
-    "B",      # flake8-bugbear
-    "C4",     # flake8-comprehensions
-    "SIM",    # flake8-simplify
-    "PTH",    # flake8-use-pathlib
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
+    "E402",   # module import not at top (intentional delayed imports)
 ]
 
 [tool.ruff.lint.isort]

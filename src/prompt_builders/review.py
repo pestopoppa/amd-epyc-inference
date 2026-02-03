@@ -34,13 +34,16 @@ def build_review_verdict_prompt(
         # TOON-encode structured worker digests (uniform array → 40-65% savings)
         try:
             from src.services.toon_encoder import encode, is_available
+
             if is_available():
                 digest_section = f"\nEvidence:\n{encode(worker_digests)}\n"
             else:
                 import json
+
                 digest_section = f"\nEvidence:\n{json.dumps(worker_digests)}\n"
         except Exception:
             import json
+
             digest_section = f"\nEvidence:\n{json.dumps(worker_digests)}\n"
     elif context_digest:
         digest_section = f"\nContext: {context_digest[:800]}\n"
@@ -55,9 +58,7 @@ A: {answer[:1500]}
 Verdict:"""
 
 
-def build_revision_prompt(
-    question: str, original: str, corrections: str
-) -> str:
+def build_revision_prompt(question: str, original: str, corrections: str) -> str:
     """Build fast model revision prompt — expands architect corrections.
 
     Args:

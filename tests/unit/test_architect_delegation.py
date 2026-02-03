@@ -7,11 +7,9 @@ and specialist document passthrough.
 
 import json
 import sys
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
-import pytest
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -63,11 +61,13 @@ class TestParseArchitectDecision:
     def test_json_investigate(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
 
-        payload = json.dumps({
-            "mode": "investigate",
-            "brief": "Search for X",
-            "to": "worker_explore",
-        })
+        payload = json.dumps(
+            {
+                "mode": "investigate",
+                "brief": "Search for X",
+                "to": "worker_explore",
+            }
+        )
         result = _parse_architect_decision(payload)
         assert result["mode"] == "investigate"
         assert result["brief"] == "Search for X"
@@ -91,18 +91,14 @@ class TestParseArchitectDecision:
     def test_invalid_role_clamped(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
 
-        result = _parse_architect_decision(
-            "I|brief:Check something|to:nonexistent_role"
-        )
+        result = _parse_architect_decision("I|brief:Check something|to:nonexistent_role")
         assert result["mode"] == "investigate"
         assert result["delegate_to"] == "coder_primary"
 
     def test_invalid_mode_clamped(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
 
-        result = _parse_architect_decision(
-            "I|brief:Check something|to:coder_primary|mode:invalid"
-        )
+        result = _parse_architect_decision("I|brief:Check something|to:coder_primary|mode:invalid")
         assert result["delegate_mode"] == "react"
 
 
@@ -270,7 +266,7 @@ class TestArchitectDelegatedAnswer:
             # Need to add the REPL primitives call
             primitives.llm_call.side_effect = [
                 responses[0],  # architect decides to delegate
-                "code here",   # specialist REPL code
+                "code here",  # specialist REPL code
                 responses[1],  # architect approves
             ]
 
@@ -288,9 +284,7 @@ class TestArchitectDelegatedAnswer:
         """Invalid delegate role gets clamped to coder_primary."""
         from src.api.routes.chat_delegation import _parse_architect_decision
 
-        result = _parse_architect_decision(
-            "I|brief:Do something|to:invalid_role_xyz"
-        )
+        result = _parse_architect_decision("I|brief:Do something|to:invalid_role_xyz")
         assert result["delegate_to"] == "coder_primary"
 
 
@@ -355,7 +349,10 @@ class TestArchitectPromptBuilders:
         from src.prompt_builders import build_architect_synthesis_prompt
 
         prompt = build_architect_synthesis_prompt(
-            "What is X?", "Report: found Y", loop_num=1, max_loops=3,
+            "What is X?",
+            "Report: found Y",
+            loop_num=1,
+            max_loops=3,
         )
         assert "Report: found Y" in prompt
         assert "Question:" in prompt
@@ -364,7 +361,10 @@ class TestArchitectPromptBuilders:
         from src.prompt_builders import build_architect_synthesis_prompt
 
         prompt = build_architect_synthesis_prompt(
-            "Q", "R", loop_num=2, max_loops=3,
+            "Q",
+            "R",
+            loop_num=2,
+            max_loops=3,
         )
         assert "2" in prompt
         assert "3" in prompt

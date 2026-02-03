@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """Unit tests for the REPL procedure tools (_ProcedureToolsMixin)."""
 
-from unittest.mock import Mock, MagicMock, patch, mock_open
-import pytest
-from pathlib import Path
+from unittest.mock import Mock, patch, mock_open
 
-from src.repl_environment import REPLEnvironment, REPLConfig
+from src.repl_environment import REPLEnvironment
 
 
 class TestRunProcedure:
     """Test _run_procedure() / run_procedure() function."""
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_run_procedure_success(self, mock_registry_class):
         """Test run_procedure() executes successfully."""
         mock_registry = Mock()
@@ -39,7 +37,7 @@ print(data['steps_completed'])
         assert "True" in result.output
         assert "2" in result.output
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_run_procedure_failure(self, mock_registry_class):
         """Test run_procedure() handles execution failures."""
         mock_registry = Mock()
@@ -79,7 +77,7 @@ print(data['error'])
 class TestListProcedures:
     """Test _list_procedures() / list_procedures() function."""
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_list_procedures_all(self, mock_registry_class):
         """Test list_procedures() returns all procedures."""
         mock_registry = Mock()
@@ -87,7 +85,7 @@ class TestListProcedures:
 
         mock_procedures = [
             {"id": "proc1", "category": "checkpoint", "description": "Create checkpoint"},
-            {"id": "proc2", "category": "benchmark", "description": "Run benchmark"}
+            {"id": "proc2", "category": "benchmark", "description": "Run benchmark"},
         ]
         mock_registry.list_procedures.return_value = mock_procedures
 
@@ -101,15 +99,13 @@ print(len(data))
         assert result.error is None
         assert "2" in result.output
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_list_procedures_filtered(self, mock_registry_class):
         """Test list_procedures() with category filter."""
         mock_registry = Mock()
         mock_registry_class.return_value = mock_registry
 
-        mock_procedures = [
-            {"id": "checkpoint_create", "category": "checkpoint"}
-        ]
+        mock_procedures = [{"id": "checkpoint_create", "category": "checkpoint"}]
         mock_registry.list_procedures.return_value = mock_procedures
 
         repl = REPLEnvironment(context="test")
@@ -146,9 +142,13 @@ print(data.get('status'))
         assert result.error is None
         assert "never_run" in result.output
 
-    @patch('pathlib.Path.exists')
-    @patch('pathlib.Path.glob')
-    @patch('builtins.open', new_callable=mock_open, read_data='{"status": "completed", "timestamp": "2024-01-01"}')
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.glob")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"status": "completed", "timestamp": "2024-01-01"}',
+    )
     def test_get_procedure_status_with_history(self, mock_file, mock_glob, mock_exists):
         """Test get_procedure_status() with execution history."""
         mock_exists.return_value = True
@@ -178,7 +178,7 @@ print(data.get('status'))
 class TestCheckpointCreate:
     """Test _checkpoint_create() / checkpoint_create() function."""
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_checkpoint_create(self, mock_registry_class):
         """Test checkpoint_create() delegates to run_procedure."""
         mock_registry = Mock()
@@ -202,8 +202,12 @@ class TestCheckpointCreate:
 class TestCheckpointRestore:
     """Test _checkpoint_restore() / checkpoint_restore() function."""
 
-    @patch('pathlib.Path.exists')
-    @patch('builtins.open', new_callable=mock_open, read_data='{"checkpoint_id": "ckpt_123", "created_at": "2024-01-01T00:00:00"}')
+    @patch("pathlib.Path.exists")
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data='{"checkpoint_id": "ckpt_123", "created_at": "2024-01-01T00:00:00"}',
+    )
     def test_checkpoint_restore_success(self, mock_file, mock_exists):
         """Test checkpoint_restore() successfully restores."""
         mock_exists.return_value = True
@@ -220,7 +224,7 @@ print(data.get('checkpoint_id'))
         assert "True" in result.output
         assert "ckpt_123" in result.output
 
-    @patch('pathlib.Path.exists')
+    @patch("pathlib.Path.exists")
     def test_checkpoint_restore_not_found(self, mock_exists):
         """Test checkpoint_restore() handles missing checkpoint."""
         mock_exists.return_value = False
@@ -244,16 +248,16 @@ print(data.get('checkpoint_id'))
 class TestRegistryLookup:
     """Test _registry_lookup() / registry_lookup() function."""
 
-    @patch('builtins.open', new_callable=mock_open, read_data='roles:\n  coder_primary:\n    model:\n      name: Qwen2.5-Coder-32B\n')
-    @patch('yaml.safe_load')
+    @patch(
+        "builtins.open",
+        new_callable=mock_open,
+        read_data="roles:\n  coder_primary:\n    model:\n      name: Qwen2.5-Coder-32B\n",
+    )
+    @patch("yaml.safe_load")
     def test_registry_lookup_success(self, mock_yaml, mock_file):
         """Test registry_lookup() finds value."""
         mock_yaml.return_value = {
-            "roles": {
-                "coder_primary": {
-                    "model": {"name": "Qwen2.5-Coder-32B"}
-                }
-            }
+            "roles": {"coder_primary": {"model": {"name": "Qwen2.5-Coder-32B"}}}
         }
 
         repl = REPLEnvironment(context="test")
@@ -265,8 +269,8 @@ print('Qwen' in output)
         assert result.error is None
         assert "True" in result.output
 
-    @patch('builtins.open', new_callable=mock_open, read_data='roles: {}')
-    @patch('yaml.safe_load')
+    @patch("builtins.open", new_callable=mock_open, read_data="roles: {}")
+    @patch("yaml.safe_load")
     def test_registry_lookup_missing_key(self, mock_yaml, mock_file):
         """Test registry_lookup() handles missing keys."""
         mock_yaml.return_value = {"roles": {}}
@@ -290,7 +294,7 @@ print('Qwen' in output)
 class TestRegistryUpdate:
     """Test _registry_update() / registry_update() function."""
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_registry_update(self, mock_registry_class):
         """Test registry_update() delegates to run_procedure."""
         mock_registry = Mock()
@@ -314,7 +318,7 @@ class TestRegistryUpdate:
 class TestBenchmarkRun:
     """Test _benchmark_run() / benchmark_run() function."""
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_benchmark_run(self, mock_registry_class):
         """Test benchmark_run() delegates to run_procedure."""
         mock_registry = Mock()
@@ -363,7 +367,7 @@ print('models' in data)
 class TestGateRun:
     """Test _gate_run() / gate_run() function."""
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_gate_run_default(self, mock_registry_class):
         """Test gate_run() with default parameters."""
         mock_registry = Mock()
@@ -383,7 +387,7 @@ class TestGateRun:
 
         assert result.error is None
 
-    @patch('orchestration.procedure_registry.ProcedureRegistry')
+    @patch("orchestration.procedure_registry.ProcedureRegistry")
     def test_gate_run_with_options(self, mock_registry_class):
         """Test gate_run() with specific gates and fix mode."""
         mock_registry = Mock()

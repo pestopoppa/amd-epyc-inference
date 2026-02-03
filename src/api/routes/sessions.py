@@ -195,9 +195,7 @@ async def rename_session(
     if session_id:
         session = store.get_session(session_id)
         if not session:
-            raise HTTPException(
-                status_code=404, detail=f"Session '{session_id}' not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
         session.name = name
         session.update_activity()
         store.update_session(session)
@@ -423,9 +421,7 @@ async def respond_to_permission(request_id: str, approved: bool) -> PermissionRe
     This is used for interactive permission flows in Normal mode.
     """
     if request_id not in _pending_permissions:
-        raise HTTPException(
-            status_code=404, detail=f"Permission request '{request_id}' not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Permission request '{request_id}' not found")
 
     perm = _pending_permissions.pop(request_id)
 

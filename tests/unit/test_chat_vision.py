@@ -5,10 +5,8 @@ Tests coverage for src/api/routes/chat_vision.py (currently under-tested).
 
 import base64
 import io
-import json
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import httpx
 import pytest
 
 from src.api.routes.chat_vision import (
@@ -437,7 +435,6 @@ class TestHandleMultiFileVision:
     @pytest.mark.asyncio
     async def test_handle_multi_file_vision_with_images(self):
         """Test multi-file handler with image files."""
-        from pathlib import Path
         from src.api.models import ChatRequest
 
         mock_ocr_result = Mock()

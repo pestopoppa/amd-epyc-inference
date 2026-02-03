@@ -105,13 +105,20 @@ class VLDescribeAnalyzer(Analyzer):
             # Build command
             cmd = [
                 str(LLAMA_MTMD_CLI),
-                "-m", str(self.model_path),
-                "--mmproj", str(self.mmproj_path),
-                "--image", image_path,
-                "-p", self.prompt,
-                "-n", str(self.max_tokens),
-                "-t", str(self.threads),
-                "--temp", "0.0",
+                "-m",
+                str(self.model_path),
+                "--mmproj",
+                str(self.mmproj_path),
+                "--image",
+                image_path,
+                "-p",
+                self.prompt,
+                "-n",
+                str(self.max_tokens),
+                "-t",
+                str(self.threads),
+                "--temp",
+                "0.0",
                 "--no-display-prompt",
             ]
 
@@ -179,6 +186,7 @@ class VLDescribeAnalyzer(Analyzer):
         """
         # Remove thinking tags if present
         import re
+
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
 
         # Remove assistant/user prefixes
@@ -241,6 +249,7 @@ class VLStructuredAnalyzer(VLDescribeAnalyzer):
         if result.success and result.data.get("description"):
             # Try to parse as JSON
             import json
+
             try:
                 # Find JSON in the response
                 text = result.data["description"]

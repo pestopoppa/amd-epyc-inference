@@ -136,10 +136,7 @@ class GateRunner:
             with open(self.config_path) as f:
                 config = yaml.safe_load(f)
 
-            self.gates = [
-                GateConfig.from_dict(gate_data)
-                for gate_data in config.get("gates", [])
-            ]
+            self.gates = [GateConfig.from_dict(gate_data) for gate_data in config.get("gates", [])]
         except Exception as e:
             raise GateRunnerError(f"Failed to load config: {e}")
 
@@ -202,6 +199,7 @@ class GateRunner:
 
         try:
             import shlex
+
             result = subprocess.run(
                 shlex.split(gate.command),
                 capture_output=True,
@@ -390,9 +388,15 @@ class GateRunner:
 
         # Phase 1: Run parallelizable gates concurrently
         if parallel_gates:
+
             async def _run_gate_async(gate: GateConfig) -> GateResult:
                 return await asyncio.to_thread(
-                    self.run_gate, gate, 1, task_id, agent_tier, agent_role,
+                    self.run_gate,
+                    gate,
+                    1,
+                    task_id,
+                    agent_tier,
+                    agent_role,
                 )
 
             parallel_results = await asyncio.gather(
@@ -404,7 +408,11 @@ class GateRunner:
                 if not result.passed and gate.retry_count > 0:
                     for attempt in range(2, gate.retry_count + 2):
                         result = self.run_gate(
-                            gate, attempt, task_id, agent_tier, agent_role,
+                            gate,
+                            attempt,
+                            task_id,
+                            agent_tier,
+                            agent_role,
                         )
                         if result.passed:
                             break
@@ -416,17 +424,17 @@ class GateRunner:
                     r = results_map[gate.name]
                     if not r.passed and gate.required:
                         # Return results in config order (parallel only)
-                        return [
-                            results_map[g.name]
-                            for g in gates
-                            if g.name in results_map
-                        ]
+                        return [results_map[g.name] for g in gates if g.name in results_map]
 
         # Phase 2: Run sequential gates in order
         for gate in sequential_gates:
             for attempt in range(1, gate.retry_count + 2):
                 result = self.run_gate(
-                    gate, attempt, task_id, agent_tier, agent_role,
+                    gate,
+                    attempt,
+                    task_id,
+                    agent_tier,
+                    agent_role,
                 )
                 if result.passed:
                     break

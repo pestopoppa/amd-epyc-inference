@@ -28,16 +28,17 @@ if TYPE_CHECKING:
     from src.proactive_delegation import (
         ArchitectReviewService,
         IterationContext,
-        ReviewDecision,
         SubtaskResult,
     )
 
 logger = logging.getLogger(__name__)
 
 # Roles that map to WARM burst worker (8102, 4 slots) — can genuinely overlap
-BURST_WORKER_ROLES = frozenset({
-    "worker_fast",
-})
+BURST_WORKER_ROLES = frozenset(
+    {
+        "worker_fast",
+    }
+)
 
 
 # ── Wave Computation ─────────────────────────────────────────────────────
@@ -98,9 +99,7 @@ def compute_waves(steps: list[dict[str, Any]]) -> list[Wave]:
     for step_id, step in step_map.items():
         for dep in step.get("depends_on", []):
             if dep not in all_ids:
-                raise ValueError(
-                    f"Step {step_id} depends on nonexistent step {dep}"
-                )
+                raise ValueError(f"Step {step_id} depends on nonexistent step {dep}")
 
     # Kahn's algorithm: compute in-degree and adjacency
     in_degree: dict[str, int] = {sid: 0 for sid in all_ids}
@@ -122,9 +121,7 @@ def compute_waves(steps: list[dict[str, Any]]) -> list[Wave]:
         ready = [sid for sid in remaining if in_degree[sid] == 0]
         if not ready:
             cycle_members = ", ".join(sorted(remaining))
-            raise ValueError(
-                f"Circular dependency detected among steps: {cycle_members}"
-            )
+            raise ValueError(f"Circular dependency detected among steps: {cycle_members}")
 
         for sid in ready:
             wave_index[sid] = current_wave
@@ -155,11 +152,13 @@ def compute_waves(steps: list[dict[str, Any]]) -> list[Wave]:
     waves: list[Wave] = []
     for wi in sorted(waves_dict):
         sids = sorted(waves_dict[wi])  # Deterministic ordering
-        waves.append(Wave(
-            index=wi,
-            step_ids=sids,
-            steps=[step_map[sid] for sid in sids],
-        ))
+        waves.append(
+            Wave(
+                index=wi,
+                step_ids=sids,
+                steps=[step_map[sid] for sid in sids],
+            )
+        )
 
     return waves
 
@@ -186,10 +185,7 @@ def extract_step_timings(
     """
     from src.metrics.critical_path import StepTiming
 
-    deps_map: dict[str, tuple[str, ...]] = {
-        s["id"]: tuple(s.get("depends_on", []))
-        for s in steps
-    }
+    deps_map: dict[str, tuple[str, ...]] = {s["id"]: tuple(s.get("depends_on", [])) for s in steps}
     return [
         StepTiming(
             step_id=r.subtask_id,
@@ -242,7 +238,6 @@ class StepExecutor:
         Returns:
             List of SubtaskResult, one per step, in plan order.
         """
-        from src.proactive_delegation import SubtaskResult
 
         role_mapping = role_mapping or {}
         all_results: dict[str, SubtaskResult] = {}
@@ -250,7 +245,10 @@ class StepExecutor:
 
         for wave in waves:
             wave_results = await self._execute_wave(
-                task_ir, wave, role_mapping, failed_steps,
+                task_ir,
+                wave,
+                role_mapping,
+                failed_steps,
             )
             for result in wave_results:
                 all_results[result.subtask_id] = result
@@ -291,13 +289,15 @@ class StepExecutor:
             # Check if any dependency failed
             deps = step.get("depends_on", [])
             if any(d in failed_steps for d in deps):
-                results.append(SubtaskResult(
-                    subtask_id=step["id"],
-                    role=role_mapping.get(step.get("actor", "worker"), "worker_general"),
-                    output="",
-                    success=False,
-                    error="Skipped: dependency failed",
-                ))
+                results.append(
+                    SubtaskResult(
+                        subtask_id=step["id"],
+                        role=role_mapping.get(step.get("actor", "worker"), "worker_general"),
+                        output="",
+                        success=False,
+                        error="Skipped: dependency failed",
+                    )
+                )
                 continue
 
             role = role_mapping.get(step.get("actor", "worker"), "worker_general")
@@ -330,13 +330,15 @@ class StepExecutor:
 
             for step, result in zip(burst_steps, burst_results):
                 if isinstance(result, Exception):
-                    results.append(SubtaskResult(
-                        subtask_id=step["id"],
-                        role="worker_fast",
-                        output="",
-                        success=False,
-                        error=str(result),
-                    ))
+                    results.append(
+                        SubtaskResult(
+                            subtask_id=step["id"],
+                            role="worker_fast",
+                            output="",
+                            success=False,
+                            error=str(result),
+                        )
+                    )
                 else:
                     results.append(result)
                     if result.success:
@@ -368,6 +370,7 @@ class StepExecutor:
         # Resolve persona: explicit step field → MemRL auto-selection → None
         # Gated behind features().personas flag
         from src.features import features as _get_features
+
         persona = None
         if _get_features().personas:
             persona = step.get("persona") or step.get("persona_hint")
@@ -400,7 +403,9 @@ class StepExecutor:
         if self.review_service is not None:
             try:
                 review = self.review_service.review(
-                    spec=task_ir, subtask=step, output=output,
+                    spec=task_ir,
+                    subtask=step,
+                    output=output,
                 )
                 if review.decision == ReviewDecision.APPROVE:
                     output = review.approved_output or output
@@ -450,16 +455,14 @@ class StepExecutor:
         context_parts: list[str] = []
         for input_key in inputs:
             if input_key in self.step_outputs:
-                context_parts.append(
-                    f"### Output from {input_key}\n{self.step_outputs[input_key]}"
-                )
+                context_parts.append(f"### Output from {input_key}\n{self.step_outputs[input_key]}")
         if context_parts:
             parts.append("## Prior Context\n" + "\n\n".join(context_parts))
 
         # Expected outputs
         outputs = step.get("outputs", [])
         if outputs:
-            parts.append(f"## Expected Outputs\n" + ", ".join(outputs))
+            parts.append("## Expected Outputs\n" + ", ".join(outputs))
 
         return "\n\n".join(parts)
 
@@ -490,10 +493,7 @@ class StepExecutor:
                 return None
 
             # Filter for persona actions (format: "persona:{name}")
-            persona_results = [
-                r for r in results
-                if r.memory.action.startswith("persona:")
-            ]
+            persona_results = [r for r in results if r.memory.action.startswith("persona:")]
             if not persona_results:
                 return None
 
@@ -503,7 +503,9 @@ class StepExecutor:
                 persona_name = best.memory.action.removeprefix("persona:")
                 logger.debug(
                     "Auto-selected persona %s (Q=%.2f) for step %s",
-                    persona_name, best.q_value, step.get("id", "?"),
+                    persona_name,
+                    best.q_value,
+                    step.get("id", "?"),
                 )
                 return persona_name
         except Exception as exc:

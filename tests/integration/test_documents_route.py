@@ -6,8 +6,6 @@ Note: The documents router is mounted at /v1/documents prefix.
 """
 
 import base64
-import tempfile
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 

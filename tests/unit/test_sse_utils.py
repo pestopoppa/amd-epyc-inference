@@ -3,7 +3,6 @@
 
 import json
 
-import pytest
 
 from src.sse_utils import (
     done_event,

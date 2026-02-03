@@ -4,10 +4,8 @@ Tests the where filter operators, checkpoint operations, embeddings,
 and other uncovered functionality in src/session/sqlite_store.py.
 """
 
-import tempfile
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -54,9 +52,7 @@ class TestWhereFilters:
         temp_store.create_session(session3)
 
         # Filter with $in operator
-        results = temp_store.list_sessions(
-            where={"project": {"$in": ["p1", "p2"]}}
-        )
+        results = temp_store.list_sessions(where={"project": {"$in": ["p1", "p2"]}})
         assert len(results) >= 2
 
     def test_gte_operator(self, temp_store):
@@ -74,9 +70,7 @@ class TestWhereFilters:
         temp_store.create_session(s3)
 
         # Filter for sessions with >= 10 messages
-        results = temp_store.list_sessions(
-            where={"message_count": {"$gte": 10}}
-        )
+        results = temp_store.list_sessions(where={"message_count": {"$gte": 10}})
         assert len(results) >= 2
         for session in results:
             assert session.message_count >= 10
@@ -92,9 +86,7 @@ class TestWhereFilters:
         temp_store.create_session(s2)
 
         # Filter for sessions with <= 10 messages
-        results = temp_store.list_sessions(
-            where={"message_count": {"$lte": 10}}
-        )
+        results = temp_store.list_sessions(where={"message_count": {"$lte": 10}})
         assert len(results) >= 2
 
     def test_ne_operator(self, temp_store):
@@ -106,9 +98,7 @@ class TestWhereFilters:
         temp_store.create_session(s2)
 
         # Filter for projects != "exclude-me"
-        results = temp_store.list_sessions(
-            where={"project": {"$ne": "exclude-me"}}
-        )
+        results = temp_store.list_sessions(where={"project": {"$ne": "exclude-me"}})
         for session in results:
             assert session.project != "exclude-me"
 
@@ -123,9 +113,7 @@ class TestWhereFilters:
         temp_store.create_session(s2)
 
         # Filter for sessions with > 10 messages
-        results = temp_store.list_sessions(
-            where={"message_count": {"$gt": 10}}
-        )
+        results = temp_store.list_sessions(where={"message_count": {"$gt": 10}})
         for session in results:
             assert session.message_count > 10
 
@@ -140,9 +128,7 @@ class TestWhereFilters:
         temp_store.create_session(s2)
 
         # Filter for sessions with < 10 messages
-        results = temp_store.list_sessions(
-            where={"message_count": {"$lt": 10}}
-        )
+        results = temp_store.list_sessions(where={"message_count": {"$lt": 10}})
         for session in results:
             assert session.message_count < 10
 

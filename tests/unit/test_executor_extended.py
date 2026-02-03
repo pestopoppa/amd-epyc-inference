@@ -10,12 +10,10 @@ Tests uncovered paths:
 - Missing inputs in prompt building
 """
 
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.context_manager import ContextManager
 from src.dispatcher import DispatchResult, StepExecution
 from src.executor import (
     ErrorCategory,
@@ -26,7 +24,7 @@ from src.executor import (
     StepResult,
     StepStatus,
 )
-from src.model_server import InferenceRequest, InferenceResult, ModelServer
+from src.model_server import InferenceResult, ModelServer
 from src.registry_loader import RegistryLoader, RoleConfig
 
 
@@ -172,7 +170,9 @@ class TestEscalationLogic:
 
         assert can_escalate is False
 
-    def test_can_escalate_with_matching_error_category(self, executor_with_escalation, mock_role_config):
+    def test_can_escalate_with_matching_error_category(
+        self, executor_with_escalation, mock_role_config
+    ):
         """Test escalation with matching error category trigger."""
         step = StepExecution(
             step_id="S1",
@@ -191,7 +191,9 @@ class TestEscalationLogic:
 
         assert can_escalate is True
 
-    def test_can_escalate_default_when_no_triggers(self, executor_with_escalation, mock_role_config):
+    def test_can_escalate_default_when_no_triggers(
+        self, executor_with_escalation, mock_role_config
+    ):
         """Test escalation defaults to True when no triggers specified."""
         mock_chain = executor_with_escalation.registry.get_chain_for_role.return_value
         mock_chain.triggers = []
@@ -554,7 +556,7 @@ class TestBackoffTiming:
         )
         executor.server = mock_server
 
-        result = executor.execute(dispatch_result)
+        executor.execute(dispatch_result)
 
         # Should have called sleep for backoff (first retry doesn't sleep, subsequent ones do)
         assert mock_sleep.call_count >= 1
@@ -564,3 +566,37 @@ class TestBackoffTiming:
         if len(sleep_calls) >= 1:
             # First retry should use doubled backoff (2.0)
             assert sleep_calls[0] >= 1.0
+
+
+class TestExecutorMain:
+    """Test executor main() CLI function."""
+
+    def test_main_dry_run_success(self):
+        """Test main() with dry run mode (default)."""
+        from src.executor import main
+
+        # main() uses dry_run=True by default
+        exit_code = main()
+
+        assert exit_code == 0
+
+    def test_main_returns_failure_on_execution_error(self):
+        """Test main() returns 1 on execution failure."""
+        from src.executor import main, ExecutionResult, StepStatus
+        from unittest.mock import patch
+
+        # Mock the Executor to return a failed result with proper to_dict
+        with patch("src.executor.Executor") as mock_executor_cls:
+            mock_executor = MagicMock()
+            # Create a real ExecutionResult with FAILED status
+            mock_result = ExecutionResult(
+                task_id="test-fail",
+                status=StepStatus.FAILED,
+                errors=["Test failure"],
+            )
+            mock_executor.execute.return_value = mock_result
+            mock_executor_cls.return_value = mock_executor
+
+            exit_code = main()
+
+        assert exit_code == 1
