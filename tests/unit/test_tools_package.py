@@ -478,6 +478,7 @@ class TestLintCodeTool:
                 "src.tools.code.lint.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("ruff", 60),
             ),
+            patch("src.tools.code.lint.ALLOWED_PATHS", ["/mnt/raid0/llm/claude/"]),
         ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
@@ -497,6 +498,7 @@ class TestLintCodeTool:
         with (
             patch("src.tools.code.lint.Path") as mock_path,
             patch("src.tools.code.lint.subprocess.run", side_effect=FileNotFoundError),
+            patch("src.tools.code.lint.ALLOWED_PATHS", ["/mnt/raid0/llm/claude/"]),
         ):
             mock_file = MagicMock()
             mock_path.return_value = mock_file
