@@ -25,19 +25,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR="/mnt/raid0/llm/tmp/draft_discovery"
-RESULTS_DIR="/mnt/raid0/llm/claude/benchmarks/results/draft_optimization"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+OUTPUT_DIR="${TMP_DIR}/draft_discovery"
+RESULTS_DIR="${PROJECT_ROOT}/benchmarks/results/draft_optimization"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RUN_DIR="$OUTPUT_DIR/$TIMESTAMP"
 
 # Binaries
-LLAMA_SPEC="/mnt/raid0/llm/llama.cpp/build/bin/llama-speculative"
-LLAMA_CLI="/mnt/raid0/llm/llama.cpp/build/bin/llama-cli"
+LLAMA_SPEC="${LLAMA_CPP_BIN}/llama-speculative"
+LLAMA_CLI="${LLAMA_CPP_BIN}/llama-cli"
 
 # Model directories to scan
 MODEL_DIRS=(
-  "/mnt/raid0/llm/lmstudio/models"
-  "/mnt/raid0/llm/models"
+  "${MODEL_BASE}"
+  "${MODELS_DIR}"
 )
 
 # Thresholds
@@ -514,7 +519,7 @@ EOF
   log "=============================================="
 
   # Clear discovery best file for fresh run
-  : >/mnt/raid0/llm/tmp/draft_discovery_best.txt
+  : >"${TMP_DIR}/draft_discovery_best.txt"
 
   # Discover models
   discover_models
@@ -625,7 +630,7 @@ EOF
       log "    Speed: ${target_best_speed} t/s (baseline: ${target_baseline} t/s)"
 
       # Write to discovery best file for progress display
-      echo "$target_name $target_best_draft $target_best_k $target_best_temp $target_best_speed" >>/mnt/raid0/llm/tmp/draft_discovery_best.txt
+      echo "$target_name $target_best_draft $target_best_k $target_best_temp $target_best_speed" >>"${TMP_DIR}/draft_discovery_best.txt"
     fi
   done
 

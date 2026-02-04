@@ -8,7 +8,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="${SCRIPT_DIR}/../.."
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
 
 # Default configuration
 WORKERS="${LIGHTONOCR_WORKERS:-4}"
@@ -38,8 +41,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Set environment
-export HF_HOME=/mnt/raid0/llm/cache/huggingface
+# Set environment (already sourced from env.sh)
+export HF_HOME="${CACHE_DIR}/huggingface"
 export LIGHTONOCR_WORKERS="$WORKERS"
 export LIGHTONOCR_THREADS="$THREADS"
 
@@ -51,8 +54,8 @@ echo "Port: $PORT"
 echo ""
 
 # Activate venv if available
-if [[ -f /mnt/raid0/llm/venv/bin/activate ]]; then
-  source /mnt/raid0/llm/venv/bin/activate
+if [[ -f "${LLM_ROOT}/venv/bin/activate" ]]; then
+  source "${LLM_ROOT}/venv/bin/activate"
 fi
 
 # Start server

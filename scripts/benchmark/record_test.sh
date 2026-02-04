@@ -5,9 +5,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/agent_log.sh" 2>/dev/null || true
 
-LOGS_DIR="/mnt/raid0/llm/LOGS"
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+source "${PROJECT_ROOT}/scripts/utils/agent_log.sh" 2>/dev/null || true
+
+LOGS_DIR="${LOG_DIR}"
 TESTED_FILE="$LOGS_DIR/tested_models.json"
 RESEARCH_REPORT="$LOGS_DIR/research_report.md"
 TEMPLATE="$SCRIPT_DIR/research_report_template.md"

@@ -6,13 +6,19 @@ set -o pipefail
 # Tests all optimization techniques and combinations on all available models
 # Avoids re-testing already completed combinations
 
-LLAMA_CPP="/mnt/raid0/llm/llama.cpp/build/bin"
-RESULTS_DIR="/mnt/raid0/llm/LOGS/benchmarks"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LLAMA_CPP="${LLAMA_CPP_BIN}"
+RESULTS_DIR="${LOG_DIR}/benchmarks"
 RESULTS_FILE="$RESULTS_DIR/systematic_optimization_$(date +%Y%m%d_%H%M%S).csv"
 EXISTING_RESULTS="$RESULTS_DIR/optimization_results_20251215_045816.csv"
-TMP_DIR="/mnt/raid0/llm/tmp"
+BENCH_TMP_DIR="${TMP_DIR}"
 
-mkdir -p "$RESULTS_DIR" "$TMP_DIR"
+mkdir -p "$RESULTS_DIR" "$BENCH_TMP_DIR"
 
 # Initialize results file
 echo "timestamp,model,model_type,optimization,k_value,temp,experts,speed_tps,accept_pct,quality,notes" >"$RESULTS_FILE"
@@ -80,7 +86,7 @@ record_result() {
 run_baseline() {
   local model="$1"
   local output
-  output="$TMP_DIR/baseline_$(basename "$model" .gguf).txt"
+  output="$BENCH_TMP_DIR/baseline_$(basename "$model" .gguf).txt"
 
   timeout 180 "$LLAMA_CPP/llama-completion" \
     -m "$model" \
@@ -103,7 +109,7 @@ run_speculative() {
   local k="$3"
   local temp="$4"
   local output
-  output="$TMP_DIR/spec_k${k}_t${temp}_$(basename "$target" .gguf).txt"
+  output="$BENCH_TMP_DIR/spec_k${k}_t${temp}_$(basename "$target" .gguf).txt"
 
   timeout 300 env OMP_NUM_THREADS=1 numactl --interleave=all \
     "$LLAMA_CPP/llama-speculative" \
@@ -130,7 +136,7 @@ run_lookup_moe_combo() {
   local arch="$2"
   local experts="$3"
   local output
-  output="$TMP_DIR/lookup_moe_exp${experts}_$(basename "$model" .gguf).txt"
+  output="$BENCH_TMP_DIR/lookup_moe_exp${experts}_$(basename "$model" .gguf).txt"
 
   timeout 180 env OMP_NUM_THREADS=1 numactl --interleave=all \
     "$LLAMA_CPP/llama-lookup" \
@@ -168,9 +174,9 @@ run_quality_comparison() {
   local prompt="Write a Python function to check if a number is prime:"
 
   local baseline_out
-  baseline_out="$TMP_DIR/quality_baseline_$(basename "$model" .gguf).txt"
+  baseline_out="$BENCH_TMP_DIR/quality_baseline_$(basename "$model" .gguf).txt"
   local opt_out
-  opt_out="$TMP_DIR/quality_${opt_name}_$(basename "$model" .gguf).txt"
+  opt_out="$BENCH_TMP_DIR/quality_${opt_name}_$(basename "$model" .gguf).txt"
 
   # Run baseline
   timeout 120 "$LLAMA_CPP/llama-completion" \
@@ -204,7 +210,7 @@ run_moe_experts() {
   local arch="$2"
   local experts="$3"
   local output
-  output="$TMP_DIR/moe_exp${experts}_$(basename "$model" .gguf).txt"
+  output="$BENCH_TMP_DIR/moe_exp${experts}_$(basename "$model" .gguf).txt"
 
   timeout 180 "$LLAMA_CPP/llama-completion" \
     -m "$model" \
@@ -233,7 +239,7 @@ run_lookup() {
   local model="$1"
   local task="$2"
   local output
-  output="$TMP_DIR/lookup_${task}_$(basename "$model" .gguf).txt"
+  output="$BENCH_TMP_DIR/lookup_${task}_$(basename "$model" .gguf).txt"
 
   local prompt
   case "$task" in
@@ -290,7 +296,7 @@ find_draft_model() {
 
   # Qwen models use Qwen draft
   if [[ "$name" == *"Qwen"* ]]; then
-    local draft="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+    local draft="${MODEL_BASE}/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
     if [ -f "$draft" ]; then
       echo "$draft"
       return
@@ -310,7 +316,7 @@ is_in_research_report() {
   model_base="${model_base%-Q4_K_M}"
   model_base="${model_base%-Instruct}"
 
-  if grep -qi "$model_base" /mnt/raid0/llm/LOGS/research_report.md 2>/dev/null; then
+  if grep -qi "$model_base" "${LOG_DIR}/research_report.md" 2>/dev/null; then
     return 0
   fi
   return 1
@@ -329,7 +335,7 @@ main() {
   # Add all Q4_K_M models
   while IFS= read -r -d '' model; do
     MODELS+=("$model")
-  done < <(find /mnt/raid0/llm/lmstudio/models -name "*Q4_K_M.gguf" -print0 2>/dev/null | head -z -n 30)
+  done < <(find "${MODEL_BASE}" -name "*Q4_K_M.gguf" -print0 2>/dev/null | head -z -n 30)
 
   log "Found ${#MODELS[@]} models"
 

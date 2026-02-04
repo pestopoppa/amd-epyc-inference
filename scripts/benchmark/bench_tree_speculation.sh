@@ -9,10 +9,16 @@
 
 set -euo pipefail
 
-# Configuration
-LLAMA_BIN="${LLAMA_BIN:-/mnt/raid0/llm/llama.cpp/build/bin}"
-MODEL_DIR="${MODEL_DIR:-/mnt/raid0/llm/models}"
-LOG_DIR="${LOG_DIR:-/mnt/raid0/llm/claude/logs/tree_speculation}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+# Configuration (use env.sh values with fallbacks)
+LLAMA_BIN="${LLAMA_CPP_BIN}"
+MODEL_DIR="${MODELS_DIR}"
+TREE_LOG_DIR="${LOG_DIR}/tree_speculation"
 THREADS="${THREADS:-96}"
 
 # Models
@@ -30,9 +36,9 @@ DRAFT_MAX=16
 N_PARALLEL_VALUES=(1 2 4 8)
 P_SPLIT_VALUES=(0.05 0.1 0.2 0.3)
 
-mkdir -p "$LOG_DIR"
+mkdir -p "$TREE_LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULTS_FILE="${LOG_DIR}/results_${TIMESTAMP}.csv"
+RESULTS_FILE="${TREE_LOG_DIR}/results_${TIMESTAMP}.csv"
 
 echo "Tree Speculation Benchmark"
 echo "=========================="

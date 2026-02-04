@@ -8,17 +8,23 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 # Paths
-LLAMA_MTMD="/mnt/raid0/llm/llama.cpp/build/bin/llama-mtmd-cli"
-TWYNE_PAGES="/mnt/raid0/llm/claude/tmp/twyne_pages"
-OUTPUT_DIR="/mnt/raid0/llm/claude/benchmarks/results/twyne_figure_analysis"
+LLAMA_MTMD="${LLAMA_CPP_BIN}/llama-mtmd-cli"
+TWYNE_PAGES="${PROJECT_ROOT}/tmp/twyne_pages"
+OUTPUT_DIR="${PROJECT_ROOT}/benchmarks/results/twyne_figure_analysis"
 
 # Model paths
-MODEL_4B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf"
-MMPROJ_4B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/mmproj-Qwen3-VL-4B-Instruct-F16.gguf"
+MODEL_4B="${MODEL_BASE}/lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf"
+MMPROJ_4B="${MODEL_BASE}/lmstudio-community/Qwen3-VL-4B-Instruct-GGUF/mmproj-Qwen3-VL-4B-Instruct-F16.gguf"
 
-MODEL_30B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf"
-MMPROJ_30B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf"
+MODEL_30B="${MODEL_BASE}/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf"
+MMPROJ_30B="${MODEL_BASE}/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf"
 
 # Configuration
 MAX_TOKENS=1024

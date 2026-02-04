@@ -8,10 +8,16 @@
 # =============================================================================
 set -uo pipefail # Note: removed -e to handle failures gracefully
 
-LLAMA_COMPLETION="/mnt/raid0/llm/llama.cpp/build/bin/llama-completion"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LLAMA_COMPLETION="${LLAMA_CPP_BIN}/llama-completion"
 TIMEOUT_SECONDS=60
-RESULTS_FILE="/mnt/raid0/llm/tmp/dry_run_results.txt"
-MODEL_BASE="/mnt/raid0/llm/lmstudio/models"
+RESULTS_FILE="${TMP_DIR}/dry_run_results.txt"
+DRY_RUN_MODEL_BASE="${MODEL_BASE}"
 
 # Parse args
 SKIP_LARGE=false

@@ -13,8 +13,15 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/mnt/raid0/llm/claude"
-LLM_ROOT="/mnt/raid0/llm"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+# Use env vars (overridable)
+PROJECT_ROOT="${PROJECT_ROOT}"
+LLM_ROOT="${LLM_ROOT}"
 BACKUP_DIR="$PROJECT_ROOT/backups/pre-reorg-$(date +%Y%m%d_%H%M%S)"
 
 log() {

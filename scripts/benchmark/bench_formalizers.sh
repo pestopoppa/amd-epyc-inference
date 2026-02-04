@@ -14,11 +14,17 @@
 
 set -euo pipefail
 
-# Configuration
-LLAMA_BIN="${LLAMA_BIN:-/mnt/raid0/llm/llama.cpp/build/bin}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+# Configuration (use unique var name to avoid conflict with env.sh LOG_DIR)
+LLAMA_BIN="${LLAMA_BIN:-${LLAMA_CPP_BIN}}"
 THREADS="${THREADS:-96}"
-LOG_DIR="${LOG_DIR:-/mnt/raid0/llm/claude/logs/formalizer_eval}"
-SCHEMA_PATH="/mnt/raid0/llm/claude/orchestration/formalization_ir.schema.json"
+FORMALIZER_LOG_DIR="${FORMALIZER_LOG_DIR:-${PROJECT_ROOT}/logs/formalizer_eval}"
+SCHEMA_PATH="${PROJECT_ROOT}/orchestration/formalization_ir.schema.json"
 
 # Parse arguments
 MODEL=""
@@ -59,7 +65,7 @@ fi
 
 if [[ -z "$OUTPUT_DIR" ]]; then
   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-  OUTPUT_DIR="${LOG_DIR}/run_${TIMESTAMP}"
+  OUTPUT_DIR="${FORMALIZER_LOG_DIR}/run_${TIMESTAMP}"
 fi
 
 mkdir -p "$OUTPUT_DIR"

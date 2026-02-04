@@ -4,12 +4,18 @@ set -x
 # Run remaining optimization benchmarks
 # This script tests lookup, external draft, hard mask, and layer skip combinations
 
-LLAMA_CPP="/mnt/raid0/llm/llama.cpp/build/bin"
-LOG_DIR="/mnt/raid0/llm/LOGS/benchmarks"
-RESULTS_CSV="$LOG_DIR/optimization_results_20251215_045816.csv"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LLAMA_CPP="${LLAMA_CPP_BIN}"
+BENCH_LOG_DIR="${LOG_DIR}/benchmarks"
+RESULTS_CSV="$BENCH_LOG_DIR/optimization_results_20251215_045816.csv"
 
 # Ensure log directory exists
-mkdir -p "$LOG_DIR"
+mkdir -p "$BENCH_LOG_DIR"
 
 # Function to check if test already done
 check_existing() {

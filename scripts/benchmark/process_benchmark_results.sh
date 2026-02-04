@@ -13,14 +13,20 @@
 # =============================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 # Paths
-BENCHMARK_BASE="/mnt/raid0/llm/claude/benchmarks"
+BENCHMARK_BASE="${PROJECT_ROOT}/benchmarks"
 RESULTS_DIR="$BENCHMARK_BASE/results"
 INDEX_FILE="$RESULTS_DIR/index.jsonl"
 PROMPTS_DIR="$BENCHMARK_BASE/prompts"
 
 # Defaults
-SOURCE_BASE="/mnt/raid0/llm/tmp"
+SOURCE_BASE="${TMP_DIR}"
 RUN_ID=$(date +%Y%m%d_%H%M%S)
 PROMPT_VERSION="1"
 

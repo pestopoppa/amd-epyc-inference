@@ -5,26 +5,32 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 echo "=== YOLO Agent Environment Setup ==="
 echo ""
 
-# 1. Set environment variables (from CLAUDE.md)
-export HF_HOME=/mnt/raid0/llm/cache/huggingface
-export TRANSFORMERS_CACHE=/mnt/raid0/llm/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/raid0/llm/cache/huggingface/datasets
-export PIP_CACHE_DIR=/mnt/raid0/llm/cache/pip
-export TMPDIR=/mnt/raid0/llm/tmp
-export XDG_CACHE_HOME=/mnt/raid0/llm/claude/cache
-export XDG_DATA_HOME=/mnt/raid0/llm/claude/share
-export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
+# 1. Set environment variables (from env.sh, re-export for visibility)
+export HF_HOME="${CACHE_DIR}/huggingface"
+export TRANSFORMERS_CACHE="${CACHE_DIR}/huggingface"
+export HF_DATASETS_CACHE="${CACHE_DIR}/huggingface/datasets"
+export PIP_CACHE_DIR="${CACHE_DIR}/pip"
+export TMPDIR="${TMP_DIR}"
+export XDG_CACHE_HOME="${PROJECT_ROOT}/cache"
+export XDG_DATA_HOME="${PROJECT_ROOT}/share"
+export XDG_STATE_HOME="${PROJECT_ROOT}/state"
 
 # Add uv to PATH
-export PATH="/mnt/raid0/llm/tools:$PATH"
+export PATH="${LLM_ROOT}/tools:$PATH"
 
 echo "✓ Environment variables set"
 
 # 2. Change to project directory
-cd /mnt/raid0/llm/claude
+cd "${PROJECT_ROOT}"
 echo "✓ Working directory: $(pwd)"
 
 # 3. Activate virtual environment
@@ -66,7 +72,6 @@ else
 fi
 
 # 6. Verify dev models exist
-MODEL_BASE="/mnt/raid0/llm/lmstudio/models"
 DEV_MODEL="lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
 
 if [ -f "${MODEL_BASE}/${DEV_MODEL}" ]; then
@@ -76,9 +81,8 @@ else
 fi
 
 # 7. Check llama.cpp binaries
-LLAMA_BIN="/mnt/raid0/llm/llama.cpp/build/bin"
 for binary in llama-server llama-cli llama-speculative; do
-  if [ -x "${LLAMA_BIN}/${binary}" ]; then
+  if [ -x "${LLAMA_CPP_BIN}/${binary}" ]; then
     echo "✓ Binary OK: ${binary}"
   else
     echo "✗ Binary missing: ${binary}"
@@ -105,7 +109,7 @@ echo "Memory: ${free_gb}GB available"
 echo ""
 echo "=== Environment Ready ==="
 echo "Python: $(python3 --version)"
-echo "uv: $(/mnt/raid0/llm/tools/uv --version)"
+echo "uv: $(${LLM_ROOT}/tools/uv --version)"
 echo ""
 echo "Next steps:"
 echo "  1. Read the plan: cat /home/daniele/.claude/plans/twinkly-sniffing-crescent.md"

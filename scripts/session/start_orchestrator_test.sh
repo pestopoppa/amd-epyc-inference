@@ -7,6 +7,12 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 DEV_MODE=false
 if [[ "${1:-}" == "--dev-mode" ]]; then
   DEV_MODE=true
@@ -17,18 +23,18 @@ echo "Mode: $([ "$DEV_MODE" = true ] && echo 'Development (0.5B model)' || echo 
 echo ""
 
 # Check RAID
-if [[ ! -d /mnt/raid0/llm/models ]]; then
-  echo "ERROR: /mnt/raid0/llm/models not found."
+if [[ ! -d "${MODELS_DIR}" ]]; then
+  echo "ERROR: ${MODELS_DIR} not found."
   echo "Is this the Beelzebub host with RAID mounted?"
   exit 1
 fi
 echo "[✓] RAID mounted"
 
 # Check llama.cpp binary
-LLAMA_SERVER="/mnt/raid0/llm/llama.cpp/build/bin/llama-server"
+LLAMA_SERVER="${LLAMA_CPP_BIN}/llama-server"
 if [[ ! -x "$LLAMA_SERVER" ]]; then
   echo "ERROR: llama-server not found at $LLAMA_SERVER"
-  echo "Build llama.cpp first: cd /mnt/raid0/llm/llama.cpp && make -j"
+  echo "Build llama.cpp first: cd ${LLM_ROOT}/llama.cpp && make -j"
   exit 1
 fi
 echo "[✓] llama-server binary found"
@@ -45,12 +51,12 @@ fi
 
 # Select model
 if [ "$DEV_MODE" = true ]; then
-  MODEL_PATH="/mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
+  MODEL_PATH="${MODELS_DIR}/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
   THREADS=8
   PARALLEL=2
   CTX_SIZE=4096
 else
-  MODEL_PATH="/mnt/raid0/llm/models/Qwen3-Coder-30B-A3B-Q4_K_M.gguf"
+  MODEL_PATH="${MODELS_DIR}/Qwen3-Coder-30B-A3B-Q4_K_M.gguf"
   THREADS=48
   PARALLEL=4
   CTX_SIZE=8192
@@ -59,7 +65,7 @@ fi
 if [[ ! -f "$MODEL_PATH" ]]; then
   echo "ERROR: Model not found: $MODEL_PATH"
   echo "Available models:"
-  ls -lh /mnt/raid0/llm/models/*.gguf | head -10
+  ls -lh "${MODELS_DIR}"/*.gguf | head -10
   exit 1
 fi
 echo "[✓] Model found: $(basename $MODEL_PATH)"
@@ -82,11 +88,11 @@ for port in 8000 8080; do
 done
 echo "[✓] Ports 8000 and 8080 available"
 
-# Set environment
-export HF_HOME=/mnt/raid0/llm/cache/huggingface
-export TRANSFORMERS_CACHE=/mnt/raid0/llm/cache/huggingface
-export TMPDIR=/mnt/raid0/llm/tmp
-export XDG_CACHE_HOME=/mnt/raid0/llm/claude/cache
+# Set environment (already sourced from env.sh, but export for subprocesses)
+export HF_HOME="${CACHE_DIR}/huggingface"
+export TRANSFORMERS_CACHE="${CACHE_DIR}/huggingface"
+export TMPDIR="${TMP_DIR}"
+export XDG_CACHE_HOME="${PROJECT_ROOT}/cache"
 
 # Ensure directories exist
 mkdir -p "$TMPDIR" "$XDG_CACHE_HOME"
@@ -134,11 +140,11 @@ fi
 # Start orchestrator API
 echo ""
 echo "Starting orchestrator API..."
-cd /mnt/raid0/llm/claude
+cd "${PROJECT_ROOT}"
 
 # Try to activate pace-env if it exists
-if [[ -f /mnt/raid0/llm/pace-env/bin/activate ]]; then
-  source /mnt/raid0/llm/pace-env/bin/activate
+if [[ -f "${LLM_ROOT}/pace-env/bin/activate" ]]; then
+  source "${LLM_ROOT}/pace-env/bin/activate"
 fi
 
 python3 -m uvicorn src.api:app --host 0.0.0.0 --port 8000 >/tmp/orchestrator.log 2>&1 &

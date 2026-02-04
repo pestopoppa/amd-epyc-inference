@@ -5,8 +5,14 @@ set -euo pipefail
 # Tests: Baseline, Lookup, External Draft, Hard Mask (MoE)
 # Skips already-completed tests
 
-LLAMA_DIR="/mnt/raid0/llm/llama.cpp/build/bin"
-LOG_DIR="/mnt/raid0/llm/LOGS/benchmarks"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LLAMA_DIR="${LLAMA_CPP_BIN}"
+LOG_DIR="${LOG_DIR}/benchmarks"
 RESULTS_CSV="$LOG_DIR/comprehensive_results_$(date +%Y%m%d_%H%M%S).csv"
 EXISTING_CSV="$LOG_DIR/optimization_results_20251215_045816.csv"
 
@@ -18,34 +24,34 @@ echo "timestamp,model,method,draft,prompt_type,speed_tps,accept_pct,n_accept,not
 # Model paths
 declare -A MODELS=(
   # Dense 32B
-  ["Qwen2.5-Coder-32B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-32B-GGUF/Qwen2.5-Coder-32B-Q4_K_M.gguf"
-  ["DeepSeek-R1-32B"]="/mnt/raid0/llm/models/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf"
-  ["Qwen3-32B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-32B-GGUF/Qwen3-32B-Q4_K_M.gguf"
+  ["Qwen2.5-Coder-32B"]="${MODEL_BASE}/lmstudio-community/Qwen2.5-Coder-32B-GGUF/Qwen2.5-Coder-32B-Q4_K_M.gguf"
+  ["DeepSeek-R1-32B"]="${MODELS_DIR}/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf"
+  ["Qwen3-32B"]="${MODEL_BASE}/lmstudio-community/Qwen3-32B-GGUF/Qwen3-32B-Q4_K_M.gguf"
   # Dense 70B+
-  ["Meta-Llama-3.1-70B-Instruct"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf"
-  ["Meta-Llama-3-70B-Instruct"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Meta-Llama-3-70B-Instruct-GGUF/Meta-Llama-3-70B-Instruct-Q4_K_M.gguf"
-  ["Hermes-4-70B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Hermes-4-70B-GGUF/Hermes-4-70B-Q4_K_M.gguf"
-  ["DeepSeek-R1-Llama-70B"]="/mnt/raid0/llm/lmstudio/models/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF/DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf"
-  ["Qwen2.5-72B"]="/mnt/raid0/llm/lmstudio/models/mradermacher/Qwen2.5-72B-GGUF/Qwen2.5-72B.Q4_K_M.gguf"
-  ["Qwen2.5-72B-Instruct"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf"
-  ["Qwen2.5-Math-72B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q4_K_M.gguf"
-  ["Gemma-3-27B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/gemma-3-27B-it-qat-GGUF/gemma-3-27B-it-QAT-Q4_0.gguf"
+  ["Meta-Llama-3.1-70B-Instruct"]="${MODEL_BASE}/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf"
+  ["Meta-Llama-3-70B-Instruct"]="${MODEL_BASE}/lmstudio-community/Meta-Llama-3-70B-Instruct-GGUF/Meta-Llama-3-70B-Instruct-Q4_K_M.gguf"
+  ["Hermes-4-70B"]="${MODEL_BASE}/lmstudio-community/Hermes-4-70B-GGUF/Hermes-4-70B-Q4_K_M.gguf"
+  ["DeepSeek-R1-Llama-70B"]="${MODEL_BASE}/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF/DeepSeek-R1-Distill-Llama-70B-Q4_K_M.gguf"
+  ["Qwen2.5-72B"]="${MODEL_BASE}/mradermacher/Qwen2.5-72B-GGUF/Qwen2.5-72B.Q4_K_M.gguf"
+  ["Qwen2.5-72B-Instruct"]="${MODEL_BASE}/lmstudio-community/Qwen2.5-72B-Instruct-GGUF/Qwen2.5-72B-Instruct-Q4_K_M.gguf"
+  ["Qwen2.5-Math-72B"]="${MODEL_BASE}/lmstudio-community/Qwen2.5-Math-72B-Instruct-GGUF/Qwen2.5-Math-72B-Instruct-Q4_K_M.gguf"
+  ["Gemma-3-27B"]="${MODEL_BASE}/lmstudio-community/gemma-3-27B-it-qat-GGUF/gemma-3-27B-it-QAT-Q4_0.gguf"
   # MoE 30B
-  ["Qwen3-VL-30B-A3B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf"
-  ["Qwen3-Coder-30B-A3B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
+  ["Qwen3-VL-30B-A3B"]="${MODEL_BASE}/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf"
+  ["Qwen3-Coder-30B-A3B"]="${MODEL_BASE}/lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf"
   # MoE 80B+
-  ["Qwen3-Next-80B-A3B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf"
-  ["Qwen3-235B-A22B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-235B-A22B-GGUF/Qwen3-235B-A22B-Q4_K_M-00001-of-00004.gguf"
+  ["Qwen3-Next-80B-A3B"]="${MODEL_BASE}/lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf"
+  ["Qwen3-235B-A22B"]="${MODEL_BASE}/lmstudio-community/Qwen3-235B-A22B-GGUF/Qwen3-235B-A22B-Q4_K_M-00001-of-00004.gguf"
   # Large MoE (multi-file)
-  ["GLM-4.6-355B"]="/mnt/raid0/llm/lmstudio/models/unsloth/GLM-4.6-GGUF/GLM-4.6-Q4_K_S-00001-of-00005.gguf"
-  ["Qwen3-Coder-480B-A35B"]="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00008.gguf"
-  ["Qwen3-VL-235B-A22B-Thinking"]="/mnt/raid0/llm/lmstudio/models/unsloth/Qwen3-VL-235B-A22B-Thinking-GGUF/Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003.gguf"
+  ["GLM-4.6-355B"]="${MODEL_BASE}/unsloth/GLM-4.6-GGUF/GLM-4.6-Q4_K_S-00001-of-00005.gguf"
+  ["Qwen3-Coder-480B-A35B"]="${MODEL_BASE}/lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/Qwen3-Coder-480B-A35B-Instruct-Q4_K_M-00001-of-00008.gguf"
+  ["Qwen3-VL-235B-A22B-Thinking"]="${MODEL_BASE}/unsloth/Qwen3-VL-235B-A22B-Thinking-GGUF/Qwen3-VL-235B-A22B-Thinking-Q4_K_S-00001-of-00003.gguf"
 )
 
 # Draft models
-DRAFT_QWEN_05B="/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
-DRAFT_QWEN3_06B="/mnt/raid0/llm/models/Qwen_Qwen3-0.6B-Q8_0.gguf"
-DRAFT_QWEN3_VL_2B="/mnt/raid0/llm/lmstudio/models/mradermacher/Qwen3_VL_2B-GGUF/Qwen3_VL_2B.Q4_K_M.gguf"
+DRAFT_QWEN_05B="${MODEL_BASE}/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+DRAFT_QWEN3_06B="${MODELS_DIR}/Qwen_Qwen3-0.6B-Q8_0.gguf"
+DRAFT_QWEN3_VL_2B="${MODEL_BASE}/mradermacher/Qwen3_VL_2B-GGUF/Qwen3_VL_2B.Q4_K_M.gguf"
 
 # MoE models (for hard mask)
 MOE_MODELS=("Qwen3-VL-30B-A3B" "Qwen3-Coder-30B-A3B" "Qwen3-Next-80B-A3B" "Qwen3-235B-A22B" "GLM-4.6-355B" "Qwen3-Coder-480B-A35B" "Qwen3-VL-235B-A22B-Thinking")
@@ -139,7 +145,7 @@ run_lookup() {
 
   local tmpfile
 
-  tmpfile=$(mktemp /mnt/raid0/llm/tmp/prompt_XXXXXX.txt)
+  tmpfile=$(mktemp "${TMP_DIR}/prompt_XXXXXX.txt")
   echo -e "$prompt" >"$tmpfile"
 
   local output
@@ -239,7 +245,7 @@ run_hard_mask() {
 
   local tmpfile
 
-  tmpfile=$(mktemp /mnt/raid0/llm/tmp/prompt_XXXXXX.txt)
+  tmpfile=$(mktemp "${TMP_DIR}/prompt_XXXXXX.txt")
   echo -e "$PROMPT_SUMMARIZE" >"$tmpfile"
 
   local output
@@ -284,7 +290,7 @@ run_layer_skip() {
 
   local tmpfile
 
-  tmpfile=$(mktemp /mnt/raid0/llm/tmp/prompt_XXXXXX.txt)
+  tmpfile=$(mktemp "${TMP_DIR}/prompt_XXXXXX.txt")
   echo -e "$PROMPT_SUMMARIZE" >"$tmpfile"
 
   local output

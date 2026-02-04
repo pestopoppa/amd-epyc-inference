@@ -10,6 +10,12 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 # Parse arguments
 MEMORY_ONLY=false
 OUTPUT_DIR=""
@@ -28,16 +34,16 @@ for arg in "$@"; do
 done
 
 # Configuration
-OUTPUT_DIR="${OUTPUT_DIR:-/mnt/raid0/llm/claude/benchmarks/evidence/$(date +%Y%m%d_%H%M%S)}"
-LLAMA_CPP_DIR="/mnt/raid0/llm/llama.cpp-experimental"
-LLAMA_BENCH="${LLAMA_CPP_DIR}/build/bin/llama-bench"
-LLAMA_COMPLETION="${LLAMA_CPP_DIR}/build/bin/llama-completion"
-MODEL_BASE="/mnt/raid0/llm"
+OUTPUT_DIR="${OUTPUT_DIR:-${PROJECT_ROOT}/benchmarks/evidence/$(date +%Y%m%d_%H%M%S)}"
+LLAMA_CPP_EXPERIMENTAL="${LLM_ROOT}/llama.cpp-experimental"
+LLAMA_BENCH="${LLAMA_CPP_EXPERIMENTAL}/build/bin/llama-bench"
+LLAMA_COMPLETION="${LLAMA_CPP_EXPERIMENTAL}/build/bin/llama-completion"
+PAGED_MODEL_BASE="${LLM_ROOT}"
 
 # Models from PR (paths from model registry)
-SMALL_MODEL="${MODEL_BASE}/models/Qwen3-1.7B-Q8_0.gguf"
-MEDIUM_MODEL="${MODEL_BASE}/models/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf"
-LARGE_MODEL="${MODEL_BASE}/lmstudio/models/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf"
+SMALL_MODEL="${PAGED_MODEL_BASE}/models/Qwen3-1.7B-Q8_0.gguf"
+MEDIUM_MODEL="${PAGED_MODEL_BASE}/models/DeepSeek-R1-Distill-Qwen-32B-Q4_K_M.gguf"
+LARGE_MODEL="${PAGED_MODEL_BASE}/lmstudio/models/lmstudio-community/Meta-Llama-3.1-70B-Instruct-GGUF/Meta-Llama-3.1-70B-Instruct-Q4_K_M.gguf"
 
 # Block sizes to test
 BLOCK_SIZES=(64 128 256)
@@ -107,8 +113,8 @@ cat /proc/meminfo >"${OUTPUT_DIR}/proc_meminfo.txt"
 
 header "2. SOFTWARE VERSIONS"
 
-log "llama.cpp directory: ${LLAMA_CPP_DIR}"
-cd "${LLAMA_CPP_DIR}"
+log "llama.cpp directory: ${LLAMA_CPP_EXPERIMENTAL}"
+cd "${LLAMA_CPP_EXPERIMENTAL}"
 
 log "Git commit: $(git log -1 --format='%H')"
 log "Git branch: $(git branch --show-current)"

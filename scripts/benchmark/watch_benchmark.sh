@@ -10,6 +10,12 @@
 #
 # =============================================================================
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
 # Colors
 readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
@@ -20,7 +26,7 @@ readonly YELLOW='\033[33m'
 readonly CYAN='\033[36m'
 readonly BLUE='\033[34m'
 
-BASE_DIR="/mnt/raid0/llm/tmp/overnight_benchmark"
+BASE_DIR="${TMP_DIR}/overnight_benchmark"
 
 # Get run ID from argument or find latest
 if [[ -n "$1" ]]; then
@@ -213,7 +219,7 @@ while true; do
 
   # Infer detailed progress by scanning result files
   # Count unique models, configs, and questions from existing results
-  results_base="/mnt/raid0/llm/tmp"
+  results_base="${TMP_DIR}"
 
   # Get most recent result file to determine current state
   latest_result=$(ls -t ${results_base}/*_rubric_results/*.txt 2>/dev/null | head -1)

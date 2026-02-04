@@ -16,11 +16,17 @@ set -x
 # implementation where DRAFT uses early exit and VERIFY uses full layers.
 # Current llama.cpp --n-layer-exit applies to the model globally, not per-phase.
 
-LLAMA_CPP="/mnt/raid0/llm/llama.cpp/build/bin"
-LOG_DIR="/mnt/raid0/llm/LOGS/benchmarks"
-RESULTS_CSV="$LOG_DIR/optimization_results_20251215_045816.csv"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-mkdir -p "$LOG_DIR"
+# Source environment library for path variables
+# shellcheck source=../lib/env.sh
+source "${SCRIPT_DIR}/../lib/env.sh"
+
+LLAMA_CPP="${LLAMA_CPP_BIN}"
+BENCH_LOG_DIR="${LOG_DIR}/benchmarks"
+RESULTS_CSV="$BENCH_LOG_DIR/optimization_results_20251215_045816.csv"
+
+mkdir -p "$BENCH_LOG_DIR"
 
 check_existing() {
   local model="$1"
