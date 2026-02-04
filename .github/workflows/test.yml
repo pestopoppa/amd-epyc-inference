@@ -35,6 +35,20 @@ jobs:
       - name: Run linter
         run: ruff check src/ tests/
 
+      - name: Check for hardcoded paths
+        run: |
+          # Check that no NEW hardcoded /mnt/raid0 paths are added (fallbacks are allowed)
+          # Current count: 13 files with exactly 1 fallback each
+          COUNT=$(grep -r "/mnt/raid0" src/ --include="*.py" 2>/dev/null | wc -l || echo "0")
+          echo "Found $COUNT occurrences of /mnt/raid0 in src/"
+          if [ "$COUNT" -gt 13 ]; then
+            echo "ERROR: New hardcoded paths detected! Use get_config().paths.* instead."
+            echo "Allowed: fallback defaults in _get_*() helper functions"
+            grep -rn "/mnt/raid0" src/ --include="*.py" || true
+            exit 1
+          fi
+          echo "✓ Path check passed (only fallback defaults found)"
+
       - name: Run tests with coverage
         run: pytest tests/ -x --timeout=120 -q --cov=src --cov-report=term-missing --cov-fail-under=30
         env:

@@ -8,7 +8,7 @@
 # Run specific:  make shellcheck
 
 SHELL := /usr/bin/env bash
-.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help
+.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -34,6 +34,24 @@ help:
 	@echo "  make gates      - Run all verification gates (schema + shell + format + lint)"
 	@echo "  make test-all   - Run schema validation + Python lint + unit tests"
 	@echo "  make quick      - Quick check (schema + shellcheck + pylint)"
+	@echo ""
+	@echo "Setup (new installations):"
+	@echo "  make setup      - Full setup (bootstrap + validate)"
+	@echo "  make bootstrap  - Run bootstrap script (prereqs, dirs, deps)"
+	@echo "  make download-models TIER=hot - Download models (hot/warm/all)"
+	@echo "  make validate-paths - Check all configured paths exist"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-build     - Build production Docker image"
+	@echo "  make docker-build-dev - Build development Docker image"
+	@echo "  make docker-run       - Run orchestrator API in Docker"
+	@echo "  make docker-dev       - Interactive development shell in Docker"
+	@echo "  make docker-test      - Run tests in Docker"
+	@echo "  make docker-clean     - Remove Docker images and containers"
+	@echo ""
+	@echo "Nix:"
+	@echo "  make nix-develop      - Enter Nix development shell"
+	@echo "  make nix-build        - Build llama-cpp via Nix"
 	@echo ""
 	@echo "Individual gates:"
 	@echo "  make schema     - Validate IR JSON files"
@@ -246,3 +264,106 @@ quick: schema shellcheck pylint
 validate-registry:
 	@echo "==> validate registry"
 	@$(PY) src/registry_loader.py
+
+# ── Setup Targets ────────────────────────────────────────────────────────────
+
+# Full setup for new installations
+setup: bootstrap validate-paths gates
+	@echo ""
+	@echo "✅ Setup complete! See docs/SETUP.md for next steps."
+
+# Run bootstrap script
+bootstrap:
+	@echo "==> bootstrap"
+	@./scripts/setup/bootstrap.sh
+
+# Download models (use TIER=hot, TIER=warm, or TIER=all)
+TIER ?= hot
+download-models:
+	@echo "==> download-models (tier=$(TIER))"
+	@$(PY) scripts/setup/download_models.py --tier $(TIER)
+
+# Validate all configured paths exist
+validate-paths:
+	@echo "==> validate-paths"
+	@$(PY) -c "\
+from src.config import get_config; \
+import sys; \
+c = get_config(); \
+errors = []; \
+for name in ['project_root', 'llm_root', 'models_dir', 'cache_dir', 'tmp_dir', 'llama_cpp_bin']: \
+    p = getattr(c.paths, name, None); \
+    if p and not p.exists(): \
+        errors.append(f'  ✗ {name}: {p}'); \
+    elif p: \
+        print(f'  ✓ {name}: {p}'); \
+if errors: \
+    print('Missing paths:'); \
+    print('\n'.join(errors)); \
+    print('\nRun: ./scripts/setup/bootstrap.sh --create-dirs'); \
+    sys.exit(1); \
+"
+
+# ── Docker Targets ──────────────────────────────────────────────────────────
+
+# Build production Docker image
+docker-build:
+	@echo "==> docker-build"
+	docker build -t orchestrator:latest .
+
+# Build development Docker image
+docker-build-dev:
+	@echo "==> docker-build-dev"
+	docker build -f Dockerfile.dev -t orchestrator-dev:latest .
+
+# Run production API in Docker
+docker-run:
+	@echo "==> docker-run (orchestrator API on port 8000)"
+	docker-compose up orchestrator
+
+# Run development shell in Docker
+docker-dev:
+	@echo "==> docker-dev (interactive shell)"
+	docker-compose run --rm dev
+
+# Run tests in Docker
+docker-test:
+	@echo "==> docker-test"
+	docker-compose run --rm test
+
+# Run linter in Docker
+docker-lint:
+	@echo "==> docker-lint"
+	docker-compose run --rm lint
+
+# Clean up Docker images and containers
+docker-clean:
+	@echo "==> docker-clean"
+	docker-compose down --rmi local --volumes --remove-orphans 2>/dev/null || true
+	docker rmi orchestrator:latest orchestrator-dev:latest 2>/dev/null || true
+	@echo "  ✓ Docker cleanup complete"
+
+# ── Nix Targets ─────────────────────────────────────────────────────────────
+
+# Enter Nix development shell
+nix-develop:
+	@echo "==> nix-develop"
+	@if command -v nix >/dev/null 2>&1; then \
+		nix develop; \
+	else \
+		echo "  ✗ Nix not installed. See: https://nixos.org/download.html"; \
+		exit 1; \
+	fi
+
+# Build llama-cpp via Nix
+nix-build:
+	@echo "==> nix-build"
+	@if command -v nix >/dev/null 2>&1; then \
+		nix build .#llama-cpp; \
+	else \
+		echo "  ✗ Nix not installed"; \
+		exit 1; \
+	fi
+
+# Alias for nix-develop
+nix-shell: nix-develop

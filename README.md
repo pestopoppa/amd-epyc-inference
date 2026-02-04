@@ -72,26 +72,65 @@ LLM inference optimization research and production orchestration system on AMD E
 - **[Tool Registry](docs/chapters/22-tool-registry.md)** — 40+ callable tools with role-based permissions, 8 agent role definitions
 - **[Security & Monitoring](docs/chapters/23-security-and-monitoring.md)** — AST sandboxing, entropy-based early failure detection
 
+## Setup
+
+See **[docs/SETUP.md](docs/SETUP.md)** for comprehensive setup instructions, including:
+- System requirements and prerequisites
+- Environment configuration (`.env.example` template)
+- Model downloads via HuggingFace
+- llama.cpp build from source
+
+**Quick Setup:**
+```bash
+# 1. Clone and configure
+git clone https://github.com/your-org/claude.git && cd claude
+cp .env.example .env  # Edit paths for your system
+
+# 2. Install dependencies
+pip install -e ".[dev]"  # or: uv sync
+
+# 3. Verify setup
+make validate-paths && make gates
+```
+
 ## Quick Start
+
+After setup, all paths are configured via environment variables:
 
 ```bash
 # Track 1: External Draft Model (11x speedup on code)
 OMP_NUM_THREADS=1 numactl --interleave=all \
-  /mnt/raid0/llm/llama.cpp/build/bin/llama-speculative \
-  -m /mnt/raid0/llm/models/Qwen2.5-Coder-32B-Q4_K_M.gguf \
-  -md /mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf \
+  ${LLAMA_SERVER} -m ${MODELS_DIR}/Qwen2.5-Coder-32B-Q4_K_M.gguf \
+  -md ${MODELS_DIR}/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf \
   --draft-max 24 -t 96 -p "Your prompt"
 
 # Track 2: MoE Expert Reduction (+87% on MoE models)
 numactl --interleave=all \
-  /mnt/raid0/llm/llama.cpp/build/bin/llama-cli \
-  -m /mnt/raid0/llm/models/Qwen3-235B-A22B-Q4_K_M.gguf \
+  ${LLAMA_CPP_BIN}/llama-cli \
+  -m ${MODELS_DIR}/Qwen3-235B-A22B-Q4_K_M.gguf \
   --override-kv qwen3moe.expert_used_count=int:4 \
   -t 96 -p "Your prompt"
 
 # Start orchestrator stack (HOT tier)
 python3 scripts/server/orchestrator_stack.py start --hot-only
 ```
+
+## Container Setup
+
+For reproducible environments, use Docker or Nix:
+
+```bash
+# Docker: Build and run API server
+make docker-build && make docker-run
+
+# Docker: Development shell
+make docker-dev
+
+# Nix: Enter development shell
+make nix-develop
+```
+
+See [docs/SETUP.md#container-setup](docs/SETUP.md#container-setup) for detailed container instructions.
 
 ---
 
@@ -134,9 +173,10 @@ See **[Chapter Index](docs/chapters/INDEX.md)** for the full list with audience-
 ## Project Structure
 
 ```
-/mnt/raid0/llm/claude/
+$PROJECT_ROOT/                 # Set via ORCHESTRATOR_PATHS_PROJECT_ROOT
 ├── CLAUDE.md                  # AI context file
 ├── README.md                  # This file
+├── .env.example               # Environment configuration template
 │
 ├── docs/
 │   ├── chapters/              # 23 research chapters (5 parts)
@@ -208,10 +248,13 @@ This project uses a modified llama.cpp with performance optimizations:
 
 ## Contributing
 
-1. Read the [Getting Started guide](docs/guides/getting-started.md)
-2. Browse the [Chapter Index](docs/chapters/INDEX.md) for your area of interest
-3. Check [ARCHITECTURE.md](docs/ARCHITECTURE.md) for system internals
-4. Run `make gates` after any changes (schema, shellcheck, format, lint)
+1. **Setup:** Follow [docs/SETUP.md](docs/SETUP.md) to configure your environment
+2. **Onboard:** Read the [Getting Started guide](docs/guides/getting-started.md)
+3. **Learn:** Browse the [Chapter Index](docs/chapters/INDEX.md) for your area of interest
+4. **Reference:** Check [ARCHITECTURE.md](docs/ARCHITECTURE.md) for system internals
+5. **Validate:** Run `make gates` after any changes (schema, shellcheck, format, lint)
+
+> **Model Selection:** See [docs/MODEL_MANIFEST.md](docs/MODEL_MANIFEST.md) for role-based model configuration. You don't need the exact models we use—the orchestrator supports any compatible models.
 
 ---
 
