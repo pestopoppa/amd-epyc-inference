@@ -146,6 +146,7 @@ class PromptBuilder:
         decision: "RoutingDecision | EscalationDecision",
         *,
         as_structured: bool = False,
+        use_toon: bool = False,
     ) -> str | EscalationPrompt:
         """Build a prompt for an escalated role.
 
@@ -160,7 +161,8 @@ class PromptBuilder:
             state: Current REPL state.
             failure_context: Context about the failure (legacy or new type).
             decision: The routing decision with escalation reason (legacy or new type).
-            as_structured: Return EscalationPrompt instead of string
+            as_structured: Return EscalationPrompt instead of string.
+            use_toon: Use TOON encoding for architect-tier escalations.
 
         Returns:
             Prompt string or EscalationPrompt if as_structured=True
@@ -169,6 +171,12 @@ class PromptBuilder:
         role = getattr(failure_context, "current_role", None) or getattr(
             failure_context, "role", "unknown"
         )
+
+        # TOON format for architect escalations (compact, structured)
+        if use_toon:
+            return self._build_escalation_toon(
+                original_prompt, state, failure_context, decision, role
+            )
 
         prompt = EscalationPrompt(
             header=f"# Escalation from {role}",
@@ -206,6 +214,48 @@ class PromptBuilder:
         if as_structured:
             return prompt
         return prompt.to_string()
+
+    def _build_escalation_toon(
+        self,
+        original_prompt: str,
+        state: str,
+        failure_context: "FailureContext | EscalationContext",
+        decision: "RoutingDecision | EscalationDecision",
+        role: str,
+    ) -> str:
+        """Build TOON-encoded escalation prompt for architect tier.
+
+        Compact format optimized for slow models (~7 t/s).
+        """
+        from src.services.toon_encoder import encode, is_available
+
+        # Build failures list
+        failures = [{
+            "tier": str(role),
+            "try": failure_context.failure_count,
+            "err": str(failure_context.error_category),
+        }]
+        if failure_context.gate_name:
+            failures[0]["gate"] = failure_context.gate_name
+        if failure_context.error_message:
+            # Truncate error to ~200 chars for TOON compactness
+            failures[0]["msg"] = failure_context.error_message[:200]
+
+        toon_data = {
+            "task": original_prompt[:500],  # Cap task length
+            "failures": failures,
+        }
+
+        # Include state summary if present (truncated)
+        if state and len(state) > 10:
+            toon_data["state"] = state[:300]
+
+        if is_available():
+            return f"```toon\n{encode(toon_data)}\n```"
+        else:
+            # Fallback: compact JSON-like format
+            import json
+            return f"```toon\n{json.dumps(toon_data, separators=(',', ':'))}\n```"
 
     def build_step_prompt(
         self,
@@ -721,3 +771,49 @@ Rules:
 Task: {objective[:500]}{context_note}
 
 JSON:"""
+
+
+def build_confidence_estimation_prompt(
+    question: str,
+    context: str = "",
+    max_question_chars: int = 500,
+    max_context_chars: int = 300,
+) -> str:
+    """Build prompt for frontdoor confidence estimation.
+
+    Asks the model to estimate its probability of correctly answering
+    via different routing strategies. Used for confidence-based routing
+    where the highest-confidence approach above threshold is selected.
+
+    Args:
+        question: The user's question.
+        context: Optional context text.
+        max_question_chars: Truncation limit for question.
+        max_context_chars: Truncation limit for context.
+
+    Returns:
+        Prompt string that elicits confidence scores in CONF|...|... format.
+
+    Example output from model:
+        CONF|SELF:0.85|ARCHITECT:0.60|CODER:0.30|WORKER:0.20
+    """
+    context_section = ""
+    if context:
+        context_section = f"\n\nContext ({len(context)} chars):\n{context[:max_context_chars]}{'...' if len(context) > max_context_chars else ''}"
+
+    return f"""Estimate your probability of correctly answering this question.
+
+Question: {question[:max_question_chars]}{'...' if len(question) > max_question_chars else ''}{context_section}
+
+Rate your confidence (0.0-1.0) for each approach:
+- SELF: You handle it (no escalation or delegation)
+- ARCHITECT: Escalate to architect for complex reasoning you cannot handle
+- WORKER: Delegate to faster worker models
+
+Score based on fit:
+- SELF: Within your capability
+- ARCHITECT: Needs deeper reasoning or complex design
+- WORKER: Simple/rote task, or can be split into parallel subtasks
+
+Output ONLY this format, nothing else:
+CONF|SELF:X.XX|ARCHITECT:X.XX|WORKER:X.XX"""

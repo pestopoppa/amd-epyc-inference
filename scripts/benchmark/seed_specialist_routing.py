@@ -546,7 +546,16 @@ def evaluate_question_3way(
         generation_ms=resp_direct.get("generation_ms", 0.0),
     )
     status = "PASS" if passed_direct else ("ERROR" if error_direct else "FAIL")
-    logger.info(f"    {ACTION_SELF_DIRECT} → {status} ({elapsed_direct:.1f}s)")
+    # Calculate t/s: prefer predicted_tps, else compute from generation_ms
+    tps_direct = resp_direct.get("predicted_tps", 0.0)
+    if tps_direct <= 0:
+        gen_ms = resp_direct.get("generation_ms", 0.0)
+        tokens = resp_direct.get("tokens_generated", 0)
+        if gen_ms > 0 and tokens > 0:
+            tps_direct = tokens / (gen_ms / 1000.0)
+    tokens_direct = resp_direct.get("tokens_generated", 0)
+    tps_str = f", {tps_direct:.1f} t/s" if tps_direct > 0 else ""
+    logger.info(f"    {ACTION_SELF_DIRECT} → {status} ({elapsed_direct:.1f}s{tps_str}, {tokens_direct} tok)")
 
     # ── Configuration 2: SELF:repl ──
     # Frontdoor, repl mode, tools available but no delegation
@@ -583,7 +592,26 @@ def evaluate_question_3way(
         generation_ms=resp_repl.get("generation_ms", 0.0),
     )
     status = "PASS" if passed_repl else ("ERROR" if error_repl else "FAIL")
-    logger.info(f"    {ACTION_SELF_REPL} → {status} ({elapsed_repl:.1f}s, {resp_repl.get('tools_used', 0)} tools)")
+    # Calculate t/s: prefer predicted_tps, else compute from generation_ms
+    tps_repl = resp_repl.get("predicted_tps", 0.0)
+    if tps_repl <= 0:
+        gen_ms = resp_repl.get("generation_ms", 0.0)
+        tokens = resp_repl.get("tokens_generated", 0)
+        if gen_ms > 0 and tokens > 0:
+            tps_repl = tokens / (gen_ms / 1000.0)
+    tokens_repl = resp_repl.get("tokens_generated", 0)
+    tps_str = f", {tps_repl:.1f} t/s" if tps_repl > 0 else ""
+    tools_used = resp_repl.get("tools_used", 0)
+    tools_called = resp_repl.get("tools_called", [])
+    logger.info(f"    {ACTION_SELF_REPL} → {status} ({elapsed_repl:.1f}s{tps_str}, {tokens_repl} tok, {tools_used} tools)")
+    # Log tool list if any tools were called
+    if tools_used > 0 and tools_called:
+        # Dedupe consecutive repeated tools for readability
+        deduped = []
+        for t in tools_called:
+            if not deduped or deduped[-1] != t:
+                deduped.append(t)
+        logger.info(f"      tools: {', '.join(deduped)}")
 
     # ── Configuration 3: ARCHITECT ──
     # Architect with full delegation freedom
@@ -621,7 +649,25 @@ def evaluate_question_3way(
         generation_ms=resp_arch.get("generation_ms", 0.0),
     )
     status = "PASS" if passed_arch else ("ERROR" if error_arch else "FAIL")
-    logger.info(f"    {ACTION_ARCHITECT} → {status} ({elapsed_arch:.1f}s)")
+    # Calculate t/s: prefer predicted_tps, else compute from generation_ms
+    tps_arch = resp_arch.get("predicted_tps", 0.0)
+    if tps_arch <= 0:
+        gen_ms = resp_arch.get("generation_ms", 0.0)
+        tokens = resp_arch.get("tokens_generated", 0)
+        if gen_ms > 0 and tokens > 0:
+            tps_arch = tokens / (gen_ms / 1000.0)
+    tokens_arch = resp_arch.get("tokens_generated", 0)
+    tps_str = f", {tps_arch:.1f} t/s" if tps_arch > 0 else ""
+    tools_used_arch = resp_arch.get("tools_used", 0)
+    tools_called_arch = resp_arch.get("tools_called", [])
+    logger.info(f"    {ACTION_ARCHITECT} → {status} ({elapsed_arch:.1f}s{tps_str}, {tokens_arch} tok)")
+    # Log tool list if any tools were called
+    if tools_used_arch > 0 and tools_called_arch:
+        deduped = []
+        for t in tools_called_arch:
+            if not deduped or deduped[-1] != t:
+                deduped.append(t)
+        logger.info(f"      tools: {', '.join(deduped)}")
 
     # ── Compute 3-way rewards (binary for faithful P(success)) ──
     rewards: dict[str, float] = {}
