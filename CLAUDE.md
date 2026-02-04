@@ -21,6 +21,7 @@
 - [Benchmark Hardening](#benchmark-hardening-2025-12-18)
 - [Research Summary Maintenance](#research-summary-maintenance)
 - [Key Resources](#key-resources)
+- [Eval Log Analysis Protocol](#eval-log-analysis-protocol-mandatory)
 - [Code Style](#code-style)
 - [Git Workflow](#git-commit-workflow)
 
@@ -948,6 +949,28 @@ When benchmarking a new model, check if it belongs in any of these tables.
 | Run all benchmarks | `scripts/benchmark/run_overnight_benchmark_suite.sh --suite all` |
 | Compare benchmark runs | `scripts/benchmark/compare_results.sh --baseline ID --current ID` |
 | List benchmark runs | `scripts/benchmark/compare_results.sh --list-runs` |
+
+---
+
+## Eval Log Analysis Protocol (MANDATORY)
+
+When asked to analyze eval log output (3-way eval, benchmark results, etc.):
+
+1. **Run the deterministic lookup script FIRST** — no speculation before data:
+   ```bash
+   python3 scripts/benchmark/lookup_question.py <question_id>
+   ```
+2. **Show the full output to the user** — question text, expected answer, all model answers, scores
+3. **If pass/fail looks wrong**, replay the scorer against stored answers:
+   ```python
+   python3 -c "
+   import json, re
+   # Extract full answer from JSONL, run multiple_choice / exact_match logic
+   "
+   ```
+4. **Then analyze** — only after raw data is presented
+
+**Never speculate about format issues, knowledge gaps, or scoring bugs without first running the scripts and showing actual model outputs.**
 
 ---
 
