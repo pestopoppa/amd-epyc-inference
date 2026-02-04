@@ -700,6 +700,9 @@ class TestEscalationHandling:
                     mock_policy.decide.return_value = mock_decision
                     mock_policy_class.return_value = mock_policy
 
+                    # Ensure routing_facade is None so EscalationPolicy is instantiated
+                    mock_state.routing_facade = None
+
                     await _execute_repl(
                         request=basic_request,
                         routing=basic_routing,
@@ -747,6 +750,9 @@ class TestEscalationHandling:
                 mock_policy = MagicMock()
                 mock_policy.decide.return_value = mock_decision
                 mock_policy_class.return_value = mock_policy
+
+                # Ensure routing_facade is None so EscalationPolicy is instantiated
+                mock_state.routing_facade = None
 
                 response = await _execute_repl(
                     request=basic_request,
