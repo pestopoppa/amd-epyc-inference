@@ -103,13 +103,14 @@ class TestSelectMode:
         result = _select_mode("Hello", "", state)
         assert result == "direct"
 
-    def test_memrl_router_returns_react(self):
-        """MemRL hybrid_router react mode selection."""
+    def test_memrl_router_returns_react_mapped_to_repl(self):
+        """MemRL hybrid_router react mode is mapped to repl (React unified into REPL)."""
         state = MagicMock()
         state.hybrid_router.route_with_mode.return_value = (["role"], "learned", "react")
 
         result = _select_mode("Hello", "", state)
-        assert result == "react"
+        # React is now unified into REPL - legacy "react" maps to "repl"
+        assert result == "repl"
 
     def test_memrl_router_returns_repl(self):
         """MemRL hybrid_router REPL mode selection."""
@@ -138,23 +139,24 @@ class TestSelectMode:
             result = _select_mode("Hello", "", state)
         assert result == "repl"
 
-    def test_no_hybrid_router_uses_heuristics(self):
-        """No hybrid_router falls back to heuristics."""
+    def test_no_hybrid_router_defaults_to_repl(self):
+        """No hybrid_router defaults to repl (React unified into REPL)."""
         state = MagicMock()
         state.hybrid_router = None
 
-        with patch("src.api.routes.chat_react._should_use_react_mode", return_value=True):
-            result = _select_mode("Use tool X", "", state)
-        assert result == "react"
+        # No more React heuristic - always returns repl
+        result = _select_mode("Use tool X", "", state)
+        assert result == "repl"
 
-    def test_heuristic_react_mode(self):
-        """Heuristic _should_use_react_mode triggers react."""
+    def test_all_prompts_default_to_repl(self):
+        """All prompts default to repl mode (React unified into REPL)."""
         state = MagicMock()
         state.hybrid_router = None
 
-        with patch("src.api.routes.chat_react._should_use_react_mode", return_value=True):
-            result = _select_mode("Call the API", "", state)
-        assert result == "react"
+        # REPL is now the universal default - model can FINAL() immediately
+        # for simple tasks or use tools for complex ones
+        result = _select_mode("Call the API", "", state)
+        assert result == "repl"
 
     def test_heuristic_repl_default(self):
         """Heuristic fallback defaults to repl."""
