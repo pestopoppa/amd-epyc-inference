@@ -280,7 +280,7 @@ class TestDelegate:
 
         repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_primary")
         result = repl.execute(
-            "output = delegate('summarize this', 'worker_summarize', 'need summary')"
+            "output = delegate('summarize this', to='worker_summarize', reason='need summary')"
         )
 
         assert result.error is None
@@ -299,18 +299,20 @@ class TestDelegate:
         call_args = mock_llm.llm_call.call_args
         assert call_args[1]["role"] == "worker_explore"
 
-    def test_delegate_tier_guard_workers_cannot_delegate(self):
-        """Test workers (Tier C) cannot delegate."""
+    def test_delegate_workers_can_delegate(self):
+        """Test workers can delegate to other workers (no tier restriction)."""
         mock_llm = Mock()
-        mock_llm.llm_call = Mock(return_value="response")
+        mock_llm.llm_call = Mock(return_value="worker response")
 
-        # Set role to a worker (Tier C)
-        repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="worker_general")
-        result = repl.execute("print(delegate('task', 'worker_math'))")
+        # Set role to a worker - workers CAN now delegate (unified execution model)
+        repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="worker_explore")
+        result = repl.execute("output = delegate('subtask', to='worker_math')")
 
         assert result.error is None
-        assert "ERROR" in result.output
-        assert "Tier C" in result.output or "cannot delegate" in result.output
+        # LLM should have been called (delegation successful)
+        mock_llm.llm_call.assert_called_once()
+        call_args = mock_llm.llm_call.call_args
+        assert call_args[1]["role"] == "worker_math"
 
     def test_delegate_tracks_delegation(self):
         """Test delegate() tracks delegation in artifacts."""
@@ -318,7 +320,8 @@ class TestDelegate:
         mock_llm.llm_call = Mock(return_value="result")
 
         repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_primary")
-        result = repl.execute("delegate('task', 'worker_math', 'need help')")
+        # Use keyword args for the new API: delegate(brief, to=..., reason=...)
+        result = repl.execute("delegate('task', to='worker_math', reason='need help')")
 
         assert result.error is None
         assert "_delegations" in repl.artifacts
