@@ -122,10 +122,10 @@ class TestSelectMode:
         assert mode in ("direct", "react", "repl")
 
     def test_react_mode_when_keywords_match(self):
-        """Should return react mode when keywords match."""
+        """Should return repl mode (react unified into repl)."""
         from src.features import set_features, Features
 
-        # Enable react mode
+        # Enable react mode (now unified into repl)
         features = Features(react_mode=True)
         set_features(features)
 
@@ -134,7 +134,7 @@ class TestSelectMode:
             state.hybrid_router = None
 
             mode = _select_mode("search for quantum computing papers", "", state)
-            assert mode == "react"
+            assert mode == "repl"  # React mode unified into REPL
         finally:
             # Reset features
             from src.features import reset_features

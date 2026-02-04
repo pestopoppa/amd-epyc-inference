@@ -238,7 +238,7 @@ class TestDelegatePersona:
         env = self._make_env()
         env._delegate(
             "review code",
-            "coder_primary",
+            "coder_escalation",
             persona="code_reviewer",
         )
         call_kwargs = env.llm_primitives.llm_call.call_args
@@ -247,7 +247,7 @@ class TestDelegatePersona:
     def test_persona_recorded_in_delegation(self):
         """Persona is stored in the delegation record."""
         env = self._make_env()
-        env._delegate("review code", "coder_primary", persona="code_reviewer")
+        env._delegate("review code", "coder_escalation", persona="code_reviewer")
         delegations = env.artifacts.get("_delegations", [])
         assert len(delegations) == 1
         assert delegations[0]["persona"] == "code_reviewer"
