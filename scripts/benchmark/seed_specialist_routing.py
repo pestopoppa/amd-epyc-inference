@@ -1,33 +1,45 @@
 #!/usr/bin/env python3
-"""Comparative Specialist Routing Evaluation for MemRL.
+"""MemRL Episodic Seeding for 3-Way Routing.
 
-THE canonical evaluation script for orchestrator routing optimization.
-Runs each question through MULTIPLE role×mode combos, scores deterministically,
-and injects comparative rewards so MemRL learns optimal routing.
+THE canonical evaluation script for training frontdoor probability estimation.
+Runs each question through multiple configurations, scores deterministically,
+and injects rewards so MemRL learns optimal routing decisions.
 
-Comparative reward scheme (xRouter-style, correctness-gated cost penalty):
+## Preferred Mode: 3-Way Routing (--3way)
+
+Uses binary rewards for faithful P(success|action) estimation:
+  - SELF:direct  → Frontdoor without tools
+  - SELF:repl    → Frontdoor with tools, delegation disabled
+  - ARCHITECT    → Architect with full delegation freedom
+  - WORKER       → Scored via delegation chain attribution
+
+Binary reward: 1.0 for pass, 0.0 for fail. Cost stored in metadata for Optuna.
+TD learning with α=0.1 converges Q-values to empirical success rates.
+
+Usage (3-way mode - RECOMMENDED):
+    # THE command. Binary rewards for faithful probability estimation.
+    python scripts/benchmark/seed_specialist_routing.py \\
+      --3way --suites all --sample-size 10
+
+    # Dry run (no reward injection)
+    python scripts/benchmark/seed_specialist_routing.py \\
+      --3way --dry-run --suites thinking --sample-size 3
+
+## Legacy Mode: Comparative Rewards
+
+Uses cost-weighted comparative rewards (deprecated for new seeding):
   specialist correct & frontdoor wrong → +1.0 (specialist clearly better)
   specialist wrong & frontdoor right   → -0.5 (specialist worse)
   both correct                         → 0.5 - λ*max(0, cost_ratio-1) (cost-aware)
   both wrong                           → -0.3 (neither helps)
 
-Usage:
-    # THE command. Launch and leave running for days.
+Usage (legacy mode):
+    # Continuous comparative seeding (legacy)
     python scripts/benchmark/seed_specialist_routing.py \\
       --continuous --suites all --sample-size 10 --cooldown 2.0 --preflight
 
-    # Resume after restart
-    python scripts/benchmark/seed_specialist_routing.py \\
-      --continuous --resume seeding_20260201_143022
-
     # Quick stats from all sessions
     python scripts/benchmark/seed_specialist_routing.py --stats
-
-    # One-shot batch (original behavior)
-    python scripts/benchmark/seed_specialist_routing.py --suites thinking coder --sample-size 5
-
-    # Dry run (no reward injection)
-    python scripts/benchmark/seed_specialist_routing.py --dry-run --suites thinking --sample-size 3
 """
 
 from __future__ import annotations
@@ -57,6 +69,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# Silence noisy HTTP client logs (httpx, httpcore, urllib3)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 # ── Re-exports from extracted modules (test backwards compatibility) ──
 # Tests import these symbols from this file; keep them accessible here.
@@ -415,7 +432,8 @@ def call_orchestrator_forced(
 
     try:
         if client is not None:
-            response = client.post(f"{url}/chat", json=payload)
+            # Use per-request timeout override
+            response = client.post(f"{url}/chat", json=payload, timeout=timeout)
         else:
             response = httpx.post(
                 f"{url}/chat",
@@ -713,7 +731,10 @@ def _inject_3way_rewards_http(
             )
             if resp.status_code == 200:
                 injected += 1
-        except Exception:
+            else:
+                logger.warning(f"Reward injection failed for {action_key}: HTTP {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"Reward injection error for {action_key}: {e}")
             continue
     return injected
 
@@ -1060,7 +1081,20 @@ def run_batch(
     no_dedup: bool = False,
     escalation_chains: bool = False,
 ) -> list[ComparativeResult]:
-    """Run one evaluation batch: sample, evaluate per-question, checkpoint."""
+    """Run one evaluation batch: sample, evaluate per-question, checkpoint.
+
+    DEPRECATED: Use run_batch_3way() with --3way flag for new seeding.
+    This legacy mode uses cost-weighted comparative rewards which conflate
+    P(success) with cost. The 3-way mode uses binary rewards for faithful
+    probability estimation.
+    """
+    import warnings
+    warnings.warn(
+        "Legacy comparative seeding is deprecated. Use --3way for binary rewards "
+        "and faithful P(success) estimation.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     # Deduplicate roles
     alias_map: dict[str, str] = {}
@@ -1477,21 +1511,22 @@ def print_3way_summary(results: list[ThreeWayResult]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Comparative Specialist Routing Evaluation for MemRL",
+        description="MemRL Episodic Seeding for 3-Way Routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Run continuously for days (THE command):
-  %(prog)s --continuous --suites all --sample-size 10 --cooldown 2.0 --preflight
-
-  # Resume after restart:
-  %(prog)s --continuous --resume seeding_20260201_143022
-
-  # Quick stats:
-  %(prog)s --stats
+Examples (3-way mode - RECOMMENDED):
+  # THE command. Run continuously for days:
+  %(prog)s --3way --continuous --suites all --sample-size 10 --preflight
 
   # One-shot batch:
-  %(prog)s --suites thinking coder --sample-size 5
+  %(prog)s --3way --suites thinking coder --sample-size 5
+
+  # Dry run (no reward injection):
+  %(prog)s --3way --dry-run --suites thinking --sample-size 3
+
+Examples (legacy mode - DEPRECATED):
+  # Quick stats from all sessions:
+  %(prog)s --stats
 """,
     )
     parser.add_argument(
@@ -1603,18 +1638,80 @@ Examples:
 
     # ── Phase 4: 3-Way Routing Mode ──
     if args.three_way:
-        logger.info(f"Starting 3-way routing evaluation: session={session_id}")
-        results = run_batch_3way(
-            suites=args.suites,
-            sample_per_suite=args.sample_size,
-            seed=base_seed,
-            url=args.url,
-            timeout=args.timeout,
-            session_id=session_id,
-            dry_run=args.dry_run,
-        )
-        print_3way_summary(results)
-        return
+        if args.continuous:
+            # Continuous 3-way mode
+            batch = 0
+            consecutive_failures = 0
+            all_results: list[ThreeWayResult] = []
+            logger.info(f"Starting continuous 3-way evaluation: session={session_id}")
+            logger.info(f"  Ctrl+C to stop gracefully (finishes current question)")
+
+            while not state.shutdown:
+                # Health gate with auto-recovery
+                if not _check_server_health(args.url):
+                    consecutive_failures += 1
+                    if consecutive_failures > MAX_RECOVERY_ATTEMPTS:
+                        logger.error(f"API unrecoverable after {MAX_RECOVERY_ATTEMPTS} attempts.")
+                        break
+                    backoff = min(30 * (2 ** (consecutive_failures - 1)), 600)
+                    logger.warning(f"API down. Attempting recovery...")
+                    recovered = _attempt_recovery(args.url)
+                    if recovered:
+                        logger.info("Recovery successful — resuming")
+                        consecutive_failures = 0
+                        continue
+                    logger.warning(f"Recovery failed — sleeping {backoff}s")
+                    for _ in range(backoff):
+                        if state.shutdown:
+                            break
+                        time.sleep(1)
+                    continue
+                consecutive_failures = 0
+
+                batch += 1
+                batch_seed = base_seed + batch
+                logger.info(f"\n[3-Way Batch {batch}, seed={batch_seed}]")
+
+                try:
+                    results = run_batch_3way(
+                        suites=args.suites,
+                        sample_per_suite=args.sample_size,
+                        seed=batch_seed,
+                        url=args.url,
+                        timeout=args.timeout,
+                        session_id=session_id,
+                        dry_run=args.dry_run,
+                    )
+                    all_results.extend(results)
+
+                    if not results:
+                        logger.info("No unseen questions. Waiting 60s...")
+                        for _ in range(60):
+                            if state.shutdown:
+                                break
+                            time.sleep(1)
+
+                except Exception as e:
+                    logger.error(f"Batch failed: {e}")
+                    time.sleep(10)
+
+            print_3way_summary(all_results)
+            return
+
+        else:
+            # One-shot 3-way mode
+            logger.info(f"Starting 3-way routing evaluation: session={session_id}")
+            results = run_batch_3way(
+                suites=args.suites,
+                sample_per_suite=args.sample_size,
+                seed=base_seed,
+                url=args.url,
+                timeout=args.timeout,
+                session_id=session_id,
+                dry_run=args.dry_run,
+            )
+            print_3way_summary(results)
+            return
 
     # Compute alias_map for summary display
     alias_map: dict[str, str] = {}
