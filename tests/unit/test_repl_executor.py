@@ -97,7 +97,7 @@ class TestBasicREPLExecution:
         """Test REPL execution with immediate FINAL() answer."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = {"context_preview": "test"}
+            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
             mock_repl.execute.return_value = ExecutionResult(
                 output="Test answer",
                 is_final=True,
@@ -132,7 +132,7 @@ class TestBasicREPLExecution:
         """Test REPL execution over multiple turns."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = {"context_preview": "test"}
+            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
 
             # First two turns return partial results, third has FINAL
             execution_results = [
@@ -171,7 +171,7 @@ class TestBasicREPLExecution:
 
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = {"context_preview": "test"}
+            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
             mock_repl.execute.return_value = ExecutionResult(
                 output="Partial result",
                 is_final=False,
@@ -206,7 +206,7 @@ class TestBasicREPLExecution:
 
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = {"context_preview": "test"}
+            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
             mock_repl.config.timeout_seconds = 30
             mock_repl._tool_invocations = 0  # Mock tool invocation count
             mock_repl_class.return_value = mock_repl
@@ -245,7 +245,7 @@ class TestGenerationMonitoring:
                     "src.api.routes.chat_pipeline.repl_executor.GenerationMonitor"
                 ) as mock_monitor_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = {"context_preview": "test"}
+                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                     mock_repl.execute.return_value = ExecutionResult(
                         output="Answer", is_final=True, final_answer="Answer", error=None
                     )
@@ -292,7 +292,7 @@ class TestGenerationMonitoring:
                 "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
             ) as mock_repl_class:
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.execute.return_value = ExecutionResult(
                     output="Answer", is_final=True, final_answer="Answer", error=None
                 )
@@ -384,7 +384,7 @@ class TestTwoStageSummarization:
                     "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
                 ) as mock_repl_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = {"context_preview": "test"}
+                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                     mock_repl.execute.return_value = ExecutionResult(
                         output="Direct answer",
                         is_final=True,
@@ -450,7 +450,7 @@ class TestLongContextExploration:
                     "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
                 ) as mock_repl_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = {"context_preview": "test"}
+                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                     mock_repl.context = "A" * 25000
 
                     # Return non-final for 7 turns, final on 8th
@@ -519,7 +519,7 @@ class TestDocumentREPLEnvironment:
                 mock_doc_context_class.from_document_result.return_value = mock_doc_context
 
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.execute.return_value = ExecutionResult(
                     output="Document answer",
                     is_final=True,
@@ -557,7 +557,7 @@ class TestDocumentREPLEnvironment:
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             with patch("src.repl_document.DocumentREPLEnvironment") as mock_doc_repl_class:
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.execute.return_value = ExecutionResult(
                     output="Regular answer",
                     is_final=True,
@@ -619,7 +619,7 @@ class TestEscalationHandling:
                         mock_build_esc.return_value = "Escalation prompt"
 
                         mock_repl = MagicMock()
-                        mock_repl.get_state.return_value = {"context_preview": "test"}
+                        mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                         # First execution continues, second has FINAL
                         mock_repl.execute.side_effect = [
                             ExecutionResult(output="Partial", is_final=False, error=None),
@@ -673,7 +673,7 @@ class TestEscalationHandling:
                     mock_build_esc.return_value = "Escalation prompt"
 
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = {"context_preview": "test"}
+                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                     # First execution has error, second succeeds after escalation
                     mock_repl.execute.side_effect = [
                         ExecutionResult(
@@ -725,7 +725,7 @@ class TestEscalationHandling:
                 "src.api.routes.chat_pipeline.repl_executor.EscalationPolicy"
             ) as mock_policy_class:
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.context = "Test context"
                 # First has error, second succeeds
                 mock_repl.execute.side_effect = [
@@ -775,7 +775,7 @@ class TestEscalationHandling:
                 "src.api.routes.chat_pipeline.repl_executor.EscalationPolicy"
             ) as mock_policy_class:
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.execute.return_value = ExecutionResult(
                     output="", is_final=False, error="Critical failure"
                 )
@@ -829,7 +829,7 @@ class TestModelInitiatedRouting:
                 mock_build_esc.return_value = "Escalation prompt"
 
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
 
                 # First turn: model requests escalation
                 # Second turn: complete with FINAL
@@ -887,7 +887,7 @@ class TestDelegationLogging:
         """Test that delegation outcomes are logged to progress_logger."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = {"context_preview": "test"}
+            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
 
             # First turn: delegation recorded
             # Second turn: FINAL
@@ -948,7 +948,7 @@ class TestQualityReviewGate:
                         "src.api.routes.chat_pipeline.repl_executor._fast_revise"
                     ) as mock_revise:
                         mock_repl = MagicMock()
-                        mock_repl.get_state.return_value = {"context_preview": "test"}
+                        mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                         mock_repl.execute.return_value = ExecutionResult(
                             output="Wrong answer",
                             is_final=True,
@@ -995,7 +995,7 @@ class TestQualityReviewGate:
                         "src.api.routes.chat_pipeline.repl_executor._fast_revise"
                     ) as mock_revise:
                         mock_repl = MagicMock()
-                        mock_repl.get_state.return_value = {"context_preview": "test"}
+                        mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                         mock_repl.execute.return_value = ExecutionResult(
                             output="Correct answer",
                             is_final=True,
@@ -1039,7 +1039,7 @@ class TestExecutionTimeout:
         """Test that REPL execution timeout is handled."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = {"context_preview": "test"}
+            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
             mock_repl.config.timeout_seconds = 1  # Short timeout
 
             # Mock execute to hang
@@ -1124,7 +1124,7 @@ class TestTwoStageExceptionHandling:
                     "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
                 ) as mock_repl_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = {"context_preview": "test"}
+                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                     mock_repl.execute.return_value = ExecutionResult(
                         output="Fallback answer",
                         is_final=True,
@@ -1176,7 +1176,7 @@ class TestContextHandling:
             def capture_init(**kwargs):
                 captured_context.append(kwargs.get("context", ""))
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.execute.return_value = ExecutionResult(
                     output="42", is_final=True, final_answer="42", error=None
                 )
@@ -1219,7 +1219,7 @@ class TestToolOutputsInAnswer:
                 "src.api.routes.chat_pipeline.repl_executor._resolve_answer"
             ) as mock_resolve:
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = {"context_preview": "test"}
+                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
                 mock_repl.execute.return_value = ExecutionResult(
                     output="Answer", is_final=True, final_answer="Answer", error=None
                 )
