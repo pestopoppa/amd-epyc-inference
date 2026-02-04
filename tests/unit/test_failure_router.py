@@ -20,6 +20,7 @@ class TestErrorCategory:
         assert ErrorCategory.TIMEOUT == "timeout"
         assert ErrorCategory.SCHEMA == "schema"
         assert ErrorCategory.FORMAT == "format"
+        assert ErrorCategory.INFRASTRUCTURE == "infrastructure"
         assert ErrorCategory.UNKNOWN == "unknown"
 
 

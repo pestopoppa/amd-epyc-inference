@@ -168,9 +168,13 @@ class RoleResult:
     passed: bool
     elapsed_seconds: float
     error: str | None = None
+    error_type: str = "none"
     tokens_generated: int = 0
     tools_used: int = 0
     tools_called: list[str] = field(default_factory=list)
+    delegation_events: list[dict] = field(default_factory=list)
+    tools_success: bool | None = None
+    delegation_success: bool | None = None
     routed_to: str = ""
     role_history: list[str] = field(default_factory=list)
     routing_strategy: str = ""

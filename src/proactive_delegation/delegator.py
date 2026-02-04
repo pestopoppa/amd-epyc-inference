@@ -221,6 +221,19 @@ class ProactiveDelegator:
                 if subtask_result.role not in result.roles_used:
                     result.roles_used.append(subtask_result.role)
 
+        # Delegation telemetry
+        for sr in result.subtask_results:
+            result.delegation_events.append(
+                {
+                    "from_role": "proactive_delegation",
+                    "to_role": sr.role,
+                    "task_summary": sr.subtask_id,
+                    "success": sr.success,
+                    "elapsed_ms": round(sr.elapsed_seconds * 1000),
+                    "tokens_generated": sr.tokens_used,
+                }
+            )
+
         plan_elapsed = time.monotonic() - plan_start
 
         # Critical path metrics (post-hoc observability)

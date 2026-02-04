@@ -710,3 +710,5 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 {"ts":"2026-02-04T02:45:00+01:00","session":"ses_20260204_020400","level":"INFO","cat":"FILE_MODIFY","msg":"scripts/benchmark/seed_specialist_routing.py","details":"Added t/s speed and tool list logging for 3-way eval"}
 {"ts":"2026-02-04T02:50:00+01:00","session":"ses_20260204_020400","level":"INFO","cat":"DECISION","msg":"No separate TOON→prose worker","details":"Frontdoor handles as chatbot naturally"}
 {"ts":"2026-02-04T02:55:00+01:00","session":"ses_20260204_020400","level":"INFO","cat":"SESSION_END","msg":"Session complete","details":"Architect optimized for TOON, eval logging improved"}
+{"ts":"2026-02-04T11:35:31+01:00","session":"ses_20260204_113531_956347","level":"INFO","cat":"TASK_START","msg":"Audit remediation implementation + tests + docs","details":"Implemented RoutingFacade, telemetry, seeding hardening; updated docs; ran unit tests"}
+{"ts":"2026-02-04T11:35:31+01:00","session":"ses_20260204_113531_956347","level":"INFO","cat":"TASK_END","msg":"Audit remediation implementation + tests + docs","details":"outcome=success"}

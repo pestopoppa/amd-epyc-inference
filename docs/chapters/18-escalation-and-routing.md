@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The orchestrator uses three complementary systems for task routing and failure handling: unified escalation policy (`escalation.py`), legacy failure router with MemRL integration (`failure_router.py`), and proactive delegation with complexity-aware routing (`proactive_delegation.py`). Together they implement reactive escalation chains (worker → coder → architect) and proactive task decomposition.
+The orchestrator uses a **RoutingFacade** to unify escalation decisions. Rules from `escalation.py` are authoritative, and MemRL’s learned escalation is advisory. Proactive delegation with complexity-aware routing (`proactive_delegation.py`) remains a separate execution strategy. The legacy `FailureRouter` is deprecated and kept as a thin wrapper for backwards compatibility.
 
 ## Unified Escalation Policy
 
@@ -22,6 +22,7 @@ class ErrorCategory(str, Enum):
     SCHEMA = "schema"          # IR/JSON schema violations
     FORMAT = "format"          # Style/format issues
     EARLY_ABORT = "early_abort"  # Model predicted failure, skip retries
+    INFRASTRUCTURE = "infrastructure"  # Backend/network failure (seeding skips reward)
     UNKNOWN = "unknown"
 ```
 
@@ -36,6 +37,7 @@ class ErrorCategory(str, Enum):
 | TIMEOUT (optional gate) | SKIP | — | — |
 | TIMEOUT (required gate) | RETRY | ESCALATE | FAIL |
 | EARLY_ABORT | ESCALATE | — | — |
+| INFRASTRUCTURE | — | — | Skip reward injection (seeding only); rules handle escalation |
 
 **Config Defaults**:
 
@@ -77,29 +79,9 @@ class Role(Enum):
 - Ingest → Architect (long-context ingestion)
 - Architect → FAIL (no further escalation)
 
-## Failure Router with Learned Escalation
+## RoutingFacade (Rules-Authoritative + Learned Advisory)
 
-### Legacy Failure Router
-
-The `FailureRouter` class predates `EscalationPolicy` but remains for MemRL integration:
-
-```python
-class FailureRouter:
-    """Routes failures with optional learned escalation (Phase 4 MemRL)."""
-
-    ESCALATION_CHAINS: dict[str, EscalationChain] = {
-        "worker": EscalationChain("worker", "coder", max_retries=2, max_escalations=2),
-        "coder": EscalationChain("coder", "architect", max_retries=2, max_escalations=1),
-        "architect": EscalationChain("architect", None, max_retries=3, max_escalations=0),
-    }
-
-    # Map specific roles to generic chains
-    ROLE_TO_CHAIN: dict[str, str] = {
-        "worker_general": "worker",
-        "coder_primary": "coder",
-        "architect_general": "architect",
-    }
-```
+The `RoutingFacade` is the single entry point for escalation decisions. It queries learned escalation when confident, but always validates against rule constraints (e.g., FORMAT/SCHEMA never escalate). The deprecated `FailureRouter` delegates to the facade.
 
 ### MemRL Integration (Phase 4)
 
@@ -143,7 +125,7 @@ class LearnedEscalationPolicy:
 # Track usage for monitoring
 self._strategy_counts = {"learned": 0, "rules": 0}
 
-# In route_failure():
+# In RoutingFacade.decide():
 if learned_result.should_use_learned:
     self._strategy_counts["learned"] += 1
     return learned_decision
@@ -165,7 +147,7 @@ The Unified Execution Model introduces 3-way confidence routing for faithful pro
 | **SELF:direct** | Handle without tools | `frontdoor` with `mode=direct` |
 | **SELF:repl** | Handle with tools, no delegation | `frontdoor` with `mode=repl`, `allow_delegation=False` |
 | **ARCHITECT** | Escalate for complex reasoning | `architect_coding` or `architect_general` |
-| **WORKER** | Delegate to faster workers | Scored via delegation chain attribution |
+| **WORKER** | Delegate to faster workers | Scored via canonical `DelegationEvent` telemetry |
 
 ### Confidence Routing Prompt
 
@@ -361,9 +343,10 @@ Prevents infinite review-fix cycles. After max iterations, accept output or esca
 ### Implementation
 
 1. `src/escalation.py`: Unified escalation policy (336 lines)
-2. `src/failure_router.py`: Legacy router with MemRL (787 lines)
-3. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
-4. `src/roles.py`: Role definitions and escalation chains
+2. `src/routing_facade.py`: Unified routing facade (rules + learned)
+3. `src/failure_router.py`: Deprecated thin wrapper (legacy API)
+4. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
+5. `src/roles.py`: Role definitions and escalation chains
 
 ### Theoretical Foundations
 

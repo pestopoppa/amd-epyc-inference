@@ -179,6 +179,7 @@ class AggregatedResult:
     all_approved: bool = False
     total_iterations: int = 0
     roles_used: list[str] = field(default_factory=list)
+    delegation_events: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -199,6 +200,7 @@ class AggregatedResult:
             "all_approved": self.all_approved,
             "total_iterations": self.total_iterations,
             "roles_used": self.roles_used,
+            "delegation_events": self.delegation_events,
         }
 
 

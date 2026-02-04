@@ -47,6 +47,7 @@ class DelegateResponse(BaseModel):
     aggregated_output: str
     all_approved: bool
     elapsed_seconds: float
+    delegation_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 @router.post("/api/delegate", response_model=DelegateResponse)
@@ -133,4 +134,5 @@ async def delegate(
         aggregated_output=result.aggregated_output,
         all_approved=result.all_approved,
         elapsed_seconds=round(elapsed, 2),
+        delegation_events=result.delegation_events,
     )

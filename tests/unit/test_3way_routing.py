@@ -213,6 +213,22 @@ class TestHybridRouter3Way:
         assert strategy == "rules"
 
 
+class TestInfraErrorClassification:
+    """Tests for infrastructure error classification in seeding."""
+
+    def test_classify_error_infra(self):
+        from seed_specialist_routing import _classify_error
+
+        assert _classify_error("ReadTimeout: timed out") == "infrastructure"
+        assert _classify_error("HTTP 503 backend down") == "infrastructure"
+
+    def test_classify_error_task_failure(self):
+        from seed_specialist_routing import _classify_error
+
+        assert _classify_error("model produced wrong answer") == "task_failure"
+        assert _classify_error(None) == "none"
+
+
 class TestChatRequestAllowDelegation:
     """Tests for ChatRequest.allow_delegation field."""
 

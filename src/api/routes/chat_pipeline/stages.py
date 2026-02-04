@@ -275,6 +275,11 @@ def _execute_delegated(
         score_completed_task(state, routing.task_id)
 
     cache_stats = primitives.get_cache_stats() if primitives._backends else None
+    delegation_events = delegation_stats.get("delegation_events", [])
+    delegation_success = None
+    if delegation_events:
+        delegation_success = any(e.get("success") for e in delegation_events)
+
     return ChatResponse(
         answer=answer,
         turns=1 + loops,
@@ -296,6 +301,8 @@ def _execute_delegated(
         formalization_applied=routing.formalization_applied,
         tools_used=delegation_stats.get("tools_used", 0),
         tools_called=delegation_stats.get("tools_called", []),
+        delegation_events=delegation_events,
+        delegation_success=delegation_success,
         prompt_eval_ms=primitives.total_prompt_eval_ms,
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,
@@ -470,6 +477,8 @@ async def _execute_proactive(
         score_completed_task(state, routing.task_id)
 
     cache_stats = primitives.get_cache_stats() if primitives._backends else None
+    delegation_events = getattr(result, "delegation_events", [])
+    delegation_success = result.all_approved if delegation_events else None
     return ChatResponse(
         answer=answer,
         turns=1 + n_subtasks,
@@ -485,6 +494,8 @@ async def _execute_proactive(
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=routing.formalization_applied,
         tools_used=0,
+        delegation_events=delegation_events,
+        delegation_success=delegation_success,
         prompt_eval_ms=primitives.total_prompt_eval_ms,
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,

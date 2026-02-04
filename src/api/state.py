@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
     from src.gate_runner import GateRunner
     from src.failure_router import FailureRouter
+    from src.routing_facade import RoutingFacade
     from src.api.protocols import (
         QScorerProtocol,
         EpisodicStoreProtocol,
@@ -53,6 +54,7 @@ class AppState:
     llm_primitives: LLMPrimitives | None = None
     gate_runner: GateRunner | None = None
     failure_router: FailureRouter | None = None
+    routing_facade: RoutingFacade | None = None
     progress_logger: ProgressLoggerProtocol | None = None
 
     # Q-scorer components (for idle-time scoring)

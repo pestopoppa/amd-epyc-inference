@@ -180,6 +180,7 @@ def _architect_delegated_answer(
         "specialist_output": "",
         "needs_input": False,
         "tools_used": 0,
+        "delegation_events": [],
     }
 
     # Optional TOON encoding for context
@@ -316,6 +317,20 @@ def _architect_delegated_answer(
                 "ms": round(phase_b_ms),
                 "delegate_to": delegate_to,
                 "delegate_mode": delegate_mode,
+            }
+        )
+        # Delegation telemetry
+        report_text = report or ""
+        failed_prefixes = ("[Investigation failed", "[REPL delegation failed")
+        success = bool(report_text) and not report_text.startswith(failed_prefixes)
+        stats["delegation_events"].append(
+            {
+                "from_role": architect_role,
+                "to_role": delegate_to,
+                "task_summary": brief[:200],
+                "success": success,
+                "elapsed_ms": round(phase_b_ms),
+                "tokens_generated": 0,
             }
         )
 

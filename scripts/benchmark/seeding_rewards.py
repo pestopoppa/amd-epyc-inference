@@ -249,16 +249,18 @@ def compute_3way_rewards(
     """
     rewards: dict[str, float] = {}
 
-    # SELF:direct — frontdoor without tools
-    if "frontdoor:direct" in results:
-        rewards[ACTION_SELF_DIRECT] = success_reward(results["frontdoor:direct"].passed)
+    # SELF:direct — frontdoor/worker_vision without tools
+    direct_keys = [k for k in results if k in ("frontdoor:direct", "worker_vision:direct")]
+    if direct_keys:
+        rewards[ACTION_SELF_DIRECT] = success_reward(results[direct_keys[0]].passed)
 
-    # SELF:repl — frontdoor with tools (no delegation)
-    if "frontdoor:repl" in results:
-        rewards[ACTION_SELF_REPL] = success_reward(results["frontdoor:repl"].passed)
+    # SELF:repl — frontdoor/worker_vision with tools (no delegation)
+    repl_keys = [k for k in results if k in ("frontdoor:repl", "worker_vision:react")]
+    if repl_keys:
+        rewards[ACTION_SELF_REPL] = success_reward(results[repl_keys[0]].passed)
 
-    # ARCHITECT — architect_coding or architect_general (with delegation freedom)
-    architect_keys = [k for k in results if k.startswith(("architect_coding", "architect_general"))]
+    # ARCHITECT — architect_coding, architect_general, or vision_escalation
+    architect_keys = [k for k in results if k.startswith(("architect_coding", "architect_general", "vision_escalation"))]
     if architect_keys:
         # Take best architect result (they have delegation freedom)
         best_architect = max(architect_keys, key=lambda k: int(results[k].passed))
@@ -283,28 +285,44 @@ def score_delegation_chain(
     """
     rewards: dict[str, float] = {}
 
-    # Check SELF:repl for delegation
-    if "frontdoor:repl" in results:
-        rr = results["frontdoor:repl"]
-        if _has_delegation(rr):
-            rewards[ACTION_WORKER] = success_reward(rr.passed)
-
-    # Check ARCHITECT for delegation
-    architect_keys = [k for k in results if k.startswith(("architect_coding", "architect_general"))]
-    for key in architect_keys:
+    # Check SELF:repl for delegation (frontdoor:repl for text, worker_vision:react for VL)
+    repl_keys = [k for k in results if k in ("frontdoor:repl", "worker_vision:react")]
+    for key in repl_keys:
         rr = results[key]
+        if getattr(rr, "error_type", "none") == "infrastructure":
+            continue
         if _has_delegation(rr):
-            # Use best WORKER outcome
-            if ACTION_WORKER in rewards:
-                rewards[ACTION_WORKER] = max(rewards[ACTION_WORKER], success_reward(rr.passed))
+            if rr.delegation_success is not None:
+                rewards[ACTION_WORKER] = success_reward(rr.delegation_success)
             else:
                 rewards[ACTION_WORKER] = success_reward(rr.passed)
+
+    # Check ARCHITECT for delegation
+    architect_keys = [k for k in results if k.startswith(("architect_coding", "architect_general", "vision_escalation"))]
+    for key in architect_keys:
+        rr = results[key]
+        if getattr(rr, "error_type", "none") == "infrastructure":
+            continue
+        if _has_delegation(rr):
+            score = (
+                success_reward(rr.delegation_success)
+                if rr.delegation_success is not None
+                else success_reward(rr.passed)
+            )
+            if ACTION_WORKER in rewards:
+                rewards[ACTION_WORKER] = max(rewards[ACTION_WORKER], score)
+            else:
+                rewards[ACTION_WORKER] = score
 
     return rewards
 
 
 def _has_delegation(rr: RoleResult) -> bool:
     """Check if a RoleResult involved delegation to a worker."""
+    if getattr(rr, "error_type", "none") == "infrastructure":
+        return False
+    if getattr(rr, "delegation_events", None):
+        return True
     # Check tools_called for delegation indicators
     if rr.tools_called:
         delegation_tools = {"delegate", "delegate_to_worker", "spawn_worker"}

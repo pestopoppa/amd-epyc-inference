@@ -53,6 +53,22 @@ log = logging.getLogger(__name__)
 # ── Stage 10: REPL orchestration mode ───────────────────────────────────
 
 
+def _tools_success(answer: str, tool_outputs: list, tool_invocations: int) -> bool | None:
+    """Infer whether tool outputs influenced the final answer."""
+    if tool_invocations <= 0:
+        return None
+    if not tool_outputs or not answer:
+        return None
+    answer_text = answer.lower()
+    for output in tool_outputs:
+        text = str(output).strip()
+        if not text:
+            continue
+        if text[:200].lower() in answer_text:
+            return True
+    return False
+
+
 async def _execute_repl(
     request: ChatRequest,
     routing: RoutingResult,
@@ -187,6 +203,7 @@ async def _execute_repl(
     consecutive_failures = 0
     role_history = [current_role]
     escalation_prompt = ""
+    delegation_events: list[dict] = []
 
     max_turns = (
         LONG_CONTEXT_CONFIG["max_turns"] if use_long_context_exploration else request.max_turns
@@ -264,7 +281,7 @@ async def _execute_repl(
                 failure_count=1,
                 task_id=task_id,
             )
-            policy = EscalationPolicy()
+            policy = state.routing_facade if state.routing_facade else EscalationPolicy()
             decision = policy.decide(escalation_ctx)
 
             if decision.should_escalate and decision.target_role:
@@ -338,7 +355,11 @@ async def _execute_repl(
                     failure_count=1,
                     task_id=task_id,
                 )
-                esc_decision = EscalationPolicy().decide(esc_ctx)
+                esc_decision = (
+                    state.routing_facade.decide(esc_ctx)
+                    if state.routing_facade
+                    else EscalationPolicy().decide(esc_ctx)
+                )
                 if esc_decision.should_escalate and esc_decision.target_role:
                     new_role = str(esc_decision.target_role)
 
@@ -355,12 +376,23 @@ async def _execute_repl(
                         error_category="early_abort",
                         task_id=task_id,
                     ),
-                    decision=EscalationPolicy().decide(
-                        EscalationContext(
-                            current_role=role_history[-2],
-                            error_category="early_abort",
-                            error_message=reason,
-                            task_id=task_id,
+                    decision=(
+                        state.routing_facade.decide(
+                            EscalationContext(
+                                current_role=role_history[-2],
+                                error_category="early_abort",
+                                error_message=reason,
+                                task_id=task_id,
+                            )
+                        )
+                        if state.routing_facade
+                        else EscalationPolicy().decide(
+                            EscalationContext(
+                                current_role=role_history[-2],
+                                error_category="early_abort",
+                                error_message=reason,
+                                task_id=task_id,
+                            )
                         )
                     ),
                 )
@@ -383,6 +415,16 @@ async def _execute_repl(
                         strategy_used=f"delegate:{deleg.get('to_role', 'unknown')}",
                         success=deleg.get("success", False),
                     )
+                delegation_events.append(
+                    {
+                        "from_role": deleg.get("from_role", ""),
+                        "to_role": deleg.get("to_role", ""),
+                        "task_summary": deleg.get("prompt_preview", ""),
+                        "success": deleg.get("success"),
+                        "elapsed_ms": int((deleg.get("elapsed_sec") or 0) * 1000),
+                        "tokens_generated": deleg.get("result_len", 0),
+                    }
+                )
             repl.artifacts["_delegations"] = []
 
         # 5. Check for FINAL() completion
@@ -439,7 +481,7 @@ async def _execute_repl(
                 failure_count=consecutive_failures,
                 task_id=task_id,
             )
-            policy = EscalationPolicy()
+            policy = state.routing_facade if state.routing_facade else EscalationPolicy()
             decision = policy.decide(escalation_ctx)
 
             if decision.should_escalate and state.progress_logger:
@@ -525,6 +567,12 @@ async def _execute_repl(
         )
         score_completed_task(state, task_id)
 
+    tool_outputs = repl.artifacts.get("_tool_outputs", [])
+    tools_success = _tools_success(answer, tool_outputs, repl._tool_invocations)
+    delegation_success = None
+    if delegation_events:
+        delegation_success = any(e.get("success") for e in delegation_events)
+
     return ChatResponse(
         answer=answer,
         turns=turns,
@@ -545,6 +593,9 @@ async def _execute_repl(
             if repl.tool_registry
             else []
         ),
+        delegation_events=delegation_events,
+        tools_success=tools_success,
+        delegation_success=delegation_success,
         prompt_eval_ms=primitives.total_prompt_eval_ms,
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,

@@ -76,6 +76,8 @@ async def lifespan(app: FastAPI):
     from src.llm_primitives import LLMPrimitives
     from src.gate_runner import GateRunner
     from src.failure_router import FailureRouter
+    from src.routing_facade import RoutingFacade
+    from src.escalation import EscalationPolicy
 
     ProgressLogger = get_progress_logger_class()
 
@@ -87,6 +89,7 @@ async def lifespan(app: FastAPI):
     state.progress_logger = ProgressLogger() if ProgressLogger else None
     state.gate_runner = GateRunner(progress_logger=state.progress_logger)
     state.failure_router = FailureRouter()
+    state.routing_facade = RoutingFacade(policy=EscalationPolicy(), learned=None)
 
     # Tool registry (feature-gated)
     ToolRegistry = get_tool_registry_class()

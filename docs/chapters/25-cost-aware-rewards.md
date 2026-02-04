@@ -125,6 +125,14 @@ Where:
 
 Cost penalty is **only applied when reward > 0** (correct answers). Incorrect answers already receive low/zero reward — adding a cost penalty would be double-counting. This matches xRouter's design: "If the final answer is incorrect, the trajectory receives zero reward regardless of cost."
 
+### Infrastructure Error Handling
+
+Infrastructure failures (timeouts, connection errors, backend down) are **not** treated as task failures. They are classified separately and **produce no reward at all** — the action is excluded from the rewards dict, so Q-values are not updated. This prevents slow or flaky backends from biasing routing probabilities.
+
+### Dual-Architect Evaluation (3-Way Seeding)
+
+During 3-way routing seeding, the `ARCHITECT` action evaluates **both** `architect_general` and `architect_coding` (for text tasks) and injects a **best-of-two** binary reward into the single `ARCHITECT` action key. Individual architect results are stored in metadata for later analysis and possible future sub-action routing.
+
 ### Cost Normalization
 
 We normalize by **expected elapsed time** rather than raw tokens or raw seconds:

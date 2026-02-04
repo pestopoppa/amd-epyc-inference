@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Failure routing for hierarchical orchestration.
+"""Failure routing for hierarchical orchestration (deprecated).
 
 This module routes failures to the appropriate escalation level based on
 role, failure count, and error category. Implements the escalation chain:
@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -42,17 +41,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-class ErrorCategory(str, Enum):
-    """Categories of errors for routing decisions."""
-
-    CODE = "code"  # Syntax errors, type errors, test failures
-    LOGIC = "logic"  # Wrong output, failed assertions
-    TIMEOUT = "timeout"  # Gate or execution timeout
-    SCHEMA = "schema"  # IR/JSON schema violations
-    FORMAT = "format"  # Style/format issues
-    EARLY_ABORT = "early_abort"  # Generation aborted due to predicted failure
-    UNKNOWN = "unknown"  # Unclassified errors
+from src.escalation import (
+    ErrorCategory,
+    EscalationAction,
+    EscalationContext,
+    EscalationDecision,
+    EscalationPolicy,
+)
+from src.routing_facade import RoutingFacade
+from src.roles import Role
 
 
 @dataclass
@@ -129,6 +126,95 @@ def _normalize_role(role: str) -> str:
         # Convert CODER_PRIMARY to coder_primary
         return enum_name.lower()
     return role
+
+
+def _map_generic_to_specific_role(role: str) -> Role | None:
+    """Map generic role names to specific Role enums for policy decisions."""
+    resolved = Role.from_string(role)
+    if resolved is not None:
+        return resolved
+
+    generic_map = {
+        "worker": "worker_general",
+        "coder": "coder_primary",
+        "architect": "architect_general",
+        "ingest": "ingest_long_context",
+        "frontdoor": "frontdoor",
+    }
+    mapped = generic_map.get(role, "")
+    return Role.from_string(mapped) if mapped else None
+
+
+def _decision_to_routing(decision: "EscalationDecision", original_role: str) -> RoutingDecision:
+    """Convert EscalationDecision to legacy RoutingDecision."""
+    if decision.action == EscalationAction.RETRY:
+        return RoutingDecision(
+            action="retry",
+            next_role=original_role,
+            reason=decision.reason,
+            should_include_context=decision.include_context,
+            max_retries_remaining=decision.retries_remaining,
+        )
+    if decision.action == EscalationAction.SKIP:
+        return RoutingDecision(
+            action="skip",
+            next_role=original_role,
+            reason=decision.reason,
+            should_include_context=decision.include_context,
+            max_retries_remaining=decision.retries_remaining,
+        )
+    if decision.action == EscalationAction.ESCALATE:
+        target = decision.target_role.value if decision.target_role else None
+        if target is None:
+            return RoutingDecision(
+                action="fail",
+                next_role=None,
+                reason="Escalation target missing",
+                should_include_context=decision.include_context,
+            )
+        return RoutingDecision(
+            action="escalate",
+            next_role=target,
+            reason=decision.reason,
+            should_include_context=decision.include_context,
+        )
+    if decision.action == EscalationAction.FAIL:
+        return RoutingDecision(
+            action="fail",
+            next_role=None,
+            reason=decision.reason,
+            should_include_context=decision.include_context,
+        )
+    if decision.action == EscalationAction.EXPLORE:
+        return RoutingDecision(
+            action="fail",
+            next_role=None,
+            reason=f"{decision.reason} (explore suggested)",
+            should_include_context=decision.include_context,
+        )
+    if decision.action in (EscalationAction.DELEGATE, EscalationAction.REVIEW):
+        target = decision.target_role.value if decision.target_role else None
+        if target:
+            return RoutingDecision(
+                action="escalate",
+                next_role=target,
+                reason=decision.reason,
+                should_include_context=decision.include_context,
+            )
+        return RoutingDecision(
+            action="retry",
+            next_role=original_role,
+            reason=decision.reason,
+            should_include_context=decision.include_context,
+            max_retries_remaining=decision.retries_remaining,
+        )
+
+    return RoutingDecision(
+        action="fail",
+        next_role=None,
+        reason=f"Unsupported escalation action: {decision.action}",
+        should_include_context=decision.include_context,
+    )
 
 
 @dataclass
@@ -274,6 +360,9 @@ class FailureRouter:
     Phase 4 (MemRL): When retriever is provided, queries episodic memory
     for similar failures before making rule-based decisions. Falls back
     to rules when not confident or during cold start.
+
+    Deprecated: this class is a thin wrapper around RoutingFacade to preserve
+    legacy API usage in tests and older code paths.
     """
 
     # Standard escalation chains (use generic names)
@@ -365,6 +454,12 @@ class FailureRouter:
         # Track strategy usage for monitoring
         self._strategy_counts = {"learned": 0, "rules": 0}
 
+        # RoutingFacade (authoritative rules + learned advisory)
+        self.facade = RoutingFacade(
+            policy=EscalationPolicy(),
+            learned=self.learned_policy,
+        )
+
     def route_failure(self, context: FailureContext) -> RoutingDecision:
         """Determine how to handle a failure.
 
@@ -386,44 +481,30 @@ class FailureRouter:
         if original_role != context.role:
             logger.info(f"Normalized role: {original_role!r} -> {context.role!r}")
 
-        # Map specific role name to generic chain name
-        chain_name = self.ROLE_TO_CHAIN.get(context.role, context.role)
-        chain = self.chains.get(chain_name)
-        if chain is None:
+        # Map generic roles to specific Role enums (for EscalationPolicy)
+        role_for_policy = _map_generic_to_specific_role(context.role)
+        if role_for_policy is None:
             return RoutingDecision(
                 action="fail",
                 next_role=None,
-                reason=f"Unknown role: {context.role} (chain: {chain_name})",
+                reason=f"Unknown role: {context.role}",
                 should_include_context=False,
             )
 
-        # Phase 4: Try learned escalation first
-        learned_result: LearnedEscalationResult | None = None
-        if self.learned_policy is not None:
-            learned_result = self.learned_policy.query(context)
-            if learned_result.should_use_learned:
-                decision = self._apply_learned_decision(context, chain, learned_result)
-                if decision is not None:
-                    self._strategy_counts["learned"] += 1
-                    self._log_decision(context, decision, "learned", learned_result)
-                    return decision
+        esc_ctx = EscalationContext(
+            current_role=role_for_policy,
+            failure_count=context.failure_count,
+            error_category=context.error_category,
+            error_message=context.error_message,
+            gate_name=context.gate_name,
+            task_id=context.task_id,
+            escalation_count=context.escalation_count,
+        )
 
-        # Rule-based escalation (default path)
-        self._strategy_counts["rules"] += 1
-        decision = self._rule_based_route(context, chain)
+        decision = self.facade.decide(esc_ctx)
+        routing = _decision_to_routing(decision, original_role=context.role)
+        return routing
 
-        # Translate generic chain names to specific role names
-        if decision.next_role is not None:
-            decision = RoutingDecision(
-                action=decision.action,
-                next_role=self._chain_to_specific_role(decision.next_role, context.role),
-                reason=decision.reason,
-                should_include_context=decision.should_include_context,
-                max_retries_remaining=decision.max_retries_remaining,
-            )
-
-        self._log_decision(context, decision, "rules", learned_result)
-        return decision
 
     def _chain_to_specific_role(self, chain_name: str, original_role: str) -> str:
         """Map a generic chain name to a specific role name.

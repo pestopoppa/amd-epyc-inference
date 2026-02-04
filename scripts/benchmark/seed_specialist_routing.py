@@ -45,6 +45,7 @@ Usage (legacy mode):
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import logging
@@ -200,9 +201,13 @@ def append_checkpoint(session_id: str, result: ComparativeResult):
     path = EVAL_DIR / f"{session_id}.jsonl"
     line = json.dumps(asdict(result), ensure_ascii=False)
     with open(path, "a") as f:
-        f.write(line + "\n")
-        f.flush()
-        os.fsync(f.fileno())
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def load_seen_questions() -> set[str]:
@@ -254,7 +259,13 @@ def record_seen(prompt_id: str, suite: str, session_id: str):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     with open(SEEN_FILE, "a") as f:
-        f.write(json.dumps(entry) + "\n")
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(entry) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 # ── Question sampling ─────────────────────────────────────────────────
@@ -458,6 +469,23 @@ def score_answer_deterministic(
     return score_answer(answer, expected, scoring_method, scoring_config or {})
 
 
+INFRA_PATTERNS = [
+    "timed out", "timeout", "connection", "refused",
+    "unreachable", "502", "503", "504", "connecterror",
+    "readtimeout", "backend down", "server error",
+]
+
+
+def _classify_error(error_str: str | None) -> str:
+    """Classify error as infrastructure or task failure."""
+    if error_str is None:
+        return "none"
+    error_lower = error_str.lower()
+    if any(p in error_lower for p in INFRA_PATTERNS):
+        return "infrastructure"
+    return "task_failure"
+
+
 # ── Phase 4: 3-Way Routing Evaluation ─────────────────────────────────
 
 
@@ -508,38 +536,60 @@ def evaluate_question_3way(
     scoring_method = prompt_info.get("scoring_method", "exact_match")
     scoring_config = prompt_info.get("scoring_config", {})
     suite = prompt_info["suite"]
+    image_path = prompt_info.get("image_path", "")
+    is_vl = bool(image_path)
 
     role_results: dict[str, RoleResult] = {}
 
+    # ── VL-aware role mapping ──
+    # VL questions must route to vision-capable models, not text-only.
+    if is_vl:
+        self_role = "worker_vision"       # port 8086
+        self_direct_mode = "direct"
+        self_repl_mode = "react"          # vision equivalent of repl
+        arch_role = "vision_escalation"   # port 8087
+    else:
+        self_role = "frontdoor"           # port 8080
+        self_direct_mode = "direct"
+        self_repl_mode = "repl"
+        arch_role = None  # determined below by _is_coding_task
+
     # ── Configuration 1: SELF:direct ──
-    # Frontdoor, direct mode, no tools
-    logger.info(f"  → {ACTION_SELF_DIRECT}...")
+    # Frontdoor/vision, direct mode, no tools
+    logger.info(f"  → {ACTION_SELF_DIRECT} ({self_role})...")
     t0 = time.perf_counter()
     resp_direct = call_orchestrator_forced(
         prompt=prompt,
-        force_role="frontdoor",
-        force_mode="direct",
+        force_role=self_role,
+        force_mode=self_direct_mode,
         url=url,
         timeout=timeout,
         client=client,
         allow_delegation=False,  # Explicitly disable delegation
+        image_path=image_path,
+        cache_prompt=False,
     )
     elapsed_direct = time.perf_counter() - t0
 
     answer_direct = resp_direct.get("answer", "")
     error_direct = resp_direct.get("error")
+    error_type_direct = _classify_error(error_direct)
     passed_direct = score_answer_deterministic(answer_direct, expected, scoring_method, scoring_config) if not error_direct else False
 
-    role_results["frontdoor:direct"] = RoleResult(
-        role="frontdoor",
-        mode="direct",
+    role_results[f"{self_role}:{self_direct_mode}"] = RoleResult(
+        role=self_role,
+        mode=self_direct_mode,
         answer=answer_direct[:500] if answer_direct else "",
         passed=passed_direct,
         elapsed_seconds=elapsed_direct,
         error=error_direct,
+        error_type=error_type_direct,
         tokens_generated=resp_direct.get("tokens_generated", 0),
         tools_used=resp_direct.get("tools_used", 0),
         tools_called=resp_direct.get("tools_called", []),
+        delegation_events=resp_direct.get("delegation_events", []),
+        tools_success=resp_direct.get("tools_success"),
+        delegation_success=resp_direct.get("delegation_success"),
         routed_to=resp_direct.get("routed_to", ""),
         role_history=resp_direct.get("role_history", []),
         predicted_tps=resp_direct.get("predicted_tps", 0.0),
@@ -558,34 +608,41 @@ def evaluate_question_3way(
     logger.info(f"    {ACTION_SELF_DIRECT} → {status} ({elapsed_direct:.1f}s{tps_str}, {tokens_direct} tok)")
 
     # ── Configuration 2: SELF:repl ──
-    # Frontdoor, repl mode, tools available but no delegation
-    logger.info(f"  → {ACTION_SELF_REPL}...")
+    # Frontdoor/vision, repl/react mode, tools available but no delegation
+    logger.info(f"  → {ACTION_SELF_REPL} ({self_role}:{self_repl_mode})...")
     t0 = time.perf_counter()
     resp_repl = call_orchestrator_forced(
         prompt=prompt,
-        force_role="frontdoor",
-        force_mode="repl",
+        force_role=self_role,
+        force_mode=self_repl_mode,
         url=url,
         timeout=timeout,
         client=client,
         allow_delegation=False,  # Tools available, but no delegation to workers
+        image_path=image_path,
+        cache_prompt=False,
     )
     elapsed_repl = time.perf_counter() - t0
 
     answer_repl = resp_repl.get("answer", "")
     error_repl = resp_repl.get("error")
+    error_type_repl = _classify_error(error_repl)
     passed_repl = score_answer_deterministic(answer_repl, expected, scoring_method, scoring_config) if not error_repl else False
 
-    role_results["frontdoor:repl"] = RoleResult(
-        role="frontdoor",
-        mode="repl",
+    role_results[f"{self_role}:{self_repl_mode}"] = RoleResult(
+        role=self_role,
+        mode=self_repl_mode,
         answer=answer_repl[:500] if answer_repl else "",
         passed=passed_repl,
         elapsed_seconds=elapsed_repl,
         error=error_repl,
+        error_type=error_type_repl,
         tokens_generated=resp_repl.get("tokens_generated", 0),
         tools_used=resp_repl.get("tools_used", 0),
         tools_called=resp_repl.get("tools_called", []),
+        delegation_events=resp_repl.get("delegation_events", []),
+        tools_success=resp_repl.get("tools_success"),
+        delegation_success=resp_repl.get("delegation_success"),
         routed_to=resp_repl.get("routed_to", ""),
         role_history=resp_repl.get("role_history", []),
         predicted_tps=resp_repl.get("predicted_tps", 0.0),
@@ -613,73 +670,128 @@ def evaluate_question_3way(
                 deduped.append(t)
         logger.info(f"      tools: {', '.join(deduped)}")
 
-    # ── Configuration 3: ARCHITECT ──
-    # Architect with full delegation freedom
-    architect_role = "architect_coding" if _is_coding_task(prompt) else "architect_general"
-    logger.info(f"  → {ACTION_ARCHITECT} ({architect_role})...")
-    t0 = time.perf_counter()
-    resp_arch = call_orchestrator_forced(
-        prompt=prompt,
-        force_role=architect_role,
-        force_mode="delegated",  # Use delegated mode for full freedom
-        url=url,
-        timeout=max(timeout, 300),  # Architects are slow
-        client=client,
-        allow_delegation=True,  # Full delegation freedom
-    )
-    elapsed_arch = time.perf_counter() - t0
+    # ── Configuration 3: ARCHITECT (dual evaluation) ──
+    # Evaluate both architect_general and architect_coding for text;
+    # vision uses vision_escalation only.
+    if is_vl:
+        arch_roles_to_eval = [arch_role]  # vision_escalation only
+    else:
+        arch_roles_to_eval = ["architect_general", "architect_coding"]
 
-    answer_arch = resp_arch.get("answer", "")
-    error_arch = resp_arch.get("error")
-    passed_arch = score_answer_deterministic(answer_arch, expected, scoring_method, scoring_config) if not error_arch else False
+    arch_results: dict[str, dict[str, Any]] = {}
+    arch_mode = "direct" if is_vl else "delegated"
 
-    role_results[f"{architect_role}:delegated"] = RoleResult(
-        role=architect_role,
-        mode="delegated",
-        answer=answer_arch[:500] if answer_arch else "",
-        passed=passed_arch,
-        elapsed_seconds=elapsed_arch,
-        error=error_arch,
-        tokens_generated=resp_arch.get("tokens_generated", 0),
-        tools_used=resp_arch.get("tools_used", 0),
-        tools_called=resp_arch.get("tools_called", []),
-        routed_to=resp_arch.get("routed_to", ""),
-        role_history=resp_arch.get("role_history", []),
-        predicted_tps=resp_arch.get("predicted_tps", 0.0),
-        generation_ms=resp_arch.get("generation_ms", 0.0),
-    )
-    status = "PASS" if passed_arch else ("ERROR" if error_arch else "FAIL")
-    # Calculate t/s: prefer predicted_tps, else compute from generation_ms
-    tps_arch = resp_arch.get("predicted_tps", 0.0)
-    if tps_arch <= 0:
-        gen_ms = resp_arch.get("generation_ms", 0.0)
-        tokens = resp_arch.get("tokens_generated", 0)
-        if gen_ms > 0 and tokens > 0:
-            tps_arch = tokens / (gen_ms / 1000.0)
-    tokens_arch = resp_arch.get("tokens_generated", 0)
-    tps_str = f", {tps_arch:.1f} t/s" if tps_arch > 0 else ""
-    tools_used_arch = resp_arch.get("tools_used", 0)
-    tools_called_arch = resp_arch.get("tools_called", [])
-    logger.info(f"    {ACTION_ARCHITECT} → {status} ({elapsed_arch:.1f}s{tps_str}, {tokens_arch} tok)")
-    # Log tool list if any tools were called
-    if tools_used_arch > 0 and tools_called_arch:
-        deduped = []
-        for t in tools_called_arch:
-            if not deduped or deduped[-1] != t:
-                deduped.append(t)
-        logger.info(f"      tools: {', '.join(deduped)}")
+    for ar in arch_roles_to_eval:
+        if len(arch_roles_to_eval) > 1:
+            _wait_for_heavy_models_idle()
+
+        logger.info(f"  → {ACTION_ARCHITECT} ({ar})...")
+        t0 = time.perf_counter()
+        resp_arch = call_orchestrator_forced(
+            prompt=prompt,
+            force_role=ar,
+            force_mode=arch_mode,
+            url=url,
+            timeout=max(timeout, 300),  # Architects/vision_escalation are slow
+            client=client,
+            allow_delegation=not is_vl,  # Full delegation for text; VL uses direct
+            image_path=image_path,
+            cache_prompt=False,
+        )
+        elapsed_arch = time.perf_counter() - t0
+
+        answer_arch = resp_arch.get("answer", "")
+        error_arch = resp_arch.get("error")
+        error_type_arch = _classify_error(error_arch)
+        if error_type_arch == "infrastructure":
+            passed_arch = None
+        else:
+            passed_arch = (
+                score_answer_deterministic(
+                    answer_arch,
+                    expected,
+                    scoring_method,
+                    scoring_config,
+                )
+                if not error_arch
+                else False
+            )
+
+        arch_results[ar] = {
+            "passed": passed_arch,
+            "elapsed_seconds": elapsed_arch,
+            "tokens_generated": resp_arch.get("tokens_generated", 0),
+            "predicted_tps": resp_arch.get("predicted_tps", 0.0),
+            "generation_ms": resp_arch.get("generation_ms", 0.0),
+            "tools_used": resp_arch.get("tools_used", 0),
+            "tools_called": resp_arch.get("tools_called", []),
+            "role_history": resp_arch.get("role_history", []),
+            "error": error_arch,
+            "error_type": error_type_arch,
+        }
+
+        role_results[f"{ar}:{arch_mode}"] = RoleResult(
+            role=ar,
+            mode=arch_mode,
+            answer=answer_arch[:500] if answer_arch else "",
+            passed=bool(passed_arch),
+            elapsed_seconds=elapsed_arch,
+            error=error_arch,
+            error_type=error_type_arch,
+            tokens_generated=resp_arch.get("tokens_generated", 0),
+            tools_used=resp_arch.get("tools_used", 0),
+            tools_called=resp_arch.get("tools_called", []),
+            delegation_events=resp_arch.get("delegation_events", []),
+            tools_success=resp_arch.get("tools_success"),
+            delegation_success=resp_arch.get("delegation_success"),
+            routed_to=resp_arch.get("routed_to", ""),
+            role_history=resp_arch.get("role_history", []),
+            predicted_tps=resp_arch.get("predicted_tps", 0.0),
+            generation_ms=resp_arch.get("generation_ms", 0.0),
+        )
+
+        if passed_arch is None:
+            status = "INFRA"
+        elif passed_arch:
+            status = "PASS"
+        elif error_arch:
+            status = "ERROR"
+        else:
+            status = "FAIL"
+        tps_arch = resp_arch.get("predicted_tps", 0.0)
+        if tps_arch <= 0:
+            gen_ms = resp_arch.get("generation_ms", 0.0)
+            tokens = resp_arch.get("tokens_generated", 0)
+            if gen_ms > 0 and tokens > 0:
+                tps_arch = tokens / (gen_ms / 1000.0)
+        tokens_arch = resp_arch.get("tokens_generated", 0)
+        tps_str = f", {tps_arch:.1f} t/s" if tps_arch > 0 else ""
+        logger.info(
+            f"    {ACTION_ARCHITECT} → {status} ({elapsed_arch:.1f}s{tps_str}, {tokens_arch} tok)"
+        )
 
     # ── Compute 3-way rewards (binary for faithful P(success)) ──
     rewards: dict[str, float] = {}
 
     # SELF:direct
-    rewards[ACTION_SELF_DIRECT] = success_reward(passed_direct)
+    if error_type_direct == "infrastructure":
+        logger.info(f"    {ACTION_SELF_DIRECT} -> INFRA_SKIP (not injecting reward)")
+    else:
+        rewards[ACTION_SELF_DIRECT] = success_reward(passed_direct)
 
     # SELF:repl
-    rewards[ACTION_SELF_REPL] = success_reward(passed_repl)
+    if error_type_repl == "infrastructure":
+        logger.info(f"    {ACTION_SELF_REPL} -> INFRA_SKIP (not injecting reward)")
+    else:
+        rewards[ACTION_SELF_REPL] = success_reward(passed_repl)
 
-    # ARCHITECT
-    rewards[ACTION_ARCHITECT] = success_reward(passed_arch)
+    # ARCHITECT (best-of-two, skip infra-only)
+    valid_results = {k: v for k, v in arch_results.items() if v["passed"] is not None}
+    if valid_results:
+        passed_arch = any(v["passed"] for v in valid_results.values())
+        rewards[ACTION_ARCHITECT] = success_reward(passed_arch)
+    else:
+        logger.info(f"    {ACTION_ARCHITECT} -> ALL INFRA_SKIP")
 
     # WORKER (via delegation chain attribution)
     worker_rewards = score_delegation_chain(role_results)
@@ -688,33 +800,64 @@ def evaluate_question_3way(
     # ── Metadata: Tool value signal + cost metrics ──
     metadata = compute_tool_value(passed_direct, passed_repl)
     metadata["suite"] = suite
-    metadata["architect_role"] = architect_role
+    metadata["cache_disabled"] = True
+
+    # Determine best architect for metadata (prefer generation_ms over elapsed)
+    best_arch = None
+    for ar, res in arch_results.items():
+        if res["passed"] is True:
+            if best_arch is None:
+                best_arch = ar
+            else:
+                cur_time = res.get("generation_ms") or (res["elapsed_seconds"] * 1000)
+                best_time = arch_results[best_arch].get("generation_ms") or (
+                    arch_results[best_arch]["elapsed_seconds"] * 1000
+                )
+                if cur_time < best_time:
+                    best_arch = ar
+    if best_arch is None:
+        for ar, res in arch_results.items():
+            if res["passed"] is not None:
+                best_arch = ar
+                break
+
+    metadata["architect_eval"] = {
+        "general": arch_results.get("architect_general"),
+        "coding": arch_results.get("architect_coding"),
+        "best": best_arch,
+        "heuristic_would_pick": "architect_coding" if _is_coding_task(prompt) else "architect_general",
+    }
+    metadata["architect_role"] = best_arch or ""
 
     # Store cost metrics for each action (used by Optuna threshold optimization later)
     # Cost is NOT used in Q-value updates (binary rewards for faithful P(success)),
     # but we store it for later analysis and threshold tuning.
+    direct_key = f"{self_role}:{self_direct_mode}"
+    repl_key = f"{self_role}:{self_repl_mode}"
     metadata["cost_metrics"] = {
         ACTION_SELF_DIRECT: {
             "elapsed_seconds": elapsed_direct,
-            "tokens_generated": role_results["frontdoor:direct"].tokens_generated,
-            "predicted_tps": role_results["frontdoor:direct"].predicted_tps,
-            "generation_ms": role_results["frontdoor:direct"].generation_ms,
+            "tokens_generated": role_results[direct_key].tokens_generated,
+            "predicted_tps": role_results[direct_key].predicted_tps,
+            "generation_ms": role_results[direct_key].generation_ms,
         },
         ACTION_SELF_REPL: {
             "elapsed_seconds": elapsed_repl,
-            "tokens_generated": role_results["frontdoor:repl"].tokens_generated,
-            "predicted_tps": role_results["frontdoor:repl"].predicted_tps,
-            "generation_ms": role_results["frontdoor:repl"].generation_ms,
-            "tools_used": role_results["frontdoor:repl"].tools_used,
-        },
-        ACTION_ARCHITECT: {
-            "elapsed_seconds": elapsed_arch,
-            "tokens_generated": role_results[f"{architect_role}:delegated"].tokens_generated,
-            "predicted_tps": role_results[f"{architect_role}:delegated"].predicted_tps,
-            "generation_ms": role_results[f"{architect_role}:delegated"].generation_ms,
-            "role_history": role_results[f"{architect_role}:delegated"].role_history,
+            "tokens_generated": role_results[repl_key].tokens_generated,
+            "predicted_tps": role_results[repl_key].predicted_tps,
+            "generation_ms": role_results[repl_key].generation_ms,
+            "tools_used": role_results[repl_key].tools_used,
         },
     }
+    if best_arch:
+        arch_key = f"{best_arch}:{arch_mode}"
+        metadata["cost_metrics"][ACTION_ARCHITECT] = {
+            "elapsed_seconds": arch_results[best_arch]["elapsed_seconds"],
+            "tokens_generated": role_results[arch_key].tokens_generated,
+            "predicted_tps": role_results[arch_key].predicted_tps,
+            "generation_ms": role_results[arch_key].generation_ms,
+            "role_history": role_results[arch_key].role_history,
+        }
 
     # Log rewards
     for action, reward in sorted(rewards.items()):
@@ -1439,6 +1582,7 @@ def run_batch_3way(
     logger.info(f"Session: {session_id}")
     logger.info(f"Actions: {', '.join(THREE_WAY_ACTIONS)}")
     logger.info(f"Seed: {seed}  Rewards: {'off' if dry_run else 'on'}")
+    logger.info("Cache control: cache_prompt=False for all 3-way eval calls (fair timing)")
     logger.info(f"{'='*60}\n")
 
     _client = _httpx.Client(timeout=max(timeout, 300))

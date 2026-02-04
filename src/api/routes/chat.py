@@ -464,7 +464,11 @@ async def chat_stream(
                         failure_count=1,
                         task_id=task_id,
                     )
-                    esc_decision = EscalationPolicy().decide(esc_ctx)
+                    esc_decision = (
+                        state.routing_facade.decide(esc_ctx)
+                        if state.routing_facade
+                        else EscalationPolicy().decide(esc_ctx)
+                    )
                     if esc_decision.should_escalate and esc_decision.target_role:
                         new_role = str(esc_decision.target_role)
 
@@ -485,12 +489,23 @@ async def chat_stream(
                             error_category="early_abort",
                             task_id=task_id,
                         ),
-                        decision=EscalationPolicy().decide(
-                            EscalationContext(
-                                current_role=role_history[-2],
-                                error_category="early_abort",
-                                error_message=reason,
-                                task_id=task_id,
+                        decision=(
+                            state.routing_facade.decide(
+                                EscalationContext(
+                                    current_role=role_history[-2],
+                                    error_category="early_abort",
+                                    error_message=reason,
+                                    task_id=task_id,
+                                )
+                            )
+                            if state.routing_facade
+                            else EscalationPolicy().decide(
+                                EscalationContext(
+                                    current_role=role_history[-2],
+                                    error_category="early_abort",
+                                    error_message=reason,
+                                    task_id=task_id,
+                                )
                             )
                         ),
                     )
@@ -559,7 +574,11 @@ async def chat_stream(
                     failure_count=consecutive_failures,
                     task_id=task_id,
                 )
-                decision = EscalationPolicy().decide(esc_ctx)
+                decision = (
+                    state.routing_facade.decide(esc_ctx)
+                    if state.routing_facade
+                    else EscalationPolicy().decide(esc_ctx)
+                )
 
                 if decision.should_escalate and decision.target_role:
                     current_role = str(decision.target_role)

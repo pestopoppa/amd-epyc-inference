@@ -237,10 +237,11 @@ Graph stats:
 - Runs each question through 4 configurations:
   - `SELF:direct` - Frontdoor, no tools
   - `SELF:repl` - Frontdoor with tools, delegation disabled
-  - `ARCHITECT` - Architect with full delegation freedom
+  - `ARCHITECT` - Dual-architect evaluation (architect_general + architect_coding; best-of-two)
   - `WORKER` - Scored indirectly via delegation chains
 - Binary rewards (1.0 for pass, 0.0 for fail)
 - Cost metrics stored separately for later Optuna optimization
+- Infrastructure errors (timeouts, connection failures) produce **no reward** — action is skipped and retried next batch
 
 **Usage:**
 
@@ -336,7 +337,7 @@ The 3-way evaluation mode uses a distinct action vocabulary:
 |------------|-------------------|-------------|------|
 | `SELF:direct` | Frontdoor without tools | frontdoor | direct |
 | `SELF:repl` | Frontdoor with tools | frontdoor | repl |
-| `ARCHITECT` | Architect with delegation | architect_* | delegated |
+| `ARCHITECT` | Architect with delegation | architect_general + architect_coding (best-of-two) | delegated |
 | `WORKER` | Worker models | via delegation | — |
 
 These action keys are stored in episodic memory and used for routing decisions. The HybridRouter's `route_3way()` method retrieves memories by these action keys.

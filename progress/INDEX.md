@@ -8,6 +8,7 @@ Lab notebook entries for the AMD EPYC 9655 inference optimization project.
 
 | Date | Summary | Key Outcomes |
 |------|---------|--------------|
+| [2026-02-04](2026-02/2026-02-04.md) | Audit Remediation Implemented | RoutingFacade, delegation telemetry, infra-aware seeding, dual-architect eval, docs updated |
 | [2026-02-03](2026-02/2026-02-03.md) | UI Consolidated + Test Coverage + Hard Benchmarks | UI handoff index, 223 new tests (97-100% chat coverage), Phase 1 hard benchmark adapters (GPQA, SimpleQA, HotpotQA, LiveCodeBench) |
 | [2026-02-02](2026-02/2026-02-02.md) | MemRL Mode-Advantage Tasks + HF Adapters | 90 mode-advantage tasks, GAIA/CRUXEval/BigCodeBench adapters |
 | [2026-02-01](2026-02/2026-02-01.md) | Vision Pipeline + WI-9/10/11 + Eval Bugfix | Doc pipeline, staged rewards, parallel gates, prompt_builders decomp, eval pre-launch fixes |
@@ -49,8 +50,8 @@ Lab notebook entries for the AMD EPYC 9655 inference optimization project.
 
 ## Quick Stats
 
-- **Total Entries**: 24
-- **Date Range**: 2025-12-16 to 2026-02-03
+- **Total Entries**: 25
+- **Date Range**: 2025-12-16 to 2026-02-04
 - **Major Milestones**:
   - Phase 1 Foundation Complete (Dec 16)
   - Benchmark Hardening (Dec 22)
@@ -65,6 +66,7 @@ Lab notebook entries for the AMD EPYC 9655 inference optimization project.
   - Vision → Document Pipeline /chat Integration (Feb 1)
   - MemRL Mode-Advantage Tasks + HF Adapters (Feb 2)
   - Phase 1 Hard Benchmark Adapters: GPQA, SimpleQA, HotpotQA, LiveCodeBench (Feb 3)
+  - Audit Remediation Implemented (RoutingFacade + telemetry) (Feb 4)
 
 ---
 

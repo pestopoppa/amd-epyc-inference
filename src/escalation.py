@@ -55,6 +55,7 @@ class ErrorCategory(str, Enum):
     SCHEMA = "schema"  # IR/JSON schema violations
     FORMAT = "format"  # Style/format issues
     EARLY_ABORT = "early_abort"  # Generation aborted due to predicted failure
+    INFRASTRUCTURE = "infrastructure"  # Backend or network failure (not task failure)
     UNKNOWN = "unknown"  # Unclassified errors
 
 
