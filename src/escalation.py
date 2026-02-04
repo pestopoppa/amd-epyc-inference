@@ -83,6 +83,7 @@ class EscalationContext:
         gate_name: Name of the gate that failed (if applicable).
         task_id: Task identifier for tracking.
         escalation_count: How many times we've already escalated.
+        max_retries: Optional role-specific max retries (overrides config).
     """
 
     current_role: Role | str
@@ -92,6 +93,7 @@ class EscalationContext:
     gate_name: str = ""
     task_id: str = ""
     escalation_count: int = 0
+    max_retries: int | None = None
     # Model-initiated routing fields
     target_role_requested: str = ""  # Specific role requested by model
 
@@ -215,6 +217,9 @@ class EscalationPolicy:
         Returns:
             EscalationDecision with action and target role.
         """
+        # Use context-specific max_retries if provided, otherwise config default
+        max_retries = context.max_retries if context.max_retries is not None else self.config.max_retries
+
         # Get the role's escalation target
         if isinstance(context.current_role, Role):
             target = context.current_role.escalates_to()
@@ -255,25 +260,25 @@ class EscalationPolicy:
 
         # Handle format/schema errors - retry only
         if context.error_category in self.config.no_escalate_categories:
-            if context.failure_count < self.config.max_retries:
+            if context.failure_count < max_retries:
                 return EscalationDecision(
                     action=EscalationAction.RETRY,
                     target_role=context.current_role,
-                    reason=f"Retry {context.error_category.value} error (attempt {context.failure_count + 1}/{self.config.max_retries})",
-                    retries_remaining=self.config.max_retries - context.failure_count - 1,
+                    reason=f"Retry {context.error_category.value} error (attempt {context.failure_count + 1}/{max_retries})",
+                    retries_remaining=max_retries - context.failure_count - 1,
                 )
             return EscalationDecision(
                 action=EscalationAction.FAIL,
-                reason=f"Max retries ({self.config.max_retries}) exceeded for {context.error_category.value} error",
+                reason=f"Max retries ({max_retries}) exceeded for {context.error_category.value} error",
             )
 
         # Standard retry/escalate logic
-        if context.failure_count < self.config.max_retries:
+        if context.failure_count < max_retries:
             return EscalationDecision(
                 action=EscalationAction.RETRY,
                 target_role=context.current_role,
-                reason=f"Retry with same role (attempt {context.failure_count + 1}/{self.config.max_retries})",
-                retries_remaining=self.config.max_retries - context.failure_count - 1,
+                reason=f"Retry with same role (attempt {context.failure_count + 1}/{max_retries})",
+                retries_remaining=max_retries - context.failure_count - 1,
             )
 
         # Retries exhausted - try to escalate

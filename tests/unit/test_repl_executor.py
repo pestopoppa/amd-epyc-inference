@@ -208,6 +208,7 @@ class TestBasicREPLExecution:
             mock_repl = MagicMock()
             mock_repl.get_state.return_value = {"context_preview": "test"}
             mock_repl.config.timeout_seconds = 30
+            mock_repl._tool_invocations = 0  # Mock tool invocation count
             mock_repl_class.return_value = mock_repl
 
             response = await _execute_repl(

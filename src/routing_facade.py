@@ -65,7 +65,8 @@ class RoutingFacade:
             return None
 
         if action == EscalationAction.RETRY:
-            retries_remaining = max(self.policy.config.max_retries - context.failure_count - 1, 0)
+            max_retries = context.max_retries if context.max_retries is not None else self.policy.config.max_retries
+            retries_remaining = max(max_retries - context.failure_count - 1, 0)
             return EscalationDecision(
                 action=EscalationAction.RETRY,
                 target_role=context.current_role if isinstance(context.current_role, Role) else None,

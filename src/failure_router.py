@@ -491,6 +491,10 @@ class FailureRouter:
                 should_include_context=False,
             )
 
+        # Look up chain-specific max_retries
+        chain = self.chains.get(context.role)
+        chain_max_retries = chain.max_retries if chain else None
+
         esc_ctx = EscalationContext(
             current_role=role_for_policy,
             failure_count=context.failure_count,
@@ -499,6 +503,7 @@ class FailureRouter:
             gate_name=context.gate_name,
             task_id=context.task_id,
             escalation_count=context.escalation_count,
+            max_retries=chain_max_retries,
         )
 
         decision = self.facade.decide(esc_ctx)
