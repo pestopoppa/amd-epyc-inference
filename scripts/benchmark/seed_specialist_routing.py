@@ -210,6 +210,21 @@ def append_checkpoint(session_id: str, result: ComparativeResult):
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
+def _checkpoint_3way(session_id: str, result: "ThreeWayResult"):
+    """Append one 3-way result to the session's JSONL file (atomic-ish)."""
+    _ensure_eval_dir()
+    path = EVAL_DIR / f"{session_id}.jsonl"
+    line = json.dumps(asdict(result), ensure_ascii=False)
+    with open(path, "a") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(line + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 def load_seen_questions() -> set[str]:
     """Load all prompt_ids ever evaluated across all sessions."""
     seen: set[str] = set()
@@ -1591,6 +1606,9 @@ def run_batch_3way(
                 rewards_injected=rewards_injected,
             )
             results.append(result)
+
+            # Checkpoint immediately (answers, scores, timing for post-hoc analysis)
+            _checkpoint_3way(session_id, result)
 
             # Record as seen
             record_seen(qid, suite, session_id)
