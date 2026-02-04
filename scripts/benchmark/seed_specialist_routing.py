@@ -595,17 +595,12 @@ def evaluate_question_3way(
         predicted_tps=resp_direct.get("predicted_tps", 0.0),
         generation_ms=resp_direct.get("generation_ms", 0.0),
     )
-    status = "PASS" if passed_direct else ("ERROR" if error_direct else "FAIL")
-    # Calculate t/s: prefer predicted_tps, else compute from generation_ms
-    tps_direct = resp_direct.get("predicted_tps", 0.0)
-    if tps_direct <= 0:
-        gen_ms = resp_direct.get("generation_ms", 0.0)
-        tokens = resp_direct.get("tokens_generated", 0)
-        if gen_ms > 0 and tokens > 0:
-            tps_direct = tokens / (gen_ms / 1000.0)
-    tokens_direct = resp_direct.get("tokens_generated", 0)
-    tps_str = f", {tps_direct:.1f} t/s" if tps_direct > 0 else ""
-    logger.info(f"    {ACTION_SELF_DIRECT} → {status} ({elapsed_direct:.1f}s{tps_str}, {tokens_direct} tok)")
+    from eval_log_format import (
+        format_self_direct, format_self_repl, format_architect_result,
+        format_reward_skip, format_all_infra_skip,
+    )
+    for line in format_self_direct(ACTION_SELF_DIRECT, passed_direct, error_direct, elapsed_direct, resp_direct):
+        logger.info(line)
 
     # ── Configuration 2: SELF:repl ──
     # Frontdoor/vision, repl/react mode, tools available but no delegation
@@ -648,27 +643,8 @@ def evaluate_question_3way(
         predicted_tps=resp_repl.get("predicted_tps", 0.0),
         generation_ms=resp_repl.get("generation_ms", 0.0),
     )
-    status = "PASS" if passed_repl else ("ERROR" if error_repl else "FAIL")
-    # Calculate t/s: prefer predicted_tps, else compute from generation_ms
-    tps_repl = resp_repl.get("predicted_tps", 0.0)
-    if tps_repl <= 0:
-        gen_ms = resp_repl.get("generation_ms", 0.0)
-        tokens = resp_repl.get("tokens_generated", 0)
-        if gen_ms > 0 and tokens > 0:
-            tps_repl = tokens / (gen_ms / 1000.0)
-    tokens_repl = resp_repl.get("tokens_generated", 0)
-    tps_str = f", {tps_repl:.1f} t/s" if tps_repl > 0 else ""
-    tools_used = resp_repl.get("tools_used", 0)
-    tools_called = resp_repl.get("tools_called", [])
-    logger.info(f"    {ACTION_SELF_REPL} → {status} ({elapsed_repl:.1f}s{tps_str}, {tokens_repl} tok, {tools_used} tools)")
-    # Log tool list if any tools were called
-    if tools_used > 0 and tools_called:
-        # Dedupe consecutive repeated tools for readability
-        deduped = []
-        for t in tools_called:
-            if not deduped or deduped[-1] != t:
-                deduped.append(t)
-        logger.info(f"      tools: {', '.join(deduped)}")
+    for line in format_self_repl(ACTION_SELF_REPL, passed_repl, error_repl, elapsed_repl, resp_repl):
+        logger.info(line)
 
     # ── Configuration 3: ARCHITECT (dual evaluation) ──
     # Evaluate both architect_general and architect_coding for text;
@@ -750,38 +726,23 @@ def evaluate_question_3way(
             generation_ms=resp_arch.get("generation_ms", 0.0),
         )
 
-        if passed_arch is None:
-            status = "INFRA"
-        elif passed_arch:
-            status = "PASS"
-        elif error_arch:
-            status = "ERROR"
-        else:
-            status = "FAIL"
-        tps_arch = resp_arch.get("predicted_tps", 0.0)
-        if tps_arch <= 0:
-            gen_ms = resp_arch.get("generation_ms", 0.0)
-            tokens = resp_arch.get("tokens_generated", 0)
-            if gen_ms > 0 and tokens > 0:
-                tps_arch = tokens / (gen_ms / 1000.0)
-        tokens_arch = resp_arch.get("tokens_generated", 0)
-        tps_str = f", {tps_arch:.1f} t/s" if tps_arch > 0 else ""
-        logger.info(
-            f"    {ACTION_ARCHITECT} → {status} ({elapsed_arch:.1f}s{tps_str}, {tokens_arch} tok)"
-        )
+        for line in format_architect_result(ACTION_ARCHITECT, passed_arch, error_arch, elapsed_arch, resp_arch):
+            logger.info(line)
 
     # ── Compute 3-way rewards (binary for faithful P(success)) ──
     rewards: dict[str, float] = {}
 
     # SELF:direct
     if error_type_direct == "infrastructure":
-        logger.info(f"    {ACTION_SELF_DIRECT} -> INFRA_SKIP (not injecting reward)")
+        for line in format_reward_skip(ACTION_SELF_DIRECT):
+            logger.info(line)
     else:
         rewards[ACTION_SELF_DIRECT] = success_reward(passed_direct)
 
     # SELF:repl
     if error_type_repl == "infrastructure":
-        logger.info(f"    {ACTION_SELF_REPL} -> INFRA_SKIP (not injecting reward)")
+        for line in format_reward_skip(ACTION_SELF_REPL):
+            logger.info(line)
     else:
         rewards[ACTION_SELF_REPL] = success_reward(passed_repl)
 
@@ -791,7 +752,8 @@ def evaluate_question_3way(
         passed_arch = any(v["passed"] for v in valid_results.values())
         rewards[ACTION_ARCHITECT] = success_reward(passed_arch)
     else:
-        logger.info(f"    {ACTION_ARCHITECT} -> ALL INFRA_SKIP")
+        for line in format_all_infra_skip(ACTION_ARCHITECT):
+            logger.info(line)
 
     # WORKER (via delegation chain attribution)
     worker_rewards = score_delegation_chain(role_results)

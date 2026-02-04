@@ -181,6 +181,7 @@ def _architect_delegated_answer(
         "needs_input": False,
         "tools_used": 0,
         "delegation_events": [],
+        "tool_timings": [],
     }
 
     # Optional TOON encoding for context
@@ -261,6 +262,8 @@ def _architect_delegated_answer(
         log.info(f"Delegating to {delegate_to} (mode={delegate_mode}): {brief[:100]}...")
 
         phase_b_start = time.perf_counter()
+        tokens_before = primitives.total_tokens_generated
+        phase_tool_timings: list[dict] = []
 
         if delegate_mode == "react":
             # ReAct investigation loop
@@ -275,6 +278,12 @@ def _architect_delegated_answer(
                 )
                 total_tools += phase_tools
                 all_tools_called.extend(phase_tool_names)
+                # Collect per-tool timing from registry
+                if tool_registry and hasattr(tool_registry, "get_invocation_log"):
+                    for inv in tool_registry.get_invocation_log():
+                        phase_tool_timings.append(
+                            {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
+                        )
             except Exception as e:
                 report = f"[Investigation failed: {e}]"
         else:
@@ -301,13 +310,16 @@ def _architect_delegated_answer(
                     report = deleg_repl.get_state()
                 total_tools += deleg_repl._tool_invocations
                 if deleg_repl.tool_registry:
-                    all_tools_called.extend(
-                        inv.tool_name for inv in deleg_repl.tool_registry.get_invocation_log()
-                    )
+                    for inv in deleg_repl.tool_registry.get_invocation_log():
+                        all_tools_called.append(inv.tool_name)
+                        phase_tool_timings.append(
+                            {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
+                        )
             except Exception as e:
                 report = f"[REPL delegation failed: {e}]"
 
         phase_b_ms = (time.perf_counter() - phase_b_start) * 1000
+        delegate_tokens = primitives.total_tokens_generated - tokens_before
         reports.append(report)
         stats["specialist_output"] = report
         stats["phases"].append(
@@ -319,6 +331,7 @@ def _architect_delegated_answer(
                 "delegate_mode": delegate_mode,
             }
         )
+        stats["tool_timings"].extend(phase_tool_timings)
         # Delegation telemetry
         report_text = report or ""
         failed_prefixes = ("[Investigation failed", "[REPL delegation failed")
@@ -330,7 +343,7 @@ def _architect_delegated_answer(
                 "task_summary": brief[:200],
                 "success": success,
                 "elapsed_ms": round(phase_b_ms),
-                "tokens_generated": 0,
+                "tokens_generated": delegate_tokens,
             }
         )
 

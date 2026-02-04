@@ -593,6 +593,14 @@ async def _execute_repl(
             if repl.tool_registry
             else []
         ),
+        tool_timings=(
+            [
+                {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
+                for inv in repl.tool_registry.get_invocation_log()
+            ]
+            if repl.tool_registry
+            else []
+        ),
         delegation_events=delegation_events,
         tools_success=tools_success,
         delegation_success=delegation_success,

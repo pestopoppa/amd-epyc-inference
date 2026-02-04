@@ -301,6 +301,7 @@ def _execute_delegated(
         formalization_applied=routing.formalization_applied,
         tools_used=delegation_stats.get("tools_used", 0),
         tools_called=delegation_stats.get("tools_called", []),
+        tool_timings=delegation_stats.get("tool_timings", []),
         delegation_events=delegation_events,
         delegation_success=delegation_success,
         prompt_eval_ms=primitives.total_prompt_eval_ms,
@@ -533,15 +534,22 @@ def _execute_react(
 
     react_tools_used = 0
     react_tools_called: list[str] = []
+    react_tool_timings: list[dict] = []
+    _react_registry = state.tool_registry if hasattr(state, "tool_registry") else None
     try:
         answer, react_tools_used, react_tools_called = _react_mode_answer(
             prompt=request.prompt,
             context=request.context or "",
             primitives=primitives,
             role=str(initial_role),
-            tool_registry=state.tool_registry if hasattr(state, "tool_registry") else None,
+            tool_registry=_react_registry,
             max_turns=5,
         )
+        if _react_registry and hasattr(_react_registry, "get_invocation_log"):
+            react_tool_timings = [
+                {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
+                for inv in _react_registry.get_invocation_log()
+            ]
         answer = answer.strip()
     except Exception as e:
         log.warning(
@@ -606,6 +614,7 @@ def _execute_react(
         formalization_applied=routing.formalization_applied,
         tools_used=react_tools_used,
         tools_called=react_tools_called,
+        tool_timings=react_tool_timings,
         prompt_eval_ms=primitives.total_prompt_eval_ms,
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,

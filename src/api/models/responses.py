@@ -5,6 +5,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class ToolTiming(BaseModel):
+    """Per-tool invocation timing record."""
+
+    tool_name: str = Field(..., description="Name of the tool invoked")
+    elapsed_ms: float = Field(default=0.0, description="Wall-clock time for this invocation")
+    success: bool = Field(default=True, description="Whether the invocation succeeded")
+
+
 class DelegationEvent(BaseModel):
     """Record of a delegation that occurred during request processing."""
 
@@ -47,6 +55,10 @@ class ChatResponse(BaseModel):
     tools_used: int = Field(default=0, description="Number of tool invocations during execution")
     tools_called: list[str] = Field(
         default_factory=list, description="Names of tools invoked during execution"
+    )
+    tool_timings: list[ToolTiming] = Field(
+        default_factory=list,
+        description="Per-tool invocation timing (name, elapsed_ms, success)",
     )
     delegation_events: list[DelegationEvent] = Field(
         default_factory=list,
