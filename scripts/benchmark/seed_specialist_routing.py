@@ -41,7 +41,7 @@ import random
 import signal
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -90,6 +90,18 @@ from seeding_rewards import (  # noqa: E402, F401
     _inject_rewards_http,
     compute_comparative_rewards,
     detect_escalation_chains,
+    # Phase 4: Binary rewards for 3-way routing
+    success_reward,
+    compute_3way_rewards,
+    score_delegation_chain,
+    compute_tool_value,
+)
+from seeding_types import (  # noqa: E402 (additional imports for 3-way routing)
+    ACTION_SELF_DIRECT,
+    ACTION_SELF_REPL,
+    ACTION_ARCHITECT,
+    ACTION_WORKER,
+    THREE_WAY_ACTIONS,
 )
 from seeding_infra import (  # noqa: E402, F401
     MAX_RECOVERY_ATTEMPTS,
@@ -368,8 +380,24 @@ def call_orchestrator_forced(
     image_path: str = "",
     cache_prompt: bool | None = None,
     client: "httpx.Client | None" = None,
+    allow_delegation: bool | None = None,
 ) -> dict[str, Any]:
-    """Call orchestrator with forced role and mode routing."""
+    """Call orchestrator with forced role and mode routing.
+
+    Args:
+        prompt: The prompt to process.
+        force_role: Force routing to this role.
+        force_mode: Force execution mode (direct/repl/delegated).
+        url: Orchestrator API URL.
+        timeout: Request timeout in seconds.
+        image_path: Optional image path for vision tasks.
+        cache_prompt: Override prompt caching (None=default).
+        client: Reusable httpx.Client for connection pooling.
+        allow_delegation: Override delegation (None=feature flag, True=allow, False=disable).
+
+    Returns:
+        Response dict with answer, tokens, timing, etc.
+    """
     import httpx
 
     payload: dict[str, Any] = {
@@ -382,6 +410,8 @@ def call_orchestrator_forced(
         payload["image_path"] = image_path
     if cache_prompt is not None:
         payload["cache_prompt"] = cache_prompt
+    if allow_delegation is not None:
+        payload["allow_delegation"] = allow_delegation
 
     try:
         if client is not None:
@@ -408,6 +438,284 @@ def score_answer_deterministic(
     from benchmark.debug_scorer import score_answer
 
     return score_answer(answer, expected, scoring_method, scoring_config or {})
+
+
+# ── Phase 4: 3-Way Routing Evaluation ─────────────────────────────────
+
+
+def _is_coding_task(prompt: str) -> bool:
+    """Heuristic to determine if a task is coding-related.
+
+    Used to select architect_coding vs architect_general.
+    """
+    coding_indicators = [
+        "code", "function", "implement", "debug", "refactor",
+        "class", "method", "algorithm", "bug", "error",
+        "syntax", "compile", "runtime", "test", "unittest",
+        "python", "javascript", "typescript", "rust", "go",
+        "def ", "async ", "import ", "return ", "class ",
+    ]
+    prompt_lower = prompt.lower()
+    return any(ind in prompt_lower for ind in coding_indicators)
+
+
+def evaluate_question_3way(
+    prompt_info: dict,
+    url: str,
+    timeout: int,
+    client: "httpx.Client",
+    dry_run: bool = False,
+) -> tuple[dict[str, RoleResult], dict[str, float], dict[str, Any]]:
+    """Evaluate one question across the 3-way routing matrix.
+
+    Test configurations:
+    1. SELF:direct - Frontdoor without tools (direct mode)
+    2. SELF:repl - Frontdoor with tools, delegation disabled
+    3. ARCHITECT - Architect with full delegation freedom
+
+    WORKER is scored indirectly via delegation chains.
+
+    Args:
+        prompt_info: Question dict with id, suite, prompt, expected, etc.
+        url: Orchestrator API URL.
+        timeout: Request timeout.
+        client: Reusable httpx.Client.
+        dry_run: If True, don't inject rewards.
+
+    Returns:
+        (role_results, rewards, metadata) tuple.
+    """
+    prompt = prompt_info["prompt"]
+    expected = prompt_info.get("expected", "")
+    scoring_method = prompt_info.get("scoring_method", "exact_match")
+    scoring_config = prompt_info.get("scoring_config", {})
+    suite = prompt_info["suite"]
+
+    role_results: dict[str, RoleResult] = {}
+
+    # ── Configuration 1: SELF:direct ──
+    # Frontdoor, direct mode, no tools
+    logger.info(f"  → {ACTION_SELF_DIRECT}...")
+    t0 = time.perf_counter()
+    resp_direct = call_orchestrator_forced(
+        prompt=prompt,
+        force_role="frontdoor",
+        force_mode="direct",
+        url=url,
+        timeout=timeout,
+        client=client,
+        allow_delegation=False,  # Explicitly disable delegation
+    )
+    elapsed_direct = time.perf_counter() - t0
+
+    answer_direct = resp_direct.get("answer", "")
+    error_direct = resp_direct.get("error")
+    passed_direct = score_answer_deterministic(answer_direct, expected, scoring_method, scoring_config) if not error_direct else False
+
+    role_results["frontdoor:direct"] = RoleResult(
+        role="frontdoor",
+        mode="direct",
+        answer=answer_direct[:500] if answer_direct else "",
+        passed=passed_direct,
+        elapsed_seconds=elapsed_direct,
+        error=error_direct,
+        tokens_generated=resp_direct.get("tokens_generated", 0),
+        tools_used=resp_direct.get("tools_used", 0),
+        tools_called=resp_direct.get("tools_called", []),
+        routed_to=resp_direct.get("routed_to", ""),
+        role_history=resp_direct.get("role_history", []),
+        predicted_tps=resp_direct.get("predicted_tps", 0.0),
+        generation_ms=resp_direct.get("generation_ms", 0.0),
+    )
+    status = "PASS" if passed_direct else ("ERROR" if error_direct else "FAIL")
+    logger.info(f"    {ACTION_SELF_DIRECT} → {status} ({elapsed_direct:.1f}s)")
+
+    # ── Configuration 2: SELF:repl ──
+    # Frontdoor, repl mode, tools available but no delegation
+    logger.info(f"  → {ACTION_SELF_REPL}...")
+    t0 = time.perf_counter()
+    resp_repl = call_orchestrator_forced(
+        prompt=prompt,
+        force_role="frontdoor",
+        force_mode="repl",
+        url=url,
+        timeout=timeout,
+        client=client,
+        allow_delegation=False,  # Tools available, but no delegation to workers
+    )
+    elapsed_repl = time.perf_counter() - t0
+
+    answer_repl = resp_repl.get("answer", "")
+    error_repl = resp_repl.get("error")
+    passed_repl = score_answer_deterministic(answer_repl, expected, scoring_method, scoring_config) if not error_repl else False
+
+    role_results["frontdoor:repl"] = RoleResult(
+        role="frontdoor",
+        mode="repl",
+        answer=answer_repl[:500] if answer_repl else "",
+        passed=passed_repl,
+        elapsed_seconds=elapsed_repl,
+        error=error_repl,
+        tokens_generated=resp_repl.get("tokens_generated", 0),
+        tools_used=resp_repl.get("tools_used", 0),
+        tools_called=resp_repl.get("tools_called", []),
+        routed_to=resp_repl.get("routed_to", ""),
+        role_history=resp_repl.get("role_history", []),
+        predicted_tps=resp_repl.get("predicted_tps", 0.0),
+        generation_ms=resp_repl.get("generation_ms", 0.0),
+    )
+    status = "PASS" if passed_repl else ("ERROR" if error_repl else "FAIL")
+    logger.info(f"    {ACTION_SELF_REPL} → {status} ({elapsed_repl:.1f}s, {resp_repl.get('tools_used', 0)} tools)")
+
+    # ── Configuration 3: ARCHITECT ──
+    # Architect with full delegation freedom
+    architect_role = "architect_coding" if _is_coding_task(prompt) else "architect_general"
+    logger.info(f"  → {ACTION_ARCHITECT} ({architect_role})...")
+    t0 = time.perf_counter()
+    resp_arch = call_orchestrator_forced(
+        prompt=prompt,
+        force_role=architect_role,
+        force_mode="delegated",  # Use delegated mode for full freedom
+        url=url,
+        timeout=max(timeout, 300),  # Architects are slow
+        client=client,
+        allow_delegation=True,  # Full delegation freedom
+    )
+    elapsed_arch = time.perf_counter() - t0
+
+    answer_arch = resp_arch.get("answer", "")
+    error_arch = resp_arch.get("error")
+    passed_arch = score_answer_deterministic(answer_arch, expected, scoring_method, scoring_config) if not error_arch else False
+
+    role_results[f"{architect_role}:delegated"] = RoleResult(
+        role=architect_role,
+        mode="delegated",
+        answer=answer_arch[:500] if answer_arch else "",
+        passed=passed_arch,
+        elapsed_seconds=elapsed_arch,
+        error=error_arch,
+        tokens_generated=resp_arch.get("tokens_generated", 0),
+        tools_used=resp_arch.get("tools_used", 0),
+        tools_called=resp_arch.get("tools_called", []),
+        routed_to=resp_arch.get("routed_to", ""),
+        role_history=resp_arch.get("role_history", []),
+        predicted_tps=resp_arch.get("predicted_tps", 0.0),
+        generation_ms=resp_arch.get("generation_ms", 0.0),
+    )
+    status = "PASS" if passed_arch else ("ERROR" if error_arch else "FAIL")
+    logger.info(f"    {ACTION_ARCHITECT} → {status} ({elapsed_arch:.1f}s)")
+
+    # ── Compute 3-way rewards (binary for faithful P(success)) ──
+    rewards: dict[str, float] = {}
+
+    # SELF:direct
+    rewards[ACTION_SELF_DIRECT] = success_reward(passed_direct)
+
+    # SELF:repl
+    rewards[ACTION_SELF_REPL] = success_reward(passed_repl)
+
+    # ARCHITECT
+    rewards[ACTION_ARCHITECT] = success_reward(passed_arch)
+
+    # WORKER (via delegation chain attribution)
+    worker_rewards = score_delegation_chain(role_results)
+    rewards.update(worker_rewards)
+
+    # ── Metadata: Tool value signal + cost metrics ──
+    metadata = compute_tool_value(passed_direct, passed_repl)
+    metadata["suite"] = suite
+    metadata["architect_role"] = architect_role
+
+    # Store cost metrics for each action (used by Optuna threshold optimization later)
+    # Cost is NOT used in Q-value updates (binary rewards for faithful P(success)),
+    # but we store it for later analysis and threshold tuning.
+    metadata["cost_metrics"] = {
+        ACTION_SELF_DIRECT: {
+            "elapsed_seconds": elapsed_direct,
+            "tokens_generated": role_results["frontdoor:direct"].tokens_generated,
+            "predicted_tps": role_results["frontdoor:direct"].predicted_tps,
+            "generation_ms": role_results["frontdoor:direct"].generation_ms,
+        },
+        ACTION_SELF_REPL: {
+            "elapsed_seconds": elapsed_repl,
+            "tokens_generated": role_results["frontdoor:repl"].tokens_generated,
+            "predicted_tps": role_results["frontdoor:repl"].predicted_tps,
+            "generation_ms": role_results["frontdoor:repl"].generation_ms,
+            "tools_used": role_results["frontdoor:repl"].tools_used,
+        },
+        ACTION_ARCHITECT: {
+            "elapsed_seconds": elapsed_arch,
+            "tokens_generated": role_results[f"{architect_role}:delegated"].tokens_generated,
+            "predicted_tps": role_results[f"{architect_role}:delegated"].predicted_tps,
+            "generation_ms": role_results[f"{architect_role}:delegated"].generation_ms,
+            "role_history": role_results[f"{architect_role}:delegated"].role_history,
+        },
+    }
+
+    # Log rewards
+    for action, reward in sorted(rewards.items()):
+        logger.info(f"    reward[{action}] = {reward:.1f}")
+
+    return role_results, rewards, metadata
+
+
+def _inject_3way_rewards_http(
+    prompt: str,
+    suite: str,
+    question_id: str,
+    rewards: dict[str, float],
+    metadata: dict[str, Any],
+    url: str,
+    client: "httpx.Client",
+) -> int:
+    """Inject 3-way rewards via HTTP API.
+
+    Q-values receive binary rewards for faithful probability estimation.
+    Cost metrics are stored in context for later Optuna threshold optimization.
+
+    Returns number of rewards successfully injected.
+    """
+    injected = 0
+    cost_metrics = metadata.get("cost_metrics", {})
+
+    for action_key, reward in rewards.items():
+        try:
+            # Build context with cost metrics for this specific action
+            action_cost = cost_metrics.get(action_key, {})
+
+            context = {
+                "task_type": suite,
+                "source": "3way_eval",
+                "question_id": question_id,
+                "action_type": "routing",
+                # Tool value metadata (flat scalars)
+                "tools_helped": metadata.get("tools_helped", False),
+                "tools_neutral": metadata.get("tools_neutral", False),
+                "tools_hurt": metadata.get("tools_hurt", False),
+                "tool_advantage": metadata.get("tool_advantage", 0),
+                # Cost metrics for this action (for Optuna later)
+                "elapsed_seconds": action_cost.get("elapsed_seconds", 0.0),
+                "tokens_generated": action_cost.get("tokens_generated", 0),
+                "predicted_tps": action_cost.get("predicted_tps", 0.0),
+                "generation_ms": action_cost.get("generation_ms", 0.0),
+                "tools_used": action_cost.get("tools_used", 0),
+            }
+
+            resp = client.post(
+                f"{url}/chat/reward",
+                json={
+                    "task_description": prompt[:200],
+                    "action": action_key,
+                    "reward": reward,
+                    "context": context,
+                },
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                injected += 1
+        except Exception:
+            continue
+    return injected
 
 
 # ── Combo building ───────────────────────────────────────────────────
@@ -641,21 +949,36 @@ def evaluate_question(
         parts.append(f", {tokens_generated} tok)")
         logger.info("".join(parts))
 
-        # Detail line: tools, chain, delegation
-        details = []
-        if tools_used > 0:
-            tool_names = ", ".join(tools_called) if tools_called else "?"
-            details.append(f"tools({tools_used}): {tool_names}")
+        # Detail lines: better formatting for readability
+        indent = "  " + " " * 30 + "   "
+
+        # Line 2: Chain (if delegated)
         if role_history and len(role_history) > 1:
-            details.append(f"chain: {' → '.join(role_history)}")
-        if formalization_applied:
-            details.append("formalized")
+            logger.info(f"{indent}chain: {' → '.join(role_history)}")
+
+        # Line 3: Tools (show all, dedupe consecutive repeats)
+        if tools_used > 0:
+            if tools_called:
+                # Dedupe consecutive repeated tools
+                deduped = []
+                for t in tools_called:
+                    if not deduped or deduped[-1] != t:
+                        deduped.append(t)
+                tool_str = ", ".join(deduped)
+            else:
+                tool_str = "?"
+            logger.info(f"{indent}tools({tools_used}): {tool_str}")
+
+        # Line 4: Timing breakdown (in seconds for readability)
+        timing_parts = []
         if generation_ms > 0:
-            details.append(f"gen={generation_ms:.0f}ms")
+            timing_parts.append(f"gen={generation_ms/1000:.1f}s")
         if prompt_eval_ms > 0:
-            details.append(f"prompt_eval={prompt_eval_ms:.0f}ms")
-        if details:
-            logger.info(f"  {'':30s}   {'  '.join(details)}")
+            timing_parts.append(f"prompt={prompt_eval_ms/1000:.1f}s")
+        if formalization_applied:
+            timing_parts.append("formalized")
+        if timing_parts:
+            logger.info(f"{indent}{', '.join(timing_parts)}")
 
     # Compute comparative rewards (baseline is frontdoor:direct)
     rewards = compute_comparative_rewards(role_results, baseline_key="frontdoor:direct")
@@ -979,6 +1302,176 @@ def print_stats():
     print(f"\nMemRL coverage: {covered}/{total_combos} combos have ≥3 observations")
 
 
+# ── Phase 4: 3-Way Batch Runner ───────────────────────────────────────
+
+
+@dataclass
+class ThreeWayResult:
+    """Result from 3-way routing evaluation."""
+
+    suite: str
+    question_id: str
+    prompt: str
+    expected: str
+    timestamp: str = ""
+    role_results: dict[str, RoleResult] = field(default_factory=dict)
+    rewards: dict[str, float] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    rewards_injected: int = 0
+
+
+def run_batch_3way(
+    suites: list[str],
+    sample_per_suite: int,
+    seed: int,
+    url: str,
+    timeout: int,
+    session_id: str,
+    dry_run: bool = False,
+) -> list[ThreeWayResult]:
+    """Run one 3-way evaluation batch.
+
+    Each question is tested through:
+    1. SELF:direct (frontdoor, no tools)
+    2. SELF:repl (frontdoor, tools, no delegation)
+    3. ARCHITECT (architect with full delegation)
+
+    Binary rewards injected for faithful probability estimation.
+    """
+    import httpx as _httpx
+
+    # Health check
+    if not _check_server_health(url):
+        raise HealthCheckError(f"API unreachable: {url}")
+
+    # Load seen questions
+    seen = load_seen_questions()
+    logger.info(f"Previously seen questions: {len(seen)}")
+
+    # Sample unseen questions
+    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed)
+    if not questions:
+        logger.info("No unseen questions available.")
+        return []
+
+    logger.info(f"\n{'='*60}")
+    logger.info(f"3-Way Routing Evaluation: {len(questions)} questions")
+    logger.info(f"Session: {session_id}")
+    logger.info(f"Actions: {', '.join(THREE_WAY_ACTIONS)}")
+    logger.info(f"Seed: {seed}  Rewards: {'off' if dry_run else 'on'}")
+    logger.info(f"{'='*60}\n")
+
+    _client = _httpx.Client(timeout=max(timeout, 300))
+    results: list[ThreeWayResult] = []
+
+    try:
+        for i, prompt_info in enumerate(questions):
+            if state.shutdown:
+                logger.info(f"\n[Stopped after {i} questions]")
+                break
+
+            qid = prompt_info["id"]
+            suite = prompt_info["suite"]
+            logger.info(f"[{i+1}/{len(questions)}] {suite}/{qid}")
+
+            # Run 3-way evaluation
+            role_results, rewards, metadata = evaluate_question_3way(
+                prompt_info, url, timeout, _client, dry_run,
+            )
+
+            # Inject rewards
+            rewards_injected = 0
+            if not dry_run:
+                rewards_injected = _inject_3way_rewards_http(
+                    prompt_info["prompt"][:200],
+                    suite,
+                    qid,
+                    rewards,
+                    metadata,
+                    url,
+                    _client,
+                )
+                logger.info(f"  Injected {rewards_injected} rewards")
+
+            result = ThreeWayResult(
+                suite=suite,
+                question_id=qid,
+                prompt=prompt_info["prompt"][:200],
+                expected=prompt_info.get("expected", "")[:200],
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                role_results=role_results,
+                rewards=rewards,
+                metadata=metadata,
+                rewards_injected=rewards_injected,
+            )
+            results.append(result)
+
+            # Record as seen
+            record_seen(qid, suite, session_id)
+
+    finally:
+        _client.close()
+
+    return results
+
+
+def print_3way_summary(results: list[ThreeWayResult]) -> None:
+    """Print summary of 3-way evaluation results."""
+    if not results:
+        print("No results to summarize.")
+        return
+
+    # Aggregate stats per action
+    action_stats: dict[str, dict[str, Any]] = {
+        a: {"pass": 0, "fail": 0, "error": 0, "total_reward": 0.0, "n": 0}
+        for a in THREE_WAY_ACTIONS
+    }
+
+    tool_value_stats = {"helped": 0, "neutral": 0, "hurt": 0}
+
+    for result in results:
+        # Action stats from rewards (binary: 1.0=pass, 0.0=fail)
+        for action, reward in result.rewards.items():
+            if action in action_stats:
+                action_stats[action]["n"] += 1
+                action_stats[action]["total_reward"] += reward
+                if reward >= 0.5:
+                    action_stats[action]["pass"] += 1
+                else:
+                    action_stats[action]["fail"] += 1
+
+        # Tool value
+        meta = result.metadata
+        if meta.get("tools_helped"):
+            tool_value_stats["helped"] += 1
+        elif meta.get("tools_hurt"):
+            tool_value_stats["hurt"] += 1
+        else:
+            tool_value_stats["neutral"] += 1
+
+    print(f"\n{'='*70}")
+    print("3-WAY ROUTING EVALUATION SUMMARY")
+    print(f"{'='*70}")
+    print(f"Questions: {len(results)}")
+
+    print(f"\n{'Action':20s} {'Pass':>5s} {'Fail':>5s} {'Acc%':>7s} {'Q̄':>7s}")
+    print("-" * 50)
+    for action in THREE_WAY_ACTIONS:
+        s = action_stats[action]
+        total = s["pass"] + s["fail"]
+        acc = s["pass"] / total * 100 if total > 0 else 0
+        avg_q = s["total_reward"] / s["n"] if s["n"] > 0 else 0.5
+        print(f"{action:20s} {s['pass']:5d} {s['fail']:5d} {acc:6.1f}% {avg_q:6.3f}")
+
+    print(f"\nTool Value (SELF:direct vs SELF:repl):")
+    print(f"  Tools helped: {tool_value_stats['helped']}")
+    print(f"  Tools neutral: {tool_value_stats['neutral']}")
+    print(f"  Tools hurt: {tool_value_stats['hurt']}")
+
+    total_injected = sum(r.rewards_injected for r in results)
+    print(f"\nRewards injected: {total_injected}")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
@@ -1078,6 +1571,13 @@ Examples:
         "Escalation chains detect when cheap models fail but expensive models "
         "pass on the same question, and inject escalation rewards into MemRL.",
     )
+    # Phase 4: 3-way routing mode
+    parser.add_argument(
+        "--3way", action="store_true", dest="three_way",
+        help="Use 3-way routing evaluation (SELF:direct, SELF:repl, ARCHITECT). "
+        "Binary rewards for faithful probability estimation. "
+        "Ignores --roles and --modes flags.",
+    )
 
     args = parser.parse_args()
 
@@ -1096,10 +1596,25 @@ Examples:
         session_id = args.resume
     else:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_id = f"seeding_{ts}"
+        session_id = f"seeding_{ts}" if not args.three_way else f"3way_{ts}"
 
     # Default seed
     base_seed = args.seed if args.seed is not None else int(time.time())
+
+    # ── Phase 4: 3-Way Routing Mode ──
+    if args.three_way:
+        logger.info(f"Starting 3-way routing evaluation: session={session_id}")
+        results = run_batch_3way(
+            suites=args.suites,
+            sample_per_suite=args.sample_size,
+            seed=base_seed,
+            url=args.url,
+            timeout=args.timeout,
+            session_id=session_id,
+            dry_run=args.dry_run,
+        )
+        print_3way_summary(results)
+        return
 
     # Compute alias_map for summary display
     alias_map: dict[str, str] = {}

@@ -203,8 +203,13 @@ def _execute_delegated(
 ) -> ChatResponse | None:
     """Handle architect delegation mode. Returns None if delegation fails (fall through)."""
     is_architect = str(initial_role) in ("architect_general", "architect_coding")
+    # allow_delegation can override the feature flag per-request
+    delegation_allowed = (
+        request.allow_delegation if request.allow_delegation is not None
+        else features().architect_delegation
+    )
     use_delegation = (
-        is_architect and features().architect_delegation
+        is_architect and delegation_allowed
     ) or execution_mode == "delegated"
 
     if not (use_delegation and request.real_mode):

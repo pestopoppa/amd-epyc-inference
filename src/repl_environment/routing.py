@@ -377,42 +377,89 @@ class _RoutingMixin:
         """
         return self._ROLE_ALIASES.get(role, role)
 
-    def _delegate(
-        self,
-        prompt: str,
-        target_role: str = "worker_general",
-        reason: str = "",
-        persona: str = "",
-    ) -> str:
-        """Delegate a subtask to a specific role with outcome tracking.
+    # Roles that can be delegation targets (any role can delegate to these)
+    # Note: coder_primary is NOT here because frontdoor = coder_primary (same model)
+    # Delegation to self would be pointless; escalate to coder_escalation instead
+    _DELEGATABLE_ROLES: frozenset[str] = frozenset({
+        "worker_explore",
+        "worker_math",
+        "worker_general",
+        "worker_summarize",
+        "worker_vision",
+        "coder_escalation",
+    })
+
+    def _can_delegate_to(self, role: str) -> bool:
+        """Check if a role can be a delegation target.
 
         Args:
-            prompt: The task to delegate.
-            target_role: Role to delegate to.
+            role: Target role to check.
+
+        Returns:
+            True if the role can receive delegations.
+        """
+        return role in self._DELEGATABLE_ROLES
+
+    def _delegate(
+        self,
+        brief: str,
+        to: str = "worker_general",
+        parallel: bool = False,
+        reason: str = "",
+        persona: str = "",
+    ) -> str | list[str]:
+        """Delegate a subtask to another role.
+
+        Available to ALL roles (no tier restrictions). Workers can delegate
+        to other workers for parallel exploration and distributed work.
+
+        Args:
+            brief: What to do (becomes the worker's prompt).
+            to: Target role (worker_explore, worker_math, coder_primary, etc.).
+            parallel: If True, spawn multiple workers for list items in brief.
             reason: Why this role was chosen (helps MemRL learn).
             persona: Optional persona overlay.
 
         Returns:
-            The delegated model's response, or error message.
+            Worker's response (or list of responses if parallel).
+
+        Examples:
+            # Single delegation
+            result = delegate("Summarize this file", to="worker_summarize")
+
+            # Parallel delegation (brief should contain parseable work items)
+            results = delegate(
+                "Apply rename to these files: [a.py, b.py, c.py]",
+                to="worker_explore",
+                parallel=True,
+            )
         """
         self._exploration_calls += 1
 
         # Resolve role aliases (e.g., "researcher_agent" -> "worker_explore")
-        target_role = self._resolve_role_alias(target_role)
+        target_role = self._resolve_role_alias(to)
 
-        # Tier guard: workers cannot delegate to other models
-        from src.roles import get_tier, Tier
-
-        try:
-            tier = get_tier(self.role)
-            if tier == Tier.C:
-                return "[ERROR: Workers (Tier C) cannot delegate to other models. Use TOOL() for deterministic tools or FINAL() to return results.]"
-        except Exception:
-            pass  # Unknown role -- allow delegation
+        # Check if target can receive delegations
+        if not self._can_delegate_to(target_role):
+            return f"[ERROR: Cannot delegate to '{target_role}'. Valid targets: {', '.join(sorted(self._DELEGATABLE_ROLES))}]"
 
         if self.llm_primitives is None:
             return "[ERROR: No LLM primitives available for delegation]"
 
+        # Handle parallel delegation
+        if parallel:
+            return self._delegate_parallel(brief, target_role, reason, persona)
+
+        return self._delegate_single(brief, target_role, reason, persona)
+
+    def _delegate_single(
+        self,
+        brief: str,
+        target_role: str,
+        reason: str = "",
+        persona: str = "",
+    ) -> str:
+        """Execute a single delegation to one worker."""
         import time
 
         start = time.perf_counter()
@@ -426,13 +473,14 @@ class _RoutingMixin:
             "to_role": target_role,
             "reason": reason,
             "persona": persona,
-            "prompt_preview": prompt[:100],
+            "prompt_preview": brief[:100],
             "timestamp": time.time(),
+            "parallel": False,
         }
 
         try:
             result = self.llm_primitives.llm_call(
-                prompt,
+                brief,
                 role=target_role,
                 persona=persona or None,
             )
@@ -459,3 +507,163 @@ class _RoutingMixin:
             self.artifacts["_delegations"].append(delegation_record)
 
             return f"[DELEGATION FAILED: {target_role} -> {e}]"
+
+    def _delegate_parallel(
+        self,
+        brief: str,
+        target_role: str,
+        reason: str = "",
+        persona: str = "",
+    ) -> list[str]:
+        """Execute parallel delegation to multiple workers.
+
+        Parses the brief for work items (lists, file paths, etc.) and
+        spawns concurrent workers for each item.
+
+        Args:
+            brief: Brief containing multiple work items.
+            target_role: Role for all workers.
+            reason: Why this delegation approach.
+            persona: Optional persona overlay.
+
+        Returns:
+            List of worker responses (one per work item).
+        """
+        import concurrent.futures
+        import time
+
+        # Parse work items from brief
+        # Look for: [a, b, c], numbered lists, file paths, etc.
+        work_items = self._parse_parallel_work_items(brief)
+
+        if len(work_items) <= 1:
+            # Not enough items for parallel, fall back to single
+            return [self._delegate_single(brief, target_role, reason, persona)]
+
+        start = time.perf_counter()
+
+        # Initialize delegation tracking
+        if "_delegations" not in self.artifacts:
+            self.artifacts["_delegations"] = []
+
+        results: list[str] = []
+        # Limit concurrent workers to prevent resource exhaustion
+        max_workers = min(4, len(work_items))
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all work items
+            futures = {
+                executor.submit(
+                    self._delegate_single_item,
+                    item,
+                    target_role,
+                    persona,
+                ): item
+                for item in work_items
+            }
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(futures):
+                item = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    results.append(f"[PARALLEL WORKER FAILED for '{item[:50]}': {e}]")
+
+        elapsed = time.perf_counter() - start
+
+        # Log parallel delegation summary
+        self._exploration_log.add_event(
+            "delegate_parallel",
+            {
+                "target_role": target_role,
+                "reason": reason,
+                "work_items": len(work_items),
+            },
+            f"[{len(results)} results in {elapsed:.1f}s]",
+        )
+
+        # Record parallel delegation in artifacts
+        self.artifacts["_delegations"].append({
+            "from_role": self.role,
+            "to_role": target_role,
+            "reason": reason,
+            "parallel": True,
+            "work_items": len(work_items),
+            "success": True,
+            "elapsed_sec": round(elapsed, 3),
+            "timestamp": time.time(),
+        })
+
+        return results
+
+    def _delegate_single_item(
+        self,
+        item: str,
+        target_role: str,
+        persona: str = "",
+    ) -> str:
+        """Execute a single parallel work item (called from thread pool)."""
+        try:
+            return self.llm_primitives.llm_call(
+                item,
+                role=target_role,
+                persona=persona or None,
+            )
+        except Exception as e:
+            return f"[ERROR: {e}]"
+
+    def _parse_parallel_work_items(self, brief: str) -> list[str]:
+        """Parse a brief into individual work items for parallel execution.
+
+        Handles various formats:
+        - Python lists: [a, b, c]
+        - Numbered lists: 1. item, 2. item
+        - Comma-separated: a, b, c
+        - Newline-separated with markers
+
+        Args:
+            brief: The brief text to parse.
+
+        Returns:
+            List of individual work items. If parsing fails, returns [brief].
+        """
+        import re
+
+        # Try Python list format: [a, b, c] or ["a", "b", "c"]
+        list_match = re.search(r'\[([^\]]+)\]', brief)
+        if list_match:
+            items_str = list_match.group(1)
+            # Split on comma, respecting quotes
+            items = []
+            current = ""
+            in_quotes = False
+            quote_char = None
+            for char in items_str:
+                if char in ('"', "'") and not in_quotes:
+                    in_quotes = True
+                    quote_char = char
+                elif char == quote_char and in_quotes:
+                    in_quotes = False
+                    quote_char = None
+                elif char == ',' and not in_quotes:
+                    if current.strip():
+                        items.append(current.strip().strip('"\''))
+                    current = ""
+                    continue
+                current += char
+            if current.strip():
+                items.append(current.strip().strip('"\''))
+            if len(items) > 1:
+                # Reconstruct full prompts with context from brief
+                context = brief[:brief.find('[')].strip()
+                return [f"{context}: {item}" if context else item for item in items]
+
+        # Try numbered list format: 1. item\n2. item
+        numbered = re.findall(r'^\d+[.)]\s*(.+)$', brief, re.MULTILINE)
+        if len(numbered) > 1:
+            return numbered
+
+        # Fall back to single item
+        return [brief]

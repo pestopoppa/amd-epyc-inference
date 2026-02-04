@@ -328,6 +328,98 @@ class HybridRouter:
         routing, mode = self.rule_based.route_with_mode(task_ir)
         return (routing, "rules", mode)
 
+    def route_3way(
+        self, task_ir: Dict[str, Any], cost_tiers: Optional[Dict[str, int]] = None
+    ) -> Tuple[str, str, float]:
+        """Route using 3-way action vocabulary with cost-adjusted decision.
+
+        3-way actions:
+        - SELF:direct - Frontdoor without tools
+        - SELF:repl - Frontdoor with tools, no delegation
+        - ARCHITECT - Architect with full delegation freedom
+        - WORKER - (Not directly routed to, used via delegation)
+
+        The Q-values represent P(success|action). Cost is applied at decision time:
+            score = Q(action) / cost_tier
+
+        Args:
+            task_ir: TaskIR dictionary.
+            cost_tiers: Optional cost tiers per action. Defaults to standard tiers.
+
+        Returns:
+            (action, strategy, confidence) tuple.
+            action is one of: "SELF:direct", "SELF:repl", "ARCHITECT"
+            strategy is "learned" or "rules"
+        """
+        # Default cost tiers (same as seeding_types.THREE_WAY_COST_TIER)
+        if cost_tiers is None:
+            cost_tiers = {
+                "SELF:direct": 2,
+                "SELF:repl": 2,
+                "ARCHITECT": 4,
+                "WORKER": 1,
+            }
+
+        # Retrieve learned Q-values
+        results = self.retriever.retrieve_for_routing(task_ir)
+
+        if self.retriever.should_use_learned(results):
+            # Aggregate Q-values by 3-way category
+            q_values: Dict[str, List[float]] = {
+                "SELF:direct": [],
+                "SELF:repl": [],
+                "ARCHITECT": [],
+            }
+
+            for r in results:
+                action = r.memory.action
+                # Map old action format to 3-way categories
+                if action in q_values:
+                    # Already in 3-way format
+                    q_values[action].append(r.q_value)
+                elif action.startswith("frontdoor:direct"):
+                    q_values["SELF:direct"].append(r.q_value)
+                elif action.startswith("frontdoor:repl"):
+                    q_values["SELF:repl"].append(r.q_value)
+                elif action.startswith(("architect_", "ARCHITECT")):
+                    q_values["ARCHITECT"].append(r.q_value)
+
+            # Average Q-values per category
+            avg_q = {}
+            for action, values in q_values.items():
+                if values:
+                    avg_q[action] = sum(values) / len(values)
+                else:
+                    avg_q[action] = 0.5  # Default neutral
+
+            # Apply cost-adjusted scoring
+            scores = {}
+            for action, q in avg_q.items():
+                cost = cost_tiers.get(action, 2)
+                scores[action] = q / cost
+
+            # Select best action
+            best_action = max(scores, key=scores.get)
+            confidence = avg_q[best_action]
+
+            return (best_action, "learned", confidence)
+
+        # Fall back to rule-based routing
+        # Determine 3-way action from task characteristics
+        task_type = task_ir.get("task_type", "chat")
+        objective = task_ir.get("objective", "").lower()
+        context_length = task_ir.get("context_length", 0)
+
+        # Heuristics for 3-way routing
+        if task_type in ("architecture", "design", "complex"):
+            return ("ARCHITECT", "rules", 0.5)
+        elif context_length > 20000:
+            return ("SELF:repl", "rules", 0.5)  # Large context needs tools
+        elif any(kw in objective for kw in ["search", "file", "explore", "read"]):
+            return ("SELF:repl", "rules", 0.5)
+        else:
+            return ("SELF:direct", "rules", 0.5)
+
     def _parse_routing_action(self, action: str) -> List[str]:
         """Parse stored action string to routing list."""
         # Actions are stored as comma-separated role names

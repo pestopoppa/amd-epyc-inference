@@ -678,3 +678,27 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 2026-02-03T15:15:06Z [VERIFY] FAISS index clean - no orphaned embeddings
 2026-02-03T15:20:00Z [VERIFY] All 9 llama-server ports healthy (8080-8090)
 2026-02-03T15:20:01Z [TASK_END] Session 10 complete - timeout simplified, episodic memory cleaned
+
+{"ts":"2026-02-04T$(date +%H:%M:%S)+01:00","session":"ses_20260204_phase7_commit","level":"INFO","cat":"SESSION_START","msg":"Commit Phase 7 backend routing and shell migration","details":"Continuing from Session 13"}
+{"ts":"2026-02-04T$(date +%H:%M:%S)+01:00","session":"ses_20260204_phase7_commit","level":"INFO","cat":"TASK_START","msg":"Commit and push Phase 7 changes","details":"15 files: registry_loader.py, model_registry.yaml, 12 shell scripts, progress doc"}
+{"ts":"2026-02-04T$(date +%H:%M:%S)+01:00","session":"ses_20260204_phase7_commit","level":"INFO","cat":"GIT","msg":"git commit f554bca","details":"feat: Add backend routing and migrate 12 shell scripts to env.sh"}
+{"ts":"2026-02-04T$(date +%H:%M:%S)+01:00","session":"ses_20260204_phase7_commit","level":"INFO","cat":"GIT","msg":"git push origin main","details":"7d489e6..f554bca main -> main"}
+{"ts":"2026-02-04T$(date +%H:%M:%S)+01:00","session":"ses_20260204_phase7_commit","level":"INFO","cat":"TASK_END","msg":"Commit and push Phase 7 changes","details":"outcome=success"}
+
+{"ts":"2026-02-04T12:30:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"SESSION_START","msg":"Phase 4: 3-way routing evaluation implementation","details":"Binary rewards for faithful probability estimation"}
+{"ts":"2026-02-04T12:31:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"TASK_START","msg":"Implement 3-way action vocabulary","details":"seeding_types.py: SELF:direct, SELF:repl, ARCHITECT, WORKER"}
+{"ts":"2026-02-04T12:32:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"EDIT","msg":"seeding_types.py","details":"Added ACTION_SELF_DIRECT, ACTION_SELF_REPL, ACTION_ARCHITECT, ACTION_WORKER, THREE_WAY_ACTIONS, THREE_WAY_COST_TIER"}
+{"ts":"2026-02-04T12:33:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"EDIT","msg":"seeding_rewards.py","details":"Added success_reward(), compute_3way_rewards(), score_delegation_chain(), compute_tool_value()"}
+{"ts":"2026-02-04T12:34:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"EDIT","msg":"seed_specialist_routing.py","details":"Added evaluate_question_3way(), _inject_3way_rewards_http(), ThreeWayResult, --3way CLI flag"}
+{"ts":"2026-02-04T12:35:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"EDIT","msg":"src/api/models/requests.py","details":"Added allow_delegation: bool | None field to ChatRequest"}
+{"ts":"2026-02-04T12:36:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"EDIT","msg":"src/api/routes/chat.py","details":"Respects allow_delegation parameter for testing delegation modes"}
+{"ts":"2026-02-04T12:37:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"EDIT","msg":"orchestration/repl_memory/retriever.py","details":"Added route_3way() method to HybridRouter"}
+{"ts":"2026-02-04T12:38:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"FIX","msg":"orchestration/repl_memory/q_scorer.py","details":"Fixed bug: search_similar() -> retrieve_by_similarity()"}
+{"ts":"2026-02-04T12:39:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"CREATE","msg":"tests/unit/test_3way_routing.py","details":"15 new tests covering all 3-way routing functionality"}
+{"ts":"2026-02-04T12:40:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"VERIFY","msg":"Unit tests pass","details":"15/15 new tests, 2564/2566 total (2 pre-existing failures)"}
+{"ts":"2026-02-04T12:41:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"TASK_END","msg":"Phase 4 implementation complete","details":"outcome=success, binary rewards + cost metrics stored"}
+{"ts":"2026-02-04T12:50:00+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"DOCS","msg":"Updated Chapter 17: Memory Seeding","details":"Added 3-way evaluation seeding strategy, action key table"}
+{"ts":"2026-02-04T12:50:01+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"DOCS","msg":"Updated Chapter 18: Escalation & Routing","details":"Added 3-way confidence routing, general delegation, allow_delegation API"}
+{"ts":"2026-02-04T12:50:02+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"DOCS","msg":"Updated Chapter 25: Cost-Aware Rewards","details":"Added binary rewards for P(success), cost stored separately for Optuna"}
+{"ts":"2026-02-04T12:50:03+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"DOCS","msg":"Updated INDEX.md","details":"Updated key results for chapters 17, 18, 25"}
+{"ts":"2026-02-04T12:50:04+01:00","session":"ses_20260204_phase4_3way","level":"INFO","cat":"HANDOFF","msg":"Updated unified_execution_model.md","details":"Added Phase 4 completion section, 3-way test matrix, CLI usage"}

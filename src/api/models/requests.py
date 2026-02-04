@@ -29,6 +29,12 @@ class ChatRequest(BaseModel):
         "bypassing _select_mode heuristics. 'delegated' enables architect delegation "
         "where the architect formulates investigation briefs for faster specialists.",
     )
+    allow_delegation: bool | None = Field(
+        default=None,
+        description="Override delegation capability. True=allow delegation to workers, "
+        "False=disable delegation (model handles alone). None=use feature flag default. "
+        "Used by 3-way seeding to isolate SELF vs ARCHITECT behavior.",
+    )
     server_urls: dict[str, str] | None = Field(
         default=None,
         description="Server URLs for real mode (e.g., {'frontdoor': 'http://localhost:8080'})",

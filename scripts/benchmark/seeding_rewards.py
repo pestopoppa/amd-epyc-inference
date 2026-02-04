@@ -12,12 +12,23 @@ from seeding_types import (
     ESCALATION_REWARD,
     ROLE_COST_TIER,
     RoleResult,
+    # Phase 4: 3-way routing
+    ACTION_SELF_DIRECT,
+    ACTION_SELF_REPL,
+    ACTION_ARCHITECT,
+    ACTION_WORKER,
+    THREE_WAY_COST_TIER,
 )
 
 __all__ = [
     "DEFAULT_BASELINE_TPS",
     "compute_comparative_rewards",
     "detect_escalation_chains",
+    # Phase 4: Binary rewards for faithful probability estimation
+    "success_reward",
+    "compute_3way_rewards",
+    "score_delegation_chain",
+    "compute_tool_value",
 ]
 
 # Default per-role optimized tokens/second from production benchmarks.
@@ -199,3 +210,136 @@ def _inject_rewards_http(
         except Exception:
             continue
     return injected
+
+
+# ── Phase 4: Binary rewards for faithful probability estimation ──────
+
+
+def success_reward(passed: bool) -> float:
+    """Binary reward for faithful probability estimation.
+
+    Q-values should converge to P(success|action).
+    With binary rewards and TD learning (α=0.1):
+        new_q = old_q + α(reward - old_q)
+    converges to empirical success rate.
+
+    Args:
+        passed: Whether the task succeeded.
+
+    Returns:
+        1.0 for success, 0.0 for failure.
+    """
+    return 1.0 if passed else 0.0
+
+
+def compute_3way_rewards(
+    results: dict[str, RoleResult],
+) -> dict[str, float]:
+    """Compute binary rewards for 3-way routing evaluation.
+
+    Maps role results to 3-way action categories and computes
+    binary rewards. Cost is NOT included — Q-values represent
+    pure P(success).
+
+    Args:
+        results: Dict mapping action_key (e.g. "frontdoor:direct") to RoleResult.
+
+    Returns:
+        Dict mapping 3-way action key to binary reward.
+    """
+    rewards: dict[str, float] = {}
+
+    # SELF:direct — frontdoor without tools
+    if "frontdoor:direct" in results:
+        rewards[ACTION_SELF_DIRECT] = success_reward(results["frontdoor:direct"].passed)
+
+    # SELF:repl — frontdoor with tools (no delegation)
+    if "frontdoor:repl" in results:
+        rewards[ACTION_SELF_REPL] = success_reward(results["frontdoor:repl"].passed)
+
+    # ARCHITECT — architect_coding or architect_general (with delegation freedom)
+    architect_keys = [k for k in results if k.startswith(("architect_coding", "architect_general"))]
+    if architect_keys:
+        # Take best architect result (they have delegation freedom)
+        best_architect = max(architect_keys, key=lambda k: int(results[k].passed))
+        rewards[ACTION_ARCHITECT] = success_reward(results[best_architect].passed)
+
+    return rewards
+
+
+def score_delegation_chain(
+    results: dict[str, RoleResult],
+) -> dict[str, float]:
+    """Score WORKER based on delegation chain outcomes.
+
+    Workers are "glorified tools" — they're triggered by SELF:repl or ARCHITECT
+    delegation. When delegation occurs, we also inject a WORKER reward.
+
+    Args:
+        results: Dict mapping action_key to RoleResult.
+
+    Returns:
+        Dict with WORKER reward if delegation occurred.
+    """
+    rewards: dict[str, float] = {}
+
+    # Check SELF:repl for delegation
+    if "frontdoor:repl" in results:
+        rr = results["frontdoor:repl"]
+        if _has_delegation(rr):
+            rewards[ACTION_WORKER] = success_reward(rr.passed)
+
+    # Check ARCHITECT for delegation
+    architect_keys = [k for k in results if k.startswith(("architect_coding", "architect_general"))]
+    for key in architect_keys:
+        rr = results[key]
+        if _has_delegation(rr):
+            # Use best WORKER outcome
+            if ACTION_WORKER in rewards:
+                rewards[ACTION_WORKER] = max(rewards[ACTION_WORKER], success_reward(rr.passed))
+            else:
+                rewards[ACTION_WORKER] = success_reward(rr.passed)
+
+    return rewards
+
+
+def _has_delegation(rr: RoleResult) -> bool:
+    """Check if a RoleResult involved delegation to a worker."""
+    # Check tools_called for delegation indicators
+    if rr.tools_called:
+        delegation_tools = {"delegate", "delegate_to_worker", "spawn_worker"}
+        for tool in rr.tools_called:
+            if any(dt in tool.lower() for dt in delegation_tools):
+                return True
+
+    # Check role_history for worker involvement
+    if rr.role_history and len(rr.role_history) > 1:
+        worker_roles = {"worker_explore", "worker_math", "worker_vision", "worker_summarize"}
+        for role in rr.role_history:
+            if any(wr in role.lower() for wr in worker_roles):
+                return True
+
+    return False
+
+
+def compute_tool_value(
+    direct_passed: bool,
+    repl_passed: bool,
+) -> dict[str, Any]:
+    """Compute tool value signal comparing SELF:direct vs SELF:repl.
+
+    This is stored as metadata, not separate rewards.
+
+    Args:
+        direct_passed: Whether SELF:direct succeeded.
+        repl_passed: Whether SELF:repl succeeded.
+
+    Returns:
+        Dict with tool value analysis.
+    """
+    return {
+        "tools_helped": repl_passed and not direct_passed,
+        "tools_neutral": repl_passed == direct_passed,
+        "tools_hurt": direct_passed and not repl_passed,
+        "tool_advantage": int(repl_passed) - int(direct_passed),
+    }

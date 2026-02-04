@@ -225,6 +225,78 @@ The cost-aware reward system is most effective when combined with tasks that pro
 
 Three HuggingFace dataset adapters (GAIA, CRUXEval, BigCodeBench) provide additional volume where tool-use modes structurally outperform direct inference.
 
+## Binary Rewards for Faithful Probability Estimation (February 2026)
+
+### The Problem with Cost-Weighted Q-Values
+
+The cost-aware reward system described above has a subtle issue: Q-values conflate two signals:
+- **P(success|action)** - the probability that this action succeeds
+- **Cost efficiency** - how expensive this action is
+
+For Optuna threshold tuning, we need these signals separated. If Q-values incorporate cost during learning, we can't later re-tune cost-quality tradeoffs without retraining.
+
+### Binary Reward Solution
+
+The 3-way evaluation mode uses pure binary rewards for Q-value updates:
+
+```python
+def success_reward(passed: bool) -> float:
+    """Binary reward for faithful probability estimation."""
+    return 1.0 if passed else 0.0
+```
+
+**Why binary?**
+- TD update: `Q_new = Q_old + α(reward - Q_old)`
+- With binary rewards (1.0/0.0) and α=0.1, Q converges to empirical success rate
+- Q-values become faithful P(success) estimates
+
+### Cost Stored Separately
+
+Cost metrics are stored in episodic memory context, not in rewards:
+
+```python
+metadata["cost_metrics"] = {
+    "SELF:direct": {
+        "elapsed_seconds": 2.3,
+        "tokens_generated": 150,
+        "predicted_tps": 18.3,
+    },
+    "SELF:repl": {
+        "elapsed_seconds": 5.1,
+        "tokens_generated": 280,
+        "tools_used": 3,
+    },
+    "ARCHITECT": {
+        "elapsed_seconds": 45.2,
+        "tokens_generated": 1200,
+        "role_history": ["architect_coding", "worker_explore"],
+    },
+}
+```
+
+### Cost Applied at Routing Time
+
+At production routing time, cost is applied to Q-values:
+
+```python
+COST_TIER = {"SELF:direct": 2, "SELF:repl": 2, "ARCHITECT": 4, "WORKER": 1}
+
+def route_with_cost(q_values: dict[str, float]) -> str:
+    scores = {action: q / COST_TIER[action] for action, q in q_values.items()}
+    return max(scores, key=scores.get)
+```
+
+### Optuna Threshold Optimization (Future)
+
+With separated Q-values and cost metrics, Optuna can optimize:
+- Cost tier weights per task type
+- Confidence thresholds for each action
+- Lambda values for cost-quality tradeoff
+
+The stored cost metrics provide the ground truth for optimization without corrupting the Q-value estimates.
+
+---
+
 ## Future Work
 
 1. **Dynamic lambda by task priority**: interactive queries use higher lambda (latency-sensitive); batch uses lower lambda (quality-sensitive).

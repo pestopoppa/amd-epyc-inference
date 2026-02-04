@@ -229,6 +229,34 @@ Graph stats:
 - Q-values: 0.3 (uncertain, needs validation)
 - Mark with `{"phase": "B", "status": "pending"}`
 
+### 10. 3-Way Routing Evaluation (`seed_specialist_routing.py --3way`)
+
+**Purpose:** Train frontdoor for faithful probability estimation via 3-way comparative testing.
+
+**Strategy:**
+- Runs each question through 4 configurations:
+  - `SELF:direct` - Frontdoor, no tools
+  - `SELF:repl` - Frontdoor with tools, delegation disabled
+  - `ARCHITECT` - Architect with full delegation freedom
+  - `WORKER` - Scored indirectly via delegation chains
+- Binary rewards (1.0 for pass, 0.0 for fail)
+- Cost metrics stored separately for later Optuna optimization
+
+**Usage:**
+
+```bash
+# Full 3-way seeding run
+python scripts/benchmark/seed_specialist_routing.py --3way --suites thinking coder --sample-size 20
+
+# Dry run (no reward injection)
+python scripts/benchmark/seed_specialist_routing.py --3way --dry-run --suites thinking --sample-size 5
+```
+
+**Key difference from comparative seeding:**
+- Comparative seeding uses cost-weighted rewards
+- 3-way seeding uses binary rewards for faithful P(success) estimation
+- Cost is stored in metadata, not incorporated into Q-values
+
 ## Seeding Order & Dependencies
 
 **Recommended seeding order:**
@@ -300,12 +328,28 @@ Average Q-value: 0.67
 Recent successes: 78%
 ```
 
+## 3-Way Action Keys (February 2026)
+
+The 3-way evaluation mode uses a distinct action vocabulary:
+
+| Action Key | What It Represents | Source Role | Mode |
+|------------|-------------------|-------------|------|
+| `SELF:direct` | Frontdoor without tools | frontdoor | direct |
+| `SELF:repl` | Frontdoor with tools | frontdoor | repl |
+| `ARCHITECT` | Architect with delegation | architect_* | delegated |
+| `WORKER` | Worker models | via delegation | — |
+
+These action keys are stored in episodic memory and used for routing decisions. The HybridRouter's `route_3way()` method retrieves memories by these action keys.
+
 ## References
 
 - **Seed loader**: `orchestration/repl_memory/seed_loader.py`
 - **Canonical examples**: `orchestration/repl_memory/seed_examples.json`
 - **Graph seeds**: `orchestration/repl_memory/graph_seeds.yaml`
 - **Seeding scripts**: `scripts/seed_*.py` (9 scripts)
+- **3-way seeding**: `scripts/benchmark/seed_specialist_routing.py --3way`
+- **Seeding types**: `scripts/benchmark/seeding_types.py` (action keys, cost tiers)
+- **Seeding rewards**: `scripts/benchmark/seeding_rewards.py` (binary rewards)
 - **EpisodicStore**: `orchestration/repl_memory/episodic_store.py`
 
 ---

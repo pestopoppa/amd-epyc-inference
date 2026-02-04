@@ -154,6 +154,87 @@ else:
 
 Monitor convergence: As MemRL matures, `learned / (learned + rules)` should increase.
 
+## 3-Way Confidence Routing (February 2026)
+
+### Overview
+
+The Unified Execution Model introduces 3-way confidence routing for faithful probability estimation. Instead of rigid mode-based routing, the frontdoor estimates P(success|action) for three approaches:
+
+| Approach | Meaning | Maps To |
+|----------|---------|---------|
+| **SELF:direct** | Handle without tools | `frontdoor` with `mode=direct` |
+| **SELF:repl** | Handle with tools, no delegation | `frontdoor` with `mode=repl`, `allow_delegation=False` |
+| **ARCHITECT** | Escalate for complex reasoning | `architect_coding` or `architect_general` |
+| **WORKER** | Delegate to faster workers | Scored via delegation chain attribution |
+
+### Confidence Routing Prompt
+
+```python
+def build_confidence_estimation_prompt(question: str, context: str = "") -> str:
+    return f"""Estimate your probability of correctly answering this question.
+
+Question: {question[:500]}...
+
+Rate your confidence (0.0-1.0) for each approach:
+- SELF: You handle it (no escalation or delegation)
+- ARCHITECT: Escalate to architect for complex reasoning
+- WORKER: Delegate to faster worker models
+
+Output ONLY this format:
+CONF|SELF:X.XX|ARCHITECT:X.XX|WORKER:X.XX"""
+```
+
+### Cost-Adjusted Routing
+
+At production routing time, Q-values are adjusted by cost tier:
+
+```python
+THREE_WAY_COST_TIER = {
+    "SELF:direct": 2,   # Frontdoor speed
+    "SELF:repl": 2,     # Frontdoor with tools
+    "ARCHITECT": 4,     # Slow but capable
+    "WORKER": 1,        # Fast workers
+}
+
+def route_with_cost(q_values: dict[str, float]) -> str:
+    scores = {action: q / THREE_WAY_COST_TIER[action] for action, q in q_values.items()}
+    return max(scores, key=scores.get)
+```
+
+**Key insight**: Cost is applied at routing time, not during Q-value updates. Q-values remain faithful P(success) estimates.
+
+### General Delegation
+
+Any role can now delegate (not just architects). Tier C restriction removed:
+
+```python
+_DELEGATABLE_ROLES = frozenset({
+    "worker_explore", "worker_math", "worker_general",
+    "worker_summarize", "worker_vision",
+    "coder_escalation",
+})
+
+# In _delegate():
+if target_role not in _DELEGATABLE_ROLES:
+    raise ValueError(f"Cannot delegate to {target_role}")
+```
+
+### allow_delegation Parameter
+
+The `ChatRequest` model now supports `allow_delegation` override for testing:
+
+```python
+class ChatRequest(BaseModel):
+    allow_delegation: bool | None = Field(
+        default=None,
+        description="Override delegation. True=allow, False=disable, None=use feature flag.",
+    )
+```
+
+Used by the 3-way evaluation script to test delegation value.
+
+---
+
 ## Proactive Delegation
 
 ### Complexity Classification

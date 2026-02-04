@@ -207,9 +207,14 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
     # Stage 8: Execute selected mode (with fallthrough on failure)
 
     # 8a: Delegated mode (architect → specialist)
+    # allow_delegation can override the feature flag per-request
+    delegation_allowed = (
+        request.allow_delegation if request.allow_delegation is not None
+        else features().architect_delegation
+    )
     if execution_mode == "delegated" or (
         str(initial_role) in ("architect_general", "architect_coding")
-        and features().architect_delegation
+        and delegation_allowed
     ):
         result = _execute_delegated(
             request,

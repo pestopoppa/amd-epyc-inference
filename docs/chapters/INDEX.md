@@ -71,8 +71,8 @@ Novel contributions (recommended reading order):
 |---|-------|------------|
 | 15 | [MemRL System](15-memrl-system.md) | 2,714 memories (cleaned), FAISS, Q-scoring |
 | 16 | [Graph-Based Reasoning](16-graph-reasoning.md) | 13 failure modes, Kuzu backend |
-| 17 | [Memory Seeding](17-memory-seeding.md) | 56 seeds, 8 strategies |
-| 18 | [Escalation & Routing](18-escalation-and-routing.md) | Learned + rule-based routing |
+| 17 | [Memory Seeding](17-memory-seeding.md) | 56 seeds, 10 strategies incl 3-way eval |
+| 18 | [Escalation & Routing](18-escalation-and-routing.md) | 3-way confidence routing, general delegation |
 | 19 | [Procedure Registry](19-procedure-registry.md) | 11 procedures, ~350 tokens/op |
 | 20 | [Session Persistence](20-session-persistence.md) | 7-phase checkpoint/resume |
 
@@ -84,7 +84,7 @@ Novel contributions (recommended reading order):
 | 22 | [Tool Registry & Agent Roles](22-tool-registry.md) | 40+ tools, 8 agent roles |
 | 23 | [Security & Monitoring](23-security-and-monitoring.md) | AST sandbox, entropy detection |
 | 24 | [Benchmark Suite Construction](24-benchmark-suite-construction.md) | 325 questions, 5 scoring methods |
-| 25 | [Cost-Aware Rewards](25-cost-aware-rewards.md) | xRouter-style correctness-gated cost penalty |
+| 25 | [Cost-Aware Rewards](25-cost-aware-rewards.md) | Binary rewards for P(success), cost stored separately |
 
 ---
 

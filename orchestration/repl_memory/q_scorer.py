@@ -467,11 +467,14 @@ class QScorer:
         embedding = self.embedder.embed_task_ir(task_ir)
 
         # Search for existing similar memory with same action
-        similar = self.store.search_similar(
-            embedding=embedding,
-            limit=5,
-            min_similarity=0.85,
+        # Note: retrieve_by_similarity returns memories sorted by similarity
+        similar = self.store.retrieve_by_similarity(
+            query_embedding=embedding,
+            k=5,
+            action_type="routing",
         )
+        # Filter to high-similarity matches (similarity_score >= 0.85)
+        similar = [m for m in similar if m.similarity_score >= 0.85]
 
         # Update existing memory if action matches closely
         updated = False

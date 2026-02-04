@@ -1,6 +1,7 @@
 """Constants, dataclasses, and shared state for the seeding evaluation suite.
 
 This module has NO project imports — it sits at the bottom of the dependency graph.
+Timeouts are read directly from the model registry YAML (single source of truth).
 """
 
 from __future__ import annotations
@@ -8,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 __all__ = [
     "ARCHITECT_MODES", "ARCHITECT_ROLES", "ComparativeResult",
@@ -18,6 +21,9 @@ __all__ = [
     "ROLE_COST_TIER", "ROLE_PORT", "RoleResult",
     "SEEN_FILE", "STACK_SCRIPT",
     "VISION_MODES", "VISION_ROLES", "state",
+    # Phase 4: 3-way routing action keys
+    "ACTION_SELF_DIRECT", "ACTION_SELF_REPL", "ACTION_ARCHITECT", "ACTION_WORKER",
+    "THREE_WAY_ACTIONS", "THREE_WAY_COST_TIER",
 ]
 
 
@@ -30,10 +36,25 @@ SEEN_FILE = EVAL_DIR / "seen_questions.jsonl"
 DEBUG_PROMPTS_DIR = PROJECT_ROOT / "benchmarks" / "prompts" / "debug"
 
 
+# ── Registry timeout reader (no project imports) ──────────────────────
+
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml without project imports."""
+    registry_path = PROJECT_ROOT / "orchestration" / "model_registry.yaml"
+    try:
+        with registry_path.open() as f:
+            data = yaml.safe_load(f)
+        timeouts = data.get("runtime_defaults", {}).get("timeouts", {})
+        cat_data = timeouts.get(category, {})
+        return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        return fallback
+
+
 # ── Orchestrator defaults ─────────────────────────────────────────────
 
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:8000"
-DEFAULT_TIMEOUT = 600  # Max from calibration: architect_general takes ~300s on hard questions
+DEFAULT_TIMEOUT = _read_registry_timeout("benchmark", "seeding_default", 600)
 DEFAULT_SUITES = [
     "thinking", "general", "math", "agentic",
     "coder", "instruction_precision", "vl",
@@ -50,7 +71,9 @@ DEFAULT_ROLES = [
     "architect_general", "architect_coding",
     "worker_vision", "vision_escalation",
 ]
-DEFAULT_MODES = ["direct", "react", "repl"]
+# NOTE: React mode has been unified into REPL with structured_mode=True.
+# "react" is no longer a separate mode - REPL is the universal superset.
+DEFAULT_MODES = ["direct", "repl"]
 
 
 # ── Role / mode constraints ──────────────────────────────────────────
@@ -79,6 +102,26 @@ ROLE_COST_TIER: dict[str, int] = {
 }
 
 ESCALATION_REWARD = 0.8
+
+
+# ── Phase 4: 3-way routing action keys ───────────────────────────────
+# Simplified action vocabulary for faithful probability estimation.
+# Q-values converge to P(success|action), cost applied at routing time.
+
+ACTION_SELF_DIRECT = "SELF:direct"  # Frontdoor without tools
+ACTION_SELF_REPL = "SELF:repl"      # Frontdoor with tools, no delegation
+ACTION_ARCHITECT = "ARCHITECT"       # Architect with full delegation freedom
+ACTION_WORKER = "WORKER"             # Worker models (scored via delegation chain)
+
+THREE_WAY_ACTIONS = [ACTION_SELF_DIRECT, ACTION_SELF_REPL, ACTION_ARCHITECT, ACTION_WORKER]
+
+# Cost tiers for 3-way routing (applied at decision time, not during learning)
+THREE_WAY_COST_TIER: dict[str, int] = {
+    ACTION_SELF_DIRECT: 2,  # Frontdoor, low cost
+    ACTION_SELF_REPL: 2,    # Same model, just with tools
+    ACTION_ARCHITECT: 4,    # Expensive architect models
+    ACTION_WORKER: 1,       # Cheapest, small worker models
+}
 
 
 # ── Server topology ──────────────────────────────────────────────────
