@@ -25,19 +25,26 @@ from typing import Any
 
 import yaml
 
+from src.config import _registry_timeout
+
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class MCPServerConfig:
-    """Configuration for launching an MCP server subprocess."""
+    """Configuration for launching an MCP server subprocess.
+
+    Timeout default from model_registry.yaml (runtime_defaults.timeouts.external.mcp_client).
+    """
 
     name: str
     command: str
     args: list[str] = field(default_factory=list)
     env: dict[str, str] | None = None
     cwd: str | None = None
-    timeout: int = 30
+    timeout: int = field(
+        default_factory=lambda: int(_registry_timeout("external", "mcp_client", 30))
+    )
 
 
 def load_server_configs(yaml_path: str | Path) -> dict[str, MCPServerConfig]:

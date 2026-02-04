@@ -12,9 +12,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source environment library first (sets all path variables)
+source "$SCRIPT_DIR/../lib/env.sh"
+
 source "$SCRIPT_DIR/agent_log.sh"
 
-LOGS_DIR="/mnt/raid0/llm/LOGS"
+LOGS_DIR="${LLM_ROOT}/LOGS"
 INVENTORY_FILE="$LOGS_DIR/model_inventory.json"
 TESTED_FILE="$LOGS_DIR/tested_models.json"
 RESEARCH_REPORT="$LOGS_DIR/research_report.md"
@@ -26,34 +30,30 @@ echo "Timestamp: $(date)"
 echo "=============================================="
 
 # ============================================
-# 0. CRITICAL: SET STORAGE CONSTRAINTS
+# 0. CRITICAL: VERIFY STORAGE CONSTRAINTS
 # ============================================
+# Note: env.sh already exports all storage paths (HF_HOME, TMPDIR, etc.)
 echo ""
-echo "--- Setting Storage Constraints (CRITICAL) ---"
-echo "All caches/temp files MUST use /mnt/raid0/"
+echo "--- Storage Constraints (from env.sh) ---"
+echo "All caches/temp files MUST use ${LLM_ROOT}/"
 
-export HF_HOME=/mnt/raid0/llm/cache/huggingface
-export TRANSFORMERS_CACHE=/mnt/raid0/llm/cache/huggingface
-export HF_DATASETS_CACHE=/mnt/raid0/llm/cache/huggingface/datasets
-export PIP_CACHE_DIR=/mnt/raid0/llm/cache/pip
-export TMPDIR=/mnt/raid0/llm/tmp
-export XDG_CACHE_HOME=/mnt/raid0/llm/cache
-export npm_config_cache=/mnt/raid0/llm/cache/npm
+# npm cache not in env.sh, add it
+export npm_config_cache="${CACHE_DIR}/npm"
 
 # Create directories if they don't exist
-mkdir -p /mnt/raid0/llm/cache/huggingface
-mkdir -p /mnt/raid0/llm/cache/huggingface/datasets
-mkdir -p /mnt/raid0/llm/cache/pip
-mkdir -p /mnt/raid0/llm/cache/npm
-mkdir -p /mnt/raid0/llm/tmp
-mkdir -p "$LOGS_DIR"
+ensure_dir "${HF_HOME}"
+ensure_dir "${HF_DATASETS_CACHE}"
+ensure_dir "${PIP_CACHE_DIR}"
+ensure_dir "${npm_config_cache}"
+ensure_dir "${TMPDIR}"
+ensure_dir "$LOGS_DIR"
 
 echo "  HF_HOME=$HF_HOME"
 echo "  TMPDIR=$TMPDIR"
 echo "  PIP_CACHE_DIR=$PIP_CACHE_DIR"
 echo ""
 echo "⛔ NEVER write to /home/, /tmp/, /var/, or ~/.cache/"
-echo "✅ ALL files must be under /mnt/raid0/"
+echo "✅ ALL files must be under ${LLM_ROOT}/"
 
 agent_session_start "New optimization session"
 agent_observe "storage_constraint" "All writes to /mnt/raid0/ only"
@@ -85,8 +85,8 @@ fi
 echo ""
 echo "--- Checking Python dependencies ---"
 if command -v uv &>/dev/null; then
-  if [[ -f "/mnt/raid0/llm/claude/pyproject.toml" ]]; then
-    cd /mnt/raid0/llm/claude
+  if [[ -f "${PROJECT_ROOT}/pyproject.toml" ]]; then
+    cd "${PROJECT_ROOT}"
     if uv sync --dry-run 2>&1 | grep -q "Would install"; then
       echo "⚠ Dependencies out of sync. Running: uv sync"
       uv sync 2>&1 | tail -5
@@ -117,9 +117,9 @@ sed -i "s/TIMESTAMP_PLACEHOLDER/$(date -Iseconds)/" "$INVENTORY_FILE"
 first_model=true
 
 # Scan HuggingFace models
-echo "Scanning /mnt/raid0/llm/hf/..."
-if [ -d "/mnt/raid0/llm/hf" ]; then
-  for dir in /mnt/raid0/llm/hf/*/; do
+echo "Scanning ${LLM_ROOT}/hf/..."
+if [ -d "${LLM_ROOT}/hf" ]; then
+  for dir in "${LLM_ROOT}"/hf/*/; do
     if [ -d "$dir" ]; then
       model_name=$(basename "$dir")
       model_path="${dir%/}"
@@ -142,9 +142,9 @@ EOF
   done
 fi
 
-# Scan GGUF models in /mnt/raid0/llm/models/
-echo "Scanning /mnt/raid0/llm/models/..."
-if [ -d "/mnt/raid0/llm/models" ]; then
+# Scan GGUF models in ${MODELS_DIR}
+echo "Scanning ${MODELS_DIR}/..."
+if [ -d "${MODELS_DIR}" ]; then
   while IFS= read -r -d '' gguf; do
     model_name=$(basename "$gguf")
     model_path="$gguf"
@@ -165,12 +165,12 @@ if [ -d "/mnt/raid0/llm/models" ]; then
 EOF
     echo "  [GGUF] $model_name"
     agent_observe "model_gguf" "$model_path"
-  done < <(find /mnt/raid0/llm/models -name "*.gguf" -type f -print0 2>/dev/null)
+  done < <(find "${MODELS_DIR}" -name "*.gguf" -type f -print0 2>/dev/null)
 fi
 
 # Scan LM Studio models
-echo "Scanning /mnt/raid0/llm/lmstudio/..."
-if [ -d "/mnt/raid0/llm/lmstudio" ]; then
+echo "Scanning ${MODEL_BASE}/..."
+if [ -d "${MODEL_BASE}" ]; then
   while IFS= read -r -d '' gguf; do
     model_name=$(basename "$gguf")
     model_path="$gguf"
@@ -191,7 +191,7 @@ if [ -d "/mnt/raid0/llm/lmstudio" ]; then
 EOF
     echo "  [LMStudio] $model_name"
     agent_observe "model_lmstudio" "$model_path"
-  done < <(find /mnt/raid0/llm/lmstudio -name "*.gguf" -type f -print0 2>/dev/null)
+  done < <(find "${MODEL_BASE}" -name "*.gguf" -type f -print0 2>/dev/null)
 fi
 
 # Close JSON

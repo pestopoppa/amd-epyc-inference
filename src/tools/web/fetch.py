@@ -18,10 +18,14 @@ from urllib.parse import urlparse
 
 import yaml
 
+from src.config import _registry_timeout
 from src.tool_registry import Tool, ToolCategory, ToolRegistry
 from src.tools.base import safe_execute
 
 logger = logging.getLogger(__name__)
+
+# Default timeout from registry
+_WEB_FETCH_TIMEOUT = int(_registry_timeout("tools", "web_fetch", 30))
 
 # Simple cache for fetched content (URL -> content)
 _fetch_cache: dict[str, tuple[str, float]] = {}
@@ -131,7 +135,7 @@ def _extract_content(html: str, url: str) -> str:
     return "\n".join(lines)
 
 
-def _fetch_url(url: str, max_length: int = 8000, timeout: int = 30) -> str:
+def _fetch_url(url: str, max_length: int = 8000, timeout: int = _WEB_FETCH_TIMEOUT) -> str:
     """Fetch content from a URL.
 
     Args:

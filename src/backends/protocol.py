@@ -25,6 +25,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterator, Protocol, runtime_checkable
 
+from src.config import _registry_timeout
+
 
 @dataclass
 class InferenceRequest:
@@ -37,7 +39,7 @@ class InferenceRequest:
         stop_sequences: Optional list of stop sequences.
         role: Role hint for routing (e.g., "coder", "worker").
         stream: Whether to stream the response.
-        timeout: Request timeout in seconds.
+        timeout: Request timeout in seconds (from registry).
         extra: Additional backend-specific parameters.
     """
 
@@ -47,7 +49,9 @@ class InferenceRequest:
     stop_sequences: list[str] = field(default_factory=list)
     role: str = "worker"
     stream: bool = False
-    timeout: int = 120
+    timeout: int = field(
+        default_factory=lambda: int(_registry_timeout("backends", "inference_default", 120))
+    )
     extra: dict[str, Any] = field(default_factory=dict)
 
 

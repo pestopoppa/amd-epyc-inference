@@ -594,7 +594,7 @@ def evaluate_question_3way(
     role_results[f"{self_role}:{self_direct_mode}"] = RoleResult(
         role=self_role,
         mode=self_direct_mode,
-        answer=answer_direct[:500] if answer_direct else "",
+        answer=answer_direct or "",
         passed=passed_direct,
         elapsed_seconds=elapsed_direct,
         error=error_direct,
@@ -642,7 +642,7 @@ def evaluate_question_3way(
     role_results[f"{self_role}:{self_repl_mode}"] = RoleResult(
         role=self_role,
         mode=self_repl_mode,
-        answer=answer_repl[:500] if answer_repl else "",
+        answer=answer_repl or "",
         passed=passed_repl,
         elapsed_seconds=elapsed_repl,
         error=error_repl,
@@ -724,7 +724,7 @@ def evaluate_question_3way(
         role_results[f"{ar}:{arch_mode}"] = RoleResult(
             role=ar,
             mode=arch_mode,
-            answer=answer_arch[:500] if answer_arch else "",
+            answer=answer_arch or "",
             passed=bool(passed_arch),
             elapsed_seconds=elapsed_arch,
             error=error_arch,
@@ -1106,7 +1106,7 @@ def evaluate_question(
         role_results[key] = RoleResult(
             role=role,
             mode=mode,
-            answer=answer[:500] if answer else "",
+            answer=answer or "",
             passed=passed,
             elapsed_seconds=q_elapsed,
             error=error,

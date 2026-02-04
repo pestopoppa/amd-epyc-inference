@@ -1,8 +1,11 @@
 #!/bin/bash
 # health_check.sh - Pre-session system health check
-# Usage: bash /mnt/raid0/llm/UTILS/health_check.sh
+# Usage: bash scripts/session/health_check.sh
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/env.sh"
 
 echo "=============================================="
 echo "Pre-Session Health Check"
@@ -58,16 +61,16 @@ echo ""
 
 echo "--- Environment Variables ---"
 
-check "TMPDIR set" "[ -n \"\${TMPDIR:-}\" ]" "Set via wrapper or export TMPDIR=/mnt/raid0/llm/tmp"
+check "TMPDIR set" "[ -n \"\${TMPDIR:-}\" ]" "Set via env.sh or export TMPDIR=${TMP_DIR}"
 
 if [ -n "${TMPDIR:-}" ]; then
-  check "TMPDIR on RAID0" "[[ \"$TMPDIR\" == /mnt/raid0/* ]]" "Currently: $TMPDIR"
+  check "TMPDIR under LLM_ROOT" "[[ \"$TMPDIR\" == ${LLM_ROOT}/* ]]" "Currently: $TMPDIR"
 fi
 
-check "HF_HOME set" "[ -n \"\${HF_HOME:-}\" ]" "Set via wrapper or export HF_HOME=/mnt/raid0/llm/cache/huggingface"
+check "HF_HOME set" "[ -n \"\${HF_HOME:-}\" ]" "Set via env.sh or export HF_HOME=${HF_HOME}"
 
 if [ -n "${HF_HOME:-}" ]; then
-  check "HF_HOME on RAID0" "[[ \"$HF_HOME\" == /mnt/raid0/* ]]" "Currently: $HF_HOME"
+  check "HF_HOME under LLM_ROOT" "[[ \"$HF_HOME\" == ${LLM_ROOT}/* ]]" "Currently: $HF_HOME"
 fi
 
 echo ""
@@ -78,10 +81,10 @@ echo ""
 
 echo "--- Required Directories ---"
 
-check "/mnt/raid0/llm/tmp exists" "[ -d /mnt/raid0/llm/tmp ]"
-check "/mnt/raid0/llm/cache exists" "[ -d /mnt/raid0/llm/cache ]"
-check "/mnt/raid0/llm/LOGS exists" "[ -d /mnt/raid0/llm/LOGS ]"
-check "/mnt/raid0/llm/models exists" "[ -d /mnt/raid0/llm/models ]"
+check "${TMP_DIR} exists" "[ -d ${TMP_DIR} ]"
+check "${CACHE_DIR} exists" "[ -d ${CACHE_DIR} ]"
+check "${LLM_ROOT}/LOGS exists" "[ -d ${LLM_ROOT}/LOGS ]"
+check "${MODELS_DIR} exists" "[ -d ${MODELS_DIR} ]"
 
 echo ""
 
@@ -144,7 +147,7 @@ if [ $FAIL -gt 0 ]; then
     echo "  1. Run emergency_cleanup.sh to free root FS"
   fi
   if ! mountpoint -q /tmp/claude 2>/dev/null; then
-    echo "  2. Start Claude via: bash /mnt/raid0/llm/UTILS/claude_safe_start.sh"
+    echo "  2. Start Claude via: bash ${PROJECT_ROOT}/scripts/session/claude_safe_start.sh"
   fi
   if [ "$CPU_GOVERNOR" != "performance" ]; then
     echo "  3. Set CPU governor: echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor"
@@ -156,7 +159,7 @@ elif [ $WARN -gt 0 ]; then
   echo ""
   echo "Recommended actions:"
   if ! pgrep -f "monitor_storage" >/dev/null; then
-    echo "  • Start monitor: bash /mnt/raid0/llm/UTILS/monitor_storage.sh &"
+    echo "  • Start monitor: bash ${PROJECT_ROOT}/scripts/session/monitor_storage.sh &"
   fi
   echo ""
   exit 0
@@ -164,7 +167,7 @@ else
   echo "âœ… ALL CHECKS PASSED - System ready for Claude session"
   echo ""
   echo "Start Claude Code:"
-  echo "  bash /mnt/raid0/llm/UTILS/claude_safe_start.sh"
+  echo "  bash ${PROJECT_ROOT}/scripts/session/claude_safe_start.sh"
   echo ""
   exit 0
 fi

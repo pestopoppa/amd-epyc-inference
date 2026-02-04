@@ -17,7 +17,12 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
+from src.config import _registry_timeout
+
 logger = logging.getLogger(__name__)
+
+# Default tool timeout from registry
+_TOOL_TIMEOUT = int(_registry_timeout("tools", "base_default", 60))
 
 T = TypeVar("T")
 
@@ -93,7 +98,7 @@ def truncate_output(text: str, max_length: int = 8192) -> tuple[str, bool]:
 def safe_execute(
     func: Callable[..., T],
     *args: Any,
-    timeout_seconds: int = 60,
+    timeout_seconds: int = _TOOL_TIMEOUT,
     max_output: int = 8192,
     **kwargs: Any,
 ) -> ToolResult:
@@ -102,7 +107,7 @@ def safe_execute(
     Args:
         func: Function to execute.
         *args: Positional arguments.
-        timeout_seconds: Timeout in seconds.
+        timeout_seconds: Timeout in seconds (from registry).
         max_output: Maximum output size.
         **kwargs: Keyword arguments.
 

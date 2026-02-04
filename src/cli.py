@@ -20,19 +20,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.config import _registry_timeout
 from src.dispatcher import Dispatcher
 from src.executor import ExecutionResult, Executor, ExecutorConfig, StepStatus
 from src.model_server import ModelServer
 from src.registry_loader import RegistryLoader
 
+# Get default timeout from registry (single source of truth)
+_DEFAULT_TIMEOUT = int(_registry_timeout("server", "request", 600))
+
 
 @dataclass
 class OrchestratorConfig:
-    """Configuration for the orchestrator."""
+    """Configuration for the orchestrator.
+
+    Timeout default comes from model_registry.yaml (runtime_defaults.timeouts.server.request).
+    """
 
     dry_run: bool = False
     verbose: bool = False
-    timeout: int = 300
+    timeout: int = _DEFAULT_TIMEOUT
     max_tokens: int = 512
     output_file: Path | None = None
     skip_frontdoor: bool = False  # Use provided TaskIR instead of generating
@@ -423,8 +430,8 @@ Examples:
         "-t",
         "--timeout",
         type=int,
-        default=300,
-        help="Timeout per step in seconds (default: 300)",
+        default=_DEFAULT_TIMEOUT,
+        help=f"Timeout per step in seconds (default: {_DEFAULT_TIMEOUT} from registry)",
     )
 
     parser.add_argument(

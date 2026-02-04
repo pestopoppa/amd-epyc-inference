@@ -6,10 +6,13 @@
 
 set -euo pipefail
 
-# Configuration
-LLAMA_CPP_DIR="/mnt/raid0/llm/llama.cpp"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/env.sh"
+
+# Configuration (derived from env.sh)
+LLAMA_CPP_DIR="${LLM_ROOT}/llama.cpp"
 EXPECTED_BRANCH="production-consolidated"
-EXPERIMENTAL_DIR="/mnt/raid0/llm/llama.cpp-experimental"
+EXPERIMENTAL_DIR="${LLM_ROOT}/llama.cpp-experimental"
 
 # Colors
 RED='\033[0;31m'

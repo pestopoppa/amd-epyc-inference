@@ -47,9 +47,23 @@ except ImportError as e:
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml."""
+    registry_path = PROJECT_ROOT / "orchestration" / "model_registry.yaml"
+    try:
+        with registry_path.open() as f:
+            data = yaml.safe_load(f)
+        timeouts = data.get("runtime_defaults", {}).get("timeouts", {})
+        cat_data = timeouts.get(category, {})
+        return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        return fallback
+
+
 # Constants
 DEFAULT_API_URL = "http://localhost:8000"
-DEFAULT_TIMEOUT = 120
+DEFAULT_TIMEOUT = _read_registry_timeout("backends", "inference_default", 120)
 CHECKPOINT_PATH = PROJECT_ROOT / "orchestration" / "optimization_checkpoint.yaml"
 STUDY_DB = PROJECT_ROOT / "orchestration" / "optuna_study.db"
 

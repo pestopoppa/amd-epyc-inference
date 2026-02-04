@@ -1,7 +1,8 @@
 """Vision pipeline configuration and constants.
 
-All vision-related paths point to /mnt/raid0/llm/vision/ to comply with
-the project's strict "no root filesystem writes" rule.
+All vision-related paths are derived from ORCHESTRATOR_PATHS_VISION_DIR
+(defaults to $LLM_ROOT/vision/) to comply with the project's strict
+"no root filesystem writes" rule.
 
 Values are sourced from the centralized config (src.config) with
 module-level aliases for backward compatibility.

@@ -14,10 +14,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from src.config import _registry_timeout
 from src.tool_registry import Tool, ToolCategory, ToolRegistry
 from src.tools.base import truncate_output
 
 logger = logging.getLogger(__name__)
+
+# Default test timeout from registry
+_TEST_TIMEOUT = int(_registry_timeout("benchmark", "test_execution", 300))
 
 
 def _get_project_root() -> str:
@@ -62,7 +66,7 @@ def run_tests(
     test_path: str = "tests/",
     test_pattern: str | None = None,
     verbose: bool = False,
-    timeout: int = 300,
+    timeout: int = _TEST_TIMEOUT,
     working_dir: str | None = None,
 ) -> dict[str, Any]:
     """Run pytest tests.
@@ -71,7 +75,7 @@ def run_tests(
         test_path: Path to test file or directory.
         test_pattern: Specific test pattern (-k flag).
         verbose: Enable verbose output.
-        timeout: Maximum execution time in seconds.
+        timeout: Maximum execution time in seconds (from registry).
         working_dir: Working directory for test execution. Defaults to project root.
 
     Returns:

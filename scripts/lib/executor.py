@@ -28,11 +28,24 @@ except ImportError:
     from registry import ModelRegistry, load_registry
 
 
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml."""
+    try:
+        reg = load_registry()
+        if reg and reg._raw:
+            timeouts = reg._raw.get("runtime_defaults", {}).get("timeouts", {})
+            cat_data = timeouts.get(category, {})
+            return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        pass
+    return fallback
+
+
 # Default inference parameters (fallbacks if registry unavailable)
 DEFAULT_THREADS = 96
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TEMPERATURE = 0.6
-DEFAULT_TIMEOUT = 180
+DEFAULT_TIMEOUT = _read_registry_timeout("scripts", "executor_default", 180)
 
 # Skip prompt lookup for models larger than this (GB)
 # Lookup doesn't benefit large models - they timeout waiting for verification

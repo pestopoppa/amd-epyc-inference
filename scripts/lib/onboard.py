@@ -34,9 +34,22 @@ except ImportError:
     from output_parser import parse_output
 
 
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml."""
+    try:
+        reg = load_registry()
+        if reg and reg._raw:
+            timeouts = reg._raw.get("runtime_defaults", {}).get("timeouts", {})
+            cat_data = timeouts.get(category, {})
+            return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        pass
+    return fallback
+
+
 # Default paths
 DEFAULT_MODEL_BASE = "/mnt/raid0/llm/lmstudio/models"
-HEALTH_CHECK_TIMEOUT = 60
+HEALTH_CHECK_TIMEOUT = _read_registry_timeout("scripts", "onboard_health", 60)
 HEALTH_CHECK_PROMPT = "What is 2+2? Answer with just the number."
 
 

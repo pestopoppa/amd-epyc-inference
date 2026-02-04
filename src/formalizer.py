@@ -32,7 +32,12 @@ from typing import Any, TYPE_CHECKING
 if TYPE_CHECKING:
     from src.registry_loader import RegistryLoader
 
+from src.config import _registry_timeout
+
 log = logging.getLogger(__name__)
+
+# Default formalizer timeout from registry
+_FORMALIZER_TIMEOUT = int(_registry_timeout("tools", "formalizer", 60))
 
 # ---------------------------------------------------------------------------
 # 4.1a: Keyword detection heuristics
@@ -184,7 +189,7 @@ def formalize_prompt(
     prompt: str,
     problem_type_hint: str,
     registry: "RegistryLoader",
-    timeout: int = 60,
+    timeout: int = _FORMALIZER_TIMEOUT,
 ) -> FormalizationResult:
     """Run formalizer model to extract formal specification from prompt.
 
@@ -195,7 +200,7 @@ def formalize_prompt(
         prompt: The user's raw prompt.
         problem_type_hint: Detected problem type (from should_formalize_input).
         registry: RegistryLoader for command generation.
-        timeout: Subprocess timeout in seconds.
+        timeout: Subprocess timeout in seconds (from registry).
 
     Returns:
         FormalizationResult with parsed IR or error details.

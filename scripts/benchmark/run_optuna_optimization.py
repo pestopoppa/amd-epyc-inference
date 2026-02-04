@@ -83,10 +83,21 @@ DASHBOARD_PORT = 8050
 # Default model (dev mode)
 DEV_MODEL = Path("/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
 
-# Timeouts
-SERVER_HEALTH_TIMEOUT = 60  # seconds
-API_HEALTH_TIMEOUT = 30  # seconds
-TRIAL_TIMEOUT = 300  # seconds
+# Timeouts - read from registry (single source of truth)
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml."""
+    try:
+        with REGISTRY_PATH.open() as f:
+            data = yaml.safe_load(f)
+        timeouts = data.get("runtime_defaults", {}).get("timeouts", {})
+        cat_data = timeouts.get(category, {})
+        return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        return fallback
+
+SERVER_HEALTH_TIMEOUT = 60  # seconds (local health check, not registry)
+API_HEALTH_TIMEOUT = 30  # seconds (local health check)
+TRIAL_TIMEOUT = _read_registry_timeout("benchmark", "optuna_trial", 300)  # seconds
 
 # Global mock mode flag (set by --mock argument)
 USE_MOCK_MODE = False
@@ -271,7 +282,7 @@ def kill_port(port: int):
         pass
 
 
-def wait_for_health(url: str, timeout: int = 30) -> bool:
+def wait_for_health(url: str, timeout: int = _read_registry_timeout("external", "mcp_client", 30)) -> bool:
     """Wait for a health endpoint to respond."""
     start = time.time()
     while time.time() - start < timeout:

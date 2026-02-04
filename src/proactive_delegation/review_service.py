@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any, TYPE_CHECKING
 
+from src.config import _registry_timeout
 from src.proactive_delegation.types import (
     ArchitectReview,
     PlanReviewResult,
@@ -18,6 +19,9 @@ if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
 
 logger = logging.getLogger(__name__)
+
+# Default review timeout from registry
+_REVIEW_TIMEOUT = float(_registry_timeout("external", "review_service", 15))
 
 
 class AggregationService:
@@ -241,7 +245,7 @@ Rules:
         objective: str,
         task_type: str,
         plan_steps: list[dict[str, Any]],
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float = _REVIEW_TIMEOUT,
     ) -> PlanReviewResult | None:
         """Have architect review a plan before specialist execution.
 

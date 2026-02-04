@@ -329,8 +329,8 @@ class CachingBackend:
         result = caching.infer(role_config, request)
         print(f"Cache hit rate: {caching.get_hit_rate():.1%}")
 
-        # Persist hot prefixes before shutdown
-        caching.save_hot_prefixes("/mnt/raid0/llm/cache/prefixes")
+        # Persist hot prefixes before shutdown (use configured cache_dir in practice)
+        caching.save_hot_prefixes("/path/to/cache/prefixes")
     """
 
     def __init__(

@@ -43,15 +43,56 @@ from typing import Any
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from src.config import _registry_timeout
 from src.registry_loader import RegistryLoader
 
 # =============================================================================
-# Configuration
+# Configuration - loaded from src.config with fallbacks
 # =============================================================================
 
-STATE_FILE = Path("/mnt/raid0/llm/claude/logs/orchestrator_state.json")
-LLAMA_SERVER = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-server")
-LOG_DIR = Path("/mnt/raid0/llm/claude/logs")
+# Health check timeouts from registry (single source of truth)
+_HEALTH_SERVER_STARTUP = int(_registry_timeout("health", "server_startup", 120))
+_HEALTH_VISION_SERVER = int(_registry_timeout("health", "vision_server", 120))
+_HEALTH_WORKER_SERVER = int(_registry_timeout("health", "worker_server", 90))
+
+
+def _get_paths() -> dict[str, Path]:
+    """Get paths from config with hardcoded fallbacks for robustness."""
+    try:
+        from src.config import get_config
+
+        cfg = get_config()
+        return {
+            "llm_root": cfg.paths.llm_root,
+            "project_root": cfg.paths.project_root,
+            "models_dir": cfg.paths.models_dir,
+            "model_base": cfg.paths.model_base,
+            "llama_cpp_bin": cfg.paths.llama_cpp_bin,
+            "log_dir": cfg.paths.log_dir,
+            "cache_dir": cfg.paths.cache_dir,
+            "tmp_dir": cfg.paths.tmp_dir,
+        }
+    except Exception:
+        # Fallback to hardcoded defaults if config unavailable
+        llm_root = Path("/mnt/raid0/llm")
+        project_root = llm_root / "claude"
+        return {
+            "llm_root": llm_root,
+            "project_root": project_root,
+            "models_dir": llm_root / "models",
+            "model_base": llm_root / "lmstudio/models",
+            "llama_cpp_bin": llm_root / "llama.cpp/build/bin",
+            "log_dir": project_root / "logs",
+            "cache_dir": llm_root / "cache",
+            "tmp_dir": llm_root / "tmp",
+        }
+
+
+_PATHS = _get_paths()
+
+STATE_FILE = _PATHS["log_dir"] / "orchestrator_state.json"
+LLAMA_SERVER = _PATHS["llama_cpp_bin"] / "llama-server"
+LOG_DIR = _PATHS["log_dir"]
 
 # Port assignments by role
 PORT_MAP = {
@@ -82,6 +123,21 @@ HOT_ROLES = {
     "worker_vision", "vision_escalation",
 }
 
+# Roles that must never run concurrently (large models).
+SERIAL_ROLES = {
+    "frontdoor",
+    "coder_primary",
+    "coder_escalation",
+    "worker_summarize",
+    "architect_general",
+    "architect_coding",
+    "ingest_long_context",
+    "vision_escalation",
+    "thinking_reasoning",
+    "formalizer",
+    "toolrunner",
+}
+
 # Servers to start (unique ports only)
 # HOT tier uses ~510GB total (45% of 1130GB RAM), leaving 620GB for KV cache
 HOT_SERVERS = [
@@ -102,23 +158,23 @@ HOT_SERVERS = [
 ]
 
 # Embedding model (lightweight, always loaded)
-EMBEDDING_MODEL_PATH = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+EMBEDDING_MODEL_PATH = str(_PATHS["model_base"] / "lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
 
 # Worker pool models (FIXED paths to existing files)
 # NOTE: worker_code removed - route all code tasks to coder_escalation (32B, faster + better quality)
 WORKER_POOL_MODELS = {
-    "explore": "/mnt/raid0/llm/models/Qwen2.5-7B-Instruct-f16.gguf",
-    "fast": "/mnt/raid0/llm/lmstudio/models/QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q4_K_M.gguf",
+    "explore": str(_PATHS["models_dir"] / "Qwen2.5-7B-Instruct-f16.gguf"),
+    "fast": str(_PATHS["model_base"] / "QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q4_K_M.gguf"),
 }
 
 # Draft model for speculative decoding on explore worker
-EXPLORE_DRAFT_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf"
+EXPLORE_DRAFT_MODEL = str(_PATHS["model_base"] / "lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
 
 # Vision models (VL) with multimodal projector
-VISION_WORKER_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf"
-VISION_WORKER_MMPROJ = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf"
-VISION_ESCALATION_MODEL = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf"
-VISION_ESCALATION_MMPROJ = "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf"
+VISION_WORKER_MODEL = str(_PATHS["model_base"] / "lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/Qwen2.5-VL-7B-Instruct-Q4_K_M.gguf")
+VISION_WORKER_MMPROJ = str(_PATHS["model_base"] / "lmstudio-community/Qwen2.5-VL-7B-Instruct-GGUF/mmproj-model-f16.gguf")
+VISION_ESCALATION_MODEL = str(_PATHS["model_base"] / "lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/Qwen3-VL-30B-A3B-Instruct-Q4_K_M.gguf")
+VISION_ESCALATION_MMPROJ = str(_PATHS["model_base"] / "lmstudio-community/Qwen3-VL-30B-A3B-Instruct-GGUF/mmproj-Qwen3-VL-30B-A3B-Instruct-F16.gguf")
 
 WARM_SERVERS = [
     {"port": 8083, "roles": ["architect_general"]},
@@ -130,7 +186,7 @@ WARM_SERVERS = [
 ]
 
 DEV_MODEL = "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
-DEV_MODEL_PATH = "/mnt/raid0/llm/models/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
+DEV_MODEL_PATH = str(_PATHS["models_dir"] / DEV_MODEL)
 
 
 # =============================================================================
@@ -160,9 +216,9 @@ def validate_model_paths() -> list[str]:
 
     # Architect models (now in HOT tier)
     architect_models = [
-        ("architect_general", "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-235B-A22B-GGUF/"),
-        ("architect_coding", "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/"),
-        ("ingest_long_context", "/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/"),
+        ("architect_general", str(_PATHS["model_base"] / "lmstudio-community/Qwen3-235B-A22B-GGUF/")),
+        ("architect_coding", str(_PATHS["model_base"] / "lmstudio-community/Qwen3-Coder-480B-A35B-Instruct-GGUF/")),
+        ("ingest_long_context", str(_PATHS["model_base"] / "lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF/")),
     ]
     for role, path in architect_models:
         if not Path(path).exists():
@@ -179,17 +235,17 @@ def validate_model_paths() -> list[str]:
             errors.append(f"[HOT] {label}: {path}")
 
     # Auxiliary services
-    formalizer = "/mnt/raid0/llm/models/LightOnOCR-2-1B-bbox-Q4_K_M.gguf"
-    if not Path(formalizer).exists():
+    formalizer = _PATHS["models_dir"] / "LightOnOCR-2-1B-bbox-Q4_K_M.gguf"
+    if not formalizer.exists():
         errors.append(f"[AUX] document_formalizer: {formalizer}")
 
     # Tool registry (required for deterministic tools)
-    tool_registry = Path("/mnt/raid0/llm/claude/orchestration/tool_registry.yaml")
+    tool_registry = _PATHS["project_root"] / "orchestration/tool_registry.yaml"
     if not tool_registry.exists():
         errors.append(f"[TOOL] tool_registry.yaml: {tool_registry}")
 
     # C++ math tools (optional - warn but don't fail)
-    cpp_math_tools = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-math-tools")
+    cpp_math_tools = _PATHS["llama_cpp_bin"] / "llama-math-tools"
     if not cpp_math_tools.exists():
         # This is a warning, not an error - append with different prefix
         pass  # Will be checked separately in init_memrl_and_tools
@@ -275,7 +331,7 @@ def kill_process(pid: int, timeout: int = 5) -> bool:
         return False
 
 
-def wait_for_health(port: int, timeout: int = 120) -> bool:
+def wait_for_health(port: int, timeout: int = _HEALTH_SERVER_STARTUP) -> bool:
     """Wait for server health endpoint."""
     import urllib.request
     import urllib.error
@@ -320,7 +376,7 @@ def build_server_command(
                 "--override-kv", "qwen3vlmoe.expert_used_count=int:4",
                 "--host", "127.0.0.1",
                 "--port", str(port),
-                "-np", "2",
+                "-np", "1",
                 "-c", "16384",
                 "-t", "96",
                 "--flash-attn", "on",
@@ -403,13 +459,14 @@ def build_server_command(
 
     model_path = role_config.model.full_path
     accel = role_config.acceleration
+    parallel_slots = "1" if role_config.name in SERIAL_ROLES else "2"
 
     cmd = [
         str(LLAMA_SERVER),
         "-m", model_path,
         "--host", "127.0.0.1",
         "--port", str(port),
-        "-np", "2",  # Parallel slots (2 slots for larger context per slot)
+        "-np", parallel_slots,  # Parallel slots (1 for large roles, 2 otherwise)
         "-c", "32768",  # Context size (16K per slot with np=2)
         "-t", "96",  # Threads
         "--flash-attn", "on",  # Flash attention
@@ -484,7 +541,7 @@ def start_server(
         print(f"    Waiting for health...")
 
         # VL models take longer to load (mmproj + main model)
-        timeout = 120 if vision_type == "escalation" else 90
+        timeout = _HEALTH_VISION_SERVER if vision_type == "escalation" else _HEALTH_WORKER_SERVER
         if wait_for_health(port, timeout=timeout):
             print(f"    [OK] Vision server {vision_type or 'worker'} ready")
             return ProcessInfo(
@@ -574,8 +631,8 @@ def start_server(
         print(f"    PID: {proc.pid}")
         print(f"    Waiting for health...")
 
-        # Faster timeout for smaller models
-        timeout = 60 if worker_type == "fast" else 90
+        # Faster timeout for smaller models (quick_check for fast workers)
+        timeout = int(_registry_timeout("health", "quick_check", 10)) * 6 if worker_type == "fast" else _HEALTH_WORKER_SERVER
         if wait_for_health(port, timeout=timeout):
             print(f"    [OK] Worker {worker_type} ready")
             return ProcessInfo(
@@ -652,8 +709,8 @@ def start_orchestrator() -> ProcessInfo | None:
 
     # Set environment — enable production feature flags
     env = os.environ.copy()
-    env["HF_HOME"] = "/mnt/raid0/llm/cache/huggingface"
-    env["TMPDIR"] = "/mnt/raid0/llm/tmp"
+    env["HF_HOME"] = str(_PATHS["cache_dir"] / "huggingface")
+    env["TMPDIR"] = str(_PATHS["tmp_dir"])
     # Feature flags: enable production capabilities
     env["ORCHESTRATOR_MEMRL"] = "1"
     env["ORCHESTRATOR_TOOLS"] = "1"
@@ -675,7 +732,7 @@ def start_orchestrator() -> ProcessInfo | None:
                 "--host", "127.0.0.1",
                 "--port", "8000",
             ],
-            cwd="/mnt/raid0/llm/claude",
+            cwd=str(_PATHS["project_root"]),
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
@@ -719,10 +776,10 @@ def start_document_formalizer() -> ProcessInfo | None:
         proc = subprocess.Popen(
             [
                 sys.executable,
-                "/mnt/raid0/llm/claude/src/services/lightonocr_llama_server.py",
+                str(_PATHS["project_root"] / "src/services/lightonocr_llama_server.py"),
                 "--port", str(port),
             ],
-            cwd="/mnt/raid0/llm/claude",
+            cwd=str(_PATHS["project_root"]),
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
@@ -782,7 +839,7 @@ def cmd_start(args: argparse.Namespace) -> int:
             for err in errors:
                 print(f"    - {err}")
             print("\nFix missing models or update paths in orchestrator_stack.py")
-            print("Check /mnt/raid0/llm/models/ and /mnt/raid0/llm/lmstudio/models/")
+            print(f"Check {_PATHS['models_dir']} and {_PATHS['model_base']}")
             return 1
         print("  [OK] All model paths validated")
         print()
@@ -1074,13 +1131,13 @@ def init_memrl_and_tools() -> bool:
     print("[6] Initializing MemRL databases...")
 
     # Initialize REPL seed examples
-    seed_loader_path = Path("/mnt/raid0/llm/claude/orchestration/repl_memory/seed_loader.py")
+    seed_loader_path = _PATHS["project_root"] / "orchestration/repl_memory/seed_loader.py"
     if seed_loader_path.exists():
         result = subprocess.run(
             [sys.executable, str(seed_loader_path), "--init"],
             capture_output=True,
             text=True,
-            cwd="/mnt/raid0/llm/claude",
+            cwd=str(_PATHS["project_root"]),
         )
         if result.returncode == 0:
             print("  [OK] REPL seed examples loaded")
@@ -1108,7 +1165,7 @@ def init_memrl_and_tools() -> bool:
     print("[7] Initializing deterministic tool registry...")
 
     # Validate tool registry exists
-    tool_registry_path = Path("/mnt/raid0/llm/claude/orchestration/tool_registry.yaml")
+    tool_registry_path = _PATHS["project_root"] / "orchestration/tool_registry.yaml"
     if not tool_registry_path.exists():
         print(f"  [!] Tool registry not found: {tool_registry_path}")
         success = False
@@ -1117,7 +1174,7 @@ def init_memrl_and_tools() -> bool:
         try:
             # Add src to path for imports
             import sys as _sys
-            _sys.path.insert(0, "/mnt/raid0/llm/claude")
+            _sys.path.insert(0, str(_PATHS["project_root"]))
             from orchestration.tools.executor import get_executor
             executor = get_executor()
             tools = executor.list_tools()
@@ -1134,12 +1191,12 @@ def init_memrl_and_tools() -> bool:
             print(f"  [WARN] Tool executor init failed: {e}")
 
     # Verify C++ math tools binary
-    cpp_binary = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-math-tools")
+    cpp_binary = _PATHS["llama_cpp_bin"] / "llama-math-tools"
     if cpp_binary.exists():
         print("  [OK] C++ math tools binary found")
     else:
         print(f"  [WARN] C++ math tools not built: {cpp_binary}")
-        print("        Run: cd /mnt/raid0/llm/llama.cpp && make llama-math-tools")
+        print(f"        Run: cd {_PATHS['llm_root']}/llama.cpp && make llama-math-tools")
 
     return success
 
@@ -1148,7 +1205,7 @@ def init_memrl_and_tools() -> bool:
 # Checkpoint Hooks for Self-Management Procedures
 # =============================================================================
 
-CHECKPOINT_DIR = Path("/mnt/raid0/llm/claude/orchestration/checkpoints")
+CHECKPOINT_DIR = _PATHS["project_root"] / "orchestration/checkpoints"
 
 
 def checkpoint_create(name: str, include_state: bool = True) -> dict[str, Any]:
@@ -1183,7 +1240,7 @@ def checkpoint_create(name: str, include_state: bool = True) -> dict[str, Any]:
         checkpoint_data["state"] = {k: asdict(v) for k, v in state.items()}
 
     # Snapshot of registry (just metadata, not full file)
-    registry_path = Path("/mnt/raid0/llm/claude/orchestration/model_registry.yaml")
+    registry_path = _PATHS["project_root"] / "orchestration/model_registry.yaml"
     if registry_path.exists():
         checkpoint_data["registry_snapshot"] = {
             "path": str(registry_path),

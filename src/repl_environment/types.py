@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
+from src.config import _registry_timeout
+
 if TYPE_CHECKING:
     pass
 
@@ -154,9 +156,14 @@ class ExplorationLog:
 
 @dataclass
 class REPLConfig:
-    """Configuration for the REPL environment."""
+    """Configuration for the REPL environment.
 
-    timeout_seconds: int = 600  # 10 min default (was 120) for document processing
+    Timeout default from model_registry.yaml (runtime_defaults.timeouts.repl.session).
+    """
+
+    timeout_seconds: int = field(
+        default_factory=lambda: int(_registry_timeout("repl", "session", 600))
+    )
     output_cap: int = 8192
     max_grep_results: int = 100
     # Forced exploration validation (prevent premature FINAL)
@@ -167,6 +174,10 @@ class REPLConfig:
     use_toon_encoding: bool = (
         True  # Enabled after TTFT benchmark: 55.6% token reduction, 41.8% latency improvement
     )
+    # Structured mode: React-style one-tool-per-turn execution
+    # When True, enforces single tool call per execute() and returns observation.
+    # Replaces separate React mode with unified REPL that can operate in structured fashion.
+    structured_mode: bool = False
     allowed_builtins: frozenset[str] = field(
         default_factory=lambda: frozenset(
             {

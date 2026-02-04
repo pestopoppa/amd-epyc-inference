@@ -19,7 +19,7 @@ Usage:
     extracted = extractor.extract_files(
         Path("docs.zip"),
         files=["report.pdf", "readme.md"],
-        dest=Path("/mnt/raid0/llm/tmp/archives/session123/")
+        dest=Path("/tmp/archives/session123/")  # Use configured tmp_dir in practice
     )
 """
 

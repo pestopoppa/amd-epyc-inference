@@ -15,10 +15,28 @@ try:
     from .executor import Executor, Config
     from .output_parser import parse_output
     from .scorer import score_response, ScoreResult
+    from .registry import load_registry
 except ImportError:
     from executor import Executor, Config
     from output_parser import parse_output
     from scorer import score_response, ScoreResult
+    from registry import load_registry
+
+
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml."""
+    try:
+        reg = load_registry()
+        if reg and reg._raw:
+            timeouts = reg._raw.get("runtime_defaults", {}).get("timeouts", {})
+            cat_data = timeouts.get(category, {})
+            return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        pass
+    return fallback
+
+
+_TEMP_OPT_TIMEOUT = _read_registry_timeout("scripts", "temperature_opt", 180)
 
 
 @dataclass
@@ -44,7 +62,7 @@ def optimize_temperature(
     max_temp: float = 1.0,
     precision: float = 0.05,
     max_iterations: int = 10,
-    timeout: int = 180,
+    timeout: int = _TEMP_OPT_TIMEOUT,
 ) -> TemperatureResult:
     """Find optimal temperature using binary search on quality score.
 
@@ -147,7 +165,7 @@ def quick_temperature_sweep(
     prompt: str,
     executor: Optional[Executor] = None,
     temps: Optional[list[float]] = None,
-    timeout: int = 180,
+    timeout: int = _TEMP_OPT_TIMEOUT,
 ) -> TemperatureResult:
     """Quick temperature sweep over a fixed grid.
 

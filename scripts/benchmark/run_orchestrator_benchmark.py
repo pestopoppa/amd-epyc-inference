@@ -44,11 +44,31 @@ except ImportError:
     print("Run: pip install httpx")
     sys.exit(1)
 
+try:
+    import yaml
+except ImportError:
+    yaml = None  # Will use fallback defaults
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent  # /mnt/raid0/llm/claude
+
+
+def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
+    """Read timeout from model_registry.yaml without project imports."""
+    if yaml is None:
+        return fallback
+    registry_path = PROJECT_ROOT / "orchestration" / "model_registry.yaml"
+    try:
+        with registry_path.open() as f:
+            data = yaml.safe_load(f)
+        timeouts = data.get("runtime_defaults", {}).get("timeouts", {})
+        cat_data = timeouts.get(category, {})
+        return cat_data.get(key, timeouts.get("default", fallback))
+    except Exception:
+        return fallback
 RESULTS_DIR = PROJECT_ROOT / "benchmarks" / "results" / "orchestrator"
 LOCK_FILE = "/mnt/raid0/llm/tmp/orchestrator_benchmark.lock"
 
@@ -299,7 +319,7 @@ def release_lock(fd: int) -> None:
 def run_subprocess(
     cmd: list[str],
     dry_run: bool = False,
-    timeout: int = 3600,
+    timeout: int = _read_registry_timeout("scripts", "orchestrator_phase", 3600),
     label: str = "",
 ) -> tuple[int, str, str]:
     """Run subprocess, return (exit_code, stdout, stderr)."""
@@ -331,7 +351,7 @@ def run_subprocess(
         return -1, "", str(e)
 
 
-def check_health(port: int, timeout: int = 10) -> bool:
+def check_health(port: int, timeout: int = _read_registry_timeout("health", "quick_check", 10)) -> bool:
     """Check /health endpoint. Returns True if HTTP 200."""
     try:
         with httpx.Client(timeout=timeout) as client:
@@ -1109,7 +1129,10 @@ def stop_stack(dry_run: bool = False) -> bool:
     return exit_code == 0 or dry_run
 
 
-def wait_for_stack(timeout: int = 300, dry_run: bool = False) -> bool:
+def wait_for_stack(
+    timeout: int = _read_registry_timeout("server", "stack_startup", 300),
+    dry_run: bool = False,
+) -> bool:
     """Wait for critical ports to become healthy."""
     if dry_run:
         print("  [DRY] Wait for stack health")

@@ -1,6 +1,6 @@
 #!/bin/bash
 # emergency_cleanup.sh - Clean up /tmp/claude and free root FS space
-# Usage: sudo bash /mnt/raid0/llm/UTILS/emergency_cleanup.sh
+# Usage: sudo bash scripts/session/emergency_cleanup.sh
 
 set -euo pipefail
 

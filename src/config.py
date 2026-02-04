@@ -808,7 +808,8 @@ class ServicesConfig:
     archive_extract_dir: Path = field(
         default_factory=lambda: Path(
             os.environ.get(
-                "ORCHESTRATOR_PATHS_ARCHIVE_EXTRACT", f"{_get_default_llm_root()}/tmp/archives"
+                "ORCHESTRATOR_PATHS_ARCHIVE_EXTRACT",
+                f"{_get_default_project_root()}/tmp/archives",
             )
         )
     )

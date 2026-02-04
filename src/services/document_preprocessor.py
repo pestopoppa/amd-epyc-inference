@@ -49,6 +49,17 @@ from src.services.figure_analyzer import (
 
 logger = logging.getLogger(__name__)
 
+
+def _get_tmp_dir() -> Path:
+    """Get tmp directory from config with fallback."""
+    try:
+        from src.config import get_config
+
+        return get_config().paths.tmp_dir
+    except Exception:
+        return Path("/mnt/raid0/llm/tmp")
+
+
 # Document extensions that trigger OCR
 DOCUMENT_EXTENSIONS = frozenset({".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".docx"})
 
@@ -475,7 +486,7 @@ class DocumentPreprocessor:
                     elif img_bytes[:4] == b"%PDF":
                         ext = ".pdf"
 
-                    tmp_dir = Path("/mnt/raid0/llm/tmp")
+                    tmp_dir = _get_tmp_dir()
                     tmp_dir.mkdir(parents=True, exist_ok=True)
                     fd, tmp_path = tempfile.mkstemp(suffix=ext, dir=str(tmp_dir))
                     with open(fd, "wb") as f:

@@ -50,6 +50,11 @@ except ImportError:
     safe_builtins = {}
     utility_builtins = {}
 
+from src.config import _registry_timeout
+
+# Default execution timeout from registry
+_RESTRICTED_TIMEOUT = int(_registry_timeout("repl", "restricted_executor", 120))
+
 
 def is_available() -> bool:
     """Check if RestrictedPython is available.
@@ -168,7 +173,7 @@ class RestrictedExecutor:
         self,
         context: str,
         artifacts: dict[str, Any] | None = None,
-        timeout_seconds: int = 120,
+        timeout_seconds: int = _RESTRICTED_TIMEOUT,
         output_cap: int = 8192,
         max_grep_results: int = 100,
         llm_primitives: Any | None = None,
@@ -178,7 +183,7 @@ class RestrictedExecutor:
         Args:
             context: The full input context.
             artifacts: Pre-existing artifacts dict.
-            timeout_seconds: Execution timeout.
+            timeout_seconds: Execution timeout (from registry).
             output_cap: Maximum output characters.
             max_grep_results: Maximum grep results.
             llm_primitives: Optional LLMPrimitives for llm_call.

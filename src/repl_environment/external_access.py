@@ -9,7 +9,12 @@ import logging
 import subprocess
 import shlex
 
+from src.config import _registry_timeout
+
 logger = logging.getLogger(__name__)
+
+# Default shell command timeout from registry
+_SHELL_TIMEOUT = int(_registry_timeout("repl", "shell_command", 30))
 
 
 def _get_project_root() -> str:
@@ -100,12 +105,12 @@ class _ExternalAccessMixin:
             logger.debug("web_fetch failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
 
-    def _run_shell(self, cmd: str, timeout: int = 30) -> str:
+    def _run_shell(self, cmd: str, timeout: int = _SHELL_TIMEOUT) -> str:
         """Run a sandboxed shell command (read-only operations only).
 
         Args:
             cmd: Shell command to execute.
-            timeout: Maximum execution time in seconds (default 30, max 120).
+            timeout: Maximum execution time in seconds (from registry, max 120).
 
         Returns:
             Command output (stdout + stderr combined).

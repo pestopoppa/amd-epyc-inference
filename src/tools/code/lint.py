@@ -15,10 +15,14 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from src.config import _registry_timeout
 from src.tool_registry import Tool, ToolCategory, ToolRegistry
 from src.tools.base import truncate_output
 
 logger = logging.getLogger(__name__)
+
+# Default lint timeout from registry
+_LINT_TIMEOUT = int(_registry_timeout("tools", "lint", 60))
 
 
 def _get_project_root() -> str:
@@ -64,7 +68,7 @@ def lint_python(
     fix: bool = False,
     select: str | None = None,
     ignore: str | None = None,
-    timeout: int = 60,
+    timeout: int = _LINT_TIMEOUT,
 ) -> dict[str, Any]:
     """Run ruff linter on Python files.
 
@@ -73,7 +77,7 @@ def lint_python(
         fix: Automatically fix fixable issues.
         select: Rule codes to check (comma-separated).
         ignore: Rule codes to ignore (comma-separated).
-        timeout: Maximum execution time in seconds.
+        timeout: Maximum execution time in seconds (from registry).
 
     Returns:
         Dict with success, issues, and output.

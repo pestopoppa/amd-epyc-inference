@@ -37,6 +37,16 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _get_default_working_dir() -> str:
+    """Get default working directory from config with fallback."""
+    try:
+        from src.config import get_config
+
+        return str(get_config().paths.project_root)
+    except Exception:
+        return "/mnt/raid0/llm/claude"
+
+
 @dataclass
 class Script:
     """A prepared script that can be invoked by ID."""
@@ -457,7 +467,7 @@ class ScriptRegistry:
             capture_output=True,
             text=True,
             timeout=60,  # 1 minute timeout
-            cwd=args.get("working_dir", "/mnt/raid0/llm/claude"),
+            cwd=args.get("working_dir", _get_default_working_dir()),
         )
 
         if result.returncode != 0:

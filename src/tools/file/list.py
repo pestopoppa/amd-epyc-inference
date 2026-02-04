@@ -17,11 +17,25 @@ from src.tool_registry import Tool, ToolCategory, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-# Allowed path prefixes (safety)
-ALLOWED_PATHS = [
-    "/mnt/raid0/llm/",
-    "/tmp/",
-]
+
+def _get_allowed_paths() -> list[str]:
+    """Get allowed path prefixes from config with fallback."""
+    try:
+        from src.config import get_config
+
+        cfg = get_config()
+        llm_root = str(cfg.paths.llm_root)
+        # Ensure trailing slash for prefix matching
+        return [
+            llm_root if llm_root.endswith("/") else f"{llm_root}/",
+            "/tmp/",
+        ]
+    except Exception:
+        return ["/mnt/raid0/llm/", "/tmp/"]
+
+
+# Allowed path prefixes (computed at module load)
+ALLOWED_PATHS = _get_allowed_paths()
 
 
 def _validate_path(path: str) -> tuple[bool, str | None]:

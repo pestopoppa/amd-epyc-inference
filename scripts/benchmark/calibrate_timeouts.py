@@ -102,7 +102,7 @@ def run_single_question(
     prompt: str,
     role: str,
     url: str = "http://localhost:8000",
-    timeout: int = 600,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> dict:
     """Run a single question and measure timing."""
     import httpx
