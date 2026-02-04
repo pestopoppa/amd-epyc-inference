@@ -284,8 +284,8 @@ class TestBuildRootLmPrompt:
             routing_context="Role: frontdoor | Tier: A",
         )
         assert "frontdoor" in result
-        # Structural: Routing context should appear before task
-        assert result.index("frontdoor") < result.index("test")
+        # Structural: Routing context should appear before task section
+        assert result.index("frontdoor") < result.index("## Task")
 
     def test_includes_error_context(self):
         result = build_root_lm_prompt(

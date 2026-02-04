@@ -13,7 +13,10 @@ All APIs are free and require no API keys.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +304,131 @@ def search_books(
     except Exception as e:
         logger.exception(f"Google Books search failed: {e}")
         return {"success": False, "results": [], "count": 0, "error": f"{type(e).__name__}: {e}"}
+
+
+def register_knowledge_tools(registry: "ToolRegistry") -> int:
+    """Register all knowledge retrieval tools with a registry.
+
+    Args:
+        registry: ToolRegistry to register tools with.
+
+    Returns:
+        Number of tools registered.
+    """
+    from src.tool_registry import Tool, ToolCategory
+
+    tools = [
+        Tool(
+            name="search_arxiv",
+            description="Search arXiv for academic papers",
+            category=ToolCategory.WEB,
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "Search query (supports arXiv syntax)",
+                    "required": True,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 10)",
+                    "required": False,
+                },
+            },
+            handler=search_arxiv,
+        ),
+        Tool(
+            name="search_papers",
+            description="Search Semantic Scholar for papers with citation data",
+            category=ToolCategory.WEB,
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "Search query",
+                    "required": True,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 10)",
+                    "required": False,
+                },
+                "year_range": {
+                    "type": "string",
+                    "description": "Year range filter (e.g. 2020-2025)",
+                    "required": False,
+                },
+            },
+            handler=search_papers,
+        ),
+        Tool(
+            name="search_wikipedia",
+            description="Search Wikipedia for articles matching a query",
+            category=ToolCategory.WEB,
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "Search query",
+                    "required": True,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 5)",
+                    "required": False,
+                },
+                "language": {
+                    "type": "string",
+                    "description": "Wikipedia language code (default en)",
+                    "required": False,
+                },
+            },
+            handler=search_wikipedia,
+        ),
+        Tool(
+            name="get_wikipedia_article",
+            description="Fetch the full text of a Wikipedia article by title",
+            category=ToolCategory.WEB,
+            parameters={
+                "title": {
+                    "type": "string",
+                    "description": "Exact article title",
+                    "required": True,
+                },
+                "language": {
+                    "type": "string",
+                    "description": "Wikipedia language code (default en)",
+                    "required": False,
+                },
+            },
+            handler=get_wikipedia_article,
+        ),
+        Tool(
+            name="search_books",
+            description="Search Google Books for publications",
+            category=ToolCategory.WEB,
+            parameters={
+                "query": {
+                    "type": "string",
+                    "description": "Search query",
+                    "required": True,
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum results (default 10)",
+                    "required": False,
+                },
+                "filter": {
+                    "type": "string",
+                    "description": "Filter: ebooks, free-ebooks, partial, full",
+                    "required": False,
+                },
+            },
+            handler=search_books,
+        ),
+    ]
+
+    for tool in tools:
+        registry.register_tool(tool)
+
+    return len(tools)
 
 
 def _strip_wikitext(text: str) -> str:

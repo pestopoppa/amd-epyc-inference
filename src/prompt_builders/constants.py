@@ -20,8 +20,21 @@ DEFAULT_ROOT_LM_TOOLS = """### Context & Files
 - `extract_figure(pdf_path, page, bbox)`: Crop figure from PDF, returns image path
 
 ### Web & Shell
-- `web_fetch(url)`: Fetch web content
+- `web_search(query, max_results=5)`: Search the web (DuckDuckGo), returns titles/URLs/snippets
+- `fetch_docs(url)`: Fetch content from a specific URL
 - `run_shell(cmd)`: Run sandboxed shell command (ls, grep, git status only)
+
+### Knowledge Retrieval (via CALL)
+- `search_arxiv(query, max_results=10)`: Search arXiv for academic papers
+- `search_papers(query, max_results=10)`: Search Semantic Scholar (with citation counts)
+- `search_wikipedia(query, max_results=5)`: Search Wikipedia articles
+- `get_wikipedia_article(title)`: Get full Wikipedia article text
+- `search_books(query, max_results=10)`: Search Google Books
+
+### Code Quality (via CALL)
+- `run_tests(test_path, test_pattern=None)`: Run pytest tests, returns pass/fail counts
+- `lint_python(file_path, fix=False)`: Lint Python with ruff, returns issues
+- `json_parse(content, extract_path=None)`: Parse/validate JSON, optional dot-path extraction
 
 ### Routing & Self-Assessment
 - `my_role()`: Get your current role, tier, capabilities, and what you can delegate to
@@ -43,7 +56,7 @@ DEFAULT_ROOT_LM_TOOLS = """### Context & Files
 - `TOOL(tool_name, **kwargs)`: Invoke a registered tool, returns raw Python object
 - `CALL(tool_name, **kwargs)`: Invoke a registered tool, returns JSON string (simpler)
   Example: `result = CALL("search_arxiv", query="transformers"); data = json.loads(result)`
-- `list_tools()`: List available tools for your role
+- `list_tools()`: Discover ALL available tools for your role (more tools may exist beyond this list)
 
 ### Completion
 - `FINAL(answer)`: Signal completion with the final answer (REQUIRED)"""
@@ -58,6 +71,10 @@ DEFAULT_ROOT_LM_RULES = """## CRITICAL
 ## Examples
 List files: `result = list_dir('/path'); FINAL(result)`
 Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
+Search web: `results = CALL("web_search", query="Ethiopia child punishment teachers 2009"); FINAL(json.loads(results))`
+Search papers: `results = CALL("search_arxiv", query="speculative decoding LLM"); FINAL(json.loads(results))`
+Run tests: `results = CALL("run_tests", test_path="tests/unit/", test_pattern="test_routing"); FINAL(json.loads(results))`
+Discover tools: `tools = list_tools(); FINAL(tools)`
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); summary = llm_call(f"Summarize: {doc['full_text'][:6000]}", role='worker'); FINAL(summary)`
 
 ## Routing (OPTIONAL — only for complex multi-model tasks)

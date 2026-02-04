@@ -60,4 +60,12 @@ def register_all_tools(registry: ToolRegistry) -> int:
     except ImportError:
         pass
 
+    # Import and register knowledge retrieval tools
+    try:
+        from src.tools.knowledge import register_knowledge_tools
+
+        count += register_knowledge_tools(registry)
+    except ImportError:
+        pass
+
     return count
