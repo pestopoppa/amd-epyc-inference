@@ -529,8 +529,13 @@ class _RoutingMixin:
         Returns:
             List of worker responses (one per work item).
         """
+        from src.concurrency import is_small_worker_role
         import concurrent.futures
         import time
+
+        if not is_small_worker_role(target_role):
+            # Large roles must never run concurrently; fall back to single.
+            return [self._delegate_single(brief, target_role, reason, persona)]
 
         # Parse work items from brief
         # Look for: [a, b, c], numbered lists, file paths, etc.

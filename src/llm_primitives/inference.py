@@ -32,6 +32,20 @@ class InferenceMixin:
         Raises:
             RuntimeError: If no backend configured for this role.
         """
+        acquire = getattr(self, "_acquire_role", None)
+        if acquire:
+            with acquire(role):
+                return self._real_call_impl(prompt, role, n_tokens, stop_sequences)
+        return self._real_call_impl(prompt, role, n_tokens, stop_sequences)
+
+    def _real_call_impl(
+        self,
+        prompt: str,
+        role: str,
+        n_tokens: int = 512,
+        stop_sequences: list[str] | None = None,
+    ) -> str:
+        """Internal real call implementation (no concurrency gating)."""
         # Try CachingBackend first (RadixAttention)
         backend = self._backends.get(role)
         if backend is not None:
@@ -163,9 +177,22 @@ class InferenceMixin:
                 f"No backend configured for role '{role}'. Provide server_urls or model_server."
             )
 
-        results: list[str | None] = [None] * len(prompts)
+        role_limit = getattr(self, "_get_role_limit", lambda _r: self.config.batch_parallelism)(
+            role
+        )
+        if role_limit <= 1:
+            results = []
+            for prompt in prompts:
+                try:
+                    results.append(self._real_call(prompt, role))
+                except Exception as e:
+                    results.append(f"[ERROR: {e}]")
+            return results
 
-        with ThreadPoolExecutor(max_workers=self.config.batch_parallelism) as executor:
+        results: list[str | None] = [None] * len(prompts)
+        max_workers = min(self.config.batch_parallelism, role_limit)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {}
             for i, prompt in enumerate(prompts):
                 future = executor.submit(self._real_call, prompt, role)

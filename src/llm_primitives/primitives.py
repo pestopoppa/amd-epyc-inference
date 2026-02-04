@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import threading
 import time
 from typing import Any
 
@@ -118,6 +120,34 @@ class LLMPrimitives(
         # Per-query cost tracking
         self._current_query = None
         self._completed_queries: list = []
+
+        # Concurrency policy (small workers only)
+        from src.concurrency import get_role_max_concurrency
+
+        self._role_limits = {
+            role: get_role_max_concurrency(role) for role in (server_urls or {}).keys()
+        }
+        self._role_semaphores: dict[str, threading.Semaphore] = {}
+
+    def _get_role_limit(self, role: str) -> int:
+        """Return per-role concurrency limit (defaults to 1)."""
+        from src.concurrency import get_role_max_concurrency
+
+        return self._role_limits.get(role) or get_role_max_concurrency(role)
+
+    @contextlib.contextmanager
+    def _acquire_role(self, role: str):
+        """Acquire per-role concurrency gate."""
+        limit = self._get_role_limit(role)
+        if limit <= 1:
+            sem = self._role_semaphores.setdefault(role, threading.Semaphore(1))
+        else:
+            sem = self._role_semaphores.setdefault(role, threading.Semaphore(limit))
+        sem.acquire()
+        try:
+            yield
+        finally:
+            sem.release()
 
     def llm_call(
         self,
@@ -368,14 +398,23 @@ class LLMPrimitives(
                 # Mock mode: simulate async calls
                 results = self._mock_batch(prompts, role)
             else:
-                # Real mode: run calls in parallel using asyncio
-                loop = asyncio.get_event_loop()
-                tasks = [
-                    loop.run_in_executor(None, self._real_call, prompt, role) for prompt in prompts
-                ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                # Convert exceptions to error strings
-                results = [str(r) if isinstance(r, Exception) else r for r in results]
+                role_limit = self._get_role_limit(role)
+                if role_limit <= 1:
+                    results = []
+                    for prompt in prompts:
+                        results.append(
+                            await asyncio.to_thread(self._real_call, prompt, role)
+                        )
+                else:
+                    # Real mode: run calls in parallel using asyncio
+                    loop = asyncio.get_event_loop()
+                    tasks = [
+                        loop.run_in_executor(None, self._real_call, prompt, role)
+                        for prompt in prompts
+                    ]
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    # Convert exceptions to error strings
+                    results = [str(r) if isinstance(r, Exception) else r for r in results]
 
             # Cap each output
             capped_results = []
@@ -466,7 +505,8 @@ class LLMPrimitives(
             if self.mock_mode:
                 result = self._mock_call_monitored(full_prompt, role, monitor)
             else:
-                result = self._real_call_monitored(full_prompt, role, monitor)
+                with self._acquire_role(role):
+                    result = self._real_call_monitored(full_prompt, role, monitor)
 
             log_entry.result = result.text[:500] if result.text else None
             log_entry.elapsed_seconds = time.perf_counter() - start_time

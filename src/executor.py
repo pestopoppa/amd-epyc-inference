@@ -316,7 +316,12 @@ class Executor:
                 parallel_groups = self._group_by_parallel(ready_steps)
 
                 for group_steps in parallel_groups.values():
-                    if len(group_steps) > 1 and self.config.max_parallel_workers > 1:
+                    can_parallel = (
+                        len(group_steps) > 1
+                        and self.config.max_parallel_workers > 1
+                        and all(self._is_small_worker_step(s) for s in group_steps)
+                    )
+                    if can_parallel:
                         # Execute in parallel
                         self._execute_parallel(group_steps, result)
                     else:
@@ -627,6 +632,14 @@ class Executor:
                 groups[group] = []
             groups[group].append(step)
         return groups
+
+    def _is_small_worker_step(self, step: StepExecution) -> bool:
+        """Return True if step role is a small worker allowed to run concurrently."""
+        from src.concurrency import is_small_worker_role
+
+        if not step.role_config:
+            return False
+        return is_small_worker_role(step.role_config.name)
 
     def _execute_step(self, step: StepExecution, result: ExecutionResult) -> StepResult:
         """Execute a single step.
