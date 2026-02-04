@@ -3,11 +3,18 @@
 Extracted from chat.py during Phase 1 decomposition.
 Contains: ReAct argument parsing, mode detection, and the
 Thought/Action/Observation loop with whitelisted read-only tools.
+
+DEPRECATION NOTICE (2026-02-04):
+    This module is deprecated. React mode is superseded by REPL with
+    structured_mode=True. The _react_mode_answer function redirects to
+    the unified REPL implementation. New code should use REPLEnvironment
+    directly with structured_mode=True.
 """
 
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any, TYPE_CHECKING
 
 from src.features import features
@@ -133,8 +140,11 @@ def _react_mode_answer(
     tool_registry: "Any | None" = None,
     max_turns: int = 5,
     tool_whitelist: "frozenset[str] | None" = None,
-) -> "tuple[str, int]":
+) -> "tuple[str, int, list[str]]":
     """Execute a ReAct-style tool loop for direct-mode prompts needing tools.
+
+    DEPRECATED: Use REPLEnvironment with structured_mode=True instead.
+    This function now redirects to the unified REPL implementation.
 
     Builds a ReAct prompt, then loops: LLM generates Thought/Action,
     we execute the Action tool and append Observation, until Final Answer
@@ -153,6 +163,12 @@ def _react_mode_answer(
     Returns:
         Tuple of (final_answer, tools_used_count, tools_called_names).
     """
+    warnings.warn(
+        "_react_mode_answer is deprecated. Use REPLEnvironment(structured_mode=True) instead. "
+        "React mode has been unified into REPL for consistency.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     from src.prompt_builders import build_react_prompt, REACT_TOOL_WHITELIST
 
     active_whitelist = tool_whitelist if tool_whitelist is not None else REACT_TOOL_WHITELIST

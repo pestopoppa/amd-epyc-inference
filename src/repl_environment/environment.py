@@ -33,6 +33,23 @@ if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
 
 
+def _get_allowed_file_paths() -> list[str]:
+    """Get allowed file path prefixes from config with fallback."""
+    try:
+        from src.config import get_config
+
+        cfg = get_config()
+        llm_root = str(cfg.paths.llm_root)
+        # Ensure trailing slash for prefix matching
+        return [
+            llm_root if llm_root.endswith("/") else f"{llm_root}/",
+            "/tmp/",
+        ]
+    except Exception:
+        return ["/mnt/raid0/llm/", "/tmp/"]
+
+
+
 class REPLEnvironment(
     _FileToolsMixin,
     _DocumentToolsMixin,
@@ -61,10 +78,7 @@ class REPLEnvironment(
     """
 
     # Allowed file paths for file operations (security)
-    ALLOWED_FILE_PATHS = [
-        "/mnt/raid0/llm/",
-        "/tmp/",
-    ]
+    ALLOWED_FILE_PATHS = _get_allowed_file_paths()
 
     def __init__(
         self,
@@ -80,6 +94,8 @@ class REPLEnvironment(
         # MemRL components for routing-aware REPL
         retriever: Any | None = None,  # TwoPhaseRetriever for recall/route_advice
         hybrid_router: Any | None = None,  # HybridRouter for route_advice
+        # Structured mode for React-style execution
+        structured_mode: bool = False,
     ):
         """Initialize the REPL environment.
 
@@ -95,6 +111,7 @@ class REPLEnvironment(
             task_id: Optional task ID for associating exploration logs with tasks.
             retriever: Optional TwoPhaseRetriever for recall/route_advice.
             hybrid_router: Optional HybridRouter for route_advice.
+            structured_mode: If True, enforce one-tool-per-turn React-style execution.
         """
         self.context = context
         self.artifacts = artifacts if artifacts is not None else {}
@@ -109,6 +126,10 @@ class REPLEnvironment(
         # MemRL components for routing-aware functions (recall, route_advice)
         self._retriever = retriever
         self._hybrid_router = hybrid_router
+
+        # Structured mode: React-style one-tool-per-turn execution
+        # Can be set via config or constructor parameter (constructor takes precedence)
+        self._structured_mode = structured_mode or self.config.structured_mode
 
         # Execution state
         self._final_answer: str | None = None
@@ -293,6 +314,170 @@ class REPLEnvironment(
             # Report first violation (avoids info disclosure about all checks)
             raise REPLSecurityError(f"Dangerous operation not allowed: {visitor.violations[0]}")
 
+    def _execute_structured(self, code: str, start_time: float) -> ExecutionResult:
+        """Execute in structured (React-style) mode: one tool call per turn.
+
+        This mode enforces the Thought/Action/Observation pattern:
+        - Parses code for a single tool function call
+        - If FINAL() found, treats as completion
+        - If multiple tools, returns error requesting one at a time
+        - Otherwise executes single tool and returns observation
+
+        Args:
+            code: Python code to execute (should be single tool call).
+            start_time: Performance timer start for elapsed_seconds.
+
+        Returns:
+            ExecutionResult with observation output or final answer.
+        """
+        import re
+        import time
+
+        # Validate code for dangerous patterns first
+        try:
+            self._validate_code(code)
+        except REPLSecurityError as e:
+            return ExecutionResult(
+                output="",
+                is_final=False,
+                error=str(e),
+                elapsed_seconds=time.perf_counter() - start_time,
+            )
+
+        # Check for FINAL() call - treat as completion
+        final_match = re.search(r'\bFINAL\s*\(\s*["\'](.+?)["\']\s*\)', code, re.DOTALL)
+        final_var_match = re.search(r'\bFINAL_VAR\s*\(\s*["\'](\w+)["\']\s*\)', code)
+
+        if final_match:
+            answer = final_match.group(1)
+            return ExecutionResult(
+                output="",
+                is_final=True,
+                final_answer=answer,
+                elapsed_seconds=time.perf_counter() - start_time,
+            )
+
+        if final_var_match:
+            var_name = final_var_match.group(1)
+            answer = str(self._globals.get(var_name, f"[Variable '{var_name}' not found]"))
+            return ExecutionResult(
+                output="",
+                is_final=True,
+                final_answer=answer,
+                elapsed_seconds=time.perf_counter() - start_time,
+            )
+
+        # List of known tool functions in the REPL environment
+        tool_functions = {
+            "peek", "grep", "llm_call", "llm_batch", "TOOL", "CALL",
+            "list_tools", "SCRIPT", "find_scripts", "list_dir", "file_info",
+            "ocr_document", "analyze_figure", "extract_figure",
+            "archive_open", "archive_extract", "archive_file", "archive_search",
+            "web_fetch", "recall", "mark_finding", "list_findings",
+            "escalate", "my_role", "route_advice", "delegate", "run_shell",
+            "run_procedure", "list_procedures", "get_procedure_status",
+            "checkpoint_create", "checkpoint_restore", "registry_lookup",
+            "registry_update", "benchmark_run", "benchmark_compare",
+            "gate_run", "log_append", "file_write_safe",
+            "chunk_context", "summarize_chunks", "context_len",
+        }
+
+        # Count tool function calls in the code
+        tool_calls = []
+        for func in tool_functions:
+            # Match function calls: func_name( with word boundary
+            pattern = rf'\b{func}\s*\('
+            matches = list(re.finditer(pattern, code))
+            tool_calls.extend([(func, m.start()) for m in matches])
+
+        # Sort by position to get order of calls
+        tool_calls.sort(key=lambda x: x[1])
+
+        if len(tool_calls) > 1:
+            # Multiple tool calls - request one at a time (React style)
+            tool_names = [t[0] for t in tool_calls]
+            return ExecutionResult(
+                output="",
+                is_final=False,
+                error=f"Structured mode: Only one tool call per turn. "
+                      f"Found {len(tool_calls)} calls: {', '.join(tool_names)}. "
+                      f"Execute one tool, observe the result, then call the next.",
+                elapsed_seconds=time.perf_counter() - start_time,
+            )
+
+        # Execute the code (single tool or simple expression)
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+
+        old_handler = None
+        _alarm_set = False
+        try:
+            if hasattr(signal, "SIGALRM"):
+                try:
+                    def timeout_handler(signum, frame):
+                        raise REPLTimeout(f"Execution timed out after {self.config.timeout_seconds}s")
+                    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(self.config.timeout_seconds)
+                    _alarm_set = True
+                except ValueError:
+                    pass
+
+            try:
+                with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                    exec(code, self._globals)
+
+                output = stdout_capture.getvalue()
+                if stderr_capture.getvalue():
+                    output += "\n[STDERR]\n" + stderr_capture.getvalue()
+
+                # Format as observation for React-style loop
+                if output:
+                    observation = f"Observation: {output.strip()}"
+                else:
+                    observation = "Observation: [No output]"
+
+                # Cap output
+                if len(observation) > self.config.output_cap:
+                    observation = (
+                        observation[: self.config.output_cap]
+                        + f"\n[... truncated at {self.config.output_cap} chars]"
+                    )
+
+                return ExecutionResult(
+                    output=observation,
+                    is_final=False,
+                    elapsed_seconds=time.perf_counter() - start_time,
+                )
+
+            except FinalSignal as e:
+                return ExecutionResult(
+                    output=stdout_capture.getvalue(),
+                    is_final=True,
+                    final_answer=e.answer,
+                    elapsed_seconds=time.perf_counter() - start_time,
+                )
+
+            except SyntaxError as e:
+                return ExecutionResult(
+                    output="",
+                    is_final=False,
+                    error=f"SyntaxError: {e}",
+                    elapsed_seconds=time.perf_counter() - start_time,
+                )
+
+            except Exception as e:
+                return ExecutionResult(
+                    output=stdout_capture.getvalue(),
+                    is_final=False,
+                    error=f"{type(e).__name__}: {e}",
+                    elapsed_seconds=time.perf_counter() - start_time,
+                )
+
+        finally:
+            if _alarm_set:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, old_handler)
+
     def execute(self, code: str) -> ExecutionResult:
         """Execute Python code in the sandboxed environment.
 
@@ -306,6 +491,10 @@ class REPLEnvironment(
 
         self._execution_count += 1
         start_time = time.perf_counter()
+
+        # Structured mode: React-style one-tool-per-turn execution
+        if self._structured_mode:
+            return self._execute_structured(code, start_time)
 
         # Validate code for dangerous patterns
         try:
@@ -402,6 +591,7 @@ def create_repl_environment(
     use_restricted_python: bool | None = None,
     progress_logger: ProgressLogger | None = None,
     task_id: str | None = None,
+    structured_mode: bool = False,
 ) -> REPLEnvironment:
     """Factory function to create REPL environment with optional RestrictedPython.
 
@@ -416,6 +606,7 @@ def create_repl_environment(
         use_restricted_python: Override feature flag (None = use flag).
         progress_logger: Optional ProgressLogger for exploration logging.
         task_id: Optional task ID for associating exploration logs.
+        structured_mode: If True, enforce one-tool-per-turn React-style execution.
 
     Returns:
         REPLEnvironment instance (may use RestrictedExecutor internally).
@@ -443,6 +634,7 @@ def create_repl_environment(
                     role=role,
                     progress_logger=progress_logger,
                     task_id=task_id,
+                    structured_mode=structured_mode,
                 )
         except ImportError:
             pass  # Fall back to standard REPL
@@ -458,6 +650,7 @@ def create_repl_environment(
         role=role,
         progress_logger=progress_logger,
         task_id=task_id,
+        structured_mode=structured_mode,
     )
 
 

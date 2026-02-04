@@ -37,6 +37,7 @@ from src.prompt_builders.constants import (
 # Builder class and module-level functions
 from src.prompt_builders.builder import (
     PromptBuilder,
+    build_confidence_estimation_prompt,
     build_escalation_prompt,
     build_long_context_exploration_prompt,
     build_root_lm_prompt,
@@ -86,6 +87,7 @@ __all__ = [
     "build_react_prompt",
     # Builder
     "PromptBuilder",
+    "build_confidence_estimation_prompt",
     "build_root_lm_prompt",
     "build_escalation_prompt",
     "build_step_prompt",
