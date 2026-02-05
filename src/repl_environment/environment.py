@@ -28,6 +28,7 @@ from src.repl_environment.routing import _RoutingMixin
 from src.repl_environment.procedure_tools import _ProcedureToolsMixin
 from src.repl_environment.context import _ContextMixin
 from src.repl_environment.state import _StateMixin
+from src.research_context import ResearchContext
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
@@ -47,7 +48,6 @@ def _get_allowed_file_paths() -> list[str]:
         ]
     except Exception:
         return ["/mnt/raid0/llm/", "/tmp/"]
-
 
 
 class REPLEnvironment(
@@ -146,6 +146,10 @@ class REPLEnvironment(
         # Key findings buffer for session persistence
         self._findings_buffer: list[dict[str, Any]] = []
 
+        # Research context tracker for tool result lineage
+        self._research_context = ResearchContext()
+        self._last_research_node: str | None = None
+
         # Build restricted globals
         self._globals = self._build_globals()
 
@@ -166,6 +170,9 @@ class REPLEnvironment(
             "_exploration_log",
             "_grep_hits_buffer",
             "_findings_buffer",
+            # Research context
+            "_research_context",
+            "_last_research_node",
             # State
             "_final_answer",
             "_globals",
@@ -369,24 +376,55 @@ class REPLEnvironment(
 
         # List of known tool functions in the REPL environment
         tool_functions = {
-            "peek", "grep", "llm_call", "llm_batch", "TOOL", "CALL",
-            "list_tools", "SCRIPT", "find_scripts", "list_dir", "file_info",
-            "ocr_document", "analyze_figure", "extract_figure",
-            "archive_open", "archive_extract", "archive_file", "archive_search",
-            "web_fetch", "recall", "mark_finding", "list_findings",
-            "escalate", "my_role", "route_advice", "delegate", "run_shell",
-            "run_procedure", "list_procedures", "get_procedure_status",
-            "checkpoint_create", "checkpoint_restore", "registry_lookup",
-            "registry_update", "benchmark_run", "benchmark_compare",
-            "gate_run", "log_append", "file_write_safe",
-            "chunk_context", "summarize_chunks", "context_len",
+            "peek",
+            "grep",
+            "llm_call",
+            "llm_batch",
+            "TOOL",
+            "CALL",
+            "list_tools",
+            "SCRIPT",
+            "find_scripts",
+            "list_dir",
+            "file_info",
+            "ocr_document",
+            "analyze_figure",
+            "extract_figure",
+            "archive_open",
+            "archive_extract",
+            "archive_file",
+            "archive_search",
+            "web_fetch",
+            "recall",
+            "mark_finding",
+            "list_findings",
+            "escalate",
+            "my_role",
+            "route_advice",
+            "delegate",
+            "run_shell",
+            "run_procedure",
+            "list_procedures",
+            "get_procedure_status",
+            "checkpoint_create",
+            "checkpoint_restore",
+            "registry_lookup",
+            "registry_update",
+            "benchmark_run",
+            "benchmark_compare",
+            "gate_run",
+            "log_append",
+            "file_write_safe",
+            "chunk_context",
+            "summarize_chunks",
+            "context_len",
         }
 
         # Count tool function calls in the code
         tool_calls = []
         for func in tool_functions:
             # Match function calls: func_name( with word boundary
-            pattern = rf'\b{func}\s*\('
+            pattern = rf"\b{func}\s*\("
             matches = list(re.finditer(pattern, code))
             tool_calls.extend([(func, m.start()) for m in matches])
 
@@ -400,8 +438,8 @@ class REPLEnvironment(
                 output="",
                 is_final=False,
                 error=f"Structured mode: Only one tool call per turn. "
-                      f"Found {len(tool_calls)} calls: {', '.join(tool_names)}. "
-                      f"Execute one tool, observe the result, then call the next.",
+                f"Found {len(tool_calls)} calls: {', '.join(tool_names)}. "
+                f"Execute one tool, observe the result, then call the next.",
                 elapsed_seconds=time.perf_counter() - start_time,
             )
 
@@ -414,8 +452,12 @@ class REPLEnvironment(
         try:
             if hasattr(signal, "SIGALRM"):
                 try:
+
                     def timeout_handler(signum, frame):
-                        raise REPLTimeout(f"Execution timed out after {self.config.timeout_seconds}s")
+                        raise REPLTimeout(
+                            f"Execution timed out after {self.config.timeout_seconds}s"
+                        )
+
                     old_handler = signal.signal(signal.SIGALRM, timeout_handler)
                     signal.alarm(self.config.timeout_seconds)
                     _alarm_set = True

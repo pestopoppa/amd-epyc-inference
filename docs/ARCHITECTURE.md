@@ -1,10 +1,14 @@
 # Orchestration System Architecture
 
-**Version**: 2.4 (Routing Facade + Delegation Telemetry)
-**Last Updated**: 2026-02-04
+**Version**: 2.5 (Research Context Tracker)
+**Last Updated**: 2026-02-05
 
 > **This is the living technical reference** — updated continuously as the system evolves.
 > For narrative explanations of each subsystem, see the [Research Chapters](chapters/INDEX.md).
+
+### Recent Updates (2026-02-05)
+
+- **Research Context Tracker**: DAG-based tracking of REPL tool invocations with semantic cross-refs. See [Ch11](chapters/11-repl-environment.md).
 
 ### Recent Updates (2026-02-04)
 
@@ -169,7 +173,8 @@ Execute decision (retry/escalate/fail)
 | `src/routing_facade.py` | Unified escalation decisions (rules + learned) | escalation, MemRL |
 | `src/failure_router.py` | Deprecated — thin wrapper around routing_facade | roles |
 | `src/executor.py` | Task execution engine | escalation |
-| `src/repl_environment.py` | Sandboxed Python REPL | - |
+| `src/repl_environment/` | Sandboxed Python REPL (modular) | - |
+| `src/research_context.py` | REPL tool result DAG tracking | repl_memory (optional) |
 | `src/registry_loader.py` | Model registry YAML | - |
 
 ### API Module Structure
@@ -458,6 +463,37 @@ To add a tool that needs filesystem/network access:
    "- `my_tool(path)`: Description of what it does",
    ```
 
+### Research Context Tracker
+
+The REPL includes a Research Context Tracker (`src/research_context.py`) that builds a DAG of tool invocations:
+
+```
+## Research Context
+Progress: 1 analyzed, 2 pending, 0 stale
+
+[+] G1: grep(pattern='error')
+    -> Found 3 matches in log...
+  [?] P1: peek(n=100)
+      -> Error at line 42...
+      refs: G1
+```
+
+**Features:**
+- **Auto IDs**: G1 (grep), P1 (peek), L1 (llm_call), T1 (TOOL), D1 (list_dir)
+- **Parent tracking**: Sequential calls auto-link to previous node
+- **Cross-refs**: String regex + semantic similarity (cosine > 0.7 via BGE embeddings)
+- **State injection**: Rendered tree included in `get_state()` when >= 3 nodes
+
+**Configuration:**
+```python
+ResearchContext(
+    use_semantic=True,        # Semantic refs ON by default
+    semantic_threshold=0.7,   # Similarity threshold
+)
+```
+
+**Integration:** Automatically hooked into `peek()`, `grep()`, `list_dir()`, `TOOL()`. Serialized in checkpoint/restore.
+
 ### Configuring File Path Restrictions
 
 Allowed paths are in `REPLEnvironment.ALLOWED_FILE_PATHS`:
@@ -731,6 +767,9 @@ from src.llm_primitives import LLMPrimitives, LLMPrimitivesConfig
 
 # REPL
 from src.repl_environment import REPLEnvironment, REPLConfig
+
+# Research Context Tracker
+from src.research_context import ResearchContext, ResearchNode
 ```
 
 ### Environment Variables

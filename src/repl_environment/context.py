@@ -338,7 +338,22 @@ class _ContextMixin:
             raise RuntimeError("No tool registry configured")
 
         self._tool_invocations += 1
-        return self.tool_registry.invoke(tool_name, self.role, **kwargs)
+        result = self.tool_registry.invoke(tool_name, self.role, **kwargs)
+
+        # Track in research context
+        if hasattr(self, "_research_context"):
+            try:
+                node_id = self._research_context.add(
+                    tool="TOOL",
+                    query=f"{tool_name}({', '.join(f'{k}={v!r}' for k, v in list(kwargs.items())[:3])})",
+                    content=str(result)[:8000],
+                    parent_id=getattr(self, "_last_research_node", None),
+                )
+                self._last_research_node = node_id
+            except Exception:
+                pass  # Silently ignore research tracking failures
+
+        return result
 
     def _call_tool(self, tool_name: str, **kwargs) -> str:
         """Invoke a registered tool and return JSON-serialized result.

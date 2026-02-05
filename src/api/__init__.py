@@ -145,6 +145,26 @@ async def lifespan(app: FastAPI):
     else:
         state.script_registry = None
 
+    # Preflight check for knowledge tools (warn only, don't block startup)
+    if f.tools:
+        from src.api.routes.health import _check_knowledge_tools
+
+        knowledge_status = _check_knowledge_tools()
+        if not knowledge_status["available"]:
+            unavailable = [
+                name
+                for name, info in knowledge_status["tools"].items()
+                if not info["available"]
+            ]
+            logger.warning(
+                f"Knowledge tools preflight: {len(unavailable)} tools unavailable "
+                f"({', '.join(unavailable)}). Install with: pip install -e '.[knowledge]'"
+            )
+        else:
+            logger.info(
+                f"Knowledge tools preflight: all {len(knowledge_status['tools'])} tools available"
+            )
+
     # Eagerly initialize MemRL components at startup (loads TaskEmbedder model).
     # This avoids a ~10-30s block on the first real_mode request.
     if f.memrl:

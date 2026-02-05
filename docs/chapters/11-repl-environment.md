@@ -125,6 +125,69 @@ Exploration logs feed into episodic memory for Q-learning:
 - **Phase 3**: Update Q-values based on final outcome
 - **Phase 4**: Retrieve similar explorations for future tasks
 
+## Research Context Tracker
+
+### Overview
+
+The Research Context Tracker (`src/research_context.py`) provides DAG-based tracking of tool invocations within a REPL session. It assigns unique IDs to each tool result, tracks parent-child relationships, and detects cross-references between results.
+
+### Node ID Assignment
+
+Each tool invocation receives a prefixed, auto-incrementing ID:
+
+| Prefix | Tool | Example |
+|--------|------|---------|
+| G | grep | G1, G2, G3 |
+| P | peek | P1, P2 |
+| L | llm_call | L1 |
+| T | TOOL | T1 |
+| D | list_dir | D1 |
+| W | web_fetch | W1 |
+| R | recall | R1 |
+
+### Cross-Reference Detection
+
+Two mechanisms detect when results reference each other:
+
+1. **String References**: Regex detects explicit mentions like "see G1", "based on P2"
+2. **Semantic References**: Cosine similarity > 0.7 using BGE embeddings (optional, ON by default)
+
+### Context Injection
+
+When >= 3 nodes exist, `get_state()` includes a rendered tree:
+
+```
+## Research Context
+Progress: 1 analyzed, 2 pending, 0 stale
+
+[+] G1: grep(pattern='error')
+    -> Found 3 matches in log file...
+  [?] P1: peek(n=100)
+      -> Error at line 42: connection timeout...
+      refs: G1
+```
+
+Status markers: `[+]` analyzed, `[?]` pending, `[~]` stale
+
+### Integration
+
+- **Automatic tracking**: `peek()`, `grep()`, `list_dir()`, `TOOL()` auto-tracked
+- **Parent inference**: Sequential calls use previous node as parent
+- **Checkpoint support**: Serialized via `to_dict()`/`from_dict()`
+- **Reset**: Cleared by `repl.reset()`
+
+### Configuration
+
+```python
+ResearchContext(
+    use_semantic=True,        # Enable semantic cross-refs (default ON)
+    semantic_threshold=0.7,   # Similarity threshold for refs
+    embedder=None,            # Auto-initializes from BGE pool
+)
+```
+
+---
+
 ## Performance Characteristics
 
 ### Token Reduction
@@ -159,9 +222,10 @@ Exploration logs feed into episodic memory for Q-learning:
 
 ### Implementation
 
-1. `src/repl_environment.py`: Main REPL environment (2700+ lines)
-2. `src/restricted_executor.py`: RestrictedPython backend (425 lines)
-3. Python AST module documentation: https://docs.python.org/3/library/ast.html
+1. `src/repl_environment/`: Modular REPL environment (environment.py, context.py, file_exploration.py, state.py, etc.)
+2. `src/research_context.py`: Research Context Tracker (~270 lines)
+3. `src/restricted_executor.py`: RestrictedPython backend (425 lines)
+4. Python AST module documentation: https://docs.python.org/3/library/ast.html
 
 ### Security Frameworks
 

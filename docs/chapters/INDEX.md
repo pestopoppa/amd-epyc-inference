@@ -60,7 +60,7 @@ Novel contributions (recommended reading order):
 | # | Title | Key Result |
 |---|-------|------------|
 | 10 | [Orchestration Architecture](10-orchestration-architecture.md) | 4-tier agents, TaskIR, escalation |
-| 11 | [REPL Environment](11-repl-environment.md) | 106KB sandbox, AST security |
+| 11 | [REPL Environment](11-repl-environment.md) | AST sandbox, Research Context Tracker |
 | 12 | [Production Server Stack](12-production-server-stack.md) | 9 servers, ~535GB HOT tier |
 | 13 | [Data Processing Pipelines](13-data-processing-pipelines.md) | 19x OCR speedup, vision batch |
 | 14 | [TOON Encoding](14-toon-encoding.md) | 55% token compression |

@@ -24,7 +24,29 @@ class _FileExplorationMixin:
         _exploration_log: ExplorationLog — exploration event history
         _grep_hits_buffer: list — grep results buffer for two-stage summarization
         _validate_file_path: Callable[[str], tuple[bool, str | None]] — path validation method
+        _research_context: ResearchContext — research context tracker
+        _last_research_node: str | None — last research node ID
     """
+
+    def _track_research(self, tool: str, query: str, content: str) -> None:
+        """Track a tool invocation in the research context.
+
+        Args:
+            tool: Tool name
+            query: Tool arguments/query
+            content: Tool output content
+        """
+        if hasattr(self, "_research_context"):
+            try:
+                node_id = self._research_context.add(
+                    tool=tool,
+                    query=query,
+                    content=content[:8000],
+                    parent_id=getattr(self, "_last_research_node", None),
+                )
+                self._last_research_node = node_id
+            except Exception:
+                pass  # Silently ignore research tracking failures
 
     def _peek(self, n: int = 500, file_path: str | None = None) -> str:
         """Return first n characters of context or file.
@@ -47,6 +69,7 @@ class _FileExplorationMixin:
                 with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                     result = f.read(n)
                 self._exploration_log.add_event("peek", {"n": n, "file_path": file_path}, result)
+                self._track_research("peek", f"n={n}, file={file_path}", result)
                 return result
             except FileNotFoundError:
                 return f"[ERROR: File not found: {file_path}]"
@@ -57,6 +80,7 @@ class _FileExplorationMixin:
         # Read from context
         result = self.context[:n]
         self._exploration_log.add_event("peek", {"n": n}, result)
+        self._track_research("peek", f"n={n}", result)
         return result
 
     def _grep(
@@ -140,6 +164,11 @@ class _FileExplorationMixin:
         self._exploration_log.add_event(
             "grep", {"pattern": pattern, "file_path": file_path}, matches
         )
+        self._track_research(
+            "grep",
+            f"pattern={pattern!r}" + (f", file={file_path}" if file_path else ""),
+            "\n".join(matches[:10]),
+        )
         return matches
 
     def _list_dir(self, path: str) -> str:
@@ -185,6 +214,7 @@ class _FileExplorationMixin:
             }
 
             self._exploration_log.add_event("list_dir", {"path": path}, result)
+            self._track_research("list_dir", f"path={path}", str(result))
 
             # Use TOON encoding for token efficiency if enabled
             if self.config.use_toon_encoding:

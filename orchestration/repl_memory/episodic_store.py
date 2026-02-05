@@ -110,7 +110,7 @@ class EpisodicStore:
         self,
         db_path: Path = DEFAULT_DB_PATH,
         embeddings_path: Optional[Path] = None,
-        embedding_dim: int = 896,  # Qwen2.5-0.5B hidden dim
+        embedding_dim: int = 1024,  # BGE-large-en-v1.5 embedding dim
         use_faiss: bool = True,
         flush_interval: float = 10.0,  # Write-behind flush interval (seconds)
     ):

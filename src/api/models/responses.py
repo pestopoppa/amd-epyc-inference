@@ -106,6 +106,10 @@ class HealthResponse(BaseModel):
         default=None,
         description="Per-backend circuit breaker status (URL → state/failure_count/cooldown)",
     )
+    knowledge_tools: dict[str, Any] | None = Field(
+        default=None,
+        description="Knowledge tools availability: {available, tools: {name: {available, error}}}",
+    )
 
 
 class GateResultModel(BaseModel):

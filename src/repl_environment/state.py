@@ -54,6 +54,11 @@ class _StateMixin:
                 preview += "..."
             state_lines.append(f"  artifacts['{key}']: {preview}")
 
+        # Include research context if sufficient nodes exist
+        if hasattr(self, "_research_context") and len(self._research_context.nodes) >= 3:
+            state_lines.append("")
+            state_lines.append(self._research_context.render())
+
         return "\n".join(state_lines)
 
     def get_exploration_log(self) -> ExplorationLog:
@@ -254,6 +259,11 @@ class _StateMixin:
                 }
             )
 
+        # Serialize research context if available
+        research_context_data = None
+        if hasattr(self, "_research_context"):
+            research_context_data = self._research_context.to_dict()
+
         return {
             "version": 1,  # Schema version for future compatibility
             "artifacts": sanitize_artifacts(self.artifacts),
@@ -265,6 +275,7 @@ class _StateMixin:
             "findings_buffer": self._findings_buffer,  # Key findings
             "context_length": len(self.context),  # For verification, not full context
             "task_id": self.task_id,
+            "research_context": research_context_data,
         }
 
     def restore(self, checkpoint: dict[str, Any]) -> None:
@@ -309,6 +320,23 @@ class _StateMixin:
         # Restore findings buffer
         self._findings_buffer = checkpoint.get("findings_buffer", [])
 
+        # Restore research context if available
+        if hasattr(self, "_research_context") and checkpoint.get("research_context"):
+            from src.research_context import ResearchContext
+
+            self._research_context = ResearchContext.from_dict(
+                checkpoint["research_context"],
+                use_semantic=self._research_context.use_semantic,
+            )
+            # Restore last node pointer if any nodes exist
+            if self._research_context.nodes:
+                # Use most recent node as last_research_node
+                most_recent = max(
+                    self._research_context.nodes.values(),
+                    key=lambda n: n.timestamp,
+                )
+                self._last_research_node = most_recent.id
+
         # Rebuild globals with restored artifacts
         self._globals = self._build_globals()
 
@@ -336,4 +364,8 @@ class _StateMixin:
         self._exploration_log = ExplorationLog()  # Reset exploration log
         self._grep_hits_buffer = []  # Clear grep history for two-stage pipeline
         self._findings_buffer = []  # Clear findings buffer
+        # Reset research context
+        if hasattr(self, "_research_context"):
+            self._research_context.clear()
+            self._last_research_node = None
         self._globals = self._build_globals()
