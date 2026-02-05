@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "name": "data",
+  "version": "1.0.0",
+  "description": "Data tools for JSON parsing and text transformation",
+  "enabled": true,
+  "dependencies": [],
+  "settings_schema": {
+    "max_json_size": {
+      "type": "integer",
+      "default": 1048576,
+      "description": "Maximum JSON content size in bytes"
+    }
+  },
+  "tools": [
+    {
+      "name": "json_parse",
+      "description": "Parse and validate JSON content with optional path extraction",
+      "module": "src.tools.data",
+      "function": "json_parse",
+      "category": "data",
+      "parameters": {
+        "content": {
+          "type": "string",
+          "required": true,
+          "description": "JSON string to parse"
+        },
+        "extract_path": {
+          "type": "string",
+          "required": false,
+          "description": "Path to extract using dot notation"
+        }
+      }
+    }
+  ]
+}

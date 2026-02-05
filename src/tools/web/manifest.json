@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "name": "web",
+  "version": "1.0.0",
+  "description": "Web tools for knowledge retrieval including URL fetching and web search",
+  "enabled": true,
+  "dependencies": ["beautifulsoup4", "pyyaml"],
+  "settings_schema": {
+    "fetch_timeout": {
+      "type": "integer",
+      "default": 30,
+      "description": "Timeout for web fetches in seconds"
+    },
+    "cache_ttl": {
+      "type": "integer",
+      "default": 900,
+      "description": "Cache TTL in seconds"
+    }
+  },
+  "tools": [
+    {
+      "name": "fetch_docs",
+      "description": "Fetch documentation or content from a URL with trust level checking",
+      "module": "src.tools.web.fetch",
+      "function": "fetch_docs",
+      "category": "web",
+      "parameters": {
+        "url": {
+          "type": "string",
+          "required": true,
+          "description": "URL to fetch content from"
+        },
+        "max_length": {
+          "type": "integer",
+          "required": false,
+          "description": "Maximum content length (default 8000)"
+        },
+        "check_trust": {
+          "type": "boolean",
+          "required": false,
+          "description": "Check source registry for trust level"
+        }
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "Search the web and return summarized results",
+      "module": "src.tools.web.search",
+      "function": "web_search",
+      "category": "web",
+      "parameters": {
+        "query": {
+          "type": "string",
+          "required": true,
+          "description": "Search query"
+        },
+        "max_results": {
+          "type": "integer",
+          "required": false,
+          "description": "Maximum number of results (default 5)"
+        }
+      }
+    }
+  ]
+}

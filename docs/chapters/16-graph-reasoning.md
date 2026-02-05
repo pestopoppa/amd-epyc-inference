@@ -248,6 +248,54 @@ ORDER BY e.timestamp DESC
 | Storage location | `/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db/failure_graph/` | `.../hypothesis_graph/` |
 | Backend | Kuzu 0.11+ | Kuzu 0.11+ |
 
+## JSON Canvas Export
+
+Both graphs can be exported to JSON Canvas format for visualization in Obsidian and other compatible tools.
+
+### Export Functions
+
+```python
+from src.canvas_export import export_hypothesis_graph, export_failure_graph, export_session_context
+
+# Export hypothesis graph
+canvas = export_hypothesis_graph(graph, output_path="logs/canvases/hypothesis.canvas")
+
+# Export failure graph
+canvas = export_failure_graph(graph, output_path="logs/canvases/failure.canvas")
+
+# Combined session view
+canvas = export_session_context(hyp_graph, fail_graph, output_path="logs/canvases/session.canvas")
+```
+
+### Visual Encoding
+
+| Feature | Hypothesis Graph | Failure Graph |
+|---------|------------------|---------------|
+| Node color | Confidence-based (green >0.7, yellow 0.3-0.7, red <0.3) | Severity-based |
+| Evidence nodes | Blue (supports) / Red (contradicts) | Orange (symptoms) / Purple (mitigations) |
+| Layout | Grid with priority ordering | Grid with symptoms on left, mitigations on right |
+
+### MCP Tools
+
+Available via MCP server:
+- `export_reasoning_canvas(graph_type="hypothesis|failure|session")`
+- `import_canvas_edits(canvas_path, baseline_path)` — extract constraints from edited canvas
+- `list_canvases()` — list available canvas files
+
+### Canvas Import
+
+When a user edits a canvas in Obsidian, the changes can be re-imported as planning constraints:
+
+```python
+from src.canvas_import import load_canvas_for_llm
+
+# Load edited canvas and extract constraints for LLM context
+context = load_canvas_for_llm("logs/canvases/hypothesis.canvas", use_toon=True)
+# Returns TOON-encoded string with position-based priorities
+```
+
+Position-based priority: nodes closer to canvas center are weighted higher, enabling human-in-the-loop attention steering.
+
 ## References
 
 - **Source**: `orchestration/repl_memory/failure_graph.py`, `hypothesis_graph.py`

@@ -47,6 +47,9 @@ orchestration/gate_report_*.json
 .mypy_cache/
 *.egg-info/
 
+# Tool plugin settings (per-user configuration)
+src/tool_settings/
+
 # Large MemRL data files (stored locally)
 orchestration/repl_memory/embeddings.npy
 orchestration/repl_memory/episodic.db

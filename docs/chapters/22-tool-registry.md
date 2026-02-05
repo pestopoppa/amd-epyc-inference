@@ -159,12 +159,98 @@ if registry.can_use_tool("frontdoor", "fetch_docs"):
     result = registry.invoke("fetch_docs", role="frontdoor", url="...")
 ```
 
+## Plugin Architecture
+
+### Overview
+
+Tools can also be loaded via a **plugin-based architecture** with manifest files (`src/tool_loader.py`). Each tool directory contains a `manifest.json` that declares:
+- Plugin metadata (name, version, description)
+- Tool definitions (module, function, parameters)
+- Dependencies and settings schema
+
+### Manifest Schema
+
+```json
+{
+  "schema_version": "1.0",
+  "name": "canvas_tools",
+  "version": "1.0.0",
+  "description": "Canvas tools for reasoning visualization",
+  "enabled": true,
+  "dependencies": ["kuzu"],
+  "settings_schema": {
+    "canvas_directory": {"type": "string", "default": "/mnt/raid0/llm/claude/logs/canvases"}
+  },
+  "tools": [
+    {
+      "name": "export_reasoning_canvas",
+      "description": "Export hypothesis/failure graphs to JSON Canvas",
+      "module": "src.tools.canvas_tools",
+      "function": "export_reasoning_canvas",
+      "category": "data",
+      "parameters": {
+        "graph_type": {"type": "string", "required": false}
+      }
+    }
+  ]
+}
+```
+
+### Plugin Discovery
+
+```python
+from src.tool_loader import ToolPluginLoader
+
+loader = ToolPluginLoader()
+count = loader.discover_plugins(Path("src/tools"))  # Scans for manifest.json files
+
+tools = loader.list_tools(enabled_only=True)
+# Returns: [{"name": "export_reasoning_canvas", "plugin": "canvas_tools", ...}, ...]
+```
+
+### Hot Reload
+
+Plugins can be reloaded without restarting the server:
+
+```python
+changed = loader.check_for_changes()  # Returns list of modified plugins
+count = loader.reload_changed()        # Reloads them
+```
+
+Via MCP: `reload_plugins()` tool.
+
+### Current Plugins
+
+| Plugin | Tools | Description |
+|--------|-------|-------------|
+| `web` | `fetch_docs`, `web_search` | Web content retrieval |
+| `file` | `read_file`, `list_dir` | File system operations |
+| `code` | `run_tests`, `lint_code` | Code quality tools |
+| `data` | `json_parse` | Data transformation |
+| `canvas_tools` | `export_reasoning_canvas`, `import_canvas_edits`, `list_canvases` | JSON Canvas integration |
+
+### Per-Tool Settings
+
+User-specific settings stored in `src/tool_settings/{plugin_name}.json` (gitignored):
+
+```json
+{
+  "enabled": true,
+  "tool_overrides": {
+    "export_reasoning_canvas": {"enabled": false}
+  },
+  "custom_config": {"canvas_directory": "/custom/path"}
+}
+```
+
 ## References
 
 ### Project Files
 
 - Tool definitions: `orchestration/tool_registry.yaml`
 - Python implementation: `src/tool_registry.py`
+- Plugin loader: `src/tool_loader.py`
+- Plugin manifests: `src/tools/*/manifest.json`
 
 ### Related Chapters
 

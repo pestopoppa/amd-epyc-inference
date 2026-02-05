@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "name": "code",
+  "version": "1.0.0",
+  "description": "Code tools for running tests and linting code",
+  "enabled": true,
+  "dependencies": ["pytest", "ruff"],
+  "settings_schema": {
+    "test_timeout": {
+      "type": "integer",
+      "default": 300,
+      "description": "Timeout for test execution in seconds"
+    },
+    "lint_timeout": {
+      "type": "integer",
+      "default": 60,
+      "description": "Timeout for linting in seconds"
+    }
+  },
+  "tools": [
+    {
+      "name": "run_tests",
+      "description": "Execute pytest tests with optional filtering",
+      "module": "src.tools.code.run_tests",
+      "function": "run_tests",
+      "category": "code",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "required": false,
+          "description": "Path to test file or directory"
+        },
+        "pattern": {
+          "type": "string",
+          "required": false,
+          "description": "Test name pattern to match"
+        },
+        "verbose": {
+          "type": "boolean",
+          "required": false,
+          "description": "Enable verbose output"
+        }
+      }
+    },
+    {
+      "name": "lint_code",
+      "description": "Run linting tools on code files",
+      "module": "src.tools.code.lint",
+      "function": "lint_code",
+      "category": "code",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "required": true,
+          "description": "Path to file or directory to lint"
+        },
+        "fix": {
+          "type": "boolean",
+          "required": false,
+          "description": "Automatically fix issues"
+        }
+      }
+    }
+  ]
+}

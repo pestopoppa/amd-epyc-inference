@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0",
+  "name": "file",
+  "version": "1.0.0",
+  "description": "File tools for reading files and listing directories",
+  "enabled": true,
+  "dependencies": [],
+  "settings_schema": {
+    "max_file_size": {
+      "type": "integer",
+      "default": 1048576,
+      "description": "Maximum file size to read in bytes"
+    },
+    "allowed_extensions": {
+      "type": "array",
+      "default": [],
+      "description": "Allowed file extensions (empty = all)"
+    }
+  },
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read content from a file with optional line limits",
+      "module": "src.tools.file.read",
+      "function": "read_file",
+      "category": "file",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "required": true,
+          "description": "Path to file to read"
+        },
+        "start_line": {
+          "type": "integer",
+          "required": false,
+          "description": "Starting line number (1-indexed)"
+        },
+        "end_line": {
+          "type": "integer",
+          "required": false,
+          "description": "Ending line number (inclusive)"
+        }
+      }
+    },
+    {
+      "name": "list_dir",
+      "description": "List contents of a directory",
+      "module": "src.tools.file.list",
+      "function": "list_dir",
+      "category": "file",
+      "parameters": {
+        "path": {
+          "type": "string",
+          "required": true,
+          "description": "Path to directory to list"
+        },
+        "pattern": {
+          "type": "string",
+          "required": false,
+          "description": "Glob pattern to filter files"
+        },
+        "recursive": {
+          "type": "boolean",
+          "required": false,
+          "description": "List recursively"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "name": "canvas_tools",
+  "version": "1.0.0",
+  "description": "Canvas tools for exporting/importing JSON Canvas files for reasoning visualization",
+  "enabled": true,
+  "dependencies": ["kuzu"],
+  "settings_schema": {
+    "canvas_directory": {
+      "type": "string",
+      "default": "/mnt/raid0/llm/claude/logs/canvases",
+      "description": "Directory for canvas files"
+    },
+    "use_toon": {
+      "type": "boolean",
+      "default": true,
+      "description": "Use TOON encoding for LLM context"
+    }
+  },
+  "tools": [
+    {
+      "name": "export_reasoning_canvas",
+      "description": "Export hypothesis/failure graphs to JSON Canvas format for Obsidian visualization",
+      "module": "src.tools.canvas_tools",
+      "function": "export_reasoning_canvas",
+      "category": "data",
+      "parameters": {
+        "graph_type": {
+          "type": "string",
+          "required": false,
+          "description": "Type of graph: hypothesis, failure, or session"
+        },
+        "include_evidence": {
+          "type": "boolean",
+          "required": false,
+          "description": "Include evidence/symptom nodes"
+        },
+        "output_path": {
+          "type": "string",
+          "required": false,
+          "description": "Custom output path"
+        }
+      }
+    },
+    {
+      "name": "import_canvas_edits",
+      "description": "Import edited canvas and extract planning constraints from user edits",
+      "module": "src.tools.canvas_tools",
+      "function": "import_canvas_edits",
+      "category": "data",
+      "parameters": {
+        "canvas_path": {
+          "type": "string",
+          "required": true,
+          "description": "Path to edited canvas file"
+        },
+        "baseline_path": {
+          "type": "string",
+          "required": false,
+          "description": "Path to baseline canvas for diff"
+        }
+      }
+    },
+    {
+      "name": "list_canvases",
+      "description": "List available canvas files with metadata",
+      "module": "src.tools.canvas_tools",
+      "function": "list_canvases",
+      "category": "data",
+      "parameters": {
+        "directory": {
+          "type": "string",
+          "required": false,
+          "description": "Directory to search"
+        }
+      }
+    }
+  ]
+}
