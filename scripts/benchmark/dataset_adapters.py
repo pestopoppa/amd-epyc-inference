@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """On-the-fly benchmark question sampling from HuggingFace datasets.
 
 Provides adapters for all debug suite categories, loading real benchmark
@@ -234,7 +236,7 @@ class MathAdapter(BaseAdapter):
             self._gsm8k = hf.load_dataset("gsm8k", "main", split="test")
             try:
                 self._math500 = hf.load_dataset("HuggingFaceH4/MATH-500", split="test")
-            except Exception:
+            except Exception as e:
                 self._math500 = []
             # Combine into unified list
             self._dataset = list(range(len(self._gsm8k) + len(self._math500)))
@@ -778,7 +780,7 @@ class GaiaAdapter(BaseAdapter):
                     shutil.copy2(file_bytes, dest)
                 elif isinstance(file_bytes, bytes):
                     dest.write_bytes(file_bytes)
-            except Exception:
+            except Exception as e:
                 return ""
 
         return f"\nThe file is available at: {dest}"
@@ -943,7 +945,7 @@ class BigCodeBenchAdapter(BaseAdapter):
             self._dataset = hf.load_dataset(
                 "bigcode/bigcodebench", split="v0.1.2",
             )
-        except Exception:
+        except Exception as e:
             try:
                 import datasets as hf
                 # Fallback to default split

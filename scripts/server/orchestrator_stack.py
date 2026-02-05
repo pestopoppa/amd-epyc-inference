@@ -72,7 +72,7 @@ def _get_paths() -> dict[str, Path]:
             "cache_dir": cfg.paths.cache_dir,
             "tmp_dir": cfg.paths.tmp_dir,
         }
-    except Exception:
+    except Exception as e:
         # Fallback to hardcoded defaults if config unavailable
         llm_root = Path("/mnt/raid0/llm")
         project_root = llm_root / "claude"
@@ -767,6 +767,7 @@ def start_document_formalizer() -> ProcessInfo | None:
 
     # Set environment
     env = os.environ.copy()
+    env["PYTHONPATH"] = str(_PATHS["project_root"]) + os.pathsep + env.get("PYTHONPATH", "")
     env["LIGHTONOCR_WORKERS"] = "8"
     env["LIGHTONOCR_THREADS"] = "12"
     env["LIGHTONOCR_MAX_TOKENS"] = "2048"
@@ -1318,7 +1319,7 @@ def checkpoint_list(limit: int = 10) -> list[dict[str, Any]]:
                 "created_at": data.get("created_at"),
                 "path": str(cp_path),
             })
-        except Exception:
+        except Exception as e:
             pass
 
     return checkpoints

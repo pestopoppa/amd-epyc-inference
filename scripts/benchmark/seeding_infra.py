@@ -38,7 +38,7 @@ def _check_server_health(url: str, timeout: int = 5) -> bool:
     try:
         resp = state.get_poll_client().get(f"{url}/health", timeout=timeout)
         return resp.status_code == 200
-    except Exception:
+    except Exception as e:
         return False
 
 
@@ -50,7 +50,7 @@ def _is_server_idle(port: int, timeout: int = 3) -> bool:
             return True  # Can't check — assume idle
         slots = resp.json()
         return not any(s.get("is_processing", False) for s in slots)
-    except Exception:
+    except Exception as e:
         return True  # Server unreachable — assume idle
 
 
@@ -280,7 +280,7 @@ def run_preflight(url: str) -> bool:
                     ok = status.get("healthy", False) if isinstance(status, dict) else status
                     tag = "OK" if ok else "DOWN"
                     logger.info(f"  Backend {name}: {tag}")
-    except Exception:
+    except Exception as e:
         pass  # Health endpoint may not expose backends — continue
 
     # 3. Smoke test (60s timeout — if 2+2 takes longer, something is broken)

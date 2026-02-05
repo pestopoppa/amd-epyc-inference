@@ -8,7 +8,13 @@ Values are sourced from the centralized config (src.config) with
 module-level aliases for backward compatibility.
 """
 
+from __future__ import annotations
+
+import logging
+
 from src.config import get_config
+
+logger = logging.getLogger(__name__)
 
 _cfg = get_config().vision
 _tcfg = get_config().timeouts

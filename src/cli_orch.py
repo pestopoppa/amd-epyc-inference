@@ -18,9 +18,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> int:
@@ -151,6 +154,7 @@ def cmd_status() -> int:
 
         print(f"  Sessions:          {active} active / {total} recent")
     except Exception as e:
+        logger.debug("Session store error: %s", e)
         print(f"  Sessions:          \033[91m✗ Error\033[0m ({e})")
 
     print()

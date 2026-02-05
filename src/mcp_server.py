@@ -22,10 +22,13 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+logger = logging.getLogger(__name__)
 
 # Resolve project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -73,8 +76,10 @@ def lookup_model(role: str) -> str:
         return "\n".join(lines)
 
     except KeyError:
+        logger.debug("Role not found: %s", role)
         return f"Role not found: {role}"
     except Exception as e:
+        logger.warning("Error loading role '%s': %s: %s", role, type(e).__name__, e)
         return f"Error loading role '{role}': {type(e).__name__}: {e}"
 
 
@@ -103,6 +108,7 @@ def list_roles() -> str:
         return "\n".join(lines) if lines else "No roles configured."
 
     except Exception as e:
+        logger.warning("Error listing roles: %s: %s", type(e).__name__, e)
         return f"Error listing roles: {type(e).__name__}: {e}"
 
 
@@ -121,6 +127,7 @@ def server_status() -> str:
     try:
         state = json.loads(state_file.read_text())
     except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Error reading state file %s: %s", state_file, e)
         return f"Error reading state file: {e}"
 
     if not state:
@@ -162,6 +169,7 @@ def query_benchmarks(model_name: str = "", suite: str = "") -> str:
             reader = csv.DictReader(f)
             rows = list(reader)
     except (OSError, csv.Error) as e:
+        logger.warning("Error reading benchmark CSV %s: %s", csv_path, e)
         return f"Error reading benchmark CSV: {e}"
 
     # Filter

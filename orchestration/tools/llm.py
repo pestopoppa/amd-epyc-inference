@@ -1,10 +1,15 @@
 """LLM tools - embeddings, similarity, classification."""
 
+from __future__ import annotations
+
+import logging
 import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))

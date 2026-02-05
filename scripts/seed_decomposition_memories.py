@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Seed memories for hierarchical task decomposition patterns.
 
 These memories teach the system how to break down complex tasks into

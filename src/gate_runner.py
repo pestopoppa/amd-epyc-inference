@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import logging
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -28,6 +29,8 @@ from typing import Any, TYPE_CHECKING
 import yaml
 
 from src.config import _registry_timeout
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
@@ -152,6 +155,7 @@ class GateRunner:
 
             self.gates = [GateConfig.from_dict(gate_data) for gate_data in config.get("gates", [])]
         except Exception as e:
+            logger.error("Failed to load gate config from %s: %s", self.config_path, e)
             raise GateRunnerError(f"Failed to load config: {e}")
 
     def _get_default_gates(self) -> list[GateConfig]:

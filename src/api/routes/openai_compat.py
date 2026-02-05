@@ -7,6 +7,7 @@ clients to use our orchestrator backend for inference.
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from typing import AsyncGenerator
@@ -32,6 +33,8 @@ from src.prompt_builders import (
 )
 from src.repl_environment import REPLEnvironment
 from src.roles import Role
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

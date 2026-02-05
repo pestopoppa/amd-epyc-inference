@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Generate test images for VL quality rubric."""
 
-from PIL import Image, ImageDraw, ImageFont
 import os
+
+from PIL import Image, ImageDraw, ImageFont
 
 OUTPUT_DIR = "/mnt/raid0/llm/claude/test_images/vl_rubric"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -11,7 +14,7 @@ def get_font(size=40):
     """Get a font, falling back to default if needed."""
     try:
         return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
-    except:
+    except Exception as e:
         return ImageFont.load_default()
 
 # T1-Q1: Simple OCR
@@ -118,7 +121,7 @@ def create_code_python():
     draw = ImageDraw.Draw(img)
     try:
         font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 16)
-    except:
+    except Exception as e:
         font = get_font(16)
 
     code_lines = [

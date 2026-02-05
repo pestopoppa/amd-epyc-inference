@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Reconstruct benchmark suites from HuggingFace datasets.
 
 Uses MANIFEST.yaml to map suites to their source datasets and

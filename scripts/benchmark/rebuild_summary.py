@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Rebuild summary.csv from ALL result JSON files and review CSVs.
 

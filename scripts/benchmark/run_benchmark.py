@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Unified Benchmark Runner
 
@@ -445,7 +447,7 @@ def run_benchmark(
                                 model_tps[model_path] = REFERENCE_TPS
                         else:
                             model_tps[model_path] = REFERENCE_TPS
-                    except Exception:
+                    except Exception as e:
                         model_tps[model_path] = REFERENCE_TPS
                 else:
                     # No baseline config, use registry or default

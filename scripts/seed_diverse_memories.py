@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Seed diverse memories for different task domains.
 
 Creates synthetic memory entries for math, medical, workflow, coding, etc.

@@ -14,7 +14,13 @@ Usage:
     register_all_tools(registry)
 """
 
+from __future__ import annotations
+
+import logging
+
 from src.tool_registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def register_all_tools(registry: ToolRegistry) -> int:
@@ -33,39 +39,39 @@ def register_all_tools(registry: ToolRegistry) -> int:
         from src.tools.web import register_web_tools
 
         count += register_web_tools(registry)
-    except ImportError:
-        pass
+    except ImportError as e:
+        logger.debug("Web tools not available: %s", e)
 
     # Import and register file tools
     try:
         from src.tools.file import register_file_tools
 
         count += register_file_tools(registry)
-    except ImportError:
-        pass
+    except ImportError as e:
+        logger.debug("File tools not available: %s", e)
 
     # Import and register code tools
     try:
         from src.tools.code import register_code_tools
 
         count += register_code_tools(registry)
-    except ImportError:
-        pass
+    except ImportError as e:
+        logger.debug("Code tools not available: %s", e)
 
     # Import and register data tools
     try:
         from src.tools.data import register_data_tools
 
         count += register_data_tools(registry)
-    except ImportError:
-        pass
+    except ImportError as e:
+        logger.debug("Data tools not available: %s", e)
 
     # Import and register knowledge retrieval tools
     try:
         from src.tools.knowledge import register_knowledge_tools
 
         count += register_knowledge_tools(registry)
-    except ImportError:
-        pass
+    except ImportError as e:
+        logger.debug("Knowledge tools not available: %s", e)
 
     return count

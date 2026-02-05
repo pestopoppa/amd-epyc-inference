@@ -7,6 +7,7 @@ context management and section-level access.
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 from dataclasses import dataclass, field
@@ -17,6 +18,8 @@ from src.models.document import (
     OCRResult,
     Section,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

@@ -394,8 +394,8 @@ class PDFRouter:
                 doc = fitz.open(str(pdf_path))
                 page_count = len(doc)
                 doc.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to get page count: %s", e)
 
         # Step 1: Try pdftotext (fast path)
         if not force_ocr:

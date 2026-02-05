@@ -16,11 +16,14 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ContextType(Enum):
@@ -455,21 +458,19 @@ def main() -> int:
     ctx.set("analysis", {"score": 95, "issues": []}, step_id="S2")
     ctx.add_artifact("code", Path("/tmp/output.py"), step_id="S3")
 
-    print("Context Manager Test")
-    print("=" * 40)
-    print(f"Entries: {ctx.count()}")
-    print(f"Total size: {ctx.size()} bytes")
-    print()
+    logger.info("Context Manager Test")
+    logger.info("=" * 40)
+    logger.info("Entries: %d", ctx.count())
+    logger.info("Total size: %d bytes", ctx.size())
 
     for entry in ctx.entries():
-        print(f"Key: {entry.key}")
-        print(f"  Type: {entry.context_type.value}")
-        print(f"  Step: {entry.step_id}")
-        print(f"  Size: {entry.size_bytes} bytes")
-        print()
+        logger.info("Key: %s", entry.key)
+        logger.info("  Type: %s", entry.context_type.value)
+        logger.info("  Step: %s", entry.step_id)
+        logger.info("  Size: %d bytes", entry.size_bytes)
 
-    print("Prompt context:")
-    print(ctx.build_prompt_context(["step1_output", "analysis"]))
+    logger.info("Prompt context:")
+    logger.info(ctx.build_prompt_context(["step1_output", "analysis"]))
 
     return 0
 

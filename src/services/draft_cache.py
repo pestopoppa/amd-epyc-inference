@@ -11,13 +11,18 @@ Key features:
 - Thread-safe: Safe for concurrent access
 """
 
+from __future__ import annotations
+
 import hashlib
 import json
+import logging
 import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -118,8 +123,9 @@ class DraftCache:
 
             return cached
 
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             # Corrupted cache entry - remove it
+            logger.debug("Corrupted cache entry for key %s: %s", key, e)
             self._remove(key)
             return None
 
@@ -143,8 +149,8 @@ class DraftCache:
         cache_path = self._cache_path(key)
         try:
             cache_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+        except OSError as e:
+            logger.debug("Failed to remove cache entry %s: %s", key, e)
 
     def cleanup_expired(self) -> int:
         """Remove all expired entries from the cache.
@@ -166,13 +172,14 @@ class DraftCache:
                     if age > self.ttl_seconds:
                         cache_file.unlink()
                         removed += 1
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError) as e:
                     # Corrupted or inaccessible - remove
+                    logger.debug("Corrupted cache file %s: %s", cache_file, e)
                     try:
                         cache_file.unlink()
                         removed += 1
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        logger.debug("Failed to remove corrupted cache file %s: %s", cache_file, e)
 
         return removed
 
@@ -200,7 +207,8 @@ class DraftCache:
                     age = now - data.get("timestamp", 0)
                     if age > self.ttl_seconds:
                         expired_entries += 1
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError) as e:
+                    logger.debug("Error reading cache file for stats %s: %s", cache_file, e)
                     expired_entries += 1
 
         return {

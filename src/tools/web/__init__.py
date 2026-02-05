@@ -6,7 +6,13 @@ Tools for fetching and searching web content:
 - doc_fetch: Documentation-specific fetching with source registry
 """
 
+from __future__ import annotations
+
+import logging
+
 from src.tool_registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def register_web_tools(registry: ToolRegistry) -> int:

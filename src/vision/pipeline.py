@@ -334,8 +334,9 @@ class VisionPipeline:
             session.commit()
             logger.debug(f"Stored results for {path}")
 
-        except Exception:
+        except Exception as e:
             session.rollback()
+            logger.error(f"Failed to store analysis results: {e}")
             raise
         finally:
             session.close()

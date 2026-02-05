@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Seed diverse failure memories across many domains.
 
 Covers: research, writing, data analysis, planning, medical, legal,

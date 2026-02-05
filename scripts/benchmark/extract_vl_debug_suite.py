@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Extract real VL benchmark questions from HuggingFace-cached Arrow files.
 
 Reads OCRBench and ChartQA Arrow datasets, samples diverse questions,
@@ -300,7 +302,7 @@ def extract_image(q: VLQuestion, base_dir: Path) -> str:
             out_path = out_dir / filename
             img.save(str(out_path))
             return str(out_path)
-        except Exception:
+        except Exception as e:
             ext = ".png"
 
     with open(out_path, "wb") as f:

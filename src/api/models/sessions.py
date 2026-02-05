@@ -1,5 +1,7 @@
 """Session management models for the orchestrator API."""
 
+from __future__ import annotations
+
 from pydantic import BaseModel
 
 

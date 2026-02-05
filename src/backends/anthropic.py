@@ -16,10 +16,13 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Iterator
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from src.backends.protocol import (
     BackendStats,
@@ -185,7 +188,8 @@ class AnthropicBackend:
                             elif event_type == "message_stop":
                                 yield StreamToken(text="", is_stop=True)
 
-                        except Exception:
+                        except Exception as e:
+                            logger.debug("Failed to parse streaming event: %s", e)
                             continue
 
         except httpx.HTTPStatusError:
@@ -212,7 +216,8 @@ class AnthropicBackend:
                 timeout=10.0,
             )
             return response.status_code in (200, 400, 401)
-        except Exception:
+        except Exception as e:
+            logger.debug("Anthropic health check failed: %s", e)
             return False
 
     def get_stats(self) -> BackendStats:

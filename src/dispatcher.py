@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from src.registry_loader import RegistryLoader, RoleConfig
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
@@ -371,8 +374,8 @@ def main() -> int:
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: dispatcher.py <task_ir.json | ->")
-        print("  Use '-' to read from stdin")
+        logger.info("Usage: dispatcher.py <task_ir.json | ->")
+        logger.info("  Use '-' to read from stdin")
         return 1
 
     try:
@@ -384,14 +387,14 @@ def main() -> int:
             result = dispatcher.dispatch_from_file(sys.argv[1])
 
         # Output as JSON
-        print(json.dumps(result.to_dict(), indent=2))
+        logger.info(json.dumps(result.to_dict(), indent=2))
 
         if result.errors:
             return 2
         return 0
 
     except DispatchError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
+        logger.error("Dispatch error: %s", e)
         return 3
 
 

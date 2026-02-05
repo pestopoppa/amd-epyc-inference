@@ -1,5 +1,7 @@
 """Pydantic models for the orchestrator API."""
 
+from __future__ import annotations
+
 from src.api.models.requests import (
     ChatRequest,
     GateRequest,

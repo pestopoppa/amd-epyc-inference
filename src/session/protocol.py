@@ -11,6 +11,7 @@ Interface patterns:
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, runtime_checkable
 
@@ -23,6 +24,8 @@ from src.session.models import (
     Session,
     SessionDocument,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Type alias for ChromaDB-style where filters

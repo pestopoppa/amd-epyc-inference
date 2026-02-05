@@ -99,7 +99,7 @@ class FAISSEmbeddingStore:
         self.index = self._faiss.IndexFlatIP(self.dim)
         self.id_map: list[str] = []
         self.id_to_idx: dict[str, int] = {}  # O(1) lookup
-        logger.info(f"Created new FAISS index at {self.index_path}")
+        logger.info("Created new FAISS index at %s", self.index_path)
 
     def _load(self) -> None:
         """Load existing FAISS index and id_map from disk."""
@@ -111,8 +111,8 @@ class FAISSEmbeddingStore:
             # Validate consistency
             if self.index.ntotal != len(self.id_map):
                 logger.warning(
-                    f"Index/id_map mismatch: {self.index.ntotal} vs {len(self.id_map)}. "
-                    "Truncating id_map to match index."
+                    "Index/id_map mismatch: %d vs %d. Truncating id_map to match index.",
+                    self.index.ntotal, len(self.id_map),
                 )
                 self.id_map = self.id_map[: self.index.ntotal]
 
@@ -120,10 +120,11 @@ class FAISSEmbeddingStore:
             self.id_to_idx = {mid: i for i, mid in enumerate(self.id_map)}
 
             logger.info(
-                f"Loaded FAISS index with {self.index.ntotal} embeddings from {self.index_path}"
+                "Loaded FAISS index with %d embeddings from %s",
+                self.index.ntotal, self.index_path,
             )
         except Exception as e:
-            logger.error(f"Failed to load FAISS index: {e}. Creating new.")
+            logger.error("Failed to load FAISS index: %s. Creating new.", e)
             self._create_new()
 
     def add(self, memory_id: str, embedding: np.ndarray) -> int:
@@ -221,7 +222,7 @@ class FAISSEmbeddingStore:
         """Persist index and id_map to disk."""
         self._faiss.write_index(self.index, str(self.index_path))
         np.save(self.id_map_path, np.array(self.id_map, dtype=object))
-        logger.debug(f"Saved FAISS index with {self.index.ntotal} embeddings")
+        logger.debug("Saved FAISS index with %d embeddings", self.index.ntotal)
 
     @property
     def count(self) -> int:
@@ -281,7 +282,7 @@ class NumpyEmbeddingStore:
             self.id_map = id_map_arr.tolist()
             self._next_idx = len(self.id_map)
         except Exception as e:
-            logger.error(f"Failed to load NumPy store: {e}. Creating new.")
+            logger.error("Failed to load NumPy store: %s. Creating new.", e)
             self._create_new()
 
     def _grow(self) -> None:

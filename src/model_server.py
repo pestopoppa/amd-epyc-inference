@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import time
 from abc import ABC, abstractmethod
@@ -35,6 +36,8 @@ from typing import Any
 
 from src.config import _registry_timeout
 from src.registry_loader import RegistryLoader, RoleConfig
+
+logger = logging.getLogger(__name__)
 
 
 class ModelState(Enum):
@@ -220,7 +223,8 @@ class LlamaCppBackend(ModelBackend):
             try:
                 self._processes[pid].terminate()
                 self._processes[pid].wait(timeout=5)
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to terminate pid %d, killing: %s", pid, e)
                 self._processes[pid].kill()
             del self._processes[pid]
         return True
@@ -757,37 +761,35 @@ def main() -> int:
 
     # Check for server mode
     if "--server" in sys.argv:
-        print("Testing with llama-server backend...")
+        logger.info("Testing with llama-server backend...")
         try:
             server = create_caching_server()
             health = server.health_check()
-            print(f"Server health: {json.dumps(health, indent=2)}")
-            print(f"Cache stats: {json.dumps(server.get_cache_stats(), indent=2)}")
+            logger.info("Server health: %s", json.dumps(health, indent=2))
+            logger.info("Cache stats: %s", json.dumps(server.get_cache_stats(), indent=2))
             return 0
         except Exception as e:
-            print(f"ERROR: {e}")
-            print("Make sure llama-server is running: scripts/server/start_servers.sh")
+            logger.error("Server test failed: %s", e)
+            logger.info("Make sure llama-server is running: scripts/server/start_servers.sh")
             return 1
 
     server = ModelServer()
 
-    print("Model Server initialized")
-    print(f"Available roles: {list(server.registry.roles.keys())}")
-    print()
+    logger.info("Model Server initialized")
+    logger.info("Available roles: %s", list(server.registry.roles.keys()))
 
     # If role specified, run inference test
     if len(sys.argv) > 1:
         role = sys.argv[1]
         prompt = sys.argv[2] if len(sys.argv) > 2 else "Write a hello world function in Python"
 
-        print(f"Testing inference with role: {role}")
-        print(f"Prompt: {prompt[:50]}...")
-        print()
+        logger.info("Testing inference with role: %s", role)
+        logger.info("Prompt: %s...", prompt[:50])
 
         try:
             # Load the model (validates path)
             status = server.load(role)
-            print(f"Model loaded: {status.state.value}")
+            logger.info("Model loaded: %s", status.state.value)
 
             # Run inference
             request = InferenceRequest(
@@ -798,28 +800,28 @@ def main() -> int:
                 timeout=120,
             )
 
-            print("Running inference...")
+            logger.info("Running inference...")
             result = server.infer(request)
 
-            print(f"\nSuccess: {result.success}")
-            print(f"Tokens: {result.tokens_generated}")
-            print(f"Speed: {result.generation_speed:.2f} t/s")
-            print(f"Time: {result.elapsed_time:.2f}s")
+            logger.info("Success: %s", result.success)
+            logger.info("Tokens: %d", result.tokens_generated)
+            logger.info("Speed: %.2f t/s", result.generation_speed)
+            logger.info("Time: %.2fs", result.elapsed_time)
 
             if result.error_message:
-                print(f"Error: {result.error_message}")
+                logger.error("Error: %s", result.error_message)
 
-            print(f"\n--- Output ---\n{result.output[:500]}")
+            logger.info("--- Output ---\n%s", result.output[:500])
 
             return 0 if result.success else 1
 
         except ModelServerError as e:
-            print(f"ERROR: {e}")
+            logger.error("Model server error: %s", e)
             return 1
 
     # Default: health check
     health = server.health_check()
-    print(f"Health check: {json.dumps(health, indent=2)}")
+    logger.info("Health check: %s", json.dumps(health, indent=2))
 
     return 0
 

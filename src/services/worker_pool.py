@@ -28,8 +28,8 @@ import asyncio
 import logging
 import os
 import signal
-import threading
 import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -372,8 +372,8 @@ class WorkerPoolManager:
                 async with self._http_session.get(url) as resp:
                     if resp.status == 200:
                         return True
-            except Exception:
-                logger.debug("Health check poll failed for port %s", port, exc_info=True)
+            except Exception as e:
+                logger.debug("Health check poll failed for port %s: %s", port, e)
             await asyncio.sleep(2)
 
         return False
@@ -397,12 +397,12 @@ class WorkerPoolManager:
                 for pid_str in result.stdout.strip().split("\n"):
                     try:
                         os.kill(int(pid_str), signal.SIGKILL)
-                    except Exception:
+                    except Exception as e:
                         logger.debug(
-                            "Failed to kill PID %s on port %s", pid_str, port, exc_info=True
+                            "Failed to kill PID %s on port %s: %s", pid_str, port, e
                         )
-        except Exception:
-            logger.debug("Port kill lookup failed for port %s", port, exc_info=True)
+        except Exception as e:
+            logger.debug("Port kill lookup failed for port %s: %s", port, e)
 
     async def _stop_worker(self, instance: WorkerInstance) -> None:
         """Stop a worker instance."""
@@ -535,8 +535,8 @@ class WorkerPoolManager:
                             await self._stop_worker(instance)
             except asyncio.CancelledError:
                 pass  # Expected when rescheduling
-            except Exception:
-                logger.exception(f"Error in warm shutdown task for worker {name}")
+            except Exception as e:
+                logger.exception("Error in warm shutdown task for worker %s: %s", name, e)
 
         # Cancel existing shutdown task if any
         if name in self._warm_shutdown_tasks:

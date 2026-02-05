@@ -170,7 +170,8 @@ class VisionSearch:
                 if not result["embeddings"]:
                     return []
                 query_embedding = result["embeddings"][0]
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to look up face embedding: {e}")
                 return []
         else:
             query_embedding = face_id_or_embedding

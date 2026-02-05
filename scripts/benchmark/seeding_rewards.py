@@ -173,7 +173,7 @@ def _inject_escalation_chains_http(
             )
             if resp.status_code == 200:
                 injected += 1
-        except Exception:
+        except Exception as e:
             continue
     return injected
 
@@ -207,7 +207,7 @@ def _inject_rewards_http(
             )
             if resp.status_code == 200:
                 injected += 1
-        except Exception:
+        except Exception as e:
             continue
     return injected
 

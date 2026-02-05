@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from src.dispatcher import Dispatcher
 from src.executor import ExecutionResult, Executor, ExecutorConfig, StepStatus
 from src.model_server import ModelServer
 from src.registry_loader import RegistryLoader
+
+logger = logging.getLogger(__name__)
 
 # Get default timeout from registry (single source of truth)
 _DEFAULT_TIMEOUT = int(_registry_timeout("server", "request", 600))
@@ -135,6 +138,7 @@ class Orchestrator:
             results["elapsed_time"] = time.time() - results["started_at"]
 
         except Exception as e:
+            logger.error("Orchestration pipeline error: %s", e)
             results["status"] = "error"
             results["error"] = str(e)
             results["elapsed_time"] = time.time() - results["started_at"]

@@ -10,6 +10,7 @@ Log format is JSONL (one JSON object per line) for efficient streaming reads.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -17,6 +18,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 # Default log path (on RAID array, or fallback to workspace for devcontainer)
 _RAID_LOG_PATH = Path("/mnt/raid0/llm/claude/logs/progress")

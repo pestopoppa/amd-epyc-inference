@@ -1,9 +1,15 @@
 """Runtime configuration endpoint for hot-reloading feature flags."""
 
+from __future__ import annotations
+
+import logging
+
 from fastapi import APIRouter, HTTPException, Request, Depends
 
 from src.features import set_features, Features
 from src.api.dependencies import dep_features
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

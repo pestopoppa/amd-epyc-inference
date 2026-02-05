@@ -20,6 +20,8 @@ Based on: MemRL (arXiv:2601.03192) - Zhang et al. 2025
 Enhanced with: Graphiti-inspired failure anti-memory and hypothesis tracking
 """
 
+from __future__ import annotations
+
 from .episodic_store import EpisodicStore, MemoryEntry, GraphEnhancedStore, extract_symptoms
 from .embedder import TaskEmbedder
 from .retriever import TwoPhaseRetriever, GraphEnhancedRetriever, RetrievalConfig, RetrievalResult

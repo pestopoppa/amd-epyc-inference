@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
@@ -34,6 +35,8 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from orchestration.procedure_registry import ProcedureRegistry, ProcedureResult
@@ -479,8 +482,9 @@ class ProcedureScheduler:
             self.state.total_succeeded = data.get("total_succeeded", 0)
             self.state.total_failed = data.get("total_failed", 0)
 
-        except Exception:
+        except Exception as e:
             # Start fresh if load fails
+            logger.debug("Failed to load scheduler state, starting fresh: %s", e)
             self.state = SchedulerState()
 
     def _save_state(self) -> None:
@@ -518,5 +522,5 @@ class ProcedureScheduler:
             with open(self.state_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
 
-        except Exception:
-            pass  # Best effort persistence
+        except Exception as e:
+            logger.debug("Failed to save scheduler state: %s", e)  # Best effort persistence

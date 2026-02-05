@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Seed the FailureGraph and HypothesisGraph with documented patterns.
 

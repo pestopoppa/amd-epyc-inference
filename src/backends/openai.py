@@ -16,10 +16,13 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Iterator
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from src.backends.protocol import (
     BackendStats,
@@ -188,7 +191,8 @@ class OpenAIBackend:
                                 if finish_reason:
                                     yield StreamToken(text="", is_stop=True)
 
-                        except Exception:
+                        except Exception as e:
+                            logger.debug("Failed to parse streaming chunk: %s", e)
                             continue
 
         except httpx.HTTPStatusError:
@@ -204,7 +208,8 @@ class OpenAIBackend:
             # Use models endpoint for lightweight health check
             response = self._client.get("/models", timeout=10.0)
             return response.status_code in (200, 401)
-        except Exception:
+        except Exception as e:
+            logger.debug("OpenAI health check failed: %s", e)
             return False
 
     def get_stats(self) -> BackendStats:

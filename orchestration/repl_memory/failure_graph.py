@@ -162,7 +162,7 @@ class FailureGraph:
             except Exception as e:
                 # Ignore "already exists" errors
                 if "already exists" not in str(e).lower():
-                    logger.warning(f"Schema creation warning: {e}")
+                    logger.warning("Schema creation warning: %s", e)
 
     def record_failure(
         self,
@@ -235,7 +235,7 @@ class FailureGraph:
                     {"fid": failure_id, "sid": symptom_id},
                 )
             except Exception as e:
-                logger.debug(f"Symptom link exists or error: {e}")
+                logger.debug("Symptom link exists or error: %s", e)
 
         # Link to episodic memory
         link_id = str(uuid.uuid4())
@@ -264,7 +264,7 @@ class FailureGraph:
                     {"f1": failure_id, "f2": previous_failure_id},
                 )
             except Exception as e:
-                logger.debug(f"Failure chain link error: {e}")
+                logger.debug("Failure chain link error: %s", e)
 
         return failure_id
 
@@ -416,7 +416,7 @@ class FailureGraph:
                 {"fid": failure_id, "mid": mitigation_id},
             )
         except Exception as e:
-            logger.debug(f"Mitigation link error: {e}")
+            logger.debug("Mitigation link error: %s", e)
 
         # If mitigation didn't work, record recurrence
         if not worked:
@@ -429,7 +429,7 @@ class FailureGraph:
                     {"fid": failure_id, "mid": mitigation_id},
                 )
             except Exception as e:
-                logger.debug(f"Recurrence link error: {e}")
+                logger.debug("Recurrence link error: %s", e)
 
         return mitigation_id
 

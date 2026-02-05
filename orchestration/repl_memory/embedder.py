@@ -88,7 +88,8 @@ class TaskEmbedder:
             with httpx.Client(timeout=2.0) as client:
                 resp = client.get(f"{self.config.server_url}/health")
                 self._server_available = resp.status_code == 200
-        except Exception:
+        except Exception as e:
+            logger.debug("Embedding server health check failed: %s", e)
             self._server_available = False
 
         if self._server_available:

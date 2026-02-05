@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -31,6 +32,8 @@ from src.model_server import (
     ModelServer,
 )
 from src.registry_loader import RegistryLoader
+
+logger = logging.getLogger(__name__)
 
 
 class StepStatus(Enum):
@@ -833,16 +836,16 @@ def main() -> int:
     dispatcher = Dispatcher(validate_paths=False)
     dispatch_result = dispatcher.dispatch(task_ir)
 
-    print("Dispatch Result:")
-    print(json.dumps(dispatch_result.to_dict(), indent=2))
+    logger.info("Dispatch Result:")
+    logger.info(json.dumps(dispatch_result.to_dict(), indent=2))
 
     # Execute (dry run)
     config = ExecutorConfig(dry_run=True)
     executor = Executor(config=config)
     execution_result = executor.execute(dispatch_result)
 
-    print("\nExecution Result:")
-    print(json.dumps(execution_result.to_dict(), indent=2))
+    logger.info("Execution Result:")
+    logger.info(json.dumps(execution_result.to_dict(), indent=2))
 
     return 0 if execution_result.status == StepStatus.COMPLETED else 1
 

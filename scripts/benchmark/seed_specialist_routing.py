@@ -410,7 +410,7 @@ def _erase_slots(port: int) -> None:
                     timeout=5,
                 )
                 logger.info(f"  → erased slot {slot_id} on port {port}")
-    except Exception:
+    except Exception as e:
         pass  # best-effort cleanup
 
 

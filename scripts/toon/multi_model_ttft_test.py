@@ -301,7 +301,7 @@ def check_server(port: int) -> bool:
     try:
         resp = httpx.get(f"http://127.0.0.1:{port}/health", timeout=5.0)
         return resp.status_code == 200
-    except Exception:
+    except Exception as e:
         return False
 
 

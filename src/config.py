@@ -28,10 +28,13 @@ Environment Variables:
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field, asdict
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 # Try to use pydantic-settings if available, fall back to basic dataclass
@@ -110,8 +113,8 @@ def _load_registry_timeouts() -> dict[str, int | float]:
 
         _REGISTRY_TIMEOUTS_CACHE = flat
         return flat
-    except Exception:
-        # Registry unavailable - return empty, will use hardcoded fallbacks
+    except Exception as e:
+        logger.debug("Registry timeouts unavailable, using hardcoded fallbacks: %s", e)
         _REGISTRY_TIMEOUTS_CACHE = {}
         return {}
 

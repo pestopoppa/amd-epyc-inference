@@ -11,6 +11,10 @@ This module provides:
 Storage location: /workspace/orchestration/repl_memory/sessions/
 """
 
+from __future__ import annotations
+
+import logging
+
 from src.session.document_cache import DocumentCache, get_document_cache
 from src.session.models import (
     Checkpoint,
@@ -25,6 +29,8 @@ from src.session.models import (
 from src.session.persister import IdleMonitor, SessionPersister
 from src.session.protocol import SessionStore
 from src.session.sqlite_store import SQLiteSessionStore
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     # Protocol

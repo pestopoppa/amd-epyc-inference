@@ -56,7 +56,8 @@ def _get_tmp_dir() -> Path:
         from src.config import get_config
 
         return get_config().paths.tmp_dir
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to get tmp dir from config, using fallback: %s", e)
         return Path("/mnt/raid0/llm/tmp")
 
 

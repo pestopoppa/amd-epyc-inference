@@ -238,12 +238,12 @@ def delete_image_embeddings(image_id: str) -> None:
     """Delete all embeddings associated with an image."""
     try:
         get_descriptions_collection().delete(ids=[image_id])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to delete description embedding for %s: %s", image_id, e)
     try:
         get_images_collection().delete(ids=[image_id])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to delete image embedding for %s: %s", image_id, e)
 
 
 def get_collection_stats() -> dict[str, int]:

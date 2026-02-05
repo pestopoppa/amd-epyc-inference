@@ -14,12 +14,15 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 # Default registry location (static fallback; config preferred in __init__)
 DEFAULT_REGISTRY_PATH = (
@@ -206,7 +209,8 @@ class RegistryLoader:
                 from src.config import get_config
 
                 self.registry_path = get_config().paths.registry_path
-            except Exception:
+            except Exception as e:
+                logger.debug("Config unavailable, using default registry path: %s", e)
                 self.registry_path = DEFAULT_REGISTRY_PATH
         self._raw: dict[str, Any] = {}
         self._roles: dict[str, RoleConfig] = {}
@@ -217,7 +221,8 @@ class RegistryLoader:
             from src.config import get_config
 
             self._model_base_path: Path = get_config().paths.model_base
-        except Exception:
+        except Exception as e:
+            logger.debug("Config unavailable, using default model base path: %s", e)
             self._model_base_path: Path = Path("/mnt/raid0/llm/lmstudio/models")
         self._runtime_defaults: dict[str, Any] = {}
         self._missing_models: list[str] = []
@@ -689,7 +694,8 @@ class RegistryLoader:
                 if self._eval_condition(condition, ctx):
                     matched_roles = hint.use
                     break
-            except Exception:
+            except Exception as e:
+                logger.debug("Routing condition eval failed for '%s': %s", condition, e)
                 continue
 
         # Default: frontdoor only

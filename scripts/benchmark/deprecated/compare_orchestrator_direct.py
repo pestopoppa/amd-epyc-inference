@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Orchestrator vs Direct Model Comparison
 
@@ -487,7 +489,7 @@ def _get_suite_timeout(suite_name: str, default_timeout: int) -> int:
         loaded = load_suite(suite_name)
         if loaded and loaded.inference_params:
             return loaded.inference_params.get("timeout", default_timeout)
-    except Exception:
+    except Exception as e:
         pass
     return default_timeout
 
@@ -753,7 +755,7 @@ def _restart_orchestrator_api(api_url: str) -> None:
             if resp.status_code == 200:
                 healthy = True
                 break
-        except Exception:
+        except Exception as e:
             pass
         time.sleep(1)
 

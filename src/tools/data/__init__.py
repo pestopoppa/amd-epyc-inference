@@ -5,7 +5,14 @@ Tools for JSON and text operations:
 - text_transform: Text manipulation utilities
 """
 
+from __future__ import annotations
+
+import json as json_module
+import logging
+
 from src.tool_registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def register_data_tools(registry: ToolRegistry) -> int:
@@ -19,7 +26,6 @@ def register_data_tools(registry: ToolRegistry) -> int:
     """
     # Data tools are simpler - register inline
     from src.tool_registry import Tool, ToolCategory
-    import json as json_module
 
     def json_parse(
         content: str,

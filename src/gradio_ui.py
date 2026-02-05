@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from typing import Any, Generator
 
 import gradio as gr
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # Default API base URL — sourced from centralized config
 from src.config import get_config as _get_config
@@ -131,9 +134,11 @@ def stream_chat_response(
                         yield history, code_artifact, routing_metadata
 
     except httpx.HTTPStatusError as e:
+        logger.error("API HTTP error: %d - %s", e.response.status_code, e.response.text)
         history[-1][1] = f"API Error: {e.response.status_code} - {e.response.text}"
         yield history, None, None
     except httpx.RequestError as e:
+        logger.error("Connection error: %s", e)
         history[-1][1] = f"Connection Error: {e}"
         yield history, None, None
 
@@ -160,6 +165,7 @@ def sync_chat(
             history[-1][1] = data.get("answer", "No response")
             return history, None, {"turns": data.get("turns", 1)}
     except Exception as e:
+        logger.error("Sync chat error: %s", e)
         history[-1][1] = f"Error: {e}"
         return history, None, None
 
@@ -289,6 +295,7 @@ def create_ui(api_url: str = DEFAULT_API_URL) -> gr.Blocks:
                     else:
                         return f"**Error:** HTTP {response.status_code}"
             except Exception as e:
+                logger.debug("Health check failed: %s", e)
                 return f"**Connection Failed:** {e}"
 
         def save_code(code: str):

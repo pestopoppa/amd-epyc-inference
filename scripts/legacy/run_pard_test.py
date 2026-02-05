@@ -1,6 +1,8 @@
-from pathlib import Path
-import time
+from __future__ import annotations
+
 import sys
+import time
+from pathlib import Path
 
 import torch
 

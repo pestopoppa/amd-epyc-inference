@@ -5,7 +5,13 @@ Tools for running tests and linting:
 - lint: Run linting tools
 """
 
+from __future__ import annotations
+
+import logging
+
 from src.tool_registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def register_code_tools(registry: ToolRegistry) -> int:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Parse rubric results from tmp and extract key metrics for scoring."""
 import os
 import re

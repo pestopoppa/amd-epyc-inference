@@ -13,14 +13,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from orchestration.repl_memory.episodic_store import EpisodicStore
 from orchestration.repl_memory.embedder import TaskEmbedder
+from orchestration.repl_memory.episodic_store import EpisodicStore
+
+logger = logging.getLogger(__name__)
 
 SEED_FILE = Path(__file__).parent / "seed_examples.json"
 

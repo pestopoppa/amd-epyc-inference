@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """End-to-end validation for recursive orchestration.
 
 This script validates the full recursive LLM pattern:

@@ -1,9 +1,15 @@
 """Tool Executor - Load and execute tools from registry."""
 
+from __future__ import annotations
+
 import importlib
+import logging
+
 import yaml
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutor:
@@ -50,7 +56,7 @@ class ToolExecutor:
             self._functions[tool_name] = func
             return func
         except Exception as e:
-            print(f"Error loading tool {tool_name}: {e}")
+            logger.error("Error loading tool %s: %s", tool_name, e)
             return None
 
     def list_tools(self, category: str | None = None) -> list[dict]:

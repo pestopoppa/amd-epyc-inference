@@ -10,6 +10,7 @@ Tables:
 
 from __future__ import annotations
 
+import logging
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
@@ -28,6 +29,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
 from src.vision.config import SQLITE_PATH
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -245,7 +248,8 @@ def managed_session() -> Generator["Session", None, None]:
     try:
         yield session
         session.commit()
-    except Exception:
+    except Exception as e:
+        logger.error("Session rollback due to error: %s", e)
         session.rollback()
         raise
     finally:

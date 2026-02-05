@@ -7,12 +7,15 @@ All models support JSON serialization via to_dict/from_dict methods.
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class SessionStatus(str, Enum):

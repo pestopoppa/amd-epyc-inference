@@ -43,7 +43,8 @@ def _get_default_working_dir() -> str:
         from src.config import get_config
 
         return str(get_config().paths.project_root)
-    except Exception:
+    except Exception as e:
+        logger.debug("Could not load config for working dir: %s", e)
         return "/mnt/raid0/llm/claude"
 
 
@@ -429,7 +430,8 @@ class ScriptRegistry:
                 from src.config import get_config
 
                 config_path = get_config().paths.project_root / "orchestration" / "mcp_servers.yaml"
-            except Exception:
+            except Exception as e:
+                logger.debug("Could not load config for MCP path: %s", e)
                 config_path = Path(__file__).parent.parent / "orchestration" / "mcp_servers.yaml"
             self._mcp_configs = load_server_configs(config_path)
 

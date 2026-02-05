@@ -15,6 +15,7 @@ extracted into focused modules during Phase 1 decomposition:
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from typing import AsyncGenerator
@@ -128,7 +129,8 @@ async def inject_reward(
     deterministic scoring of a benchmark answer, the score is fed back
     as a reward so the Q-scorer can learn from routing decisions.
     """
-    success = store_external_reward(
+    success = await asyncio.to_thread(
+        store_external_reward,
         state,
         request.task_description,
         request.action,

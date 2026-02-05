@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Seed REPL memory from existing progress logs.
 
 Parses task_started + task_completed event pairs from progress logs

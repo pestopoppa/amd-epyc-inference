@@ -976,5 +976,6 @@ def _zipinfo_to_timestamp(info: zipfile.ZipInfo) -> float | None:
 
         dt = datetime.datetime(*info.date_time)
         return dt.timestamp()
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to convert ZipInfo date_time to timestamp: %s", e)
         return None

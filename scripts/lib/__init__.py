@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Shared library modules for benchmark and orchestrator systems.
 """

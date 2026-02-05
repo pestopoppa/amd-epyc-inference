@@ -1,11 +1,16 @@
 """System tools - file operations, processes, environment, date/time."""
 
+from __future__ import annotations
+
 import datetime
+import logging
 import os
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Allowed paths for safety
 ALLOWED_PATHS = ["/mnt/raid0/llm/", "/tmp/"]
@@ -92,7 +97,8 @@ def list_directory(path: str, pattern: str = "*", recursive: bool = False) -> li
                     "size": stat.st_size if item.is_file() else 0,
                     "modified": stat.st_mtime,
                 })
-            except:
+            except Exception as e:
+                logger.debug("Failed to stat item %s: %s", item, e)
                 continue
 
         return results

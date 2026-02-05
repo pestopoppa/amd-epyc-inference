@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Seed memories for FAILED strategies and common pitfalls.
 
 These teach the system what NOT to do - critical for learned routing.

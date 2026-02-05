@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """LightOnOCR-2 document processing server."""
 
+from __future__ import annotations
+
 import argparse
 import base64
 import io
@@ -8,10 +10,10 @@ import logging
 import re
 import time
 
+import pypdfium2 as pdfium
 import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
-import pypdfium2 as pdfium
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("lightonocr-server")

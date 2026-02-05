@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Score benchmark responses against reference answers - no external dependencies."""
 
 import json

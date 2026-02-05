@@ -7,6 +7,8 @@ Replaces in-memory session store with SQLiteSessionStore for:
 - Crash recovery via checkpoints
 """
 
+from __future__ import annotations
+
 import logging
 import uuid
 from datetime import datetime

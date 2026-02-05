@@ -188,13 +188,13 @@ class EpisodicStore:
             self._embedding_store: Union[FAISSEmbeddingStore, NumpyEmbeddingStore] = (
                 FAISSEmbeddingStore(path=self.storage_dir, dim=self.embedding_dim)
             )
-            logger.info(f"Initialized FAISS embedding store at {self.storage_dir}")
+            logger.info("Initialized FAISS embedding store at %s", self.storage_dir)
         else:
             from .faiss_store import NumpyEmbeddingStore
             self._embedding_store = NumpyEmbeddingStore(
                 path=self.storage_dir, dim=self.embedding_dim
             )
-            logger.info(f"Initialized NumPy embedding store at {self.storage_dir}")
+            logger.info("Initialized NumPy embedding store at %s", self.storage_dir)
 
     # Legacy compatibility properties for NumPy backend
     @property
@@ -801,7 +801,7 @@ class GraphEnhancedStore:
                         self._update_graphs(memory_id, action, action_type, context, outcome, task_type)
                     )
             except Exception as e:
-                logger.warning(f"Failed to schedule graph updates: {e}")
+                logger.warning("Failed to schedule graph updates: %s", e)
 
         return memory_id
 
@@ -837,9 +837,9 @@ class GraphEnhancedStore:
                     description=f"{action} failed with: {outcome[:100]}",
                     severity=3,  # Default medium severity
                 )
-                logger.debug(f"Recorded failure with symptoms: {symptoms}")
+                logger.debug("Recorded failure with symptoms: %s", symptoms)
             except Exception as e:
-                logger.warning(f"Failed to update failure graph: {e}")
+                logger.warning("Failed to update failure graph: %s", e)
 
         # Update hypothesis graph (success or failure)
         if self.hypothesis_graph is not None and task_type:
@@ -857,9 +857,9 @@ class GraphEnhancedStore:
                     outcome=evidence_outcome,
                     source=memory_id,
                 )
-                logger.debug(f"Updated hypothesis confidence for {action}|{task_type}")
+                logger.debug("Updated hypothesis confidence for %s|%s", action, task_type)
             except Exception as e:
-                logger.warning(f"Failed to update hypothesis graph: {e}")
+                logger.warning("Failed to update hypothesis graph: %s", e)
 
     def record_mitigation(
         self,
@@ -896,7 +896,7 @@ class GraphEnhancedStore:
                         worked=worked,
                     )
         except Exception as e:
-            logger.warning(f"Failed to record mitigation: {e}")
+            logger.warning("Failed to record mitigation: %s", e)
 
         return None
 
@@ -916,7 +916,7 @@ class GraphEnhancedStore:
                 await task
                 completed += 1
             except Exception as e:
-                logger.warning(f"Graph update failed: {e}")
+                logger.warning("Graph update failed: %s", e)
 
         self._pending_updates.clear()
         return completed

@@ -4,6 +4,12 @@ Each analyzer is a modular plugin that processes images and returns structured r
 Analyzers can be enabled/disabled per job configuration.
 """
 
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 from src.vision.analyzers.base import Analyzer, AnalyzerResult
 from src.vision.analyzers.face_detect import FaceDetectAnalyzer
 from src.vision.analyzers.face_embed import FaceEmbedAnalyzer

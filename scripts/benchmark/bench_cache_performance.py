@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Benchmark cache hit rates on RLM (Recursive LLM) workloads.
 
 This script measures the effectiveness of RadixAttention-style prefix caching

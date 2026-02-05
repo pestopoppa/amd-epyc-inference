@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Q-Scorer Runner: Periodic job for updating Q-values in episodic memory.
 

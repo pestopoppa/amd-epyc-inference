@@ -1,5 +1,7 @@
 """Code tools - linting, formatting, git, execution."""
 
+from __future__ import annotations
+
 import ast
 import logging
 import re
@@ -180,7 +182,8 @@ def lint_python(code: str, fix: bool = False) -> dict:
             import json
             try:
                 issues = json.loads(result["stdout"])
-            except:
+            except Exception as e:
+                logger.debug("Failed to parse ruff JSON output: %s", e)
                 issues = [{"message": result["stdout"]}]
 
         return {
@@ -188,8 +191,8 @@ def lint_python(code: str, fix: bool = False) -> dict:
             "fixed_code": fixed_code if fix else None,
             "summary": f"{len(issues)} issues found",
         }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Ruff lint failed, falling back to basic AST check: %s", e)
 
     # Fallback: basic AST check
     try:

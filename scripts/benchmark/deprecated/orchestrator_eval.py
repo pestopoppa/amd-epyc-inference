@@ -398,7 +398,7 @@ def inject_reward(
         if resp.status_code == 200:
             return resp.json().get("success", False)
         return False
-    except Exception:
+    except Exception as e:
         return False
 
 
@@ -800,7 +800,7 @@ def restart_orchestrator_api(api_url: str) -> None:
             if resp.status_code == 200:
                 print(f"  [OK] Orchestrator API ready")
                 return
-        except Exception:
+        except Exception as e:
             pass
         time.sleep(1)
 

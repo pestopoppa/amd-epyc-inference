@@ -1,9 +1,14 @@
 """Math tools - numerical, symbolic, statistics."""
 
+from __future__ import annotations
+
+import logging
 import math
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def calculate(expression: str) -> float | complex:
@@ -171,7 +176,8 @@ def integrate(expression: str, variable: str = "x",
             result = sym_integrate(expr, (x, lower, upper))
             try:
                 return float(result.evalf())
-            except:
+            except Exception as e:
+                logger.debug("Could not evaluate integral to float: %s", e)
                 return str(result)
         else:
             # Indefinite integral

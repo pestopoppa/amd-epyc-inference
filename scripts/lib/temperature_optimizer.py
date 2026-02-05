@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Temperature Optimizer for LLM Inference
 
@@ -31,7 +33,7 @@ def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
             timeouts = reg._raw.get("runtime_defaults", {}).get("timeouts", {})
             cat_data = timeouts.get(category, {})
             return cat_data.get(key, timeouts.get("default", fallback))
-    except Exception:
+    except Exception as e:
         pass
     return fallback
 

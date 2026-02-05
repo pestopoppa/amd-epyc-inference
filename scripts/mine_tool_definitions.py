@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Mine tool definitions from external sources.
 
 Sources:

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Model Verification Script
 
@@ -97,7 +99,7 @@ def test_model(model_path: str, role: str = None) -> dict:
                         try:
                             tps = float(line.split('(')[1].split('t/s')[0].strip())
                             result["tokens_per_second"] = tps
-                        except:
+                        except Exception as e:
                             pass
                     break
 

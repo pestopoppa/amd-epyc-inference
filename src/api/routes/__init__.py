@@ -1,5 +1,7 @@
 """Route modules for the orchestrator API."""
 
+from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter

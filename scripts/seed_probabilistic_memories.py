@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Seed probabilistic memories - same strategy, variable outcomes.
 
 Real strategies don't always succeed or always fail. These memories

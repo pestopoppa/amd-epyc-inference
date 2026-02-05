@@ -5,7 +5,13 @@ Tools for reading files and listing directories:
 - list_dir: List directory contents
 """
 
+from __future__ import annotations
+
+import logging
+
 from src.tool_registry import ToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def register_file_tools(registry: ToolRegistry) -> int:

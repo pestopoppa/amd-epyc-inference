@@ -136,7 +136,7 @@ class HypothesisGraph:
                 self.conn.execute(schema)
             except Exception as e:
                 if "already exists" not in str(e).lower():
-                    logger.warning(f"Schema creation warning: {e}")
+                    logger.warning("Schema creation warning: %s", e)
 
     def _make_claim(self, action: str, task_type: str) -> str:
         """Create a standardized claim string."""
@@ -243,7 +243,7 @@ class HypothesisGraph:
         rows = result.get_as_df()
 
         if len(rows) == 0:
-            logger.warning(f"Hypothesis {hypothesis_id} not found")
+            logger.warning("Hypothesis %s not found", hypothesis_id)
             return 0.5
 
         old_confidence = rows.iloc[0]["h.confidence"]

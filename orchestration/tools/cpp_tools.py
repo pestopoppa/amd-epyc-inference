@@ -72,9 +72,10 @@ class MathTools:
 
         if not self.binary_path.exists():
             logger.warning(
-                f"Math tools binary not found at {self.binary_path}. "
+                "Math tools binary not found at %s. "
                 "Build with: cd /mnt/raid0/llm/llama.cpp/tools/math-tools && "
-                "cmake -B build && cmake --build build"
+                "cmake -B build && cmake --build build",
+                self.binary_path
             )
 
     def _call(self, command: str, **params: Any) -> dict[str, Any]:
@@ -895,5 +896,5 @@ def register_math_tools(registry) -> int:
     ), update=True)
     count += 1
 
-    logger.info(f"Registered {count} C++ math tools")
+    logger.info("Registered %d C++ math tools", count)
     return count

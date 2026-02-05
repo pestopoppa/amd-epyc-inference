@@ -5,6 +5,8 @@ Uses llama.cpp's llama-mtmd-cli for optimized inference.
 Runs 4 workers with 24 threads each for maximum throughput.
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import base64
@@ -357,12 +359,12 @@ async def pdf_endpoint(
         for path in image_paths:
             try:
                 os.unlink(path)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to remove temp file %s: %s", path, e)
         try:
             os.rmdir(temp_dir)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to remove temp dir %s: %s", temp_dir, e)
 
     return {
         "pages": [

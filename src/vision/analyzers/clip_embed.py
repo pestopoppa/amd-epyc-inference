@@ -49,12 +49,12 @@ class ClipEmbedAnalyzer(Analyzer):
     def initialize(self) -> None:
         """Load CLIP model."""
         try:
+            import os
+
             from sentence_transformers import SentenceTransformer
 
             # Set cache directory
-            import os
-
-            os.environ["TRANSFORMERS_CACHE"] = str(VISION_CACHE_DIR)
+            os.environ.setdefault("TRANSFORMERS_CACHE", str(VISION_CACHE_DIR))
 
             self._model = SentenceTransformer(self.model_name)
             logger.info(f"CLIP model '{self.model_name}' loaded")
@@ -176,11 +176,12 @@ class TextEmbedAnalyzer(Analyzer):
     def initialize(self) -> None:
         """Load text embedding model."""
         try:
-            from sentence_transformers import SentenceTransformer
-
             import os
 
-            os.environ["TRANSFORMERS_CACHE"] = str(VISION_CACHE_DIR)
+            from sentence_transformers import SentenceTransformer
+
+            # Set cache directory
+            os.environ.setdefault("TRANSFORMERS_CACHE", str(VISION_CACHE_DIR))
 
             self._model = SentenceTransformer(self.model_name)
             logger.info(f"Text embedding model '{self.model_name}' loaded")

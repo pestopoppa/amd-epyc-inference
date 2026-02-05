@@ -205,8 +205,7 @@ class ProcedureRegistry:
                 self._episodic_store = EpisodicStore()
                 self._embedder = TaskEmbedder()
             except Exception as e:
-                import logging
-                logging.warning(f"Failed to initialize memory: {e}")
+                logger.warning("Failed to initialize memory: %s", e)
                 self._enable_memory = False
 
     def _load_schema(self) -> None:
@@ -233,7 +232,7 @@ class ProcedureRegistry:
                     self.procedures[procedure.id] = procedure
                 except Exception as e:
                     # Log but don't fail - allow partial loading
-                    print(f"Warning: Failed to load {file_path}: {e}")
+                    logger.warning("Failed to load %s: %s", file_path, e)
 
     def _load_procedure_file(self, path: Path) -> Procedure:
         """Load a single procedure from a YAML or JSON file.
@@ -660,8 +659,7 @@ class ProcedureRegistry:
                 initial_q=initial_q,
             )
         except Exception as e:
-            import logging
-            logging.warning(f"Failed to log procedure to memory: {e}")
+            logger.warning("Failed to log procedure to memory: %s", e)
 
     def _execute_step(self, step: ProcedureStep) -> StepResult:
         """Execute a single procedure step.
@@ -733,7 +731,8 @@ class ProcedureRegistry:
                             output=str(output)[:1000],
                             elapsed_seconds=time.perf_counter() - start_time,
                         )
-                except Exception:
+                except Exception as e:
+                    logger.debug("Step %s retry %d failed: %s", step.id, retries, e)
                     continue
 
             return StepResult(

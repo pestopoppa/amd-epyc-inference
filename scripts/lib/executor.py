@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Command Executor for LLM Inference
 
@@ -36,7 +38,7 @@ def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
             timeouts = reg._raw.get("runtime_defaults", {}).get("timeouts", {})
             cat_data = timeouts.get(category, {})
             return cat_data.get(key, timeouts.get("default", fallback))
-    except Exception:
+    except Exception as e:
         pass
     return fallback
 
@@ -71,7 +73,7 @@ def get_binary_paths(registry: Optional["ModelRegistry"] = None) -> dict[str, st
     if registry is None:
         try:
             registry = load_registry()
-        except Exception:
+        except Exception as e:
             pass
 
     if registry and hasattr(registry, "data"):
@@ -143,7 +145,7 @@ def get_server_defaults(registry: Optional["ModelRegistry"] = None) -> dict:
     if registry is None:
         try:
             registry = load_registry()
-        except Exception:
+        except Exception as e:
             pass
 
     if registry and hasattr(registry, "data"):
@@ -289,7 +291,7 @@ class ServerManager:
                                     if 'n_expert_used' in line:
                                         print(f"      [DEBUG] {line.strip()}", flush=True)
                                         break
-                        except Exception:
+                        except Exception as e:
                             pass
                     return True
             except requests.exceptions.RequestException:
@@ -307,7 +309,7 @@ class ServerManager:
                                 print(f"    [SERVER] Process died. Last 20 lines of stderr:", flush=True)
                                 for line in lines[-20:]:
                                     print(f"      {line.rstrip()}", flush=True)
-                    except Exception:
+                    except Exception as e:
                         pass
                 return False
 

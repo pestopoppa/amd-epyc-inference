@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """TTFT benchmark comparing JSON vs TOON encoding for orchestrator."""
 import json
 import time

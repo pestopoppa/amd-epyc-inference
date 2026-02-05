@@ -31,9 +31,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -586,6 +589,7 @@ def main() -> int:
         print("\nCancelled")
         return 130
     except Exception as e:
+        logger.error("CLI session command error: %s", e)
         print(f"Error: {e}", file=sys.stderr)
         return 1
 

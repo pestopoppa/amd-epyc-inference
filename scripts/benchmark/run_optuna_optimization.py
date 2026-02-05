@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Standalone Optuna Optimization for Orchestrator
 
@@ -92,7 +94,7 @@ def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
         timeouts = data.get("runtime_defaults", {}).get("timeouts", {})
         cat_data = timeouts.get(category, {})
         return cat_data.get(key, timeouts.get("default", fallback))
-    except Exception:
+    except Exception as e:
         return fallback
 
 SERVER_HEALTH_TIMEOUT = 60  # seconds (local health check, not registry)
@@ -278,7 +280,7 @@ def kill_port(port: int):
                 except ProcessLookupError:
                     pass
             time.sleep(1)
-    except Exception:
+    except Exception as e:
         pass
 
 
@@ -291,7 +293,7 @@ def wait_for_health(url: str, timeout: int = _read_registry_timeout("external", 
                 resp = client.get(f"{url}/health")
                 if resp.status_code == 200:
                     return True
-        except Exception:
+        except Exception as e:
             pass
         time.sleep(1)
     return False
@@ -305,7 +307,7 @@ def get_local_ip() -> str:
         ip = s.getsockname()[0]
         s.close()
         return ip
-    except Exception:
+    except Exception as e:
         return "localhost"
 
 
@@ -574,7 +576,7 @@ def run_test_suite(
                         try:
                             json.loads(data.get("answer", ""))
                             schema_valid += 1
-                        except:
+                        except Exception as e:
                             pass
 
                     # Execution success (code ran without error)
@@ -798,7 +800,7 @@ def optimize_layer(
     try:
         study = optuna.load_study(study_name=study_name, storage=storage)
         print(f"Resuming existing study with {len(study.trials)} trials")
-    except:
+    except Exception as e:
         study = optuna.create_study(
             study_name=study_name,
             storage=storage,

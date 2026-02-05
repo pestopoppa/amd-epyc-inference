@@ -94,7 +94,7 @@ def check_orchestrator_health(url: str = "http://localhost:8000") -> bool:
     try:
         resp = httpx.get(f"{url}/health", timeout=5)
         return resp.status_code == 200
-    except Exception:
+    except Exception as e:
         return False
 
 

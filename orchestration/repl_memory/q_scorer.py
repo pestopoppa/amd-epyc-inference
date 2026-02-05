@@ -14,6 +14,7 @@ keeping Q-value computation off the critical inference path.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -24,6 +25,8 @@ from .embedder import TaskEmbedder
 from .episodic_store import EpisodicStore
 from .progress_logger import EventType, ProgressEntry, ProgressLogger, ProgressReader
 from .staged_scorer import StagedQScorer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

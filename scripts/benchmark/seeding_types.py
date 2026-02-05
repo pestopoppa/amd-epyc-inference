@@ -47,7 +47,7 @@ def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
         timeouts = data.get("runtime_defaults", {}).get("timeouts", {})
         cat_data = timeouts.get(category, {})
         return cat_data.get(key, timeouts.get("default", fallback))
-    except Exception:
+    except Exception as e:
         return fallback
 
 
@@ -231,7 +231,7 @@ class _State:
         if self._poll_client is not None:
             try:
                 self._poll_client.close()
-            except Exception:
+            except Exception as e:
                 pass
             self._poll_client = None
 

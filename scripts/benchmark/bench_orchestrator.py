@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """
 Orchestrator Benchmark Runner
 
@@ -411,7 +413,7 @@ def evaluate_criteria(
                     passed = True
                 else:
                     passed = False
-            except:
+            except Exception as e:
                 passed = False
         results["answer_is_valid_json"] = {"passed": passed}
         if not passed:
@@ -429,7 +431,7 @@ def evaluate_criteria(
             else:
                 data = json.loads(answer)
             has_keys = all(k in data for k in required_keys)
-        except:
+        except Exception as e:
             has_keys = False
         results["json_has_keys"] = {"passed": has_keys, "required": required_keys}
         if not has_keys:

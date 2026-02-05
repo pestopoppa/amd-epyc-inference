@@ -11,6 +11,7 @@ Enhanced with failure anti-memory and hypothesis tracking from Graphiti-inspired
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -18,6 +19,8 @@ import numpy as np
 
 from .embedder import TaskEmbedder
 from .episodic_store import EpisodicStore, MemoryEntry
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .failure_graph import FailureGraph

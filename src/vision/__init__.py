@@ -7,6 +7,12 @@ This package provides:
 - Video frame extraction and analysis
 """
 
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
+
 from src.vision.config import (
     VISION_DATA_DIR,
     VISION_THUMBS_DIR,

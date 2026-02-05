@@ -1,10 +1,15 @@
 """Web tools - HTTP requests, search, scraping."""
 
+from __future__ import annotations
+
 import json
+import logging
 import time
 import urllib.parse
 import urllib.request
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def http_get(url: str, headers: dict | None = None, timeout: int = 30) -> dict:
