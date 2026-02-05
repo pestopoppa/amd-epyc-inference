@@ -16,8 +16,22 @@ from src.tool_registry import ToolCategory, ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-# Default canvas directory
-CANVAS_DIR = Path("/mnt/raid0/llm/claude/logs/canvases")
+# Canvas directory is determined lazily to avoid import-time config access
+_canvas_dir_cache: Path | None = None
+
+
+def _get_canvas_dir() -> Path:
+    """Get the canvas directory from config or fallback."""
+    global _canvas_dir_cache
+    if _canvas_dir_cache is None:
+        try:
+            from src.config import get_config
+
+            _canvas_dir_cache = get_config().paths.log_dir / "canvases"
+        except Exception:
+            # Fallback if config not available
+            _canvas_dir_cache = Path.cwd() / "logs" / "canvases"
+    return _canvas_dir_cache
 
 
 def export_reasoning_canvas(
@@ -160,7 +174,7 @@ def list_canvases(directory: str | None = None) -> str:
     import json
     from datetime import datetime
 
-    search_dir = Path(directory) if directory else CANVAS_DIR
+    search_dir = Path(directory) if directory else _get_canvas_dir()
 
     if not search_dir.exists():
         return json.dumps({"status": "success", "canvases": [], "message": "No canvases directory"})

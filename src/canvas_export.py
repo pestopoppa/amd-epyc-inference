@@ -23,8 +23,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Default canvas directory (on RAID per CLAUDE.md)
-DEFAULT_CANVAS_DIR = Path("/mnt/raid0/llm/claude/logs/canvases")
+# Canvas directory is determined lazily to avoid import-time config access
+_canvas_dir_cache: Path | None = None
+
+
+def _get_canvas_dir() -> Path:
+    """Get the canvas directory from config or fallback."""
+    global _canvas_dir_cache
+    if _canvas_dir_cache is None:
+        try:
+            from src.config import get_config
+
+            _canvas_dir_cache = get_config().paths.log_dir / "canvases"
+        except Exception:
+            # Fallback if config not available
+            _canvas_dir_cache = Path.cwd() / "logs" / "canvases"
+    return _canvas_dir_cache
 
 # Node dimensions
 NODE_WIDTH = 250
@@ -669,6 +683,7 @@ def get_default_canvas_path(graph_type: str = "hypothesis") -> Path:
     Returns:
         Path to default canvas location
     """
-    DEFAULT_CANVAS_DIR.mkdir(parents=True, exist_ok=True)
+    canvas_dir = _get_canvas_dir()
+    canvas_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    return DEFAULT_CANVAS_DIR / f"{graph_type}_{timestamp}.canvas"
+    return canvas_dir / f"{graph_type}_{timestamp}.canvas"

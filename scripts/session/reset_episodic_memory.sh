@@ -6,8 +6,9 @@ set -euo pipefail
 # What it does:
 #   1. Truncates the SQLite memories table (preserves schema)
 #   2. Resets FAISS index to empty (rewrites embeddings.faiss + id_map.npy)
-#   3. Clears seen_questions.jsonl so seeding can re-sample all questions
-#   4. Sends SIGHUP to the API process so it reinitializes its in-memory state
+#   3. Archives checkpoint JSONL files (which contain seen question IDs)
+#   4. Clears seen_questions.jsonl so seeding can re-sample all questions
+#   5. Sends SIGHUP to the API process so it reinitializes its in-memory state
 #
 # What it does NOT do:
 #   - Delete database files (which breaks the running API)
@@ -33,15 +34,23 @@ fi
 echo "=== Episodic Memory Reset ==="
 
 # 1. Clear SQLite memories table
-if [[ -f "$DB_PATH" ]]; then
-    count=$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM memories;" 2>/dev/null || echo "0")
-    sqlite3 "$DB_PATH" "DELETE FROM memories;"
-    echo "  episodic.db: cleared $count memories (schema preserved)"
-else
-    echo "  episodic.db: not found (will be created on API start)"
-fi
+python3 -c "
+import sqlite3
+from pathlib import Path
 
-# 2. Reset FAISS index to empty
+db_path = Path('$DB_PATH')
+if db_path.exists():
+    conn = sqlite3.connect(db_path)
+    count = conn.execute('SELECT COUNT(*) FROM memories;').fetchone()[0]
+    conn.execute('DELETE FROM memories;')
+    conn.commit()
+    conn.close()
+    print(f'  episodic.db: cleared {count} memories (schema preserved)')
+else:
+    print('  episodic.db: not found (will be created on API start)')
+"
+
+# 2. Reset FAISS index to empty (1024-dim for BGE-large-en-v1.5)
 python3 -c "
 import sys
 sys.path.insert(0, '/mnt/raid0/llm/claude')
@@ -49,25 +58,32 @@ from pathlib import Path
 import numpy as np
 try:
     import faiss
-    index = faiss.IndexFlatIP(896)  # Qwen2.5-0.5B hidden dim
+    index = faiss.IndexFlatIP(1024)  # BGE-large-en-v1.5 embedding dim
     faiss.write_index(index, '$FAISS_PATH')
     np.save('$IDMAP_PATH', np.array([], dtype=object))
-    print('  FAISS index: reset to empty (896-dim)')
+    print('  FAISS index: reset to empty (1024-dim)')
 except ImportError:
     print('  FAISS: not installed, skipping index reset')
     print('  (index will be recreated on next API start)')
 "
 
-# 3. Clear seen questions
+# 3. Archive checkpoint JSONL files (contain seen question IDs)
 if [[ "$KEEP_SEEN" == "false" ]]; then
-    if [[ -f "$SEEN_PATH" ]]; then
-        count=$(wc -l < "$SEEN_PATH" 2>/dev/null || echo "0")
-        truncate -s 0 "$SEEN_PATH"
-        echo "  seen_questions.jsonl: cleared $count entries"
+    checkpoint_count=$(find "$EVAL_DIR" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l)
+    if [[ "$checkpoint_count" -gt 0 ]]; then
+        archive_dir="$EVAL_DIR/archive_$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$archive_dir"
+        mv "$EVAL_DIR"/*.jsonl "$archive_dir/" 2>/dev/null || true
+        echo "  checkpoints: archived $checkpoint_count files to $(basename "$archive_dir")"
     else
-        echo "  seen_questions.jsonl: not found"
+        echo "  checkpoints: none found"
     fi
+
+    # Recreate empty seen_questions.jsonl
+    touch "$SEEN_PATH"
+    echo "  seen_questions.jsonl: reset"
 else
+    echo "  checkpoints: kept (--keep-seen)"
     echo "  seen_questions.jsonl: kept (--keep-seen)"
 fi
 
