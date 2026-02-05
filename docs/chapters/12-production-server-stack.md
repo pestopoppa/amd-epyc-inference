@@ -20,9 +20,9 @@ Managed by `orchestrator_stack.py`, the system provides graceful start/stop, hea
 | 8085 | ingest_long_context | Qwen3-Next-80B-A3B Q4_K_M | MoE4 (NO SPEC!) | 6.3 t/s | ~45GB |
 | 8086 | worker_vision | Qwen2.5-VL-7B Q4_K_M + mmproj | None (VL) | ~15 t/s | ~8GB |
 | 8087 | vision_escalation | Qwen3-VL-30B-A3B Q4_K_M + mmproj | MoE4 | ~10 t/s | ~20GB |
-| 8090 | embedder | Qwen2.5-Coder-0.5B Q8_0 | — | — | ~1GB |
+| 8090-8095 | embedder (6x) | BGE-large-en-v1.5 F16 | probe-first | — | ~4GB |
 
-**Total HOT RAM**: ~535GB (47% of 1130GB), leaving ~595GB for KV cache and OS.
+**Total HOT RAM**: ~538GB (48% of 1130GB), leaving ~592GB for KV cache and OS.
 
 ### Auxiliary Services
 

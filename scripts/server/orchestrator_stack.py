@@ -111,7 +111,13 @@ PORT_MAP = {
     "architect_general": 8083,
     "architect_coding": 8084,
     "ingest_long_context": 8085,
-    "embedder": 8090,  # Embedding server for episodic memory
+    # Embedding servers (6 parallel instances for redundancy)
+    "embedder": 8090,  # Primary embedding server
+    "embedder_1": 8091,
+    "embedder_2": 8092,
+    "embedder_3": 8093,
+    "embedder_4": 8094,
+    "embedder_5": 8095,
     "orchestrator": 8000,
     "document_formalizer": 9001,
 }
@@ -150,15 +156,23 @@ HOT_SERVERS = [
     {"port": 8086, "roles": ["worker_vision"], "vision": True, "vision_type": "worker"},
     {"port": 8087, "roles": ["vision_escalation"], "vision": True, "vision_type": "escalation"},
     # worker_code REMOVED - route to coder_escalation (32B is faster + better quality)
-    {"port": 8090, "roles": ["embedder"], "embedding": True},  # Embedding server
+    # Parallel BGE embedder instances (6 for redundancy, ~4GB total)
+    {"port": 8090, "roles": ["embedder"], "embedding": True},
+    {"port": 8091, "roles": ["embedder_1"], "embedding": True},
+    {"port": 8092, "roles": ["embedder_2"], "embedding": True},
+    {"port": 8093, "roles": ["embedder_3"], "embedding": True},
+    {"port": 8094, "roles": ["embedder_4"], "embedding": True},
+    {"port": 8095, "roles": ["embedder_5"], "embedding": True},
     # Architects in HOT tier (always resident)
     {"port": 8083, "roles": ["architect_general"]},
     {"port": 8084, "roles": ["architect_coding"]},
     {"port": 8085, "roles": ["ingest_long_context"]},
 ]
 
-# Embedding model (lightweight, always loaded)
-EMBEDDING_MODEL_PATH = str(_PATHS["model_base"] / "lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
+# Embedding model: BGE-large-en-v1.5 (purpose-built for embeddings, 1024 dims)
+# 6 parallel instances provide redundancy and reduce latency via fan-out
+EMBEDDING_MODEL_PATH = str(_PATHS["models_dir"] / "bge-large-en-v1.5-f16.gguf")
+EMBEDDER_PORTS = [8090, 8091, 8092, 8093, 8094, 8095]
 
 # Worker pool models (FIXED paths to existing files)
 # NOTE: worker_code removed - route all code tasks to coder_escalation (32B, faster + better quality)
@@ -395,7 +409,7 @@ def build_server_command(
                 "--flash-attn", "on",
             ]
 
-    # Embedding server mode - lightweight, dedicated to embeddings
+    # Embedding server mode - BGE-large with CLS pooling
     if embedding_mode:
         return [
             str(LLAMA_SERVER),
@@ -403,9 +417,10 @@ def build_server_command(
             "--host", "127.0.0.1",
             "--port", str(port),
             "-np", "4",  # 4 parallel slots for embedding requests
-            "-c", "4096",  # Small context (embeddings don't need long context)
-            "-t", "8",  # 8 threads sufficient for small model
+            "-c", "512",  # BGE works with short contexts
+            "-t", "4",  # 4 threads per instance (6 instances = 24 threads total)
             "--embeddings",  # Enable embedding endpoint
+            "--pooling", "cls",  # BGE uses CLS token pooling (standard BERT)
             "--flash-attn", "on",
         ]
 
@@ -560,15 +575,16 @@ def start_server(
 
     # Embedding mode uses dedicated config, no registry lookup needed
     if embedding_mode:
-        log_file = LOG_DIR / f"llama-server-{port}.log"
+        log_file = LOG_DIR / f"embedder-{port}.log"
         LOG_DIR.mkdir(parents=True, exist_ok=True)
 
         cmd = build_server_command(None, port, dev_mode=False, embedding_mode=True)
-        model_name = "Qwen2.5-Coder-0.5B (embeddings)"
+        model_name = "BGE-large-en-v1.5 (embeddings)"
+        instance_idx = port - 8090  # 0-5 for ports 8090-8095
 
-        print(f"  Starting port {port}: {model_name}")
+        print(f"  Starting embedder #{instance_idx} on port {port}: {model_name}")
         print(f"    Roles: {', '.join(roles)}")
-        print(f"    Command: {' '.join(cmd[:5])}...")
+        print(f"    Command: {' '.join(cmd[:6])}...")
 
         with open(log_file, "w") as log:
             env = os.environ.copy()
@@ -584,9 +600,9 @@ def start_server(
         print(f"    Waiting for health...")
 
         if wait_for_health(port, timeout=60):  # Faster timeout for small model
-            print(f"    [OK] Embedding server ready")
+            print(f"    [OK] Embedder #{instance_idx} ready")
             return ProcessInfo(
-                role="embedder",
+                role=roles[0],  # Use actual role name (embedder, embedder_1, etc.)
                 pid=proc.pid,
                 port=port,
                 started_at=datetime.now().isoformat(),
@@ -594,7 +610,7 @@ def start_server(
                 log_file=str(log_file),
             )
         else:
-            print(f"    [FAIL] Embedding server did not become healthy")
+            print(f"    [FAIL] Embedder #{instance_idx} did not become healthy")
             print(f"    Check log: {log_file}")
             kill_process(proc.pid)
             return None
@@ -1010,7 +1026,56 @@ def cmd_reload(args: argparse.Namespace) -> int:
     for component in args.components:
         print(f"Reloading {component}...")
 
-        if component == "orchestrator":
+        # Special case: reload all embedders at once
+        if component == "embedders":
+            print("  Reloading all 6 BGE embedder instances...")
+
+            # Kill by state file entries
+            for port in EMBEDDER_PORTS:
+                key = f"server_{port}"
+                role = "embedder" if port == 8090 else f"embedder_{port - 8090}"
+                if key in state:
+                    kill_process(state[key].pid)
+                    del state[key]
+                if role in state:
+                    del state[role]
+
+            # Also kill by port (in case state is stale)
+            for port in EMBEDDER_PORTS:
+                if is_port_in_use(port):
+                    try:
+                        result = subprocess.run(
+                            ["lsof", "-t", f"-i:{port}"],
+                            capture_output=True, text=True,
+                        )
+                        if result.stdout.strip():
+                            for pid_str in result.stdout.strip().split("\n"):
+                                kill_process(int(pid_str))
+                                print(f"    Killed stale process on port {port}")
+                    except Exception:
+                        pass
+
+            time.sleep(2)  # Wait for ports to free
+
+            # Start all embedders
+            success_count = 0
+            for port in EMBEDDER_PORTS:
+                role = "embedder" if port == 8090 else f"embedder_{port - 8090}"
+                info = start_server(
+                    port, [role], registry, dev_mode=False,
+                    embedding_mode=True,
+                )
+                if info:
+                    state[f"server_{port}"] = info
+                    state[role] = info
+                    success_count += 1
+
+            print(f"  [OK] {success_count}/{len(EMBEDDER_PORTS)} embedders restarted")
+            if success_count == 0:
+                return 1
+            continue
+
+        elif component == "orchestrator":
             # Stop existing
             if "orchestrator" in state:
                 kill_process(state["orchestrator"].pid)
@@ -1145,20 +1210,26 @@ def init_memrl_and_tools() -> bool:
         else:
             print(f"  [WARN] Seed loader failed: {result.stderr[:100] if result.stderr else 'no output'}")
 
-    # Warm up embedding model with test query
+    # Warm up all embedding servers with test query
     try:
         import urllib.request
         import urllib.error
 
         test_payload = json.dumps({"content": "test embedding warmup"}).encode()
-        req = urllib.request.Request(
-            "http://localhost:8090/embedding",
-            data=test_payload,
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            if resp.status == 200:
-                print("  [OK] Embedding model warmed up")
+        healthy_count = 0
+        for port in EMBEDDER_PORTS:
+            try:
+                req = urllib.request.Request(
+                    f"http://localhost:{port}/embedding",
+                    data=test_payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    if resp.status == 200:
+                        healthy_count += 1
+            except Exception:
+                pass
+        print(f"  [OK] Embedding servers warmed up: {healthy_count}/{len(EMBEDDER_PORTS)} healthy")
     except Exception as e:
         print(f"  [WARN] Embedding warmup failed: {e}")
 

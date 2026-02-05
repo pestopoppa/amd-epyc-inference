@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-02 (Test coverage expansion: +314 tests across 18 new files. 2015 tests pass, 67.48% coverage.)
+**Last Updated**: 2026-02-05 (Added JSON Canvas + Plugin Architecture handoff)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -27,6 +27,7 @@
 | **MCP Knowledge Tools** | — | **MEDIUM** | `handoffs/active/mcp-knowledge-tools.md` | ✅ PHASES 1-2 COMPLETE (5 knowledge tools + MCP server, 35 tests passing). Phase 3 (MCP client) deferred. |
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
 | **Orchestrator real mode** | — | **LOW** | `handoffs/active/orchestrator.md` | 📋 READY (stack infrastructure complete, live verification pending) |
+| **JSON Canvas + Plugin Architecture** | — | **MEDIUM** | `handoffs/active/json-canvas-plugin-architecture.md` | 📋 NEW (visual reasoning + MCP tool plugins) |
 
 ---
 

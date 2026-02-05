@@ -61,7 +61,7 @@ class FAISSEmbeddingStore:
     def __init__(
         self,
         path: Path = DEFAULT_FAISS_PATH,
-        dim: int = 896,  # Qwen2.5-0.5B hidden dim
+        dim: int = 1024,  # BGE-large embedding dimension
     ):
         """
         Initialize FAISS embedding store.
@@ -251,7 +251,7 @@ class NumpyEmbeddingStore:
     def __init__(
         self,
         path: Path = DEFAULT_FAISS_PATH,
-        dim: int = 896,
+        dim: int = 1024,  # BGE-large embedding dimension
     ):
         self.path = Path(path)
         self.dim = dim

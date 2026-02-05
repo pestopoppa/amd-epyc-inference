@@ -179,7 +179,10 @@ Workers are **stateless** and cheap; many run concurrently.
 - Tiny model for speculative decoding (co-loaded with spec decode servers)
 - Embedding server for episodic memory (MemRL)
 - **Draft Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0 (co-loaded on ports 8081, 8082)
-- **Embedder**: Qwen2.5-Coder-0.5B Q8_0 (port 8090, dedicated embedding endpoint)
+- **Embedder**: BGE-large-en-v1.5 F16 (6 parallel instances, ports 8090-8095)
+  - Probe-first architecture: health probe all servers, first responder gets request
+  - 1024-dim embeddings with CLS pooling (standard BERT)
+  - Hotswap: `orchestrator_stack.py reload embedders`
 
 ### Formalizers (Preprocessing)
 

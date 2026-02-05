@@ -1,9 +1,11 @@
 """
 TaskEmbedder: Generate embeddings for TaskIR and related content.
 
-Uses Qwen2.5-Coder-0.5B via llama-server /embedding endpoint for efficient embedding.
+Uses BGE-large-en-v1.5 via llama-server /embedding endpoint for efficient embedding.
 Falls back to subprocess (llama-embedding) if server unavailable.
 Falls back to hash-based pseudo-embeddings if model is unavailable.
+
+For parallel fan-out to multiple servers, see parallel_embedder.py.
 
 Performance:
 - HTTP server: 2-5ms per embedding (40x faster)
@@ -25,9 +27,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Default model path (Qwen2.5-Coder-0.5B for embeddings)
-# Use lmstudio path structure per model_registry.yaml (model_base_path + relative path)
-DEFAULT_MODEL_PATH = Path("/mnt/raid0/llm/lmstudio/models/lmstudio-community/Qwen2.5-Coder-0.5B-GGUF/Qwen2.5-Coder-0.5B-Q8_0.gguf")
+# Default model path (BGE-large-en-v1.5 for embeddings)
+# BGE-large produces 1024-dim embeddings, purpose-built for similarity search
+DEFAULT_MODEL_PATH = Path("/mnt/raid0/llm/models/bge-large-en-v1.5-f16.gguf")
 DEFAULT_EMBEDDING_BINARY = Path("/mnt/raid0/llm/llama.cpp/build/bin/llama-embedding")
 DEFAULT_SERVER_URL = "http://127.0.0.1:8090"
 
@@ -38,12 +40,13 @@ class EmbeddingConfig:
 
     model_path: Path = DEFAULT_MODEL_PATH
     embedding_binary: Path = DEFAULT_EMBEDDING_BINARY
-    embedding_dim: int = 896  # Qwen2.5-0.5B hidden dim
+    embedding_dim: int = 1024  # BGE-large embedding dimension
     threads: int = 8  # Use fewer threads for embedding (fast operation)
     timeout: int = 30  # Seconds
     use_fallback: bool = True  # Fall back to hash-based if model unavailable
     server_url: str = DEFAULT_SERVER_URL  # Embedding server URL
     use_server: bool = True  # Try HTTP server first (40x faster)
+    use_parallel: bool = True  # Use parallel embedder client (probe-first to 6 servers)
 
 
 class TaskEmbedder:
@@ -51,9 +54,10 @@ class TaskEmbedder:
     Generate embeddings for TaskIR and other orchestration content.
 
     Embedding strategy (in priority order):
-    1. HTTP server (http://127.0.0.1:8090/embedding) - 2-5ms
-    2. Subprocess (llama-embedding binary) - 50-200ms
-    3. Hash-based pseudo-embeddings - fallback
+    1. Parallel HTTP servers (probe-first to ports 8090-8095) - 5-15ms with redundancy
+    2. Single HTTP server fallback (port 8090) - 2-5ms
+    3. Subprocess (llama-embedding binary) - 50-200ms
+    4. Hash-based pseudo-embeddings - fallback
 
     Fallback:
     - If model unavailable, use hash-based pseudo-embeddings
@@ -66,6 +70,7 @@ class TaskEmbedder:
         self._model_available = self._check_model()
         self._server_available: Optional[bool] = None  # Lazy check
         self._http_client = None  # Lazy httpx client
+        self._parallel_client = None  # Lazy parallel client
 
     def _check_model(self) -> bool:
         """Check if embedding model and binary are available."""
@@ -330,9 +335,24 @@ class TaskEmbedder:
         """
         return self._generate_embedding(text)
 
+    def _get_parallel_client(self):
+        """Get or create parallel embedder client (lazy initialization)."""
+        if self._parallel_client is None:
+            from orchestration.repl_memory.parallel_embedder import ParallelEmbedderClient
+            self._parallel_client = ParallelEmbedderClient()
+        return self._parallel_client
+
     def _generate_embedding(self, text: str) -> np.ndarray:
-        """Generate embedding using available method (HTTP > subprocess > hash)."""
-        # Try HTTP server first (2-5ms)
+        """Generate embedding using available method (parallel > single HTTP > subprocess > hash)."""
+        # Try parallel embedder first (probe-first to 6 servers)
+        if self.config.use_parallel and self.config.use_server:
+            try:
+                client = self._get_parallel_client()
+                return client.embed_sync(text)
+            except Exception as e:
+                logger.warning("Parallel embedder failed (%s), falling back to single server", e)
+
+        # Try single HTTP server (2-5ms)
         if self._check_server():
             try:
                 return self._generate_embedding_http(text)
@@ -387,7 +407,10 @@ class TaskEmbedder:
         return self._check_server()
 
     def close(self) -> None:
-        """Close HTTP client connection."""
+        """Close HTTP client connections."""
         if self._http_client is not None:
             self._http_client.close()
             self._http_client = None
+        if self._parallel_client is not None:
+            self._parallel_client.close_sync()
+            self._parallel_client = None

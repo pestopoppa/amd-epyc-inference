@@ -141,7 +141,7 @@ python scripts/server/orchestrator_stack.py stop --all
 | 8085 | ingest_long_context | Qwen3-Next-80B-A3B-Q4_K_M (~45GB) | MoE4 (NO SPEC!) | 6.3 t/s |
 | 8086 | worker_vision | Qwen2.5-VL-7B-Q4_K_M + mmproj | None (VL) | ~15 t/s |
 | 8087 | vision_escalation | Qwen3-VL-30B-A3B-Q4_K_M + mmproj | MoE4 | ~10 t/s |
-| 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | — | — |
+| 8090-8095 | embedder (6x) | BGE-large-en-v1.5-F16 | probe-first | — |
 
 ### WARM Tier (Burst Capacity, ~1GB)
 

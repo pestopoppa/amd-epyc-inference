@@ -186,7 +186,7 @@ Always resident in memory, loaded at startup:
 | 8082 | worker_explore | Qwen2.5-7B-Instruct-f16 | ~14GB | 44 t/s (spec) |
 | 8084 | architect_coding | Qwen3-Coder-480B-A35B-Q4_K_M | ~280GB | 10.3 t/s |
 | 8086 | worker_vision | Qwen2.5-VL-7B-Q4_K_M | ~4GB | ~15 t/s |
-| 8090 | embedder | Qwen2.5-Coder-0.5B-Q8_0 | ~0.5GB | — |
+| 8090-8095 | embedder (6x) | BGE-large-en-v1.5-F16 | ~4GB | probe-first |
 | 9001 | document_formalizer | LightOnOCR-2-1B | ~2GB | 19x PDF speedup |
 
 **Draft models** (shared by spec decode): ~0.5GB each

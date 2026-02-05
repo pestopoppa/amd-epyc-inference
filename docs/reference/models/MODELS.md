@@ -36,7 +36,7 @@ Comprehensive reference for all models used in the orchestration system.
 | Role | Model | Quant | Port | Purpose |
 |------|-------|-------|------|---------|
 | draft | Qwen2.5-Coder-0.5B-Instruct | Q8_0 | — | Speculative decoding |
-| embedder | Qwen2.5-Coder-0.5B | Q8_0 | 8090 | MemRL episodic memory |
+| embedder (6x) | BGE-large-en-v1.5 | F16 | 8090-8095 | MemRL episodic memory (probe-first) |
 
 ## Memory Footprint
 
