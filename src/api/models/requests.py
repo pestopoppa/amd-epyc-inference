@@ -79,6 +79,10 @@ class RewardRequest(BaseModel):
     context: dict | None = Field(
         default=None, description="Optional metadata (suite, tier, scoring_method)"
     )
+    embedding: list[float] | None = Field(
+        default=None,
+        description="Precomputed embedding for task_description (avoids re-embedding)",
+    )
 
 
 class GateRequest(BaseModel):

@@ -21,6 +21,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+
 from .embedder import TaskEmbedder
 from .episodic_store import EpisodicStore
 from .progress_logger import EventType, ProgressEntry, ProgressLogger, ProgressReader
@@ -440,6 +442,7 @@ class QScorer:
         action: str,
         reward: float,
         context: Dict[str, Any] | None = None,
+        embedding: List[float] | None = None,
     ) -> Dict[str, Any]:
         """Score an externally-evaluated result.
 
@@ -452,6 +455,7 @@ class QScorer:
             action: The action taken (e.g., "frontdoor:direct").
             reward: Pre-computed reward (-1.0 to 1.0).
             context: Additional context to store with the memory.
+            embedding: Precomputed embedding for task_description (avoids re-embedding).
 
         Returns:
             Dict with memories_created and memories_updated counts.
@@ -462,17 +466,20 @@ class QScorer:
         # Clamp reward to valid range
         reward = max(-1.0, min(1.0, reward))
 
-        # Check if similar memory exists
-        task_ir = {
-            "task_type": context.get("task_type", "chat"),
-            "objective": task_description[:200],
-        }
-        embedding = self.embedder.embed_task_ir(task_ir)
+        # Use precomputed embedding or compute it
+        if embedding is not None:
+            emb_array = np.array(embedding, dtype=np.float32)
+        else:
+            task_ir = {
+                "task_type": context.get("task_type", "chat"),
+                "objective": task_description[:200],
+            }
+            emb_array = self.embedder.embed_task_ir(task_ir)
 
         # Search for existing similar memory with same action
         # Note: retrieve_by_similarity returns memories sorted by similarity
         similar = self.store.retrieve_by_similarity(
-            query_embedding=embedding,
+            query_embedding=emb_array,
             k=5,
             action_type="routing",
         )
@@ -504,7 +511,7 @@ class QScorer:
             context["source"] = "external"
 
             memory_id = self.store.store(
-                embedding=embedding,
+                embedding=emb_array,
                 action=action,
                 action_type="routing",
                 context=context,

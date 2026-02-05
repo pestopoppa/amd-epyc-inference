@@ -725,3 +725,6 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 {"ts":"2026-02-05T23:57:00+01:00","session":"ses_20260205_research_context","level":"INFO","cat":"DOCS","msg":"Updated ARCHITECTURE.md","details":"Version 2.5, added Research Context Tracker to module list and security section"}
 {"ts":"2026-02-05T23:58:00+01:00","session":"ses_20260205_research_context","level":"INFO","cat":"DOCS","msg":"Updated chapters/INDEX.md","details":"Updated Ch11 key result to include Research Context Tracker"}
 {"ts":"2026-02-05T23:59:00+01:00","session":"ses_20260205_research_context","level":"INFO","cat":"SESSION_END","msg":"Research Context Tracker implementation complete","details":"outcome=success, 36 tests, 4 files created/modified, docs updated"}
+{"ts":"2026-02-05T23:46:35+01:00","session":"ses_20260205_234635_459962","level":"INFO","cat":"TASK_END","msg":"Condense tool timing logs","details":"outcome=success"}
+{"ts":"2026-02-06T00:53:19+01:00","session":"ses_20260205_234635_459962","level":"INFO","cat":"TASK_START","msg":"Cache embedding for reward injection","details":"Fix timeout by precomputing embedding once for all 3 reward injections"}
+{"ts":"2026-02-06T00:53:51+01:00","session":"ses_20260205_234635_459962","level":"INFO","cat":"TASK_END","msg":"Cache embedding for reward injection","details":"outcome=success"}

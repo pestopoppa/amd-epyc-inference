@@ -198,6 +198,7 @@ def store_external_reward(
     action: str,
     reward: float,
     context: dict | None = None,
+    embedding: list[float] | None = None,
 ) -> bool:
     """Store an externally-computed reward in MemRL.
 
@@ -210,6 +211,7 @@ def store_external_reward(
         action: The action taken (e.g., "frontdoor:direct").
         reward: Pre-computed reward value (-1.0 to 1.0).
         context: Optional additional context to store with the memory.
+        embedding: Precomputed embedding for task_description (avoids re-embedding).
 
     Returns:
         True if reward was stored, False otherwise.
@@ -226,6 +228,7 @@ def store_external_reward(
             action=action,
             reward=reward,
             context=context or {},
+            embedding=embedding,
         )
         if state.progress_logger:
             state.progress_logger.flush()

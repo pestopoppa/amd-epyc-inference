@@ -32,7 +32,12 @@ class StubQScorer:
         pass
 
     def score_external_result(
-        self, task_description: str, action: str, reward: float, context: dict
+        self,
+        task_description: str,
+        action: str,
+        reward: float,
+        context: dict,
+        embedding: list[float] | None = None,
     ) -> dict:
         """Stub external result scoring."""
         return {"memories_created": 1, "memories_updated": 0}

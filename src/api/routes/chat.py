@@ -128,6 +128,9 @@ async def inject_reward(
     Used by orchestrator_eval.py to close the learning loop: after
     deterministic scoring of a benchmark answer, the score is fed back
     as a reward so the Q-scorer can learn from routing decisions.
+
+    Supports precomputed embeddings via `embedding` field to avoid
+    re-embedding the same task_description across multiple reward injections.
     """
     success = await asyncio.to_thread(
         store_external_reward,
@@ -136,6 +139,7 @@ async def inject_reward(
         request.action,
         request.reward,
         request.context,
+        request.embedding,
     )
     return {"success": success}
 

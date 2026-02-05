@@ -843,6 +843,55 @@ def evaluate_question_3way(
     return role_results, rewards, metadata
 
 
+# Embedder server ports for precomputing embeddings
+EMBEDDER_PORTS = [8090, 8091, 8092, 8093, 8094, 8095]
+
+
+def _precompute_embedding(
+    task_description: str,
+    client: "httpx.Client",
+) -> list[float] | None:
+    """Precompute embedding for task_description using embedder servers.
+
+    Tries each embedder port until one succeeds. Returns None on failure
+    (caller will fall back to letting the API compute the embedding).
+
+    Args:
+        task_description: Text to embed (will be truncated to 200 chars).
+        client: HTTP client for requests.
+
+    Returns:
+        List of float embeddings, or None on failure.
+    """
+    # Build the text the same way q_scorer does
+    text = f"type:chat | objective:{task_description[:200]}"
+
+    for port in EMBEDDER_PORTS:
+        try:
+            resp = client.post(
+                f"http://127.0.0.1:{port}/embedding",
+                json={"content": text},
+                timeout=5.0,
+            )
+            if resp.status_code != 200:
+                continue
+
+            data = resp.json()
+            # Parse llama-server response format
+            if "embedding" in data:
+                embedding_data = data["embedding"]
+                if isinstance(embedding_data[0], list):
+                    return embedding_data[0]
+                return embedding_data
+            elif "data" in data and len(data["data"]) > 0:
+                return data["data"][0]["embedding"]
+        except Exception:
+            continue
+
+    logger.debug("All embedder servers failed, will let API compute embedding")
+    return None
+
+
 def _inject_3way_rewards_http(
     prompt: str,
     suite: str,
@@ -857,10 +906,16 @@ def _inject_3way_rewards_http(
     Q-values receive binary rewards for faithful probability estimation.
     Cost metrics are stored in context for later Optuna threshold optimization.
 
+    Precomputes the embedding once and reuses it for all reward injections,
+    avoiding redundant embedding calls that can cause timeouts.
+
     Returns number of rewards successfully injected.
     """
     injected = 0
     cost_metrics = metadata.get("cost_metrics", {})
+
+    # Precompute embedding once for all reward injections (same task_description)
+    embedding = _precompute_embedding(prompt[:200], client)
 
     for action_key, reward in rewards.items():
         try:
@@ -885,14 +940,19 @@ def _inject_3way_rewards_http(
                 "tools_used": action_cost.get("tools_used", 0),
             }
 
+            payload = {
+                "task_description": prompt[:200],
+                "action": action_key,
+                "reward": reward,
+                "context": context,
+            }
+            # Include precomputed embedding if available
+            if embedding is not None:
+                payload["embedding"] = embedding
+
             resp = client.post(
                 f"{url}/chat/reward",
-                json={
-                    "task_description": prompt[:200],
-                    "action": action_key,
-                    "reward": reward,
-                    "context": context,
-                },
+                json=payload,
                 timeout=10,
             )
             if resp.status_code == 200:
