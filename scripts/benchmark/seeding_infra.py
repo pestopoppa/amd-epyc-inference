@@ -238,15 +238,25 @@ def _attempt_recovery(url: str) -> bool:
 # ── Preflight ────────────────────────────────────────────────────────
 
 
-def run_preflight(url: str) -> bool:
+def run_preflight(url: str, restart_api: bool = True) -> bool:
     """Run preflight health checks on orchestrator and backends.
 
     Auto-launches the orchestrator stack if the API is not reachable.
+    If restart_api=True (default), restarts the API to pick up code changes.
     Returns True if all checks pass.
     """
     logger.info("=" * 60)
     logger.info("PREFLIGHT CHECKS")
     logger.info("=" * 60)
+
+    # 0. Restart API if requested (ensures code changes are picked up)
+    if restart_api and _check_port(8000):
+        logger.info("  Restarting API to pick up code changes...")
+        if _kill_port(8000):
+            logger.info("  API stopped, will relaunch below")
+            time.sleep(2)
+        else:
+            logger.warning("  Could not stop API cleanly — continuing anyway")
 
     # 1. Orchestrator API health (auto-launch if down)
     api_healthy = _check_server_health(url)
