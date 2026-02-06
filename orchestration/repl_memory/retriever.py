@@ -137,6 +137,27 @@ class TwoPhaseRetriever:
         embedding = self.embedder.embed_exploration(query, context_preview)
         return self._retrieve(embedding, action_type="exploration")
 
+    def retrieve_for_classification(
+        self,
+        prompt: str,
+        classification_type: str = "routing",
+    ) -> List[RetrievalResult]:
+        """
+        Retrieve memories for classification decision.
+
+        Used by ClassificationRetriever to find similar classification exemplars
+        and return the most confident classification based on Q-value weighted voting.
+
+        Args:
+            prompt: User prompt to classify.
+            classification_type: Type of classification (routing, summarization, etc.).
+
+        Returns:
+            List of RetrievalResult sorted by combined score.
+        """
+        embedding = self.embedder.embed_classification_prompt(prompt, classification_type)
+        return self._retrieve(embedding, action_type="classification")
+
     def _retrieve(
         self,
         embedding: np.ndarray,

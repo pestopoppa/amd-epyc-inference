@@ -187,7 +187,7 @@ class TestClassifyAndRoute:
 
     def test_no_specialist_routing_returns_frontdoor(self):
         """Without specialist_routing feature, returns frontdoor."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = False
             role, strategy = _classify_and_route("Implement a function", "")
 
@@ -196,7 +196,7 @@ class TestClassifyAndRoute:
 
     def test_specialist_routing_disabled_ignores_keywords(self):
         """Specialist routing disabled ignores code keywords."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = False
             role, _ = _classify_and_route("debug this function", "")
 
@@ -222,7 +222,7 @@ class TestClassifyAndRoute:
     )
     def test_code_keywords_route_to_coder_primary(self, keyword: str):
         """Code keywords route to coder_primary."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, strategy = _classify_and_route(f"Please {keyword} this", "")
 
@@ -243,7 +243,7 @@ class TestClassifyAndRoute:
     )
     def test_complex_code_keywords_route_to_escalation(self, keyword: str):
         """Complex code keywords route to coder_escalation."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, strategy = _classify_and_route(f"Fix the {keyword} issue", "")
 
@@ -256,7 +256,7 @@ class TestClassifyAndRoute:
             "architecture",
             "system design",
             "design pattern",
-            "scalability",
+            "scalab",  # prefix match (scalability)
             "microservice",
             "trade-off",
             "tradeoff",
@@ -267,7 +267,7 @@ class TestClassifyAndRoute:
     )
     def test_arch_keywords_route_to_architect(self, keyword: str):
         """Architecture keywords route to architect_general."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, strategy = _classify_and_route(f"Explain the {keyword}", "")
 
@@ -276,7 +276,7 @@ class TestClassifyAndRoute:
 
     def test_no_keyword_match_returns_frontdoor(self):
         """No keyword match returns frontdoor."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, strategy = _classify_and_route("What is the weather?", "")
 
@@ -285,7 +285,7 @@ class TestClassifyAndRoute:
 
     def test_keyword_case_insensitive(self):
         """Keyword matching is case-insensitive."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, _ = _classify_and_route("IMPLEMENT THIS FUNCTION", "")
 
@@ -295,7 +295,7 @@ class TestClassifyAndRoute:
         """Complex code keywords take priority (checked first) over simple code."""
         # Actually checking the implementation - complex_code_keywords are checked
         # after code_keywords, so this tests that both exist in prompt
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             # "concurrent" matches complex_code, but "implement" matches first
             role, _ = _classify_and_route("implement concurrent data structure", "")
@@ -305,7 +305,7 @@ class TestClassifyAndRoute:
 
     def test_only_complex_keyword_routes_to_escalation(self):
         """Only complex keyword routes to escalation."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, _ = _classify_and_route("fix the deadlock issue", "")
 
@@ -313,7 +313,7 @@ class TestClassifyAndRoute:
 
     def test_context_not_used_for_routing(self):
         """Context is not used for keyword routing (only prompt)."""
-        with patch("src.api.routes.chat_routing.features") as mock_features:
+        with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             # Keyword only in context, not prompt
             role, _ = _classify_and_route("hello", "implement a function")

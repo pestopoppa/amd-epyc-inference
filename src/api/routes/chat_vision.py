@@ -27,25 +27,6 @@ if TYPE_CHECKING:
     from src.llm_primitives import LLMPrimitives
 
 
-def _is_ocr_heavy_prompt(prompt: str) -> bool:
-    """Detect if a vision prompt would benefit from deterministic OCR pre-processing.
-
-    ALWAYS returns True — OCR is cheap (~1s via LightOnOCR-2-1B on port 9001)
-    and provides text context that helps the VL model for ANY task:
-    - Text extraction: OCR is primary answer source
-    - Chart analysis: OCR extracts axis labels, values, legends
-    - Document analysis: OCR extracts full text for Twyne/whitepaper/protocol analysis
-    - Scene understanding: OCR captures signage, labels, text overlays
-
-    Args:
-        prompt: The user's vision prompt.
-
-    Returns:
-        Always True. OCR context is universally beneficial.
-    """
-    return True
-
-
 def _needs_structured_analysis(prompt: str) -> bool:
     """Detect if a vision prompt needs full structured analysis beyond OCR.
 
@@ -58,31 +39,25 @@ def _needs_structured_analysis(prompt: str) -> bool:
     Returns:
         True if structured analysis should complement OCR.
     """
-    prompt_lower = prompt.lower()
-    structured_keywords = [
-        "analyze",
-        "architecture",
-        "diagram",
-        "protocol",
-        "economic model",
-        "security audit",
-        "security analysis",
-        "whitepaper",
-        "smart contract",
-        "incentive",
-        "trust assumption",
-        "attack vector",
-        "forensic",
-        "entity extraction",
-        "business relationship",
-        "flow chart",
-        "flowchart",
-        "sequence diagram",
-        "system design",
-        "data flow",
-        "state machine",
-    ]
-    return any(kw in prompt_lower for kw in structured_keywords)
+    from src.classifiers import needs_structured_analysis
+
+    return needs_structured_analysis(prompt)
+
+
+def _is_ocr_heavy_prompt(prompt: str) -> bool:
+    """Check if prompt is OCR-heavy (always True - OCR is now default).
+
+    This function exists for backward compatibility. All vision prompts
+    now use OCR pre-processing by default.
+
+    Args:
+        prompt: The user's vision prompt.
+
+    Returns:
+        Always True - OCR is enabled for all vision prompts.
+    """
+    # OCR is now always enabled for vision prompts
+    return True
 
 
 async def _handle_vision_request(

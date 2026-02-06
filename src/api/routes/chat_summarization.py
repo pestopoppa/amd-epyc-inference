@@ -35,21 +35,9 @@ def _is_summarization_task(prompt: str) -> bool:
     Returns:
         True if this looks like a summarization request.
     """
-    summarization_keywords = [
-        "summarize",
-        "summary",
-        "summarise",
-        "summarisation",
-        "executive summary",
-        "overview",
-        "key points",
-        "main ideas",
-        "tl;dr",
-        "tldr",
-        "synopsis",
-    ]
-    prompt_lower = prompt.lower()
-    return any(kw in prompt_lower for kw in summarization_keywords)
+    from src.classifiers import is_summarization_task
+
+    return is_summarization_task(prompt)
 
 
 def _should_use_two_stage(

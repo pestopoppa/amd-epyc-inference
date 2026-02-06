@@ -207,6 +207,39 @@ class TaskEmbedder:
         preview_truncated = context_preview[:500] if context_preview else ""
         return f"query:{query} | preview:{preview_truncated}"
 
+    def _serialize_classification_prompt(self, prompt: str, classification_type: str) -> str:
+        """Serialize a prompt for classification lookup.
+
+        Args:
+            prompt: User prompt to classify.
+            classification_type: Type of classification (e.g., "routing", "summarization").
+
+        Returns:
+            Serialized string for embedding.
+        """
+        # Truncate long prompts (first 300 chars capture intent)
+        prompt_truncated = prompt[:300] if len(prompt) > 300 else prompt
+        return f"classify:{classification_type} | prompt:{prompt_truncated}"
+
+    def embed_classification_prompt(
+        self,
+        prompt: str,
+        classification_type: str = "routing",
+    ) -> np.ndarray:
+        """Generate embedding for a classification prompt.
+
+        Used by ClassificationRetriever to find similar classification exemplars.
+
+        Args:
+            prompt: User prompt to classify.
+            classification_type: Type of classification (routing, summarization, etc.).
+
+        Returns:
+            Embedding vector (1024-dim for BGE-large).
+        """
+        text = self._serialize_classification_prompt(prompt, classification_type)
+        return self._generate_embedding(text)
+
     def _generate_embedding_llama(self, text: str) -> np.ndarray:
         """Generate embedding using llama-embedding binary."""
         try:

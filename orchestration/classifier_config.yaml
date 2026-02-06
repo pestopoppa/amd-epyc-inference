@@ -1,0 +1,203 @@
+# Classifier Configuration
+# Externalized keywords, patterns, and thresholds for all classifiers.
+# Used by src/classifiers/config_loader.py
+---
+
+# Tier 1: Simple keyword matching (config-driven, no embeddings)
+keyword_matchers:
+  summarization:
+    keywords:
+      - summarize
+      - summary
+      - summarise
+      - summarisation
+      - executive summary
+      - overview
+      - key points
+      - main ideas
+      - "tl;dr"
+      - tldr
+      - synopsis
+    case_sensitive: false
+
+  structured_analysis:
+    keywords:
+      - analyze
+      - architecture
+      - diagram
+      - protocol
+      - economic model
+      - security audit
+      - security analysis
+      - whitepaper
+      - smart contract
+      - incentive
+      - trust assumption
+      - attack vector
+      - forensic
+      - entity extraction
+      - business relationship
+      - flow chart
+      - flowchart
+      - sequence diagram
+      - system design
+      - data flow
+      - state machine
+    case_sensitive: false
+
+  coding_task:
+    keywords:
+      - implement
+      - code
+      - function
+      - "class "
+      - method
+      - debug
+      - refactor
+      - bug
+      - error
+      - exception
+      - compile
+      - syntax
+      - algorithm
+      - data structure
+      - api
+      - endpoint
+      - database
+      - query
+      - sql
+      - test
+      - unit test
+      - integration
+    case_sensitive: false
+
+  stub_final:
+    patterns:
+      - complete
+      - see above
+      - analysis complete
+      - estimation complete
+      - done
+      - finished
+      - see results above
+      - see output above
+      - see structured output above
+      - see integrated results above
+      - see the structured output above
+    normalize: true  # strip, lowercase, remove trailing .
+
+# Tier 2: MemRL-backed routing (semantic matching + keyword fallback)
+routing_classifiers:
+  direct_mode:
+    context_threshold: 20000  # chars - keep REPL for large contexts
+    repl_indicators:
+      - read the file
+      - list files
+      - list the files
+      - look at the file
+      - open the file
+      - read from
+      - write to
+      - save to
+      - execute
+      - run the
+      - run this
+      - search the codebase
+      - find in the
+      - grep for
+      - explore the
+      - scan the
+    use_memrl: true  # MemRL-backed mode classification
+
+  specialist_routing:
+    use_memrl: true  # MemRL-backed specialist routing
+    categories:
+      coder_primary:
+        keywords:
+          - implement
+          - write code
+          - function
+          - "class "
+          - debug
+          - refactor
+          - fix the bug
+          - code review
+          - unit test
+          - algorithm
+          - data structure
+          - regex
+          - parse
+      coder_escalation:
+        keywords:
+          - concurrent
+          - lock-free
+          - distributed
+          - optimize performance
+          - memory leak
+          - race condition
+          - deadlock
+      architect_general:
+        keywords:
+          - architecture
+          - system design
+          - design pattern
+          - scalab
+          - microservice
+          - trade-off
+          - tradeoff
+          - invariant
+          - constraint
+          - cap theorem
+
+# Tier 3: Quality detection thresholds (externalized from hardcoded values)
+# NOTE: These are now in src/config.py ChatPipelineConfig for centralization
+# This section documents the values but ChatPipelineConfig is the source of truth
+quality_detection:
+  # Trigram unique ratio - below this indicates degeneration loops
+  repetition_unique_ratio: 0.5
+  # Ratio of very short lines indicating garbled output
+  garbled_short_line_ratio: 0.6
+  # Minimum meaningful answer length
+  min_answer_length: 50
+  # Prefixes to strip when checking for near-empty output
+  prefix_strip:
+    - "```"
+    - "```python"
+    - "```json"
+    - "Here is"
+    - "The answer is"
+
+# Classification exemplars for MemRL seeding (Phase 5)
+# These become EpisodicStore entries with Q-values for similarity-based routing
+classification_exemplars:
+  summarization:
+    - prompt: "Summarize the key findings of this research paper"
+      expected_role: frontdoor
+    - prompt: "Give me a TL;DR of this document"
+      expected_role: frontdoor
+    - prompt: "What are the main takeaways from this whitepaper?"
+      expected_role: frontdoor
+
+  coding:
+    - prompt: "Implement a binary search algorithm in Python"
+      expected_role: coder_primary
+    - prompt: "Debug this function - it returns wrong values"
+      expected_role: coder_primary
+    - prompt: "Write a unit test for the authentication module"
+      expected_role: coder_primary
+
+  complex_coding:
+    - prompt: "Implement a lock-free queue with ABA problem prevention"
+      expected_role: coder_escalation
+    - prompt: "Fix this race condition in the concurrent map"
+      expected_role: coder_escalation
+    - prompt: "Optimize this database query that causes memory leaks"
+      expected_role: coder_escalation
+
+  architecture:
+    - prompt: "Design a scalable microservice architecture for e-commerce"
+      expected_role: architect_general
+    - prompt: "What design patterns should I use for this system?"
+      expected_role: architect_general
+    - prompt: "Evaluate the trade-offs between these two approaches"
+      expected_role: architect_general

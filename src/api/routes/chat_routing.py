@@ -13,8 +13,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.features import features
-from src.roles import Role
 
 log = logging.getLogger(__name__)
 
@@ -44,37 +42,9 @@ def _should_use_direct_mode(prompt: str, context: str = "") -> bool:
     Returns:
         True if direct mode should be used.
     """
-    prompt_lower = prompt.lower()
+    from src.classifiers import should_use_direct_mode
 
-    # Keep REPL for large contexts (needs peek/grep/summarize_chunks)
-    if context and len(context) > 20000:
-        return False
-
-    # Keep REPL when prompt explicitly needs file/tool operations
-    repl_indicators = [
-        "read the file",
-        "list files",
-        "list the files",
-        "look at the file",
-        "open the file",
-        "read from",
-        "write to",
-        "save to",
-        "execute",
-        "run the",
-        "run this",
-        "search the codebase",
-        "find in the",
-        "grep for",
-        "explore the",
-        "scan the",
-    ]
-    if any(ind in prompt_lower for ind in repl_indicators):
-        return False
-
-    # Direct mode for everything else — reasoning, formatting, QA,
-    # math proofs, instruction following, tool-call JSON generation, etc.
-    return True
+    return should_use_direct_mode(prompt, context)
 
 
 def _select_mode(
@@ -141,67 +111,10 @@ def _classify_and_route(prompt: str, context: str = "", has_image: bool = False)
     Returns:
         Tuple of (role_name, routing_strategy).
     """
-    # Vision: has image data — route to VL server (different model type)
-    if has_image:
-        return "worker_vision", "classified"
+    from src.classifiers import classify_and_route
 
-    # Specialist routing: when enabled, use keyword heuristics to route
-    # code/architecture tasks to stronger specialists (32B, 235B, 480B).
-    # Gated behind feature flag — only activate when Q-values demonstrate
-    # clear benefit via comparative seeding (Phase 3).
-    if features().specialist_routing:
-        prompt_lower = prompt.lower()
-
-        # Code generation / debugging → 32B coder (39 t/s with spec decode)
-        code_keywords = [
-            "implement",
-            "write code",
-            "function",
-            "class ",
-            "debug",
-            "refactor",
-            "fix the bug",
-            "code review",
-            "unit test",
-            "algorithm",
-            "data structure",
-            "regex",
-            "parse",
-        ]
-        if any(kw in prompt_lower for kw in code_keywords):
-            return str(Role.CODER_PRIMARY), "classified"
-
-        # Complex code requiring escalation → 32B coder escalation
-        complex_code_keywords = [
-            "concurrent",
-            "lock-free",
-            "distributed",
-            "optimize performance",
-            "memory leak",
-            "race condition",
-            "deadlock",
-        ]
-        if any(kw in prompt_lower for kw in complex_code_keywords):
-            return str(Role.CODER_ESCALATION), "classified"
-
-        # Architecture / system design → 235B architect (6.75 t/s)
-        arch_keywords = [
-            "architecture",
-            "system design",
-            "design pattern",
-            "scalab",
-            "microservice",
-            "trade-off",
-            "tradeoff",
-            "invariant",
-            "constraint",
-            "cap theorem",
-        ]
-        if any(kw in prompt_lower for kw in arch_keywords):
-            return str(Role.ARCHITECT_GENERAL), "classified"
-
-    # Default: frontdoor (30B MoE) handles all text prompts
-    return str(Role.FRONTDOOR), "rules"
+    result = classify_and_route(prompt, context, has_image)
+    return result.role, result.strategy
 
 
 # ============================================================================
@@ -259,32 +172,9 @@ def _is_coding_task(prompt: str) -> bool:
     Returns:
         True if the task is coding-related.
     """
-    prompt_lower = prompt.lower()
-    coding_indicators = [
-        "implement",
-        "code",
-        "function",
-        "class ",
-        "method",
-        "debug",
-        "refactor",
-        "bug",
-        "error",
-        "exception",
-        "compile",
-        "syntax",
-        "algorithm",
-        "data structure",
-        "api",
-        "endpoint",
-        "database",
-        "query",
-        "sql",
-        "test",
-        "unit test",
-        "integration",
-    ]
-    return any(indicator in prompt_lower for indicator in coding_indicators)
+    from src.classifiers import is_coding_task
+
+    return is_coding_task(prompt)
 
 
 def _select_role_by_confidence(

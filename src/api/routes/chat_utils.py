@@ -94,21 +94,6 @@ LONG_CONTEXT_CONFIG = {
     "max_turns": _chat_cfg.long_context_max_turns,
 }
 
-_STUB_PATTERNS = {
-    "complete",
-    "see above",
-    "analysis complete",
-    "estimation complete",
-    "done",
-    "finished",
-    "see results above",
-    "see output above",
-    "see structured output above",
-    "see integrated results above",
-    "see the structured output above",
-}
-
-
 def _estimate_tokens(text: str) -> int:
     """Estimate token count from text (rough: 4 chars per token)."""
     return len(text) // 4
@@ -121,8 +106,9 @@ def _is_stub_final(text: str) -> bool:
     FINAL("Analysis complete. See above.") — the real content
     is in result.output, not result.final_answer.
     """
-    normalized = text.strip().rstrip(".").lower()
-    return any(p in normalized for p in _STUB_PATTERNS)
+    from src.classifiers import is_stub_final
+
+    return is_stub_final(text)
 
 
 def _strip_tool_outputs(text: str, tool_outputs: list[str]) -> str:
