@@ -92,12 +92,16 @@ class PromptBuilder:
             Prompt string or RootLMPrompt if as_structured=True
         """
         prompt = RootLMPrompt(
-            system="You are an orchestrator that generates Python code to solve tasks.",
+            system=(
+                "You are an assistant that completes tasks. "
+                "For simple questions (factual, reasoning, multiple-choice), answer directly with FINAL(answer). "
+                "For tasks requiring file access, web search, or external data, use the available tools."
+            ),
             tools=DEFAULT_ROOT_LM_TOOLS,
             rules=DEFAULT_ROOT_LM_RULES,
             state=f"Turn {turn + 1}\n{state}",
             task=original_prompt,
-            instruction="Write Python code to complete the task. Output only the code:",
+            instruction="Complete the task. Output Python code with FINAL(answer):",
         )
 
         # Build context section based on last output/error

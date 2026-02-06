@@ -168,16 +168,16 @@ If you can answer completely and confidently, respond with:
 D|<your answer>
 
 If you need investigation (search, read files, verify facts), respond with:
-I|brief:<detailed investigation request>|to:coder_primary
+I|brief:<detailed investigation request>|to:coder_escalation
 
 If you need a document drafted (code, report, design doc), respond with:
-I|brief:<detailed drafting request>|to:coder_primary|mode:repl
+I|brief:<detailed drafting request>|to:coder_escalation|mode:repl
 
 Rules:
 - List ALL information you need in the brief — you get one report per loop
 - Be specific: file paths, search terms, exact questions to answer
 - Only delegate if you genuinely cannot answer from your training
-- "to:" must be a valid role: coder_primary, coder_escalation, worker_explore
+- "to:" must be a valid role: coder_escalation, worker_explore, worker_summarize, worker_vision, vision_escalation
 {context_section}
 Question: {question[:2000]}
 
@@ -210,7 +210,7 @@ def build_architect_synthesis_prompt(
     if can_investigate:
         investigate_option = (
             f"\nIf you need MORE investigation (loop {loop_num}/{max_loops}), respond with:\n"
-            "I|brief:<what else to investigate>|to:coder_primary\n"
+            "I|brief:<what else to investigate>|to:coder_escalation\n"
         )
 
     return f"""You are an architect synthesizing an answer from an investigation report.

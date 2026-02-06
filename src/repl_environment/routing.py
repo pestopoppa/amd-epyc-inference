@@ -211,6 +211,7 @@ class _RoutingMixin:
 
         # Workers that Tier A/B can delegate to
         WORKER_ROLES = [
+            "worker_explore",
             "worker_general",
             "worker_math",
             "worker_summarize",
@@ -220,9 +221,9 @@ class _RoutingMixin:
         delegate_targets: list[str] = []
         if tier_val in ("A", "B"):
             delegate_targets = list(WORKER_ROLES)
-            # Tier A can also delegate to coder
-            if tier_val == "A":
-                delegate_targets.append("coder_primary")
+            # Both Tier A and B can delegate to specialists
+            # (coder_primary = frontdoor, same model, so delegation is pointless)
+            delegate_targets.extend(["coder_escalation", "vision_escalation"])
 
         # Get escalation target
         chain = get_escalation_chain(self.role)
@@ -386,6 +387,7 @@ class _RoutingMixin:
         "worker_general",
         "worker_summarize",
         "worker_vision",
+        "vision_escalation",
         "coder_escalation",
     })
 

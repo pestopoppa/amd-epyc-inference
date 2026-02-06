@@ -6,87 +6,123 @@ from typing import Any
 
 
 # Default tool descriptions for Root LM
+# Following Claude Code pattern: each tool has "when to use" AND "when NOT to use"
 DEFAULT_ROOT_LM_TOOLS = """### Context & Files
-- `context`: str - The full input context (large, do not send to LLM)
-- `artifacts`: dict - Store intermediate results
-- `peek(n, file_path=None)`: Return first n characters of context or file
-- `grep(pattern, file_path=None)`: Search context or file with regex
-- `list_dir(path)`: List directory contents, returns JSON with files/dirs
-- `file_info(path)`: Get file metadata (size, type, modified date)
+- `context`: str - The full input context. Do NOT send to LLM calls directly (too large).
+- `artifacts`: dict - Store intermediate results between turns.
+- `peek(n, file_path=None)`: Return first n characters of context or file. Use when you
+  need to inspect content. Do NOT use if you can answer from knowledge alone.
+- `grep(pattern, file_path=None)`: Search context or file with regex. Use for finding
+  specific patterns in large text. Do NOT use for simple keyword questions.
+- `list_dir(path)`: List directory contents as JSON. Use for file exploration tasks.
+  Do NOT use for questions unrelated to files.
+- `file_info(path)`: Get file metadata (size, type, modified date). Use when file
+  properties matter. Do NOT use if you just need file contents.
 
-### Document Processing (all return JSON strings - use json.loads())
-- `ocr_document(path)`: Extract text from PDF, returns JSON with full_text, pages, figures
-- `analyze_figure(image_path, prompt)`: Analyze image with vision model
-- `extract_figure(pdf_path, page, bbox)`: Crop figure from PDF, returns image path
+### Document Processing (return JSON - use json.loads())
+- `ocr_document(path)`: Extract text from PDF. Use ONLY for PDF/image files that need
+  OCR. Do NOT use for plain text files or questions answerable without documents.
+- `analyze_figure(image_path, prompt)`: Analyze image with vision model. Use for charts,
+  diagrams, photos. Do NOT use for text-only tasks.
+- `extract_figure(pdf_path, page, bbox)`: Crop figure from PDF. Use when you need a
+  specific region. Do NOT use if ocr_document gives sufficient text.
 
 ### Web & Shell
-- `web_search(query, max_results=5)`: Search the web (DuckDuckGo), returns titles/URLs/snippets
-- `fetch_docs(url)`: Fetch content from a specific URL
-- `run_shell(cmd)`: Run sandboxed shell command (ls, grep, git status only)
+- `web_search(query, max_results=5)`: Search the web via DuckDuckGo. Use ONLY when you
+  need current/real-time info, or facts beyond your training data. Do NOT use for
+  general knowledge, reasoning, or multiple-choice questions you can answer directly.
+- `fetch_docs(url)`: Fetch content from a URL. Use when you have a specific URL to read.
+  Do NOT use for general searches (use web_search instead).
+- `run_shell(cmd)`: Run sandboxed shell command (ls, grep, git status only). Use for
+  system exploration. Do NOT use for file reading (use peek instead).
 
 ### Knowledge Retrieval (via CALL)
-- `search_arxiv(query, max_results=10)`: Search arXiv for academic papers
-- `search_papers(query, max_results=10)`: Search Semantic Scholar (with citation counts)
-- `search_wikipedia(query, max_results=5)`: Search Wikipedia articles
-- `get_wikipedia_article(title)`: Get full Wikipedia article text
-- `search_books(query, max_results=10)`: Search Google Books
+- `search_arxiv(query, max_results=10)`: Search arXiv papers. Use for academic/research
+  questions requiring recent publications. Do NOT use for basic science questions.
+- `search_papers(query, max_results=10)`: Search Semantic Scholar with citation counts.
+  Use when citation metrics matter. Do NOT use for simple factual questions.
+- `search_wikipedia(query, max_results=5)`: Search Wikipedia. Use when you need verified
+  encyclopedic info. Do NOT use for questions you can answer from knowledge.
+- `get_wikipedia_article(title)`: Get full Wikipedia article. Use after search_wikipedia
+  identifies a relevant article. Do NOT use without knowing the exact title.
+- `search_books(query, max_results=10)`: Search Google Books. Use for book-specific
+  queries. Do NOT use for general knowledge questions.
 
 ### Code Quality (via CALL)
-- `run_tests(test_path, test_pattern=None)`: Run pytest tests, returns pass/fail counts
-- `lint_python(file_path, fix=False)`: Lint Python with ruff, returns issues
-- `json_parse(content, extract_path=None)`: Parse/validate JSON, optional dot-path extraction
+- `run_tests(test_path, test_pattern=None)`: Run pytest tests. Use when testing code
+  changes. Do NOT use for non-code tasks.
+- `lint_python(file_path, fix=False)`: Lint Python with ruff. Use for code quality
+  checks. Do NOT use for non-Python or non-code tasks.
+- `json_parse(content, extract_path=None)`: Parse/validate JSON. Use for structured
+  data extraction. Do NOT use if data is already parsed.
 
 ### Routing & Self-Assessment
-- `my_role()`: Get your current role, tier, capabilities, and what you can delegate to
-- `route_advice(task_description)`: Get MemRL routing recommendation with Q-values
-- `delegate(prompt, target_role, reason)`: Delegate to a specific role with outcome tracking
-- `escalate(reason, target_role=None)`: Request escalation (up-chain or to specific role)
-- `recall(query)`: Search episodic memory — returns Q-values and past routing outcomes
+- `my_role()`: Get your role, tier, capabilities. Use ONLY if genuinely unsure about
+  your capabilities. Do NOT call on every task.
+- `route_advice(task_description)`: Get MemRL routing recommendation. Use ONLY before
+  delegating complex subtasks. Do NOT use for simple tasks.
+- `delegate(prompt, target_role, reason)`: Delegate to specialist with tracking. Use
+  for complex subtasks needing different expertise. Do NOT use for simple tasks.
+- `escalate(reason, target_role=None)`: Request escalation. Use when task exceeds your
+  tier. Do NOT use if you can complete the task yourself.
+- `recall(query)`: Search episodic memory for past outcomes. Use for routing decisions.
+  Do NOT use for answering user questions.
 
 ### LLM Delegation (low-level, no tracking)
-- `llm_call(prompt, role='worker')`: Raw sub-LM call
-- `llm_batch(prompts, role='worker')`: Parallel raw sub-LM calls
+- `llm_call(prompt, role='worker')`: Raw sub-LM call. Use for subtasks needing LLM.
+  Do NOT send full context (use peek/grep first). Do NOT use for simple questions.
+- `llm_batch(prompts, role='worker')`: Parallel sub-LM calls. Use for multiple
+  independent subtasks. Do NOT use for single questions.
 
 ### Long Context Exploration
-- `context_len()`: Return character count of context
-- `chunk_context(n_chunks=4, overlap=200)`: Split context into N chunks with metadata
-- `summarize_chunks(task, n_chunks=4, role='worker_general')`: Chunk + parallel worker summaries
+- `context_len()`: Return character count. Use to check if context is large.
+- `chunk_context(n_chunks=4, overlap=200)`: Split context into chunks. Use for
+  long document processing. Do NOT use for short contexts.
+- `summarize_chunks(task, n_chunks=4, role='worker_general')`: Chunk + parallel
+  summaries. Use for long document summarization. Do NOT use for short texts.
 
 ### Tool Invocation
-- `TOOL(tool_name, **kwargs)`: Invoke a registered tool, returns raw Python object
-- `CALL(tool_name, **kwargs)`: Invoke a registered tool, returns JSON string (simpler)
+- `TOOL(tool_name, **kwargs)`: Invoke registered tool, returns Python object.
+- `CALL(tool_name, **kwargs)`: Invoke registered tool, returns JSON string.
   Example: `result = CALL("search_arxiv", query="transformers"); data = json.loads(result)`
-- `list_tools()`: Discover ALL available tools for your role (more tools may exist beyond this list)
+- `list_tools()`: Discover ALL available tools. Use to find specialized tools.
 
 ### Completion
-- `FINAL(answer)`: Signal completion with the final answer (REQUIRED)"""
+- `FINAL(answer)`: Signal completion with the final answer. REQUIRED for every task."""
 
 # Default rules for Root LM
-DEFAULT_ROOT_LM_RULES = """## CRITICAL
-1. **NO IMPORTS** - import/from are BLOCKED. The `json` module is pre-loaded, just use `json.loads()` directly.
-2. **USE list_dir()** for files - NOT os.listdir or pathlib
-3. **ALWAYS call FINAL(answer)** when you have your answer — this is REQUIRED to complete the task.
-   Do NOT keep calling tools after you have enough information.
+DEFAULT_ROOT_LM_RULES = """## WHEN TO USE TOOLS vs DIRECT ANSWER
+- **Answer directly** for: factual questions, reasoning, multiple-choice, math, general knowledge
+- **Use tools** for: file access, web search, current events, running code, document processing
 
-## Examples
+## CRITICAL RULES
+1. **NO IMPORTS** - import/from are BLOCKED. `json` is pre-loaded, just use `json.loads()`.
+2. **USE list_dir()** for files - NOT os.listdir or pathlib
+3. **ALWAYS call FINAL(answer)** to complete the task. Do NOT keep calling tools after
+   you have enough information.
+
+## EXAMPLES: Direct Answer (NO tools needed)
+Factual: `FINAL("Paris")`  # "What is the capital of France?"
+Multiple choice: `FINAL("B")`  # "Which option is correct? A) ... B) ..."
+Reasoning: `FINAL("The answer is 42 because...")`  # Math or logic problem
+Definition: `FINAL("A transformer is a neural network architecture...")`
+
+## EXAMPLES: Tool Use (external data needed)
 List files: `result = list_dir('/path'); FINAL(result)`
 Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
-Search web: `results = CALL("web_search", query="Ethiopia child punishment teachers 2009"); FINAL(json.loads(results))`
-Search papers: `results = CALL("search_arxiv", query="speculative decoding LLM"); FINAL(json.loads(results))`
-Run tests: `results = CALL("run_tests", test_path="tests/unit/", test_pattern="test_routing"); FINAL(json.loads(results))`
-Discover tools: `tools = list_tools(); FINAL(tools)`
-Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); summary = llm_call(f"Summarize: {doc['full_text'][:6000]}", role='worker'); FINAL(summary)`
+Current info: `results = CALL("web_search", query="2024 election results"); FINAL(json.loads(results))`
+Research: `results = CALL("search_arxiv", query="speculative decoding"); FINAL(json.loads(results))`
+Run tests: `results = CALL("run_tests", test_path="tests/"); FINAL(json.loads(results))`
+Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); FINAL(doc['full_text'][:2000])`
 
-## Routing (OPTIONAL — only for complex multi-model tasks)
-4. Simple tasks: just answer directly — do NOT call my_role() or route_advice() first
-5. Only call my_role() if genuinely unsure about your capabilities
-6. Only call route_advice() before delegating complex subtasks to specialists
-7. Use `delegate()` over `llm_call()` when making a conscious routing choice
-8. Call `escalate(reason)` if the task exceeds your tier — don't guess
+## ROUTING (only for complex multi-model tasks)
+- Only call my_role() if genuinely unsure about your capabilities
+- Only call route_advice() before delegating complex subtasks
+- Call escalate(reason) if the task exceeds your tier
 
-## Other Rules
-9. NEVER send full context to llm_call - use peek() or grep() first
-10. Output only valid Python code - no markdown, no explanations"""
+## OTHER RULES
+- NEVER send full context to llm_call - use peek() or grep() first
+- Output only valid Python code - no markdown, no explanations around the code"""
 
 
 # ── ReAct Tool Loop Constants ──────────────────────────────────────────────

@@ -892,6 +892,41 @@ def _precompute_embedding(
     return None
 
 
+# Background executor for async reward injection (fire-and-forget)
+import concurrent.futures
+_reward_executor: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_reward_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Get or create the background executor for reward injection."""
+    global _reward_executor
+    if _reward_executor is None:
+        _reward_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="reward_inject"
+        )
+    return _reward_executor
+
+
+def _inject_single_reward(
+    url: str,
+    payload: dict[str, Any],
+    action_key: str,
+) -> bool:
+    """Inject a single reward (runs in background thread)."""
+    import httpx
+    try:
+        with httpx.Client() as client:
+            resp = client.post(f"{url}/chat/reward", json=payload, timeout=30)
+            if resp.status_code == 200:
+                return True
+            else:
+                logger.debug(f"Reward injection failed for {action_key}: HTTP {resp.status_code}")
+                return False
+    except Exception as e:
+        logger.debug(f"Reward injection error for {action_key}: {e}")
+        return False
+
+
 def _inject_3way_rewards_http(
     prompt: str,
     suite: str,
@@ -901,68 +936,61 @@ def _inject_3way_rewards_http(
     url: str,
     client: "httpx.Client",
 ) -> int:
-    """Inject 3-way rewards via HTTP API.
+    """Inject 3-way rewards via HTTP API (async, non-blocking).
 
     Q-values receive binary rewards for faithful probability estimation.
     Cost metrics are stored in context for later Optuna threshold optimization.
 
-    Precomputes the embedding once and reuses it for all reward injections,
-    avoiding redundant embedding calls that can cause timeouts.
+    Precomputes the embedding once and reuses it for all reward injections.
+    Submissions are fire-and-forget to avoid blocking the eval loop.
 
-    Returns number of rewards successfully injected.
+    Returns number of rewards submitted (not necessarily injected yet).
     """
-    injected = 0
     cost_metrics = metadata.get("cost_metrics", {})
 
     # Precompute embedding once for all reward injections (same task_description)
     embedding = _precompute_embedding(prompt[:200], client)
 
+    executor = _get_reward_executor()
+    submitted = 0
+
     for action_key, reward in rewards.items():
-        try:
-            # Build context with cost metrics for this specific action
-            action_cost = cost_metrics.get(action_key, {})
+        # Build context with cost metrics for this specific action
+        action_cost = cost_metrics.get(action_key, {})
 
-            context = {
-                "task_type": suite,
-                "source": "3way_eval",
-                "question_id": question_id,
-                "action_type": "routing",
-                # Tool value metadata (flat scalars)
-                "tools_helped": metadata.get("tools_helped", False),
-                "tools_neutral": metadata.get("tools_neutral", False),
-                "tools_hurt": metadata.get("tools_hurt", False),
-                "tool_advantage": metadata.get("tool_advantage", 0),
-                # Cost metrics for this action (for Optuna later)
-                "elapsed_seconds": action_cost.get("elapsed_seconds", 0.0),
-                "tokens_generated": action_cost.get("tokens_generated", 0),
-                "predicted_tps": action_cost.get("predicted_tps", 0.0),
-                "generation_ms": action_cost.get("generation_ms", 0.0),
-                "tools_used": action_cost.get("tools_used", 0),
-            }
+        context = {
+            "task_type": suite,
+            "source": "3way_eval",
+            "question_id": question_id,
+            "action_type": "routing",
+            # Tool value metadata (flat scalars)
+            "tools_helped": metadata.get("tools_helped", False),
+            "tools_neutral": metadata.get("tools_neutral", False),
+            "tools_hurt": metadata.get("tools_hurt", False),
+            "tool_advantage": metadata.get("tool_advantage", 0),
+            # Cost metrics for this action (for Optuna later)
+            "elapsed_seconds": action_cost.get("elapsed_seconds", 0.0),
+            "tokens_generated": action_cost.get("tokens_generated", 0),
+            "predicted_tps": action_cost.get("predicted_tps", 0.0),
+            "generation_ms": action_cost.get("generation_ms", 0.0),
+            "tools_used": action_cost.get("tools_used", 0),
+        }
 
-            payload = {
-                "task_description": prompt[:200],
-                "action": action_key,
-                "reward": reward,
-                "context": context,
-            }
-            # Include precomputed embedding if available
-            if embedding is not None:
-                payload["embedding"] = embedding
+        payload = {
+            "task_description": prompt[:200],
+            "action": action_key,
+            "reward": reward,
+            "context": context,
+        }
+        # Include precomputed embedding if available
+        if embedding is not None:
+            payload["embedding"] = embedding
 
-            resp = client.post(
-                f"{url}/chat/reward",
-                json=payload,
-                timeout=10,
-            )
-            if resp.status_code == 200:
-                injected += 1
-            else:
-                logger.warning(f"Reward injection failed for {action_key}: HTTP {resp.status_code}")
-        except Exception as e:
-            logger.warning(f"Reward injection error for {action_key}: {e}")
-            continue
-    return injected
+        # Fire-and-forget: submit to background executor
+        executor.submit(_inject_single_reward, url, payload, action_key)
+        submitted += 1
+
+    return submitted
 
 
 # ── Combo building ───────────────────────────────────────────────────
