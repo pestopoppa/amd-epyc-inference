@@ -50,6 +50,7 @@ dev = [
     "pytest-timeout>=2.2.0",
     "pytest-cov>=4.1.0",
     "hypothesis>=6.0.0",
+    "pandas>=2.0.0",  # Required for canvas export tests
 ]
 toon = [
     # Token-Oriented Object Notation - 55% token reduction on structured data
