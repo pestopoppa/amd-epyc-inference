@@ -40,7 +40,7 @@ def temp_dir():
 @pytest.fixture
 def episodic_store(temp_dir):
     """Create an EpisodicStore with temporary storage."""
-    return EpisodicStore(db_path=temp_dir / "episodic", use_faiss=True)
+    return EpisodicStore(db_path=temp_dir / "episodic", use_faiss=True, embedding_dim=896)
 
 
 @pytest.fixture

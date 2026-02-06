@@ -2,7 +2,8 @@
 
 These tests make actual API calls to external services (arXiv, Wikipedia, etc.).
 They are designed to be:
-- Skipped in CI if packages are missing
+- Skipped in CI (ORCHESTRATOR_MOCK_MODE=true)
+- Skipped if packages are missing
 - Run manually before production deployment
 - Verify real connectivity and response parsing
 
@@ -13,7 +14,12 @@ Usage:
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Skip all tests in CI/mock mode (they make real API calls)
+MOCK_MODE = os.environ.get("ORCHESTRATOR_MOCK_MODE", "").lower() == "true"
 
 # Skip all tests if knowledge packages are not installed
 try:
@@ -26,10 +32,16 @@ try:
 except ImportError:
     KNOWLEDGE_PACKAGES_AVAILABLE = False
 
-pytestmark = pytest.mark.skipif(
-    not KNOWLEDGE_PACKAGES_AVAILABLE,
-    reason="Knowledge packages not installed. Run: pip install -e '.[knowledge]'",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        MOCK_MODE,
+        reason="Skipped in CI: live API tests require network access",
+    ),
+    pytest.mark.skipif(
+        not KNOWLEDGE_PACKAGES_AVAILABLE,
+        reason="Knowledge packages not installed. Run: pip install -e '.[knowledge]'",
+    ),
+]
 
 
 class TestArXivSearch:

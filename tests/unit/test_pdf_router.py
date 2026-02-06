@@ -1,5 +1,7 @@
 """Unit tests for PDF Router."""
 
+import os
+
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -155,6 +157,10 @@ class TestPDFRouterExtraction:
         assert figures == []
 
 
+@pytest.mark.skipif(
+    os.environ.get("ORCHESTRATOR_MOCK_MODE", "").lower() == "true",
+    reason="Skipped in CI: requires local PDF files and extraction tools",
+)
 class TestPDFRouterIntegration:
     """Integration tests with real PDFs."""
 
@@ -164,6 +170,8 @@ class TestPDFRouterIntegration:
         pdf_path = Path("/mnt/raid0/llm/claude/tmp/Twyne_V1_Whitepaper.pdf")
         if not pdf_path.exists():
             pytest.skip("Test PDF not available")
+        if not os.access(pdf_path, os.R_OK):
+            pytest.skip("Test PDF not readable")
 
         router = PDFRouter()
         result = router.extract_sync(pdf_path)
