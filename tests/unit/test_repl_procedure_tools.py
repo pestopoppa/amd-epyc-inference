@@ -334,7 +334,7 @@ class TestBenchmarkRun:
         mock_registry.execute.return_value = mock_result
 
         repl = REPLEnvironment(context="test")
-        result = repl.execute("output = benchmark_run('/mnt/raid0/llm/models/test.gguf')")
+        result = repl.execute("output = benchmark_run('/tmp/models/test.gguf')")
 
         assert result.error is None
 

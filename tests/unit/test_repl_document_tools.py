@@ -22,7 +22,7 @@ class TestOcrDocument:
     def test_ocr_document_non_pdf(self):
         """Test ocr_document() rejects non-PDF files."""
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(ocr_document('/mnt/raid0/llm/file.txt'))")
+        result = repl.execute("print(ocr_document('/tmp/file.txt'))")
 
         assert result.error is None
         assert "ERROR" in result.output
@@ -50,7 +50,7 @@ class TestOcrDocument:
 
         repl = REPLEnvironment(context="test")
         result = repl.execute("""
-output = ocr_document('/mnt/raid0/llm/test.pdf')
+output = ocr_document('/tmp/test.pdf')
 data = json.loads(output)
 print(data['total_pages'])
 print(len(data['figures']))
@@ -70,7 +70,7 @@ print(len(data['figures']))
         mock_post.return_value = mock_response
 
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(ocr_document('/mnt/raid0/llm/test.pdf'))")
+        result = repl.execute("print(ocr_document('/tmp/test.pdf'))")
 
         assert result.error is None
         assert "ERROR" in result.output
@@ -85,7 +85,7 @@ print(len(data['figures']))
         mock_post.side_effect = requests.exceptions.ConnectionError()
 
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(ocr_document('/mnt/raid0/llm/test.pdf'))")
+        result = repl.execute("print(ocr_document('/tmp/test.pdf'))")
 
         assert result.error is None
         assert "ERROR" in result.output
@@ -124,7 +124,7 @@ class TestAnalyzeFigure:
         mock_post.return_value = mock_response
 
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(analyze_figure('/mnt/raid0/llm/chart.png'))")
+        result = repl.execute("print(analyze_figure('/tmp/chart.png'))")
 
         assert result.error is None
         assert "bar chart" in result.output or "sales data" in result.output
@@ -139,7 +139,7 @@ class TestAnalyzeFigure:
 
         repl = REPLEnvironment(context="test")
         result = repl.execute("""
-output = analyze_figure('/mnt/raid0/llm/chart.png', 'What is the trend?')
+output = analyze_figure('/tmp/chart.png', 'What is the trend?')
 print('trend' in output.lower())
 """)
 
@@ -154,7 +154,7 @@ print('trend' in output.lower())
         mock_post.side_effect = requests.exceptions.ConnectionError()
 
         repl = REPLEnvironment(context="test")
-        result = repl.execute("print(analyze_figure('/mnt/raid0/llm/chart.png'))")
+        result = repl.execute("print(analyze_figure('/tmp/chart.png'))")
 
         assert result.error is None
         assert "ERROR" in result.output
@@ -186,7 +186,7 @@ class TestExtractFigure:
         repl = REPLEnvironment(context="test")
         initial_calls = repl._exploration_calls
         # Will fail but should increment exploration
-        repl.execute("extract_figure('/mnt/raid0/llm/doc.pdf', 1, [0, 0, 100, 100])")
+        repl.execute("extract_figure('/tmp/doc.pdf', 1, [0, 0, 100, 100])")
 
         assert repl._exploration_calls > initial_calls
 
@@ -194,7 +194,7 @@ class TestExtractFigure:
         """Test extract_figure() returns error for nonexistent file."""
         repl = REPLEnvironment(context="test")
         result = repl.execute(
-            "print(extract_figure('/mnt/raid0/llm/nonexistent.pdf', 1, [0, 0, 100, 100]))"
+            "print(extract_figure('/tmp/nonexistent.pdf', 1, [0, 0, 100, 100]))"
         )
 
         assert result.error is None

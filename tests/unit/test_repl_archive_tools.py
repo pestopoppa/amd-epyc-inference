@@ -43,7 +43,7 @@ class TestArchiveOpen:
 
         repl = REPLEnvironment(context="test")
         result = repl.execute("""
-output = archive_open('/mnt/raid0/llm/test.zip')
+output = archive_open('/tmp/test.zip')
 data = json.loads(output)
 print(data['total_files'])
 """)
@@ -68,7 +68,7 @@ print(data['total_files'])
 
         repl = REPLEnvironment(context="test")
         result = repl.execute("""
-output = archive_open('/mnt/raid0/llm/malicious.zip')
+output = archive_open('/tmp/malicious.zip')
 print('error' in output.lower())
 """)
 
@@ -120,7 +120,7 @@ class TestArchiveExtract:
         repl.artifacts["_archives"] = {
             "test.zip": {
                 "manifest": mock_manifest,
-                "path": "/mnt/raid0/llm/test.zip",
+                "path": "/tmp/test.zip",
                 "extracted_to": None,
                 "processed_files": {},
             }
@@ -155,7 +155,7 @@ print(data.get('extracted', 0))
         repl.artifacts["_archives"] = {
             "test.zip": {
                 "manifest": mock_manifest,
-                "path": "/mnt/raid0/llm/test.zip",
+                "path": "/tmp/test.zip",
                 "extracted_to": None,
                 "processed_files": {},
             }
