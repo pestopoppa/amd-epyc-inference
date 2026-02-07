@@ -13,7 +13,6 @@ External dependencies are mocked (subprocess, HTTP, filesystem).
 
 import json
 import subprocess
-from pathlib import Path
 from unittest.mock import MagicMock, Mock, mock_open, patch
 
 
@@ -84,15 +83,12 @@ class TestListDirectoryTool:
         """Test listing a directory successfully."""
         from src.tools.file.list import list_dir
 
-        # Create test directory structure
-        Path("/mnt/raid0/llm/tmp/test_dir")
-
         # Mock Path operations
         with patch("src.tools.file.list.Path") as mock_path:
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir"
+            mock_dir.__str__.return_value = "/tmp/test_dir"
             mock_dir.exists.return_value = True
             mock_dir.is_dir.return_value = True
 
@@ -102,18 +98,18 @@ class TestListDirectoryTool:
             file1.is_dir.return_value = False
             file1.is_file.return_value = True
             file1.stat.return_value.st_size = 1024
-            file1.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir/test.py"
+            file1.__str__.return_value = "/tmp/test_dir/test.py"
 
             dir1 = MagicMock()
             dir1.name = "subdir"
             dir1.is_dir.return_value = True
             dir1.is_file.return_value = False
-            dir1.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir/subdir"
+            dir1.__str__.return_value = "/tmp/test_dir/subdir"
 
             mock_dir.glob.return_value = [dir1, file1]
 
             result = list_dir(
-                directory="/mnt/raid0/llm/tmp/test_dir",
+                directory="/tmp/test_dir",
                 pattern="*",
             )
 
@@ -146,10 +142,10 @@ class TestListDirectoryTool:
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/tmp/missing"
+            mock_dir.__str__.return_value = "/tmp/missing"
             mock_dir.exists.return_value = False
 
-            result = list_dir(directory="/mnt/raid0/llm/tmp/missing")
+            result = list_dir(directory="/tmp/missing")
 
         assert result["success"] is False
         assert "not found" in result["error"]
@@ -162,7 +158,7 @@ class TestListDirectoryTool:
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir"
+            mock_dir.__str__.return_value = "/tmp/test_dir"
             mock_dir.exists.return_value = True
             mock_dir.is_dir.return_value = True
 
@@ -172,12 +168,12 @@ class TestListDirectoryTool:
             py_file.is_dir.return_value = False
             py_file.is_file.return_value = True
             py_file.stat.return_value.st_size = 1024
-            py_file.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir/test.py"
+            py_file.__str__.return_value = "/tmp/test_dir/test.py"
 
             mock_dir.glob.return_value = [py_file]
 
             result = list_dir(
-                directory="/mnt/raid0/llm/tmp/test_dir",
+                directory="/tmp/test_dir",
                 pattern="*.py",
             )
 
@@ -193,7 +189,7 @@ class TestListDirectoryTool:
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir"
+            mock_dir.__str__.return_value = "/tmp/test_dir"
             mock_dir.exists.return_value = True
             mock_dir.is_dir.return_value = True
 
@@ -202,12 +198,12 @@ class TestListDirectoryTool:
             file1.is_dir.return_value = False
             file1.is_file.return_value = True
             file1.stat.return_value.st_size = 1024
-            file1.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir/test.py"
+            file1.__str__.return_value = "/tmp/test_dir/test.py"
 
             mock_dir.rglob.return_value = [file1]
 
             result = list_dir(
-                directory="/mnt/raid0/llm/tmp/test_dir",
+                directory="/tmp/test_dir",
                 recursive=True,
             )
 
@@ -222,7 +218,7 @@ class TestListDirectoryTool:
             mock_dir = MagicMock()
             mock_path.return_value = mock_dir
             mock_dir.resolve.return_value = mock_dir
-            mock_dir.__str__.return_value = "/mnt/raid0/llm/tmp/test_dir"
+            mock_dir.__str__.return_value = "/tmp/test_dir"
             mock_dir.exists.return_value = True
             mock_dir.is_dir.return_value = True
 
@@ -234,13 +230,13 @@ class TestListDirectoryTool:
                 f.is_dir.return_value = False
                 f.is_file.return_value = True
                 f.stat.return_value.st_size = 1024
-                f.__str__.return_value = f"/mnt/raid0/llm/tmp/test_dir/file{i}.txt"
+                f.__str__.return_value = f"/tmp/test_dir/file{i}.txt"
                 files.append(f)
 
             mock_dir.glob.return_value = files
 
             result = list_dir(
-                directory="/mnt/raid0/llm/tmp/test_dir",
+                directory="/tmp/test_dir",
                 limit=5,
             )
 
@@ -280,11 +276,11 @@ class TestReadFileTool:
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
-            mock_file.__str__.return_value = "/mnt/raid0/llm/tmp/test.txt"
+            mock_file.__str__.return_value = "/tmp/test.txt"
             mock_file.exists.return_value = True
             mock_file.is_file.return_value = True
 
-            result = read_file(file_path="/mnt/raid0/llm/tmp/test.txt")
+            result = read_file(file_path="/tmp/test.txt")
 
         assert result["success"] is True
         assert "line 1" in result["content"]
@@ -308,10 +304,10 @@ class TestReadFileTool:
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
-            mock_file.__str__.return_value = "/mnt/raid0/llm/tmp/missing.txt"
+            mock_file.__str__.return_value = "/tmp/missing.txt"
             mock_file.exists.return_value = False
 
-            result = read_file(file_path="/mnt/raid0/llm/tmp/missing.txt")
+            result = read_file(file_path="/tmp/missing.txt")
 
         assert result["success"] is False
         assert "not found" in result["error"]
@@ -330,12 +326,12 @@ class TestReadFileTool:
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
-            mock_file.__str__.return_value = "/mnt/raid0/llm/tmp/test.txt"
+            mock_file.__str__.return_value = "/tmp/test.txt"
             mock_file.exists.return_value = True
             mock_file.is_file.return_value = True
 
             result = read_file(
-                file_path="/mnt/raid0/llm/tmp/test.txt",
+                file_path="/tmp/test.txt",
                 offset=10,
                 limit=5,
             )
@@ -358,12 +354,12 @@ class TestReadFileTool:
             mock_file = MagicMock()
             mock_path.return_value = mock_file
             mock_file.resolve.return_value = mock_file
-            mock_file.__str__.return_value = "/mnt/raid0/llm/tmp/test.txt"
+            mock_file.__str__.return_value = "/tmp/test.txt"
             mock_file.exists.return_value = True
             mock_file.is_file.return_value = True
 
             result = read_file(
-                file_path="/mnt/raid0/llm/tmp/test.txt",
+                file_path="/tmp/test.txt",
                 show_line_numbers=False,
             )
 
