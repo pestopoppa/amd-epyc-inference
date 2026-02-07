@@ -17,35 +17,6 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
-def _should_use_direct_mode(prompt: str, context: str = "") -> bool:
-    """Decide if the prompt should bypass the REPL and get a direct LLM answer.
-
-    The REPL wrapper forces the model to generate Python code and call FINAL(),
-    which destroys quality on instruction-precision, formatting, and constraint-
-    satisfaction tasks. When the task doesn't need tools (peek, grep, list_dir),
-    direct mode produces much higher quality output.
-
-    Bypass REPL when:
-    - No context or short context (no files to explore)
-    - Prompt doesn't reference file operations
-    - Prompt doesn't ask for code execution
-
-    Keep REPL when:
-    - Large context (needs chunked exploration via peek/grep)
-    - Prompt explicitly asks to read/write files
-    - Prompt asks to execute or run code
-
-    Args:
-        prompt: The user's prompt.
-        context: Optional context text.
-
-    Returns:
-        True if direct mode should be used.
-    """
-    from src.classifiers import should_use_direct_mode
-
-    return should_use_direct_mode(prompt, context)
-
 
 def _select_mode(
     prompt: str,

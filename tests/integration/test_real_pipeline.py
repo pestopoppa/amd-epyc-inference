@@ -22,7 +22,8 @@ from fastapi.testclient import TestClient
 
 from src.api import create_app
 from src.api.models import ChatResponse
-from src.api.routes.chat_pipeline.stages import _annotate_error, _parse_plan_steps
+from src.api.routes.chat_pipeline.stages import _annotate_error
+from src.api.routes.chat_pipeline.proactive_stage import _parse_plan_steps
 from src.api.routes.chat_review import _detect_output_quality_issue
 from src.llm_primitives import LLMPrimitives
 

@@ -13,22 +13,10 @@ from src.api.routes.chat_vision import (
     _execute_vision_tool,
     _handle_multi_file_vision,
     _handle_vision_request,
-    _is_ocr_heavy_prompt,
     _needs_structured_analysis,
     _safe_eval_math,
     _vision_react_mode_answer,
 )
-
-
-class TestOCRDetection:
-    """Test OCR prompt detection."""
-
-    def test_is_ocr_heavy_prompt_always_true(self):
-        """Verify _is_ocr_heavy_prompt always returns True."""
-        assert _is_ocr_heavy_prompt("extract text") is True
-        assert _is_ocr_heavy_prompt("what color is this?") is True
-        assert _is_ocr_heavy_prompt("random question") is True
-        assert _is_ocr_heavy_prompt("") is True
 
 
 class TestStructuredAnalysisDetection:

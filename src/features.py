@@ -155,6 +155,9 @@ class Features:
     # Phase 4: Input formalizer (extract formal specs before specialist execution)
     input_formalizer: bool = False  # Preprocess complex prompts via MathSmith-8B
 
+    # Unified streaming: route streaming endpoint through pipeline stages
+    unified_streaming: bool = False  # Use stream_adapter.py instead of inline generator
+
     # Phase 10: Semantic classifiers (externalized keyword matching + MemRL routing)
     semantic_classifiers: bool = True  # Use config-driven classifiers from classifier_config.yaml
 
@@ -229,6 +232,7 @@ class Features:
             "input_formalizer": self.input_formalizer,
             "generation_monitor": self.generation_monitor,
             "semantic_classifiers": self.semantic_classifiers,
+            "unified_streaming": self.unified_streaming,
             "mock_mode": self.mock_mode,
         }
 
@@ -318,6 +322,7 @@ def get_features(
             "input_formalizer": False,  # Enable after regression testing
             "generation_monitor": True,  # Early failure detection in production
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
+            "unified_streaming": False,  # Enable after streaming regression testing
             "mock_mode": False,  # Real mode in production
         }
     else:
@@ -342,6 +347,7 @@ def get_features(
             "input_formalizer": False,  # Disabled in tests by default
             "generation_monitor": False,  # Disabled in tests by default
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
+            "unified_streaming": False,  # Disabled in tests by default
             "mock_mode": True,  # Mock mode in tests
         }
 
@@ -369,6 +375,7 @@ def get_features(
         "input_formalizer": _env_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
         "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
         "semantic_classifiers": _env_bool("SEMANTIC_CLASSIFIERS", defaults["semantic_classifiers"]),
+        "unified_streaming": _env_bool("UNIFIED_STREAMING", defaults["unified_streaming"]),
         "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),
     }
 

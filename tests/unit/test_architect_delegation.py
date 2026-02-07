@@ -156,11 +156,22 @@ class TestArchitectDelegatedAnswer:
         primitives = self._mock_primitives(responses)
         state = self._mock_state()
 
-        # Mock _react_mode_answer to avoid needing real ReAct loop
-        with patch(
-            "src.api.routes.chat_delegation._react_mode_answer",
-            return_value=("File contents: error handling at line 42", 2),
-        ):
+        # Mock REPLEnvironment to avoid needing real REPL loop
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            mock_repl = MagicMock()
+            mock_repl.get_prompt.return_value = "prompt"
+            mock_repl.execute.return_value = {"final": "File contents: error handling at line 42"}
+            mock_repl._tool_invocations = 2
+            mock_repl.tool_registry = None
+            mock_repl_cls.return_value = mock_repl
+
+            # Need to override llm_call side effects to include REPL code call
+            primitives.llm_call.side_effect = [
+                responses[0],  # architect decides to investigate
+                "code here",  # REPL code
+                responses[1],  # architect synthesizes
+            ]
+
             answer, stats = _architect_delegated_answer(
                 question="Where is error handling?",
                 context="",
@@ -188,10 +199,28 @@ class TestArchitectDelegatedAnswer:
         primitives = self._mock_primitives(responses)
         state = self._mock_state()
 
-        with patch(
-            "src.api.routes.chat_delegation._react_mode_answer",
-            side_effect=[("Report from A", 1), ("Report from B", 3)],
-        ):
+        call_count = [0]
+        reports = ["Report from A", "Report from B"]
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            def make_repl(*a, **kw):
+                mock_repl = MagicMock()
+                mock_repl.get_prompt.return_value = "prompt"
+                idx = min(call_count[0], len(reports) - 1)
+                mock_repl.execute.return_value = {"final": reports[idx]}
+                mock_repl._tool_invocations = 1
+                mock_repl.tool_registry = None
+                call_count[0] += 1
+                return mock_repl
+            mock_repl_cls.side_effect = make_repl
+
+            primitives.llm_call.side_effect = [
+                responses[0],  # investigate A
+                "code",  # REPL code for A
+                responses[1],  # investigate B
+                "code",  # REPL code for B
+                responses[2],  # final answer
+            ]
+
             answer, stats = _architect_delegated_answer(
                 question="Compare A and B",
                 context="",
@@ -221,10 +250,30 @@ class TestArchitectDelegatedAnswer:
         primitives = self._mock_primitives(responses)
         state = self._mock_state()
 
-        with patch(
-            "src.api.routes.chat_delegation._react_mode_answer",
-            side_effect=[("Report X", 1), ("Report Y", 1), ("Report Z", 1)],
-        ):
+        call_count = [0]
+        reports = ["Report X", "Report Y", "Report Z"]
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            def make_repl(*a, **kw):
+                mock_repl = MagicMock()
+                mock_repl.get_prompt.return_value = "prompt"
+                idx = min(call_count[0], len(reports) - 1)
+                mock_repl.execute.return_value = {"final": reports[idx]}
+                mock_repl._tool_invocations = 1
+                mock_repl.tool_registry = None
+                call_count[0] += 1
+                return mock_repl
+            mock_repl_cls.side_effect = make_repl
+
+            primitives.llm_call.side_effect = [
+                responses[0],  # investigate X
+                "code",  # REPL code
+                responses[1],  # investigate Y
+                "code",  # REPL code
+                responses[2],  # investigate Z (exceeds cap)
+                "code",  # REPL code
+                responses[3],  # forced synthesis
+            ]
+
             answer, stats = _architect_delegated_answer(
                 question="Complex question",
                 context="",

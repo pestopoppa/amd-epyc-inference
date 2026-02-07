@@ -13,7 +13,6 @@ import logging
 import time
 from typing import Any, TYPE_CHECKING
 
-from src.api.routes.chat_react import _react_mode_answer
 from src.repl_environment import REPLEnvironment
 
 log = logging.getLogger(__name__)
@@ -266,21 +265,31 @@ def _architect_delegated_answer(
         phase_tool_timings: list[dict] = []
 
         if delegate_mode == "react":
-            # ReAct investigation loop
+            # React mode unified into REPL with structured_mode=True
             try:
-                report, phase_tools, phase_tool_names = _react_mode_answer(
-                    prompt=brief,
-                    context=context,
-                    primitives=primitives,
-                    role=delegate_to,
+                react_repl = REPLEnvironment(
+                    context=f"{brief}\n\nContext:\n{context}" if context else brief,
+                    llm_primitives=primitives,
                     tool_registry=tool_registry,
-                    max_turns=8,
+                    role=delegate_to,
+                    structured_mode=True,
                 )
-                total_tools += phase_tools
-                all_tools_called.extend(phase_tool_names)
-                # Collect per-tool timing from registry
-                if tool_registry and hasattr(tool_registry, "get_invocation_log"):
-                    for inv in tool_registry.get_invocation_log():
+                for _turn in range(8):
+                    code = primitives.llm_call(
+                        react_repl.get_prompt(question=brief),
+                        role=delegate_to,
+                        n_tokens=2048,
+                    )
+                    result = react_repl.execute(code)
+                    if result.get("final"):
+                        report = result["final"]
+                        break
+                else:
+                    report = react_repl.get_state()
+                total_tools += react_repl._tool_invocations
+                if react_repl.tool_registry:
+                    for inv in react_repl.tool_registry.get_invocation_log():
+                        all_tools_called.append(inv.tool_name)
                         phase_tool_timings.append(
                             {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
                         )

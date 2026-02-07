@@ -11,15 +11,20 @@ Stage functions:
     _execute_mock()      -- Mock mode response
     _execute_vision()    -- Vision pipeline (OCR, VL, multi-file)
     _execute_delegated() -- Architect delegation mode
-    _execute_react()     -- ReAct tool loop mode
+    _execute_react()     -- ReAct via REPL structured_mode (legacy, unreachable)
     _execute_direct()    -- Direct LLM call mode
     _execute_repl()      -- REPL orchestration mode
     _annotate_error()    -- Detect error answers -> set error_code/error_detail
 
-Decomposed from monolithic chat_pipeline.py into:
-    routing.py       -- Stages 1-3, 5 (routing, preprocess, init, plan review)
-    stages.py        -- Stages 4, 6-9, error annotation
-    repl_executor.py -- Stage 10 (REPL orchestration loop)
+Module layout:
+    routing.py           -- Stages 1-3, 5 (routing, preprocess, init, plan review)
+    stages.py            -- Shared helpers, mock mode, react mode, error annotation
+    vision_stage.py      -- Stage 6: vision preprocessing
+    delegation_stage.py  -- Stage 7: architect delegation
+    proactive_stage.py   -- Stage 7.5: proactive parallel delegation
+    direct_stage.py      -- Stage 9: direct LLM call
+    repl_executor.py     -- Stage 10: REPL orchestration loop
+    stream_adapter.py    -- SSE streaming adapter (unified_streaming flag)
 """
 
 from src.api.routes.chat_pipeline.routing import (
@@ -30,14 +35,16 @@ from src.api.routes.chat_pipeline.routing import (
 )
 from src.api.routes.chat_pipeline.stages import (
     _execute_mock,
-    _execute_vision,
-    _execute_delegated,
-    _parse_plan_steps,
-    _execute_proactive,
     _execute_react,
-    _execute_direct,
     _annotate_error,
 )
+from src.api.routes.chat_pipeline.vision_stage import _execute_vision
+from src.api.routes.chat_pipeline.delegation_stage import _execute_delegated
+from src.api.routes.chat_pipeline.proactive_stage import (
+    _execute_proactive,
+    _parse_plan_steps,
+)
+from src.api.routes.chat_pipeline.direct_stage import _execute_direct
 from src.api.routes.chat_pipeline.repl_executor import _execute_repl
 
 # Backward-compat re-exports (vision functions were imported here historically)

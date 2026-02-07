@@ -55,17 +55,8 @@ class TestChatImportsResolve:
     def test_chat_routing_imports(self):
         """Import chat_routing — catches missing functions."""
         from src.api.routes.chat_routing import (  # noqa: F401
-            _should_use_direct_mode,
             _select_mode,
             _classify_and_route,
-        )
-
-    def test_chat_react_imports(self):
-        """Import chat_react — catches missing functions."""
-        from src.api.routes.chat_react import (  # noqa: F401
-            _parse_react_args,
-            _should_use_react_mode,
-            _react_mode_answer,
         )
 
     def test_chat_delegation_imports(self):
@@ -92,7 +83,6 @@ class TestChatImportsResolve:
     def test_chat_vision_imports(self):
         """Import chat_vision — catches missing functions."""
         from src.api.routes.chat_vision import (  # noqa: F401
-            _is_ocr_heavy_prompt,
             _needs_structured_analysis,
             _handle_vision_request,
             _execute_vision_tool,

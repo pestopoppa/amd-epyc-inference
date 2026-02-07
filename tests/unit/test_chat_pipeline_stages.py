@@ -18,14 +18,13 @@ import pytest
 from src.api.models import ChatRequest, ChatResponse
 from src.api.routes.chat_pipeline.stages import (
     _annotate_error,
-    _execute_delegated,
-    _execute_direct,
     _execute_mock,
-    _execute_proactive,
     _execute_react,
-    _execute_vision,
-    _parse_plan_steps,
 )
+from src.api.routes.chat_pipeline.vision_stage import _execute_vision
+from src.api.routes.chat_pipeline.delegation_stage import _execute_delegated
+from src.api.routes.chat_pipeline.proactive_stage import _execute_proactive, _parse_plan_steps
+from src.api.routes.chat_pipeline.direct_stage import _execute_direct
 from src.api.routes.chat_utils import RoutingResult
 
 
@@ -681,7 +680,7 @@ class TestExecuteDelegated:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.delegation_stage.features") as mock_features:
             mock_features.return_value.architect_delegation = False
             result = _execute_delegated(
                 request,
@@ -717,13 +716,13 @@ class TestExecuteDelegated:
             "tools_called": ["tool1"],
         }
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.delegation_stage.features") as mock_features:
             mock_features.return_value.architect_delegation = True
             with patch(
-                "src.api.routes.chat_pipeline.stages._architect_delegated_answer"
+                "src.api.routes.chat_pipeline.delegation_stage._architect_delegated_answer"
             ) as mock_deleg:
                 mock_deleg.return_value = ("Delegated answer", delegation_stats)
-                with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                with patch("src.api.routes.chat_pipeline.delegation_stage.score_completed_task"):
                     result = _execute_delegated(
                         request,
                         routing,
@@ -752,10 +751,10 @@ class TestExecuteDelegated:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.delegation_stage.features") as mock_features:
             mock_features.return_value.architect_delegation = True
             with patch(
-                "src.api.routes.chat_pipeline.stages._architect_delegated_answer"
+                "src.api.routes.chat_pipeline.delegation_stage._architect_delegated_answer"
             ) as mock_deleg:
                 mock_deleg.side_effect = RuntimeError("Delegation crash")
                 result = _execute_delegated(
@@ -782,10 +781,10 @@ class TestExecuteDelegated:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.delegation_stage.features") as mock_features:
             mock_features.return_value.architect_delegation = True
             with patch(
-                "src.api.routes.chat_pipeline.stages._architect_delegated_answer"
+                "src.api.routes.chat_pipeline.delegation_stage._architect_delegated_answer"
             ) as mock_deleg:
                 mock_deleg.return_value = ("", {"loops": 0, "phases": []})
                 result = _execute_delegated(
@@ -812,13 +811,13 @@ class TestExecuteDelegated:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.delegation_stage.features") as mock_features:
             mock_features.return_value.architect_delegation = False  # Should still work
             with patch(
-                "src.api.routes.chat_pipeline.stages._architect_delegated_answer"
+                "src.api.routes.chat_pipeline.delegation_stage._architect_delegated_answer"
             ) as mock_deleg:
                 mock_deleg.return_value = ("Forced delegation", {"loops": 0, "phases": []})
-                with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                with patch("src.api.routes.chat_pipeline.delegation_stage.score_completed_task"):
                     result = _execute_delegated(
                         request,
                         routing,
@@ -854,7 +853,7 @@ class TestExecuteProactive:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.proactive_stage.features") as mock_features:
             mock_features.return_value.parallel_execution = False
             result = await _execute_proactive(
                 request, routing, mock_primitives, mock_state, start_time
@@ -875,7 +874,7 @@ class TestExecuteProactive:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.proactive_stage.features") as mock_features:
             mock_features.return_value.parallel_execution = True
             with patch("src.proactive_delegation.classify_task_complexity") as mock_classify:
                 from src.proactive_delegation import TaskComplexity
@@ -900,7 +899,7 @@ class TestExecuteProactive:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.proactive_stage.features") as mock_features:
             mock_features.return_value.parallel_execution = True
             with patch("src.proactive_delegation.classify_task_complexity") as mock_classify:
                 from src.proactive_delegation import TaskComplexity
@@ -925,7 +924,7 @@ class TestExecuteProactive:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.proactive_stage.features") as mock_features:
             mock_features.return_value.parallel_execution = True
             with patch("src.proactive_delegation.classify_task_complexity") as mock_classify:
                 from src.proactive_delegation import TaskComplexity
@@ -957,7 +956,7 @@ class TestExecuteProactive:
         mock_deleg_result.subtask_results = [MagicMock(), MagicMock()]
         mock_deleg_result.roles_used = ["coder", "architect"]
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.proactive_stage.features") as mock_features:
             mock_features.return_value.parallel_execution = True
             with patch("src.proactive_delegation.classify_task_complexity") as mock_classify:
                 from src.proactive_delegation import TaskComplexity
@@ -969,7 +968,7 @@ class TestExecuteProactive:
                 ]"""
                 with patch("src.proactive_delegation.ProactiveDelegator") as mock_pd:
                     mock_pd.return_value.delegate = AsyncMock(return_value=mock_deleg_result)
-                    with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                    with patch("src.api.routes.chat_pipeline.proactive_stage.score_completed_task"):
                         result = await _execute_proactive(
                             request, routing, mock_primitives, mock_state, start_time
                         )
@@ -992,7 +991,7 @@ class TestExecuteProactive:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
+        with patch("src.api.routes.chat_pipeline.proactive_stage.features") as mock_features:
             mock_features.return_value.parallel_execution = True
             with patch("src.proactive_delegation.classify_task_complexity") as mock_classify:
                 from src.proactive_delegation import TaskComplexity
@@ -1054,8 +1053,12 @@ class TestExecuteReact:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages._react_mode_answer") as mock_react:
-            mock_react.return_value = ("ReAct result", 2, ["tool1", "tool2"])
+        mock_repl = MagicMock()
+        mock_repl.get_prompt.return_value = "prompt"
+        mock_repl.execute.return_value = {"final": "ReAct result"}
+        mock_repl._tool_invocations = 2
+        mock_repl.tool_registry = None
+        with patch("src.api.routes.chat_pipeline.stages.REPLEnvironment", return_value=mock_repl):
             with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
                 mock_trunc.return_value = "ReAct result"
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
@@ -1074,7 +1077,6 @@ class TestExecuteReact:
         assert result.answer == "ReAct result"
         assert result.mode == "react"
         assert result.tools_used == 2
-        assert result.tools_called == ["tool1", "tool2"]
 
     def test_react_exception_returns_none(self, mock_primitives, mock_state):
         """Exception during ReAct returns None (fall through)."""
@@ -1088,8 +1090,7 @@ class TestExecuteReact:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages._react_mode_answer") as mock_react:
-            mock_react.side_effect = RuntimeError("ReAct crash")
+        with patch("src.api.routes.chat_pipeline.stages.REPLEnvironment", side_effect=RuntimeError("REPL crash")):
             result = _execute_react(
                 request,
                 routing,
@@ -1113,8 +1114,13 @@ class TestExecuteReact:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages._react_mode_answer") as mock_react:
-            mock_react.return_value = ("", 0, [])
+        mock_repl = MagicMock()
+        mock_repl.get_prompt.return_value = "prompt"
+        mock_repl.execute.return_value = {}
+        mock_repl.get_state.return_value = ""
+        mock_repl._tool_invocations = 0
+        mock_repl.tool_registry = None
+        with patch("src.api.routes.chat_pipeline.stages.REPLEnvironment", return_value=mock_repl):
             result = _execute_react(
                 request,
                 routing,
@@ -1138,8 +1144,12 @@ class TestExecuteReact:
         )
         start_time = time.perf_counter()
 
-        with patch("src.api.routes.chat_pipeline.stages._react_mode_answer") as mock_react:
-            mock_react.return_value = ("Low quality answer", 1, [])
+        mock_repl = MagicMock()
+        mock_repl.get_prompt.return_value = "prompt"
+        mock_repl.execute.return_value = {"final": "Low quality answer"}
+        mock_repl._tool_invocations = 1
+        mock_repl.tool_registry = None
+        with patch("src.api.routes.chat_pipeline.stages.REPLEnvironment", return_value=mock_repl):
             with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
                 mock_trunc.return_value = "Low quality answer"
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
@@ -1185,15 +1195,15 @@ class TestExecuteDirect:
 
         mock_primitives.llm_call.return_value = "Direct answer"
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.return_value = "Direct answer"
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (False, None)
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                     mock_features.return_value.generation_monitor = False
-                    with patch("src.api.routes.chat_pipeline.stages._should_review") as mock_review:
+                    with patch("src.api.routes.chat_pipeline.direct_stage._should_review") as mock_review:
                         mock_review.return_value = False
-                        with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                        with patch("src.api.routes.chat_pipeline.direct_stage.score_completed_task"):
                             result = _execute_direct(
                                 request,
                                 routing,
@@ -1225,15 +1235,15 @@ class TestExecuteDirect:
 
         mock_primitives.llm_call.return_value = "Answer"
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.return_value = "Answer"
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (False, None)
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                     mock_features.return_value.generation_monitor = False
-                    with patch("src.api.routes.chat_pipeline.stages._should_review") as mock_review:
+                    with patch("src.api.routes.chat_pipeline.direct_stage._should_review") as mock_review:
                         mock_review.return_value = False
-                        with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                        with patch("src.api.routes.chat_pipeline.direct_stage.score_completed_task"):
                             _execute_direct(
                                 request,
                                 routing,
@@ -1266,15 +1276,15 @@ class TestExecuteDirect:
             "Retry success",
         ]
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.return_value = "Retry success"
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (False, None)
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                     mock_features.return_value.generation_monitor = False
-                    with patch("src.api.routes.chat_pipeline.stages._should_review") as mock_review:
+                    with patch("src.api.routes.chat_pipeline.direct_stage._should_review") as mock_review:
                         mock_review.return_value = False
-                        with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                        with patch("src.api.routes.chat_pipeline.direct_stage.score_completed_task"):
                             result = _execute_direct(
                                 request,
                                 routing,
@@ -1304,7 +1314,7 @@ class TestExecuteDirect:
             RuntimeError("Second fail"),
         ]
 
-        with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+        with patch("src.api.routes.chat_pipeline.direct_stage.score_completed_task"):
             result = _execute_direct(
                 request,
                 routing,
@@ -1331,19 +1341,19 @@ class TestExecuteDirect:
 
         mock_primitives.llm_call.return_value = "Raw answer"
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.return_value = "Raw answer"
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (True, {"format": "json"})
-                with patch("src.api.routes.chat_pipeline.stages._formalize_output") as mock_formal:
+                with patch("src.api.routes.chat_pipeline.direct_stage._formalize_output") as mock_formal:
                     mock_formal.return_value = '{"formatted": true}'
                     with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                         mock_features.return_value.generation_monitor = False
                         with patch(
-                            "src.api.routes.chat_pipeline.stages._should_review"
+                            "src.api.routes.chat_pipeline.direct_stage._should_review"
                         ) as mock_review:
                             mock_review.return_value = False
-                            with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                            with patch("src.api.routes.chat_pipeline.direct_stage.score_completed_task"):
                                 result = _execute_direct(
                                     request,
                                     routing,
@@ -1372,9 +1382,9 @@ class TestExecuteDirect:
             "Escalated answer",
         ]
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.side_effect = lambda x, _: x
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (False, None)
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                     mock_features.return_value.generation_monitor = True
@@ -1383,10 +1393,10 @@ class TestExecuteDirect:
                     ) as mock_detect:
                         mock_detect.return_value = "repetitive"
                         with patch(
-                            "src.api.routes.chat_pipeline.stages._should_review"
+                            "src.api.routes.chat_pipeline.direct_stage._should_review"
                         ) as mock_review:
                             mock_review.return_value = False
-                            with patch("src.api.routes.chat_pipeline.stages.score_completed_task"):
+                            with patch("src.api.routes.chat_pipeline.direct_stage.score_completed_task"):
                                 result = _execute_direct(
                                     request,
                                     routing,
@@ -1412,24 +1422,24 @@ class TestExecuteDirect:
 
         mock_primitives.llm_call.return_value = "Original answer"
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.return_value = "Original answer"
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (False, None)
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                     mock_features.return_value.generation_monitor = False
-                    with patch("src.api.routes.chat_pipeline.stages._should_review") as mock_review:
+                    with patch("src.api.routes.chat_pipeline.direct_stage._should_review") as mock_review:
                         mock_review.return_value = True
                         with patch(
-                            "src.api.routes.chat_pipeline.stages._architect_verdict"
+                            "src.api.routes.chat_pipeline.direct_stage._architect_verdict"
                         ) as mock_verdict:
                             mock_verdict.return_value = "WRONG: Missing key detail"
                             with patch(
-                                "src.api.routes.chat_pipeline.stages._fast_revise"
+                                "src.api.routes.chat_pipeline.direct_stage._fast_revise"
                             ) as mock_revise:
                                 mock_revise.return_value = "Revised answer"
                                 with patch(
-                                    "src.api.routes.chat_pipeline.stages.score_completed_task"
+                                    "src.api.routes.chat_pipeline.direct_stage.score_completed_task"
                                 ):
                                     result = _execute_direct(
                                         request,
@@ -1461,13 +1471,13 @@ class TestExecuteDirect:
 
         mock_primitives.llm_call.return_value = "Answer"
 
-        with patch("src.api.routes.chat_pipeline.stages._truncate_looped_answer") as mock_trunc:
+        with patch("src.api.routes.chat_pipeline.direct_stage._truncate_looped_answer") as mock_trunc:
             mock_trunc.return_value = "Answer"
-            with patch("src.api.routes.chat_pipeline.stages._should_formalize") as mock_fmt:
+            with patch("src.api.routes.chat_pipeline.direct_stage._should_formalize") as mock_fmt:
                 mock_fmt.return_value = (False, None)
                 with patch("src.api.routes.chat_pipeline.stages.features") as mock_features:
                     mock_features.return_value.generation_monitor = False
-                    with patch("src.api.routes.chat_pipeline.stages._should_review") as mock_review:
+                    with patch("src.api.routes.chat_pipeline.direct_stage._should_review") as mock_review:
                         mock_review.return_value = False
                         result = _execute_direct(
                             request,

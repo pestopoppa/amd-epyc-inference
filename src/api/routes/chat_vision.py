@@ -44,21 +44,6 @@ def _needs_structured_analysis(prompt: str) -> bool:
     return needs_structured_analysis(prompt)
 
 
-def _is_ocr_heavy_prompt(prompt: str) -> bool:
-    """Check if prompt is OCR-heavy (always True - OCR is now default).
-
-    This function exists for backward compatibility. All vision prompts
-    now use OCR pre-processing by default.
-
-    Args:
-        prompt: The user's vision prompt.
-
-    Returns:
-        Always True - OCR is enabled for all vision prompts.
-    """
-    # OCR is now always enabled for vision prompts
-    return True
-
 
 async def _handle_vision_request(
     request: "ChatRequest",
@@ -400,7 +385,7 @@ async def _vision_react_mode_answer(
 ) -> tuple[str, int]:
     """Vision-aware ReAct loop using direct VL backend calls.
 
-    Unlike _react_mode_answer() which uses primitives.llm_call() (text-only),
+    Unlike the text-only REPL loop which uses primitives.llm_call(),
     this sends multimodal messages directly to VL backend via httpx with
     OpenAI /v1/chat/completions format.
 

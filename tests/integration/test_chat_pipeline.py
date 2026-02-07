@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from src.api import create_app
-from src.api.routes.chat_routing import _classify_and_route, _should_use_direct_mode, _select_mode
+from src.api.routes.chat_routing import _classify_and_route, _select_mode
 from src.roles import Role
 
 
@@ -83,31 +83,6 @@ class TestClassifyAndRoute:
 
             reset_features()
 
-
-class TestShouldUseDirectMode:
-    """Test _should_use_direct_mode() heuristic."""
-
-    def test_simple_question_uses_direct(self):
-        """Simple questions should use direct mode."""
-        assert _should_use_direct_mode("What is 2+2?") is True
-
-    def test_file_operation_uses_repl(self):
-        """File operations should use REPL mode."""
-        assert _should_use_direct_mode("read the file foo.py") is False
-
-    def test_large_context_uses_repl(self):
-        """Large context should use REPL mode."""
-        large_context = "x" * 30000
-        assert _should_use_direct_mode("summarize this", large_context) is False
-
-    def test_code_execution_uses_repl(self):
-        """Code execution requests should use REPL mode."""
-        assert _should_use_direct_mode("execute this code") is False
-
-    def test_small_context_can_use_direct(self):
-        """Small context with simple question can use direct mode."""
-        small_context = "The capital of France is Paris."
-        assert _should_use_direct_mode("What is the capital?", small_context) is True
 
 
 class TestSelectMode:

@@ -70,6 +70,7 @@ from src.api.routes.chat_review import (
 from src.api.routes.chat_routing import (
     _select_mode,
 )
+from src.features import features
 
 # Phase 1b: Pipeline stage functions (extracted from _handle_chat)
 from src.api.routes.chat_pipeline import (
@@ -284,6 +285,13 @@ async def chat_stream(
     Note: Uses sse-starlette when available (via feature flag), otherwise
     falls back to manual SSE formatting for backward compatibility.
     """
+    # Unified streaming path — reuses pipeline stages from _handle_chat()
+    if features().unified_streaming:
+        from src.api.routes.chat_pipeline.stream_adapter import generate_stream
+
+        return create_sse_response(generate_stream(request, state))
+
+    # Legacy inline streaming path (preserved until unified_streaming is validated)
     # Generate task ID for MemRL tracking (outside generator for closure)
     task_id = f"stream-{uuid.uuid4().hex[:8]}"
 

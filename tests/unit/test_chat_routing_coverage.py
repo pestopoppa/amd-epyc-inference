@@ -9,13 +9,13 @@ import pytest
 from src.api.routes.chat_routing import (
     _classify_and_route,
     _select_mode,
-    _should_use_direct_mode,
 )
+from src.classifiers import should_use_direct_mode as _should_use_direct_mode
 from src.roles import Role
 
 
 class TestShouldUseDirectMode:
-    """Tests for _should_use_direct_mode heuristic."""
+    """Tests for should_use_direct_mode classifier (was in chat_routing, now in classifiers)."""
 
     def test_empty_context_returns_direct(self):
         """Empty context triggers direct mode."""
@@ -121,22 +121,20 @@ class TestSelectMode:
         assert result == "repl"
 
     def test_memrl_router_invalid_mode_falls_back(self):
-        """MemRL returning invalid mode falls back to heuristics."""
+        """MemRL returning invalid mode falls back to repl."""
         state = MagicMock()
         state.hybrid_router.route_with_mode.return_value = (["role"], "learned", "invalid")
 
-        with patch("src.api.routes.chat_react._should_use_react_mode", return_value=False):
-            result = _select_mode("Hello", "", state)
+        result = _select_mode("Hello", "", state)
         # Falls back to repl (default)
         assert result == "repl"
 
     def test_memrl_router_exception_falls_back(self):
-        """MemRL exception falls back to heuristics."""
+        """MemRL exception falls back to repl."""
         state = MagicMock()
         state.hybrid_router.route_with_mode.side_effect = RuntimeError("DB error")
 
-        with patch("src.api.routes.chat_react._should_use_react_mode", return_value=False):
-            result = _select_mode("Hello", "", state)
+        result = _select_mode("Hello", "", state)
         assert result == "repl"
 
     def test_no_hybrid_router_defaults_to_repl(self):
@@ -163,16 +161,14 @@ class TestSelectMode:
         state = MagicMock()
         state.hybrid_router = None
 
-        with patch("src.api.routes.chat_react._should_use_react_mode", return_value=False):
-            result = _select_mode("Explain something", "", state)
+        result = _select_mode("Explain something", "", state)
         assert result == "repl"
 
     def test_state_without_hybrid_router_attr(self):
-        """State without hybrid_router attribute falls back to heuristics."""
+        """State without hybrid_router attribute falls back to repl."""
         state = MagicMock(spec=[])  # No hybrid_router attr
 
-        with patch("src.api.routes.chat_react._should_use_react_mode", return_value=False):
-            result = _select_mode("Hello", "", state)
+        result = _select_mode("Hello", "", state)
         assert result == "repl"
 
 
