@@ -58,16 +58,24 @@ class InferenceMixin:
             )
 
         from src.model_server import InferenceRequest
+        from src.config import get_config
+
+        role_timeout = get_config().timeouts.role_timeouts_dict().get(
+            role, self.config.call_timeout
+        )
 
         request = InferenceRequest(
             role=role,
             prompt=prompt,
             n_tokens=n_tokens,
-            timeout=self.config.call_timeout,
+            timeout=role_timeout,
             stop_sequences=stop_sequences,
             cache_prompt=self.cache_prompt,
         )
-        result = self.model_server.infer(role, request)
+        from src.inference_lock import inference_lock
+
+        with inference_lock(role):
+            result = self.model_server.infer(role, request)
 
         self.total_tokens_generated += result.tokens_generated
         self.total_prompt_eval_ms += result.prompt_eval_ms
@@ -121,11 +129,17 @@ class InferenceMixin:
             memory=MemoryConfig(residency="warm"),
         )
 
+        from src.config import get_config
+
+        role_timeout = get_config().timeouts.role_timeouts_dict().get(
+            role, self.config.call_timeout
+        )
+
         request = InferenceRequest(
             role=role,
             prompt=prompt,
             n_tokens=n_tokens,
-            timeout=self.config.call_timeout,
+            timeout=role_timeout,
             stop_sequences=stop_sequences,
             cache_prompt=self.cache_prompt,
         )
@@ -136,7 +150,10 @@ class InferenceMixin:
             if not self.health_tracker.is_available(backend_url):
                 raise RuntimeError(f"Backend unavailable (circuit open): {backend_url}")
 
-        result = backend.infer(role_config, request)
+        from src.inference_lock import inference_lock
+
+        with inference_lock(role):
+            result = backend.infer(role_config, request)
 
         # Record success/failure for circuit breaker
         if backend_url and self.health_tracker:
@@ -306,26 +323,29 @@ class InferenceMixin:
         )
 
         output_tokens = []
-        for token_id, logits in self.model_server.infer_stream(role, request):
-            output_tokens.append(token_id)
+        from src.inference_lock import inference_lock
 
-            # Update monitor with real logits
-            monitor.update(token_id, logits)
+        with inference_lock(role):
+            for token_id, logits in self.model_server.infer_stream(role, request):
+                output_tokens.append(token_id)
 
-            # Check if we should abort
-            should_abort, abort_reason = monitor.should_abort()
-            if should_abort:
-                health = monitor.get_health()
-                # Decode partial output
-                partial_text = self.model_server.decode_tokens(output_tokens)
-                return LLMResult(
-                    text=partial_text,
-                    aborted=True,
-                    abort_reason=abort_reason.value,
-                    tokens_generated=len(output_tokens),
-                    tokens_saved=0,  # Unknown for real inference
-                    failure_probability=health.estimated_failure_prob,
-                )
+                # Update monitor with real logits
+                monitor.update(token_id, logits)
+
+                # Check if we should abort
+                should_abort, abort_reason = monitor.should_abort()
+                if should_abort:
+                    health = monitor.get_health()
+                    # Decode partial output
+                    partial_text = self.model_server.decode_tokens(output_tokens)
+                    return LLMResult(
+                        text=partial_text,
+                        aborted=True,
+                        abort_reason=abort_reason.value,
+                        tokens_generated=len(output_tokens),
+                        tokens_saved=0,  # Unknown for real inference
+                        failure_probability=health.estimated_failure_prob,
+                    )
 
         # Completed without abort
         health = monitor.get_health()

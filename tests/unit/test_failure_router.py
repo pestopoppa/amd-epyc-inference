@@ -677,3 +677,83 @@ class TestIngestRole:
         path = router.get_escalation_path("ingest")
 
         assert path == ["ingest", "architect"]
+
+
+class TestLearnedEscalationParsing:
+    """Test LearnedEscalationPolicy action parsing."""
+
+    def test_parse_arrow_format_action(self):
+        """Test parsing 'escalate:from->to' format extracts target role."""
+        from src.failure_router import LearnedEscalationPolicy
+        from unittest.mock import MagicMock
+
+        # Create mock retriever that returns action in arrow format
+        mock_retriever = MagicMock()
+        mock_memory = MagicMock()
+        mock_memory.action = "escalate:worker->coder_primary"
+        mock_memory.id = "test-id"
+
+        mock_result = MagicMock()
+        mock_result.memory = mock_memory
+        mock_result.combined_score = 0.85
+
+        mock_retriever.retrieve_for_escalation.return_value = [mock_result]
+        mock_retriever.should_use_learned.return_value = True
+
+        policy = LearnedEscalationPolicy(retriever=mock_retriever)
+        result = policy.query(
+            FailureContext(role="worker", failure_count=2, error_category="code")
+        )
+
+        assert result.should_use_learned is True
+        assert result.suggested_action == "escalate"
+        assert result.suggested_role == "coder_primary"  # Extracted from arrow format
+
+    def test_parse_simple_format_action(self):
+        """Test parsing 'escalate:role' format (no arrow)."""
+        from src.failure_router import LearnedEscalationPolicy
+        from unittest.mock import MagicMock
+
+        mock_retriever = MagicMock()
+        mock_memory = MagicMock()
+        mock_memory.action = "escalate:architect_general"  # No arrow
+        mock_memory.id = "test-id"
+
+        mock_result = MagicMock()
+        mock_result.memory = mock_memory
+        mock_result.combined_score = 0.80
+
+        mock_retriever.retrieve_for_escalation.return_value = [mock_result]
+        mock_retriever.should_use_learned.return_value = True
+
+        policy = LearnedEscalationPolicy(retriever=mock_retriever)
+        result = policy.query(
+            FailureContext(role="coder", failure_count=2, error_category="code")
+        )
+
+        assert result.suggested_role == "architect_general"
+
+    def test_parse_retry_action(self):
+        """Test parsing 'retry' action (no colon)."""
+        from src.failure_router import LearnedEscalationPolicy
+        from unittest.mock import MagicMock
+
+        mock_retriever = MagicMock()
+        mock_memory = MagicMock()
+        mock_memory.action = "retry"
+        mock_memory.id = "test-id"
+
+        mock_result = MagicMock()
+        mock_result.memory = mock_memory
+        mock_result.combined_score = 0.75
+
+        mock_retriever.retrieve_for_escalation.return_value = [mock_result]
+        mock_retriever.should_use_learned.return_value = True
+
+        policy = LearnedEscalationPolicy(retriever=mock_retriever)
+        result = policy.query(
+            FailureContext(role="worker", failure_count=1, error_category="code")
+        )
+
+        assert result.suggested_action == "retry"
+        assert result.suggested_role is None

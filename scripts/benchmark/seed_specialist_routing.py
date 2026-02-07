@@ -610,6 +610,10 @@ def evaluate_question_3way(
         predicted_tps=resp_direct.get("predicted_tps", 0.0),
         generation_ms=resp_direct.get("generation_ms", 0.0),
     )
+    if error_type_direct == "infrastructure" and resp_direct.get("tokens_generated", 0) == 0:
+        target_port = ROLE_PORT.get(self_role, 0)
+        if target_port:
+            _erase_slots(target_port)
     from eval_log_format import (
         format_self_direct, format_self_repl, format_architect_result,
         format_reward_skip, format_all_infra_skip,
@@ -658,6 +662,10 @@ def evaluate_question_3way(
         predicted_tps=resp_repl.get("predicted_tps", 0.0),
         generation_ms=resp_repl.get("generation_ms", 0.0),
     )
+    if error_type_repl == "infrastructure" and resp_repl.get("tokens_generated", 0) == 0:
+        target_port = ROLE_PORT.get(self_role, 0)
+        if target_port:
+            _erase_slots(target_port)
     for line in format_self_repl(ACTION_SELF_REPL, passed_repl, error_repl, elapsed_repl, resp_repl):
         logger.info(line)
 
@@ -740,6 +748,10 @@ def evaluate_question_3way(
             predicted_tps=resp_arch.get("predicted_tps", 0.0),
             generation_ms=resp_arch.get("generation_ms", 0.0),
         )
+        if error_type_arch == "infrastructure" and resp_arch.get("tokens_generated", 0) == 0:
+            target_port = ROLE_PORT.get(ar, 0)
+            if target_port:
+                _erase_slots(target_port)
 
         for line in format_architect_result(ACTION_ARCHITECT, passed_arch, error_arch, elapsed_arch, resp_arch):
             logger.info(line)
@@ -839,6 +851,13 @@ def evaluate_question_3way(
     # Log rewards
     for action, reward in sorted(rewards.items()):
         logger.info(f"    reward[{action}] = {reward:.1f}")
+
+    infra_flags = [
+        rr.error_type == "infrastructure"
+        for rr in role_results.values()
+        if rr is not None
+    ]
+    metadata["all_infra"] = bool(infra_flags) and all(infra_flags)
 
     return role_results, rewards, metadata
 
@@ -1667,6 +1686,14 @@ def run_batch_3way(
             role_results, rewards, metadata = evaluate_question_3way(
                 prompt_info, url, timeout, _client, dry_run,
             )
+            if metadata.get("all_infra"):
+                logger.warning("  All roles failed due to infra. Attempting recovery...")
+                recovered = _attempt_recovery(url)
+                if recovered:
+                    logger.info("  Recovery successful — continuing")
+                else:
+                    logger.warning("  Recovery failed — sleeping 30s before continuing")
+                    time.sleep(30)
 
             # Inject rewards
             rewards_injected = 0

@@ -126,7 +126,7 @@ THREE_WAY_COST_TIER: dict[str, int] = {
 
 # ── Server topology ──────────────────────────────────────────────────
 
-HEAVY_PORTS = {8083, 8084, 8085, 8087}
+HEAVY_PORTS = {8080, 8081, 8083, 8084, 8085, 8087}
 
 ROLE_PORT: dict[str, int] = {
     "frontdoor": 8080,

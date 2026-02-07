@@ -27,6 +27,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+from src.inference_lock import inference_lock
+
 # Default model path (BGE-large-en-v1.5 for embeddings)
 # BGE-large produces 1024-dim embeddings, purpose-built for similarity search
 DEFAULT_MODEL_PATH = Path("/mnt/raid0/llm/models/bge-large-en-v1.5-f16.gguf")
@@ -123,8 +125,13 @@ class TaskEmbedder:
         resp.raise_for_status()
         data = resp.json()
 
-        # llama-server returns: {"embedding": [[...]], ...}
-        # or {"data": [{"embedding": [...]}], ...}
+        # llama-server returns:
+        # - {"embedding": [[...]], ...}
+        # - {"data": [{"embedding": [...]}], ...}
+        # - or list payload: [{"embedding": [[...]], ...}]
+        if isinstance(data, list) and data:
+            data = data[0]
+
         if "embedding" in data:
             # Direct embedding format
             embedding_data = data["embedding"]
@@ -136,7 +143,10 @@ class TaskEmbedder:
             # OpenAI-compatible format
             embedding = np.array(data["data"][0]["embedding"], dtype=np.float32)
         else:
-            raise ValueError(f"Unexpected embedding response format: {list(data.keys())}")
+            raise ValueError(
+                "Unexpected embedding response format: "
+                f"{list(data.keys()) if hasattr(data, 'keys') else type(data)}"
+            )
 
         # Normalize to unit vector
         norm = np.linalg.norm(embedding)
@@ -377,37 +387,42 @@ class TaskEmbedder:
 
     def _generate_embedding(self, text: str) -> np.ndarray:
         """Generate embedding using available method (parallel > single HTTP > subprocess > hash)."""
-        # Try parallel embedder first (probe-first to 6 servers)
-        if self.config.use_parallel and self.config.use_server:
-            try:
-                client = self._get_parallel_client()
-                return client.embed_sync(text)
-            except Exception as e:
-                logger.warning("Parallel embedder failed (%s), falling back to single server", e)
+        with inference_lock("embedder", shared=True):
+            # Try parallel embedder first (probe-first to 6 servers)
+            if self.config.use_parallel and self.config.use_server:
+                try:
+                    client = self._get_parallel_client()
+                    return client.embed_sync(text)
+                except Exception as e:
+                    logger.warning(
+                        "Parallel embedder failed (%s), falling back to single server", e
+                    )
 
-        # Try single HTTP server (2-5ms)
-        if self._check_server():
-            try:
-                return self._generate_embedding_http(text)
-            except Exception as e:
-                logger.warning("Embedding server failed (%s), falling back to subprocess", e)
-                self._server_available = False  # Reset to retry later
+            # Try single HTTP server (2-5ms)
+            if self._check_server():
+                try:
+                    return self._generate_embedding_http(text)
+                except Exception as e:
+                    logger.warning(
+                        "Embedding server failed (%s), falling back to subprocess", e
+                    )
+                    self._server_available = False  # Reset to retry later
 
-        # Try subprocess (50-200ms)
-        if self._model_available:
-            try:
-                return self._generate_embedding_llama(text)
-            except Exception as e:
-                if self.config.use_fallback:
-                    logger.warning("llama-embedding failed (%s), using hash fallback", e)
-                    return self._generate_embedding_fallback(text)
-                raise
+            # Try subprocess (50-200ms)
+            if self._model_available:
+                try:
+                    return self._generate_embedding_llama(text)
+                except Exception as e:
+                    if self.config.use_fallback:
+                        logger.warning("llama-embedding failed (%s), using hash fallback", e)
+                        return self._generate_embedding_fallback(text)
+                    raise
 
-        # Hash fallback
-        if self.config.use_fallback:
-            return self._generate_embedding_fallback(text)
-        else:
-            raise RuntimeError("Embedding model not available and fallback disabled")
+            # Hash fallback
+            if self.config.use_fallback:
+                return self._generate_embedding_fallback(text)
+            else:
+                raise RuntimeError("Embedding model not available and fallback disabled")
 
     def embed_batch(self, texts: List[str]) -> np.ndarray:
         """

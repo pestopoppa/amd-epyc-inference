@@ -17,6 +17,7 @@ from src.escalation import EscalationAction, EscalationContext, EscalationPolicy
 from src.features import features
 from src.generation_monitor import GenerationMonitor, MonitorConfig
 from src.llm_primitives import LLMPrimitives
+from src.llm_primitives.types import LLMResult
 from src.prompt_builders import (
     auto_wrap_final,
     build_escalation_prompt,
@@ -254,16 +255,27 @@ async def _execute_repl(
                     config=monitor_config,
                     mock_mode=request.mock_mode,
                 )
-                llm_result = primitives.llm_call_monitored(
-                    root_prompt,
-                    role=current_role,
-                    monitor=monitor,
-                )
-                code = llm_result.text
+                if primitives.model_server is None:
+                    code = await asyncio.to_thread(
+                        primitives.llm_call,
+                        root_prompt,
+                        role=current_role,
+                        n_tokens=1024,
+                    )
+                    llm_result = LLMResult(text=code, aborted=False)
+                else:
+                    llm_result = await asyncio.to_thread(
+                        primitives.llm_call_monitored,
+                        root_prompt,
+                        role=current_role,
+                        monitor=monitor,
+                    )
+                    code = llm_result.text
                 generation_aborted = llm_result.aborted
                 abort_reason = llm_result.abort_reason
             else:
-                code = primitives.llm_call(
+                code = await asyncio.to_thread(
+                    primitives.llm_call,
                     root_prompt,
                     role=current_role,
                     n_tokens=1024,
@@ -441,7 +453,8 @@ async def _execute_repl(
                     task_id,
                     extra=task_extra(task_id=task_id, role=current_role, stage="review"),
                 )
-                verdict = _architect_verdict(
+                verdict = await asyncio.to_thread(
+                    _architect_verdict,
                     question=request.prompt,
                     answer=answer,
                     primitives=primitives,
@@ -453,7 +466,8 @@ async def _execute_repl(
                         corrections,
                         extra=task_extra(task_id=task_id, role=current_role, stage="review"),
                     )
-                    answer = _fast_revise(
+                    answer = await asyncio.to_thread(
+                        _fast_revise,
                         question=request.prompt,
                         original_answer=answer,
                         corrections=corrections,

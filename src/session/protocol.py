@@ -332,7 +332,7 @@ class SessionStore(Protocol):
 
         Args:
             session_id: The session ID
-            embedding: The embedding vector (896-dim for TaskEmbedder)
+            embedding: The embedding vector (1024-dim for TaskEmbedder)
             content_type: Type of content ("session", "finding", "document")
 
         Returns:

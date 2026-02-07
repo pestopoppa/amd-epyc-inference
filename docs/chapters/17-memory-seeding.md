@@ -52,7 +52,7 @@ python orchestration/repl_memory/seed_loader.py --force
 **What it does:**
 
 1. Loads 56 examples from `seed_examples.json`
-2. Generates embeddings using `TaskEmbedder` (Qwen2.5-Coder-0.5B)
+2. Generates embeddings using `TaskEmbedder` (BGE-large, 1024-dim)
 3. Stores in episodic memory with:
    - `action`: The code snippet
    - `action_type`: "exploration"
@@ -341,6 +341,17 @@ The 3-way evaluation mode uses a distinct action vocabulary:
 | `WORKER` | Worker models | via delegation | — |
 
 These action keys are stored in episodic memory and used for routing decisions. The HybridRouter's `route_3way()` method retrieves memories by these action keys.
+
+## Infra Safeguards (2026-02-07)
+
+Recent seeding regressions showed that a single stalled heavy-model request can
+block the orchestrator event loop and cascade into 600s timeouts. The infra
+plan now includes:
+
+- **CPU-exclusive inference lock**: heavy models acquire an exclusive lock; workers/embedders acquire a shared lock and only run when no heavy model is active.
+- **Async safety**: all blocking LLM calls are offloaded from the event loop.
+- **3-way timeout cleanup**: slot erasure on infra timeouts to prevent stuck backends.
+- **Backend probes in /health**: detect hung backends even when circuit state is stale.
 
 ## References
 

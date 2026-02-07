@@ -8,6 +8,7 @@
 - [Hardware Specifications](#hardware-specifications)
 - [Current Status](#current-status-production-orchestration-december-2025)
 - [Hierarchical Orchestration System](#hierarchical-orchestration-system)
+- [Component Flow](#component-flow)
 - [Directory Structure](#directory-structure)
 - [Session Startup](#session-startup-mandatory)
 - [Quick Reference Commands](#quick-reference-commands)
@@ -80,7 +81,7 @@ This machine has 192 hardware threads. Running `pytest -n auto` (pytest-xdist pa
 
 ### What Happened (2026-01-13)
 
-An agent ran orchestration liveness tests with parallel execution. Each pytest worker initialized `TaskEmbedder` which loads a 0.5B embedding model. With ~192 workers, memory exhausted and the machine crashed.
+An agent ran orchestration liveness tests with parallel execution. Each pytest worker initialized `TaskEmbedder` which loads the BGE-large embedder. With ~192 workers, memory exhausted and the machine crashed.
 
 ### Safeguards Added
 
@@ -212,13 +213,33 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 - Speculative decoding draft models (co-loaded with spec decode servers on ports 8081, 8082)
 - Embedding server for episodic memory (port 8090)
 - **Draft Model**: Qwen2.5-Coder-0.5B-Instruct Q8_0
-- **Embedder**: Qwen2.5-Coder-0.5B Q8_0
+- **Embedder**: BGE-large-en-v1.5 (1024-dim) via 6-way parallel fanout (ports 8090-8095)
 
 ### Critical Constraints
 
 **SSM Models (Qwen3-Next)**: NEVER use speculative decoding or prompt lookup. SSM architecture requires consecutive positions — incompatible with ALL speculation methods.
 
 **Qwen3-Coder-480B**: BOS token mismatch (`BOS=','`) breaks all speculation. Use expert reduction only.
+
+### Component Flow
+
+> **Maintenance note**: Review this section when making architecture changes.
+
+```
+Request:    API(:8000) → AppState → RoutingFacade → LLMPrimitives → [model servers]
+Memory:     EpisodicStore(SQLite) → FAISSStore(4042 vectors) → ParallelEmbedder → BGE pool(:8090-8095)
+Escalation: RoutingFacade queries FailureRouter(learned) with EscalationPolicy(rules) fallback
+Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
+Tools:      ChatPipeline → REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
+```
+
+### Knowledgebase Updates (2026-02-07)
+
+- **Embedder switch**: TaskEmbedder now uses **BGE-large** (1024-dim) instead of Qwen 0.5B.
+- **FAISS rebuild required** after the switch; existing 896-d FAISS indexes are incompatible.
+- **Reset/backfill flow** now recreates FAISS at 1024-d and updates SQLite `embedding_idx`.
+
+**Visual topology**: `logs/canvases/component_topology.canvas` (for Obsidian)
 
 ---
 

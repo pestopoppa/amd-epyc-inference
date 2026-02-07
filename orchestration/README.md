@@ -466,7 +466,7 @@ The `repl_memory/` directory contains the MemRL episodic memory system for learn
 | `repl_memory/seed_loader.py` | Script to load seeds into episodic memory |
 | `repl_memory/episodic_store.py` | SQLite + FAISS/numpy memory storage |
 | `repl_memory/faiss_store.py` | FAISS embedding store + NumPy fallback |
-| `repl_memory/embedder.py` | Task embedding via Qwen2.5-0.5B |
+| `repl_memory/embedder.py` | Task embedding via BGE-large (1024-dim) |
 | `repl_memory/retriever.py` | Two-phase retrieval + hybrid router |
 | `repl_memory/q_scorer.py` | Async Q-value update agent |
 | `repl_memory/progress_logger.py` | Structured JSONL logging |

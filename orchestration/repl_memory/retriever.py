@@ -189,8 +189,11 @@ class TwoPhaseRetriever:
         results = []
 
         for memory in candidates:
-            mem_norm = memory.embedding / (np.linalg.norm(memory.embedding) + 1e-8)
-            similarity = float(np.dot(query_norm, mem_norm))
+            if memory.embedding is None:
+                similarity = memory.similarity_score
+            else:
+                mem_norm = memory.embedding / (np.linalg.norm(memory.embedding) + 1e-8)
+                similarity = float(np.dot(query_norm, mem_norm))
 
             # Skip if below similarity threshold
             if similarity < self.config.min_similarity:

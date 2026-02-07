@@ -128,6 +128,9 @@ def backfill_embeddings(store: EpisodicStore, embedder: ParallelEmbedder,
     stats = {"backfilled": 0, "failed": 0}
     missing_list = list(missing_ids)
 
+    conn = sqlite3.connect(store.sqlite_path)
+    cursor = conn.cursor()
+
     for i in range(0, len(missing_list), batch_size):
         batch_ids = missing_list[i:i + batch_size]
 
@@ -144,11 +147,16 @@ def backfill_embeddings(store: EpisodicStore, embedder: ParallelEmbedder,
             # Add to FAISS
             for mid, emb in zip(batch_ids, embeddings):
                 try:
-                    store._embedding_store.add(mid, emb)
+                    idx = store._embedding_store.add(mid, emb)
+                    cursor.execute(
+                        "UPDATE memories SET embedding_idx = ? WHERE id = ?",
+                        (idx, mid),
+                    )
                     stats["backfilled"] += 1
                 except Exception as e:
                     print(f"  Failed to add {mid}: {e}")
                     stats["failed"] += 1
+            conn.commit()
 
         except Exception as e:
             print(f"  Batch embedding failed: {e}")
@@ -157,6 +165,7 @@ def backfill_embeddings(store: EpisodicStore, embedder: ParallelEmbedder,
         if (i + batch_size) % 100 == 0 or i + batch_size >= len(missing_list):
             print(f"  Progress: {min(i + batch_size, len(missing_list))}/{len(missing_list)}")
 
+    conn.close()
     return stats
 
 

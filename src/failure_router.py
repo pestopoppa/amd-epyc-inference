@@ -322,10 +322,21 @@ class LearnedEscalationPolicy:
                 )
 
             # Parse the best action
+            # Format: "escalate:from_role->to_role" or "escalate:to_role" or "retry"
             best = results[0]
             action_parts = best.memory.action.split(":")
             suggested_action = action_parts[0] if action_parts else "retry"
-            suggested_role = action_parts[1] if len(action_parts) > 1 else None
+
+            # Extract target role from "from->to" or just "role" format
+            suggested_role = None
+            if len(action_parts) > 1:
+                role_part = action_parts[1]
+                if "->" in role_part:
+                    # Format: "from_role->to_role" — extract target
+                    suggested_role = role_part.split("->")[-1]
+                else:
+                    # Format: just "role"
+                    suggested_role = role_part
 
             return LearnedEscalationResult(
                 should_use_learned=True,

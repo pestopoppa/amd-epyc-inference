@@ -62,7 +62,7 @@ class Features:
 
     Attributes:
         memrl: Memory-based Reinforcement Learning (Phase 4)
-            - TaskEmbedder: 0.5B embedding model for task similarity
+            - TaskEmbedder: BGE-large embeddings for task similarity (1024-dim)
             - QScorer: Q-value scoring for escalation decisions
             - HybridRouter: Learned + rule-based routing
             - EpisodicStore: SQLite storage for task memories

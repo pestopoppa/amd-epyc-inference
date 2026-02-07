@@ -53,8 +53,8 @@ CREATE INDEX idx_type_q ON memories(action_type, q_value DESC);
 class FAISSEmbeddingStore:
     """FAISS IndexFlatIP with L2 normalization for cosine similarity."""
 
-    def __init__(self, path: Path, dim: int = 896):
-        # Qwen2.5-0.5B hidden dim
+    def __init__(self, path: Path, dim: int = 1024):
+        # BGE-large embedding dim
         self.index = faiss.IndexFlatIP(dim)  # Inner product
 
     def add(self, memory_id: str, embedding: np.ndarray) -> int:
@@ -89,9 +89,9 @@ class TaskEmbedder:
     """Generate embeddings via HTTP server (2-5ms) or subprocess (50-200ms)."""
 
     def __init__(self):
-        self.model_path = "Qwen2.5-Coder-0.5B-Q8_0.gguf"
+        self.model_path = "bge-large-en-v1.5-f16.gguf"
         self.server_url = "http://127.0.0.1:8090"
-        self.embedding_dim = 896  # Qwen2.5-0.5B hidden dim
+        self.embedding_dim = 1024  # BGE-large embedding dim
 
     def embed_task_ir(self, task_ir: Dict[str, Any]) -> np.ndarray:
         # Serialize to focus on semantic fields

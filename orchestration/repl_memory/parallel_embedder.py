@@ -193,6 +193,9 @@ class ParallelEmbedderClient:
             resp.raise_for_status()
             data = resp.json()
 
+            if isinstance(data, list) and data:
+                data = data[0]
+
             # Parse response (llama-server format)
             if "embedding" in data:
                 embedding_data = data["embedding"]

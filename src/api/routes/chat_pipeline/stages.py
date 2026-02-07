@@ -6,6 +6,7 @@ parallel delegation, ReAct tool loop, direct LLM call, and error annotation.
 
 from __future__ import annotations
 
+import asyncio
 import json as _json
 import logging
 import re as _re
@@ -402,7 +403,8 @@ async def _execute_proactive(
     )
 
     try:
-        plan_json_str = primitives.llm_call(
+        plan_json_str = await asyncio.to_thread(
+            primitives.llm_call,
             plan_prompt,
             role="architect_general",
             n_tokens=256,

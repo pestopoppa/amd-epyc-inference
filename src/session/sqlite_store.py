@@ -60,7 +60,7 @@ class SQLiteSessionStore(BaseSessionStore):
         self,
         db_path: Path | str = DEFAULT_DB_PATH,
         embeddings_path: Path | str = DEFAULT_EMBEDDINGS_PATH,
-        embedding_dim: int = 896,  # Qwen2.5-0.5B hidden dim (matches TaskEmbedder)
+        embedding_dim: int = 1024,  # BGE-large embedding dim (matches TaskEmbedder)
     ):
         self.db_path = Path(db_path)
         self.embeddings_path = Path(embeddings_path)
@@ -194,8 +194,16 @@ class SQLiteSessionStore(BaseSessionStore):
         if self.embeddings_path.exists() and self.embeddings_path.stat().st_size > 0:
             try:
                 self._embeddings = np.load(self.embeddings_path, mmap_mode="r+")
-                self._next_embedding_idx = len(self._embeddings)
-                return
+                if self._embeddings.shape[1] != self.embedding_dim:
+                    logger.warning(
+                        "Session embeddings dim mismatch (%s != %s); recreating file.",
+                        self._embeddings.shape[1],
+                        self.embedding_dim,
+                    )
+                    self.embeddings_path.unlink()
+                else:
+                    self._next_embedding_idx = len(self._embeddings)
+                    return
             except (EOFError, ValueError) as e:
                 logger.warning(f"Corrupt embeddings file, recreating: {e}")
                 self.embeddings_path.unlink()

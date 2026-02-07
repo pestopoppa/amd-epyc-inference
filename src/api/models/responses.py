@@ -106,6 +106,10 @@ class HealthResponse(BaseModel):
         default=None,
         description="Per-backend circuit breaker status (URL → state/failure_count/cooldown)",
     )
+    backend_probes: dict[str, Any] | None = Field(
+        default=None,
+        description="Per-backend liveness probes (role → {url, ok, latency_ms})",
+    )
     knowledge_tools: dict[str, Any] | None = Field(
         default=None,
         description="Knowledge tools availability: {available, tools: {name: {available, error}}}",

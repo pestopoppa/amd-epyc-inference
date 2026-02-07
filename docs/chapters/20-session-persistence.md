@@ -29,7 +29,7 @@ The system was implemented in 7 phases (2026-01-21 to 2026-01-26) and uses SQLit
 ```
 /workspace/orchestration/repl_memory/sessions/
 ├── sessions.db                        # Main session metadata (SQLite WAL mode)
-├── session_embeddings.npy             # 896-dim embeddings (TaskEmbedder)
+├── session_embeddings.npy             # 1024-dim embeddings (TaskEmbedder)
 ├── state/
 │   ├── {session_id}/
 │   │   └── ocr_cache.db              # Per-session document cache
@@ -375,7 +375,7 @@ $ orch sessions list --status active
 | Checkpoint | ~5-50KB | Depends on artifact count |
 | Document record | ~1KB | Reference only, OCR cached separately |
 | OCR cache | ~100KB-2MB/doc | Compressed JSON, no images |
-| Embeddings | 896 × 4 bytes = 3.5KB | Per session (TaskEmbedder) |
+| Embeddings | 1024 × 4 bytes = 4.0KB | Per session (TaskEmbedder) |
 
 **WAL mode benefits:**
 - Crash-safe (writes to WAL first)

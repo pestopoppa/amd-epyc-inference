@@ -1,6 +1,8 @@
 """Health check endpoint with backend health aggregation."""
 
+import asyncio
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -8,6 +10,7 @@ from fastapi import APIRouter, Depends
 from src.api.dependencies import dep_health_tracker
 from src.api.health_tracker import BackendHealthTracker
 from src.api.models import HealthResponse
+from src.config import get_config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,6 +84,44 @@ def _check_knowledge_tools() -> dict[str, Any]:
     return status
 
 
+async def _probe_backend(url: str, timeout: float = 2.0) -> dict[str, Any]:
+    """Probe a backend for liveness."""
+    import httpx
+
+    start = time.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(f"{url}/health")
+        ok = resp.status_code == 200
+    except Exception:
+        ok = False
+    latency_ms = (time.perf_counter() - start) * 1000
+    return {"ok": ok, "latency_ms": round(latency_ms, 1), "url": url}
+
+
+async def _probe_core_backends() -> dict[str, Any]:
+    """Probe core backend roles for liveness."""
+    server_urls = get_config().server_urls.as_dict()
+    core_roles = ["frontdoor", "coder_escalation", "architect_general", "architect_coding"]
+    probes: dict[str, Any] = {}
+    tasks = []
+    role_list = []
+    for role in core_roles:
+        url = server_urls.get(role)
+        if url:
+            role_list.append(role)
+            tasks.append(_probe_backend(url))
+    if not tasks:
+        return probes
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for role, result in zip(role_list, results):
+        if isinstance(result, Exception):
+            probes[role] = {"ok": False, "latency_ms": None, "url": server_urls.get(role)}
+        else:
+            probes[role] = result
+    return probes
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health(
     tracker: BackendHealthTracker = Depends(dep_health_tracker),
@@ -105,11 +146,19 @@ async def health(
     # Check knowledge tools availability (cached)
     knowledge_status = _check_knowledge_tools()
 
+    # Probe core backends for liveness
+    backend_probes = await _probe_core_backends()
+    if backend_probes:
+        any_down = any(not p.get("ok", False) for p in backend_probes.values())
+        if any_down and status == "ok":
+            status = "degraded"
+
     return HealthResponse(
         status=status,
         models_loaded=backends_healthy,
         mock_mode_available=True,
         version="0.1.0",
         backend_health=backend_health,
+        backend_probes=backend_probes or None,
         knowledge_tools=knowledge_status,
     )

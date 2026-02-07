@@ -76,6 +76,10 @@ benchmarks/evidence/
 benchmarks/results/reviews/*.csv
 !benchmarks/results/reviews/summary.csv
 benchmarks/results/orchestrator/
+benchmarks/results/eval/
+benchmarks/results/reviews/backup_*/
+benchmarks/results/timeout_calibration.json
+benchmarks/images/
 
 # Benchmark question pools (reconstructible from public sources — see Ch24)
 # Use wildcard pattern to allow negation of specific files
@@ -84,3 +88,24 @@ benchmarks/prompts/*
 !benchmarks/prompts/debug/
 benchmarks/prompts/debug/*
 !benchmarks/prompts/debug/mode_advantage_hard.yaml
+
+# Local-only artifacts (not for GitHub)
+.coverage
+coverage.json
+.mcp.json
+.dockerignore
+.env.example
+=0.8
+=1.7.4
+Dockerfile
+Dockerfile.dev
+docker-compose.yml
+flake.nix
+docs/MODEL_MANIFEST.md
+docs/SETUP.md
+docs/guides/model-sizing.md
+Twyne_V1_Whitepaper_*.json
+orchestration/repl_memory/sessions/
+orchestration/repl_memory/sessions/*.bak*
+scripts/benchmark/lookup_question.py
+scripts/setup/download_models.py

@@ -741,12 +741,14 @@ def start_orchestrator() -> ProcessInfo | None:
     env["ORCHESTRATOR_REACT_MODE"] = "1"
 
     with open(log_file, "w") as log:
+        workers = int(os.environ.get("ORCHESTRATOR_UVICORN_WORKERS", "2"))
         proc = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn",
                 "src.api:app",
                 "--host", "127.0.0.1",
                 "--port", "8000",
+                "--workers", str(workers),
             ],
             cwd=str(_PATHS["project_root"]),
             stdout=log,

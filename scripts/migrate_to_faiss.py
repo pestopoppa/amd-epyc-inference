@@ -195,7 +195,7 @@ def compare_backends(db_path: Path, n_queries: int = 10) -> None:
 
     # Generate random query embeddings
     rng = np.random.default_rng(42)
-    dim = 896  # Qwen2.5-0.5B hidden dim
+    dim = 1024  # BGE-large embedding dim
 
     overlaps = []
     for i in range(n_queries):

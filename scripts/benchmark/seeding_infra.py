@@ -144,12 +144,14 @@ def _launch_api_only() -> bool:
     log_file = PROJECT_ROOT / "logs" / "orchestrator_autolaunch.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
+    workers = int(os.environ.get("ORCHESTRATOR_UVICORN_WORKERS", "2"))
     proc = subprocess.Popen(
         [
             sys.executable, "-m", "uvicorn",
             "src.api:app",
             "--host", "127.0.0.1",
             "--port", "8000",
+            "--workers", str(workers),
         ],
         cwd=str(PROJECT_ROOT),
         stdout=open(log_file, "w"),

@@ -222,7 +222,8 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
         str(initial_role) in ("architect_general", "architect_coding")
         and delegation_allowed
     ):
-        result = _execute_delegated(
+        result = await asyncio.to_thread(
+            _execute_delegated,
             request,
             routing,
             primitives,
@@ -236,7 +237,8 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
 
     # 8b: ReAct tool loop mode
     if execution_mode == "react":
-        result = _execute_react(
+        result = await asyncio.to_thread(
+            _execute_react,
             request,
             routing,
             primitives,
@@ -250,7 +252,15 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
     # 8c: Direct LLM call mode
     if execution_mode == "direct" and request.real_mode:
         return _annotate_error(
-            _execute_direct(request, routing, primitives, state, start_time, initial_role)
+            await asyncio.to_thread(
+                _execute_direct,
+                request,
+                routing,
+                primitives,
+                state,
+                start_time,
+                initial_role,
+            )
         )
 
     # 8d: REPL orchestration mode (default fallback)

@@ -152,7 +152,7 @@ repl = REPLEnvironment(context="...", config=config)
 
 ### Phase 1: Core Implementation (COMPLETE)
 - [x] `episodic_store.py` - SQLite + numpy memory storage
-- [x] `embedder.py` - Task embedding via 0.5B model
+- [x] `embedder.py` - Task embedding via BGE-large (1024-dim)
 - [x] `retriever.py` - Two-phase retrieval + hybrid router
 - [x] `progress_logger.py` - Structured JSONL logging
 - [x] `q_scorer.py` - Async Q-value update agent

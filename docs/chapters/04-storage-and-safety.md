@@ -104,7 +104,7 @@ sudo bash /mnt/raid0/llm/UTILS/emergency_cleanup.sh
 ### Memory Exhaustion Incident (2026-01-13)
 
 An agent ran orchestration liveness tests with `pytest -n auto`, spawning ~192 worker processes (one per hardware thread). Each worker initialized the API, which loads:
-- TaskEmbedder: 0.5B embedding model (~2GB)
+- TaskEmbedder: BGE-large embedding model (~2–3GB, 1024-dim)
 - QScorer: Q-value scoring model (~1GB)
 
 **Result**: 192 workers × 3GB = **576GB allocation**, exceeding the 1.13TB RAM budget when combined with existing HOT tier (~535GB). The machine exhausted memory and crashed.
