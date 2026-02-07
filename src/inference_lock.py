@@ -38,7 +38,14 @@ LIGHT_ROLES = {
 
 
 def _lock_path() -> Path:
-    return get_config().paths.tmp_dir / "heavy_model.lock"
+    configured = get_config().paths.tmp_dir / "heavy_model.lock"
+    try:
+        configured.parent.mkdir(parents=True, exist_ok=True)
+        return configured
+    except OSError:
+        import tempfile
+        fallback = Path(tempfile.gettempdir()) / "heavy_model.lock"
+        return fallback
 
 
 def _is_heavy_role(role: str) -> bool:
@@ -57,7 +64,6 @@ def inference_lock(role: str, shared: bool | None = None):
     Heavy roles take an exclusive lock; light roles take a shared lock.
     """
     lock_file = _lock_path()
-    lock_file.parent.mkdir(parents=True, exist_ok=True)
 
     if shared is None:
         shared = not _is_heavy_role(role)
