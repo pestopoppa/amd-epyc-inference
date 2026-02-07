@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
+      - name: Create CI workspace dirs
+        run: mkdir -p .ci-tmp/models .ci-tmp/cache .ci-tmp/tmp logs/canvases
+
       - name: Run linter
         run: ruff check src/ tests/
 
@@ -53,6 +56,10 @@ jobs:
         run: pytest tests/ -x --timeout=120 -q --cov=src --cov-report=term-missing --cov-fail-under=30
         env:
           ORCHESTRATOR_MOCK_MODE: "true"
+          # Redirect /mnt/raid0 paths to CI-safe locations
+          ORCHESTRATOR_PATHS_LLM_ROOT: ${{ github.workspace }}/.ci-tmp
+          ORCHESTRATOR_PATHS_PROJECT_ROOT: ${{ github.workspace }}
+          ORCHESTRATOR_PATHS_TMP_DIR: ${{ runner.temp }}
 
       - name: Type check
         run: mypy src/ --ignore-missing-imports --no-error-summary || true

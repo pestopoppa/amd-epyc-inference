@@ -12,6 +12,12 @@ from unittest.mock import patch
 
 import pytest
 
+# Tests that assert /mnt/raid0/ paths only apply on the production machine
+_on_raid = pytest.mark.skipif(
+    not Path("/mnt/raid0").exists(),
+    reason="Path assertions require /mnt/raid0 (production machine only)",
+)
+
 from src.config import (
     ChatPipelineConfig,
     DelegationConfig,
@@ -394,6 +400,7 @@ class TestVisionDefaults:
         assert cfg.clip_model_name == "ViT-B/32"
         assert cfg.sentence_transformer_model == "all-MiniLM-L6-v2"
 
+    @_on_raid
     def test_paths_on_raid(self):
         cfg = VisionConfig()
         assert str(cfg.base_dir).startswith("/mnt/raid0/")
@@ -427,6 +434,7 @@ class TestDelegationDefaults:
 
 
 class TestServicesDefaults:
+    @_on_raid
     def test_ocr_model_paths_on_raid(self):
         cfg = ServicesConfig()
         assert str(cfg.lightonocr_model).startswith("/mnt/raid0/")
@@ -436,6 +444,7 @@ class TestServicesDefaults:
         cfg = ServicesConfig()
         assert cfg.lightonocr_max_tokens == 2048
 
+    @_on_raid
     def test_draft_cache(self):
         cfg = ServicesConfig()
         assert str(cfg.draft_cache_dir).startswith("/mnt/raid0/")
@@ -452,6 +461,7 @@ class TestServicesDefaults:
 
 
 class TestPathsDefaults:
+    @_on_raid
     def test_all_paths_on_raid(self):
         cfg = PathsConfig()
         for field_name in [
@@ -473,10 +483,12 @@ class TestPathsDefaults:
                 f"PathsConfig.{field_name} = {path} is NOT on /mnt/raid0/"
             )
 
+    @_on_raid
     def test_raid_prefix(self):
         cfg = PathsConfig()
         assert cfg.raid_prefix == "/mnt/raid0/"
 
+    @_on_raid
     def test_specific_paths(self):
         cfg = PathsConfig()
         assert cfg.project_root == Path("/mnt/raid0/llm/claude")
@@ -488,6 +500,7 @@ class TestPathsDefaults:
 
 
 class TestWorkerPoolPathsDefaults:
+    @_on_raid
     def test_paths_on_raid(self):
         cfg = WorkerPoolPathsConfig()
         assert str(cfg.llama_server_path).startswith("/mnt/raid0/")
@@ -630,6 +643,7 @@ class TestWiringChatVision:
 class TestWiringRegistryLoader:
     """Verify registry_loader.py sources defaults from config."""
 
+    @_on_raid
     def test_default_model_base_from_config(self):
         """RegistryLoader._model_base_path should match config.paths.model_base."""
         cfg = get_config()
@@ -637,6 +651,7 @@ class TestWiringRegistryLoader:
         # a valid YAML file, so we check the config value directly
         assert cfg.paths.model_base == Path("/mnt/raid0/llm/lmstudio/models")
 
+    @_on_raid
     def test_default_registry_path_from_config(self):
         cfg = get_config()
         assert cfg.paths.registry_path == Path(
@@ -647,6 +662,7 @@ class TestWiringRegistryLoader:
 class TestWiringBuiltinTools:
     """Verify builtin_tools.py uses config for security prefix."""
 
+    @_on_raid
     def test_raid_prefix_in_config(self):
         cfg = get_config()
         assert cfg.paths.raid_prefix == "/mnt/raid0/"

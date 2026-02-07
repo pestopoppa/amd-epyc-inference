@@ -1,11 +1,19 @@
 """Tests for API route path validation."""
 
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException
 
 from src.api.routes.path_validation import validate_api_path, _get_allowed_prefixes
 
+_on_raid = pytest.mark.skipif(
+    not Path("/mnt/raid0").exists(),
+    reason="Requires /mnt/raid0 (production machine only)",
+)
 
+
+@_on_raid
 def test_allowed_raid_path():
     """Paths under /mnt/raid0/llm/ are accepted."""
     # Use a path that resolves to itself (no symlinks needed)
@@ -21,6 +29,7 @@ def test_allowed_tmp_path(tmp_path):
     assert result.exists()
 
 
+@_on_raid
 def test_rejects_traversal():
     """Path traversal with ../../ is blocked after resolution."""
     with pytest.raises(HTTPException) as exc_info:
@@ -46,11 +55,13 @@ def test_rejects_home_path():
 def test_allowed_prefixes_are_correct():
     """Verify the allowlist includes required prefixes."""
     import tempfile
+    from src.config import get_config
 
     allowed = _get_allowed_prefixes()
-    # Must include LLM root and tmp
-    assert "/mnt/raid0/llm/" in allowed
-    assert "/mnt/raid0/llm/tmp/" in allowed
+    # Must include configured LLM root
+    llm_root = str(get_config().paths.llm_root)
+    llm_prefix = llm_root if llm_root.endswith("/") else f"{llm_root}/"
+    assert llm_prefix in allowed
     # Must include system temp for CI/tests
     sys_tmp = tempfile.gettempdir()
     sys_tmp_prefix = sys_tmp if sys_tmp.endswith("/") else f"{sys_tmp}/"
