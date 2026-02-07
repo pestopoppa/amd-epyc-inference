@@ -22,9 +22,6 @@ from src.roles import Role, get_tier
 
 if TYPE_CHECKING:
     from src.context_manager import ContextManager
-
-    # Support both legacy and new escalation types
-    from src.failure_router import FailureContext, RoutingDecision
     from src.escalation import EscalationContext, EscalationDecision
 
 
@@ -146,8 +143,8 @@ class PromptBuilder:
         self,
         original_prompt: str,
         state: str,
-        failure_context: "FailureContext | EscalationContext",
-        decision: "RoutingDecision | EscalationDecision",
+        failure_context: "EscalationContext",
+        decision: "EscalationDecision",
         *,
         as_structured: bool = False,
         use_toon: bool = False,
@@ -157,14 +154,13 @@ class PromptBuilder:
         Includes failure context to help the higher-tier model understand
         what went wrong and what was tried.
 
-        Supports both legacy (FailureContext/RoutingDecision) and new
-        (EscalationContext/EscalationDecision) types for migration.
+        Uses EscalationContext/EscalationDecision types for escalation info.
 
         Args:
             original_prompt: The user's original prompt.
             state: Current REPL state.
-            failure_context: Context about the failure (legacy or new type).
-            decision: The routing decision with escalation reason (legacy or new type).
+            failure_context: Context about the failure.
+            decision: The routing decision with escalation reason.
             as_structured: Return EscalationPrompt instead of string.
             use_toon: Use TOON encoding for architect-tier escalations.
 
@@ -223,8 +219,8 @@ class PromptBuilder:
         self,
         original_prompt: str,
         state: str,
-        failure_context: "FailureContext | EscalationContext",
-        decision: "RoutingDecision | EscalationDecision",
+        failure_context: "EscalationContext",
+        decision: "EscalationDecision",
         role: str,
     ) -> str:
         """Build TOON-encoded escalation prompt for architect tier.
@@ -536,13 +532,12 @@ def build_root_lm_prompt(
 def build_escalation_prompt(
     original_prompt: str,
     state: str,
-    failure_context: "FailureContext | EscalationContext",
-    decision: "RoutingDecision | EscalationDecision",
+    failure_context: "EscalationContext",
+    decision: "EscalationDecision",
 ) -> str:
     """Build a prompt for an escalated role.
 
     Module-level function for backwards compatibility.
-    Supports both legacy and new escalation types.
     See PromptBuilder.build_escalation_prompt() for full documentation.
     """
     result = _get_builder().build_escalation_prompt(

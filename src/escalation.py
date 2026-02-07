@@ -2,7 +2,7 @@
 """Unified escalation logic for hierarchical orchestration.
 
 This module is the single source of truth for escalation policy. All other
-modules (api.py, failure_router.py, executor.py) should use this module
+modules (graph nodes, api.py, executor.py) should use this module
 for escalation decisions.
 
 Escalation Chain:
@@ -186,7 +186,7 @@ class EscalationPolicy:
     """Unified escalation policy for the orchestration system.
 
     This class encapsulates all escalation logic. It replaces the scattered
-    escalation implementations in failure_router.py, executor.py, and api.py.
+    escalation implementations in graph nodes, executor.py, and api.py.
 
     Policy Rules:
     1. Format/Schema errors: Retry only, never escalate

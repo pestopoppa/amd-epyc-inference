@@ -372,15 +372,6 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
         rule_router = RuleBasedRouter(routing_hints=state.registry.routing_hints)
         state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
 
-        # Wire learned escalation into routing facade (advisory only)
-        try:
-            from src.failure_router import LearnedEscalationPolicy
-
-            if state.routing_facade is not None:
-                state.routing_facade.learned = LearnedEscalationPolicy(retriever)
-        except Exception as e:
-            logger.warning(f"LearnedEscalationPolicy init failed: {e}", exc_info=True)
-
         return True
     except Exception as e:
         # MemRL initialization failed - log and continue without it

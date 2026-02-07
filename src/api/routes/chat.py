@@ -8,7 +8,6 @@ extracted into focused modules during Phase 1 decomposition:
 - chat_vision.py     — Vision pipeline (OCR, VL routing, ReAct VL)
 - chat_summarization.py — Two-stage/three-stage context processing
 - chat_review.py     — Architect review, quality gates, plan review
-- chat_react.py      — ReAct tool loop (Thought/Action/Observation)
 - chat_delegation.py — Architect delegation (TOON parsing, multi-loop)
 - chat_routing.py    — Intent classification, mode selection, routing
 """
@@ -40,7 +39,6 @@ from src.api.services.memrl import (
     score_completed_task,
     store_external_reward,
 )
-from src.features import features
 from src.llm_primitives import LLMPrimitives
 from src.repl_environment import REPLEnvironment
 from src.escalation import (
@@ -213,27 +211,19 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
     # Stage 8: Execute selected mode (with fallthrough on failure)
 
     # 8a: Delegated mode (architect → specialist)
-    # allow_delegation can override the feature flag per-request
-    delegation_allowed = (
-        request.allow_delegation if request.allow_delegation is not None
-        else features().architect_delegation
+    # _execute_delegated checks delegation_allowed internally and returns None if not allowed
+    result = await asyncio.to_thread(
+        _execute_delegated,
+        request,
+        routing,
+        primitives,
+        state,
+        start_time,
+        initial_role,
+        execution_mode,
     )
-    if execution_mode == "delegated" or (
-        str(initial_role) in ("architect_general", "architect_coding")
-        and delegation_allowed
-    ):
-        result = await asyncio.to_thread(
-            _execute_delegated,
-            request,
-            routing,
-            primitives,
-            state,
-            start_time,
-            initial_role,
-            execution_mode,
-        )
-        if result is not None:
-            return _annotate_error(result)
+    if result is not None:
+        return _annotate_error(result)
 
     # 8b: ReAct tool loop mode
     if execution_mode == "react":
@@ -480,11 +470,7 @@ async def chat_stream(
                         failure_count=1,
                         task_id=task_id,
                     )
-                    esc_decision = (
-                        state.routing_facade.decide(esc_ctx)
-                        if state.routing_facade
-                        else EscalationPolicy().decide(esc_ctx)
-                    )
+                    esc_decision = EscalationPolicy().decide(esc_ctx)
                     if esc_decision.should_escalate and esc_decision.target_role:
                         new_role = str(esc_decision.target_role)
 
@@ -505,23 +491,12 @@ async def chat_stream(
                             error_category="early_abort",
                             task_id=task_id,
                         ),
-                        decision=(
-                            state.routing_facade.decide(
-                                EscalationContext(
-                                    current_role=role_history[-2],
-                                    error_category="early_abort",
-                                    error_message=reason,
-                                    task_id=task_id,
-                                )
-                            )
-                            if state.routing_facade
-                            else EscalationPolicy().decide(
-                                EscalationContext(
-                                    current_role=role_history[-2],
-                                    error_category="early_abort",
-                                    error_message=reason,
-                                    task_id=task_id,
-                                )
+                        decision=EscalationPolicy().decide(
+                            EscalationContext(
+                                current_role=role_history[-2],
+                                error_category="early_abort",
+                                error_message=reason,
+                                task_id=task_id,
                             )
                         ),
                     )
@@ -590,11 +565,7 @@ async def chat_stream(
                     failure_count=consecutive_failures,
                     task_id=task_id,
                 )
-                decision = (
-                    state.routing_facade.decide(esc_ctx)
-                    if state.routing_facade
-                    else EscalationPolicy().decide(esc_ctx)
-                )
+                decision = EscalationPolicy().decide(esc_ctx)
 
                 if decision.should_escalate and decision.target_role:
                     current_role = str(decision.target_role)

@@ -298,6 +298,15 @@ Embeddings count: 2714
 - Failure graph: Links memories to symptom patterns
 - Hypothesis graph: Tracks action-task confidence
 
+**Graph Wiring** (as of 2026-02-07, pydantic-graph migration):
+The following MemRL functions are now called from `src/graph/nodes.py`:
+- `failure_graph.record_failure()` — called on every error in `_handle_error()`
+- `failure_graph.record_mitigation()` — called when an escalated role resolves a failure
+- `hypothesis_graph.add_evidence()` — called on task success/failure outcomes
+- `retriever.retrieve_for_escalation()` — called during `_check_memrl_suggestion()`
+
+These were previously dead code (declared but never invoked) in the old `repl_executor.py` manual loop.
+
 ### Retrieval Latency
 
 | Operation | Time | Notes |

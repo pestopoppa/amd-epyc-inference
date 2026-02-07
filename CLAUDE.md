@@ -224,13 +224,15 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 ### Component Flow
 
 > **Maintenance note**: Review this section when making architecture changes.
+> **Last updated**: 2026-02-07 (pydantic-graph migration)
 
 ```
-Request:    API(:8000) → AppState → RoutingFacade → LLMPrimitives → [model servers]
+Request:    API(:8000) → AppState → ChatPipeline → REPLExecutor → run_task() → [graph nodes]
+Graph:      orchestration_graph (pydantic-graph) → 7 node classes → LLMPrimitives → [model servers]
 Memory:     EpisodicStore(SQLite) → FAISSStore(4042 vectors) → ParallelEmbedder → BGE pool(:8090-8095)
-Escalation: RoutingFacade queries FailureRouter(learned) with EscalationPolicy(rules) fallback
+Escalation: Graph nodes use EscalationPolicy(rules) + MemRL(advisory) via TaskDeps injection
 Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
-Tools:      ChatPipeline → REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
+Tools:      REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
 ```
 
 ### Knowledgebase Updates (2026-02-07)

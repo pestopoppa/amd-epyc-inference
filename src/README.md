@@ -79,7 +79,7 @@ src/
 | `repl_environment.py` | Python REPL sandbox for Root LM code execution |
 | `executor.py` | Full RLM execution loop with recursive calls |
 | `escalation.py` | Unified escalation policy (EscalationPolicy, EscalationContext) |
-| `failure_router.py` | Failure routing with learned escalation (MemRL Phase 4) |
+| `graph/` | Pydantic-graph orchestration (nodes, state, persistence, mermaid) |
 | `dispatcher.py` | TaskIR parsing and specialist routing |
 
 ### LLM Interface
@@ -152,7 +152,8 @@ worker → coder → architect
 ```
 
 Failures escalate up the chain based on retry count and error category.
-MemRL (Phase 4) adds learned escalation from episodic memory.
+The escalation loop is driven by `src/graph/` (pydantic-graph), with MemRL
+providing learned advisory via dependency injection.
 
 ## Testing
 

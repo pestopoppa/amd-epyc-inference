@@ -494,60 +494,62 @@ class TestFailureProbability:
         assert health.estimated_failure_prob > 0.3
 
 
-class TestIntegrationWithFailureRouter:
-    """Test integration with failure router."""
+class TestIntegrationWithEscalationPolicy:
+    """Test integration with escalation policy."""
 
     def test_early_abort_category_exists(self):
         """Test EARLY_ABORT error category is available."""
-        from src.failure_router import ErrorCategory
+        from src.escalation import ErrorCategory
 
         assert hasattr(ErrorCategory, "EARLY_ABORT")
         assert ErrorCategory.EARLY_ABORT.value == "early_abort"
 
     def test_early_abort_routing(self):
         """Test early abort triggers immediate escalation."""
-        from src.failure_router import (
+        from src.escalation import (
             ErrorCategory,
-            FailureContext,
-            FailureRouter,
+            EscalationContext,
+            EscalationPolicy,
+            EscalationAction,
         )
+        from src.roles import Role
 
-        router = FailureRouter()
-        context = FailureContext(
-            role="worker",
-            failure_count=0,  # First failure
-            error_category=ErrorCategory.EARLY_ABORT,
-            error_message="High entropy detected",
-        )
-
-        decision = router.route_failure(context)
-
-        # Should escalate immediately, not retry
-        # Note: "coder" chain maps to "coder_primary" specific role
-        assert decision.action == "escalate"
-        assert decision.next_role == "coder_primary"
-
-    def test_early_abort_at_architect_fails(self):
-        """Test early abort at architect tier fails gracefully."""
-        from src.failure_router import (
-            ErrorCategory,
-            FailureContext,
-            FailureRouter,
-        )
-
-        router = FailureRouter()
-        context = FailureContext(
-            role="architect",
+        policy = EscalationPolicy()
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
             failure_count=0,
             error_category=ErrorCategory.EARLY_ABORT,
             error_message="High entropy detected",
         )
 
-        decision = router.route_failure(context)
+        decision = policy.decide(context)
 
-        # No escalation from architect
-        assert decision.action == "fail"
-        assert decision.next_role is None
+        # Should escalate immediately, not retry
+        assert decision.action == EscalationAction.ESCALATE
+        assert decision.target_role is not None
+
+    def test_early_abort_at_architect_fails(self):
+        """Test early abort at architect tier fails gracefully."""
+        from src.escalation import (
+            ErrorCategory,
+            EscalationContext,
+            EscalationPolicy,
+            EscalationAction,
+        )
+        from src.roles import Role
+
+        policy = EscalationPolicy()
+        context = EscalationContext(
+            current_role=Role.ARCHITECT_GENERAL,
+            failure_count=0,
+            error_category=ErrorCategory.EARLY_ABORT,
+            error_message="High entropy detected",
+        )
+
+        decision = policy.decide(context)
+
+        # No escalation from architect (terminal role)
+        assert decision.action == EscalationAction.FAIL
 
 
 class TestIntegrationWithLLMPrimitives:

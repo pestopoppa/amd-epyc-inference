@@ -62,9 +62,10 @@ datasets = [
     "datasets>=2.14.0",
 ]
 graph = [
-    # Graph database for MemRL failure/hypothesis graphs (not yet in use)
+    # Graph database for MemRL failure/hypothesis graphs
     "kuzu>=0.8",
     "cachetools>=5.3",  # TTL cache for graph penalty lookups
+    "pydantic-graph>=0.1.0",  # Typed orchestration graph (escalation flow)
 ]
 sandbox = [
     # Python sandboxing for REPL code execution (not yet in use)

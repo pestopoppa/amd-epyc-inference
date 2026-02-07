@@ -124,8 +124,7 @@ except Exception as e:
 
 ### Modifying Escalation Logic
 
-**Use `src/escalation.py` ONLY.** Do not modify:
-- `failure_router.py` (legacy, for backwards compatibility)
+**Use `src/escalation.py` and `src/graph/nodes.py`.** Do not modify:
 - `api.py` ESCALATION_ROLES (deprecated)
 - `executor.py` escalation methods (should delegate to escalation.py)
 
@@ -318,4 +317,4 @@ If stuck:
 | Write to /mnt/raid0/ | Write to root filesystem |
 | Use limited parallelism | Use `pytest -n auto` |
 | Check feature flag | Assume module available |
-| Use escalation.py | Modify legacy failure_router |
+| Use escalation.py / graph nodes | Modify escalation inline |

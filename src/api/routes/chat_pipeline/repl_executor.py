@@ -3,6 +3,13 @@
 The largest pipeline stage — manages the multi-turn REPL loop with
 escalation support, generation monitoring, two-stage summarization,
 long-context exploration, and quality review gates.
+
+The inner escalation loop is now driven by the pydantic-graph orchestration
+graph (src.graph), replacing the manual for-loop. Bug fixes included:
+- escalation_count is incremented on every escalation
+- failure_graph.record_failure() is called on every error
+- hypothesis_graph.add_evidence() is called on task outcomes
+- Hardcoded EscalationPolicy() fallbacks are eliminated
 """
 
 from __future__ import annotations
@@ -13,22 +20,9 @@ import time
 
 from src.api.models import ChatRequest, ChatResponse
 from src.api.services.memrl import score_completed_task
-from src.escalation import EscalationAction, EscalationContext, EscalationPolicy
-from src.features import features
-from src.generation_monitor import GenerationMonitor, MonitorConfig
+from src.graph import run_task, GraphConfig, TaskDeps, TaskState
 from src.llm_primitives import LLMPrimitives
-from src.llm_primitives.types import LLMResult
-from src.prompt_builders import (
-    auto_wrap_final,
-    build_escalation_prompt,
-    build_long_context_exploration_prompt,
-    build_root_lm_prompt,
-    build_routing_context,
-    classify_error,
-    extract_code_from_response,
-)
 from src.repl_environment import REPLEnvironment
-from src.roles import Role
 
 from src.api.routes.chat_review import (
     _architect_verdict,
@@ -43,7 +37,6 @@ from src.api.routes.chat_utils import (
     LONG_CONTEXT_CONFIG,
     TWO_STAGE_CONFIG,
     RoutingResult,
-    _resolve_answer,
     _strip_tool_outputs,
 )
 from src.api.structured_logging import task_extra
@@ -194,362 +187,92 @@ async def _execute_repl(
             f"Long context detected ({context_chars:,} chars). Using REPL exploration strategy."
         )
 
-    # Run Root LM orchestration loop with escalation support
-    turns = 0
-    answer = ""
-    last_output = ""
-    last_error = ""
-
-    current_role = initial_role
-    consecutive_failures = 0
-    role_history = [current_role]
-    escalation_prompt = ""
-    delegation_events: list[dict] = []
-
     max_turns = (
         LONG_CONTEXT_CONFIG["max_turns"] if use_long_context_exploration else request.max_turns
     )
 
-    for turn in range(max_turns):
-        turns += 1
+    # ── Run orchestration graph ──────────────────────────────────────
+    # The graph replaces the manual for-loop with typed node transitions.
+    # Bug fixes: escalation_count incremented, failure_graph.record_failure()
+    # called, hypothesis_graph.add_evidence() called.
 
-        # 1. Get current REPL state
-        repl_state = repl.get_state()
+    graph_config = GraphConfig(max_turns=max_turns)
+    try:
+        graph_config = GraphConfig.from_config()
+        graph_config.max_turns = max_turns
+    except Exception:
+        pass  # Use defaults if config unavailable
 
-        # 2. Build prompt
-        if escalation_prompt:
-            root_prompt = escalation_prompt
-            escalation_prompt = ""
-        elif use_long_context_exploration and turn == 0:
-            root_prompt = build_long_context_exploration_prompt(
-                original_prompt=request.prompt,
-                context_chars=context_chars,
-                state=repl_state,
+    task_state = TaskState(
+        task_id=task_id,
+        prompt=request.prompt,
+        context=combined_context,
+        current_role=initial_role,
+        role_history=[str(initial_role)],
+        max_turns=max_turns,
+    )
+
+    task_deps = TaskDeps(
+        primitives=primitives,
+        repl=repl,
+        failure_graph=state.failure_graph if hasattr(state, "failure_graph") else None,
+        hypothesis_graph=state.hypothesis_graph if hasattr(state, "hypothesis_graph") else None,
+        config=graph_config,
+        progress_logger=state.progress_logger,
+        session_store=state.session_store if hasattr(state, "session_store") else None,
+    )
+
+    graph_result = await run_task(task_state, task_deps, start_role=initial_role)
+
+    answer = graph_result.answer
+    turns = graph_result.turns
+    role_history = graph_result.role_history or [str(initial_role)]
+    current_role = role_history[-1] if role_history else str(initial_role)
+    delegation_events = graph_result.delegation_events
+
+    # ── Post-graph processing ────────────────────────────────────────
+
+    # Quality review gate (same logic as before, outside the graph)
+    if (
+        graph_result.success
+        and request.real_mode
+        and _should_review(state, task_id, current_role, answer)
+    ):
+        log.info(
+            "Review gate triggered for %s (task %s)",
+            current_role,
+            task_id,
+            extra=task_extra(task_id=task_id, role=current_role, stage="review"),
+        )
+        verdict = await asyncio.to_thread(
+            _architect_verdict,
+            question=request.prompt,
+            answer=answer,
+            primitives=primitives,
+        )
+        if verdict and verdict.upper().startswith("WRONG"):
+            corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
+            log.info(
+                "Review verdict: WRONG — revising (%.80s)",
+                corrections,
+                extra=task_extra(task_id=task_id, role=current_role, stage="review"),
+            )
+            answer = await asyncio.to_thread(
+                _fast_revise,
+                question=request.prompt,
+                original_answer=answer,
+                corrections=corrections,
+                primitives=primitives,
             )
         else:
-            routing_ctx = ""
-            if turn == 0 and state.hybrid_router:
-                routing_ctx = build_routing_context(
-                    role=current_role,
-                    hybrid_router=state.hybrid_router,
-                    task_description=request.prompt,
-                )
-            root_prompt = build_root_lm_prompt(
-                state=repl_state,
-                original_prompt=request.prompt,
-                last_output=last_output,
-                last_error=last_error,
-                turn=turn,
-                routing_context=routing_ctx,
+            log.info(
+                "Review verdict: OK",
+                extra=task_extra(task_id=task_id, role=current_role, stage="review"),
             )
 
-        # 3. Call Root LM with generation monitoring
-        f = features()
-        generation_aborted = False
-        abort_reason = ""
-
-        try:
-            if f.generation_monitor and not request.mock_mode:
-                monitor_config = MonitorConfig.for_tier(current_role)
-                monitor = GenerationMonitor(
-                    config=monitor_config,
-                    mock_mode=request.mock_mode,
-                )
-                if primitives.model_server is None:
-                    code = await asyncio.to_thread(
-                        primitives.llm_call,
-                        root_prompt,
-                        role=current_role,
-                        n_tokens=1024,
-                    )
-                    llm_result = LLMResult(text=code, aborted=False)
-                else:
-                    llm_result = await asyncio.to_thread(
-                        primitives.llm_call_monitored,
-                        root_prompt,
-                        role=current_role,
-                        monitor=monitor,
-                    )
-                    code = llm_result.text
-                generation_aborted = llm_result.aborted
-                abort_reason = llm_result.abort_reason
-            else:
-                code = await asyncio.to_thread(
-                    primitives.llm_call,
-                    root_prompt,
-                    role=current_role,
-                    n_tokens=1024,
-                )
-        except Exception as e:
-            answer = f"[ERROR: {current_role} LM call failed: {e}]"
-            break
-
-        # Handle early abort from generation monitoring
-        if generation_aborted:
-            escalation_ctx = EscalationContext(
-                current_role=current_role,
-                error_message=f"Generation aborted: {abort_reason}",
-                error_category="early_abort",
-                failure_count=1,
-                task_id=task_id,
-            )
-            policy = state.routing_facade if state.routing_facade else EscalationPolicy()
-            decision = policy.decide(escalation_ctx)
-
-            if decision.should_escalate and decision.target_role:
-                if state.failure_graph:
-                    try:
-                        state.failure_graph.record_failure(
-                            memory_id=task_id,
-                            symptoms=["early_abort", abort_reason[:100]],
-                            description=f"{role_history[-1]} failed: {abort_reason[:200]}",
-                            severity=3,
-                        )
-                    except Exception as exc:
-                        log.debug("failure_graph.record_failure (abort) failed: %s", exc)
-                current_role = str(decision.target_role)
-                role_history.append(current_role)
-                escalation_prompt = build_escalation_prompt(
-                    original_prompt=request.prompt,
-                    state=repl_state,
-                    failure_context=escalation_ctx,
-                    decision=decision,
-                )
-                if state.progress_logger:
-                    state.progress_logger.log_escalation(
-                        task_id=task_id,
-                        from_tier=role_history[-2],
-                        to_tier=current_role,
-                        reason=f"Early abort: {abort_reason}",
-                    )
-                continue
-            else:
-                pass  # Continue with partial code
-
-        # Extract code from response
-        code = extract_code_from_response(code)
-        code = auto_wrap_final(code)
-
-        # 4. Execute code in REPL (in thread to avoid blocking event loop —
-        #    repl.execute() can call blocking I/O like requests.get in _web_fetch).
-        #    signal.alarm() timeouts silently fail in non-main threads, so we use
-        #    asyncio.wait_for as the authoritative timeout mechanism.
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(repl.execute, code),
-                timeout=repl.config.timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            from src.repl_environment.types import ExecutionResult
-
-            result = ExecutionResult(
-                output="",
-                is_final=False,
-                error=f"REPL execution timed out after {repl.config.timeout_seconds}s",
-            )
-
-        # 4a. Check model-initiated routing
-        if repl.artifacts.get("_escalation_requested"):
-            target = repl.artifacts.pop("_escalation_target", None)
-            reason = repl.artifacts.pop("_escalation_reason", "Model requested")
-            repl.artifacts.pop("_escalation_requested", None)
-
-            new_role = None
-            if target:
-                resolved = Role.from_string(target)
-                if resolved:
-                    new_role = str(resolved)
-            else:
-                esc_ctx = EscalationContext(
-                    current_role=current_role,
-                    error_category="early_abort",
-                    error_message=reason,
-                    failure_count=1,
-                    task_id=task_id,
-                )
-                esc_decision = (
-                    state.routing_facade.decide(esc_ctx)
-                    if state.routing_facade
-                    else EscalationPolicy().decide(esc_ctx)
-                )
-                if esc_decision.should_escalate and esc_decision.target_role:
-                    new_role = str(esc_decision.target_role)
-
-            if new_role and new_role != current_role:
-                current_role = new_role
-                role_history.append(current_role)
-                consecutive_failures = 0
-                escalation_prompt = build_escalation_prompt(
-                    original_prompt=request.prompt,
-                    state=repl_state,
-                    failure_context=EscalationContext(
-                        current_role=role_history[-2],
-                        error_message=reason,
-                        error_category="early_abort",
-                        task_id=task_id,
-                    ),
-                    decision=(
-                        state.routing_facade.decide(
-                            EscalationContext(
-                                current_role=role_history[-2],
-                                error_category="early_abort",
-                                error_message=reason,
-                                task_id=task_id,
-                            )
-                        )
-                        if state.routing_facade
-                        else EscalationPolicy().decide(
-                            EscalationContext(
-                                current_role=role_history[-2],
-                                error_category="early_abort",
-                                error_message=reason,
-                                task_id=task_id,
-                            )
-                        )
-                    ),
-                )
-                if state.progress_logger:
-                    state.progress_logger.log_escalation(
-                        task_id=task_id,
-                        from_tier=role_history[-2],
-                        to_tier=current_role,
-                        reason=f"Model-initiated: {reason}",
-                    )
-                continue
-
-        # 4b. Log delegation outcomes (MemRL learning)
-        if repl.artifacts.get("_delegations"):
-            for deleg in repl.artifacts["_delegations"]:
-                if state.progress_logger:
-                    state.progress_logger.log_exploration(
-                        task_id=task_id,
-                        query=deleg.get("prompt_preview", ""),
-                        strategy_used=f"delegate:{deleg.get('to_role', 'unknown')}",
-                        success=deleg.get("success", False),
-                    )
-                delegation_events.append(
-                    {
-                        "from_role": deleg.get("from_role", ""),
-                        "to_role": deleg.get("to_role", ""),
-                        "task_summary": deleg.get("prompt_preview", ""),
-                        "success": deleg.get("success"),
-                        "elapsed_ms": int((deleg.get("elapsed_sec") or 0) * 1000),
-                        "tokens_generated": deleg.get("result_len", 0),
-                    }
-                )
-            repl.artifacts["_delegations"] = []
-
-        # 5. Check for FINAL() completion
-        if result.is_final:
-            tool_outputs = repl.artifacts.get("_tool_outputs", [])
-            answer = _resolve_answer(result, tool_outputs=tool_outputs)
-            consecutive_failures = 0
-
-            # MemRL-informed quality review gate
-            if request.real_mode and _should_review(state, task_id, current_role, answer):
-                log.info(
-                    "Review gate triggered for %s (task %s)",
-                    current_role,
-                    task_id,
-                    extra=task_extra(task_id=task_id, role=current_role, stage="review"),
-                )
-                verdict = await asyncio.to_thread(
-                    _architect_verdict,
-                    question=request.prompt,
-                    answer=answer,
-                    primitives=primitives,
-                )
-                if verdict and verdict.upper().startswith("WRONG"):
-                    corrections = verdict.split(":", 1)[1].strip() if ":" in verdict else verdict
-                    log.info(
-                        "Review verdict: WRONG — revising (%.80s)",
-                        corrections,
-                        extra=task_extra(task_id=task_id, role=current_role, stage="review"),
-                    )
-                    answer = await asyncio.to_thread(
-                        _fast_revise,
-                        question=request.prompt,
-                        original_answer=answer,
-                        corrections=corrections,
-                        primitives=primitives,
-                    )
-                else:
-                    log.info(
-                        "Review verdict: OK",
-                        extra=task_extra(task_id=task_id, role=current_role, stage="review"),
-                    )
-
-            break
-
-        # 6. Handle errors with EscalationPolicy
-        if result.error:
-            consecutive_failures += 1
-            last_error = result.error
-            last_output = result.output
-
-            error_category = classify_error(result.error)
-            escalation_ctx = EscalationContext(
-                current_role=current_role,
-                error_message=result.error,
-                error_category=error_category.value,
-                failure_count=consecutive_failures,
-                task_id=task_id,
-            )
-            policy = state.routing_facade if state.routing_facade else EscalationPolicy()
-            decision = policy.decide(escalation_ctx)
-
-            if decision.should_escalate and state.progress_logger:
-                state.progress_logger.log_escalation(
-                    task_id=task_id,
-                    from_tier=current_role,
-                    to_tier=str(decision.target_role) if decision.target_role else current_role,
-                    reason=f"{decision.reason} (failures: {consecutive_failures})",
-                )
-
-            if decision.should_escalate and decision.target_role:
-                if state.failure_graph:
-                    try:
-                        state.failure_graph.record_failure(
-                            memory_id=task_id,
-                            symptoms=[error_category.value, last_error[:100]],
-                            description=f"{current_role} failed: {last_error[:200]}",
-                            severity=min(consecutive_failures + 2, 5),
-                        )
-                    except Exception as exc:
-                        log.debug("failure_graph.record_failure (error) failed: %s", exc)
-                current_role = str(decision.target_role)
-                role_history.append(current_role)
-                consecutive_failures = 0
-                escalation_prompt = build_escalation_prompt(
-                    original_prompt=request.prompt,
-                    state=repl_state,
-                    failure_context=escalation_ctx,
-                    decision=decision,
-                )
-            elif decision.action == EscalationAction.EXPLORE:
-                consecutive_failures = 0
-                escalation_prompt = build_long_context_exploration_prompt(
-                    original_prompt=request.prompt,
-                    context_chars=len(repl.context),
-                    state=repl_state,
-                )
-                if state.progress_logger:
-                    state.progress_logger.log_escalation(
-                        task_id=task_id,
-                        from_tier=current_role,
-                        to_tier=f"{current_role}+explore",
-                        reason="Terminal role: switching to REPL exploration",
-                    )
-            elif decision.action == EscalationAction.FAIL:
-                answer = f"[FAILED: {decision.reason}]"
-                break
-        else:
-            consecutive_failures = 0
-            last_error = ""
-            last_output = result.output
-
-    # If max turns reached without FINAL()
+    # If max turns reached without FINAL() and graph returned empty
     if not answer:
+        last_output = task_state.last_output
         tool_outputs = repl.artifacts.get("_tool_outputs", [])
         cleaned_output = _strip_tool_outputs(last_output, tool_outputs) if last_output else ""
 

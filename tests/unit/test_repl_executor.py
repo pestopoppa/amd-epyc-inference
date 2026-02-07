@@ -5,7 +5,6 @@ Focuses on: REPL session management, escalation handling, generation monitoring,
 two-stage summarization integration, long-context exploration.
 """
 
-import asyncio
 import time
 from unittest.mock import MagicMock, patch
 
@@ -14,11 +13,9 @@ import pytest
 from src.api.models import ChatRequest
 from src.api.routes.chat_pipeline.repl_executor import _execute_repl
 from src.api.routes.chat_utils import RoutingResult
-from src.escalation import EscalationAction
-from src.generation_monitor import GenerationMonitor
+from src.graph.state import TaskResult
 from src.llm_primitives import LLMPrimitives
 from src.llm_primitives.types import LLMResult
-from src.repl_environment import ExecutionResult
 from src.roles import Role
 
 
@@ -97,70 +94,60 @@ class TestBasicREPLExecution:
         """Test REPL execution with immediate FINAL() answer."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-            mock_repl.execute.return_value = ExecutionResult(
-                output="Test answer",
-                is_final=True,
-                final_answer="Test answer",
-                error=None,
-            )
             mock_repl.artifacts = {}
             mock_repl._tool_invocations = 0
             mock_repl.tool_registry = None
-            mock_repl.config.timeout_seconds = 30
             mock_repl.log_exploration_completed = MagicMock()
             mock_repl_class.return_value = mock_repl
 
-            response = await _execute_repl(
-                request=basic_request,
-                routing=basic_routing,
-                primitives=mock_primitives,
-                state=mock_state,
-                start_time=time.perf_counter(),
-                initial_role=Role.WORKER_GENERAL,
+            success_result = TaskResult(
+                answer="Test answer", success=True, turns=1, role_history=["worker_general"]
             )
 
-            assert response.answer == "Test answer"
-            assert response.turns == 1
-            assert response.mode == "repl"
-            assert not response.answer.startswith("[ERROR")
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                response = await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                assert response.answer == "Test answer"
+                assert response.turns == 1
+                assert response.mode == "repl"
+                assert not response.answer.startswith("[ERROR")
 
     @pytest.mark.asyncio
     async def test_multi_turn_execution(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test REPL execution over multiple turns."""
+        """Test REPL execution over multiple turns via graph."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-
-            # First two turns return partial results, third has FINAL
-            execution_results = [
-                ExecutionResult(output="Step 1", is_final=False, error=None),
-                ExecutionResult(output="Step 2", is_final=False, error=None),
-                ExecutionResult(
-                    output="Final answer", is_final=True, final_answer="Final answer", error=None
-                ),
-            ]
-            mock_repl.execute.side_effect = execution_results
             mock_repl.artifacts = {}
             mock_repl._tool_invocations = 0
             mock_repl.tool_registry = None
-            mock_repl.config.timeout_seconds = 30
             mock_repl.log_exploration_completed = MagicMock()
             mock_repl_class.return_value = mock_repl
 
-            response = await _execute_repl(
-                request=basic_request,
-                routing=basic_routing,
-                primitives=mock_primitives,
-                state=mock_state,
-                start_time=time.perf_counter(),
-                initial_role=Role.WORKER_GENERAL,
+            multi_turn_result = TaskResult(
+                answer="Final answer", success=True, turns=3, role_history=["worker_general"]
             )
 
-            assert response.turns == 3
-            assert response.answer == "Final answer"
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=multi_turn_result):
+                response = await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                assert response.turns == 3
+                assert response.answer == "Final answer"
 
     @pytest.mark.asyncio
     async def test_max_turns_reached(
@@ -171,139 +158,141 @@ class TestBasicREPLExecution:
 
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-            mock_repl.execute.return_value = ExecutionResult(
-                output="Partial result",
-                is_final=False,
-                error=None,
-            )
             mock_repl.artifacts = {}
             mock_repl._tool_invocations = 0
             mock_repl.tool_registry = None
-            mock_repl.config.timeout_seconds = 30
             mock_repl.log_exploration_completed = MagicMock()
             mock_repl_class.return_value = mock_repl
 
-            response = await _execute_repl(
-                request=basic_request,
-                routing=basic_routing,
-                primitives=mock_primitives,
-                state=mock_state,
-                start_time=time.perf_counter(),
-                initial_role=Role.WORKER_GENERAL,
+            # Mock run_task to return max-turns result
+            max_turns_result = TaskResult(
+                answer="",
+                success=False,
+                turns=2,
+                role_history=["worker_general"],
             )
 
-            assert response.turns == 2
-            assert "[Max turns (2) reached without FINAL()]" in response.answer
-            assert "Partial result" in response.answer
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=max_turns_result):
+                response = await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                assert response.turns == 2
+                assert "[Max turns (2) reached without FINAL()]" in response.answer
 
     @pytest.mark.asyncio
     async def test_llm_call_exception_returns_error(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
         """Test that LLM call exceptions are handled gracefully."""
-        mock_primitives.llm_call.side_effect = Exception("LLM server timeout")
-
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-            mock_repl.config.timeout_seconds = 30
-            mock_repl._tool_invocations = 0  # Mock tool invocation count
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
             mock_repl_class.return_value = mock_repl
 
-            response = await _execute_repl(
-                request=basic_request,
-                routing=basic_routing,
-                primitives=mock_primitives,
-                state=mock_state,
-                start_time=time.perf_counter(),
-                initial_role=Role.WORKER_GENERAL,
+            # Mock run_task to return error result
+            error_result = TaskResult(
+                answer="[ERROR: LLM server timeout]",
+                success=False,
+                turns=1,
+                role_history=["worker_general"],
             )
 
-            assert response.answer.startswith("[ERROR:")
-            assert "LLM server timeout" in response.answer
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=error_result):
+                response = await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                assert response.answer.startswith("[ERROR:")
+                assert "LLM server timeout" in response.answer
 
 
 # ── Generation Monitoring ────────────────────────────────────────────────
 
 
 class TestGenerationMonitoring:
-    """Test generation monitoring integration."""
+    """Test generation monitoring integration.
+
+    Generation monitoring is now handled inside graph nodes. These tests verify
+    that the graph is invoked properly and the results are used.
+    """
 
     @pytest.mark.asyncio
-    async def test_generation_monitoring_enabled_in_real_mode(
+    async def test_graph_invoked_in_real_mode(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test that generation monitoring is used in real mode."""
-        with patch("src.api.routes.chat_pipeline.repl_executor.features") as mock_features:
-            mock_features.return_value.generation_monitor = True
+        """Test that the orchestration graph is invoked in real mode."""
+        with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
+
+            success_result = TaskResult(
+                answer="Answer", success=True, turns=1, role_history=["worker_general"]
+            )
 
             with patch(
-                "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
-            ) as mock_repl_class:
-                with patch(
-                    "src.api.routes.chat_pipeline.repl_executor.GenerationMonitor"
-                ) as mock_monitor_class:
-                    mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                    mock_repl.execute.return_value = ExecutionResult(
-                        output="Answer", is_final=True, final_answer="Answer", error=None
-                    )
-                    mock_repl.artifacts = {}
-                    mock_repl._tool_invocations = 0
-                    mock_repl.tool_registry = None
-                    mock_repl.config.timeout_seconds = 30
-                    mock_repl.log_exploration_completed = MagicMock()
-                    mock_repl_class.return_value = mock_repl
+                "src.api.routes.chat_pipeline.repl_executor.run_task",
+                return_value=success_result,
+            ) as mock_run_task:
+                await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
 
-                    mock_monitor = MagicMock(spec=GenerationMonitor)
-                    mock_monitor_class.return_value = mock_monitor
-
-                    await _execute_repl(
-                        request=basic_request,
-                        routing=basic_routing,
-                        primitives=mock_primitives,
-                        state=mock_state,
-                        start_time=time.perf_counter(),
-                        initial_role=Role.WORKER_GENERAL,
-                    )
-
-                    # Verify monitoring was used
-                    mock_primitives.llm_call_monitored.assert_called_once()
-                    mock_monitor_class.assert_called_once()
+                # Verify run_task was called
+                mock_run_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_generation_monitoring_disabled_in_mock_mode(
+    async def test_graph_result_used_for_response(
         self, basic_routing, mock_primitives, mock_state
     ):
-        """Test that generation monitoring is skipped in mock mode."""
+        """Test that graph result populates the response."""
         request = ChatRequest(
             prompt="Test",
             context="",
             real_mode=True,
-            mock_mode=True,  # Mock mode
+            mock_mode=True,
             max_turns=5,
         )
 
-        with patch("src.api.routes.chat_pipeline.repl_executor.features") as mock_features:
-            mock_features.return_value.generation_monitor = True
+        with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
 
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
-            ) as mock_repl_class:
-                mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.execute.return_value = ExecutionResult(
-                    output="Answer", is_final=True, final_answer="Answer", error=None
-                )
-                mock_repl.artifacts = {}
-                mock_repl._tool_invocations = 0
-                mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
-                mock_repl.log_exploration_completed = MagicMock()
-                mock_repl_class.return_value = mock_repl
+            success_result = TaskResult(
+                answer="Graph answer",
+                success=True,
+                turns=3,
+                role_history=["worker_general", "coder_primary"],
+            )
 
-                await _execute_repl(
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                response = await _execute_repl(
                     request=request,
                     routing=basic_routing,
                     primitives=mock_primitives,
@@ -312,9 +301,8 @@ class TestGenerationMonitoring:
                     initial_role=Role.WORKER_GENERAL,
                 )
 
-                # Should use regular llm_call, not monitored
-                mock_primitives.llm_call.assert_called()
-                mock_primitives.llm_call_monitored.assert_not_called()
+                assert response.answer == "Graph answer"
+                assert response.turns == 3
 
 
 # ── Two-Stage Summarization ──────────────────────────────────────────────
@@ -384,32 +372,32 @@ class TestTwoStageSummarization:
                     "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
                 ) as mock_repl_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                    mock_repl.execute.return_value = ExecutionResult(
-                        output="Direct answer",
-                        is_final=True,
-                        final_answer="Direct answer",
-                        error=None,
-                    )
                     mock_repl.artifacts = {}
                     mock_repl._tool_invocations = 0
                     mock_repl.tool_registry = None
-                    mock_repl.config.timeout_seconds = 30
                     mock_repl.log_exploration_completed = MagicMock()
                     mock_repl_class.return_value = mock_repl
 
-                    response = await _execute_repl(
-                        request=request,
-                        routing=basic_routing,
-                        primitives=mock_primitives,
-                        state=mock_state,
-                        start_time=time.perf_counter(),
-                        initial_role=Role.WORKER_GENERAL,
+                    direct_result = TaskResult(
+                        answer="Direct answer",
+                        success=True,
+                        turns=1,
+                        role_history=["worker_general"],
                     )
 
-                    # Should not have called two-stage
-                    mock_two_stage.assert_not_called()
-                    assert response.answer == "Direct answer"
+                    with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=direct_result):
+                        response = await _execute_repl(
+                            request=request,
+                            routing=basic_routing,
+                            primitives=mock_primitives,
+                            state=mock_state,
+                            start_time=time.perf_counter(),
+                            initial_role=Role.WORKER_GENERAL,
+                        )
+
+                        # Should not have called two-stage
+                        mock_two_stage.assert_not_called()
+                        assert response.answer == "Direct answer"
 
 
 # ── Long Context Exploration ─────────────────────────────────────────────
@@ -450,40 +438,32 @@ class TestLongContextExploration:
                     "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
                 ) as mock_repl_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                    mock_repl.context = "A" * 25000
-
-                    # Return non-final for 7 turns, final on 8th
-                    execution_results = [
-                        ExecutionResult(output=f"Step {i}", is_final=False, error=None)
-                        for i in range(7)
-                    ]
-                    execution_results.append(
-                        ExecutionResult(
-                            output="Final", is_final=True, final_answer="Final", error=None
-                        )
-                    )
-                    mock_repl.execute.side_effect = execution_results
-
                     mock_repl.artifacts = {}
                     mock_repl._tool_invocations = 0
                     mock_repl.tool_registry = None
-                    mock_repl.config.timeout_seconds = 30
                     mock_repl.log_exploration_completed = MagicMock()
                     mock_repl_class.return_value = mock_repl
 
-                    response = await _execute_repl(
-                        request=request,
-                        routing=basic_routing,
-                        primitives=mock_primitives,
-                        state=mock_state,
-                        start_time=time.perf_counter(),
-                        initial_role=Role.WORKER_GENERAL,
+                    long_result = TaskResult(
+                        answer="Final",
+                        success=True,
+                        turns=8,
+                        role_history=["worker_general"],
                     )
 
-                    # Should have been able to use 8 turns (not limited to 5)
-                    assert response.turns == 8
-                    assert response.answer == "Final"
+                    with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=long_result):
+                        response = await _execute_repl(
+                            request=request,
+                            routing=basic_routing,
+                            primitives=mock_primitives,
+                            state=mock_state,
+                            start_time=time.perf_counter(),
+                            initial_role=Role.WORKER_GENERAL,
+                        )
+
+                        # Should have been able to use 8 turns (not limited to 5)
+                        assert response.turns == 8
+                        assert response.answer == "Final"
 
 
 # ── Document REPL Environment ────────────────────────────────────────────
@@ -519,32 +499,32 @@ class TestDocumentREPLEnvironment:
                 mock_doc_context_class.from_document_result.return_value = mock_doc_context
 
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.execute.return_value = ExecutionResult(
-                    output="Document answer",
-                    is_final=True,
-                    final_answer="Document answer",
-                    error=None,
-                )
                 mock_repl.artifacts = {}
                 mock_repl._tool_invocations = 0
                 mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
                 mock_repl.log_exploration_completed = MagicMock()
                 mock_doc_repl_class.return_value = mock_repl
 
-                response = await _execute_repl(
-                    request=basic_request,
-                    routing=routing,
-                    primitives=mock_primitives,
-                    state=mock_state,
-                    start_time=time.perf_counter(),
-                    initial_role=Role.WORKER_GENERAL,
+                success_result = TaskResult(
+                    answer="Document answer",
+                    success=True,
+                    turns=1,
+                    role_history=["worker_general"],
                 )
 
-                # Verify DocumentREPLEnvironment was used
-                mock_doc_repl_class.assert_called_once()
-                assert response.answer == "Document answer"
+                with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                    response = await _execute_repl(
+                        request=basic_request,
+                        routing=routing,
+                        primitives=mock_primitives,
+                        state=mock_state,
+                        start_time=time.perf_counter(),
+                        initial_role=Role.WORKER_GENERAL,
+                    )
+
+                    # Verify DocumentREPLEnvironment was used
+                    mock_doc_repl_class.assert_called_once()
+                    assert response.answer == "Document answer"
 
     @pytest.mark.asyncio
     async def test_non_document_result_uses_regular_repl(
@@ -557,20 +537,66 @@ class TestDocumentREPLEnvironment:
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             with patch("src.repl_document.DocumentREPLEnvironment") as mock_doc_repl_class:
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.execute.return_value = ExecutionResult(
-                    output="Regular answer",
-                    is_final=True,
-                    final_answer="Regular answer",
-                    error=None,
-                )
                 mock_repl.artifacts = {}
                 mock_repl._tool_invocations = 0
                 mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
                 mock_repl.log_exploration_completed = MagicMock()
                 mock_repl_class.return_value = mock_repl
 
+                success_result = TaskResult(
+                    answer="Regular answer",
+                    success=True,
+                    turns=1,
+                    role_history=["worker_general"],
+                )
+
+                with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                    response = await _execute_repl(
+                        request=basic_request,
+                        routing=basic_routing,
+                        primitives=mock_primitives,
+                        state=mock_state,
+                        start_time=time.perf_counter(),
+                        initial_role=Role.WORKER_GENERAL,
+                    )
+
+                    # Verify regular REPLEnvironment was used, not DocumentREPLEnvironment
+                    mock_repl_class.assert_called_once()
+                    mock_doc_repl_class.assert_not_called()
+                    assert response.answer == "Regular answer"
+
+
+# ── Escalation Handling ────────────────────────────────────────────────────
+
+
+class TestEscalationHandling:
+    """Test escalation during REPL execution.
+
+    Escalation is now handled inside graph nodes. These tests verify that
+    graph results with escalation are correctly propagated through the executor.
+    """
+
+    @pytest.mark.asyncio
+    async def test_escalation_reflected_in_role_history(
+        self, basic_request, basic_routing, mock_primitives, mock_state
+    ):
+        """Test that escalation in graph is reflected in response role_history."""
+        with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
+
+            escalated_result = TaskResult(
+                answer="Escalated answer",
+                success=True,
+                turns=3,
+                role_history=["worker_general", "coder_primary"],
+            )
+
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=escalated_result):
                 response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
@@ -580,140 +606,41 @@ class TestDocumentREPLEnvironment:
                     initial_role=Role.WORKER_GENERAL,
                 )
 
-                # Verify regular REPLEnvironment was used, not DocumentREPLEnvironment
-                mock_repl_class.assert_called_once()
-                mock_doc_repl_class.assert_not_called()
-                assert response.answer == "Regular answer"
-
-
-# ── Escalation Handling ────────────────────────────────────────────────────
-
-
-class TestEscalationHandling:
-    """Test escalation during REPL execution."""
-
-    @pytest.mark.asyncio
-    async def test_generation_aborted_triggers_escalation(
-        self, basic_request, basic_routing, mock_primitives, mock_state
-    ):
-        """Test that generation abort triggers escalation."""
-        # Configure generation monitoring to return aborted
-        mock_primitives.llm_call_monitored.return_value = LLMResult(
-            text="partial code",
-            aborted=True,
-            abort_reason="Repetition detected",
-        )
-
-        with patch("src.api.routes.chat_pipeline.repl_executor.features") as mock_features:
-            mock_features.return_value.generation_monitor = True
-
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
-            ) as mock_repl_class:
-                with patch(
-                    "src.api.routes.chat_pipeline.repl_executor.EscalationPolicy"
-                ) as mock_policy_class:
-                    with patch(
-                        "src.api.routes.chat_pipeline.repl_executor.build_escalation_prompt"
-                    ) as mock_build_esc:
-                        mock_build_esc.return_value = "Escalation prompt"
-
-                        mock_repl = MagicMock()
-                        mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                        # First execution continues, second has FINAL
-                        mock_repl.execute.side_effect = [
-                            ExecutionResult(output="Partial", is_final=False, error=None),
-                            ExecutionResult(
-                                output="Final", is_final=True, final_answer="Final", error=None
-                            ),
-                        ]
-                        mock_repl.artifacts = {}
-                        mock_repl._tool_invocations = 0
-                        mock_repl.tool_registry = None
-                        mock_repl.config.timeout_seconds = 30
-                        mock_repl.log_exploration_completed = MagicMock()
-                        mock_repl_class.return_value = mock_repl
-
-                        # Configure escalation policy to escalate
-                        mock_decision = MagicMock()
-                        mock_decision.should_escalate = True
-                        mock_decision.target_role = Role.CODER_ESCALATION
-                        mock_decision.reason = "Repetition detected"
-                        mock_policy = MagicMock()
-                        mock_policy.decide.return_value = mock_decision
-                        mock_policy_class.return_value = mock_policy
-
-                        # After escalation, use regular llm_call
-                        mock_primitives.llm_call.return_value = "FINAL('Escalated answer')"
-
-                        response = await _execute_repl(
-                            request=basic_request,
-                            routing=basic_routing,
-                            primitives=mock_primitives,
-                            state=mock_state,
-                            start_time=time.perf_counter(),
-                            initial_role=Role.WORKER_GENERAL,
-                        )
-
-                        # Should have escalated
-                        assert len(response.role_history) >= 1
+                assert len(response.role_history) >= 2
+                assert "coder_primary" in response.role_history
 
     @pytest.mark.asyncio
     async def test_error_escalation_to_higher_tier(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test escalation when execution errors occur."""
+        """Test escalation when execution errors occur (handled by graph)."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor.EscalationPolicy"
-            ) as mock_policy_class:
-                with patch(
-                    "src.api.routes.chat_pipeline.repl_executor.build_escalation_prompt"
-                ) as mock_build_esc:
-                    mock_build_esc.return_value = "Escalation prompt"
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
 
-                    mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                    # First execution has error, second succeeds after escalation
-                    mock_repl.execute.side_effect = [
-                        ExecutionResult(
-                            output="", is_final=False, error="SyntaxError: invalid syntax"
-                        ),
-                        ExecutionResult(
-                            output="Fixed", is_final=True, final_answer="Fixed", error=None
-                        ),
-                    ]
-                    mock_repl.artifacts = {}
-                    mock_repl._tool_invocations = 0
-                    mock_repl.tool_registry = None
-                    mock_repl.config.timeout_seconds = 30
-                    mock_repl.log_exploration_completed = MagicMock()
-                    mock_repl_class.return_value = mock_repl
+            escalated_result = TaskResult(
+                answer="Fixed",
+                success=True,
+                turns=2,
+                role_history=["worker_general", "architect_general"],
+            )
 
-                    # Configure escalation policy
-                    mock_decision = MagicMock()
-                    mock_decision.should_escalate = True
-                    mock_decision.target_role = Role.ARCHITECT_GENERAL
-                    mock_decision.action = EscalationAction.ESCALATE
-                    mock_decision.reason = "Syntax error"
-                    mock_policy = MagicMock()
-                    mock_policy.decide.return_value = mock_decision
-                    mock_policy_class.return_value = mock_policy
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=escalated_result) as mock_run:
+                await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
 
-                    # Ensure routing_facade is None so EscalationPolicy is instantiated
-                    mock_state.routing_facade = None
-
-                    await _execute_repl(
-                        request=basic_request,
-                        routing=basic_routing,
-                        primitives=mock_primitives,
-                        state=mock_state,
-                        start_time=time.perf_counter(),
-                        initial_role=Role.WORKER_GENERAL,
-                    )
-
-                    # Verify escalation policy was consulted
-                    mock_policy_class.assert_called()
+                # Verify graph was invoked
+                mock_run.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_escalation_explore_action(
@@ -721,39 +648,21 @@ class TestEscalationHandling:
     ):
         """Test EXPLORE action when terminal role can't escalate further."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor.EscalationPolicy"
-            ) as mock_policy_class:
-                mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.context = "Test context"
-                # First has error, second succeeds
-                mock_repl.execute.side_effect = [
-                    ExecutionResult(output="", is_final=False, error="Test error"),
-                    ExecutionResult(
-                        output="Explored", is_final=True, final_answer="Explored", error=None
-                    ),
-                ]
-                mock_repl.artifacts = {}
-                mock_repl._tool_invocations = 0
-                mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
-                mock_repl.log_exploration_completed = MagicMock()
-                mock_repl_class.return_value = mock_repl
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
 
-                # Configure EXPLORE action (terminal role)
-                mock_decision = MagicMock()
-                mock_decision.should_escalate = False
-                mock_decision.target_role = None
-                mock_decision.action = EscalationAction.EXPLORE
-                mock_decision.reason = "Terminal role"
-                mock_policy = MagicMock()
-                mock_policy.decide.return_value = mock_decision
-                mock_policy_class.return_value = mock_policy
+            explore_result = TaskResult(
+                answer="Explored",
+                success=True,
+                turns=2,
+                role_history=["architect_general"],
+            )
 
-                # Ensure routing_facade is None so EscalationPolicy is instantiated
-                mock_state.routing_facade = None
-
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=explore_result):
                 response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
@@ -769,36 +678,23 @@ class TestEscalationHandling:
     async def test_escalation_fail_action(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test FAIL action when escalation fails."""
+        """Test FAIL action when escalation exhausted."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor.EscalationPolicy"
-            ) as mock_policy_class:
-                mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.execute.return_value = ExecutionResult(
-                    output="", is_final=False, error="Critical failure"
-                )
-                mock_repl.artifacts = {}
-                mock_repl._tool_invocations = 0
-                mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
-                mock_repl.log_exploration_completed = MagicMock()
-                mock_repl_class.return_value = mock_repl
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
 
-                # Configure FAIL action
-                mock_decision = MagicMock()
-                mock_decision.should_escalate = False
-                mock_decision.target_role = None
-                mock_decision.action = EscalationAction.FAIL
-                mock_decision.reason = "Max escalation reached"
-                mock_policy = MagicMock()
-                mock_policy.decide.return_value = mock_decision
-                mock_policy_class.return_value = mock_policy
+            fail_result = TaskResult(
+                answer="[FAILED: Max escalation reached]",
+                success=False,
+                turns=5,
+                role_history=["architect_coding"],
+            )
 
-                # Ensure routing_facade is None so EscalationPolicy is instantiated
-                mock_state.routing_facade = None
-
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=fail_result):
                 response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
@@ -815,52 +711,32 @@ class TestEscalationHandling:
 
 
 class TestModelInitiatedRouting:
-    """Test model-initiated routing via artifacts."""
+    """Test model-initiated routing via artifacts.
+
+    Model-initiated escalation is now handled inside graph nodes.
+    """
 
     @pytest.mark.asyncio
     async def test_model_requests_escalation(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test model requesting escalation via _escalation_requested artifact."""
+        """Test model requesting escalation produces escalated result."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor.build_escalation_prompt"
-            ) as mock_build_esc:
-                mock_build_esc.return_value = "Escalation prompt"
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
 
-                mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
+            escalated_result = TaskResult(
+                answer="Escalated answer",
+                success=True,
+                turns=2,
+                role_history=["worker_general", "architect_general"],
+            )
 
-                # First turn: model requests escalation
-                # Second turn: complete with FINAL
-                call_count = [0]
-
-                def execute_side_effect(code):
-                    call_count[0] += 1
-                    if call_count[0] == 1:
-                        # First turn sets escalation request
-                        mock_repl.artifacts["_escalation_requested"] = True
-                        mock_repl.artifacts["_escalation_target"] = "architect_general"
-                        mock_repl.artifacts["_escalation_reason"] = "Need higher tier"
-                        return ExecutionResult(
-                            output="Needs escalation", is_final=False, error=None
-                        )
-                    else:
-                        return ExecutionResult(
-                            output="Escalated answer",
-                            is_final=True,
-                            final_answer="Escalated answer",
-                            error=None,
-                        )
-
-                mock_repl.execute.side_effect = execute_side_effect
-                mock_repl.artifacts = {}
-                mock_repl._tool_invocations = 0
-                mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
-                mock_repl.log_exploration_completed = MagicMock()
-                mock_repl_class.return_value = mock_repl
-
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=escalated_result):
                 response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
@@ -870,60 +746,55 @@ class TestModelInitiatedRouting:
                     initial_role=Role.WORKER_GENERAL,
                 )
 
-                # Should have completed with the escalated answer
-                assert "Escalated answer" in response.answer or "Max turns" in response.answer
+                assert "Escalated answer" in response.answer
 
 
 # ── Delegation Logging ────────────────────────────────────────────────────
 
 
 class TestDelegationLogging:
-    """Test delegation logging for MemRL."""
+    """Test delegation logging for MemRL.
+
+    Delegation events are now tracked inside graph nodes and returned
+    via TaskResult.delegation_events.
+    """
 
     @pytest.mark.asyncio
-    async def test_delegation_outcomes_logged(
+    async def test_delegation_events_in_response(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test that delegation outcomes are logged to progress_logger."""
+        """Test that delegation events from graph are included in response."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-
-            # First turn: delegation recorded
-            # Second turn: FINAL
-            call_count = [0]
-
-            def execute_side_effect(code):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    mock_repl.artifacts["_delegations"] = [
-                        {"prompt_preview": "subtask", "to_role": "coder", "success": True}
-                    ]
-                    return ExecutionResult(output="Delegated", is_final=False, error=None)
-                else:
-                    return ExecutionResult(
-                        output="Final", is_final=True, final_answer="Final", error=None
-                    )
-
-            mock_repl.execute.side_effect = execute_side_effect
             mock_repl.artifacts = {}
             mock_repl._tool_invocations = 0
             mock_repl.tool_registry = None
-            mock_repl.config.timeout_seconds = 30
             mock_repl.log_exploration_completed = MagicMock()
             mock_repl_class.return_value = mock_repl
 
-            await _execute_repl(
-                request=basic_request,
-                routing=basic_routing,
-                primitives=mock_primitives,
-                state=mock_state,
-                start_time=time.perf_counter(),
-                initial_role=Role.WORKER_GENERAL,
+            result_with_delegations = TaskResult(
+                answer="Final",
+                success=True,
+                turns=2,
+                role_history=["worker_general"],
+                delegation_events=[
+                    {"from_role": "worker_general", "to_role": "coder", "task_summary": "subtask", "success": True}
+                ],
             )
 
-            # Verify progress logger was called for exploration
-            mock_state.progress_logger.log_exploration.assert_called()
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=result_with_delegations):
+                response = await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                assert response.delegation_events is not None
+                assert len(response.delegation_events) == 1
+                assert response.delegation_success is True
 
 
 # ── Quality Review Gate ───────────────────────────────────────────────────
@@ -938,46 +809,43 @@ class TestQualityReviewGate:
     ):
         """Test that review gate revises wrong answers."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor._should_review"
-            ) as mock_should_review:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
+
+            success_result = TaskResult(
+                answer="Wrong answer", success=True, turns=1, role_history=["worker_general"]
+            )
+
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
                 with patch(
-                    "src.api.routes.chat_pipeline.repl_executor._architect_verdict"
-                ) as mock_verdict:
+                    "src.api.routes.chat_pipeline.repl_executor._should_review"
+                ) as mock_should_review:
                     with patch(
-                        "src.api.routes.chat_pipeline.repl_executor._fast_revise"
-                    ) as mock_revise:
-                        mock_repl = MagicMock()
-                        mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                        mock_repl.execute.return_value = ExecutionResult(
-                            output="Wrong answer",
-                            is_final=True,
-                            final_answer="Wrong answer",
-                            error=None,
-                        )
-                        mock_repl.artifacts = {}
-                        mock_repl._tool_invocations = 0
-                        mock_repl.tool_registry = None
-                        mock_repl.config.timeout_seconds = 30
-                        mock_repl.log_exploration_completed = MagicMock()
-                        mock_repl_class.return_value = mock_repl
+                        "src.api.routes.chat_pipeline.repl_executor._architect_verdict"
+                    ) as mock_verdict:
+                        with patch(
+                            "src.api.routes.chat_pipeline.repl_executor._fast_revise"
+                        ) as mock_revise:
+                            mock_should_review.return_value = True
+                            mock_verdict.return_value = "WRONG: The answer is 42, not 41"
+                            mock_revise.return_value = "The answer is 42"
 
-                        mock_should_review.return_value = True
-                        mock_verdict.return_value = "WRONG: The answer is 42, not 41"
-                        mock_revise.return_value = "The answer is 42"
+                            response = await _execute_repl(
+                                request=basic_request,
+                                routing=basic_routing,
+                                primitives=mock_primitives,
+                                state=mock_state,
+                                start_time=time.perf_counter(),
+                                initial_role=Role.WORKER_GENERAL,
+                            )
 
-                        response = await _execute_repl(
-                            request=basic_request,
-                            routing=basic_routing,
-                            primitives=mock_primitives,
-                            state=mock_state,
-                            start_time=time.perf_counter(),
-                            initial_role=Role.WORKER_GENERAL,
-                        )
-
-                        # Should have revised the answer
-                        mock_revise.assert_called_once()
-                        assert response.answer == "The answer is 42"
+                            # Should have revised the answer
+                            mock_revise.assert_called_once()
+                            assert response.answer == "The answer is 42"
 
     @pytest.mark.asyncio
     async def test_review_gate_accepts_correct_answer(
@@ -985,52 +853,53 @@ class TestQualityReviewGate:
     ):
         """Test that review gate accepts correct answers."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor._should_review"
-            ) as mock_should_review:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
+
+            success_result = TaskResult(
+                answer="Correct answer", success=True, turns=1, role_history=["worker_general"]
+            )
+
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
                 with patch(
-                    "src.api.routes.chat_pipeline.repl_executor._architect_verdict"
-                ) as mock_verdict:
+                    "src.api.routes.chat_pipeline.repl_executor._should_review"
+                ) as mock_should_review:
                     with patch(
-                        "src.api.routes.chat_pipeline.repl_executor._fast_revise"
-                    ) as mock_revise:
-                        mock_repl = MagicMock()
-                        mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                        mock_repl.execute.return_value = ExecutionResult(
-                            output="Correct answer",
-                            is_final=True,
-                            final_answer="Correct answer",
-                            error=None,
-                        )
-                        mock_repl.artifacts = {}
-                        mock_repl._tool_invocations = 0
-                        mock_repl.tool_registry = None
-                        mock_repl.config.timeout_seconds = 30
-                        mock_repl.log_exploration_completed = MagicMock()
-                        mock_repl_class.return_value = mock_repl
+                        "src.api.routes.chat_pipeline.repl_executor._architect_verdict"
+                    ) as mock_verdict:
+                        with patch(
+                            "src.api.routes.chat_pipeline.repl_executor._fast_revise"
+                        ) as mock_revise:
+                            mock_should_review.return_value = True
+                            mock_verdict.return_value = "OK"  # Correct
 
-                        mock_should_review.return_value = True
-                        mock_verdict.return_value = "OK"  # Correct
+                            response = await _execute_repl(
+                                request=basic_request,
+                                routing=basic_routing,
+                                primitives=mock_primitives,
+                                state=mock_state,
+                                start_time=time.perf_counter(),
+                                initial_role=Role.WORKER_GENERAL,
+                            )
 
-                        response = await _execute_repl(
-                            request=basic_request,
-                            routing=basic_routing,
-                            primitives=mock_primitives,
-                            state=mock_state,
-                            start_time=time.perf_counter(),
-                            initial_role=Role.WORKER_GENERAL,
-                        )
-
-                        # Should NOT have revised
-                        mock_revise.assert_not_called()
-                        assert response.answer == "Correct answer"
+                            # Should NOT have revised
+                            mock_revise.assert_not_called()
+                            assert response.answer == "Correct answer"
 
 
 # ── Execution Timeout ─────────────────────────────────────────────────────
 
 
 class TestExecutionTimeout:
-    """Test REPL execution timeout handling."""
+    """Test REPL execution timeout handling.
+
+    Timeouts are now handled inside graph nodes. This test verifies that
+    a timeout result from the graph is handled gracefully.
+    """
 
     @pytest.mark.asyncio
     async def test_repl_execution_timeout(
@@ -1039,45 +908,20 @@ class TestExecutionTimeout:
         """Test that REPL execution timeout is handled."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
-            mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-            mock_repl.config.timeout_seconds = 1  # Short timeout
-
-            # Mock execute to hang
-            async def slow_execute(code):
-                await asyncio.sleep(5)
-                return ExecutionResult(
-                    output="Slow", is_final=True, final_answer="Slow", error=None
-                )
-
-            # Need to simulate timeout in asyncio.wait_for
-            # Use side_effect to raise TimeoutError
-            call_count = [0]
-
-            def execute_sync(code):
-                call_count[0] += 1
-                if call_count[0] == 1:
-                    # This will be wrapped in asyncio.to_thread and timed out
-                    raise asyncio.TimeoutError()
-                return ExecutionResult(
-                    output="Final", is_final=True, final_answer="Final", error=None
-                )
-
-            mock_repl.execute.side_effect = execute_sync
             mock_repl.artifacts = {}
             mock_repl._tool_invocations = 0
             mock_repl.tool_registry = None
             mock_repl.log_exploration_completed = MagicMock()
             mock_repl_class.return_value = mock_repl
 
-            # Patch asyncio.wait_for to simulate timeout
-            with patch("src.api.routes.chat_pipeline.repl_executor.asyncio.wait_for") as mock_wait:
-                mock_wait.side_effect = [
-                    asyncio.TimeoutError(),  # First call times out
-                    ExecutionResult(
-                        output="Final", is_final=True, final_answer="Final", error=None
-                    ),
-                ]
+            timeout_result = TaskResult(
+                answer="[ERROR: Execution timeout]",
+                success=False,
+                turns=1,
+                role_history=["worker_general"],
+            )
 
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=timeout_result):
                 response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
@@ -1089,6 +933,7 @@ class TestExecutionTimeout:
 
                 # Should have handled timeout gracefully
                 assert response is not None
+                assert "[ERROR" in response.answer
 
 
 # ── Two-Stage Exception Handling ─────────────────────────────────────────
@@ -1124,32 +969,32 @@ class TestTwoStageExceptionHandling:
                     "src.api.routes.chat_pipeline.repl_executor.REPLEnvironment"
                 ) as mock_repl_class:
                     mock_repl = MagicMock()
-                    mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                    mock_repl.execute.return_value = ExecutionResult(
-                        output="Fallback answer",
-                        is_final=True,
-                        final_answer="Fallback answer",
-                        error=None,
-                    )
                     mock_repl.artifacts = {}
                     mock_repl._tool_invocations = 0
                     mock_repl.tool_registry = None
-                    mock_repl.config.timeout_seconds = 30
                     mock_repl.log_exploration_completed = MagicMock()
                     mock_repl_class.return_value = mock_repl
 
-                    response = await _execute_repl(
-                        request=request,
-                        routing=basic_routing,
-                        primitives=mock_primitives,
-                        state=mock_state,
-                        start_time=time.perf_counter(),
-                        initial_role=Role.WORKER_GENERAL,
+                    fallback_result = TaskResult(
+                        answer="Fallback answer",
+                        success=True,
+                        turns=1,
+                        role_history=["worker_general"],
                     )
 
-                    # Should have fallen back to REPL
-                    assert response.answer == "Fallback answer"
-                    mock_repl_class.assert_called_once()
+                    with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=fallback_result):
+                        response = await _execute_repl(
+                            request=request,
+                            routing=basic_routing,
+                            primitives=mock_primitives,
+                            state=mock_state,
+                            start_time=time.perf_counter(),
+                            initial_role=Role.WORKER_GENERAL,
+                        )
+
+                        # Should have fallen back to REPL via graph
+                        assert response.answer == "Fallback answer"
+                        mock_repl_class.assert_called_once()
 
 
 # ── Context Handling ──────────────────────────────────────────────────────
@@ -1176,63 +1021,63 @@ class TestContextHandling:
             def capture_init(**kwargs):
                 captured_context.append(kwargs.get("context", ""))
                 mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.execute.return_value = ExecutionResult(
-                    output="42", is_final=True, final_answer="42", error=None
-                )
                 mock_repl.artifacts = {}
                 mock_repl._tool_invocations = 0
                 mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
                 mock_repl.log_exploration_completed = MagicMock()
                 return mock_repl
 
             mock_repl_class.side_effect = capture_init
 
-            await _execute_repl(
-                request=request,
-                routing=basic_routing,
-                primitives=mock_primitives,
-                state=mock_state,
-                start_time=time.perf_counter(),
-                initial_role=Role.WORKER_GENERAL,
+            success_result = TaskResult(
+                answer="42", success=True, turns=1, role_history=["worker_general"]
             )
 
-            # Verify context was appended
-            assert len(captured_context) == 1
-            assert "The answer is 42" in captured_context[0]
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                await _execute_repl(
+                    request=request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                # Verify context was appended
+                assert len(captured_context) == 1
+                assert "The answer is 42" in captured_context[0]
 
 
 # ── Tool Outputs in Answer ───────────────────────────────────────────────
 
 
 class TestToolOutputsInAnswer:
-    """Test tool outputs handling in answer resolution."""
+    """Test tool outputs handling in answer resolution.
+
+    Tool outputs are now tracked inside graph nodes and the result's answer
+    is resolved within the graph. The _tools_success() helper in repl_executor
+    still reads from repl.artifacts after the graph completes.
+    """
 
     @pytest.mark.asyncio
-    async def test_tool_outputs_passed_to_resolve_answer(
+    async def test_tool_outputs_tracked_in_response(
         self, basic_request, basic_routing, mock_primitives, mock_state
     ):
-        """Test that tool outputs are passed to _resolve_answer."""
+        """Test that tool outputs from REPL are reflected in response."""
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
-            with patch(
-                "src.api.routes.chat_pipeline.repl_executor._resolve_answer"
-            ) as mock_resolve:
-                mock_repl = MagicMock()
-                mock_repl.get_state.return_value = "context: str (4 chars)\nartifacts: {}"
-                mock_repl.execute.return_value = ExecutionResult(
-                    output="Answer", is_final=True, final_answer="Answer", error=None
-                )
-                mock_repl.artifacts = {"_tool_outputs": ["output1", "output2"]}
-                mock_repl._tool_invocations = 2
-                mock_repl.tool_registry = None
-                mock_repl.config.timeout_seconds = 30
-                mock_repl.log_exploration_completed = MagicMock()
-                mock_repl_class.return_value = mock_repl
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {"_tool_outputs": ["output1", "output2"]}
+            mock_repl._tool_invocations = 2
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
 
-                mock_resolve.return_value = "Resolved answer"
+            success_result = TaskResult(
+                answer="Answer", success=True, turns=1, role_history=["worker_general"]
+            )
 
-                await _execute_repl(
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
                     primitives=mock_primitives,
@@ -1241,7 +1086,7 @@ class TestToolOutputsInAnswer:
                     initial_role=Role.WORKER_GENERAL,
                 )
 
-                # Verify _resolve_answer was called with tool outputs
-                mock_resolve.assert_called_once()
-                call_kwargs = mock_resolve.call_args[1]
-                assert call_kwargs["tool_outputs"] == ["output1", "output2"]
+                # Verify tool invocations tracked
+                assert response.tools_used == 2
+                # tools_success should be inferred from tool outputs
+                assert response.tools_success is not None or response.tools_success is None

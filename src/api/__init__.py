@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     1. Load feature flags from environment
     2. Load optional module imports based on features
     3. Load registry (YAML parsing only)
-    4. Initialize core components (LLM primitives, gate runner, failure router)
+    4. Initialize core components (LLM primitives, gate runner)
     5. Initialize optional components based on features
     6. Eagerly initialize MemRL (Q-scorer, TaskEmbedder, HybridRouter)
     7. Start background tasks if MemRL enabled
@@ -75,9 +75,6 @@ async def lifespan(app: FastAPI):
     # Core components (always initialized)
     from src.llm_primitives import LLMPrimitives
     from src.gate_runner import GateRunner
-    from src.failure_router import FailureRouter
-    from src.routing_facade import RoutingFacade
-    from src.escalation import EscalationPolicy
 
     ProgressLogger = get_progress_logger_class()
 
@@ -88,8 +85,6 @@ async def lifespan(app: FastAPI):
     )
     state.progress_logger = ProgressLogger() if ProgressLogger else None
     state.gate_runner = GateRunner(progress_logger=state.progress_logger)
-    state.failure_router = FailureRouter()
-    state.routing_facade = RoutingFacade(policy=EscalationPolicy(), learned=None)
 
     # Tool registry (feature-gated)
     ToolRegistry = get_tool_registry_class()
@@ -200,7 +195,6 @@ async def lifespan(app: FastAPI):
     # Clear state
     state.llm_primitives = None
     state.gate_runner = None
-    state.failure_router = None
     state.progress_logger = None
     state.q_scorer = None
     state.episodic_store = None

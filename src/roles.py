@@ -348,7 +348,7 @@ def get_escalation_chain(role: Role | str) -> list[Role]:
     return chain
 
 
-# Generic chain names (for backwards compatibility with failure_router)
+# Generic chain names (used by graph node selection and routing)
 CHAIN_NAMES = {
     "worker": Role.WORKER_GENERAL,
     "coder": Role.CODER_PRIMARY,

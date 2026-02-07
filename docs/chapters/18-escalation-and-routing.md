@@ -2,7 +2,9 @@
 
 ## Introduction
 
-The orchestrator uses a **RoutingFacade** to unify escalation decisions. Rules from `escalation.py` are authoritative, and MemRL’s learned escalation is advisory. Proactive delegation with complexity-aware routing (`proactive_delegation.py`) remains a separate execution strategy. The legacy `FailureRouter` is deprecated and kept as a thin wrapper for backwards compatibility.
+The orchestrator uses an **explicit pydantic-graph** to drive escalation decisions. Seven node classes encode valid transitions in Union return types. Rules from `escalation.py` are authoritative, and MemRL's learned escalation is advisory (injected via `TaskDeps`). Proactive delegation with complexity-aware routing (`proactive_delegation.py`) remains a separate execution strategy.
+
+As of 2026-02-07, the legacy `FailureRouter` and `RoutingFacade` have been deleted. All escalation logic is now in `src/graph/nodes.py`.
 
 ## Unified Escalation Policy
 
@@ -79,62 +81,80 @@ class Role(Enum):
 - Ingest → Architect (long-context ingestion)
 - Architect → FAIL (no further escalation)
 
-## RoutingFacade (Rules-Authoritative + Learned Advisory)
+## Pydantic-Graph Orchestration (February 2026)
 
-The `RoutingFacade` is the single entry point for escalation decisions. It queries learned escalation when confident, but always validates against rule constraints (e.g., FORMAT/SCHEMA never escalate). The deprecated `FailureRouter` delegates to the facade.
+The escalation loop is an explicit `pydantic_graph.Graph` with 7 node classes. Each node's `run()` method returns a Union of valid next nodes or `End[TaskResult]`, making transitions type-safe and visible.
 
-### MemRL Integration (Phase 4)
-
-```python
-class LearnedEscalationPolicy:
-    """Queries episodic memory for similar failures."""
-
-    def query(self, context: FailureContext) -> LearnedEscalationResult:
-        failure_dict = {
-            "role": context.role,
-            "error_category": context.error_category.value,
-            "gate_name": context.gate_name,
-            "error_message": context.error_message[:500],
-        }
-
-        # Two-phase retrieval from episodic memory
-        results = self.retriever.retrieve_for_escalation(failure_dict)
-
-        if not self.retriever.should_use_learned(results, min_samples=3):
-            return LearnedEscalationResult(should_use_learned=False)
-
-        # Parse best action from memory
-        best = results[0]
-        action_parts = best.memory.action.split(":")
-        suggested_action = action_parts[0]  # "retry", "escalate", "fail"
-        suggested_role = action_parts[1] if len(action_parts) > 1 else None
-
-        return LearnedEscalationResult(
-            should_use_learned=True,
-            suggested_action=suggested_action,
-            suggested_role=suggested_role,
-            confidence=best.combined_score,
-        )
-```
-
-**Hybrid Strategy**: Try learned escalation first (if confident), fall back to rule-based when cold-starting or low confidence.
-
-### Strategy Tracking
+### Node Classes
 
 ```python
-# Track usage for monitoring
-self._strategy_counts = {"learned": 0, "rules": 0}
+from pydantic_graph import BaseNode, Graph, End, GraphRunContext
 
-# In RoutingFacade.decide():
-if learned_result.should_use_learned:
-    self._strategy_counts["learned"] += 1
-    return learned_decision
-else:
-    self._strategy_counts["rules"] += 1
-    return rule_based_decision
+@dataclass
+class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> FrontdoorNode | CoderNode | WorkerNode | End[TaskResult]: ...
+
+@dataclass
+class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> WorkerNode | CoderNode | End[TaskResult]: ...
+
+@dataclass
+class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> CoderNode | ArchitectNode | End[TaskResult]: ...
+
+@dataclass
+class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> CoderEscalationNode | ArchitectCodingNode | End[TaskResult]: ...
+
+@dataclass
+class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> IngestNode | ArchitectNode | End[TaskResult]: ...
+
+@dataclass
+class ArchitectNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> ArchitectNode | End[TaskResult]: ...  # Terminal
+
+@dataclass
+class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
+    async def run(self, ctx) -> ArchitectCodingNode | End[TaskResult]: ...  # Terminal
+
+orchestration_graph = Graph(nodes=[all 7 classes])
 ```
 
-Monitor convergence: As MemRL matures, `learned / (learned + rules)` should increase.
+### Node Execution Flow
+
+Each node's `run()`:
+1. Check `state.turns >= state.max_turns` → End(max turns)
+2. Build prompt via `build_root_lm_prompt()` or use `state.escalation_prompt`
+3. Call LLM via `deps.primitives.llm_call()` with role for this node
+4. Extract code, auto-wrap FINAL, execute in REPL
+5. If `is_final` → `End(TaskResult)`
+6. If error → classify, record failure, decide retry/escalate/fail
+7. If no error, no final → self-loop (return same node class)
+
+### MemRL Integration via Dependencies
+
+MemRL components are injected as immutable `TaskDeps`:
+
+```python
+@dataclass
+class TaskDeps:
+    primitives: LLMPrimitives | None
+    repl: REPLEnvironment | None
+    failure_graph: FailureGraphProtocol | None   # Anti-memory
+    hypothesis_graph: HypothesisGraph | None      # Confidence tracking
+    config: GraphConfig
+    session_store: SessionStore | None
+
+# Inside node error handler:
+def _handle_error(ctx, error_cat, error):
+    if ctx.deps.failure_graph:
+        ctx.deps.failure_graph.record_failure(...)  # Anti-memory
+    if ctx.deps.hypothesis_graph:
+        ctx.deps.hypothesis_graph.add_evidence(...)  # Confidence
+```
+
+**Key change from RoutingFacade**: MemRL functions (`record_failure`, `record_mitigation`, `add_evidence`) are now actually called — they were dead code in the old architecture.
 
 ## 3-Way Confidence Routing (February 2026)
 
@@ -342,11 +362,12 @@ Prevents infinite review-fix cycles. After max iterations, accept output or esca
 
 ### Implementation
 
-1. `src/escalation.py`: Unified escalation policy (336 lines)
-2. `src/routing_facade.py`: Unified routing facade (rules + learned)
-3. `src/failure_router.py`: Deprecated thin wrapper (legacy API)
-4. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
-5. `src/roles.py`: Role definitions and escalation chains
+1. `src/graph/nodes.py`: Pydantic-graph node classes with escalation logic
+2. `src/graph/state.py`: TaskState, TaskDeps, TaskResult, GraphConfig
+3. `src/graph/graph.py`: Graph singleton, `run_task()`, `generate_mermaid()`
+4. `src/escalation.py`: Unified escalation policy (EscalationAction, ErrorCategory, EscalationConfig)
+5. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
+6. `src/roles.py`: Role definitions and escalation chains
 
 ### Theoretical Foundations
 

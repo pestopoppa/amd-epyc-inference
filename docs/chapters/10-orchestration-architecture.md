@@ -154,6 +154,8 @@ User Request
 - Context size exceeds model limit
 - Explicit `max_escalation_level` in TaskIR
 
+**Implementation** (as of 2026-02-07): The escalation loop is driven by `src/graph/` — a pydantic-graph `Graph` with 7 node classes. Each node encodes valid transitions in its Union return type (e.g., `CoderNode.run()` returns `CoderNode | ArchitectNode | End[TaskResult]`). The graph replaces the manual for-loop in `repl_executor.py` and wires MemRL anti-memory functions (see [Chapter 15](15-memrl-system.md) and [Chapter 18](18-escalation-and-routing.md)).
+
 ### Tier C - Workers (Parallel)
 
 - File-level implementation, exploration, summarization

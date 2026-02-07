@@ -6,7 +6,7 @@ import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.failure_router import ErrorCategory
+    from src.escalation import ErrorCategory
 
 
 def _strip_import_lines(code: str) -> str:
@@ -189,7 +189,7 @@ def classify_error(error_message: str, gate_name: str = "") -> ErrorCategory:
         ErrorCategory for the error.
     """
     # Import here to avoid circular imports
-    from src.failure_router import ErrorCategory
+    from src.escalation import ErrorCategory
 
     error_lower = error_message.lower()
 
