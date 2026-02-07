@@ -35,6 +35,9 @@ dependencies = [
     # MCP server (src/mcp_server.py)
     "mcp>=1.0.0",
 
+    # Orchestration graph (escalation flow)
+    "pydantic-graph>=0.1.0",
+
     # Utilities
     "psutil>=5.9.0",  # Memory monitoring
     "requests>=2.31.0",
@@ -65,7 +68,6 @@ graph = [
     # Graph database for MemRL failure/hypothesis graphs
     "kuzu>=0.8",
     "cachetools>=5.3",  # TTL cache for graph penalty lookups
-    "pydantic-graph>=0.1.0",  # Typed orchestration graph (escalation flow)
 ]
 sandbox = [
     # Python sandboxing for REPL code execution (not yet in use)
