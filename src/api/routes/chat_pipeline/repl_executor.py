@@ -310,6 +310,18 @@ async def _execute_repl(
     if delegation_events:
         delegation_success = any(e.get("success") for e in delegation_events)
 
+    invocation_log = (
+        repl.tool_registry.get_invocation_log()
+        if repl.tool_registry
+        else []
+    )
+    tools_called = [inv.tool_name for inv in invocation_log]
+    tool_timings = [
+        {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
+        for inv in invocation_log
+    ]
+    tools_used = max(repl._tool_invocations, len(tools_called), len(tool_timings))
+
     return ChatResponse(
         answer=answer,
         turns=turns,
@@ -324,20 +336,9 @@ async def _execute_repl(
         mode="repl",
         tokens_generated=primitives.total_tokens_generated,
         formalization_applied=formalization_applied,
-        tools_used=repl._tool_invocations,
-        tools_called=(
-            [inv.tool_name for inv in repl.tool_registry.get_invocation_log()]
-            if repl.tool_registry
-            else []
-        ),
-        tool_timings=(
-            [
-                {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
-                for inv in repl.tool_registry.get_invocation_log()
-            ]
-            if repl.tool_registry
-            else []
-        ),
+        tools_used=tools_used,
+        tools_called=tools_called,
+        tool_timings=tool_timings,
         delegation_events=delegation_events,
         tools_success=tools_success,
         delegation_success=delegation_success,

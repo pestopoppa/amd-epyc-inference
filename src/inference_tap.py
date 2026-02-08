@@ -12,24 +12,48 @@ from __future__ import annotations
 
 import os
 import threading
+import time as _time
 from contextlib import contextmanager
 from datetime import datetime
 
 
 _ENV_KEY = "INFERENCE_TAP_FILE"
 
+# Sentinel file written by the TUI so that API workers (separate processes)
+# can discover the tap path without needing the env var.
+_SENTINEL = "/mnt/raid0/llm/tmp/.inference_tap_active"
+
 # Module-level lock for serialising writes across threads
 _write_lock = threading.Lock()
+
+# Cache sentinel reads — the file only changes when the TUI starts/stops,
+# so 5-second staleness is fine and avoids per-request I/O.
+_sentinel_cache: tuple[str, float] = ("", 0.0)
+
+
+def _read_sentinel() -> str:
+    """Read the sentinel file, caching the result for 5 seconds."""
+    global _sentinel_cache
+    now = _time.monotonic()
+    if now - _sentinel_cache[1] < 5.0:
+        return _sentinel_cache[0]
+    try:
+        with open(_SENTINEL) as f:
+            val = f.read().strip()
+    except (FileNotFoundError, OSError):
+        val = ""
+    _sentinel_cache = (val, now)
+    return val
 
 
 def is_active() -> bool:
     """Return True when the inference tap is enabled."""
-    return bool(os.environ.get(_ENV_KEY))
+    return bool(os.environ.get(_ENV_KEY) or _read_sentinel())
 
 
 def _tap_path() -> str:
     """Return the configured tap file path."""
-    return os.environ.get(_ENV_KEY, "")
+    return os.environ.get(_ENV_KEY, "") or _read_sentinel()
 
 
 class TapWriter:

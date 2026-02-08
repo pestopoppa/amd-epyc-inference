@@ -101,7 +101,13 @@ def _execute_direct(
             answer = _formalize_output(answer, request.prompt, fmt_spec, primitives)
 
     # Entropy-inspired output quality check
-    answer, initial_role = _quality_escalate(answer, direct_prompt, primitives, initial_role)
+    answer, initial_role = _quality_escalate(
+        answer,
+        direct_prompt,
+        primitives,
+        initial_role,
+        allow_escalation=not bool(request.force_role),
+    )
 
     # MemRL-informed quality review gate
     if (

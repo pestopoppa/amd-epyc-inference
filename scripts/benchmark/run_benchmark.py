@@ -189,6 +189,39 @@ MIN_TIMEOUT_MULTIPLIER = 1.0
 # Default multiplier when speed test fails
 DEFAULT_TIMEOUT_MULTIPLIER = 2.0
 
+# Inference defaults
+_DEFAULT_MAX_TOKENS = 256
+_LOOKUP_MAX_TOKENS = 512
+_DEFAULT_TEMPERATURE = 0.6
+_SERVER_STARTUP_TIMEOUT_BASE = 600
+
+# Timeout scaling: timeout = max(base, size_gb * multiplier + buffer)
+_TIMEOUT_SIZE_MULTIPLIER = 3
+_TIMEOUT_SIZE_BUFFER = 120
+
+# Log noise prefixes to skip when extracting errors from stderr
+_LOG_PREFIXES = ('build:', 'main:', 'llama_model_loader:', 'print_info:', 'load_')
+# Keywords indicating a real error line
+_ERROR_KEYWORDS = ('error:', 'error ', 'failed', 'fatal', 'abort', 'segfault', 'exception')
+
+
+def _compute_timeout(size_gb: float, base: int = 180) -> int:
+    """Compute dynamic timeout based on model size in GB."""
+    return max(base, int(size_gb * _TIMEOUT_SIZE_MULTIPLIER) + _TIMEOUT_SIZE_BUFFER)
+
+
+def _extract_error_hint(stderr: str, max_chars: int = 80) -> str:
+    """Extract meaningful error from stderr, filtering log noise."""
+    for line in reversed(stderr.split('\n')):
+        line = line.strip()
+        if not line:
+            continue
+        if any(line.startswith(p) for p in _LOG_PREFIXES):
+            continue
+        if any(x in line.lower() for x in _ERROR_KEYWORDS):
+            return line[:max_chars]
+    return ""
+
 
 def acquire_lock() -> Optional[int]:
     """Acquire exclusive lock for single-instance execution.
@@ -319,6 +352,318 @@ def build_work_items(
     return work_items
 
 
+class _ServerState:
+    """Mutable state for the benchmark server lifecycle."""
+
+    __slots__ = ("server", "model_path", "experts", "draft_path")
+
+    def __init__(self) -> None:
+        self.server: Optional[ServerManager] = None
+        self.model_path: Optional[str] = None
+        self.experts: Optional[int] = None
+        self.draft_path: Optional[str] = None
+
+    def stop(self) -> None:
+        if self.server is not None:
+            self.server.stop()
+            self.server = None
+
+
+def _ensure_server(
+    ss: _ServerState,
+    model_path: str,
+    config,
+    role: str,
+    size_gb: float,
+    registry: ModelRegistry,
+    no_mmap: bool,
+    mmproj_path: Optional[str],
+    is_new_model: bool,
+) -> None:
+    """Start or restart the llama-server to match the requirements of *config*.
+
+    Handles three scenarios:
+    1. New model — stop old server, start fresh
+    2. Different MoE expert count — restart with new override
+    3. Different draft model — restart with new draft
+    """
+    # --- 1. New model ---
+    if is_new_model:
+        if ss.server and ss.model_path != model_path:
+            print(f"    [SERVER] Stopping server for previous model", flush=True)
+            ss.stop()
+
+        if ss.server is None:
+            print(f"    [SERVER] Starting llama-server (model will stay in RAM)...", flush=True)
+            ss.server = ServerManager(port=8080)
+            ss.server.start(model_path, moe_override=None, registry=registry,
+                            no_mmap=no_mmap, role=role, mmproj_path=mmproj_path)
+            timeout = _compute_timeout(size_gb, base=_SERVER_STARTUP_TIMEOUT_BASE)
+            if not ss.server.wait_ready(timeout=timeout):
+                print(f"    [SERVER] Failed to start, falling back to subprocess mode", flush=True)
+                ss.server = None
+            else:
+                ss.model_path = model_path
+                ss.experts = None
+                ss.draft_path = None
+                print(f"    [SERVER] Ready, model loaded in RAM (default experts)", flush=True)
+        return
+
+    if ss.server is None or not ss.server.is_running():
+        return
+
+    # --- 2. MoE expert count change ---
+    if config.config_type == "moe":
+        required_experts = config.moe_experts
+    elif config.config_type == "baseline":
+        required_experts = None
+    else:
+        required_experts = ss.experts
+
+    if required_experts != ss.experts:
+        if required_experts is None:
+            print(f"      [SERVER] Restarting for baseline (default experts)...", flush=True)
+            moe_override = None
+        else:
+            moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
+            moe_override = f"{moe_key}=int:{required_experts}"
+            print(f"      [SERVER] Restarting for {config.name} ({required_experts} experts)...", flush=True)
+
+        ss.stop()
+        ss.server = ServerManager(port=8080)
+        ss.server.start(model_path, moe_override=moe_override, registry=registry,
+                        no_mmap=no_mmap, role=role, mmproj_path=mmproj_path)
+        timeout = _compute_timeout(size_gb, base=_SERVER_STARTUP_TIMEOUT_BASE)
+        if not ss.server.wait_ready(timeout=timeout):
+            print(f"      [SERVER] Failed to restart, falling back to subprocess", flush=True)
+            ss.server = None
+            ss.experts = None
+        else:
+            ss.experts = required_experts
+            ss.draft_path = None
+            print(f"      [SERVER] Ready", flush=True)
+
+    if ss.server is None or not ss.server.is_running():
+        return
+
+    # --- 3. Draft model change (spec decode) ---
+    if config.config_type in ("spec", "moe_spec"):
+        required_draft = config.draft_model_path
+        if required_draft != ss.draft_path:
+            if config.config_type == "moe_spec":
+                moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
+                moe_override = f"{moe_key}=int:{config.moe_experts}"
+            else:
+                moe_override = None
+
+            draft_name = Path(required_draft).stem if required_draft else "unknown"
+            print(f"      [SERVER] Restarting with draft {draft_name}...", flush=True)
+            ss.stop()
+            ss.server = ServerManager(port=8080)
+            ss.server.start(
+                model_path, moe_override=moe_override, registry=registry,
+                no_mmap=no_mmap, role=role,
+                draft_model_path=required_draft,
+                draft_max=config.spec_k,
+                mmproj_path=mmproj_path,
+            )
+            timeout = _compute_timeout(size_gb, base=_SERVER_STARTUP_TIMEOUT_BASE)
+            if not ss.server.wait_ready(timeout=timeout):
+                print(f"      [SERVER] Failed to restart with draft, falling back to subprocess", flush=True)
+                ss.server = None
+                ss.draft_path = None
+            else:
+                ss.draft_path = required_draft
+                if config.config_type == "moe_spec":
+                    ss.experts = config.moe_experts
+                print(f"      [SERVER] Ready with draft", flush=True)
+
+
+def _run_speed_test(
+    executor: Executor,
+    results_manager: ResultsManager,
+    config,
+    model_path: str,
+    size_gb: float,
+    mmproj_path: Optional[str],
+    role: str,
+    run_id: str,
+    stats: dict,
+) -> None:
+    """Execute a speed-only benchmark for *config* (no quality questions)."""
+    is_lookup = config.config_type in ("lookup", "moe_lookup")
+    speed_prompt = LOOKUP_SPEED_TEST_PROMPT if is_lookup else SPEED_TEST_PROMPT
+    speed_max_tokens = _LOOKUP_MAX_TOKENS if is_lookup else _DEFAULT_MAX_TOKENS
+    speed_timeout = _compute_timeout(size_gb, base=300 if is_lookup else 180)
+
+    result = executor.run_inference(
+        model_path=model_path,
+        config=config,
+        prompt=speed_prompt,
+        max_tokens=speed_max_tokens,
+        temperature=_DEFAULT_TEMPERATURE,
+        timeout=speed_timeout,
+        mmproj_path=mmproj_path,
+        role=role,
+    )
+
+    if result.timed_out:
+        stats["errors"] += 1
+        print(f"    [TIMEOUT] {role}/{config.name} (speed test)")
+        return
+
+    if not result.success:
+        stats["errors"] += 1
+        err_hint = (_extract_error_hint(result.stderr, max_chars=60) if result.stderr else "") or f"exit={result.exit_code}"
+        print(f"    [ERROR] {role}/{config.name} (speed test): {err_hint}")
+        return
+
+    parsed = parse_output(result.raw_output)
+
+    results_manager.add_speed_result(
+        run_id=run_id,
+        model_role=role,
+        config_name=config.name,
+        model_path=model_path,
+        tokens_per_second=parsed.tokens_per_second or 0,
+        inherits_quality_from=config.inherits_quality_from or "baseline",
+        acceptance_rate=parsed.acceptance_rate,
+    )
+
+    tps = parsed.tokens_per_second
+    tps_str = f"{tps:.1f}t/s" if tps else "---"
+    acc_str = f"acc={parsed.acceptance_rate:.1%}" if parsed.acceptance_rate else ""
+    print(f"      ⚡ {config.name}: {tps_str} {acc_str} (speed only, quality from {config.inherits_quality_from})", flush=True)
+    stats["passed"] += 1
+
+
+def _run_quality_question(
+    executor: Executor,
+    results_manager: ResultsManager,
+    ss: _ServerState,
+    config,
+    model_path: str,
+    mmproj_path: Optional[str],
+    role: str,
+    run_id: str,
+    suite_name: str,
+    question,
+    params: dict,
+    stats: dict,
+    force: bool,
+) -> None:
+    """Execute a single quality benchmark question and store the result."""
+    exists = result_exists(run_id, role, config.name, suite_name, question.id)
+    if not force and exists:
+        stats["skipped"] += 1
+        return
+
+    if not force:
+        existing_role = result_exists_for_model(
+            run_id, model_path, config.name, suite_name, question.id
+        )
+        if existing_role and existing_role != role:
+            copied = copy_result_from_role(
+                run_id=run_id,
+                from_role=existing_role,
+                to_role=role,
+                config_name=config.name,
+                suite=suite_name,
+                question_id=question.id,
+                model_path=model_path,
+            )
+            if copied:
+                stats["skipped"] += 1
+                print(f"    [COPY] {role}/{config.name}/{question.id} <- {existing_role}")
+                return
+
+    try:
+        use_server = (
+            ss.server is not None
+            and ss.server.is_running()
+            and config.config_type in ("baseline", "moe", "spec", "moe_spec")
+        )
+
+        if use_server:
+            spec_k = config.spec_k if config.config_type in ("spec", "moe_spec") else None
+            result = ss.server.run_inference(
+                prompt=question.prompt,
+                max_tokens=params["max_tokens"],
+                temperature=params["temperature"],
+                timeout=params["timeout"],
+                speculative_n_max=spec_k,
+                image_path=question.image_path,
+            )
+        else:
+            result = executor.run_inference(
+                model_path=model_path,
+                config=config,
+                prompt=question.prompt,
+                max_tokens=params["max_tokens"],
+                temperature=params["temperature"],
+                timeout=params["timeout"],
+                mmproj_path=mmproj_path,
+                image_path=question.image_path,
+                context_size=question.context_tokens,
+                role=role,
+            )
+
+        if result.timed_out:
+            stats["errors"] += 1
+            parsed = parse_output(result.raw_output)
+            if parsed.response and len(parsed.response.strip()) > 50:
+                char_count = len(parsed.response)
+                print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: partial output saved ({char_count} chars)")
+            else:
+                print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: no usable output")
+                return
+
+        elif not result.success:
+            stats["errors"] += 1
+            err_hint = (_extract_error_hint(result.stderr) if result.stderr else "")
+            if not err_hint and result.raw_output:
+                first_line = result.raw_output.split('\n')[0][:80]
+                if not first_line.startswith('build:'):
+                    err_hint = first_line
+            err_hint = err_hint or f"exit={result.exit_code}"
+            print(f"    [ERROR] {role}/{config.name}/{question.id}: {err_hint}")
+            return
+
+        else:
+            parsed = parse_output(result.raw_output)
+
+        qresult = QuestionResult(
+            question_id=question.id,
+            prompt=question.prompt,
+            response=parsed.response,
+            tokens_per_second=parsed.tokens_per_second,
+            prompt_tokens=parsed.prompt_tokens,
+            completion_tokens=parsed.completion_tokens,
+            total_time_ms=parsed.total_time_ms,
+            algorithmic_score=None,
+            score_reason=None,
+            acceptance_rate=parsed.acceptance_rate,
+        )
+
+        results_manager.add_question_result(
+            run_id=run_id,
+            model_role=role,
+            config_name=config.name,
+            model_path=model_path,
+            suite=suite_name,
+            question_result=qresult,
+        )
+
+        tps = parsed.tokens_per_second
+        tps_str = f"{tps:.1f}t/s" if tps else "---"
+        print(f"      {config.name}/{suite_name}/{question.id}: {tps_str}", flush=True)
+        stats["passed"] += 1
+
+    except Exception as e:
+        stats["errors"] += 1
+        print(f"    [ERROR] {role}/{config.name}/{question.id}: {e}")
+
+
 def run_benchmark(
     registry: ModelRegistry,
     executor: Executor,
@@ -381,13 +726,9 @@ def run_benchmark(
 
     print(f"\nBenchmark: {run_id} | {len(models_sorted)} models, {len(valid_roles)} roles (smallest first)")
 
-    # Track which models we've already printed and speed-tested
     printed_models: set[str] = set()
-    model_tps: dict[str, float] = {}  # model_path -> measured TPS
-    active_server: Optional[ServerManager] = None  # Server for current model
-    current_server_model: Optional[str] = None  # Model path loaded in server
-    current_server_experts: Optional[int] = None  # Expert count loaded in server (None = default)
-    current_server_draft: Optional[str] = None  # Draft model path loaded in server (None = no draft)
+    model_tps: dict[str, float] = {}
+    ss = _ServerState()
 
     # Outer progress bar: roles
     role_iter = tqdm(valid_roles, desc="Roles") if TQDM_AVAILABLE else valid_roles
@@ -433,9 +774,9 @@ def run_benchmark(
                             model_path=model_path,
                             config=baseline_config,
                             prompt=SPEED_TEST_PROMPT,
-                            max_tokens=256,
-                            temperature=0.6,
-                            timeout=max(180, int(size_gb * 3) + 120),  # Dynamic based on model size
+                            max_tokens=_DEFAULT_MAX_TOKENS,
+                            temperature=_DEFAULT_TEMPERATURE,
+                            timeout=_compute_timeout(size_gb),
                             mmproj_path=mmproj_path,  # VL models need mmproj even for text
                             role=role,  # For paged attention on 70B+ models
                         )
@@ -468,233 +809,52 @@ def run_benchmark(
         total_questions = sum(len(suites_data[s]["suite"].questions) for s in suites_data)
         inner_total = len(configs) * total_questions
 
-        # Print model header only once, then show roles underneath
-        model_name = Path(model_path).stem if model_path else role
-        if model_path not in printed_models:
+        # Print model header once
+        is_new_model = model_path not in printed_models
+        if is_new_model:
             printed_models.add(model_path)
-            roles_for_model = model_to_roles[model_path]
+            model_name = Path(model_path).stem if model_path else role
             tps_str = f"{measured_tps:.1f} t/s"
             mult_str = f"{timeout_multiplier:.1f}x" if timeout_multiplier > 1.0 else "1x"
             print(f"\n  {model_name} ({size_gb:.1f}GB) @ {tps_str} → timeout {mult_str}", flush=True)
-            print(f"    roles: {', '.join(roles_for_model)}", flush=True)
+            print(f"    roles: {', '.join(model_to_roles[model_path])}", flush=True)
 
-            # SERVER MODE: Start server for this model (keeps it in RAM)
             if server_mode and not dry_run:
-                # Stop previous server if different model
-                if active_server and current_server_model != model_path:
-                    print(f"    [SERVER] Stopping server for previous model", flush=True)
-                    active_server.stop()
-                    active_server = None
-
-                if active_server is None:
-                    # Start with no MoE override (use model defaults for baseline)
-                    # Server will be restarted with specific expert counts when needed
-                    print(f"    [SERVER] Starting llama-server (model will stay in RAM)...", flush=True)
-                    active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=None, registry=registry, no_mmap=no_mmap, role=role, mmproj_path=mmproj_path)
-
-                    # Dynamic timeout: 3s per GB + 2 min buffer, minimum 600s
-                    server_timeout = max(600, int(size_gb * 3) + 120)
-                    if not active_server.wait_ready(timeout=server_timeout):
-                        print(f"    [SERVER] Failed to start, falling back to subprocess mode", flush=True)
-                        active_server = None
-                    else:
-                        current_server_model = model_path
-                        current_server_experts = None  # Default expert count
-                        current_server_draft = None  # No draft model initially
-                        print(f"    [SERVER] Ready, model loaded in RAM (default experts)", flush=True)
+                _ensure_server(ss, model_path, configs[0] if configs else None, role,
+                               size_gb, registry, no_mmap, mmproj_path, is_new_model=True)
 
         print(f"    [{role}] {pending_tests}/{inner_total} tests pending ({len(configs)} configs × {len(suite_names)} suites)", flush=True)
 
         for config in configs:
-            # SERVER RESTART for different MoE expert counts
-            # Each MoE config needs the server restarted with its specific expert count
-            if server_mode and active_server is not None and active_server.is_running():
-                # Determine required expert count for this config
-                if config.config_type == "moe":
-                    required_experts = config.moe_experts
-                elif config.config_type == "baseline":
-                    required_experts = None  # Use model default
-                else:
-                    required_experts = current_server_experts  # Keep current (for non-server configs)
+            # Server management per config
+            if server_mode and ss.server is not None and ss.server.is_running():
+                _ensure_server(ss, model_path, config, role, size_gb,
+                               registry, no_mmap, mmproj_path, is_new_model=False)
 
-                # Restart if expert count differs
-                if required_experts != current_server_experts:
-                    if required_experts is None:
-                        print(f"      [SERVER] Restarting for baseline (default experts)...", flush=True)
-                        moe_override = None
-                    else:
-                        moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
-                        moe_override = f"{moe_key}=int:{required_experts}"
-                        print(f"      [SERVER] Restarting for {config.name} ({required_experts} experts)...", flush=True)
-
-                    active_server.stop()
-                    active_server = ServerManager(port=8080)
-                    active_server.start(model_path, moe_override=moe_override, registry=registry, no_mmap=no_mmap, role=role, mmproj_path=mmproj_path)
-
-                    server_timeout = max(600, int(size_gb * 3) + 120)
-                    if not active_server.wait_ready(timeout=server_timeout):
-                        print(f"      [SERVER] Failed to restart, falling back to subprocess", flush=True)
-                        active_server = None
-                        current_server_experts = None
-                    else:
-                        current_server_experts = required_experts
-                        current_server_draft = None  # MoE restart clears draft
-                        print(f"      [SERVER] Ready", flush=True)
-
-            # SERVER RESTART for different draft models (spec decode configs)
-            # Only restart if draft model differs from currently loaded one
-            if server_mode and active_server is not None and active_server.is_running():
-                if config.config_type in ("spec", "moe_spec"):
-                    required_draft = config.draft_model_path
-                    if required_draft != current_server_draft:
-                        # Need to restart with draft model
-                        # Determine MoE override for moe_spec configs
-                        if config.config_type == "moe_spec":
-                            moe_key = registry.get_moe_override_key(role) or "qwen3moe.expert_used_count"
-                            moe_override = f"{moe_key}=int:{config.moe_experts}"
-                        else:
-                            moe_override = None
-
-                        draft_name = Path(required_draft).stem if required_draft else "unknown"
-                        print(f"      [SERVER] Restarting with draft {draft_name}...", flush=True)
-                        active_server.stop()
-                        active_server = ServerManager(port=8080)
-                        active_server.start(
-                            model_path,
-                            moe_override=moe_override,
-                            registry=registry,
-                            no_mmap=no_mmap,
-                            role=role,
-                            draft_model_path=required_draft,
-                            draft_max=config.spec_k,  # Use this K as default
-                            mmproj_path=mmproj_path,
-                        )
-
-                        server_timeout = max(600, int(size_gb * 3) + 120)
-                        if not active_server.wait_ready(timeout=server_timeout):
-                            print(f"      [SERVER] Failed to restart with draft, falling back to subprocess", flush=True)
-                            active_server = None
-                            current_server_draft = None
-                        else:
-                            current_server_draft = required_draft
-                            if config.config_type == "moe_spec":
-                                current_server_experts = config.moe_experts
-                            print(f"      [SERVER] Ready with draft", flush=True)
-
-            # SPEED-TEST OPTIMIZATION: For configs that only need speed measurement
-            # (e.g., spec decode variants, lookup), run a single speed test instead of all questions.
-            # Quality is inherited from baseline since target model is the same.
+            # Speed-test-only configs
             if config.speed_test_only:
                 stats["total"] += 1
-
                 if dry_run:
                     print(f"      [SPEED] {config.name} (inherits quality from {config.inherits_quality_from})", flush=True)
                     continue
-
-                # Skip if already done
                 if not force and result_exists(run_id, role, config.name):
                     stats["skipped"] += 1
                     continue
-
                 try:
-                    # Choose prompt based on config type
-                    # Lookup needs a longer prompt for n-gram matching to work
-                    is_lookup = config.config_type in ("lookup", "moe_lookup")
-                    speed_prompt = LOOKUP_SPEED_TEST_PROMPT if is_lookup else SPEED_TEST_PROMPT
-                    speed_max_tokens = 512 if is_lookup else 256  # Longer response for longer prompt
-                    speed_timeout = max(300 if is_lookup else 180, int(size_gb * 3) + 120)
-
-                    # NEVER use server for spec decode speed tests - server returns broken timing
-                    # (predicted_per_second is ~28x inflated due to llama-server bug)
-                    # Always use subprocess mode which runs llama-speculative CLI with correct timing
-                    use_server_for_speed = False
-
-                    if use_server_for_speed:
-                        # Use server - K is per-request, no reload needed
-                        result = active_server.run_inference(
-                            prompt=speed_prompt,
-                            max_tokens=speed_max_tokens,
-                            temperature=0.6,
-                            timeout=speed_timeout,
-                            speculative_n_max=config.spec_k,
-                        )
-                    else:
-                        # Fallback to subprocess (VL models, lookup, or server not available)
-                        result = executor.run_inference(
-                            model_path=model_path,
-                            config=config,
-                            prompt=speed_prompt,
-                            max_tokens=speed_max_tokens,
-                            temperature=0.6,
-                            timeout=speed_timeout,
-                            mmproj_path=mmproj_path,  # VL models need mmproj even for speed tests
-                            role=role,  # For paged attention on 70B+ models
-                        )
-
-                    if result.timed_out:
-                        stats["errors"] += 1
-                        print(f"    [TIMEOUT] {role}/{config.name} (speed test)")
-                        continue
-
-                    if not result.success:
-                        stats["errors"] += 1
-                        err_hint = f"exit={result.exit_code}"
-                        if result.stderr:
-                            for line in reversed(result.stderr.split('\n')):
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                if any(line.startswith(p) for p in ['build:', 'main:', 'llama_model_loader:', 'print_info:', 'load_']):
-                                    continue
-                                line_lower = line.lower()
-                                if any(x in line_lower for x in ['error:', 'error ', 'failed', 'fatal', 'abort']):
-                                    err_hint = line[:60]
-                                    break
-                        print(f"    [ERROR] {role}/{config.name} (speed test): {err_hint}")
-                        continue
-
-                    parsed = parse_output(result.raw_output)
-
-                    # Store speed-only result
-                    results_manager.add_speed_result(
-                        run_id=run_id,
-                        model_role=role,
-                        config_name=config.name,
-                        model_path=model_path,
-                        tokens_per_second=parsed.tokens_per_second or 0,
-                        inherits_quality_from=config.inherits_quality_from or "baseline",
-                        acceptance_rate=parsed.acceptance_rate,
-                    )
-
-                    tps = parsed.tokens_per_second
-                    tps_str = f"{tps:.1f}t/s" if tps else "---"
-                    acc_str = f"acc={parsed.acceptance_rate:.1%}" if parsed.acceptance_rate else ""
-                    print(f"      ⚡ {config.name}: {tps_str} {acc_str} (speed only, quality from {config.inherits_quality_from})", flush=True)
-                    stats["passed"] += 1
-
+                    _run_speed_test(executor, results_manager, config, model_path,
+                                    size_gb, mmproj_path, role, run_id, stats)
                 except Exception as e:
                     stats["errors"] += 1
                     print(f"    [ERROR] {role}/{config.name}: {e}")
-
-                # LONG_CONTEXT OPTIMIZATION: First spec config falls through to run
-                # quality tests for long_context suite (faster than baseline)
                 if config.name != long_context_spec_config:
-                    continue  # Normal case: skip to next config after speed test
-                # else: fall through to quality loop for long_context only
+                    continue
 
-            # FULL QUALITY BENCHMARK for baseline and non-spec configs
+            # Quality benchmark loop
             for suite_name, sdata in suites_data.items():
-                # Skip lookup configs for short-prompt suites
-                # Only long_context has prompts long enough for lookup to be effective
                 if config.config_type in ("lookup", "moe_lookup") and suite_name != "long_context":
                     continue
-
-                # LONG_CONTEXT OPTIMIZATION: Skip baseline long_context if spec decode handles it
                 if suite_name == "long_context" and config.name == "baseline" and long_context_spec_config:
                     continue
-
-                # First spec config only runs long_context quality (already did speed test for others)
                 if suite_name != "long_context" and config.name == long_context_spec_config:
                     continue
 
@@ -703,152 +863,18 @@ def run_benchmark(
 
                 for question in suite.questions:
                     stats["total"] += 1
-
-                    # Dry run: just count, don't execute
                     if dry_run:
                         continue
-
-                    # Skip check - first check if THIS role has the result
-                    exists = result_exists(run_id, role, config.name, suite_name, question.id)
-                    if not force and exists:
-                        stats["skipped"] += 1
-                        continue
-
-                    # Model-path deduplication: check if ANOTHER role with same model has result
-                    if not force:
-                        existing_role = result_exists_for_model(
-                            run_id, model_path, config.name, suite_name, question.id
-                        )
-                        if existing_role and existing_role != role:
-                            # Copy result from the other role instead of re-testing
-                            copied = copy_result_from_role(
-                                run_id=run_id,
-                                from_role=existing_role,
-                                to_role=role,
-                                config_name=config.name,
-                                suite=suite_name,
-                                question_id=question.id,
-                                model_path=model_path,
-                            )
-                            if copied:
-                                stats["skipped"] += 1
-                                print(f"    [COPY] {role}/{config.name}/{question.id} <- {existing_role}")
-                                continue
-
-                    try:
-                        # Use server for all supported config types (model stays in RAM)
-                        # Server supports: baseline, MoE, spec decode (K is per-request)
-                        # VL models can use server via /v1/chat/completions with mmproj
-                        use_server = (
-                            active_server is not None
-                            and active_server.is_running()
-                            and config.config_type in ("baseline", "moe", "spec", "moe_spec")
-                        )
-
-                        if use_server:
-                            # Pass K value for spec decode configs (per-request override)
-                            spec_k = config.spec_k if config.config_type in ("spec", "moe_spec") else None
-                            result = active_server.run_inference(
-                                prompt=question.prompt,
-                                max_tokens=params["max_tokens"],
-                                temperature=params["temperature"],
-                                timeout=params["timeout"],
-                                speculative_n_max=spec_k,
-                                image_path=question.image_path,
-                            )
-                        else:
-                            result = executor.run_inference(
-                                model_path=model_path,
-                                config=config,
-                                prompt=question.prompt,
-                                max_tokens=params["max_tokens"],
-                                temperature=params["temperature"],
-                                timeout=params["timeout"],
-                                mmproj_path=mmproj_path,
-                                image_path=question.image_path,
-                                context_size=question.context_tokens,  # For long_context prompts
-                                role=role,  # For paged attention on 70B+ models
-                            )
-
-                        if result.timed_out:
-                            stats["errors"] += 1
-                            # Still parse and save partial output for quality assessment
-                            parsed = parse_output(result.raw_output)
-                            if parsed.response and len(parsed.response.strip()) > 50:
-                                # Meaningful partial output - save it
-                                char_count = len(parsed.response)
-                                print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: partial output saved ({char_count} chars)")
-                                # Fall through to save the result (scoring done via Claude-as-Judge)
-                            else:
-                                print(f"    [TIMEOUT] {role}/{config.name}/{question.id}: no usable output")
-                                continue
-
-                        elif not result.success:
-                            stats["errors"] += 1
-                            # Extract meaningful error from stderr, filtering out log noise
-                            err_hint = f"exit={result.exit_code}"
-                            if result.stderr:
-                                # Look for actual error messages in stderr (last lines often have the error)
-                                for line in reversed(result.stderr.split('\n')):
-                                    line = line.strip()
-                                    if not line:
-                                        continue
-                                    # Skip common log prefixes
-                                    if any(line.startswith(p) for p in ['build:', 'main:', 'llama_model_loader:', 'print_info:', 'load_']):
-                                        continue
-                                    # Look for real error indicators
-                                    line_lower = line.lower()
-                                    if any(x in line_lower for x in ['error:', 'error ', 'failed', 'fatal', 'abort', 'segfault', 'exception']):
-                                        err_hint = line[:80]
-                                        break
-                            elif result.raw_output:
-                                first_line = result.raw_output.split('\n')[0][:80]
-                                if not first_line.startswith('build:'):
-                                    err_hint = first_line
-                            print(f"    [ERROR] {role}/{config.name}/{question.id}: {err_hint}")
-                            continue
-
-                        else:
-                            parsed = parse_output(result.raw_output)
-
-                        # NOTE: Algorithmic scoring removed. Quality evaluation via Claude-as-Judge only.
-                        qresult = QuestionResult(
-                            question_id=question.id,
-                            prompt=question.prompt,
-                            response=parsed.response,
-                            tokens_per_second=parsed.tokens_per_second,
-                            prompt_tokens=parsed.prompt_tokens,
-                            completion_tokens=parsed.completion_tokens,
-                            total_time_ms=parsed.total_time_ms,
-                            algorithmic_score=None,  # Deprecated - use Claude-as-Judge
-                            score_reason=None,
-                            acceptance_rate=parsed.acceptance_rate,
-                        )
-
-                        results_manager.add_question_result(
-                            run_id=run_id,
-                            model_role=role,
-                            config_name=config.name,
-                            model_path=model_path,
-                            suite=suite_name,
-                            question_result=qresult,
-                        )
-
-                        # Show progress for every test (speed only - Claude-as-Judge scores later)
-                        tps = parsed.tokens_per_second
-                        tps_str = f"{tps:.1f}t/s" if tps else "---"
-                        print(f"      {config.name}/{suite_name}/{question.id}: {tps_str}", flush=True)
-                        stats["passed"] += 1  # "passed" = completed successfully
-
-                    except Exception as e:
-                        stats["errors"] += 1
-                        print(f"    [ERROR] {role}/{config.name}/{question.id}: {e}")
+                    _run_quality_question(
+                        executor, results_manager, ss, config, model_path,
+                        mmproj_path, role, run_id, suite_name, question, params,
+                        stats, force,
+                    )
 
     finally:
-        # Clean up server if running
-        if active_server is not None:
+        if ss.server is not None:
             print(f"\n  [SERVER] Stopping server...", flush=True)
-            active_server.stop()
+            ss.stop()
 
     print(f"\nDone: {stats['passed']} completed, {stats['skipped']} skipped, {stats['errors']} errors")
     return stats

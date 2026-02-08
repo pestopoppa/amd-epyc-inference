@@ -4,7 +4,13 @@
 import threading
 from unittest.mock import MagicMock
 
-from src.inference_tap import TapWriter, _NullWriter, is_active, tap_section
+from src.inference_tap import (
+    TapWriter,
+    _NullWriter,
+    _read_sentinel,
+    is_active,
+    tap_section,
+)
 
 
 class TestIsActive:
@@ -240,3 +246,83 @@ class TestInferStreamTextSSE:
         assert result.prompt_eval_ms == 50.0
         assert result.generation_ms == 100.0
         assert result.predicted_per_second == 30.0
+
+
+class TestSentinelFallback:
+    """Tests for sentinel file fallback in is_active() / _tap_path()."""
+
+    def _reset_cache(self):
+        """Force-expire the sentinel cache so reads are fresh."""
+        import src.inference_tap as _mod
+        _mod._sentinel_cache = ("", 0.0)
+
+    def test_is_active_true_with_sentinel(self, tmp_path, monkeypatch):
+        """is_active() returns True when sentinel file exists."""
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("/tmp/tap.log")
+
+        monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(sentinel))
+        self._reset_cache()
+
+        assert is_active() is True
+
+    def test_is_active_false_after_removal(self, tmp_path, monkeypatch):
+        """is_active() returns False after sentinel is removed (cache expired)."""
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("/tmp/tap.log")
+
+        monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(sentinel))
+        self._reset_cache()
+
+        assert is_active() is True
+
+        # Remove sentinel and expire cache
+        sentinel.unlink()
+        self._reset_cache()
+
+        assert is_active() is False
+
+    def test_sentinel_cache_is_used(self, tmp_path, monkeypatch):
+        """Reads within 5 seconds return cached value (no re-read)."""
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("/tmp/tap.log")
+
+        monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(sentinel))
+        self._reset_cache()
+
+        # First read populates cache
+        assert _read_sentinel() == "/tmp/tap.log"
+
+        # Remove file — cached value should still be returned
+        sentinel.unlink()
+        assert _read_sentinel() == "/tmp/tap.log"  # cached!
+
+        # After expiring cache, read returns empty
+        self._reset_cache()
+        assert _read_sentinel() == ""
+
+    def test_env_var_takes_precedence(self, tmp_path, monkeypatch):
+        """Env var is checked before sentinel."""
+        sentinel = tmp_path / "sentinel"
+        sentinel.write_text("/tmp/sentinel_tap.log")
+
+        monkeypatch.setenv("INFERENCE_TAP_FILE", "/tmp/env_tap.log")
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(sentinel))
+        self._reset_cache()
+
+        assert is_active() is True
+        # _tap_path should return env var, not sentinel
+        from src.inference_tap import _tap_path
+        assert _tap_path() == "/tmp/env_tap.log"
+
+    def test_nonexistent_sentinel(self, tmp_path, monkeypatch):
+        """Missing sentinel file returns empty string without error."""
+        monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(tmp_path / "nope"))
+        self._reset_cache()
+
+        assert is_active() is False
+        assert _read_sentinel() == ""

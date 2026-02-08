@@ -830,3 +830,17 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 {"ts":"2026-02-08T15:18:00+01:00","session":"ses_20260208_150000_inference_tap","level":"INFO","cat":"FILE_CREATE","msg":"tests/unit/test_inference_tap.py","details":"action=create; 12 tests across 6 test classes"}
 {"ts":"2026-02-08T15:18:00+01:00","session":"ses_20260208_150000_inference_tap","level":"INFO","cat":"TASK_END","msg":"Create test suite","details":"outcome=success; 12/12 tests pass"}
 {"ts":"2026-02-08T15:20:00+01:00","session":"ses_20260208_150000_inference_tap","level":"INFO","cat":"SESSION_END","msg":"Session complete","details":"2 new files, 3 modified files, 12 new tests, 0 regressions"}
+
+[2026-02-08T15:30:00Z] SESSION_START purpose="Rich TUI for seeding script"
+[2026-02-08T15:30:01Z] TASK_START description="Create seeding_tui.py module" reasoning="New file with DequeHandler, TapTailer, TUIProgress, SeedingTUI classes"
+[2026-02-08T15:31:00Z] TASK_END description="Create seeding_tui.py module" result="success"
+[2026-02-08T15:31:01Z] TASK_START description="Add sentinel fallback to inference_tap.py" reasoning="Cross-process tap discovery via sentinel file"
+[2026-02-08T15:31:30Z] TASK_END description="Add sentinel fallback to inference_tap.py" result="success"
+[2026-02-08T15:31:31Z] TASK_START description="Add --tui flag and on_progress to seed_specialist_routing.py" reasoning="Minimal changes: arg, callback, context wrapper"
+[2026-02-08T15:32:30Z] TASK_END description="Add --tui flag and on_progress to seed_specialist_routing.py" result="success"
+[2026-02-08T15:32:31Z] TASK_START description="Create tests for TUI and sentinel fallback" reasoning="10 TUI tests + 5 sentinel tests"
+[2026-02-08T15:33:30Z] TASK_END description="Create tests for TUI and sentinel fallback" result="success"
+[2026-02-08T15:33:31Z] TASK_START description="Run tests and verify" reasoning="pytest 27/27 pass"
+[2026-02-08T15:34:00Z] TASK_END description="Run tests and verify" result="success"
+[2026-02-08T15:34:01Z] TASK_START description="Update logs and progress report" reasoning="Daily progress + orchestration progress"
+[2026-02-08T15:35:00Z] TASK_END description="Update logs and progress report" result="success"

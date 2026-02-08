@@ -138,7 +138,7 @@ def _handle_sigint(sig, frame):
         state.close_poll_client()
         sys.exit(1)
     state.shutdown = True
-    print("\n[SIGINT] Finishing current question, then stopping...")
+    logger.info("[SIGINT] Finishing current question, then stopping...")
 
 
 def _handle_sigterm(sig, frame):
@@ -467,6 +467,46 @@ def call_orchestrator_forced(
     if allow_delegation is not None:
         payload["allow_delegation"] = allow_delegation
 
+    def _normalize_tool_telemetry(data: dict[str, Any]) -> None:
+        """Normalize tool telemetry fields for downstream consistency.
+
+        Ensures tools_used, tools_called, and tool_timings are aligned even when
+        older/partial API responses omit one of the fields.
+        """
+        if not isinstance(data, dict):
+            return
+
+        tools_called = data.get("tools_called") or []
+        if not isinstance(tools_called, list):
+            tools_called = [str(tools_called)]
+
+        tool_timings = data.get("tool_timings") or []
+        if not isinstance(tool_timings, list):
+            tool_timings = []
+
+        tools_used_raw = data.get("tools_used", 0)
+        try:
+            tools_used = int(tools_used_raw or 0)
+        except Exception:
+            tools_used = 0
+
+        if tool_timings and not tools_called:
+            tools_called = [str(t.get("tool_name", "?")) for t in tool_timings]
+
+        inferred_used = max(tools_used, len(tools_called), len(tool_timings))
+
+        # If we have tool names but no timing rows, synthesize placeholders
+        # rather than dropping telemetry dimensions.
+        if inferred_used > 0 and not tool_timings and tools_called:
+            tool_timings = [
+                {"tool_name": str(name), "elapsed_ms": 0.0, "success": True}
+                for name in tools_called
+            ]
+
+        data["tools_called"] = tools_called
+        data["tool_timings"] = tool_timings
+        data["tools_used"] = inferred_used
+
     try:
         if client is not None:
             # Use per-request timeout override
@@ -484,6 +524,7 @@ def call_orchestrator_forced(
             error_code = data.get("error_code")
             if error_code and not data.get("error"):
                 data["error"] = data.get("error_detail") or f"HTTP {error_code}"
+            _normalize_tool_telemetry(data)
         return data
     except Exception as e:
         return {"answer": "", "error": str(e)}
@@ -540,292 +581,107 @@ def _is_coding_task(prompt: str) -> bool:
     return any(ind in prompt_lower for ind in coding_indicators)
 
 
-def evaluate_question_3way(
-    prompt_info: dict,
+def _eval_single_config(
+    prompt: str,
+    expected: str,
+    scoring_method: str,
+    scoring_config: dict,
+    role: str,
+    mode: str,
     url: str,
     timeout: int,
     client: "httpx.Client",
-    dry_run: bool = False,
-) -> tuple[dict[str, RoleResult], dict[str, float], dict[str, Any]]:
-    """Evaluate one question across the 3-way routing matrix.
-
-    Test configurations:
-    1. SELF:direct - Frontdoor without tools (direct mode)
-    2. SELF:repl - Frontdoor with tools, delegation disabled
-    3. ARCHITECT - Architect with full delegation freedom
-
-    WORKER is scored indirectly via delegation chains.
-
-    Args:
-        prompt_info: Question dict with id, suite, prompt, expected, etc.
-        url: Orchestrator API URL.
-        timeout: Request timeout.
-        client: Reusable httpx.Client.
-        dry_run: If True, don't inject rewards.
+    allow_delegation: bool,
+    image_path: str = "",
+    log_label: str = "",
+    format_fn=None,
+) -> tuple[RoleResult, dict]:
+    """Call the orchestrator, score, build RoleResult, and handle infra errors.
 
     Returns:
-        (role_results, rewards, metadata) tuple.
+        (role_result, raw_response_dict) tuple.
     """
-    prompt = prompt_info["prompt"]
-    expected = prompt_info.get("expected", "")
-    scoring_method = prompt_info.get("scoring_method", "exact_match")
-    scoring_config = prompt_info.get("scoring_config", {})
-    suite = prompt_info["suite"]
-    image_path = prompt_info.get("image_path", "")
-    is_vl = bool(image_path)
+    port = ROLE_PORT.get(role, 0)
+    if port in HEAVY_PORTS:
+        _wait_for_heavy_models_idle()
 
-    role_results: dict[str, RoleResult] = {}
-
-    # ── VL-aware role mapping ──
-    # VL questions must route to vision-capable models, not text-only.
-    if is_vl:
-        self_role = "worker_vision"       # port 8086
-        self_direct_mode = "direct"
-        self_repl_mode = "react"          # vision equivalent of repl
-        arch_role = "vision_escalation"   # port 8087
-    else:
-        self_role = "frontdoor"           # port 8080
-        self_direct_mode = "direct"
-        self_repl_mode = "repl"
-        arch_role = None  # determined below by _is_coding_task
-
-    # ── Configuration 1: SELF:direct ──
-    # Frontdoor/vision, direct mode, no tools
-    logger.info(f"  → {ACTION_SELF_DIRECT} ({self_role})...")
+    logger.info(f"  → {log_label} ({role}:{mode})...")
     t0 = time.perf_counter()
-    resp_direct = call_orchestrator_forced(
+    resp = call_orchestrator_forced(
         prompt=prompt,
-        force_role=self_role,
-        force_mode=self_direct_mode,
+        force_role=role,
+        force_mode=mode,
         url=url,
         timeout=timeout,
         client=client,
-        allow_delegation=False,  # Explicitly disable delegation
+        allow_delegation=allow_delegation,
         image_path=image_path,
         cache_prompt=False,
     )
-    elapsed_direct = time.perf_counter() - t0
+    elapsed = time.perf_counter() - t0
 
-    answer_direct = resp_direct.get("answer", "")
-    error_direct = resp_direct.get("error")
-    error_type_direct = _classify_error(error_direct)
-    passed_direct = score_answer_deterministic(answer_direct, expected, scoring_method, scoring_config) if not error_direct else False
+    answer = resp.get("answer", "")
+    error = resp.get("error")
+    error_type = _classify_error(error)
 
-    role_results[f"{self_role}:{self_direct_mode}"] = RoleResult(
-        role=self_role,
-        mode=self_direct_mode,
-        answer=answer_direct or "",
-        passed=passed_direct,
-        elapsed_seconds=elapsed_direct,
-        error=error_direct,
-        error_type=error_type_direct,
-        tokens_generated=resp_direct.get("tokens_generated", 0),
-        tools_used=resp_direct.get("tools_used", 0),
-        tools_called=resp_direct.get("tools_called", []),
-        delegation_events=resp_direct.get("delegation_events", []),
-        tools_success=resp_direct.get("tools_success"),
-        delegation_success=resp_direct.get("delegation_success"),
-        routed_to=resp_direct.get("routed_to", ""),
-        role_history=resp_direct.get("role_history", []),
-        predicted_tps=resp_direct.get("predicted_tps", 0.0),
-        generation_ms=resp_direct.get("generation_ms", 0.0),
+    if error_type == "infrastructure":
+        passed = None
+    elif error:
+        passed = False
+    else:
+        passed = score_answer_deterministic(answer, expected, scoring_method, scoring_config)
+
+    rr = RoleResult(
+        role=role,
+        mode=mode,
+        answer=answer or "",
+        passed=bool(passed) if passed is not None else False,
+        elapsed_seconds=elapsed,
+        error=error,
+        error_type=error_type,
+        tokens_generated=resp.get("tokens_generated", 0),
+        tools_used=resp.get("tools_used", 0),
+        tools_called=resp.get("tools_called", []),
+        delegation_events=resp.get("delegation_events", []),
+        tools_success=resp.get("tools_success"),
+        delegation_success=resp.get("delegation_success"),
+        routed_to=resp.get("routed_to", ""),
+        role_history=resp.get("role_history", []),
+        predicted_tps=resp.get("predicted_tps", 0.0),
+        generation_ms=resp.get("generation_ms", 0.0),
     )
-    if error_type_direct == "infrastructure" and resp_direct.get("tokens_generated", 0) == 0:
-        target_port = ROLE_PORT.get(self_role, 0)
+
+    if error_type == "infrastructure" and resp.get("tokens_generated", 0) == 0:
+        target_port = ROLE_PORT.get(role, 0)
         if target_port:
             _erase_slots(target_port)
-    from eval_log_format import (
-        format_self_direct, format_self_repl, format_architect_result,
-        format_reward_skip, format_all_infra_skip,
-    )
-    for line in format_self_direct(
-        ACTION_SELF_DIRECT,
-        passed_direct,
-        error_direct,
-        elapsed_direct,
-        resp_direct,
-        infra=(error_type_direct == "infrastructure"),
-    ):
-        logger.info(line)
 
-    # ── Configuration 2: SELF:repl ──
-    # Frontdoor/vision, repl/react mode, tools available but no delegation
-    logger.info(f"  → {ACTION_SELF_REPL} ({self_role}:{self_repl_mode})...")
-    t0 = time.perf_counter()
-    resp_repl = call_orchestrator_forced(
-        prompt=prompt,
-        force_role=self_role,
-        force_mode=self_repl_mode,
-        url=url,
-        timeout=timeout,
-        client=client,
-        allow_delegation=False,  # Tools available, but no delegation to workers
-        image_path=image_path,
-        cache_prompt=False,
-    )
-    elapsed_repl = time.perf_counter() - t0
-
-    answer_repl = resp_repl.get("answer", "")
-    error_repl = resp_repl.get("error")
-    error_type_repl = _classify_error(error_repl)
-    passed_repl = score_answer_deterministic(answer_repl, expected, scoring_method, scoring_config) if not error_repl else False
-
-    role_results[f"{self_role}:{self_repl_mode}"] = RoleResult(
-        role=self_role,
-        mode=self_repl_mode,
-        answer=answer_repl or "",
-        passed=passed_repl,
-        elapsed_seconds=elapsed_repl,
-        error=error_repl,
-        error_type=error_type_repl,
-        tokens_generated=resp_repl.get("tokens_generated", 0),
-        tools_used=resp_repl.get("tools_used", 0),
-        tools_called=resp_repl.get("tools_called", []),
-        delegation_events=resp_repl.get("delegation_events", []),
-        tools_success=resp_repl.get("tools_success"),
-        delegation_success=resp_repl.get("delegation_success"),
-        routed_to=resp_repl.get("routed_to", ""),
-        role_history=resp_repl.get("role_history", []),
-        predicted_tps=resp_repl.get("predicted_tps", 0.0),
-        generation_ms=resp_repl.get("generation_ms", 0.0),
-    )
-    if error_type_repl == "infrastructure" and resp_repl.get("tokens_generated", 0) == 0:
-        target_port = ROLE_PORT.get(self_role, 0)
-        if target_port:
-            _erase_slots(target_port)
-    for line in format_self_repl(
-        ACTION_SELF_REPL,
-        passed_repl,
-        error_repl,
-        elapsed_repl,
-        resp_repl,
-        infra=(error_type_repl == "infrastructure"),
-    ):
-        logger.info(line)
-
-    # ── Configuration 3: ARCHITECT (dual evaluation) ──
-    # Evaluate both architect_general and architect_coding for text;
-    # vision uses vision_escalation only.
-    if is_vl:
-        arch_roles_to_eval = [arch_role]  # vision_escalation only
-    else:
-        arch_roles_to_eval = ["architect_general", "architect_coding"]
-
-    arch_results: dict[str, dict[str, Any]] = {}
-    arch_mode = "direct" if is_vl else "delegated"
-
-    for ar in arch_roles_to_eval:
-        if len(arch_roles_to_eval) > 1:
-            _wait_for_heavy_models_idle()
-
-        logger.info(f"  → {ACTION_ARCHITECT} ({ar})...")
-        t0 = time.perf_counter()
-        resp_arch = call_orchestrator_forced(
-            prompt=prompt,
-            force_role=ar,
-            force_mode=arch_mode,
-            url=url,
-            timeout=max(timeout, 300),  # Architects/vision_escalation are slow
-            client=client,
-            allow_delegation=not is_vl,  # Full delegation for text; VL uses direct
-            image_path=image_path,
-            cache_prompt=False,
-        )
-        elapsed_arch = time.perf_counter() - t0
-
-        answer_arch = resp_arch.get("answer", "")
-        error_arch = resp_arch.get("error")
-        error_type_arch = _classify_error(error_arch)
-        if error_type_arch == "infrastructure":
-            passed_arch = None
-        else:
-            passed_arch = (
-                score_answer_deterministic(
-                    answer_arch,
-                    expected,
-                    scoring_method,
-                    scoring_config,
-                )
-                if not error_arch
-                else False
-            )
-
-        arch_results[ar] = {
-            "passed": passed_arch,
-            "elapsed_seconds": elapsed_arch,
-            "tokens_generated": resp_arch.get("tokens_generated", 0),
-            "predicted_tps": resp_arch.get("predicted_tps", 0.0),
-            "generation_ms": resp_arch.get("generation_ms", 0.0),
-            "tools_used": resp_arch.get("tools_used", 0),
-            "tools_called": resp_arch.get("tools_called", []),
-            "role_history": resp_arch.get("role_history", []),
-            "error": error_arch,
-            "error_type": error_type_arch,
-        }
-
-        role_results[f"{ar}:{arch_mode}"] = RoleResult(
-            role=ar,
-            mode=arch_mode,
-            answer=answer_arch or "",
-            passed=bool(passed_arch),
-            elapsed_seconds=elapsed_arch,
-            error=error_arch,
-            error_type=error_type_arch,
-            tokens_generated=resp_arch.get("tokens_generated", 0),
-            tools_used=resp_arch.get("tools_used", 0),
-            tools_called=resp_arch.get("tools_called", []),
-            delegation_events=resp_arch.get("delegation_events", []),
-            tools_success=resp_arch.get("tools_success"),
-            delegation_success=resp_arch.get("delegation_success"),
-            routed_to=resp_arch.get("routed_to", ""),
-            role_history=resp_arch.get("role_history", []),
-            predicted_tps=resp_arch.get("predicted_tps", 0.0),
-            generation_ms=resp_arch.get("generation_ms", 0.0),
-        )
-        if error_type_arch == "infrastructure" and resp_arch.get("tokens_generated", 0) == 0:
-            target_port = ROLE_PORT.get(ar, 0)
-            if target_port:
-                _erase_slots(target_port)
-
-        for line in format_architect_result(ACTION_ARCHITECT, passed_arch, error_arch, elapsed_arch, resp_arch):
+    if format_fn is not None:
+        for line in format_fn(log_label, passed, error, elapsed, resp,
+                              infra=(error_type == "infrastructure")):
             logger.info(line)
 
-    # ── Compute 3-way rewards (binary for faithful P(success)) ──
-    rewards: dict[str, float] = {}
+    return rr, resp
 
-    # SELF:direct
-    if error_type_direct == "infrastructure":
-        for line in format_reward_skip(ACTION_SELF_DIRECT):
-            logger.info(line)
-    else:
-        rewards[ACTION_SELF_DIRECT] = success_reward(passed_direct)
 
-    # SELF:repl
-    if error_type_repl == "infrastructure":
-        for line in format_reward_skip(ACTION_SELF_REPL):
-            logger.info(line)
-    else:
-        rewards[ACTION_SELF_REPL] = success_reward(passed_repl)
-
-    # ARCHITECT (best-of-two, skip infra-only)
-    valid_results = {k: v for k, v in arch_results.items() if v["passed"] is not None}
-    if valid_results:
-        passed_arch = any(v["passed"] for v in valid_results.values())
-        rewards[ACTION_ARCHITECT] = success_reward(passed_arch)
-    else:
-        for line in format_all_infra_skip(ACTION_ARCHITECT):
-            logger.info(line)
-
-    # WORKER (via delegation chain attribution)
-    worker_rewards = score_delegation_chain(role_results)
-    rewards.update(worker_rewards)
-
-    # ── Metadata: Tool value signal + cost metrics ──
+def _compute_3way_metadata(
+    role_results: dict[str, RoleResult],
+    arch_results: dict[str, dict[str, Any]],
+    prompt: str,
+    suite: str,
+    passed_direct: bool,
+    passed_repl: bool,
+    self_role: str,
+    self_direct_mode: str,
+    self_repl_mode: str,
+    arch_mode: str,
+) -> dict[str, Any]:
+    """Compute metadata dict (tool value, cost metrics, architect eval)."""
     metadata = compute_tool_value(passed_direct, passed_repl)
     metadata["suite"] = suite
     metadata["cache_disabled"] = True
 
-    # Determine best architect for metadata (prefer generation_ms over elapsed)
+    # Determine best architect (prefer generation_ms over elapsed)
     best_arch = None
     for ar, res in arch_results.items():
         if res["passed"] is True:
@@ -852,20 +708,17 @@ def evaluate_question_3way(
     }
     metadata["architect_role"] = best_arch or ""
 
-    # Store cost metrics for each action (used by Optuna threshold optimization later)
-    # Cost is NOT used in Q-value updates (binary rewards for faithful P(success)),
-    # but we store it for later analysis and threshold tuning.
     direct_key = f"{self_role}:{self_direct_mode}"
     repl_key = f"{self_role}:{self_repl_mode}"
     metadata["cost_metrics"] = {
         ACTION_SELF_DIRECT: {
-            "elapsed_seconds": elapsed_direct,
+            "elapsed_seconds": role_results[direct_key].elapsed_seconds,
             "tokens_generated": role_results[direct_key].tokens_generated,
             "predicted_tps": role_results[direct_key].predicted_tps,
             "generation_ms": role_results[direct_key].generation_ms,
         },
         ACTION_SELF_REPL: {
-            "elapsed_seconds": elapsed_repl,
+            "elapsed_seconds": role_results[repl_key].elapsed_seconds,
             "tokens_generated": role_results[repl_key].tokens_generated,
             "predicted_tps": role_results[repl_key].predicted_tps,
             "generation_ms": role_results[repl_key].generation_ms,
@@ -882,16 +735,154 @@ def evaluate_question_3way(
             "role_history": role_results[arch_key].role_history,
         }
 
-    # Log rewards
-    for action, reward in sorted(rewards.items()):
-        logger.info(f"    reward[{action}] = {reward:.1f}")
-
     infra_flags = [
         rr.error_type == "infrastructure"
         for rr in role_results.values()
         if rr is not None
     ]
     metadata["all_infra"] = bool(infra_flags) and all(infra_flags)
+
+    return metadata
+
+
+def evaluate_question_3way(
+    prompt_info: dict,
+    url: str,
+    timeout: int,
+    client: "httpx.Client",
+    dry_run: bool = False,
+) -> tuple[dict[str, RoleResult], dict[str, float], dict[str, Any]]:
+    """Evaluate one question across the 3-way routing matrix.
+
+    Test configurations:
+    1. SELF:direct - Frontdoor without tools (direct mode)
+    2. SELF:repl - Frontdoor with tools, delegation disabled
+    3. ARCHITECT - Architect with full delegation freedom
+
+    WORKER is scored indirectly via delegation chains.
+    """
+    prompt = prompt_info["prompt"]
+    expected = prompt_info.get("expected", "")
+    scoring_method = prompt_info.get("scoring_method", "exact_match")
+    scoring_config = prompt_info.get("scoring_config", {})
+    suite = prompt_info["suite"]
+    image_path = prompt_info.get("image_path", "")
+    is_vl = bool(image_path)
+
+    role_results: dict[str, RoleResult] = {}
+
+    from eval_log_format import (
+        format_self_direct, format_self_repl, format_architect_result,
+        format_reward_skip, format_all_infra_skip,
+    )
+
+    # ── VL-aware role mapping ──
+    if is_vl:
+        self_role = "worker_vision"
+        self_direct_mode = "direct"
+        self_repl_mode = "react"
+        arch_role = "vision_escalation"
+    else:
+        self_role = "frontdoor"
+        self_direct_mode = "direct"
+        self_repl_mode = "repl"
+        arch_role = None
+
+    # ── Configuration 1: SELF:direct ──
+    rr_direct, _ = _eval_single_config(
+        prompt, expected, scoring_method, scoring_config,
+        role=self_role, mode=self_direct_mode,
+        url=url, timeout=timeout, client=client,
+        allow_delegation=False, image_path=image_path,
+        log_label=ACTION_SELF_DIRECT, format_fn=format_self_direct,
+    )
+    role_results[f"{self_role}:{self_direct_mode}"] = rr_direct
+
+    # ── Configuration 2: SELF:repl ──
+    rr_repl, _ = _eval_single_config(
+        prompt, expected, scoring_method, scoring_config,
+        role=self_role, mode=self_repl_mode,
+        url=url, timeout=timeout, client=client,
+        allow_delegation=False, image_path=image_path,
+        log_label=ACTION_SELF_REPL, format_fn=format_self_repl,
+    )
+    role_results[f"{self_role}:{self_repl_mode}"] = rr_repl
+
+    # ── Configuration 3: ARCHITECT (dual evaluation) ──
+    if is_vl:
+        arch_roles_to_eval = [arch_role]
+    else:
+        arch_roles_to_eval = ["architect_general", "architect_coding"]
+
+    arch_results: dict[str, dict[str, Any]] = {}
+    arch_mode = "direct" if is_vl else "delegated"
+
+    for ar in arch_roles_to_eval:
+        rr_arch, resp_arch = _eval_single_config(
+            prompt, expected, scoring_method, scoring_config,
+            role=ar, mode=arch_mode,
+            url=url, timeout=max(timeout, 300), client=client,
+            allow_delegation=not is_vl, image_path=image_path,
+            log_label=ACTION_ARCHITECT,
+            format_fn=lambda label, passed, error, elapsed, resp, infra=False: format_architect_result(label, passed, error, elapsed, resp),
+        )
+        role_results[f"{ar}:{arch_mode}"] = rr_arch
+
+        # Determine passed for architect (None for infra errors)
+        passed_arch = None if rr_arch.error_type == "infrastructure" else rr_arch.passed
+        arch_results[ar] = {
+            "passed": passed_arch,
+            "elapsed_seconds": rr_arch.elapsed_seconds,
+            "tokens_generated": rr_arch.tokens_generated,
+            "predicted_tps": rr_arch.predicted_tps,
+            "generation_ms": rr_arch.generation_ms,
+            "tools_used": rr_arch.tools_used,
+            "tools_called": rr_arch.tools_called,
+            "role_history": rr_arch.role_history,
+            "error": rr_arch.error,
+            "error_type": rr_arch.error_type,
+        }
+
+    # ── Compute 3-way rewards (binary for faithful P(success)) ──
+    passed_direct = rr_direct.passed
+    passed_repl = rr_repl.passed
+    error_type_direct = rr_direct.error_type
+    error_type_repl = rr_repl.error_type
+
+    rewards: dict[str, float] = {}
+
+    if error_type_direct == "infrastructure":
+        for line in format_reward_skip(ACTION_SELF_DIRECT):
+            logger.info(line)
+    else:
+        rewards[ACTION_SELF_DIRECT] = success_reward(passed_direct)
+
+    if error_type_repl == "infrastructure":
+        for line in format_reward_skip(ACTION_SELF_REPL):
+            logger.info(line)
+    else:
+        rewards[ACTION_SELF_REPL] = success_reward(passed_repl)
+
+    valid_results = {k: v for k, v in arch_results.items() if v["passed"] is not None}
+    if valid_results:
+        passed_arch_any = any(v["passed"] for v in valid_results.values())
+        rewards[ACTION_ARCHITECT] = success_reward(passed_arch_any)
+    else:
+        for line in format_all_infra_skip(ACTION_ARCHITECT):
+            logger.info(line)
+
+    worker_rewards = score_delegation_chain(role_results)
+    rewards.update(worker_rewards)
+
+    # ── Metadata ──
+    metadata = _compute_3way_metadata(
+        role_results, arch_results, prompt, suite,
+        passed_direct, passed_repl,
+        self_role, self_direct_mode, self_repl_mode, arch_mode,
+    )
+
+    for action, reward in sorted(rewards.items()):
+        logger.info(f"    reward[{action}] = {reward:.1f}")
 
     return role_results, rewards, metadata
 
@@ -1669,6 +1660,7 @@ def run_batch_3way(
     timeout: int,
     session_id: str,
     dry_run: bool = False,
+    on_progress: "Callable[[int, int, str, str], None] | None" = None,
 ) -> list[ThreeWayResult]:
     """Run one 3-way evaluation batch.
 
@@ -1678,6 +1670,11 @@ def run_batch_3way(
     3. ARCHITECT (architect with full delegation)
 
     Binary rewards injected for faithful probability estimation.
+
+    Args:
+        on_progress: Optional callback ``(idx, total, suite, qid)`` called
+            at the start of each question.  Used by the TUI to update the
+            status bar.
     """
     import httpx as _httpx
 
@@ -1715,6 +1712,9 @@ def run_batch_3way(
             qid = prompt_info["id"]
             suite = prompt_info["suite"]
             logger.info(f"[{i+1}/{len(questions)}] {suite}/{qid}")
+
+            if on_progress is not None:
+                on_progress(i + 1, len(questions), suite, qid)
 
             # Run 3-way evaluation
             role_results, rewards, metadata = evaluate_question_3way(
@@ -1932,6 +1932,10 @@ Examples (legacy mode - DEPRECATED):
         "Binary rewards for faithful probability estimation. "
         "Ignores --roles and --modes flags.",
     )
+    parser.add_argument(
+        "--tui", action="store_true",
+        help="Rich split-screen TUI (requires --3way)",
+    )
 
     args = parser.parse_args()
 
@@ -1957,80 +1961,100 @@ Examples (legacy mode - DEPRECATED):
 
     # ── Phase 4: 3-Way Routing Mode ──
     if args.three_way:
-        if args.continuous:
-            # Continuous 3-way mode
-            batch = 0
-            consecutive_failures = 0
-            all_results: list[ThreeWayResult] = []
-            logger.info(f"Starting continuous 3-way evaluation: session={session_id}")
-            logger.info(f"  Ctrl+C to stop gracefully (finishes current question)")
+        # TUI setup (--tui flag)
+        from contextlib import nullcontext
 
-            while not state.shutdown:
-                # Health gate with auto-recovery
-                if not _check_server_health(args.url):
-                    consecutive_failures += 1
-                    if consecutive_failures > MAX_RECOVERY_ATTEMPTS:
-                        logger.error(f"API unrecoverable after {MAX_RECOVERY_ATTEMPTS} attempts.")
-                        break
-                    backoff = min(30 * (2 ** (consecutive_failures - 1)), 600)
-                    logger.warning(f"API down. Attempting recovery...")
-                    recovered = _attempt_recovery(args.url)
-                    if recovered:
-                        logger.info("Recovery successful — resuming")
-                        consecutive_failures = 0
-                        continue
-                    logger.warning(f"Recovery failed — sleeping {backoff}s")
-                    for _ in range(backoff):
-                        if state.shutdown:
-                            break
-                        time.sleep(1)
-                    continue
+        if args.tui:
+            from seeding_tui import SeedingTUI
+            tui = SeedingTUI(session_id=session_id)
+            tui_ctx = tui
+        else:
+            tui = None
+            tui_ctx = nullcontext()
+
+        def _on_progress(idx: int, total: int, suite: str, qid: str) -> None:
+            if tui is not None:
+                tui.update_progress(idx, total, suite, qid)
+
+        with tui_ctx:
+            if args.continuous:
+                # Continuous 3-way mode
+                batch = 0
                 consecutive_failures = 0
+                all_results: list[ThreeWayResult] = []
+                logger.info(f"Starting continuous 3-way evaluation: session={session_id}")
+                logger.info(f"  Ctrl+C to stop gracefully (finishes current question)")
 
-                batch += 1
-                batch_seed = base_seed + batch
-                logger.info(f"\n[3-Way Batch {batch}, seed={batch_seed}]")
-
-                try:
-                    results = run_batch_3way(
-                        suites=args.suites,
-                        sample_per_suite=args.sample_size,
-                        seed=batch_seed,
-                        url=args.url,
-                        timeout=args.timeout,
-                        session_id=session_id,
-                        dry_run=args.dry_run,
-                    )
-                    all_results.extend(results)
-
-                    if not results:
-                        logger.info("No unseen questions. Waiting 60s...")
-                        for _ in range(60):
+                while not state.shutdown:
+                    # Health gate with auto-recovery
+                    if not _check_server_health(args.url):
+                        consecutive_failures += 1
+                        if consecutive_failures > MAX_RECOVERY_ATTEMPTS:
+                            logger.error(f"API unrecoverable after {MAX_RECOVERY_ATTEMPTS} attempts.")
+                            break
+                        backoff = min(30 * (2 ** (consecutive_failures - 1)), 600)
+                        logger.warning(f"API down. Attempting recovery...")
+                        recovered = _attempt_recovery(args.url)
+                        if recovered:
+                            logger.info("Recovery successful — resuming")
+                            consecutive_failures = 0
+                            continue
+                        logger.warning(f"Recovery failed — sleeping {backoff}s")
+                        for _ in range(backoff):
                             if state.shutdown:
                                 break
                             time.sleep(1)
+                        continue
+                    consecutive_failures = 0
 
-                except Exception as e:
-                    logger.error(f"Batch failed: {e}")
-                    time.sleep(10)
+                    batch += 1
+                    batch_seed = base_seed + batch
+                    logger.info(f"\n[3-Way Batch {batch}, seed={batch_seed}]")
 
+                    try:
+                        results = run_batch_3way(
+                            suites=args.suites,
+                            sample_per_suite=args.sample_size,
+                            seed=batch_seed,
+                            url=args.url,
+                            timeout=args.timeout,
+                            session_id=session_id,
+                            dry_run=args.dry_run,
+                            on_progress=_on_progress,
+                        )
+                        all_results.extend(results)
+
+                        if not results:
+                            logger.info("No unseen questions. Waiting 60s...")
+                            for _ in range(60):
+                                if state.shutdown:
+                                    break
+                                time.sleep(1)
+
+                    except Exception as e:
+                        logger.error(f"Batch failed: {e}")
+                        time.sleep(10)
+
+            else:
+                # One-shot 3-way mode
+                logger.info(f"Starting 3-way routing evaluation: session={session_id}")
+                results = run_batch_3way(
+                    suites=args.suites,
+                    sample_per_suite=args.sample_size,
+                    seed=base_seed,
+                    url=args.url,
+                    timeout=args.timeout,
+                    session_id=session_id,
+                    dry_run=args.dry_run,
+                    on_progress=_on_progress,
+                )
+
+        # Summary printed AFTER TUI context exits (normal terminal restored)
+        if args.continuous:
             print_3way_summary(all_results)
-            return
-
         else:
-            # One-shot 3-way mode
-            logger.info(f"Starting 3-way routing evaluation: session={session_id}")
-            results = run_batch_3way(
-                suites=args.suites,
-                sample_per_suite=args.sample_size,
-                seed=base_seed,
-                url=args.url,
-                timeout=args.timeout,
-                session_id=session_id,
-                dry_run=args.dry_run,
-            )
             print_3way_summary(results)
-            return
+        return
 
     # Compute alias_map for summary display
     alias_map: dict[str, str] = {}

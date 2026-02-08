@@ -198,14 +198,22 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
     # Stage 7: Mode selection
     initial_role = routing.routing_decision[0] if routing.routing_decision else Role.FRONTDOOR
 
-    # Force REPL for vision-preprocessed requests — the document pipeline
-    # populated routing.document_result, so we need DocumentREPLEnvironment
-    # with a text model (frontdoor) to synthesize the answer.
+    vision_roles = {"worker_vision", "vision_escalation"}
+    forced_mode = request.force_mode if request.force_mode in ("direct", "react", "repl", "delegated") else None
+
+    # Vision-preprocessed requests need REPL document context unless an explicit
+    # forced mode is set. For multi-file/document workflows we keep synthesis on
+    # frontdoor; for pure image workflows preserve vision role if selected/forced.
     if routing.document_result is not None:
-        execution_mode = "repl"
-        initial_role = Role.FRONTDOOR
-    elif request.force_mode and request.force_mode in ("direct", "react", "repl", "delegated"):
-        execution_mode = request.force_mode
+        execution_mode = forced_mode or "repl"
+        if request.files:
+            initial_role = Role.FRONTDOOR
+        elif request.force_role in vision_roles:
+            initial_role = request.force_role
+        elif str(initial_role) not in vision_roles:
+            initial_role = Role.FRONTDOOR
+    elif forced_mode:
+        execution_mode = forced_mode
     else:
         execution_mode = _select_mode(request.prompt, request.context or "", state)
 

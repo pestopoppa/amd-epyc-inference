@@ -1,276 +1,313 @@
-# Handoff: Refactoring — src/api/routes
+# Handoff: Refactoring — scripts/benchmark/
 
-**Status**: ALL PHASES COMPLETE (0-4)
-**Created**: 2026-02-07
-**Updated**: 2026-02-07
-**Priority**: Done
-**Scope**: `src/api/routes/` (26 files after split, ~6,200 lines after dead code removal)
-**Estimated effort**: 9 issues across 12 files, 5 phases (all resolved)
+**Status**: COMPLETE
+**Created**: 2026-02-08
+**Updated**: 2026-02-08
+**Priority**: High
+**Scope**: `scripts/benchmark/` (34 Python files, ~20K lines)
+**Estimated effort**: 14 issues across 8 files, 4 phases
 
 ## Problem
 
-The `src/api/routes/` scope has significant technical debt from the Phase 1 chat.py decomposition: a deprecated module still actively imported, duplicated logic across execution stages, a 350-line streaming endpoint that reimplements the entire orchestration pipeline independently, dead code from completed migrations, and 18/23 source files with zero test coverage.
+`scripts/benchmark/` has three dominant problems: (1) `run_benchmark()` is a 532-line function with 5-level nesting, duplicated error extraction, and magic numbers; (2) `seed_specialist_routing.py` (2252 lines, 26 commits since Dec) has two 200+ line evaluation functions with parallel structure but no shared extraction; (3) test coverage is 3/34 files (8.8%), meaning most refactoring targets have no safety net. The most-changed file (`seed_specialist_routing.py`, 26 commits) has zero test coverage.
 
 ## Test Coverage Map
 
 | Source File | Test File | Coverage | Notes |
 |-------------|-----------|----------|-------|
-| `chat_pipeline/repl_executor.py` | `test_repl_executor.py` (23 tests) | Good | Covers `run_task` integration |
-| `chat_vision.py` | `test_chat_vision.py` (35 tests) | Good | OCR, VL routing, ReAct vision |
-| `chat_summarization.py` | `test_chat_summarization.py` (32 tests) | Good | Two-stage pipeline |
-| `path_validation.py` | `test_path_validation.py` (6 tests) | Good | Path traversal checks |
-| `openai_compat.py` | `test_openai_compat.py` (integration) | Partial | Integration only, no unit |
-| `chat.py` | None | **None** | 23 git changes, highest churn |
-| `chat_pipeline/stages.py` | None | **None** | 816 lines, largest file |
-| `chat_pipeline/routing.py` | None | **None** | Routing + preprocessing |
-| `chat_review.py` | None | **None** | Quality gates, plan review |
-| `chat_routing.py` | None | **None** | Mode selection, confidence routing |
-| `chat_delegation.py` | None | **None** | TOON parsing, multi-loop |
-| `chat_react.py` | None | **None** | DEPRECATED, still imported |
-| `chat_utils.py` | None | **None** | Constants, answer resolution |
-| `sessions.py` | None | **None** | 440 lines |
-| `documents.py` | None | **None** | 369 lines |
-| `delegate.py` | None | **None** | 138 lines |
-| `health.py` | None | **None** | 164 lines |
-| `vision.py` | None | **None** | 302 lines |
-| `config.py` | None | **None** | 42 lines |
-| `stats.py` | None | **None** | 23 lines |
-| `gates.py` | None | **None** | 63 lines |
-
-**18 of 23 source files have zero test coverage.**
+| `scripts/benchmark/dataset_adapters.py` | `tests/unit/test_dataset_adapters.py` | Partial | Adapter sampling, tier; no adapter-specific edge cases |
+| `scripts/benchmark/eval_log_format.py` | `tests/unit/test_eval_log_format.py` | Good | Format fns covered |
+| `scripts/benchmark/seeding_tui.py` | `tests/unit/test_seeding_tui.py` | Good | DequeHandler, TapTailer, SeedingTUI |
+| `scripts/benchmark/seed_specialist_routing.py` | — | **None** | 2252 lines, 26 commits, zero tests |
+| `scripts/benchmark/run_benchmark.py` | — | **None** | 997 lines, 17 commits, zero tests |
+| `scripts/benchmark/seeding_types.py` | — | **None** | 239 lines, 11 commits; dataclasses only |
+| `scripts/benchmark/seeding_rewards.py` | — | **None** | 363 lines, pure functions |
+| `scripts/benchmark/seeding_infra.py` | — | **None** | 324 lines, health/recovery |
+| `scripts/benchmark/debug_scorer.py` | — | **None** | 525 lines; used in seeding + benchmark |
+| `scripts/benchmark/results.py` | — | **None** | 568 lines; ResultsManager |
+| `scripts/benchmark/score_outputs.py` | — | **None** | 365 lines |
+| `scripts/benchmark/suites.py` | — | **None** | 307 lines |
+| `scripts/benchmark/context_generator.py` | — | **None** | 735 lines |
+| 21 other files | — | **None** | Lower churn, lower priority |
 
 ## Issue Inventory
 
-| # | Issue | File:Line | Sev | Freq | Risk | Effort | Priority | Phase |
-|---|-------|-----------|-----|------|------|--------|----------|-------|
-| 1 | `delegation_allowed` computed twice identically | `stages.py:208` + `chat.py:217` | 2 | 5 | 2.0 | 1 | 20.0 | 2 |
-| 2 | Quality-check-then-escalate duplicated | `stages.py:576` + `stages.py:700` | 3 | 3 | 2.0 | 1 | 18.0 | 2 |
-| 3 | Streaming endpoint reimplements orchestration | `chat.py:272-622` | 5 | 5 | 2.0 | 4 | 12.5 | 3 |
-| 4 | `_should_use_direct_mode()` never called | `chat_routing.py:20` | 2 | 3 | 2.0 | 1 | 12.0 | 1 |
-| 5 | ChatResponse construction duplicated 4x | `stages.py:284,485,603,761` | 3 | 3 | 2.0 | 2 | 9.0 | 2 |
-| 6 | Module-level `_get_config()` at import time | `chat_utils.py:34,69` | 3 | 3 | 2.0 | 2 | 9.0 | 2 |
-| 7 | Deprecated `chat_react.py` still imported | `chat_delegation.py:16` + `stages.py:22` | 3 | 2 | 2.0 | 2 | 6.0 | 1 |
-| 8 | `stages.py` is 816-line catch-all (7 stages) | `chat_pipeline/stages.py` | 3 | 3 | 2.0 | 4 | 4.5 | 4 |
-| 9 | `_is_ocr_heavy_prompt()` always returns True | `chat_vision.py:47` | 1 | 2 | 1.0 | 1 | 2.0 | 1 |
+| # | Issue | File:Line | Severity | Freq | Risk | Effort | Score | Phase |
+|---|-------|-----------|----------|------|------|--------|-------|-------|
+| 1 | 532-line `run_benchmark()` function | `run_benchmark.py:322` | 5 | 5 | 2.0 | 3 | 16.7 | 2 |
+| 2 | Duplicated stderr error extraction (10 lines × 2) | `run_benchmark.py:644,792` | 4 | 5 | 2.0 | 1 | 40.0 | 1 |
+| 3 | Timeout formula duplication (5 occurrences) | `run_benchmark.py:438,497,535,574,606` | 3 | 5 | 2.0 | 1 | 30.0 | 1 |
+| 4 | Dead code: `use_server_for_speed = False` branch | `run_benchmark.py:611` | 2 | 5 | 2.0 | 1 | 20.0 | 1 |
+| 5 | Dead code: `if args.summary or True:` | `score_outputs.py:315` | 1 | 1 | 2.0 | 1 | 2.0 | 1 |
+| 6 | Magic numbers (timeout bases, max_tokens, temps) | `run_benchmark.py:436-629` | 3 | 5 | 2.0 | 2 | 15.0 | 1 |
+| 7 | `evaluate_question_3way()` 362 lines | `seed_specialist_routing.py:584` | 4 | 5 | 2.0 | 3 | 13.3 | 3 |
+| 8 | `evaluate_question()` + `evaluate_question_3way()` parallel structure | `seed_specialist_routing.py:1199,584` | 3 | 5 | 2.0 | 3 | 10.0 | 3 |
+| 9 | `_ensure_loaded()` boilerplate repeated in 10+ adapters | `dataset_adapters.py:231-245` (× 10) | 3 | 2 | 1.5 | 3 | 3.0 | 4 |
+| 10 | Bare imports (fragile `sys.path` manipulation) | `seed_specialist_routing.py:63-66` | 2 | 5 | 1.0 | 2 | 5.0 | 4 |
+| 11 | `seeding_rewards.py` zero test coverage (pure functions) | `seeding_rewards.py:*` | 3 | 4 | 2.0 | 2 | 12.0 | 0 |
+| 12 | `debug_scorer.py` zero test coverage (used everywhere) | `debug_scorer.py:*` | 4 | 3 | 2.0 | 2 | 12.0 | 0 |
+| 13 | `seeding_types.py` zero test coverage (shared dataclasses) | `seeding_types.py:*` | 2 | 5 | 2.0 | 1 | 20.0 | 0 |
+| 14 | `score_outputs.py:extract_answer()` naming (public but internal-only) | `score_outputs.py:109` | 1 | 1 | 2.0 | 1 | 2.0 | 1 |
 
-Risk column: 1.0 = well-tested, 1.5 = partially tested, 2.0 = untested
+Risk column: 1.0 = well-tested, 1.5 = partially tested, 2.0 = untested.
+Score = (Severity × Freq × Risk) / Effort.
 
 ## Phase 0: Safety Net
 
-Add tests for the files that Phase 1-2 will modify. Without these, refactoring is blind.
+Add tests for the three most-used untested modules **before** refactoring them in later phases. Without these, Phases 1–3 are blind.
 
-### Tests to Add
+### 0A: `tests/unit/test_seeding_rewards.py`
 
-| Source Function | What to Assert |
-|----------------|----------------|
-| `stages._execute_direct()` | Returns ChatResponse, quality escalation triggers on bad output, retry logic works |
-| `stages._execute_react()` | Returns ChatResponse or None, quality escalation triggers |
-| `stages._execute_delegated()` | Returns None on feature disabled, ChatResponse on success |
-| `chat_routing._should_use_direct_mode()` | Delegates to classifier (verify import path) |
-| `chat_routing._select_mode()` | Returns "repl" by default, respects hybrid_router |
-| `chat_routing._parse_confidence_response()` | Parses CONF\| format correctly |
-| `chat_utils._resolve_answer()` | Stub detection, tool output stripping |
-| `chat_utils._truncate_looped_answer()` | Truncation on prompt echo, passthrough on clean |
-| `chat_review._detect_output_quality_issue()` | Repetition detection, garbled detection, None on clean |
-| `chat_review._should_review()` | Returns False for architects, False without hybrid_router |
-| `chat_delegation._parse_architect_decision()` | TOON D\|, I\|, JSON, markdown-wrapped JSON, bare text |
+All functions are pure (no I/O, no network). Test:
 
-Target: 40+ new tests across `test_chat_routing.py`, `test_stages.py`, `test_chat_review.py`, `test_chat_delegation.py`, `test_chat_utils.py`.
+| Function | What to assert |
+|----------|----------------|
+| `success_reward(True)` → `1.0`, `success_reward(False)` → `0.0` | Binary return |
+| `compute_comparative_rewards(role_results, baseline_key)` | Reward dict keys match inputs; baseline gets 0.0 |
+| `detect_escalation_chains(role_results)` | Returns list of dicts with `from_role`, `to_role`, `reward` |
+| `compute_tool_value(passed_direct, passed_repl)` | `tools_helped=True` when `not passed_direct and passed_repl` |
+| `score_delegation_chain(role_results)` | Worker rewards derived from delegation events |
+
+### 0B: `tests/unit/test_debug_scorer.py`
+
+| Function | What to assert |
+|----------|----------------|
+| `score_answer("42", "42", "exact_match")` → `True` | Exact match |
+| `score_answer("B", "B", "multiple_choice")` → `True` | MC extraction |
+| `score_answer("wrong", "42", "exact_match")` → `False` | Mismatch |
+| `score_answer("", "42", "exact_match")` → `False` | Empty answer |
+| `score_answer(code, test_cases, "code_execution")` | Happy path |
+| `_score_programmatic(answer, config)` | IFEval constraint checks |
+
+### 0C: `tests/unit/test_seeding_types.py`
+
+| Class | What to assert |
+|-------|----------------|
+| `RoleResult(...)` | Dataclass fields, default values |
+| `ComparativeResult(...)` | Serialization round-trip via `asdict()` |
+| `state` singleton | `shutdown` starts False, `close_poll_client()` no-ops safely |
 
 ### Verification
 
 ```bash
-cd /mnt/raid0/llm/claude
-python3 -m pytest tests/unit/test_chat_routing.py tests/unit/test_stages.py tests/unit/test_chat_review.py tests/unit/test_chat_delegation.py tests/unit/test_chat_utils.py -v
-python3 -m pytest tests/unit/ -x -q  # Full suite, no regressions
+pytest tests/unit/test_seeding_rewards.py tests/unit/test_debug_scorer.py tests/unit/test_seeding_types.py -v
 ```
 
-## Phase 1: Dead Code Removal
+## Phase 1: Quick Wins in `run_benchmark.py` and `score_outputs.py`
 
-Low-risk cleanup. Remove code that is confirmed unused or deprecated.
+Low-effort, high-impact changes. Each is independently deployable.
 
 ### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `chat_vision.py:47-60` | Delete `_is_ocr_heavy_prompt()` — always returns True, dead function |
-| `chat_react.py` | Mark for removal tracking (still imported, actual deletion in Phase 1b) |
-| `chat_routing.py:20-47` | Delete `_should_use_direct_mode()` — never called by `_select_mode()` which always returns `"repl"` |
-| `chat_routing.py:87-133` | Delete `_should_use_react_mode()` — React deprecated, uses hardcoded keywords (bypassed by classifiers) |
-| `chat_delegation.py:16` | Change `from src.api.routes.chat_react import _react_mode_answer` to direct REPL usage |
-| `stages.py:22` | Remove `from src.api.routes.chat_react import _react_mode_answer` |
+| `scripts/benchmark/run_benchmark.py` | Extract helpers, add constants, remove dead code |
+| `scripts/benchmark/score_outputs.py` | Remove dead branch, rename functions |
 
 ### Implementation Order
 
-1. Delete `_is_ocr_heavy_prompt()` from `chat_vision.py` and remove any callers (only tests)
-2. Delete `_should_use_direct_mode()` and `_should_use_react_mode()` from `chat_routing.py`
-3. In `chat_delegation.py:268-278`: Replace `_react_mode_answer` call with `REPLEnvironment(structured_mode=True)` — the module already imports `REPLEnvironment` on line 17
-4. In `stages.py:542-549`: Replace `_react_mode_answer` call in `_execute_react()` with `REPLEnvironment(structured_mode=True)` — or flag `_execute_react()` itself as the next removal target since `_select_mode()` never returns "react"
-5. Once no imports remain, delete `chat_react.py` entirely
+**1a. Extract `_extract_error_hint(stderr, max_chars=80)` helper** (`run_benchmark.py`)
+
+Two identical blocks at lines 644–653 and 792–803 differ only in truncation length (60 vs 80). Extract to:
+
+```python
+def _extract_error_hint(stderr: str, max_chars: int = 80) -> str:
+    """Extract meaningful error from stderr, filtering log noise."""
+    _LOG_PREFIXES = ('build:', 'main:', 'llama_model_loader:', 'print_info:', 'load_')
+    _ERROR_KEYWORDS = ('error:', 'error ', 'failed', 'fatal', 'abort', 'segfault', 'exception')
+    for line in reversed(stderr.split('\n')):
+        line = line.strip()
+        if not line:
+            continue
+        if any(line.startswith(p) for p in _LOG_PREFIXES):
+            continue
+        if any(x in line.lower() for x in _ERROR_KEYWORDS):
+            return line[:max_chars]
+    return ""
+```
+
+Replace both blocks with `err_hint = _extract_error_hint(result.stderr) or f"exit={result.exit_code}"`.
+
+**1b. Extract `_compute_timeout(size_gb, base=180)` helper** (`run_benchmark.py`)
+
+```python
+_TIMEOUT_SIZE_MULTIPLIER = 3
+_TIMEOUT_SIZE_BUFFER = 120
+
+def _compute_timeout(size_gb: float, base: int = 180) -> int:
+    return max(base, int(size_gb * _TIMEOUT_SIZE_MULTIPLIER) + _TIMEOUT_SIZE_BUFFER)
+```
+
+Replace 5 occurrences:
+- Line 438: `timeout=_compute_timeout(size_gb)`
+- Line 497: `server_timeout = _compute_timeout(size_gb, base=600)`
+- Line 535: same
+- Line 574: same
+- Line 606: `speed_timeout = _compute_timeout(size_gb, base=300 if is_lookup else 180)`
+
+**1c. Remove dead `use_server_for_speed` branch** (`run_benchmark.py:611–621`)
+
+`use_server_for_speed = False` is hardcoded; the `if use_server_for_speed:` branch is unreachable. Delete lines 611–621 and dedent the else-branch.
+
+**1d. Constants for magic numbers** (`run_benchmark.py`)
+
+Add at top of file:
+
+```python
+_DEFAULT_MAX_TOKENS = 256
+_LOOKUP_MAX_TOKENS = 512
+_DEFAULT_TEMPERATURE = 0.6
+_SERVER_STARTUP_TIMEOUT_BASE = 600
+```
+
+Replace occurrences at lines 436, 437, 605, 618, 629.
+
+**1e. Fix `score_outputs.py:315`** — remove dead `or True`:
+
+```python
+# Before
+if args.summary or True:  # Always show summary
+# After
+# Summary always shown
+```
+
+**1f. Rename private functions** (`score_outputs.py:109,139,147`):
+
+`extract_answer` → `_extract_answer`, `extract_speed` → `_extract_speed`, `extract_acceptance` → `_extract_acceptance`. Verify no external callers first:
+
+```bash
+grep -rn "extract_answer\|extract_speed\|extract_acceptance" /mnt/raid0/llm/claude/ --include="*.py" | grep -v score_outputs.py | grep -v __pycache__
+```
 
 ### Verification
 
 ```bash
-# Confirm no remaining imports of deleted functions
-grep -rn "_is_ocr_heavy_prompt\|_should_use_direct_mode\|_should_use_react_mode" src/api/routes/ --include="*.py"
-
-# Confirm chat_react imports are gone
-grep -rn "from src.api.routes.chat_react" src/ --include="*.py"
-
-# Tests pass
-python3 -m pytest tests/unit/ -x -q
+# Syntax check
+python -c "import ast; ast.parse(open('scripts/benchmark/run_benchmark.py').read())"
+python -c "import ast; ast.parse(open('scripts/benchmark/score_outputs.py').read())"
+# Grep for removed patterns
+grep -n "use_server_for_speed" scripts/benchmark/run_benchmark.py  # Should be empty
+grep -n "or True" scripts/benchmark/score_outputs.py  # Should be empty
+# Full gate check
+cd /mnt/raid0/llm/claude && make gates
 ```
 
-## Phase 2: Duplication Extraction
-
-Extract repeated patterns into shared helpers.
+## Phase 2: Decompose `run_benchmark()` (532 → ~4 × 130 lines)
 
 ### Files to Modify
 
 | File | Changes |
 |------|---------|
-| `chat_pipeline/stages.py` | Extract `_build_chat_response()` helper, `_quality_escalate()` helper |
-| `chat.py:217-224` | Remove duplicated `delegation_allowed` computation, use `stages._execute_delegated()`'s internal check |
-| `chat_utils.py:34-36,69-88` | Convert module-level config to lazy properties or a function |
+| `scripts/benchmark/run_benchmark.py` | Split `run_benchmark()` into 4 functions |
 
 ### Implementation Order
 
-1. **Extract `_quality_escalate()`** from the duplicated pattern at `stages.py:576-590` and `stages.py:700-725`:
+**2a. Extract `_ensure_server(active_server, model_path, ...) → ServerManager | None`** (lines 470–504)
 
-```python
-def _quality_escalate(
-    answer: str, prompt: str, primitives: LLMPrimitives, initial_role
-) -> tuple[str, Any]:
-    """Detect quality issue and escalate to coder_escalation if needed."""
-    if not (answer and not answer.startswith("[ERROR") and features().generation_monitor):
-        return answer, initial_role
-    quality_issue = _detect_output_quality_issue(answer)
-    if not quality_issue:
-        return answer, initial_role
-    try:
-        escalated = primitives.llm_call(
-            prompt, role="coder_escalation", n_tokens=2048, skip_suffix=True,
-        )
-        if escalated.strip():
-            return escalated.strip(), Role.CODER_ESCALATION
-    except Exception as exc:
-        log.debug("Quality escalation failed: %s", exc)
-    return answer, initial_role
-```
+Server lifecycle: stop if wrong model, start if needed, wait_ready. Returns the server or None.
 
-2. **Extract `_build_stage_response()`** to construct ChatResponse from common fields:
+**2b. Extract `_run_speed_test(executor, active_server, model_path, config, ...) → dict | None`** (lines 598–695)
 
-```python
-def _build_stage_response(
-    answer: str, routing: RoutingResult, primitives: LLMPrimitives,
-    state, start_time: float, initial_role, mode: str,
-    tools_used: int = 0, tools_called: list | None = None,
-    tool_timings: list | None = None,
-    delegation_events: list | None = None,
-    delegation_success: bool | None = None,
-    role_history: list | None = None,
-    turns: int = 1,
-) -> ChatResponse:
-    """Build ChatResponse with common fields populated."""
-    elapsed = time.perf_counter() - start_time
-    state.increment_request(mock_mode=False, turns=turns)
-    # ... common scoring, progress logging, cache_stats ...
-```
+Prompt selection, subprocess/server dispatch, output parsing, result storage. Returns speed result dict or None on error.
 
-3. **Remove duplicated `delegation_allowed`** in `chat.py:217-224` — the check already exists inside `_execute_delegated()` at `stages.py:208-214`. Just pass the request through and let the stage handle it.
+**2c. Extract `_run_quality_question(executor, active_server, model_path, config, question, ...) → dict | None`** (lines 707–846)
 
-4. **Make config lazy in `chat_utils.py`** — replace module-level `_get_config()` calls with a cached function:
+Single question execution: timeout calculation, dispatch, error extraction, result storage. Returns result dict or None.
 
-```python
-@functools.cache
-def _chat_config():
-    return _get_config().chat
+**2d. Slim `run_benchmark()`** to orchestration only
 
-# Replace all references: THREE_STAGE_CONFIG → _chat_config_dict()
-```
+After extraction, the main function becomes:
+1. Build work items (existing `build_work_items()`)
+2. For each role: discover model, measure baseline TPS
+3. For each config: ensure server, run speed test, run quality questions
+4. Cleanup server
+
+~130 lines of orchestration glue, no business logic.
 
 ### Verification
 
 ```bash
-# Run phase 0 tests first (new tests)
-python3 -m pytest tests/unit/test_stages.py tests/unit/test_chat_review.py -v
-
-# Full suite
-python3 -m pytest tests/unit/ -x -q
-
-# Verify no duplicate delegation_allowed pattern
-grep -n "delegation_allowed" src/api/routes/chat.py src/api/routes/chat_pipeline/stages.py
+python -c "import ast; ast.parse(open('scripts/benchmark/run_benchmark.py').read())"
+# If Phase 0 tests exist:
+pytest tests/unit/ -v -k "benchmark"
 ```
 
-## Phase 3: Streaming Parity (High Risk)
+## Phase 3: Decompose `evaluate_question_3way()` (362 → helpers)
 
-The streaming endpoint `chat_stream()` (lines 272-622 in `chat.py`) reimplements the entire orchestration loop: REPL creation, escalation tracking, review gates, MemRL scoring. Any pipeline change must be made in two places.
+### Files to Modify
 
-### Approach
-
-Refactor `chat_stream()` to reuse the pipeline stages. The generator should wrap `_handle_chat()` stages and emit SSE events at stage boundaries rather than reimplementing each stage.
-
-**This is the highest-risk change.** Recommend implementing behind a feature flag:
-
-```python
-# src/features.py
-unified_streaming: bool = False  # Phase 3: streaming uses pipeline stages
-```
+| File | Changes |
+|------|---------|
+| `scripts/benchmark/seed_specialist_routing.py` | Extract shared helpers from 3way and legacy eval |
 
 ### Implementation Order
 
-1. Add `unified_streaming` feature flag
-2. Create `chat_pipeline/stream_adapter.py` that wraps pipeline stages with SSE event emission
-3. In `chat_stream()`, branch on feature flag: old path vs new adapter
-4. Test with flag on, verify SSE event format matches
-5. Remove old path once validated
+**3a. Extract `_eval_single_config(prompt_info, role, mode, url, timeout, client, **kw) → RoleResult`**
+
+Both `evaluate_question_3way()` (lines 594–632, 653–704, 717–784) and `evaluate_question()` (lines 1210–1268) do the same thing: call orchestrator, score answer, build `RoleResult`, erase slots on infra error, format log lines. Extract the common core.
+
+Reduces `evaluate_question_3way()` from 362 to ~120 lines (3 calls to `_eval_single_config` + reward computation + metadata assembly).
+
+**3b. Extract `_compute_3way_metadata(role_results, arch_results, prompt, suite) → dict`**
+
+Lines 828–894 in `evaluate_question_3way()` build cost metrics and architect eval metadata. Pure computation, no I/O.
 
 ### Verification
 
 ```bash
-# Compare SSE output between old and new paths
-curl -X POST http://localhost:8000/chat/stream -H 'Content-Type: application/json' \
-  -d '{"prompt":"2+2","mock_mode":true}' 2>/dev/null | head -20
-
-python3 -m pytest tests/unit/ -x -q
+python -c "import ast; ast.parse(open('scripts/benchmark/seed_specialist_routing.py').read())"
+pytest tests/unit/test_seeding_tui.py tests/unit/test_inference_tap.py -v
+# If Phase 0 tests exist:
+pytest tests/unit/test_seeding_rewards.py -v
 ```
 
-## Phase 4: Structural Cleanup
+## Phase 4: Lower-Priority Cleanup (optional)
 
-Split the 816-line catch-all `stages.py` into focused modules.
+### 4a. Adapter boilerplate in `dataset_adapters.py`
 
-### Proposed Split
+Move `_ensure_loaded()` try/except/print to `BaseAdapter`:
 
-| Current location | New file | Functions |
-|-----------------|----------|-----------|
-| `stages.py:44-77` | Keep in stages.py | `_execute_mock()` |
-| `stages.py:83-190` | `chat_pipeline/vision_stage.py` | `_execute_vision()` |
-| `stages.py:196-312` | `chat_pipeline/delegation_stage.py` | `_execute_delegated()`, delegation helpers |
-| `stages.py:358-506` | `chat_pipeline/proactive_stage.py` | `_execute_proactive()`, `_parse_plan_steps()` |
-| `stages.py:512-624` | (delete or move to delegation) | `_execute_react()` — deprecated path |
-| `stages.py:630-780` | `chat_pipeline/direct_stage.py` | `_execute_direct()` |
-| `stages.py:786-817` | Keep in stages.py | `_annotate_error()` |
+```python
+class BaseAdapter:
+    def _ensure_loaded(self):
+        if self._dataset is not None:
+            return
+        try:
+            self._load_datasets()
+        except Exception as e:
+            print(f"  [adapter] {self.suite_name} load failed: {e}")
+            self._dataset = []
 
-Update `chat_pipeline/__init__.py` imports accordingly.
+    def _load_datasets(self):
+        """Override in subclass to load HF datasets."""
+        raise NotImplementedError
+```
 
-**Do this last** — it's a structural reorg with many import changes. Only worth it after the duplication is resolved in Phase 2.
+Subclasses only implement `_load_datasets()`. Eliminates ~100 lines of boilerplate across 10 adapters.
+
+### 4b. Replace bare imports with relative or explicit paths
+
+Currently `seed_specialist_routing.py` does `sys.path.insert(0, ...)` then `from seeding_types import ...`. Fragile if run from a different CWD. Options:
+
+- Add `__init__.py` to `scripts/benchmark/` and use `from . import seeding_types` (breaks standalone execution)
+- Keep `sys.path` manipulation but centralize it in a single `_bootstrap()` function
+- **Recommended**: Leave as-is (low severity, works today, breaking change for all callers)
 
 ## Success Criteria
 
-1. All 9 issues addressed across 4 phases
-2. 40+ new tests in Phase 0 (test coverage for modified files)
-3. No test regressions (2677+ tests passing)
-4. `make gates` passes
-5. `chat_react.py` deleted (275 lines removed)
-6. `_is_ocr_heavy_prompt`, `_should_use_direct_mode`, `_should_use_react_mode` deleted
-7. ChatResponse construction DRY (single helper)
-8. Quality-escalation pattern DRY (single function)
-9. Streaming endpoint shares pipeline stages (behind feature flag)
+1. `run_benchmark()` has no function longer than 150 lines
+2. Zero duplicated error extraction blocks
+3. Zero hardcoded timeout formulas (all via `_compute_timeout()`)
+4. Phase 0 adds ≥15 tests for `seeding_rewards`, `debug_scorer`, `seeding_types`
+5. No test regressions: `pytest tests/ -v` passes
+6. `make gates` passes
+7. `python -c "import ast; ast.parse(...)"` passes for all modified files
 
 ## Notes
 
-- `chat_react.py` is marked DEPRECATED but `chat_delegation.py` still calls `_react_mode_answer()` for the ReAct investigation path inside architect delegation. The replacement (REPL with `structured_mode=True`) already exists in the same function for the REPL delegation path — so the migration is straightforward.
-- `_execute_react()` in `stages.py` is unreachable from normal flow because `_select_mode()` never returns `"react"`. It can only be reached via `request.force_mode="react"`. Consider whether to keep that escape hatch.
-- `chat.py` streaming has 350 lines of escalation logic that the non-streaming path handles via graph nodes. The graph module (`src/graph/`) already supports `iter_task()` which could yield intermediate states for streaming.
-- Module-level `_get_config()` in `chat_utils.py` means tests must have config available at import time. This has caused test isolation issues in the past.
-- `_should_use_direct_mode()` delegates to `src.classifiers` but `_select_mode()` ignores it entirely (always returns "repl"). This is either dead code or a regression from when direct mode was unified into REPL.
+- **Phase 0 is mandatory before Phases 2-3.** Without tests for `seeding_rewards` and `debug_scorer`, extracting helpers from `evaluate_question_3way()` is blind.
+- **Phase 1 is safe without new tests** — it's mechanical extraction (rename, move, delete dead code). AST parse + grep verification is sufficient.
+- **Do not touch `dataset_adapters.py` adapter logic** — each adapter has HF-specific quirks. Only refactor the `_ensure_loaded()` boilerplate.
+- **The `deprecated/` subdirectory** contains 3 archived scripts (~2500 lines). Do not refactor — they exist for git history reference only.
+- **`seed_specialist_routing.py` re-exports** (lines 82–130) exist for backward compatibility with tests that import from this file. Do not remove without updating all test imports.
+- **`run_benchmark.py` uses `print()` not `logger`** — this is intentional (interactive CLI output). Don't convert to logging.

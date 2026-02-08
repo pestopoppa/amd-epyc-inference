@@ -294,7 +294,11 @@ def _architect_delegated_answer(
             if answer.lower().strip() in ("approved", "approved.") and stats["specialist_output"]:
                 answer = stats["specialist_output"]
             stats["loops"] = loop
-            stats["tools_used"] = total_tools
+            stats["tools_used"] = max(
+                total_tools,
+                len(all_tools_called),
+                len(stats.get("tool_timings", [])),
+            )
             stats["tools_called"] = all_tools_called
             return answer, stats
 
@@ -390,7 +394,11 @@ def _architect_delegated_answer(
 
     # ── Cap reached ──
     stats["loops"] = max_loops
-    stats["tools_used"] = total_tools
+    stats["tools_used"] = max(
+        total_tools,
+        len(all_tools_called),
+        len(stats.get("tool_timings", [])),
+    )
     stats["tools_called"] = all_tools_called
 
     if force_response_on_cap:

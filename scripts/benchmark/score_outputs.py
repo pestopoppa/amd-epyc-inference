@@ -106,7 +106,7 @@ CRITERIA = {
 }
 
 
-def extract_answer(content: str) -> str:
+def _extract_answer(content: str) -> str:
     """Extract the answer portion from model output."""
     # Try to find content after </think> tag
     think_match = re.search(r'</think>\s*(.*?)(?:EOF by user|common_perf_print|llama_perf|$)',
@@ -136,7 +136,7 @@ def extract_answer(content: str) -> str:
     return '\n'.join(answer_lines).strip()
 
 
-def extract_speed(content: str) -> Optional[float]:
+def _extract_speed(content: str) -> Optional[float]:
     """Extract tokens per second from output."""
     match = re.search(r'(\d+\.?\d*)\s*tokens per second', content)
     if match:
@@ -144,7 +144,7 @@ def extract_speed(content: str) -> Optional[float]:
     return None
 
 
-def extract_acceptance(content: str) -> Optional[float]:
+def _extract_acceptance(content: str) -> Optional[float]:
     """Extract acceptance rate for speculative decoding."""
     match = re.search(r'accept\s*=\s*(\d+\.?\d*)%', content)
     if match:
@@ -250,9 +250,9 @@ def score_file(filepath: Path) -> Optional[dict]:
     except Exception as e:
         return None
 
-    answer = extract_answer(content)
-    speed = extract_speed(content)
-    acceptance = extract_acceptance(content)
+    answer = _extract_answer(content)
+    speed = _extract_speed(content)
+    acceptance = _extract_acceptance(content)
 
     score_result = score_answer(parsed["test"], answer)
 
@@ -312,51 +312,51 @@ def main():
     print(f"Wrote {len(results)} scores to {output_file}")
 
     # Print summary
-    if args.summary or True:  # Always show summary
-        print("\n" + "="*70)
-        print("SCORING SUMMARY")
-        print("="*70)
+    # Print summary
+    print("\n" + "="*70)
+    print("SCORING SUMMARY")
+    print("="*70)
 
-        # Group by model
-        models = {}
-        for r in results:
-            key = f"{r['model']}_{r['config']}"
-            if key not in models:
-                models[key] = {"scores": [], "speeds": []}
-            models[key]["scores"].append(r["score"])
-            if r["speed_tps"]:
-                models[key]["speeds"].append(r["speed_tps"])
+    # Group by model
+    models = {}
+    for r in results:
+        key = f"{r['model']}_{r['config']}"
+        if key not in models:
+            models[key] = {"scores": [], "speeds": []}
+        models[key]["scores"].append(r["score"])
+        if r["speed_tps"]:
+            models[key]["speeds"].append(r["speed_tps"])
 
-        print(f"\n{'Model + Config':<45} {'Avg Score':>10} {'Total':>8} {'Avg TPS':>10}")
-        print("-"*75)
+    print(f"\n{'Model + Config':<45} {'Avg Score':>10} {'Total':>8} {'Avg TPS':>10}")
+    print("-"*75)
 
-        for key in sorted(models.keys()):
-            data = models[key]
-            avg_score = sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0
-            total = sum(data["scores"])
-            max_total = len(data["scores"]) * 3
-            avg_speed = sum(data["speeds"]) / len(data["speeds"]) if data["speeds"] else 0
+    for key in sorted(models.keys()):
+        data = models[key]
+        avg_score = sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0
+        total = sum(data["scores"])
+        max_total = len(data["scores"]) * 3
+        avg_speed = sum(data["speeds"]) / len(data["speeds"]) if data["speeds"] else 0
 
-            print(f"{key:<45} {avg_score:>10.2f} {total:>4}/{max_total:<3} {avg_speed:>10.1f}")
+        print(f"{key:<45} {avg_score:>10.2f} {total:>4}/{max_total:<3} {avg_speed:>10.1f}")
 
-        # Per-question breakdown
-        print("\n" + "-"*70)
-        print("Per-Question Scores (all models):")
-        print("-"*70)
+    # Per-question breakdown
+    print("\n" + "-"*70)
+    print("Per-Question Scores (all models):")
+    print("-"*70)
 
-        questions = {}
-        for r in results:
-            if r["test"] not in questions:
-                questions[r["test"]] = []
-            questions[r["test"]].append(r["score"])
+    questions = {}
+    for r in results:
+        if r["test"] not in questions:
+            questions[r["test"]] = []
+        questions[r["test"]].append(r["score"])
 
-        for test in sorted(questions.keys()):
-            scores = questions[test]
-            avg = sum(scores) / len(scores) if scores else 0
-            dist = {0: 0, 1: 0, 2: 0, 3: 0}
-            for s in scores:
-                dist[s] = dist.get(s, 0) + 1
-            print(f"  {test:<25} avg={avg:.2f}  dist=[0:{dist[0]}, 1:{dist[1]}, 2:{dist[2]}, 3:{dist[3]}]")
+    for test in sorted(questions.keys()):
+        scores = questions[test]
+        avg = sum(scores) / len(scores) if scores else 0
+        dist = {0: 0, 1: 0, 2: 0, 3: 0}
+        for s in scores:
+            dist[s] = dist.get(s, 0) + 1
+        print(f"  {test:<25} avg={avg:.2f}  dist=[0:{dist[0]}, 1:{dist[1]}, 2:{dist[2]}, 3:{dist[3]}]")
 
     return 0
 

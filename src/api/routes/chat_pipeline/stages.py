@@ -41,12 +41,19 @@ log = logging.getLogger(__name__)
 
 
 def _quality_escalate(
-    answer: str, prompt: str, primitives: "LLMPrimitives", initial_role,
+    answer: str,
+    prompt: str,
+    primitives: "LLMPrimitives",
+    initial_role,
+    *,
+    allow_escalation: bool = True,
 ) -> tuple[str, "Role"]:
     """Detect quality issue and escalate to coder_escalation if needed.
 
     Returns (answer, role) — either unchanged or with escalated answer and role.
     """
+    if not allow_escalation:
+        return answer, initial_role
     if not (answer and not answer.startswith("[ERROR") and features().generation_monitor):
         return answer, initial_role
     quality_issue = _detect_output_quality_issue(answer)
@@ -177,6 +184,11 @@ def _execute_react(
                 for inv in react_repl.tool_registry.get_invocation_log()
             ]
             react_tools_called = [inv.tool_name for inv in react_repl.tool_registry.get_invocation_log()]
+        react_tools_used = max(
+            react_tools_used,
+            len(react_tools_called),
+            len(react_tool_timings),
+        )
         answer = answer.strip()
     except Exception as e:
         log.warning(
@@ -198,7 +210,13 @@ def _execute_react(
     # Post-processing: truncation, quality check
     answer = _truncate_looped_answer(answer, request.prompt)
 
-    answer, initial_role = _quality_escalate(answer, request.prompt, primitives, initial_role)
+    answer, initial_role = _quality_escalate(
+        answer,
+        request.prompt,
+        primitives,
+        initial_role,
+        allow_escalation=not bool(request.force_role),
+    )
 
     elapsed = time.perf_counter() - start_time
     state.increment_request(mock_mode=False, turns=1)
