@@ -1,8 +1,15 @@
-"""Streaming inference tap for real-time prompt/response visibility.
+"""Inference tap for prompt/response visibility with low-overhead modes.
 
 Activated by setting INFERENCE_TAP_FILE env var to a file path.
-When active, inference calls stream tokens to the tap file so that
-``tail -f`` shows prompts and model output in real time.
+When active, model calls write prompt/response to the tap file so that
+``tail -f`` shows live activity.
+
+Streaming policy is configurable via ``INFERENCE_TAP_STREAM_MODE``:
+
+- ``safe`` (default): stream only non-heavy roles; heavy roles use stable
+  non-streaming inference and write response after completion.
+- ``force``: stream all roles (highest live fidelity, highest contention risk).
+- ``off``: disable streaming path even when tap is active.
 
 Performance impact is zero when disabled — is_active() is an O(1)
 env-var check with no I/O.
@@ -18,10 +25,11 @@ from datetime import datetime
 
 
 _ENV_KEY = "INFERENCE_TAP_FILE"
+_ENV_STREAM_MODE = "INFERENCE_TAP_STREAM_MODE"
 
 # Sentinel file written by the TUI so that API workers (separate processes)
 # can discover the tap path without needing the env var.
-_SENTINEL = "/mnt/raid0/llm/tmp/.inference_tap_active"
+_SENTINEL = os.path.join(os.environ.get("TMPDIR", "/tmp"), ".inference_tap_active")
 
 # Module-level lock for serialising writes across threads
 _write_lock = threading.Lock()
@@ -29,6 +37,16 @@ _write_lock = threading.Lock()
 # Cache sentinel reads — the file only changes when the TUI starts/stops,
 # so 5-second staleness is fine and avoids per-request I/O.
 _sentinel_cache: tuple[str, float] = ("", 0.0)
+
+# Roles that have shown the strongest contention/timeout behavior under
+# long-held locks. In "safe" tap mode these stay on non-stream inference.
+_HEAVY_STREAM_ROLES = frozenset({
+    "architect_general",
+    "architect_coding",
+    "vision_escalation",
+    "worker_vision",
+    "ingest_long_context",
+})
 
 
 def _read_sentinel() -> str:
@@ -56,21 +74,41 @@ def _tap_path() -> str:
     return os.environ.get(_ENV_KEY, "") or _read_sentinel()
 
 
+def stream_mode() -> str:
+    """Return normalized tap stream mode: safe|force|off."""
+    mode = (os.environ.get(_ENV_STREAM_MODE, "safe") or "safe").strip().lower()
+    if mode in {"safe", "force", "off"}:
+        return mode
+    return "safe"
+
+
+def should_stream_role(role: str) -> bool:
+    """Whether tap should force streaming transport for this role."""
+    mode = stream_mode()
+    if mode == "off":
+        return False
+    if mode == "force":
+        return True
+    return role not in _HEAVY_STREAM_ROLES
+
+
 class TapWriter:
     """Thread-safe writer that appends tap output to a file.
 
-    Each ``_append`` call opens/closes the file so that logrotate
-    can safely rotate the file without leaving stale handles.
+    Keeps a per-section file descriptor open and closes on context exit.
+    This avoids open/close on every streamed chunk.
     """
 
     def __init__(self, path: str) -> None:
         self._path = path
+        self._fh = None
 
     def _append(self, text: str) -> None:
         with _write_lock:
-            with open(self._path, "a") as f:
-                f.write(text)
-                f.flush()
+            if self._fh is None:
+                self._fh = open(self._path, "a")
+            self._fh.write(text)
+            self._fh.flush()
 
     def write_header(self, role: str) -> None:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -92,6 +130,11 @@ class TapWriter:
         """Write a single streaming chunk (called per SSE event)."""
         self._append(chunk)
 
+    def write_response(self, text: str) -> None:
+        """Write a complete response when non-stream path is used."""
+        if text:
+            self._append(text)
+
     def write_timings(
         self,
         tokens: int,
@@ -107,6 +150,14 @@ class TapWriter:
             f"{'=' * 72}\n\n"
         )
 
+    def close(self) -> None:
+        with _write_lock:
+            if self._fh is not None:
+                try:
+                    self._fh.close()
+                finally:
+                    self._fh = None
+
 
 class _NullWriter:
     """No-op writer when tap is disabled."""
@@ -120,6 +171,9 @@ class _NullWriter:
     def write_chunk(self, chunk: str) -> None:
         pass
 
+    def write_response(self, text: str) -> None:
+        pass
+
     def write_timings(
         self,
         tokens: int,
@@ -127,6 +181,9 @@ class _NullWriter:
         gen_ms: float,
         tps: float,
     ) -> None:
+        pass
+
+    def close(self) -> None:
         pass
 
 
@@ -149,4 +206,7 @@ def tap_section(role: str, prompt: str):
     writer = TapWriter(path)
     writer.write_header(role)
     writer.write_prompt(prompt)
-    yield writer
+    try:
+        yield writer
+    finally:
+        writer.close()

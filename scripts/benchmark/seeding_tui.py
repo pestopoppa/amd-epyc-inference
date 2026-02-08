@@ -31,8 +31,8 @@ from rich.text import Text
 # Constants
 # ---------------------------------------------------------------------------
 
-_SENTINEL_PATH = "/mnt/raid0/llm/tmp/.inference_tap_active"
-_DEFAULT_TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
+_SENTINEL_PATH = os.path.join(os.environ.get("TMPDIR", "/tmp"), ".inference_tap_active")
+_DEFAULT_TAP_PATH = os.path.join(os.environ.get("TMPDIR", "/tmp"), "inference_tap.log")
 
 # ---------------------------------------------------------------------------
 # DequeHandler — capture log records for the left panel
@@ -151,6 +151,64 @@ class TUIProgress:
     current_action: str = ""
     session_id: str = ""
     start_time: float = field(default_factory=time.monotonic)
+
+
+# ---------------------------------------------------------------------------
+# Stream panel styling
+# ---------------------------------------------------------------------------
+
+
+def _style_stream_lines(lines: list[str]) -> Text:
+    """Apply Rich styles to inference stream lines.
+
+    Re-parses the full visible buffer each tick so that code blocks,
+    FINAL() calls, and structural markers are always correctly styled
+    even while content is still streaming in.
+    """
+    styled = Text()
+    in_code = False
+    for i, line in enumerate(lines):
+        if i > 0:
+            styled.append("\n")
+
+        # Structural markers
+        if line.startswith("=" * 20) or line.startswith("-" * 20):
+            styled.append(line, style="dim")
+            continue
+        if line.startswith("PROMPT:"):
+            styled.append(line, style="dim italic")
+            continue
+        if line.startswith("RESPONSE:"):
+            styled.append(line, style="bold green")
+            continue
+        if line.startswith("TIMINGS:"):
+            styled.append(line, style="bold yellow")
+            continue
+        if line.startswith("[") and "ROLE=" in line:
+            styled.append(line, style="bold cyan")
+            continue
+
+        # Code fence toggle
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            styled.append(line, style="dim cyan")
+            continue
+
+        # Inside code block
+        if in_code:
+            styled.append(line, style="cyan")
+            continue
+
+        # FINAL() answer — highlight prominently
+        if "FINAL(" in line:
+            styled.append(line, style="bold magenta")
+            continue
+
+        # Default prose
+        styled.append(line)
+
+    return styled
 
 
 # ---------------------------------------------------------------------------
@@ -318,8 +376,9 @@ class SeedingTUI:
                 filtered.append("")  # visual separator
             filtered.append(line)
 
-        display_lines = filtered[-(panel_height):]
-        stream_text = Text("\n".join(display_lines) if display_lines else "(waiting for inference tap...)")
+        # Truncate each line to panel width so 1 logical line = 1 display line (no wrap)
+        display_lines = [line[:panel_width] for line in filtered[-(panel_height):]]
+        stream_text = _style_stream_lines(display_lines) if display_lines else Text("(waiting for inference tap...)")
         layout["stream"].update(Panel(stream_text, title="Inference Stream", border_style="cyan"))
 
         # Bottom bar: status — extract current action from last log line
