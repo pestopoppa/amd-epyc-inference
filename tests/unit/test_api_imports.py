@@ -246,9 +246,10 @@ class TestRoutingResult:
         from src.api.routes.chat_utils import RoutingResult
 
         r = RoutingResult(task_id="t", task_ir={}, use_mock=False)
-        assert r.timeout_for_role("worker_explore") == 30
+        # All roles have uniform 600s timeout for seeding fairness
+        assert r.timeout_for_role("worker_explore") == 600
         assert r.timeout_for_role("architect_general") == 600
-        assert r.timeout_for_role("frontdoor") == 60
+        assert r.timeout_for_role("frontdoor") == 600
 
 
 class TestRoleTimeouts:
@@ -270,11 +271,12 @@ class TestRoleTimeouts:
         for role in expected_roles:
             assert role in ROLE_TIMEOUTS, f"Missing timeout for {role}"
 
-    def test_worker_timeouts_shorter_than_architect(self):
+    def test_worker_timeouts_equal_to_architect(self):
         from src.api.routes.chat_utils import ROLE_TIMEOUTS
 
-        assert ROLE_TIMEOUTS["worker_explore"] < ROLE_TIMEOUTS["architect_general"]
-        assert ROLE_TIMEOUTS["worker_math"] < ROLE_TIMEOUTS["architect_coding"]
+        # All roles have uniform 600s timeout for seeding fairness
+        assert ROLE_TIMEOUTS["worker_explore"] == ROLE_TIMEOUTS["architect_general"]
+        assert ROLE_TIMEOUTS["worker_math"] == ROLE_TIMEOUTS["architect_coding"]
 
     def test_default_timeout_exists(self):
         from src.api.routes.chat_utils import DEFAULT_TIMEOUT_S

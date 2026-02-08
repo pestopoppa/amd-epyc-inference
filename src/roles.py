@@ -36,6 +36,19 @@ if TYPE_CHECKING:
     pass
 
 
+class FailoverReason(str, Enum):
+    """Reason for triggering a model fallback (distinct from task escalation).
+
+    Fallback is for infrastructure failures — the model is unavailable.
+    Escalation is for task complexity — the model can't solve the problem.
+    """
+
+    CIRCUIT_OPEN = "circuit_open"
+    TIMEOUT = "timeout"
+    CONNECTION_ERROR = "connection_error"
+    OOM = "oom"
+
+
 class Tier(str, Enum):
     """Agent tier in the orchestration hierarchy.
 
@@ -290,6 +303,36 @@ _ESCALATION_MAP: dict[Role, Role] = {
     # Architects have no escalation (top of chain)
     # Draft models don't escalate (they support other models)
 }
+
+
+# Role -> Fallback alternatives (infrastructure failure, NOT task escalation)
+# Used when model_fallback feature is enabled and primary backend is circuit-open.
+_FALLBACK_MAP: dict[Role, list[Role]] = {
+    Role.ARCHITECT_GENERAL: [Role.ARCHITECT_CODING, Role.CODER_PRIMARY],
+    Role.ARCHITECT_CODING: [Role.ARCHITECT_GENERAL, Role.CODER_ESCALATION],
+    Role.CODER_PRIMARY: [Role.CODER_ESCALATION],
+    Role.CODER_ESCALATION: [Role.CODER_PRIMARY],
+    Role.WORKER_MATH: [Role.WORKER_GENERAL],
+    Role.INGEST_LONG_CONTEXT: [Role.ARCHITECT_GENERAL],
+    Role.FRONTDOOR: [],  # Always-on, no fallback
+    Role.WORKER_VISION: [],  # Hardware-specific, no fallback
+}
+
+
+def get_fallback_roles(role: Role | str) -> list[Role]:
+    """Get fallback roles for infrastructure failure (NOT task escalation).
+
+    Args:
+        role: Role whose backend is unavailable.
+
+    Returns:
+        List of alternative roles to try, in priority order.
+    """
+    if isinstance(role, str):
+        role = Role.from_string(role)
+        if role is None:
+            return []
+    return list(_FALLBACK_MAP.get(role, []))
 
 
 def get_tier(role: Role | str) -> Tier:

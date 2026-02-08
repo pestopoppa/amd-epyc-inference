@@ -85,6 +85,9 @@ class AppState:
     # Backend health tracking (circuit breaker)
     health_tracker: BackendHealthTracker = field(default_factory=BackendHealthTracker)
 
+    # Binding-based routing (OpenClaw pattern, Phase 4B)
+    binding_router: Any | None = None  # RoutingBindings.BindingRouter
+
     # Plan review state (architect-in-the-loop)
     plan_review_phase: str = "A"  # "A" (bootstrap), "B" (supervised fade), "C" (spot-check)
     _plan_review_stats: dict = field(

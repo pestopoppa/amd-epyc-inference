@@ -326,6 +326,49 @@ Models sometimes generate natural-language role names in `delegate()` and `escal
 3. **Verification gates** replace consensus
 4. **Explicit routing** prevents over-thinking
 
+## Cross-Cutting Concerns (February 2026)
+
+Eight concepts from OpenClaw and Lobster were integrated behind feature flags. All default off.
+
+### Content-Addressable LLM Cache
+
+SHA-256 keyed prompt-to-response cache (`src/llm_cache.py`). JSON files on disk with TTL (168h default) and LRU eviction (10K max entries). Cache key includes prompt, role, token count, and model hash. Checked before `_real_call_single()` in inference, stored after success. Highest-value targets: `architect_general` (6.75 t/s), `ingest_long_context` (6.3 t/s).
+
+Feature flag: `content_cache`.
+
+### Model Fallback
+
+When a backend is circuit-open or times out, same-tier alternatives are tried before failing. Distinct from task escalation (which handles complexity, not infrastructure). Fallback map in `src/roles.py`:
+
+| Primary | Fallbacks |
+|---------|-----------|
+| architect_general | architect_coding, coder_primary |
+| architect_coding | architect_general, coder_escalation |
+| coder_primary | coder_escalation |
+| coder_escalation | coder_primary |
+| worker_math | worker_general |
+| ingest_long_context | architect_general |
+| frontdoor | (none) |
+| worker_vision | (none) |
+
+`BackendHealthTracker.classify_failure()` maps error messages to `FailoverReason` (circuit_open, timeout, connection_error, oom). Feature flag: `model_fallback`.
+
+### Session Compaction
+
+Summarizes old context entries when conversation exceeds threshold (turns > 5 AND context > 12K chars). Uses `worker_summarize` (44 t/s) to compress, keeps last 3000 chars verbatim. `compaction_count` in `TaskState` tracks how many times compaction fired. Feature flag: `session_compaction`.
+
+### Resume Tokens
+
+Base64url-encoded graph state for crash recovery (`src/graph/resume_token.py`). Contents: task_id, node_class, current_role, turns, escalation/failure counts, role_history, last_error (truncated 200 chars), SHA-256[:8] checksum. Encoding: JSON -> zlib -> base64url (<500 bytes). Generated in `snapshot_node()`, decoded in `run_task()`. Feature flag: `resume_tokens`.
+
+### Approval Gates
+
+Human approval at escalation boundaries and destructive tool invocations (`src/graph/approval_gate.py`). Three halt triggers: tier crossing (ESCALATION), destructive tools (DESTRUCTIVE_TOOL), architect-tier models (HIGH_COST). Protocol: `should_halt()` -> build `HaltState` -> call `ApprovalCallback.request_approval()` -> APPROVE or REJECT. Default `AutoApproveCallback` preserves current behavior. Feature flag: `approval_gates` (requires `resume_tokens` + `side_effect_tracking`).
+
+### Binding-Based Routing
+
+Priority-ordered routing overrides (`src/routing_bindings.py`). Five priority levels: DEFAULT (0) < CLASSIFIER (10) < Q_VALUE (20) < USER_PREF (30) < SESSION (40). `BindingRouter.resolve()` returns highest-priority active binding for a task type. Session bindings cleared at conversation end. Integrated in `_classify_and_route()`. Feature flag: `binding_routing`.
+
 ## Implementation Status
 
 The orchestration layer is implemented in:
@@ -334,13 +377,17 @@ The orchestration layer is implemented in:
 - `src/context_manager.py` - Context passing between steps
 - `src/prompt_builders/` - Prompt construction package (6 sub-modules: types, constants, builder, review, code_utils, formatting)
 - `src/gate_runner.py` - Verification gate execution (sequential + parallel via `asyncio.gather()`)
-- `src/features.py` - Feature flag system with dataclass validation
+- `src/features.py` - Feature flag system with dataclass validation (8 concept-integration flags added 2026-02-08)
 - `src/config.py` - Centralized configuration (~185 values)
+- `src/llm_cache.py` - Content-addressable LLM response cache
+- `src/routing_bindings.py` - Priority-ordered routing bindings
+- `src/graph/resume_token.py` - Base64url continuation tokens
+- `src/graph/approval_gate.py` - Halt/resume approval protocol
 - `orchestration/model_registry.yaml` - Deterministic model mapping
 - `orchestration/task_ir.schema.json` - TaskIR validation
 - `orchestration/repl_memory/` - MemRL episodic memory (staged rewards, FAISS retrieval, Q-scoring)
 
-**Test Coverage**: 2015 tests passing (0 failures), 67.48% line coverage
+**Test Coverage**: 2841 tests passing (0 failures), including 83 concept-integration tests
 
 ## References
 

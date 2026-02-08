@@ -64,21 +64,21 @@ runtime_defaults:
     # Single source of truth for ALL timeouts in the system
     default: 600  # Fallback for any unspecified timeout
 
-    # Per-role inference timeouts (seconds)
+    # Per-role inference timeouts (seconds) — uniform 600s for seeding fairness
     roles:
-      worker_explore: 30
-      worker_math: 30
-      worker_vision: 30
-      worker_summarize: 120
-      worker_general: 60
-      worker_code: 60
-      worker_fast: 30
-      frontdoor: 60
-      coder_primary: 60
-      coder_escalation: 120
-      vision_escalation: 60
-      ingest_long_context: 120
-      architect_general: 600  # Hard questions take ~300s
+      worker_explore: 600
+      worker_math: 600
+      worker_vision: 600
+      worker_summarize: 600
+      worker_general: 600
+      worker_code: 600
+      worker_fast: 600
+      frontdoor: 600
+      coder_primary: 600
+      coder_escalation: 600
+      vision_escalation: 600
+      ingest_long_context: 600
+      architect_general: 600
       architect_coding: 600
 
     # Server/connection timeouts

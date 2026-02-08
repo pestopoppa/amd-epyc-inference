@@ -161,6 +161,10 @@ class TestFormatSelfDirect:
         lines = format_self_direct("SELF:direct", False, "timeout", 120.0, _RESP_DIRECT)
         assert "→ ERROR" in lines[0]
 
+    def test_infra_format(self):
+        lines = format_self_direct("SELF:direct", False, "timeout", 120.0, _RESP_DIRECT, infra=True)
+        assert "→ INFRA" in lines[0]
+
     def test_no_tps_omits_field(self):
         resp = {**_RESP_DIRECT, "predicted_tps": 0, "generation_ms": 0}
         lines = format_self_direct("SELF:direct", True, None, 1.0, resp)
@@ -215,6 +219,10 @@ class TestFormatSelfRepl:
         lines = format_self_repl("SELF:repl", True, None, 1.0, resp)
         timing_lines = [ln for ln in lines if "fetch:" in ln]
         assert "fail" in timing_lines[0]
+
+    def test_infra_format(self):
+        lines = format_self_repl("SELF:repl", False, "timeout", 120.0, _RESP_REPL, infra=True)
+        assert "→ INFRA" in lines[0]
 
 
 # ── ARCHITECT format ──────────────────────────────────────────────────

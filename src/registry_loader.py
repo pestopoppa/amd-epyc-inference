@@ -442,7 +442,7 @@ class RegistryLoader:
 
         Returns:
             Tuple of (n_tokens, temperature, system_prompt_suffix).
-            Falls back to (512, None, None) if role not found.
+            Falls back to (-1, None, None) if role not found (-1 = unlimited).
         """
         try:
             role = self.get_role(role_name)
@@ -452,9 +452,9 @@ class RegistryLoader:
                     role.generation_defaults.temperature,
                     role.system_prompt_suffix,
                 )
-            return (512, None, role.system_prompt_suffix)
+            return (-1, None, role.system_prompt_suffix)
         except KeyError:
-            return (512, None, None)
+            return (-1, None, None)
 
     @property
     def escalation_chains(self) -> dict[str, EscalationChain]:

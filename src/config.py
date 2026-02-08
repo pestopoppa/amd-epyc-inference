@@ -547,31 +547,31 @@ class TimeoutsConfig:
 
     # Role-specific request timeouts (read from registry.timeouts.roles.*)
     worker_explore: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "worker_explore", 30))
+        default_factory=lambda: int(_registry_timeout("roles", "worker_explore", 600))
     )
     worker_math: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "worker_math", 30))
+        default_factory=lambda: int(_registry_timeout("roles", "worker_math", 600))
     )
     worker_vision: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "worker_vision", 30))
+        default_factory=lambda: int(_registry_timeout("roles", "worker_vision", 600))
     )
     worker_summarize: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "worker_summarize", 120))
+        default_factory=lambda: int(_registry_timeout("roles", "worker_summarize", 600))
     )
     frontdoor: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "frontdoor", 60))
+        default_factory=lambda: int(_registry_timeout("roles", "frontdoor", 600))
     )
     coder_primary: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "coder_primary", 60))
+        default_factory=lambda: int(_registry_timeout("roles", "coder_primary", 600))
     )
     coder_escalation: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "coder_escalation", 120))
+        default_factory=lambda: int(_registry_timeout("roles", "coder_escalation", 600))
     )
     vision_escalation: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "vision_escalation", 60))
+        default_factory=lambda: int(_registry_timeout("roles", "vision_escalation", 600))
     )
     ingest_long_context: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "ingest_long_context", 120))
+        default_factory=lambda: int(_registry_timeout("roles", "ingest_long_context", 600))
     )
     architect_general: int = field(
         default_factory=lambda: int(_registry_timeout("roles", "architect_general", 600))
@@ -828,6 +828,22 @@ class ServicesConfig:
         )
     )
 
+    llm_cache_dir: Path = field(
+        default_factory=lambda: Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_LLM_CACHE",
+                f"{_get_default_project_root()}/cache/llm_responses",
+            )
+        )
+    )
+    """Content-addressable LLM response cache directory."""
+
+    llm_cache_ttl_hours: float = 168.0
+    """Cache TTL in hours (default 1 week)."""
+
+    llm_cache_max_entries: int = 10_000
+    """Maximum cache entries before LRU eviction."""
+
 
 @dataclass
 class ApiConfig:
@@ -1073,15 +1089,15 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         )
 
     class TimeoutsSettings(BaseSettings):
-        worker_explore: int = 30
-        worker_math: int = 30
-        worker_vision: int = 30
-        worker_summarize: int = 120
-        frontdoor: int = 60
-        coder_primary: int = 60
-        coder_escalation: int = 120
-        vision_escalation: int = 60
-        ingest_long_context: int = 120
+        worker_explore: int = 600
+        worker_math: int = 600
+        worker_vision: int = 600
+        worker_summarize: int = 600
+        frontdoor: int = 600
+        coder_primary: int = 600
+        coder_escalation: int = 600
+        vision_escalation: int = 600
+        ingest_long_context: int = 600
         architect_general: int = 600
         architect_coding: int = 600
         default_request: int = 600
@@ -1264,39 +1280,39 @@ def _load_from_env() -> OrchestratorConfigData:
             # All defaults come from registry; env vars can override
             worker_explore=_env_int(
                 f"{P}TIMEOUTS_WORKER_EXPLORE",
-                int(_registry_timeout("roles", "worker_explore", 30)),
+                int(_registry_timeout("roles", "worker_explore", 600)),
             ),
             worker_math=_env_int(
                 f"{P}TIMEOUTS_WORKER_MATH",
-                int(_registry_timeout("roles", "worker_math", 30)),
+                int(_registry_timeout("roles", "worker_math", 600)),
             ),
             worker_vision=_env_int(
                 f"{P}TIMEOUTS_WORKER_VISION",
-                int(_registry_timeout("roles", "worker_vision", 30)),
+                int(_registry_timeout("roles", "worker_vision", 600)),
             ),
             worker_summarize=_env_int(
                 f"{P}TIMEOUTS_WORKER_SUMMARIZE",
-                int(_registry_timeout("roles", "worker_summarize", 120)),
+                int(_registry_timeout("roles", "worker_summarize", 600)),
             ),
             frontdoor=_env_int(
                 f"{P}TIMEOUTS_FRONTDOOR",
-                int(_registry_timeout("roles", "frontdoor", 60)),
+                int(_registry_timeout("roles", "frontdoor", 600)),
             ),
             coder_primary=_env_int(
                 f"{P}TIMEOUTS_CODER_PRIMARY",
-                int(_registry_timeout("roles", "coder_primary", 60)),
+                int(_registry_timeout("roles", "coder_primary", 600)),
             ),
             coder_escalation=_env_int(
                 f"{P}TIMEOUTS_CODER_ESCALATION",
-                int(_registry_timeout("roles", "coder_escalation", 120)),
+                int(_registry_timeout("roles", "coder_escalation", 600)),
             ),
             vision_escalation=_env_int(
                 f"{P}TIMEOUTS_VISION_ESCALATION",
-                int(_registry_timeout("roles", "vision_escalation", 60)),
+                int(_registry_timeout("roles", "vision_escalation", 600)),
             ),
             ingest_long_context=_env_int(
                 f"{P}TIMEOUTS_INGEST_LONG_CONTEXT",
-                int(_registry_timeout("roles", "ingest_long_context", 120)),
+                int(_registry_timeout("roles", "ingest_long_context", 600)),
             ),
             architect_general=_env_int(
                 f"{P}TIMEOUTS_ARCHITECT_GENERAL",

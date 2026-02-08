@@ -91,7 +91,9 @@ class PromptBuilder:
         prompt = RootLMPrompt(
             system=(
                 "You are an assistant that completes tasks. "
-                "For simple questions (factual, reasoning, multiple-choice), answer directly with FINAL(answer). "
+                "Match your response depth to the user's request. "
+                "For factual lookups and multiple-choice, answer concisely with FINAL(answer). "
+                "For explanations or reasoning, think thoroughly before FINAL(answer). "
                 "For tasks requiring file access, web search, or external data, use the available tools."
             ),
             tools=DEFAULT_ROOT_LM_TOOLS,

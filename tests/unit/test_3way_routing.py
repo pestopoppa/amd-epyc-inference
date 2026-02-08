@@ -221,6 +221,10 @@ class TestInfraErrorClassification:
 
         assert _classify_error("ReadTimeout: timed out") == "infrastructure"
         assert _classify_error("HTTP 503 backend down") == "infrastructure"
+        assert (
+            _classify_error("Server disconnected without sending a response.")
+            == "infrastructure"
+        )
 
     def test_classify_error_task_failure(self):
         from seed_specialist_routing import _classify_error

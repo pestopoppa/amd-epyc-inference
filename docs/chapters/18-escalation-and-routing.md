@@ -358,6 +358,122 @@ Prevents infinite review-fix cycles. After max iterations, accept output or esca
 - **Reactive**: Well-defined tasks, known failure patterns, speed-critical
 - **Proactive**: Novel tasks, complex multi-file changes, quality-critical
 
+## Model Fallback (February 2026)
+
+Model fallback handles **infrastructure failure** — distinct from task escalation which handles **task complexity**. When a backend is circuit-open, timed out, or OOM, same-tier alternatives are tried before failing the request.
+
+### Fallback vs Escalation
+
+| Concern | Mechanism | Trigger | Direction |
+|---------|-----------|---------|-----------|
+| Task complexity | Escalation (graph nodes) | Gate failure, retry exhaustion | Worker -> Coder -> Architect (upward) |
+| Infrastructure failure | Fallback (`get_fallback_roles()`) | Circuit open, timeout, OOM | Same-tier alternatives (lateral) |
+
+### Fallback Map
+
+Defined in `src/roles.py` as `_FALLBACK_MAP`:
+
+```python
+_FALLBACK_MAP: dict[Role, list[Role]] = {
+    Role.ARCHITECT_GENERAL: [Role.ARCHITECT_CODING, Role.CODER_PRIMARY],
+    Role.ARCHITECT_CODING: [Role.ARCHITECT_GENERAL, Role.CODER_ESCALATION],
+    Role.CODER_PRIMARY: [Role.CODER_ESCALATION],
+    Role.CODER_ESCALATION: [Role.CODER_PRIMARY],
+    Role.WORKER_MATH: [Role.WORKER_GENERAL],
+    Role.INGEST_LONG_CONTEXT: [Role.ARCHITECT_GENERAL],
+    Role.FRONTDOOR: [],            # Always-on, no fallback
+    Role.WORKER_VISION: [],        # Hardware-specific, no fallback
+}
+```
+
+### Failure Classification
+
+`BackendHealthTracker.classify_failure()` maps error messages to `FailoverReason`:
+
+| Error Pattern | FailoverReason |
+|---------------|----------------|
+| "circuit open" | `circuit_open` |
+| "timed out", "timeout" | `timeout` |
+| "out of memory", "oom", "kv cache" | `oom` |
+| Everything else | `connection_error` |
+
+### Integration
+
+In `_real_call_impl()`: primary call via `_real_call_single()` catches `RuntimeError`. If `model_fallback` feature enabled, iterates `get_fallback_roles(role)` trying each alternative. Logs `FailoverReason` for observability.
+
+Feature flag: `model_fallback`.
+
+## Approval Gates (February 2026)
+
+Human approval gates at escalation boundaries and destructive tool invocations. The graph halts, serializes state via resume token, waits for approval, then continues or rejects.
+
+### Halt Triggers
+
+| Trigger | HaltReason | Example |
+|---------|------------|---------|
+| Tier crossing | `ESCALATION` | Worker -> Coder, Worker -> Architect |
+| Architect-tier model | `HIGH_COST` | Coder -> Architect (both Tier B, but expensive) |
+| Destructive tool | `DESTRUCTIVE_TOOL` | `tool.destructive == True` |
+
+### Protocol
+
+```
+Graph node -> should_halt(from_role, to_role)
+  |
+  +-- None -> continue normally
+  +-- HaltReason -> build HaltState
+       |
+       +-- call deps.approval_callback.request_approval(halt)
+            |
+            +-- APPROVE -> continue to escalation/execution
+            +-- REJECT -> End(success=False, answer="Rejected by user")
+```
+
+### Tier Classification
+
+```python
+_TIER_MAP = {
+    "frontdoor": "A",
+    "coder_primary": "B", "coder_escalation": "B",
+    "architect_general": "B", "architect_coding": "B",
+    "ingest_long_context": "B",
+    "worker_general": "C", "worker_math": "C",
+    "worker_explore": "C", "worker_summarize": "C",
+    "worker_vision": "C",
+}
+```
+
+Tier crossing (C->B, C->A) triggers `ESCALATION`. Same-tier to architect triggers `HIGH_COST`.
+
+### Default Behavior
+
+`AutoApproveCallback` auto-approves everything, preserving current behavior when `approval_gates=False` or no callback injected. The callback protocol (`ApprovalCallback`) can be implemented by API handlers for external approval flows.
+
+Feature flag: `approval_gates` (requires `resume_tokens` + `side_effect_tracking`).
+
+## Binding-Based Routing (February 2026)
+
+Priority-ordered routing overrides from multiple sources. Same task type can route to different roles based on session state, user preference, or Q-values.
+
+### Priority Levels
+
+```python
+class BindingPriority(IntEnum):
+    DEFAULT = 0        # model_registry.yaml task_type -> role
+    CLASSIFIER = 10    # _classify_and_route() keyword heuristic
+    Q_VALUE = 20       # MemRL Q-value suggestion
+    USER_PREF = 30     # ChatRequest.preferred_role header
+    SESSION = 40       # Session-specific override (during conversation)
+```
+
+### Integration
+
+After `_classify_and_route()` returns a role, `binding_router.resolve(task_type)` is checked. If a binding with higher priority exists and its backend is available, that role is used instead. Session bindings are cleared at conversation end.
+
+Implementation: `src/routing_bindings.py` (`BindingRouter`), integrated in `src/api/routes/chat_routing.py`.
+
+Feature flag: `binding_routing`.
+
 ## References
 
 ### Implementation
@@ -367,7 +483,9 @@ Prevents infinite review-fix cycles. After max iterations, accept output or esca
 3. `src/graph/graph.py`: Graph singleton, `run_task()`, `generate_mermaid()`
 4. `src/escalation.py`: Unified escalation policy (EscalationAction, ErrorCategory, EscalationConfig)
 5. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
-6. `src/roles.py`: Role definitions and escalation chains
+6. `src/roles.py`: Role definitions, escalation chains, and fallback map
+7. `src/graph/approval_gate.py`: Halt/resume protocol types and approval gates
+8. `src/routing_bindings.py`: Priority-ordered routing bindings
 
 ### Theoretical Foundations
 

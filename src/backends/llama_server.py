@@ -392,6 +392,137 @@ class LlamaServerBackend(ModelBackend):
             logger.error(f"Stream error: {e}")
             return
 
+    def infer_stream_text(
+        self,
+        role_config: RoleConfig,
+        request: InferenceRequest,
+        on_chunk: Any | None = None,
+    ) -> InferenceResult:
+        """Stream inference and return text result (with optional per-chunk callback).
+
+        Like ``infer()`` but uses SSE streaming so that an ``on_chunk``
+        callback can observe tokens as they arrive (e.g. for the
+        inference tap).  The return value is identical to ``infer()``.
+
+        Args:
+            role_config: Configuration for the role/model.
+            request: Inference request parameters.
+            on_chunk: Optional callback ``(str) -> None`` called for each
+                text chunk received from the server.
+
+        Returns:
+            InferenceResult with output and metrics (same shape as batch).
+        """
+        import json as _json
+
+        start_time = time.time()
+        self.cache_stats.total_requests += 1
+
+        payload = self._build_payload(role_config, request)
+        payload["stream"] = True
+
+        try:
+            http_start = time.perf_counter()
+
+            with self.client.stream(
+                "POST",
+                "/completion",
+                json=payload,
+                timeout=request.timeout or self.config.timeout,
+            ) as response:
+                response.raise_for_status()
+
+                chunks: list[str] = []
+                timings: dict[str, Any] = {}
+                tokens_generated = 0
+                prompt_tokens = 0
+                cached_tokens = 0
+
+                for line in response.iter_lines():
+                    if not line:
+                        continue
+                    line_str = line if isinstance(line, str) else line.decode("utf-8")
+                    if not line_str.startswith("data: "):
+                        continue
+
+                    try:
+                        data = _json.loads(line_str[6:])
+                    except _json.JSONDecodeError:
+                        continue
+
+                    content = data.get("content", "")
+                    if content and on_chunk is not None:
+                        on_chunk(content)
+                    if content:
+                        chunks.append(content)
+
+                    if data.get("stop", False):
+                        timings = data.get("timings", {})
+                        tokens_generated = data.get("tokens_predicted", 0)
+                        prompt_tokens = data.get("tokens_evaluated", 0)
+                        cached_tokens = data.get("tokens_cached", 0)
+                        break
+
+            http_elapsed_ms = (time.perf_counter() - http_start) * 1000
+            elapsed = time.time() - start_time
+
+            prompt_eval_ms = timings.get("prompt_ms", 0.0)
+            generation_ms = timings.get("predicted_ms", 0.0)
+            predicted_per_second = timings.get("predicted_per_second", 0.0)
+
+            inference_ms = prompt_eval_ms + generation_ms
+            http_overhead_ms = max(0.0, http_elapsed_ms - inference_ms)
+
+            # Update cache stats
+            self.cache_stats.total_prompt_tokens += prompt_tokens
+            self.cache_stats.cached_prompt_tokens += cached_tokens
+            if cached_tokens > 0:
+                self.cache_stats.cache_hits += 1
+            else:
+                self.cache_stats.cache_misses += 1
+
+            speed = (
+                predicted_per_second
+                if predicted_per_second > 0
+                else (tokens_generated / elapsed if elapsed > 0 else 0.0)
+            )
+
+            return InferenceResult(
+                role=role_config.name,
+                output="".join(chunks),
+                tokens_generated=tokens_generated,
+                generation_speed=speed,
+                elapsed_time=elapsed,
+                success=True,
+                prompt_eval_ms=prompt_eval_ms,
+                generation_ms=generation_ms,
+                predicted_per_second=predicted_per_second,
+                http_overhead_ms=http_overhead_ms,
+            )
+
+        except httpx.TimeoutException:
+            return InferenceResult(
+                role=role_config.name,
+                output="",
+                tokens_generated=0,
+                generation_speed=0.0,
+                elapsed_time=request.timeout or self.config.timeout,
+                success=False,
+                error_message=f"Request timed out after {request.timeout}s",
+            )
+
+        except httpx.RequestError as e:
+            elapsed = time.time() - start_time
+            return InferenceResult(
+                role=role_config.name,
+                output="",
+                tokens_generated=0,
+                generation_speed=0.0,
+                elapsed_time=elapsed,
+                success=False,
+                error_message=f"Server request failed: {e}",
+            )
+
     def _build_payload(
         self,
         role_config: RoleConfig,

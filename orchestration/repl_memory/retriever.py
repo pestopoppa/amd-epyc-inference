@@ -391,8 +391,13 @@ class HybridRouter:
         results = self.retriever.retrieve_for_routing(task_ir)
 
         if self.retriever.should_use_learned(results):
-            # Aggregate Q-values by 3-way category
+            # Aggregate Q-values and elapsed times by 3-way category
             q_values: Dict[str, List[float]] = {
+                "SELF:direct": [],
+                "SELF:repl": [],
+                "ARCHITECT": [],
+            }
+            elapsed_times: Dict[str, List[float]] = {
                 "SELF:direct": [],
                 "SELF:repl": [],
                 "ARCHITECT": [],
@@ -401,15 +406,23 @@ class HybridRouter:
             for r in results:
                 action = r.memory.action
                 # Map old action format to 3-way categories
+                category = None
                 if action in q_values:
-                    # Already in 3-way format
-                    q_values[action].append(r.q_value)
+                    category = action
                 elif action.startswith("frontdoor:direct"):
-                    q_values["SELF:direct"].append(r.q_value)
+                    category = "SELF:direct"
                 elif action.startswith("frontdoor:repl"):
-                    q_values["SELF:repl"].append(r.q_value)
+                    category = "SELF:repl"
                 elif action.startswith(("architect_", "ARCHITECT")):
-                    q_values["ARCHITECT"].append(r.q_value)
+                    category = "ARCHITECT"
+
+                if category:
+                    q_values[category].append(r.q_value)
+                    # Extract actual compute cost from stored metadata
+                    ctx = r.memory.context or {}
+                    elapsed = ctx.get("elapsed_seconds", 0.0)
+                    if elapsed > 0:
+                        elapsed_times[category].append(elapsed)
 
             # Average Q-values per category
             avg_q = {}
@@ -419,11 +432,20 @@ class HybridRouter:
                 else:
                     avg_q[action] = 0.5  # Default neutral
 
-            # Apply cost-adjusted scoring
+            # Compute cost: use actual avg elapsed seconds from similar tasks,
+            # fall back to static cost tiers if no elapsed data stored yet
+            avg_cost = {}
+            for action in avg_q:
+                times = elapsed_times.get(action, [])
+                if times:
+                    avg_cost[action] = sum(times) / len(times)
+                else:
+                    avg_cost[action] = float(cost_tiers.get(action, 2))
+
+            # Apply cost-adjusted scoring: Q(action) / avg_elapsed_seconds
             scores = {}
             for action, q in avg_q.items():
-                cost = cost_tiers.get(action, 2)
-                scores[action] = q / cost
+                scores[action] = q / avg_cost[action]
 
             # Select best action
             best_action = max(scores, key=scores.get)

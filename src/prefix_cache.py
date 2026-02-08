@@ -383,6 +383,17 @@ class CachingBackend:
         # prompt sent to the model, contaminating inference output.
         return self.backend.infer(role_config, request)
 
+    def infer_stream_text(
+        self,
+        role_config: "RoleConfig",  # noqa: F821
+        request: "InferenceRequest",  # noqa: F821
+        on_chunk=None,
+    ) -> "InferenceResult":  # noqa: F821
+        """Stream inference with prefix caching (delegates to backend)."""
+        prompt = request.prompt or ""
+        self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
+        return self.backend.infer_stream_text(role_config, request, on_chunk=on_chunk)
+
     def get_hit_rate(self) -> float:
         """Get the current cache hit rate.
 

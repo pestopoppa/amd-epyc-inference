@@ -361,13 +361,16 @@ def sample_unseen_questions(
     seen: set[str],
     seed: int,
 ) -> list[dict]:
-    """Sample questions not in the seen set.
+    """Sample questions not in the seen set, interleaved across suites.
 
     Tries HF dataset adapters first, falls back to YAML.
     Oversamples by 3x to compensate for dedup filtering.
+
+    Returns questions interleaved by suite (round-robin) so the orchestrator
+    sees diverse question types early rather than processing one suite at a time.
     """
     suite_names = DEFAULT_SUITES if suites == ["all"] else suites
-    all_prompts: list[dict] = []
+    per_suite: list[list[dict]] = []
 
     for suite_name in suite_names:
         oversample = sample_per_suite * 3
@@ -382,7 +385,15 @@ def sample_unseen_questions(
             filtered = len(prompts) - len(fresh)
             logger.info(f"  [{suite_name}] Filtered {filtered} previously seen questions")
 
-        all_prompts.extend(fresh[:sample_per_suite])
+        per_suite.append(fresh[:sample_per_suite])
+
+    # Interleave: round-robin across suites (thinking_q1, general_q1, math_q1, ..., thinking_q2, ...)
+    all_prompts: list[dict] = []
+    max_len = max((len(s) for s in per_suite), default=0)
+    for i in range(max_len):
+        for suite_questions in per_suite:
+            if i < len(suite_questions):
+                all_prompts.append(suite_questions[i])
 
     return all_prompts
 
@@ -467,7 +478,13 @@ def call_orchestrator_forced(
                 timeout=timeout,
             )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        # Surface structured orchestrator failures through a single "error" field.
+        if isinstance(data, dict):
+            error_code = data.get("error_code")
+            if error_code and not data.get("error"):
+                data["error"] = data.get("error_detail") or f"HTTP {error_code}"
+        return data
     except Exception as e:
         return {"answer": "", "error": str(e)}
 
@@ -488,6 +505,9 @@ INFRA_PATTERNS = [
     "timed out", "timeout", "connection", "refused",
     "unreachable", "502", "503", "504", "connecterror",
     "readtimeout", "backend down", "server error",
+    "server disconnected without sending a response",
+    "remoteprotocolerror", "connection reset", "broken pipe",
+    "temporarily unavailable", "name or service not known",
 ]
 
 
@@ -618,7 +638,14 @@ def evaluate_question_3way(
         format_self_direct, format_self_repl, format_architect_result,
         format_reward_skip, format_all_infra_skip,
     )
-    for line in format_self_direct(ACTION_SELF_DIRECT, passed_direct, error_direct, elapsed_direct, resp_direct):
+    for line in format_self_direct(
+        ACTION_SELF_DIRECT,
+        passed_direct,
+        error_direct,
+        elapsed_direct,
+        resp_direct,
+        infra=(error_type_direct == "infrastructure"),
+    ):
         logger.info(line)
 
     # ── Configuration 2: SELF:repl ──
@@ -666,7 +693,14 @@ def evaluate_question_3way(
         target_port = ROLE_PORT.get(self_role, 0)
         if target_port:
             _erase_slots(target_port)
-    for line in format_self_repl(ACTION_SELF_REPL, passed_repl, error_repl, elapsed_repl, resp_repl):
+    for line in format_self_repl(
+        ACTION_SELF_REPL,
+        passed_repl,
+        error_repl,
+        elapsed_repl,
+        resp_repl,
+        infra=(error_type_repl == "infrastructure"),
+    ):
         logger.info(line)
 
     # ── Configuration 3: ARCHITECT (dual evaluation) ──

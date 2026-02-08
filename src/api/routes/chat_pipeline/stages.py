@@ -143,17 +143,31 @@ def _execute_react(
             role=str(initial_role),
             structured_mode=True,
         )
+        from src.prompt_builders import build_root_lm_prompt, extract_code_from_response, auto_wrap_final
         answer = ""
+        react_last_output = ""
+        react_last_error = ""
         for _turn in range(5):
-            code = primitives.llm_call(
-                react_repl.get_prompt(question=request.prompt),
-                role=str(initial_role),
-                n_tokens=2048,
+            repl_state = react_repl.get_state()
+            react_prompt = build_root_lm_prompt(
+                state=repl_state,
+                original_prompt=request.prompt,
+                last_output=react_last_output,
+                last_error=react_last_error,
+                turn=_turn,
             )
+            code = primitives.llm_call(
+                react_prompt,
+                role=str(initial_role),
+            )
+            code = extract_code_from_response(code)
+            code = auto_wrap_final(code)
             result = react_repl.execute(code)
             if result.get("final"):
                 answer = result["final"]
                 break
+            react_last_output = result.get("output", "")
+            react_last_error = result.get("error", "")
         else:
             answer = react_repl.get_state()
         react_tools_used = react_repl._tool_invocations

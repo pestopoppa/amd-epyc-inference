@@ -93,6 +93,81 @@ All use the compiled `llama-math-tools` binary with Eigen and Boost:
 | `similarity_search` | Find similar items by embedding | `compute` |
 | `classify_text` | Classify text into categories | `compute` |
 
+## Side-Effect Declaration (February 2026)
+
+Tools can declare their side effects and whether they are destructive, allowing the graph to reason about tool safety without executing.
+
+### SideEffect Enum
+
+```python
+class SideEffect(str, Enum):
+    LOCAL_EXEC = "local_exec"        # Executes code locally
+    CALLS_LLM = "calls_llm"          # Makes LLM API call
+    MODIFIES_FILES = "modifies_files" # Writes to filesystem
+    NETWORK_ACCESS = "network_access" # Makes network requests
+    SYSTEM_STATE = "system_state"     # Modifies system state
+    READ_ONLY = "read_only"           # No side effects
+```
+
+### Tool Dataclass Fields
+
+```python
+@dataclass
+class Tool:
+    name: str
+    description: str
+    category: ToolCategory
+    parameters: dict
+    # ... existing fields ...
+    side_effects: list[str] = field(default_factory=list)  # SideEffect values
+    destructive: bool = False  # Requires approval when True
+```
+
+### YAML Declaration
+
+```yaml
+tools:
+  - name: run_shell
+    description: Sandboxed shell command execution
+    category: code
+    side_effects: [local_exec, modifies_files, system_state]
+    destructive: true
+```
+
+Parsed by `load_from_yaml()`. Listed in `list_tools()` output only when non-empty.
+
+Feature flag: `side_effect_tracking`.
+
+## Structured Tool Output (February 2026)
+
+`ToolOutput` provides a structured envelope for tool results with dual output modes.
+
+### ToolOutput Dataclass
+
+```python
+@dataclass
+class ToolOutput:
+    protocol_version: int = 1
+    ok: bool = True
+    status: str = "success"          # "success" | "error" | "pending_approval"
+    output: Any = None
+    side_effects_declared: list[str] = field(default_factory=list)
+    requires_approval: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_human(self) -> str: ...     # Human-readable text
+    def to_machine(self) -> dict: ...  # Machine-parseable dict
+```
+
+### Behavior
+
+- When `structured_tool_output` enabled: `invoke()` wraps raw results in `ToolOutput` with `ok=True`, includes `side_effects_declared` from tool definition.
+- When `side_effect_tracking` also enabled: destructive tools return `ToolOutput(status="pending_approval", requires_approval=True)` instead of executing.
+- Errors wrapped as `ToolOutput(ok=False, status="error")` instead of raising.
+- `ToolOutput` slots into existing `ToolInvocation.result` field (type `Any`).
+
+Feature flags: `structured_tool_output`, `side_effect_tracking`.
+
 ## Permission Model
 
 ### Permission Types

@@ -53,6 +53,20 @@ class SQLiteStatePersistence(BaseStatePersistence[TaskState, TaskResult]):
             "node_class": type(next_node).__name__,
             "state": _state_to_dict(state),
         }
+
+        # Generate resume token if feature is enabled
+        from src.features import features as _get_features
+
+        if _get_features().resume_tokens:
+            try:
+                from src.graph.resume_token import ResumeToken
+
+                token = ResumeToken.from_state(state, type(next_node).__name__)
+                state.resume_token = token.encode()
+                blob["resume_token"] = state.resume_token
+            except Exception as exc:
+                log.debug("Resume token generation failed: %s", exc)
+
         self._snapshots.append(blob)
         self._write(blob)
 

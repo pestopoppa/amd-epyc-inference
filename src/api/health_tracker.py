@@ -201,6 +201,27 @@ class BackendHealthTracker:
                 for url, c in self._circuits.items()
             }
 
+    def classify_failure(self, error: Exception | str) -> str:
+        """Classify a failure for fallback decision-making.
+
+        Args:
+            error: The exception or error message.
+
+        Returns:
+            FailoverReason value string: "circuit_open", "timeout",
+            "connection_error", or "oom".
+        """
+        msg = str(error).lower()
+        if "circuit open" in msg or "unavailable" in msg:
+            return "circuit_open"
+        if "timeout" in msg or "timed out" in msg or "deadline" in msg:
+            return "timeout"
+        if "oom" in msg or "out of memory" in msg or "memory" in msg:
+            return "oom"
+        if any(kw in msg for kw in ("connection", "refused", "unreachable", "502", "503")):
+            return "connection_error"
+        return "connection_error"  # default to infrastructure issue
+
     def reset(self) -> None:
         """Reset all circuits. Used in tests."""
         with self._lock:

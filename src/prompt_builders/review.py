@@ -164,19 +164,19 @@ def build_architect_investigate_prompt(
 
     return f"""You are an architect deciding how to answer a question.
 
-If you can answer completely and confidently, respond with:
-D|<your answer>
+You have a Python REPL available. If you need to compute something (math, numerical estimation, symbolic manipulation), output Python code and the result will be returned to you. Then make your decision based on the computed result. Available: math, numpy, scipy, statistics, itertools, fractions, decimal.
 
-If you need investigation (search, read files, verify facts), respond with:
-I|brief:<detailed investigation request>|to:coder_escalation
+When ready to decide, respond with ONE of:
 
-If you need a document drafted (code, report, design doc), respond with:
-I|brief:<detailed drafting request>|to:coder_escalation|mode:repl
+D|<your answer>  — answer directly (use after computation if needed)
+
+I|brief:<step-by-step plan for the specialist>|to:coder_escalation  — delegate with a plan
+I|brief:<drafting request>|to:coder_escalation|mode:repl  — delegate document/code drafting
 
 Rules:
-- List ALL information you need in the brief — you get one report per loop
-- Be specific: file paths, search terms, exact questions to answer
-- Only delegate if you genuinely cannot answer from your training
+- For computation-heavy questions: compute first, then D|answer
+- For investigation/search: delegate with I| and a detailed plan
+- List ALL steps in the brief — you get one report per loop
 - "to:" must be a valid role: coder_escalation, worker_explore, worker_summarize, worker_vision, vision_escalation
 {context_section}
 Question: {question[:2000]}

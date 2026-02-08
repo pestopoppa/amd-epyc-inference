@@ -87,6 +87,15 @@ class TaskState:
     # Delegation tracking
     delegation_events: list[dict] = field(default_factory=list)
 
+    # Session compaction tracking
+    compaction_count: int = 0
+
+    # Resume token for crash recovery (Phase 3B)
+    resume_token: str = ""
+
+    # Pending approval for halt-and-resume (Phase 4A)
+    pending_approval: Any = None
+
     def record_role(self, role: Role | str) -> None:
         """Append a role to history and update current_role."""
         self.current_role = role
@@ -174,3 +183,4 @@ class TaskDeps:
     config: GraphConfig = field(default_factory=GraphConfig)
     progress_logger: Any = None  # ProgressLoggerProtocol
     session_store: Any = None  # SQLiteSessionStore
+    approval_callback: Any = None  # ApprovalCallback protocol (Phase 4A)

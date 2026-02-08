@@ -169,6 +169,7 @@ def _architect_delegated_answer(
     from src.prompt_builders import (
         build_architect_investigate_prompt,
         build_architect_synthesis_prompt,
+        build_root_lm_prompt,
     )
 
     total_tools = 0
@@ -200,10 +201,9 @@ def _architect_delegated_answer(
     for loop in range(max_loops + 1):  # +1 for initial decision
         phase_start = time.perf_counter()
 
-        # ── Phase A: Architect call ──
+        # ── Phase A: Architect call with computation REPL ──
         if loop == 0:
             prompt_text = build_architect_investigate_prompt(question, toon_context)
-            n_tokens = 512
         else:
             report = reports[-1] if reports else ""
             prompt_text = build_architect_synthesis_prompt(
@@ -212,21 +212,65 @@ def _architect_delegated_answer(
                 loop,
                 max_loops,
             )
-            n_tokens = 2048  # Synthesis needs more room
 
-        try:
-            arch_response = primitives.llm_call(
-                prompt_text,
-                role=architect_role,
-                n_tokens=n_tokens,
-                skip_suffix=True,
-            )
-        except Exception as e:
-            log.warning(f"Architect call failed (loop {loop}): {e}")
-            # If we have reports, synthesize from what we have
-            if reports:
-                return reports[-1], stats
-            return f"[ERROR: Architect delegation failed: {e}]", stats
+        # Mini-REPL loop: architect can compute before deciding
+        arch_repl = REPLEnvironment(
+            context=question,
+            llm_primitives=primitives,
+            tool_registry=tool_registry,
+            role=architect_role,
+        )
+        arch_response = None
+        arch_last_output = ""
+        for _aturn in range(4):  # Max 4 computation turns
+            if _aturn == 0:
+                full_prompt = prompt_text
+            else:
+                full_prompt = (
+                    f"{prompt_text}\n\n"
+                    f"Computation result:\n{arch_last_output}\n\n"
+                    f"Now make your decision (D|answer or I|brief:...|to:role):"
+                )
+            try:
+                raw = primitives.llm_call(
+                    full_prompt,
+                    role=architect_role,
+                    skip_suffix=True,
+                )
+            except Exception as e:
+                log.warning(f"Architect call failed (loop {loop}, turn {_aturn}): {e}")
+                if reports:
+                    return reports[-1], stats
+                return f"[ERROR: Architect delegation failed: {e}]", stats
+
+            stripped = raw.strip()
+            # If output is a TOON decision, we're done
+            if stripped.startswith("D|") or stripped.startswith("I|"):
+                arch_response = stripped
+                break
+            # Check if it looks like JSON (fallback TOON format)
+            if stripped.startswith("{") or stripped.startswith("```"):
+                arch_response = stripped
+                break
+
+            # Otherwise treat as Python code — execute it
+            from src.prompt_builders import extract_code_from_response
+            code = extract_code_from_response(raw)
+            if not code.strip():
+                # No code extracted, treat raw output as direct answer
+                arch_response = raw
+                break
+            result = arch_repl.execute(code)
+            if result.get("final"):
+                arch_response = result["final"]
+                break
+            arch_last_output = result.get("output") or result.get("error") or ""
+            log.info(f"Architect computation turn {_aturn}: {len(arch_last_output)} chars output")
+        else:
+            # Exhausted computation turns, use last raw response
+            arch_response = raw if raw else f"D|{arch_last_output}"
+
+        total_tools += arch_repl._tool_invocations
 
         phase_a_ms = (time.perf_counter() - phase_start) * 1000
         decision = _parse_architect_decision(arch_response)
@@ -236,10 +280,11 @@ def _architect_delegated_answer(
                 "phase": "A",
                 "ms": round(phase_a_ms),
                 "decision": decision["mode"],
+                "computation_turns": _aturn + 1,
             }
         )
 
-        log.info(f"Architect loop {loop}: {decision['mode']} ({phase_a_ms:.0f}ms)")
+        log.info(f"Architect loop {loop}: {decision['mode']} ({phase_a_ms:.0f}ms, {_aturn+1} turns)")
 
         # ── Direct/final answer ──
         if decision["mode"] == "direct":
@@ -264,68 +309,53 @@ def _architect_delegated_answer(
         tokens_before = primitives.total_tokens_generated
         phase_tool_timings: list[dict] = []
 
-        if delegate_mode == "react":
-            # React mode unified into REPL with structured_mode=True
-            try:
-                react_repl = REPLEnvironment(
-                    context=f"{brief}\n\nContext:\n{context}" if context else brief,
-                    llm_primitives=primitives,
-                    tool_registry=tool_registry,
-                    role=delegate_to,
-                    structured_mode=True,
+        # Both react and repl modes use the same REPL loop
+        # (react = structured_mode=True, repl = structured_mode=False)
+        structured = delegate_mode == "react"
+        max_delegate_turns = 8 if structured else 10
+        try:
+            deleg_repl = REPLEnvironment(
+                context=f"{brief}\n\nContext:\n{context}" if context else brief,
+                llm_primitives=primitives,
+                tool_registry=tool_registry,
+                role=delegate_to,
+                structured_mode=structured,
+            )
+            deleg_last_output = ""
+            deleg_last_error = ""
+            for _turn in range(max_delegate_turns):
+                repl_state = deleg_repl.get_state()
+                deleg_prompt = build_root_lm_prompt(
+                    state=repl_state,
+                    original_prompt=brief,
+                    last_output=deleg_last_output,
+                    last_error=deleg_last_error,
+                    turn=_turn,
                 )
-                for _turn in range(8):
-                    code = primitives.llm_call(
-                        react_repl.get_prompt(question=brief),
-                        role=delegate_to,
-                        n_tokens=2048,
-                    )
-                    result = react_repl.execute(code)
-                    if result.get("final"):
-                        report = result["final"]
-                        break
-                else:
-                    report = react_repl.get_state()
-                total_tools += react_repl._tool_invocations
-                if react_repl.tool_registry:
-                    for inv in react_repl.tool_registry.get_invocation_log():
-                        all_tools_called.append(inv.tool_name)
-                        phase_tool_timings.append(
-                            {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
-                        )
-            except Exception as e:
-                report = f"[Investigation failed: {e}]"
-        else:
-            # REPL mode for drafting — use REPL environment
-            try:
-                deleg_repl = REPLEnvironment(
-                    context=f"{brief}\n\nContext:\n{context}" if context else brief,
-                    llm_primitives=primitives,
-                    tool_registry=tool_registry,
+                code = primitives.llm_call(
+                    deleg_prompt,
                     role=delegate_to,
                 )
-                # Run REPL for up to 10 turns
-                for _turn in range(10):
-                    code = primitives.llm_call(
-                        deleg_repl.get_prompt(question=brief),
-                        role=delegate_to,
-                        n_tokens=2048,
+                from src.prompt_builders import extract_code_from_response, auto_wrap_final
+                code = extract_code_from_response(code)
+                code = auto_wrap_final(code)
+                result = deleg_repl.execute(code)
+                if result.get("final"):
+                    report = result["final"]
+                    break
+                deleg_last_output = result.get("output", "")
+                deleg_last_error = result.get("error", "")
+            else:
+                report = deleg_repl.get_state()
+            total_tools += deleg_repl._tool_invocations
+            if deleg_repl.tool_registry:
+                for inv in deleg_repl.tool_registry.get_invocation_log():
+                    all_tools_called.append(inv.tool_name)
+                    phase_tool_timings.append(
+                        {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
                     )
-                    result = deleg_repl.execute(code)
-                    if result.get("final"):
-                        report = result["final"]
-                        break
-                else:
-                    report = deleg_repl.get_state()
-                total_tools += deleg_repl._tool_invocations
-                if deleg_repl.tool_registry:
-                    for inv in deleg_repl.tool_registry.get_invocation_log():
-                        all_tools_called.append(inv.tool_name)
-                        phase_tool_timings.append(
-                            {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
-                        )
-            except Exception as e:
-                report = f"[REPL delegation failed: {e}]"
+        except Exception as e:
+            report = f"[Delegation failed: {e}]"
 
         phase_b_ms = (time.perf_counter() - phase_b_start) * 1000
         delegate_tokens = primitives.total_tokens_generated - tokens_before
@@ -375,7 +405,6 @@ def _architect_delegated_answer(
             answer = primitives.llm_call(
                 forced_prompt,
                 role=architect_role,
-                n_tokens=2048,
                 skip_suffix=True,
             )
             return answer.strip(), stats

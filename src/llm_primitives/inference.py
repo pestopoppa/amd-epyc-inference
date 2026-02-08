@@ -46,6 +46,73 @@ class InferenceMixin:
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Internal real call implementation (no concurrency gating)."""
+        # Content-addressable cache check
+        from src.features import features as _get_features
+
+        cache = getattr(self, "_content_cache", None)
+        cache_key = None
+        if cache is not None and _get_features().content_cache and stop_sequences is None:
+            from src.llm_cache import ContentAddressableCache
+
+            cache_key = ContentAddressableCache.make_key(
+                prompt, role, n_tokens,
+                model_hash=getattr(self, "_model_hash", ""),
+            )
+            cached = cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        result = None
+        try:
+            result = self._real_call_single(prompt, role, n_tokens, stop_sequences)
+        except RuntimeError as primary_error:
+            # Model fallback: try same-tier alternatives on infrastructure failure
+            if not _get_features().model_fallback:
+                raise
+
+            from src.roles import get_fallback_roles
+
+            fallback_roles = get_fallback_roles(role)
+            if not fallback_roles:
+                raise
+
+            # Classify the failure
+            reason = "unknown"
+            if self.health_tracker:
+                reason = self.health_tracker.classify_failure(primary_error)
+
+            log = logging.getLogger(__name__)
+            for fallback_role in fallback_roles:
+                fb_role_str = str(fallback_role)
+                log.warning(
+                    "Model fallback: %s → %s (reason: %s)",
+                    role, fb_role_str, reason,
+                )
+                try:
+                    result = self._real_call_single(
+                        prompt, fb_role_str, n_tokens, stop_sequences
+                    )
+                    break
+                except RuntimeError:
+                    continue
+            else:
+                # All fallbacks failed
+                raise
+
+        # Store in content cache on success
+        if result is not None and cache_key is not None and cache is not None:
+            cache.put(cache_key, result, metadata={"role": role})
+
+        return result
+
+    def _real_call_single(
+        self,
+        prompt: str,
+        role: str,
+        n_tokens: int = 512,
+        stop_sequences: list[str] | None = None,
+    ) -> str:
+        """Execute a single inference call against one role's backend."""
         # Try CachingBackend first (RadixAttention)
         backend = self._backends.get(role)
         if backend is not None:
@@ -153,7 +220,23 @@ class InferenceMixin:
         from src.inference_lock import inference_lock
 
         with inference_lock(role):
-            result = backend.infer(role_config, request)
+            from src.inference_tap import is_active as _tap_active
+
+            if _tap_active() and hasattr(backend, "infer_stream_text"):
+                from src.inference_tap import tap_section
+
+                with tap_section(role, prompt, n_tokens) as tap:
+                    result = backend.infer_stream_text(
+                        role_config, request, on_chunk=tap.write_chunk
+                    )
+                    tap.write_timings(
+                        result.tokens_generated,
+                        result.prompt_eval_ms,
+                        result.generation_ms,
+                        result.predicted_per_second,
+                    )
+            else:
+                result = backend.infer(role_config, request)
 
         # Record success/failure for circuit breaker
         if backend_url and self.health_tracker:

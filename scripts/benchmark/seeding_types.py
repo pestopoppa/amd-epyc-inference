@@ -56,15 +56,15 @@ def _read_registry_timeout(category: str, key: str, fallback: int) -> int:
 DEFAULT_ORCHESTRATOR_URL = "http://localhost:8000"
 DEFAULT_TIMEOUT = _read_registry_timeout("benchmark", "seeding_default", 600)
 DEFAULT_SUITES = [
-    # Core capability suites
-    "thinking", "general", "math", "agentic",
-    "coder", "instruction_precision", "vl",
-    "long_context", "tool_compliance",
-    # Mode-advantage suites (tool-use vs direct)
-    "mode_advantage", "mode_advantage_hard",
-    # HuggingFace dataset adapters (hard benchmarks)
-    "gpqa", "simpleqa", "hotpotqa",
-    "livecodebench", "debugbench", "usaco",
+    # Hard benchmarks first (most routing signal, biggest mode differences)
+    "gpqa", "usaco", "livecodebench", "debugbench",
+    "mode_advantage_hard", "math",
+    # Medium difficulty
+    "hotpotqa", "simpleqa", "agentic", "coder",
+    "long_context", "mode_advantage",
+    # Easier / format-focused suites last
+    "thinking", "general", "instruction_precision",
+    "vl", "tool_compliance",
 ]
 DEFAULT_ROLES = [
     "frontdoor", "coder_primary", "coder_escalation",

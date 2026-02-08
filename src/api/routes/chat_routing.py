@@ -68,16 +68,25 @@ def _select_mode(
     return "repl"
 
 
-def _classify_and_route(prompt: str, context: str = "", has_image: bool = False) -> tuple[str, str]:
+def _classify_and_route(
+    prompt: str,
+    context: str = "",
+    has_image: bool = False,
+    binding_router: "Any | None" = None,
+) -> tuple[str, str]:
     """Classify prompt intent and proactively route to the best specialist.
 
     Zero-latency keyword heuristic. Returns (role, strategy).
     Falls back to frontdoor if no strong signal.
 
+    If binding_routing is enabled and a binding_router is provided,
+    checks for higher-priority overrides after classification.
+
     Args:
         prompt: The user's prompt.
         context: Optional context text.
         has_image: Whether the request includes an image.
+        binding_router: Optional BindingRouter for priority overrides.
 
     Returns:
         Tuple of (role_name, routing_strategy).
@@ -85,7 +94,42 @@ def _classify_and_route(prompt: str, context: str = "", has_image: bool = False)
     from src.classifiers import classify_and_route
 
     result = classify_and_route(prompt, context, has_image)
-    return result.role, result.strategy
+    role, strategy = result.role, result.strategy
+
+    # Check binding overrides (OpenClaw pattern)
+    if binding_router is not None:
+        from src.features import features as _get_features
+
+        if _get_features().binding_routing:
+            # Map role to task_type for binding lookup
+            task_type = _role_to_task_type(role)
+            override = binding_router.resolve(task_type)
+            if override is not None and override != role:
+                log.info(
+                    "Binding override: %s → %s (task_type=%s)",
+                    role, override, task_type,
+                )
+                role = override
+                strategy = f"binding:{strategy}"
+
+    return role, strategy
+
+
+def _role_to_task_type(role: str) -> str:
+    """Map a role name to a task type for binding lookup."""
+    if "coder" in role or "architect_coding" in role:
+        return "code"
+    if "ingest" in role:
+        return "ingest"
+    if "architect" in role:
+        return "reasoning"
+    if "worker_math" in role:
+        return "math"
+    if "worker_vision" in role:
+        return "vision"
+    if "worker" in role:
+        return "explore"
+    return "general"
 
 
 # ============================================================================

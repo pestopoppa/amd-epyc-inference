@@ -64,13 +64,14 @@ def format_self_direct(
     error: str | None,
     elapsed: float,
     resp: dict[str, Any],
+    infra: bool = False,
 ) -> list[str]:
     """Format SELF:direct result line.
 
     Output:
         SELF:direct → PASS (4.6s, 23.5 t/s, 85 tok)
     """
-    status = _status_str(passed, error)
+    status = _status_str(None if infra else passed, error)
     tps = compute_tps(resp)
     tokens = resp.get("tokens_generated", 0)
     return [
@@ -84,6 +85,7 @@ def format_self_repl(
     error: str | None,
     elapsed: float,
     resp: dict[str, Any],
+    infra: bool = False,
 ) -> list[str]:
     """Format SELF:repl result with tools and per-tool timing.
 
@@ -94,7 +96,7 @@ def format_self_repl(
           grep: 85ms (ok)
           FINAL: 10ms (ok)
     """
-    status = _status_str(passed, error)
+    status = _status_str(None if infra else passed, error)
     tps = compute_tps(resp)
     tokens = resp.get("tokens_generated", 0)
     tools_used = resp.get("tools_used", 0)

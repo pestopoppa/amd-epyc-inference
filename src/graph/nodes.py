@@ -144,6 +144,58 @@ def _log_escalation(ctx: Ctx, from_role: str, to_role: str, reason: str) -> None
         log.debug("progress_logger.log_escalation failed: %s", exc)
 
 
+async def _maybe_compact_context(ctx: Ctx) -> None:
+    """Compact old context entries if conversation is long (OpenClaw pattern).
+
+    Trigger: turns > 5 AND context > 12000 chars AND primitives available.
+    Uses worker_summarize role (44 t/s) for cheap, fast compression.
+    """
+    from src.features import features as _get_features
+
+    if not _get_features().session_compaction:
+        return
+
+    state = ctx.state
+    if state.turns <= 5 or len(state.context) <= 12000:
+        return
+    if ctx.deps.primitives is None:
+        return
+
+    try:
+        # Summarize old context, keep recent material
+        old_context = state.context
+        # Keep last 3000 chars verbatim
+        keep_verbatim = old_context[-3000:] if len(old_context) > 3000 else old_context
+        to_summarize = old_context[: -3000] if len(old_context) > 3000 else ""
+
+        if not to_summarize.strip():
+            return
+
+        summary_prompt = (
+            "Summarize the following conversation context into a concise paragraph "
+            "preserving all key facts, decisions, and error messages:\n\n"
+            f"{to_summarize[:8000]}"
+        )
+
+        summary = await asyncio.to_thread(
+            ctx.deps.primitives.llm_call,
+            summary_prompt,
+            role="worker_summarize",
+            n_tokens=512,
+        )
+
+        state.context = f"[Compacted context]\n{summary}\n\n[Recent]\n{keep_verbatim}"
+        state.compaction_count += 1
+        log.info(
+            "Session compaction #%d: %d → %d chars",
+            state.compaction_count,
+            len(old_context),
+            len(state.context),
+        )
+    except Exception as exc:
+        log.debug("Session compaction failed (non-fatal): %s", exc)
+
+
 async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bool, dict]:
     """Execute one LLM → REPL turn.
 
@@ -154,6 +206,9 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     deps = ctx.deps
     state.turns += 1
     log.debug("_execute_turn: turn=%d, role=%s", state.turns, role)
+
+    # Session compaction before execution
+    await _maybe_compact_context(ctx)
 
     if deps.primitives is None or deps.repl is None:
         return "", "No LLM primitives or REPL configured", False, {}
@@ -251,6 +306,24 @@ def _should_retry(ctx: Ctx, error_category: ErrorCategory) -> bool:
     """Determine if we should retry with the same role."""
     cfg = ctx.deps.config
     return ctx.state.consecutive_failures < cfg.max_retries
+
+
+def _check_approval_gate(
+    ctx: Ctx,
+    from_role: str,
+    to_role: str,
+    reason: str,
+) -> bool:
+    """Check approval gate before escalation. Returns True if approved."""
+    from src.features import features as _get_features
+
+    if not _get_features().approval_gates:
+        return True
+
+    from src.graph.approval_gate import request_approval_for_escalation, ApprovalDecision
+
+    decision = request_approval_for_escalation(ctx, from_role, to_role, reason)
+    return decision == ApprovalDecision.APPROVE
 
 
 def _timeout_skip(ctx: Ctx, error_msg: str) -> bool:

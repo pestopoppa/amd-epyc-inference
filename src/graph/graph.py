@@ -49,6 +49,7 @@ async def run_task(
     state: TaskState,
     deps: TaskDeps,
     start_role: Role | str | None = None,
+    resume_token: str | None = None,
 ) -> TaskResult:
     """Run the full orchestration graph to completion.
 
@@ -57,10 +58,29 @@ async def run_task(
         deps: Immutable infrastructure dependencies.
         start_role: Initial role (determines start node).
             Defaults to state.current_role.
+        resume_token: Optional base64url resume token for crash recovery.
+            If provided, restores state from token before starting.
 
     Returns:
         TaskResult with answer, success flag, and metadata.
     """
+    # Restore from resume token if provided
+    if resume_token:
+        from src.features import features as _get_features
+
+        if _get_features().resume_tokens:
+            from src.graph.resume_token import ResumeToken
+
+            token = ResumeToken.decode(resume_token)
+            state.task_id = token.task_id
+            state.current_role = token.current_role
+            state.turns = token.turns
+            state.escalation_count = token.escalation_count
+            state.consecutive_failures = token.consecutive_failures
+            state.role_history = list(token.role_history)
+            state.last_error = token.last_error
+            start_role = token.current_role
+
     role = start_role or state.current_role
     start_node = select_start_node(role)
 

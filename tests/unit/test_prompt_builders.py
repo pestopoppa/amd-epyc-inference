@@ -642,7 +642,7 @@ class TestPromptConstants:
         assert len(DEFAULT_ROOT_LM_RULES) > 50
         # Should contain critical rules
         assert "FINAL" in DEFAULT_ROOT_LM_RULES
-        assert "NO IMPORTS" in DEFAULT_ROOT_LM_RULES.upper()
+        assert "SAFE IMPORTS ONLY" in DEFAULT_ROOT_LM_RULES.upper()
 
     def test_react_tool_whitelist_not_empty(self):
         """Test REACT_TOOL_WHITELIST has expected tools."""

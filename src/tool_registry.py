@@ -47,6 +47,21 @@ class ToolCategory(str, Enum):
     SPECIALIZED = "specialized"
 
 
+class SideEffect(str, Enum):
+    """Declared side effects for tools (Lobster pattern).
+
+    Enables the graph to reason about tool safety without executing.
+    Only active when features().side_effect_tracking is True.
+    """
+
+    LOCAL_EXEC = "local_exec"
+    CALLS_LLM = "calls_llm"
+    MODIFIES_FILES = "modifies_files"
+    NETWORK_ACCESS = "network_access"
+    SYSTEM_STATE = "system_state"
+    READ_ONLY = "read_only"
+
+
 @dataclass
 class ToolPermissions:
     """Permissions for a specific role's tool access."""
@@ -94,6 +109,8 @@ class Tool:
     handler: Callable[..., Any] | None = None
     mcp_server: str | None = None  # MCP server identifier if MCP-backed
     code_hash: str | None = None  # SHA256 of handler code for integrity
+    side_effects: list[str] = field(default_factory=list)  # SideEffect values
+    destructive: bool = False  # Whether tool modifies state irreversibly
 
     def validate_args(self, args: dict[str, Any]) -> list[str]:
         """Validate arguments against parameter schema.
@@ -147,6 +164,45 @@ class ToolInvocation:
     result: Any
     error: str | None = None
     elapsed_ms: float = 0.0
+
+
+@dataclass
+class ToolOutput:
+    """Structured envelope for tool results (Lobster pattern).
+
+    Provides dual output modes: human-readable and machine-parseable
+    from the same invocation. Foundation for halt-and-resume protocol.
+    Only used when features().structured_tool_output is True.
+    """
+
+    protocol_version: int = 1
+    ok: bool = True
+    status: str = "success"  # "success" | "error" | "pending_approval"
+    output: Any = None
+    side_effects_declared: list[str] = field(default_factory=list)
+    requires_approval: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_human(self) -> str:
+        """Human-readable representation."""
+        if not self.ok:
+            return f"[ERROR] {self.output}"
+        if self.status == "pending_approval":
+            effects = ", ".join(self.side_effects_declared) or "none"
+            return f"[PENDING APPROVAL] Side effects: {effects}"
+        return str(self.output) if self.output is not None else ""
+
+    def to_machine(self) -> dict[str, Any]:
+        """Machine-parseable representation."""
+        return {
+            "protocol_version": self.protocol_version,
+            "ok": self.ok,
+            "status": self.status,
+            "output": self.output,
+            "side_effects_declared": self.side_effects_declared,
+            "requires_approval": self.requires_approval,
+            "metadata": self.metadata,
+        }
 
 
 class ToolRegistry:
@@ -328,6 +384,22 @@ class ToolRegistry:
         if errors:
             raise ValueError(f"Invalid arguments: {'; '.join(errors)}")
 
+        # Check if structured output is enabled
+        from src.features import features as _get_features
+
+        use_structured = _get_features().structured_tool_output
+
+        # Check approval requirement for destructive tools
+        if use_structured and tool.destructive and _get_features().side_effect_tracking:
+            return ToolOutput(
+                ok=True,
+                status="pending_approval",
+                output=None,
+                side_effects_declared=tool.side_effects,
+                requires_approval=True,
+                metadata={"tool_name": tool_name, "args": kwargs},
+            )
+
         # Execute
         try:
             if tool.handler is not None:
@@ -351,6 +423,14 @@ class ToolRegistry:
                 )
             )
 
+            if use_structured:
+                return ToolOutput(
+                    ok=True,
+                    status="success",
+                    output=result,
+                    side_effects_declared=tool.side_effects,
+                    metadata={"elapsed_ms": elapsed},
+                )
             return result
 
         except Exception as e:
@@ -368,6 +448,14 @@ class ToolRegistry:
                 )
             )
 
+            if use_structured:
+                return ToolOutput(
+                    ok=False,
+                    status="error",
+                    output=str(e),
+                    side_effects_declared=tool.side_effects,
+                    metadata={"elapsed_ms": elapsed},
+                )
             raise RuntimeError(f"Tool execution failed: {e}") from e
 
     def _invoke_mcp(
@@ -414,15 +502,18 @@ class ToolRegistry:
         result = []
         for tool in self._tools.values():
             if role is None or self.can_use_tool(role, tool.name):
-                result.append(
-                    {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "category": tool.category.value,
-                        "parameters": tool.parameters,
-                        "mcp_backed": tool.mcp_server is not None,
-                    }
-                )
+                info: dict[str, Any] = {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "category": tool.category.value,
+                    "parameters": tool.parameters,
+                    "mcp_backed": tool.mcp_server is not None,
+                }
+                if tool.side_effects:
+                    info["side_effects"] = tool.side_effects
+                if tool.destructive:
+                    info["destructive"] = True
+                result.append(info)
         return result
 
     def get_invocation_log(self) -> list[ToolInvocation]:
@@ -525,6 +616,16 @@ def load_from_yaml(
 
                         handler = make_stub(tool_name, str(e))
 
+            # Parse side effects
+            raw_effects = tool_spec.get("side_effects", [])
+            side_effects = []
+            for eff in raw_effects:
+                try:
+                    SideEffect(eff)  # validate
+                    side_effects.append(eff)
+                except ValueError:
+                    logger.warning(f"Unknown side effect '{eff}' for tool '{tool_name}'")
+
             # Create Tool object
             tool = Tool(
                 name=tool_name,
@@ -533,6 +634,8 @@ def load_from_yaml(
                 parameters=params,
                 handler=handler,
                 mcp_server=tool_spec.get("mcp_server"),
+                side_effects=side_effects,
+                destructive=tool_spec.get("destructive", False),
             )
 
             registry.register_tool(tool)

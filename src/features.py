@@ -164,6 +164,16 @@ class Features:
     # Generation Monitoring (Phase 6)
     generation_monitor: bool = True  # Enable early failure detection (post-hoc quality check)
 
+    # OpenClaw/Lobster concept integration
+    side_effect_tracking: bool = False  # Declare tool side effects for safety reasoning
+    structured_tool_output: bool = False  # ToolOutput envelope (human + machine modes)
+    model_fallback: bool = False  # Try same-tier alternatives on circuit-open
+    content_cache: bool = False  # SHA-256 keyed response cache for LLM calls
+    session_compaction: bool = False  # Summarize old context on long conversations
+    resume_tokens: bool = False  # Base64url continuation tokens for crash recovery
+    approval_gates: bool = False  # Human approval at escalation boundaries
+    binding_routing: bool = False  # Priority-ordered routing overrides
+
     # Debug/Development
     mock_mode: bool = True  # Default to mock mode for safety
 
@@ -192,6 +202,12 @@ class Features:
             errors.append("personas feature requires memrl feature")
         if self.staged_rewards and not self.memrl:
             errors.append("staged_rewards feature requires memrl feature")
+
+        # Approval gates require resume tokens and side effect tracking
+        if self.approval_gates and not self.resume_tokens:
+            errors.append("approval_gates feature requires resume_tokens feature")
+        if self.approval_gates and not self.side_effect_tracking:
+            errors.append("approval_gates feature requires side_effect_tracking feature")
 
         # RestrictedPython requires the library
         if self.restricted_python:
@@ -233,6 +249,14 @@ class Features:
             "generation_monitor": self.generation_monitor,
             "semantic_classifiers": self.semantic_classifiers,
             "unified_streaming": self.unified_streaming,
+            "side_effect_tracking": self.side_effect_tracking,
+            "structured_tool_output": self.structured_tool_output,
+            "model_fallback": self.model_fallback,
+            "content_cache": self.content_cache,
+            "session_compaction": self.session_compaction,
+            "resume_tokens": self.resume_tokens,
+            "approval_gates": self.approval_gates,
+            "binding_routing": self.binding_routing,
             "mock_mode": self.mock_mode,
         }
 
@@ -312,7 +336,7 @@ def get_features(
             "structured_delimiters": True,  # Low risk, always on
             "react_mode": False,  # Enable after regression testing
             "output_formalizer": False,  # Enable after regression testing
-            "restricted_python": True,  # Use safer sandbox in production
+            "restricted_python": False,  # AST blocklist is sufficient; RestrictedPython blocks all imports including safe ones (scipy, numpy)
             "specialist_routing": False,  # Enable after comparative seeding proves benefit
             "plan_review": False,  # Enable after Phase A validation
             "architect_delegation": False,  # Enable after delegation regression testing
@@ -323,6 +347,14 @@ def get_features(
             "generation_monitor": True,  # Early failure detection in production
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
             "unified_streaming": False,  # Enable after streaming regression testing
+            "side_effect_tracking": False,  # Enable after tool annotation
+            "structured_tool_output": False,  # Enable after tool output validation
+            "model_fallback": False,  # Enable after fallback quality validation
+            "content_cache": False,  # Enable after cache correctness validation
+            "session_compaction": False,  # Enable after compaction quality validation
+            "resume_tokens": False,  # Enable after resume reliability testing
+            "approval_gates": False,  # Enable after approval UX validation
+            "binding_routing": False,  # Enable after routing regression testing
             "mock_mode": False,  # Real mode in production
         }
     else:
@@ -348,6 +380,14 @@ def get_features(
             "generation_monitor": False,  # Disabled in tests by default
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
             "unified_streaming": False,  # Disabled in tests by default
+            "side_effect_tracking": False,  # Disabled in tests by default
+            "structured_tool_output": False,  # Disabled in tests by default
+            "model_fallback": False,  # Disabled in tests by default
+            "content_cache": False,  # Disabled in tests by default
+            "session_compaction": False,  # Disabled in tests by default
+            "resume_tokens": False,  # Disabled in tests by default
+            "approval_gates": False,  # Disabled in tests by default
+            "binding_routing": False,  # Disabled in tests by default
             "mock_mode": True,  # Mock mode in tests
         }
 
@@ -376,6 +416,16 @@ def get_features(
         "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
         "semantic_classifiers": _env_bool("SEMANTIC_CLASSIFIERS", defaults["semantic_classifiers"]),
         "unified_streaming": _env_bool("UNIFIED_STREAMING", defaults["unified_streaming"]),
+        "side_effect_tracking": _env_bool("SIDE_EFFECT_TRACKING", defaults["side_effect_tracking"]),
+        "structured_tool_output": _env_bool(
+            "STRUCTURED_TOOL_OUTPUT", defaults["structured_tool_output"]
+        ),
+        "model_fallback": _env_bool("MODEL_FALLBACK", defaults["model_fallback"]),
+        "content_cache": _env_bool("CONTENT_CACHE", defaults["content_cache"]),
+        "session_compaction": _env_bool("SESSION_COMPACTION", defaults["session_compaction"]),
+        "resume_tokens": _env_bool("RESUME_TOKENS", defaults["resume_tokens"]),
+        "approval_gates": _env_bool("APPROVAL_GATES", defaults["approval_gates"]),
+        "binding_routing": _env_bool("BINDING_ROUTING", defaults["binding_routing"]),
         "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),
     }
 

@@ -225,7 +225,7 @@ class LLMPrimitives(
             if n_tokens is None:
                 n_tokens = default_n
         if n_tokens is None:
-            n_tokens = 512  # Fallback default
+            n_tokens = -1  # Unlimited — timeout is the real limit
 
         # Inject persona system prompt if specified and feature enabled
         if persona and not skip_suffix:
