@@ -255,7 +255,8 @@ def compute_3way_rewards(
         rewards[ACTION_SELF_DIRECT] = success_reward(results[direct_keys[0]].passed)
 
     # SELF:repl — frontdoor/worker_vision with tools (no delegation)
-    repl_keys = [k for k in results if k in ("frontdoor:repl", "worker_vision:react")]
+    # Backward-compatible: older sessions may still have worker_vision:react.
+    repl_keys = [k for k in results if k in ("frontdoor:repl", "worker_vision:repl", "worker_vision:react")]
     if repl_keys:
         rewards[ACTION_SELF_REPL] = success_reward(results[repl_keys[0]].passed)
 
@@ -285,8 +286,9 @@ def score_delegation_chain(
     """
     rewards: dict[str, float] = {}
 
-    # Check SELF:repl for delegation (frontdoor:repl for text, worker_vision:react for VL)
-    repl_keys = [k for k in results if k in ("frontdoor:repl", "worker_vision:react")]
+    # Check SELF:repl for delegation (frontdoor:repl for text, worker_vision:repl for VL).
+    # Keep worker_vision:react for backward compatibility with older logs.
+    repl_keys = [k for k in results if k in ("frontdoor:repl", "worker_vision:repl", "worker_vision:react")]
     for key in repl_keys:
         rr = results[key]
         if getattr(rr, "error_type", "none") == "infrastructure":

@@ -36,7 +36,7 @@ class TestTapWriter:
         path = str(tmp_path / "tap.log")
         w = TapWriter(path)
 
-        w.write_header("coder_escalation", 512)
+        w.write_header("coder_escalation")
         w.write_prompt("Hello world")
         w.write_chunk("def foo():")
         w.write_chunk("\n    pass")
@@ -46,7 +46,6 @@ class TestTapWriter:
             content = f.read()
 
         assert "ROLE=coder_escalation" in content
-        assert "n_tokens=512" in content
         assert "PROMPT:" in content
         assert "Hello world" in content
         assert "RESPONSE:" in content
@@ -63,7 +62,7 @@ class TestTapWriter:
     def test_prompt_truncation(self, tmp_path):
         path = str(tmp_path / "tap.log")
         w = TapWriter(path)
-        w.write_header("coder", 100)
+        w.write_header("coder")
         long_prompt = "x" * 3000
         w.write_prompt(long_prompt, max_chars=2000)
 
@@ -107,7 +106,7 @@ class TestNullWriter:
     def test_all_methods_noop(self):
         w = _NullWriter()
         # Should not raise
-        w.write_header("x", 1)
+        w.write_header("x")
         w.write_prompt("x")
         w.write_chunk("x")
         w.write_timings(0, 0.0, 0.0, 0.0)
@@ -118,13 +117,13 @@ class TestTapSection:
 
     def test_yields_null_writer_when_inactive(self, monkeypatch):
         monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
-        with tap_section("coder", "prompt", 100) as w:
+        with tap_section("coder", "prompt") as w:
             assert isinstance(w, _NullWriter)
 
     def test_yields_tap_writer_when_active(self, tmp_path, monkeypatch):
         path = str(tmp_path / "tap.log")
         monkeypatch.setenv("INFERENCE_TAP_FILE", path)
-        with tap_section("coder", "prompt text", 256) as w:
+        with tap_section("coder", "prompt text") as w:
             assert isinstance(w, TapWriter)
             w.write_chunk("hello")
             w.write_timings(5, 50.0, 200.0, 25.0)

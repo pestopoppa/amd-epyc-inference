@@ -394,26 +394,38 @@ class DocumentPreprocessor:
                 ),
             )
 
-            # Optionally analyze figures with vision model
+            # Optionally analyze figures with vision model.
+            # FigureAnalyzer renders PDF pages via pypdfium2, so skip for
+            # non-PDF inputs (png/jpg/etc.) to avoid PDFium decode errors.
             if self.config.describe_figures and document_result.figures:
                 try:
-                    # Extract summary context for better figure understanding
-                    summary = self._extract_summary_context(document_result)
-                    vl_prompt = self._build_figure_prompt(summary)
-
-                    if summary:
-                        logger.info(
-                            f"Using {len(summary)} char summary context for figure analysis"
+                    doc_ext = doc_path.suffix.lower()
+                    if doc_ext != ".pdf":
+                        warnings.append(
+                            f"Figure analysis skipped for non-PDF input ({doc_ext or 'unknown'})"
                         )
+                        logger.debug(
+                            "Skipping figure analysis for non-PDF input: %s",
+                            doc_path,
+                        )
+                    else:
+                    # Extract summary context for better figure understanding
+                        summary = self._extract_summary_context(document_result)
+                        vl_prompt = self._build_figure_prompt(summary)
 
-                    document_result.figures = await analyze_figures_async(
-                        pdf_path=str(doc_path),
-                        figures=document_result.figures,
-                        vl_prompt=vl_prompt,
-                    )
-                    logger.info(
-                        f"Analyzed {len(document_result.figures)} figures with vision model"
-                    )
+                        if summary:
+                            logger.info(
+                                f"Using {len(summary)} char summary context for figure analysis"
+                            )
+
+                        document_result.figures = await analyze_figures_async(
+                            pdf_path=str(doc_path),
+                            figures=document_result.figures,
+                            vl_prompt=vl_prompt,
+                        )
+                        logger.info(
+                            f"Analyzed {len(document_result.figures)} figures with vision model"
+                        )
                 except Exception as e:
                     logger.warning(f"Figure analysis failed (continuing without): {e}")
                     warnings.append(f"Figure analysis failed: {e}")

@@ -440,6 +440,12 @@ for result in results:
 
 **Batch throughput** (4 workers): 1.2 images/s end-to-end
 
+## Operational Notes (2026-02-08)
+
+- Vision preprocessing uses `DocumentPreprocessor` for both documents and images.
+- Figure-description analysis (`FigureAnalyzer`) renders pages via PDFium and therefore applies only to PDF inputs.
+- Non-PDF image inputs (png/jpg/etc.) skip figure-render analysis to avoid PDFium decode errors and continue through OCR/chunking flow.
+
 ## References
 
 - `src/services/document_preprocessor.py` - Main document pipeline

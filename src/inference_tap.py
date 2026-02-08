@@ -72,11 +72,11 @@ class TapWriter:
                 f.write(text)
                 f.flush()
 
-    def write_header(self, role: str, n_tokens: int) -> None:
+    def write_header(self, role: str) -> None:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._append(
             f"{'=' * 72}\n"
-            f"[{ts}] ROLE={role}  n_tokens={n_tokens}\n"
+            f"[{ts}] ROLE={role}\n"
             f"{'-' * 72}\n"
             f"PROMPT:\n"
         )
@@ -111,7 +111,7 @@ class TapWriter:
 class _NullWriter:
     """No-op writer when tap is disabled."""
 
-    def write_header(self, role: str, n_tokens: int) -> None:
+    def write_header(self, role: str) -> None:
         pass
 
     def write_prompt(self, prompt: str, max_chars: int = 2000) -> None:
@@ -131,12 +131,12 @@ class _NullWriter:
 
 
 @contextmanager
-def tap_section(role: str, prompt: str, n_tokens: int):
+def tap_section(role: str, prompt: str):
     """Context manager that yields a TapWriter (or _NullWriter if inactive).
 
     Usage::
 
-        with tap_section(role, prompt, n_tokens) as tap:
+        with tap_section(role, prompt) as tap:
             result = backend.infer_stream_text(role_config, request,
                                                 on_chunk=tap.write_chunk)
             tap.write_timings(result.tokens_generated, ...)
@@ -147,6 +147,6 @@ def tap_section(role: str, prompt: str, n_tokens: int):
 
     path = _tap_path()
     writer = TapWriter(path)
-    writer.write_header(role, n_tokens)
+    writer.write_header(role)
     writer.write_prompt(prompt)
     yield writer

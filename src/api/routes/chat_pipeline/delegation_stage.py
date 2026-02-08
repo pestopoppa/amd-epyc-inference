@@ -100,7 +100,12 @@ def _execute_delegated(
             success=True,
             details=f"Delegated mode ({initial_role}), {elapsed:.3f}s, {phases_log}",
         )
-        score_completed_task(state, routing.task_id)
+        score_completed_task(
+            state,
+            routing.task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
 
     cache_stats = primitives.get_cache_stats() if primitives._backends else None
     delegation_events = delegation_stats.get("delegation_events", [])

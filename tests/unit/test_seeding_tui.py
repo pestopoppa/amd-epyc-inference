@@ -135,21 +135,21 @@ class TestTapTailer:
         """Tailer waits for file creation without crashing."""
         tap_file = tmp_path / "does_not_exist.log"
 
-        tailer = TapTailer(str(tap_file), poll_interval=0.02)
+        tailer = TapTailer(str(tap_file), poll_interval=0.05)
         tailer.start()
         try:
             time.sleep(0.1)  # Tailer is waiting for file
 
             # Create the file (tailer will open and seek to end)
             tap_file.write_text("")
-            time.sleep(0.15)  # Wait for tailer to open
+            time.sleep(0.8)  # Wait for tailer to detect file + open + seek
 
             # Now append — tailer is positioned at EOF
             with open(str(tap_file), "a") as f:
                 f.write("appeared!\n")
                 f.flush()
 
-            time.sleep(0.2)
+            time.sleep(0.3)
             section = tailer.get_current_section()
             assert "appeared!" in section
         finally:

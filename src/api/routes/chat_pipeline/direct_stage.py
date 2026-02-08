@@ -139,7 +139,12 @@ def _execute_direct(
             success=success,
             details=f"Direct answer mode ({initial_role}), {elapsed:.3f}s",
         )
-        score_completed_task(state, routing.task_id)
+        score_completed_task(
+            state,
+            routing.task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
 
     cache_stats = primitives.get_cache_stats() if primitives._backends else None
 

@@ -236,12 +236,13 @@ Graph stats:
 **Strategy:**
 - Runs each question through 4 configurations:
   - `SELF:direct` - Frontdoor, no tools
-  - `SELF:repl` - Frontdoor with tools, delegation disabled
+  - `SELF:repl` - Frontdoor/vision worker with tools, delegation disabled
   - `ARCHITECT` - Dual-architect evaluation (architect_general + architect_coding; best-of-two)
   - `WORKER` - Scored indirectly via delegation chains
 - Binary rewards (1.0 for pass, 0.0 for fail)
 - Cost metrics stored separately for later Optuna optimization
 - Infrastructure errors (timeouts, connection failures) produce **no reward** — action is skipped and retried next batch
+- For VL questions, `SELF:repl` is `worker_vision:repl` (legacy `worker_vision:react` is backward-compatible in historical reward parsing).
 
 **Usage:**
 
@@ -352,6 +353,14 @@ plan now includes:
 - **Async safety**: all blocking LLM calls are offloaded from the event loop.
 - **3-way timeout cleanup**: slot erasure on infra timeouts to prevent stuck backends.
 - **Backend probes in /health**: detect hung backends even when circuit state is stale.
+
+## Timeout + Telemetry Updates (2026-02-08)
+
+- **Adaptive per-call timeout budget** in 3-way eval: timeout is selected by role/mode/modality and capped by CLI `--timeout` (hard ceiling). This reduces worst-case stall wait while preserving headroom for slow architect paths.
+- **Observed-runtime timeout bumping**: REPL and architect calls can be raised using earlier per-question observed latency (direct/repl), reducing false `INFRA` on hard long-generation tasks while still respecting the hard ceiling.
+- **Structured error normalization**: benchmark caller now maps `error_code`/`error_detail` into a unified `error` field.
+- **Telemetry consistency invariant**: `tools_used`, `tools_called`, and `tool_timings` are normalized and kept internally consistent for debugging and post-hoc analysis.
+- **Slot-erase capability guard**: 3-way cleanup now detects unsupported `/slots/{id}?action=erase` behavior on llama-server builds and disables repeated failing erase attempts instead of logging false success.
 
 ## References
 

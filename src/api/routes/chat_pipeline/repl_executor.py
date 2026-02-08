@@ -147,7 +147,12 @@ async def _execute_repl(
                     success=True,
                     details=f"Two-stage summarization ({cache_info}), {elapsed:.3f}s",
                 )
-                score_completed_task(state, task_id)
+                score_completed_task(
+                    state,
+                    task_id,
+                    force_role=request.force_role,
+                    real_mode=request.real_mode,
+                )
 
             cache_stats = primitives.get_cache_stats() if primitives._backends else None
 
@@ -302,7 +307,12 @@ async def _execute_repl(
             success=success,
             details=f"Real inference: {turns} turns, {elapsed:.3f}s{role_info}",
         )
-        score_completed_task(state, task_id)
+        score_completed_task(
+            state,
+            task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
 
     tool_outputs = repl.artifacts.get("_tool_outputs", [])
     tools_success = _tools_success(answer, tool_outputs, repl._tool_invocations)

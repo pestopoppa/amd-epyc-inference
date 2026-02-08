@@ -91,7 +91,7 @@ class TestInferenceRequest:
 
         assert request.role == "test_role"
         assert request.prompt == "Hello"
-        assert request.n_tokens == 512
+        assert request.n_tokens == -1
         assert request.temperature == 0.0
         assert request.timeout == 600
 

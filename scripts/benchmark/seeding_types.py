@@ -83,7 +83,8 @@ ARCHITECT_MODES = {"direct", "delegated"}
 
 VISION_ROLES = {"worker_vision", "vision_escalation"}
 VISION_MODES: dict[str, set[str]] = {
-    "worker_vision": {"direct", "react"},
+    # React has been unified into repl (structured REPL path).
+    "worker_vision": {"direct", "repl"},
     "vision_escalation": {"direct"},
 }
 

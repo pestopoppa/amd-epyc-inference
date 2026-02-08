@@ -184,7 +184,12 @@ async def _execute_proactive(
             success=result.all_approved,
             details=f"Proactive delegation: {n_subtasks} subtasks, {elapsed:.3f}s",
         )
-        score_completed_task(state, routing.task_id)
+        score_completed_task(
+            state,
+            routing.task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
 
     cache_stats = primitives.get_cache_stats() if primitives._backends else None
     delegation_events = getattr(result, "delegation_events", [])

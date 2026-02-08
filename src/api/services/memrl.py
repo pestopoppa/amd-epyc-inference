@@ -147,7 +147,13 @@ def _get_score_pool() -> ThreadPoolExecutor:
     return _score_pool
 
 
-def score_completed_task(state: "AppState", task_id: str) -> None:
+def score_completed_task(
+    state: "AppState",
+    task_id: str,
+    *,
+    force_role: str | None = None,
+    real_mode: bool = False,
+) -> None:
     """Fire-and-forget task scoring in the Q-scorer thread pool.
 
     Scoring involves embedder calls (port 8090) which are synchronous HTTP.
@@ -156,10 +162,44 @@ def score_completed_task(state: "AppState", task_id: str) -> None:
     Args:
         state: Application state containing Q-scorer.
         task_id: The task ID to score.
+        force_role: Optional forced role from request context.
+        real_mode: Whether request was real_mode.
     """
+    if should_skip_background_scoring(force_role=force_role, real_mode=real_mode):
+        return
     if not state.q_scorer or not state.q_scorer_enabled:
         return
     _get_score_pool().submit(_do_score, state, task_id)
+
+
+def should_skip_background_scoring(
+    *,
+    force_role: str | None = None,
+    real_mode: bool = False,
+) -> bool:
+    """Return True when background task scoring should be suppressed.
+
+    Forced-role real-mode calls are benchmark/eval probes where rewards are
+    injected externally (e.g., /chat/reward). Skipping background scoring
+    reduces extra embedder/lock load that can skew latency measurements.
+    """
+    return bool(force_role) and bool(real_mode)
+
+
+def score_completed_task_for_request(
+    state: "AppState",
+    task_id: str,
+    *,
+    force_role: str | None = None,
+    real_mode: bool = False,
+) -> None:
+    """Request-aware wrapper around score_completed_task()."""
+    score_completed_task(
+        state,
+        task_id,
+        force_role=force_role,
+        real_mode=real_mode,
+    )
 
 
 def score_completed_task_with_mode(

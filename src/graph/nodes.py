@@ -181,7 +181,6 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
             ctx.deps.primitives.llm_call,
             summary_prompt,
             role="worker_summarize",
-            n_tokens=512,
         )
 
         state.context = f"[Compacted context]\n{summary}\n\n[Recent]\n{keep_verbatim}"
@@ -235,7 +234,6 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             deps.primitives.llm_call,
             prompt,
             role=str(role),
-            n_tokens=1024,
         )
     except Exception as e:
         return "", f"LLM call failed: {e}", False, {}

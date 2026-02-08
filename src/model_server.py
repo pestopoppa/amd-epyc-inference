@@ -85,7 +85,7 @@ class InferenceRequest:
     role: str
     prompt: str | None = None
     prompt_file: Path | None = None
-    n_tokens: int = 512
+    n_tokens: int = -1
     temperature: float = 0.0
     context_length: int = 8192
     timeout: int = field(

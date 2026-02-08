@@ -15,7 +15,7 @@ class InferenceMixin:
         self,
         prompt: str,
         role: str,
-        n_tokens: int = 512,
+        n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Make a real inference call via CachingBackend or legacy ModelServer.
@@ -42,7 +42,7 @@ class InferenceMixin:
         self,
         prompt: str,
         role: str,
-        n_tokens: int = 512,
+        n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Internal real call implementation (no concurrency gating)."""
@@ -109,7 +109,7 @@ class InferenceMixin:
         self,
         prompt: str,
         role: str,
-        n_tokens: int = 512,
+        n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Execute a single inference call against one role's backend."""
@@ -156,7 +156,7 @@ class InferenceMixin:
         backend: Any,
         prompt: str,
         role: str,
-        n_tokens: int = 512,
+        n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
     ) -> str:
         """Call a CachingBackend with RadixAttention prefix caching.
@@ -225,7 +225,7 @@ class InferenceMixin:
             if _tap_active() and hasattr(backend, "infer_stream_text"):
                 from src.inference_tap import tap_section
 
-                with tap_section(role, prompt, n_tokens) as tap:
+                with tap_section(role, prompt) as tap:
                     result = backend.infer_stream_text(
                         role_config, request, on_chunk=tap.write_chunk
                     )

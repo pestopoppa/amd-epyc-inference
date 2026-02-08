@@ -87,7 +87,12 @@ async def _stream_mock(
             state.progress_logger.log_task_completed(
                 routing.task_id, success=True, details="Plan mode"
             )
-            score_completed_task(state, routing.task_id)
+            score_completed_task(
+                state,
+                routing.task_id,
+                force_role=request.force_role,
+                real_mode=request.real_mode,
+            )
         yield done_event()
         return
 
@@ -102,7 +107,12 @@ async def _stream_mock(
         state.progress_logger.log_task_completed(
             routing.task_id, success=True, details="Mock stream"
         )
-        score_completed_task(state, routing.task_id)
+        score_completed_task(
+            state,
+            routing.task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
     yield done_event()
 
 
@@ -174,7 +184,12 @@ async def _stream_repl(
                 state.progress_logger.log_task_completed(
                     task_id, success=False, details=f"Root LM failed: {e}"
                 )
-                score_completed_task(state, task_id)
+                score_completed_task(
+                    state,
+                    task_id,
+                    force_role=request.force_role,
+                    real_mode=request.real_mode,
+                )
             yield error_event(f"Root LM call failed: {e}")
             yield done_event()
             return
@@ -339,7 +354,12 @@ async def _stream_repl(
             success=success,
             details=f"Stream complete{role_info}",
         )
-        score_completed_task(state, task_id)
+        score_completed_task(
+            state,
+            task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
     yield done_event()
 
 
@@ -378,7 +398,12 @@ async def generate_stream(
             state.progress_logger.log_task_completed(
                 routing.task_id, success=False, details=str(e)
             )
-            score_completed_task(state, routing.task_id)
+            score_completed_task(
+                state,
+                routing.task_id,
+                force_role=request.force_role,
+                real_mode=request.real_mode,
+            )
         yield error_event(str(e))
         yield done_event()
         return

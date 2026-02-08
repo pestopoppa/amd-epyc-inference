@@ -76,6 +76,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
+# Per-port capability cache for llama-server slot erase endpoint.
+# None = unknown, True = supported, False = unsupported/broken.
+_SLOT_ERASE_CAPABILITY: dict[int, bool | None] = {}
+
 # ── Re-exports from extracted modules (test backwards compatibility) ──
 # Tests import these symbols from this file; keep them accessible here.
 
@@ -416,11 +420,30 @@ def _erase_slots(port: int) -> None:
         for slot in resp.json():
             if slot.get("is_processing"):
                 slot_id = slot.get("id", 0)
-                httpx.post(
-                    f"http://localhost:{port}/slots/{slot_id}?action=erase",
-                    timeout=5,
-                )
-                logger.info(f"  → erased slot {slot_id} on port {port}")
+                cap = _SLOT_ERASE_CAPABILITY.get(port)
+                if cap is False:
+                    continue
+                try:
+                    erase_resp = httpx.post(
+                        f"http://localhost:{port}/slots/{slot_id}?action=erase",
+                        timeout=3,
+                    )
+                except Exception:
+                    # Endpoint can hang on some llama-server builds.
+                    _SLOT_ERASE_CAPABILITY[port] = False
+                    logger.warning(
+                        f"  slot erase endpoint timed out on port {port}; disabling erase attempts"
+                    )
+                    continue
+
+                if erase_resp.status_code == 200:
+                    _SLOT_ERASE_CAPABILITY[port] = True
+                    logger.info(f"  → erased slot {slot_id} on port {port}")
+                else:
+                    _SLOT_ERASE_CAPABILITY[port] = False
+                    logger.warning(
+                        f"  slot erase unsupported on port {port} (HTTP {erase_resp.status_code}); disabling erase attempts"
+                    )
     except Exception as e:
         pass  # best-effort cleanup
 
@@ -579,6 +602,70 @@ def _is_coding_task(prompt: str) -> bool:
     ]
     prompt_lower = prompt.lower()
     return any(ind in prompt_lower for ind in coding_indicators)
+
+
+def _adaptive_timeout_s(
+    *,
+    role: str,
+    mode: str,
+    prompt: str,
+    is_vl: bool,
+    hard_timeout_s: int,
+) -> int:
+    """Pick a per-call timeout to reduce stall wait while preserving slow paths.
+
+    `hard_timeout_s` remains the absolute ceiling from CLI/config.
+    """
+    budget = max(30, int(hard_timeout_s or DEFAULT_TIMEOUT))
+    prompt_len = len(prompt or "")
+
+    # Lightweight token estimate by mode and modality.
+    if mode == "direct":
+        est_tokens = 640 if not is_vl else 800
+    elif mode == "repl":
+        est_tokens = 1100 if not is_vl else 1400
+    else:  # delegated
+        est_tokens = 1800
+    est_tokens += min(1200, prompt_len // 8)
+
+    baseline_tps = {
+        "frontdoor": 18.0,
+        "worker_vision": 15.0,
+        "vision_escalation": 10.0,
+        "architect_general": 6.0,
+        "architect_coding": 6.0,
+    }
+    tps = baseline_tps.get(role, 12.0)
+    expected_s = est_tokens / max(1.0, tps)
+
+    # Slack for tool/setup/network overhead.
+    rec = int(expected_s * 2.4 + 20)
+    role_cap = {
+        "frontdoor": 180,
+        "worker_vision": 240,
+        "vision_escalation": 360,
+        "architect_general": 420,
+        "architect_coding": 420,
+    }.get(role, 300)
+    rec = max(45, min(rec, role_cap))
+    return min(budget, rec)
+
+
+def _bump_timeout_from_observed(
+    *,
+    current_s: int,
+    observed_s: float,
+    factor: float,
+    slack_s: int,
+    hard_timeout_s: int,
+    role_cap_s: int,
+) -> int:
+    """Increase timeout based on observed earlier stage runtime for this question."""
+    if observed_s <= 0:
+        return current_s
+    observed_budget = int(observed_s * factor + slack_s)
+    observed_budget = max(current_s, min(observed_budget, role_cap_s))
+    return min(max(30, int(hard_timeout_s or DEFAULT_TIMEOUT)), observed_budget)
 
 
 def _eval_single_config(
@@ -780,7 +867,8 @@ def evaluate_question_3way(
     if is_vl:
         self_role = "worker_vision"
         self_direct_mode = "direct"
-        self_repl_mode = "react"
+        # React has been subsumed by repl; keep a single SELF:repl action.
+        self_repl_mode = "repl"
         arch_role = "vision_escalation"
     else:
         self_role = "frontdoor"
@@ -789,20 +877,45 @@ def evaluate_question_3way(
         arch_role = None
 
     # ── Configuration 1: SELF:direct ──
+    timeout_direct = _adaptive_timeout_s(
+        role=self_role,
+        mode=self_direct_mode,
+        prompt=prompt,
+        is_vl=is_vl,
+        hard_timeout_s=timeout,
+    )
     rr_direct, _ = _eval_single_config(
         prompt, expected, scoring_method, scoring_config,
         role=self_role, mode=self_direct_mode,
-        url=url, timeout=timeout, client=client,
+        url=url, timeout=timeout_direct, client=client,
         allow_delegation=False, image_path=image_path,
         log_label=ACTION_SELF_DIRECT, format_fn=format_self_direct,
     )
     role_results[f"{self_role}:{self_direct_mode}"] = rr_direct
 
     # ── Configuration 2: SELF:repl ──
+    timeout_repl = _adaptive_timeout_s(
+        role=self_role,
+        mode=self_repl_mode,
+        prompt=prompt,
+        is_vl=is_vl,
+        hard_timeout_s=timeout,
+    )
+    # Hard prompts often require materially longer REPL orchestration than direct.
+    # Use direct elapsed as a per-question lower bound to avoid premature INFRA.
+    if rr_direct.error_type != "infrastructure":
+        timeout_repl = _bump_timeout_from_observed(
+            current_s=timeout_repl,
+            observed_s=rr_direct.elapsed_seconds,
+            factor=2.2 if not is_vl else 1.8,
+            slack_s=30,
+            hard_timeout_s=timeout,
+            role_cap_s=300 if not is_vl else 260,
+        )
     rr_repl, _ = _eval_single_config(
         prompt, expected, scoring_method, scoring_config,
         role=self_role, mode=self_repl_mode,
-        url=url, timeout=timeout, client=client,
+        url=url, timeout=timeout_repl, client=client,
         allow_delegation=False, image_path=image_path,
         log_label=ACTION_SELF_REPL, format_fn=format_self_repl,
     )
@@ -818,10 +931,28 @@ def evaluate_question_3way(
     arch_mode = "direct" if is_vl else "delegated"
 
     for ar in arch_roles_to_eval:
+        timeout_arch = _adaptive_timeout_s(
+            role=ar,
+            mode=arch_mode,
+            prompt=prompt,
+            is_vl=is_vl,
+            hard_timeout_s=timeout,
+        )
+        observed_base = rr_direct.elapsed_seconds
+        if rr_repl.error_type != "infrastructure" and rr_repl.elapsed_seconds > observed_base:
+            observed_base = rr_repl.elapsed_seconds
+        timeout_arch = _bump_timeout_from_observed(
+            current_s=timeout_arch,
+            observed_s=observed_base,
+            factor=4.0 if not is_vl else 2.5,
+            slack_s=60 if not is_vl else 40,
+            hard_timeout_s=timeout,
+            role_cap_s=540 if not is_vl else 360,
+        )
         rr_arch, resp_arch = _eval_single_config(
             prompt, expected, scoring_method, scoring_config,
             role=ar, mode=arch_mode,
-            url=url, timeout=max(timeout, 300), client=client,
+            url=url, timeout=timeout_arch, client=client,
             allow_delegation=not is_vl, image_path=image_path,
             log_label=ACTION_ARCHITECT,
             format_fn=lambda label, passed, error, elapsed, resp, infra=False: format_architect_result(label, passed, error, elapsed, resp),

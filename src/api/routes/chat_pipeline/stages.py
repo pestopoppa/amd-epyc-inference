@@ -95,7 +95,12 @@ def _execute_mock(
             success=True,
             details=f"Mock response in {elapsed:.3f}s",
         )
-        score_completed_task(state, routing.task_id)
+        score_completed_task(
+            state,
+            routing.task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
 
     return ChatResponse(
         answer=answer,
@@ -226,7 +231,12 @@ def _execute_react(
             success=True,
             details=f"ReAct mode ({initial_role}), {elapsed:.3f}s",
         )
-        score_completed_task(state, routing.task_id)
+        score_completed_task(
+            state,
+            routing.task_id,
+            force_role=request.force_role,
+            real_mode=request.real_mode,
+        )
 
     cache_stats = primitives.get_cache_stats() if primitives._backends else None
     return ChatResponse(

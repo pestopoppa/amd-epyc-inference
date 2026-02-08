@@ -20,7 +20,7 @@ Highest value targets (slowest models):
 Usage:
     from src.llm_cache import ContentAddressableCache
 
-    cache = ContentAddressableCache("/mnt/raid0/llm/claude/cache/llm_responses")
+    cache = ContentAddressableCache(get_config().services.llm_cache_dir)
     key = cache.make_key(prompt, role, n_tokens)
 
     # Check cache

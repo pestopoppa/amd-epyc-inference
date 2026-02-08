@@ -44,7 +44,7 @@ class InferenceRequest:
     """
 
     prompt: str
-    max_tokens: int = 512
+    max_tokens: int = -1
     temperature: float = 0.0
     stop_sequences: list[str] = field(default_factory=list)
     role: str = "worker"

@@ -344,7 +344,7 @@ elif decision.should_retry:
 | `scripts` | Script registry (requires tools) | Off | On |
 | `streaming` | SSE streaming endpoints | Off | On |
 | `openai_compat` | OpenAI-compatible API | Off | On |
-| `repl` | REPL execution | On | On |
+| `repl` | REPL execution (includes legacy `react` alias paths) | On | On |
 | `caching` | Response caching | Off | On |
 
 ### Environment Variables

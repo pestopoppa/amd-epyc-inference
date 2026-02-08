@@ -19,10 +19,9 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
-from rich.console import Console, ConsoleOptions, RenderResult
+from rich.console import Console
 from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
@@ -69,14 +68,18 @@ class TapTailer:
 
     Tracks the *current section* (text between ``========`` markers) so
     that the right panel always shows the most recent inference call.
+
+    Buffers partial lines so that character-at-a-time SSE streaming
+    doesn't produce one-char-per-line output.
     """
 
-    def __init__(self, tap_path: str, poll_interval: float = 0.05) -> None:
+    def __init__(self, tap_path: str, poll_interval: float = 0.10,
+                 max_lines: int = 200) -> None:
         self._path = tap_path
         self._poll = poll_interval
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._current_section: list[str] = []
+        self._current_section: collections.deque[str] = collections.deque(maxlen=max_lines)
         self._thread: threading.Thread | None = None
 
     # -- public API --
@@ -92,9 +95,12 @@ class TapTailer:
         if self._thread is not None:
             self._thread.join(timeout=2.0)
 
-    def get_current_section(self) -> list[str]:
+    def get_current_section(self, tail: int = 0) -> list[str]:
         with self._lock:
-            return list(self._current_section)
+            items = list(self._current_section)
+            if tail > 0:
+                return items[-tail:]
+            return items
 
     # -- internal --
 
@@ -103,7 +109,7 @@ class TapTailer:
         while not self._stop.is_set():
             if os.path.exists(self._path):
                 break
-            self._stop.wait(self._poll)
+            self._stop.wait(0.5)
 
         if self._stop.is_set():
             return
@@ -112,19 +118,23 @@ class TapTailer:
             # Seek to end — we only care about new output
             fh.seek(0, 2)
             while not self._stop.is_set():
-                line = fh.readline()
-                if line:
-                    self._process_line(line.rstrip("\n"))
+                # Read all available data at once (not line-by-line)
+                chunk = fh.read(8192)
+                if chunk:
+                    self._process_chunk(chunk)
                 else:
                     self._stop.wait(self._poll)
 
-    def _process_line(self, line: str) -> None:
+    def _process_chunk(self, chunk: str) -> None:
+        """Process a chunk of text, appending to rolling buffer."""
         with self._lock:
-            if line.startswith("=" * 20):
-                # New section boundary — reset
-                self._current_section = [line]
-            else:
-                self._current_section.append(line)
+            lines = chunk.split("\n")
+            for i, fragment in enumerate(lines):
+                if i == 0 and self._current_section:
+                    # First fragment continues the last incomplete line
+                    self._current_section[-1] += fragment
+                elif fragment:  # skip empty strings from split
+                    self._current_section.append(fragment)
 
 
 # ---------------------------------------------------------------------------
@@ -208,19 +218,25 @@ class SeedingTUI:
         root.handlers.clear()
         fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
         self._deque_handler.setFormatter(fmt)
+        self._deque_handler.setLevel(logging.INFO)
         root.addHandler(self._deque_handler)
-        root.setLevel(logging.DEBUG)
+        root.setLevel(logging.INFO)
+
+        # Silence noisy third-party loggers
+        for name in ("filelock", "datasets", "huggingface_hub", "urllib3", "fsspec"):
+            logging.getLogger(name).setLevel(logging.WARNING)
 
         # 3. Start tap tailer
         self._tailer.start()
 
-        # 4. Start Rich Live (passes self as renderable — __rich_console__ is
-        #    called on every refresh tick to rebuild the layout dynamically)
+        # 4. Start Rich Live with get_renderable callback.
+        #    Rich Live's auto_refresh thread calls get_renderable() on each
+        #    tick → _make_layout() → fresh layout with current deque/tap data.
         self._live = Live(
-            self,
             console=self._console,
             screen=True,
             refresh_per_second=self._refresh,
+            get_renderable=self._make_layout,
         )
         self._live.start()
 
@@ -249,11 +265,6 @@ class SeedingTUI:
 
         return False
 
-    # -- Rich renderable protocol --
-
-    def __rich_console__(self, console: Console, options: ConsoleOptions) -> RenderResult:
-        yield self._make_layout()
-
     # -- layout building --
 
     def _make_layout(self) -> Layout:
@@ -268,16 +279,50 @@ class SeedingTUI:
         )
 
         # Left panel: seeding log
-        log_lines = list(self._deque_handler.records)[-40:]
+        # Calculate visible lines based on terminal size.
+        # Panel border (2) + status bar (3) = 5 overhead, main ratio=9/10.
+        try:
+            panel_height = max(10, (self._console.height - 5) * 9 // 10 - 2)
+            panel_width = max(20, self._console.width // 2 - 4)
+        except Exception:
+            panel_height = 25
+            panel_width = 70
+        # Truncate each line to panel width so 1 record = 1 display line (no wrap)
+        raw = list(self._deque_handler.records)[-(panel_height):]
+        log_lines = [line[:panel_width] for line in raw]
         log_text = Text("\n".join(log_lines) if log_lines else "(waiting for log output...)")
-        layout["log"].update(Panel(log_text, title="Seeding Progress", border_style="green"))
+        layout["log"].update(Panel(
+            log_text,
+            title=f"Seeding Progress ({len(self._deque_handler.records)} records)",
+            border_style="green",
+        ))
 
-        # Right panel: inference stream
-        section = self._tailer.get_current_section()[-40:]
-        stream_text = Text("\n".join(section) if section else "(waiting for inference tap...)")
+        # Right panel: inference stream — filter out verbose PROMPT sections,
+        # keep headers, RESPONSE tokens, and TIMINGS.
+        raw_section = self._tailer.get_current_section()
+        filtered: list[str] = []
+        in_prompt = False
+        for line in raw_section:
+            if line.startswith("PROMPT:") or line == "PROMPT:":
+                in_prompt = True
+                filtered.append("PROMPT: [...]")
+                continue
+            if in_prompt:
+                # End of prompt section: a line of dashes or a new section marker
+                if line.startswith("-" * 20) or line.startswith("=" * 20):
+                    in_prompt = False
+                    # Don't add the dash separator — RESPONSE: follows
+                else:
+                    continue
+            if line.startswith("RESPONSE:"):
+                filtered.append("")  # visual separator
+            filtered.append(line)
+
+        display_lines = filtered[-(panel_height):]
+        stream_text = Text("\n".join(display_lines) if display_lines else "(waiting for inference tap...)")
         layout["stream"].update(Panel(stream_text, title="Inference Stream", border_style="cyan"))
 
-        # Bottom bar: status
+        # Bottom bar: status — extract current action from last log line
         p = self._progress
         elapsed = time.monotonic() - p.start_time
         mins, secs = divmod(int(elapsed), 60)
@@ -285,7 +330,19 @@ class SeedingTUI:
             f"[{p.current_index}/{p.total_questions}] "
             f"{p.current_suite}/{p.current_qid}"
         )
-        if p.current_action:
+        # Show current action from last meaningful log line (e.g. "→ SELF:direct (frontdoor:direct)...")
+        last_action = ""
+        for rec in reversed(list(self._deque_handler.records)):
+            if "→ " in rec:
+                # Extract e.g. "SELF:direct (frontdoor:direct)"
+                try:
+                    last_action = rec.split("→ ", 1)[1].split("...")[0].strip()
+                except (IndexError, ValueError):
+                    pass
+                break
+        if last_action:
+            status_str += f" | {last_action}"
+        elif p.current_action:
             status_str += f" | {p.current_action}"
         status_str += f" | {mins}m{secs:02d}s"
         if p.session_id:
