@@ -403,7 +403,14 @@ class SeedingTUI:
         p = self._progress
         q_text = p.current_question
         if q_text:
-            wrapped = textwrap.wrap(q_text, width=panel_width) or [""]
+            # Preserve explicit newlines (e.g., MCQ choices A/B/C/D)
+            # by wrapping each paragraph separately.
+            wrapped: list[str] = []
+            for paragraph in q_text.split("\n"):
+                if paragraph.strip():
+                    wrapped.extend(textwrap.wrap(paragraph, width=panel_width))
+                else:
+                    wrapped.append("")  # blank line between paragraphs
             if len(wrapped) <= q_visible_lines:
                 q_display = "\n".join(wrapped)
             else:
