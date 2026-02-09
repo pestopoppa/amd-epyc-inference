@@ -45,6 +45,7 @@ Usage (legacy mode):
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import fcntl
 import hashlib
 import json
@@ -52,6 +53,7 @@ import logging
 import os
 import random
 import signal
+import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass, field
@@ -76,9 +78,9 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-# Per-port capability cache for llama-server slot erase endpoint.
-# None = unknown, True = supported, False = unsupported/broken.
-_SLOT_ERASE_CAPABILITY: dict[int, bool | None] = {}
+# Per-port slot erase strategy cache.
+# None = unknown, str = preferred strategy, False = unsupported on this build.
+_SLOT_ERASE_CAPABILITY: dict[int, str | None | bool] = {}
 
 # ── Re-exports from extracted modules (test backwards compatibility) ──
 # Tests import these symbols from this file; keep them accessible here.
@@ -364,16 +366,39 @@ def sample_unseen_questions(
     sample_per_suite: int,
     seen: set[str],
     seed: int,
+    *,
+    use_pool: bool = True,
 ) -> list[dict]:
     """Sample questions not in the seen set, interleaved across suites.
 
-    Tries HF dataset adapters first, falls back to YAML.
+    If use_pool=True (default), tries the pre-extracted question pool first
+    (~100ms). Falls back to HF dataset adapters, then YAML.
     Oversamples by 3x to compensate for dedup filtering.
 
     Returns questions interleaved by suite (round-robin) so the orchestrator
     sees diverse question types early rather than processing one suite at a time.
     """
     suite_names = DEFAULT_SUITES if suites == ["all"] else suites
+
+    # Try the pre-extracted pool first
+    if use_pool:
+        try:
+            from question_pool import POOL_FILE, build_pool, load_pool, sample_from_pool
+
+            if not POOL_FILE.exists():
+                logger.info("Question pool not found — building automatically (one-time)...")
+                build_pool()
+
+            pool = load_pool()
+            if pool:
+                result = sample_from_pool(pool, suite_names, sample_per_suite, seed, seen)
+                if result:
+                    logger.info(f"Sampled {len(result)} questions from pool (fast path)")
+                    return result
+                logger.info("Pool returned no results — falling back to adapters")
+        except Exception as e:
+            logger.warning(f"Pool loading failed ({e}) — falling back to adapters")
+
     per_suite: list[list[dict]] = []
 
     for suite_name in suite_names:
@@ -413,6 +438,27 @@ def _erase_slots(port: int) -> None:
     """
     import httpx
 
+    def _erase_slot_with_strategy(slot_id: int, strategy: str) -> int | None:
+        if strategy == "POST_QUERY":
+            resp = httpx.post(
+                f"http://localhost:{port}/slots/{slot_id}?action=erase",
+                timeout=3,
+            )
+        elif strategy == "GET_QUERY":
+            resp = httpx.get(
+                f"http://localhost:{port}/slots/{slot_id}?action=erase",
+                timeout=3,
+            )
+        elif strategy == "POST_JSON":
+            resp = httpx.post(
+                f"http://localhost:{port}/slots/{slot_id}",
+                json={"action": "erase"},
+                timeout=3,
+            )
+        else:
+            return None
+        return resp.status_code
+
     try:
         resp = httpx.get(f"http://localhost:{port}/slots", timeout=5)
         if resp.status_code != 200:
@@ -423,29 +469,284 @@ def _erase_slots(port: int) -> None:
                 cap = _SLOT_ERASE_CAPABILITY.get(port)
                 if cap is False:
                     continue
-                try:
-                    erase_resp = httpx.post(
-                        f"http://localhost:{port}/slots/{slot_id}?action=erase",
-                        timeout=3,
-                    )
-                except Exception:
-                    # Endpoint can hang on some llama-server builds.
-                    _SLOT_ERASE_CAPABILITY[port] = False
-                    logger.warning(
-                        f"  slot erase endpoint timed out on port {port}; disabling erase attempts"
-                    )
+                strategies: list[str]
+                if isinstance(cap, str):
+                    strategies = [cap]
+                else:
+                    strategies = ["POST_QUERY", "GET_QUERY", "POST_JSON"]
+
+                unsupported_codes = {404, 405, 501}
+                saw_transient = False
+                erased = False
+                for strategy in strategies:
+                    try:
+                        status = _erase_slot_with_strategy(slot_id, strategy)
+                    except Exception:
+                        saw_transient = True
+                        continue
+
+                    if status == 200:
+                        _SLOT_ERASE_CAPABILITY[port] = strategy
+                        logger.info(f"  → erased slot {slot_id} on port {port}")
+                        erased = True
+                        break
+                    if status not in unsupported_codes:
+                        saw_transient = True
+
+                if erased:
                     continue
 
-                if erase_resp.status_code == 200:
-                    _SLOT_ERASE_CAPABILITY[port] = True
-                    logger.info(f"  → erased slot {slot_id} on port {port}")
-                else:
+                if isinstance(cap, str):
+                    # Cached strategy failed; reset to unknown so we can probe again.
+                    _SLOT_ERASE_CAPABILITY[port] = None
+                elif not saw_transient:
                     _SLOT_ERASE_CAPABILITY[port] = False
                     logger.warning(
-                        f"  slot erase unsupported on port {port} (HTTP {erase_resp.status_code}); disabling erase attempts"
+                        f"  slot erase unsupported on port {port}; disabling erase attempts"
                     )
     except Exception as e:
         pass  # best-effort cleanup
+
+
+def _busy_heavy_ports(timeout_s: float = 2.0) -> list[int]:
+    """Return heavy-model ports that currently report is_processing=True."""
+    import httpx
+
+    busy: list[int] = []
+    for port in sorted(HEAVY_PORTS):
+        try:
+            resp = httpx.get(f"http://localhost:{port}/slots", timeout=timeout_s)
+            if resp.status_code != 200:
+                continue
+            slots = resp.json()
+            if any(bool(s.get("is_processing", False)) for s in slots):
+                busy.append(port)
+        except Exception:
+            # If status is unknown, defer to existing call-path error handling.
+            continue
+    return busy
+
+
+def _read_slot_progress(port: int, timeout_s: float = 1.0) -> dict[str, Any] | None:
+    """Read lightweight progress counters from llama-server /slots."""
+    import httpx
+
+    try:
+        resp = httpx.get(f"http://localhost:{port}/slots", timeout=timeout_s)
+        if resp.status_code != 200:
+            return None
+        slots = resp.json()
+        if not isinstance(slots, list) or not slots:
+            return None
+
+        # Prefer actively processing slot for live progress.
+        slot = None
+        for s in slots:
+            if bool(s.get("is_processing", False)):
+                slot = s
+                break
+        if slot is None:
+            slot = slots[0]
+
+        nt = {}
+        next_tokens = slot.get("next_token")
+        if isinstance(next_tokens, list) and next_tokens:
+            nt = next_tokens[0] or {}
+
+        decoded_raw = nt.get("n_decoded", 0)
+        remain_raw = nt.get("n_remain", 0)
+        task_raw = slot.get("id_task", 0)
+        try:
+            decoded = int(decoded_raw or 0)
+        except Exception:
+            decoded = 0
+        try:
+            remain = int(remain_raw or 0)
+        except Exception:
+            remain = 0
+        try:
+            task_id = int(task_raw or 0)
+        except Exception:
+            task_id = 0
+
+        return {
+            "is_processing": bool(slot.get("is_processing", False)),
+            "task_id": task_id,
+            "n_decoded": max(0, decoded),
+            "n_remain": remain,
+        }
+    except Exception:
+        return None
+
+
+def _call_orchestrator_with_slot_poll(
+    *,
+    prompt: str,
+    force_role: str,
+    force_mode: str,
+    url: str,
+    timeout: int,
+    image_path: str,
+    cache_prompt: bool | None,
+    client: "httpx.Client | None",
+    allow_delegation: bool | None,
+    log_label: str,
+    poll_port: int,
+) -> tuple[dict[str, Any], float, dict[str, Any]]:
+    """Call orchestrator while polling slot progress for live visibility."""
+
+    progress: dict[str, Any] = {
+        "max_decoded": 0,
+        "last_decoded": 0,
+        "last_remain": 0,
+        "task_id": 0,
+        "source": "",
+    }
+    t0 = time.perf_counter()
+    log_every_s = 5.0
+    log_delta_tokens = 128
+    last_log_at = t0
+    last_logged_decoded = 0
+    heartbeat_interval = 120.0
+    last_heartbeat = t0
+
+    def _run() -> dict[str, Any]:
+        return call_orchestrator_forced(
+            prompt=prompt,
+            force_role=force_role,
+            force_mode=force_mode,
+            url=url,
+            timeout=timeout,
+            image_path=image_path,
+            cache_prompt=cache_prompt,
+            client=client,
+            allow_delegation=allow_delegation,
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_run)
+        while True:
+            try:
+                resp = fut.result(timeout=1.0)
+                elapsed = time.perf_counter() - t0
+                break
+            except concurrent.futures.TimeoutError:
+                if poll_port <= 0:
+                    now_hb = time.perf_counter()
+                    if (now_hb - last_heartbeat) >= heartbeat_interval:
+                        logger.info(
+                            "    ... still waiting for %s (%ds elapsed)",
+                            log_label,
+                            int(now_hb - t0),
+                        )
+                        last_heartbeat = now_hb
+                    continue
+                sp = _read_slot_progress(poll_port, timeout_s=1.0)
+                if not sp:
+                    continue
+                decoded = int(sp.get("n_decoded", 0) or 0)
+                if decoded > progress["max_decoded"]:
+                    progress["max_decoded"] = decoded
+                progress["last_decoded"] = decoded
+                progress["last_remain"] = int(sp.get("n_remain", 0) or 0)
+                progress["task_id"] = int(sp.get("task_id", 0) or 0)
+                progress["source"] = "slots_poll"
+
+                now = time.perf_counter()
+                if (
+                    (now - last_log_at) >= log_every_s
+                    or (decoded - last_logged_decoded) >= log_delta_tokens
+                ):
+                    elapsed = now - t0
+                    logger.debug(
+                        "  [slot-progress] %s port=%s task=%s decoded=%s remain=%s elapsed=%.1fs",
+                        log_label,
+                        poll_port,
+                        progress["task_id"],
+                        decoded,
+                        progress["last_remain"],
+                        elapsed,
+                    )
+                    last_log_at = now
+                    last_logged_decoded = decoded
+
+                # Heartbeat every 120s so TUI left panel stays alive
+                now_hb = time.perf_counter()
+                if (now_hb - last_heartbeat) >= heartbeat_interval:
+                    elapsed_hb = now_hb - t0
+                    decoded_hb = progress["max_decoded"]
+                    logger.info(
+                        "    ... still waiting for %s (%ds elapsed, %d tokens so far)",
+                        log_label,
+                        int(elapsed_hb),
+                        decoded_hb,
+                    )
+                    last_heartbeat = now_hb
+            except Exception as exc:
+                elapsed = time.perf_counter() - t0
+                resp = {"answer": "", "error": str(exc)}
+                break
+
+    return resp, elapsed, progress
+
+
+def _recover_heavy_ports_if_stuck(url: str, busy_ports: list[int]) -> bool:
+    """Attempt targeted backend recovery when heavy ports appear stuck.
+
+    IMPORTANT: avoid full-stack restart in seeding loop.
+    """
+    if not busy_ports:
+        return True
+    if os.environ.get("SEEDING_ENABLE_TARGETED_RELOAD", "0") != "1":
+        logger.warning(
+            "  [recover] heavy ports stuck but targeted reload is disabled "
+            "(set SEEDING_ENABLE_TARGETED_RELOAD=1 to enable)"
+        )
+        return False
+
+    logger.warning(f"  [recover] heavy ports stuck: {busy_ports} — targeted reload")
+
+    port_to_component = {
+        8080: "coder_primary",
+        8081: "coder_escalation",
+        8083: "architect_general",
+        8084: "architect_coding",
+        8085: "ingest_long_context",
+        8087: "vision_escalation",
+    }
+    components: list[str] = []
+    for p in busy_ports:
+        c = port_to_component.get(p)
+        if c and c not in components:
+            components.append(c)
+
+    if not components:
+        logger.warning("  [recover] no reloadable components mapped for busy ports")
+        return False
+
+    cmd = [
+        sys.executable,
+        str(STACK_SCRIPT),
+        "reload",
+        *components,
+    ]
+    try:
+        res = subprocess.run(cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=300)
+        if res.returncode != 0:
+            tail = "\n".join((res.stderr or "").strip().splitlines()[-6:])
+            logger.warning(f"  [recover] targeted reload failed (rc={res.returncode}) {tail}")
+            return False
+    except Exception as exc:
+        logger.warning(f"  [recover] targeted reload exception: {exc}")
+        return False
+
+    _wait_for_heavy_models_idle(max_wait=180)
+    still_busy = _busy_heavy_ports(timeout_s=2.0)
+    if still_busy:
+        logger.warning(f"  [recover] heavy ports still busy after recovery: {still_busy}")
+        return False
+    logger.info("  [recover] heavy ports cleared after recovery")
+    return True
 
 
 def call_orchestrator_forced(
@@ -612,43 +913,15 @@ def _adaptive_timeout_s(
     is_vl: bool,
     hard_timeout_s: int,
 ) -> int:
-    """Pick a per-call timeout to reduce stall wait while preserving slow paths.
+    """Return a generous per-call timeout.
 
-    `hard_timeout_s` remains the absolute ceiling from CLI/config.
+    Previous per-role caps (frontdoor=180, vision=240, etc.) caused premature
+    INFRA classifications when the server was still generating.  The llama.cpp
+    server keeps generating after client disconnect, so tight timeouts only
+    waste the work.  Use a flat 600s ceiling; optimize later once we have
+    solid per-role telemetry.
     """
-    budget = max(30, int(hard_timeout_s or DEFAULT_TIMEOUT))
-    prompt_len = len(prompt or "")
-
-    # Lightweight token estimate by mode and modality.
-    if mode == "direct":
-        est_tokens = 640 if not is_vl else 800
-    elif mode == "repl":
-        est_tokens = 1100 if not is_vl else 1400
-    else:  # delegated
-        est_tokens = 1800
-    est_tokens += min(1200, prompt_len // 8)
-
-    baseline_tps = {
-        "frontdoor": 18.0,
-        "worker_vision": 15.0,
-        "vision_escalation": 10.0,
-        "architect_general": 6.0,
-        "architect_coding": 6.0,
-    }
-    tps = baseline_tps.get(role, 12.0)
-    expected_s = est_tokens / max(1.0, tps)
-
-    # Slack for tool/setup/network overhead.
-    rec = int(expected_s * 2.4 + 20)
-    role_cap = {
-        "frontdoor": 180,
-        "worker_vision": 240,
-        "vision_escalation": 360,
-        "architect_general": 420,
-        "architect_coding": 420,
-    }.get(role, 300)
-    rec = max(45, min(rec, role_cap))
-    return min(budget, rec)
+    return max(60, int(hard_timeout_s or DEFAULT_TIMEOUT))
 
 
 def _bump_timeout_from_observed(
@@ -660,12 +933,15 @@ def _bump_timeout_from_observed(
     hard_timeout_s: int,
     role_cap_s: int,
 ) -> int:
-    """Increase timeout based on observed earlier stage runtime for this question."""
+    """Increase timeout based on observed earlier stage runtime for this question.
+
+    With the flat 600s ceiling from _adaptive_timeout_s, this function now
+    only raises current_s if the observed time suggests it's too low.
+    """
     if observed_s <= 0:
         return current_s
     observed_budget = int(observed_s * factor + slack_s)
-    observed_budget = max(current_s, min(observed_budget, role_cap_s))
-    return min(max(30, int(hard_timeout_s or DEFAULT_TIMEOUT)), observed_budget)
+    return max(current_s, min(observed_budget, max(60, int(hard_timeout_s or DEFAULT_TIMEOUT))))
 
 
 def _eval_single_config(
@@ -689,23 +965,41 @@ def _eval_single_config(
         (role_result, raw_response_dict) tuple.
     """
     port = ROLE_PORT.get(role, 0)
+    did_recover_precheck = False
     if port in HEAVY_PORTS:
-        _wait_for_heavy_models_idle()
+        # Do not spend a full 600s here; call timeout and idle wait should share budget.
+        idle_wait_cap = max(30, min(120, int(timeout // 2) if timeout else 120))
+        _wait_for_heavy_models_idle(max_wait=idle_wait_cap)
 
-    logger.info(f"  → {log_label} ({role}:{mode})...")
-    t0 = time.perf_counter()
-    resp = call_orchestrator_forced(
+        busy_ports = _busy_heavy_ports(timeout_s=2.0)
+        if busy_ports:
+            # Best-effort attempt to clear stragglers before issuing a new call.
+            for bp in busy_ports:
+                _erase_slots(bp)
+            time.sleep(1.0)
+            still_busy = _busy_heavy_ports(timeout_s=2.0)
+            if still_busy:
+                did_recover_precheck = _recover_heavy_ports_if_stuck(url, still_busy)
+
+    logger.info(f"  → {log_label} ({role}:{mode}, timeout={timeout}s)...")
+    resp, elapsed, slot_progress = _call_orchestrator_with_slot_poll(
         prompt=prompt,
         force_role=role,
         force_mode=mode,
         url=url,
         timeout=timeout,
-        client=client,
-        allow_delegation=allow_delegation,
         image_path=image_path,
         cache_prompt=False,
+        client=client,
+        allow_delegation=allow_delegation,
+        log_label=log_label,
+        poll_port=port,
     )
-    elapsed = time.perf_counter() - t0
+    max_decoded = int(slot_progress.get("max_decoded", 0) or 0)
+    if max_decoded > 0:
+        resp["tokens_generated_estimate"] = max_decoded
+    resp["backend_task_id"] = int(slot_progress.get("task_id", 0) or 0)
+    resp["slot_progress_source"] = str(slot_progress.get("source", "") or "")
 
     answer = resp.get("answer", "")
     error = resp.get("error")
@@ -736,15 +1030,86 @@ def _eval_single_config(
         role_history=resp.get("role_history", []),
         predicted_tps=resp.get("predicted_tps", 0.0),
         generation_ms=resp.get("generation_ms", 0.0),
+        tokens_generated_estimate=resp.get("tokens_generated_estimate", 0),
+        backend_task_id=resp.get("backend_task_id", 0),
+        slot_progress_source=resp.get("slot_progress_source", ""),
     )
 
     if error_type == "infrastructure" and resp.get("tokens_generated", 0) == 0:
         target_port = ROLE_PORT.get(role, 0)
         if target_port:
             _erase_slots(target_port)
+        # One recovery retry for zero-token infra failures on heavy paths.
+        if port in HEAVY_PORTS and not did_recover_precheck:
+            busy_now = _busy_heavy_ports(timeout_s=2.0)
+            if _recover_heavy_ports_if_stuck(url, busy_now):
+                logger.info(f"  [retry] {log_label} retry after recovery")
+                resp2, elapsed2, slot_progress2 = _call_orchestrator_with_slot_poll(
+                    prompt=prompt,
+                    force_role=role,
+                    force_mode=mode,
+                    url=url,
+                    timeout=timeout,
+                    image_path=image_path,
+                    cache_prompt=False,
+                    client=client,
+                    allow_delegation=allow_delegation,
+                    log_label=log_label,
+                    poll_port=port,
+                )
+                max_decoded2 = int(slot_progress2.get("max_decoded", 0) or 0)
+                max_decoded = max(max_decoded, max_decoded2)
+                if max_decoded > 0:
+                    resp2["tokens_generated_estimate"] = max_decoded
+                resp2["backend_task_id"] = int(slot_progress2.get("task_id", 0) or 0) or int(
+                    slot_progress.get("task_id", 0) or 0
+                )
+                resp2["slot_progress_source"] = (
+                    str(slot_progress2.get("source", "") or "")
+                    or str(slot_progress.get("source", "") or "")
+                )
+
+                answer2 = resp2.get("answer", "")
+                error2 = resp2.get("error")
+                error_type2 = _classify_error(error2)
+                if error_type2 == "infrastructure":
+                    passed2 = None
+                elif error2:
+                    passed2 = False
+                else:
+                    passed2 = score_answer_deterministic(
+                        answer2, expected, scoring_method, scoring_config
+                    )
+
+                rr = RoleResult(
+                    role=role,
+                    mode=mode,
+                    answer=answer2 or "",
+                    passed=bool(passed2) if passed2 is not None else False,
+                    elapsed_seconds=elapsed + elapsed2,
+                    error=error2,
+                    error_type=error_type2,
+                    tokens_generated=resp2.get("tokens_generated", 0),
+                    tools_used=resp2.get("tools_used", 0),
+                    tools_called=resp2.get("tools_called", []),
+                    delegation_events=resp2.get("delegation_events", []),
+                    tools_success=resp2.get("tools_success"),
+                    delegation_success=resp2.get("delegation_success"),
+                    routed_to=resp2.get("routed_to", ""),
+                    role_history=resp2.get("role_history", []),
+                    predicted_tps=resp2.get("predicted_tps", 0.0),
+                    generation_ms=resp2.get("generation_ms", 0.0),
+                    tokens_generated_estimate=resp2.get("tokens_generated_estimate", 0),
+                    backend_task_id=resp2.get("backend_task_id", 0),
+                    slot_progress_source=resp2.get("slot_progress_source", ""),
+                )
+                resp = resp2
+                error_type = error_type2
 
     if format_fn is not None:
-        for line in format_fn(log_label, passed, error, elapsed, resp,
+        final_error = rr.error
+        final_passed = rr.passed
+        for line in format_fn(log_label, final_passed, final_error, rr.elapsed_seconds, resp,
                               infra=(error_type == "infrastructure")):
             logger.info(line)
 
@@ -801,15 +1166,21 @@ def _compute_3way_metadata(
         ACTION_SELF_DIRECT: {
             "elapsed_seconds": role_results[direct_key].elapsed_seconds,
             "tokens_generated": role_results[direct_key].tokens_generated,
+            "tokens_generated_estimate": role_results[direct_key].tokens_generated_estimate,
             "predicted_tps": role_results[direct_key].predicted_tps,
             "generation_ms": role_results[direct_key].generation_ms,
+            "backend_task_id": role_results[direct_key].backend_task_id,
+            "slot_progress_source": role_results[direct_key].slot_progress_source,
         },
         ACTION_SELF_REPL: {
             "elapsed_seconds": role_results[repl_key].elapsed_seconds,
             "tokens_generated": role_results[repl_key].tokens_generated,
+            "tokens_generated_estimate": role_results[repl_key].tokens_generated_estimate,
             "predicted_tps": role_results[repl_key].predicted_tps,
             "generation_ms": role_results[repl_key].generation_ms,
             "tools_used": role_results[repl_key].tools_used,
+            "backend_task_id": role_results[repl_key].backend_task_id,
+            "slot_progress_source": role_results[repl_key].slot_progress_source,
         },
     }
     if best_arch:
@@ -817,9 +1188,12 @@ def _compute_3way_metadata(
         metadata["cost_metrics"][ACTION_ARCHITECT] = {
             "elapsed_seconds": arch_results[best_arch]["elapsed_seconds"],
             "tokens_generated": role_results[arch_key].tokens_generated,
+            "tokens_generated_estimate": role_results[arch_key].tokens_generated_estimate,
             "predicted_tps": role_results[arch_key].predicted_tps,
             "generation_ms": role_results[arch_key].generation_ms,
             "role_history": role_results[arch_key].role_history,
+            "backend_task_id": role_results[arch_key].backend_task_id,
+            "slot_progress_source": role_results[arch_key].slot_progress_source,
         }
 
     infra_flags = [
@@ -947,7 +1321,7 @@ def evaluate_question_3way(
             factor=4.0 if not is_vl else 2.5,
             slack_s=60 if not is_vl else 40,
             hard_timeout_s=timeout,
-            role_cap_s=540 if not is_vl else 360,
+            role_cap_s=max(540, int(timeout)) if not is_vl else 360,
         )
         rr_arch, resp_arch = _eval_single_config(
             prompt, expected, scoring_method, scoring_config,
@@ -1068,7 +1442,6 @@ def _precompute_embedding(
 
 
 # Background executor for async reward injection (fire-and-forget)
-import concurrent.futures
 _reward_executor: concurrent.futures.ThreadPoolExecutor | None = None
 
 
@@ -1132,6 +1505,8 @@ def _inject_3way_rewards_http(
     for action_key, reward in rewards.items():
         # Build context with cost metrics for this specific action
         action_cost = cost_metrics.get(action_key, {})
+        tokens_generated = int(action_cost.get("tokens_generated", 0) or 0)
+        tokens_estimate = int(action_cost.get("tokens_generated_estimate", 0) or 0)
 
         context = {
             "task_type": suite,
@@ -1145,10 +1520,16 @@ def _inject_3way_rewards_http(
             "tool_advantage": metadata.get("tool_advantage", 0),
             # Cost metrics for this action (for Optuna later)
             "elapsed_seconds": action_cost.get("elapsed_seconds", 0.0),
-            "tokens_generated": action_cost.get("tokens_generated", 0),
+            "tokens_generated": tokens_generated,
+            "tokens_generated_estimate": tokens_estimate,
+            "tokens_generated_effective": (
+                tokens_generated if tokens_generated > 0 else tokens_estimate
+            ),
             "predicted_tps": action_cost.get("predicted_tps", 0.0),
             "generation_ms": action_cost.get("generation_ms", 0.0),
             "tools_used": action_cost.get("tools_used", 0),
+            "backend_task_id": action_cost.get("backend_task_id", 0),
+            "slot_progress_source": action_cost.get("slot_progress_source", ""),
         }
 
         payload = {
@@ -1509,6 +1890,7 @@ def run_batch(
     cooldown: float = 0.0,
     no_dedup: bool = False,
     escalation_chains: bool = False,
+    use_pool: bool = True,
 ) -> list[ComparativeResult]:
     """Run one evaluation batch: sample, evaluate per-question, checkpoint.
 
@@ -1552,7 +1934,7 @@ def run_batch(
     logger.info(f"Checkpoint: {len(completed)} completed, {len(seen)} total seen")
 
     # Sample unseen questions
-    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed)
+    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed, use_pool=use_pool)
     questions = [q for q in questions if q["id"] not in completed_ids]
 
     if not questions:
@@ -1792,6 +2174,7 @@ def run_batch_3way(
     session_id: str,
     dry_run: bool = False,
     on_progress: "Callable[[int, int, str, str], None] | None" = None,
+    use_pool: bool = True,
 ) -> list[ThreeWayResult]:
     """Run one 3-way evaluation batch.
 
@@ -1818,7 +2201,7 @@ def run_batch_3way(
     logger.info(f"Previously seen questions: {len(seen)}")
 
     # Sample unseen questions
-    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed)
+    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed, use_pool=use_pool)
     if not questions:
         logger.info("No unseen questions available.")
         return []
@@ -2067,8 +2450,30 @@ Examples (legacy mode - DEPRECATED):
         "--tui", action="store_true",
         help="Rich split-screen TUI (requires --3way)",
     )
+    # Question pool options
+    parser.add_argument(
+        "--rebuild-pool", action="store_true",
+        help="Rebuild the pre-extracted question pool from all adapters, then exit.",
+    )
+    parser.add_argument(
+        "--no-pool", action="store_true",
+        help="Bypass the question pool and load from HF adapters directly (slow).",
+    )
 
     args = parser.parse_args()
+
+    # Rebuild pool — build and exit
+    if args.rebuild_pool:
+        from question_pool import build_pool
+        import time as _time
+        t0 = _time.monotonic()
+        stats = build_pool()
+        elapsed = _time.monotonic() - t0
+        total = sum(stats.values())
+        print(f"Pool rebuilt in {elapsed:.1f}s: {total} questions across {len(stats)} suites")
+        for suite, count in sorted(stats.items(), key=lambda x: -x[1]):
+            print(f"  {suite:25s} {count:>6,d}")
+        return
 
     # Stats mode — just print and exit
     if args.stats:
@@ -2152,6 +2557,7 @@ Examples (legacy mode - DEPRECATED):
                             session_id=session_id,
                             dry_run=args.dry_run,
                             on_progress=_on_progress,
+                            use_pool=not args.no_pool,
                         )
                         all_results.extend(results)
 
@@ -2178,6 +2584,7 @@ Examples (legacy mode - DEPRECATED):
                     session_id=session_id,
                     dry_run=args.dry_run,
                     on_progress=_on_progress,
+                    use_pool=not args.no_pool,
                 )
 
         # Summary printed AFTER TUI context exits (normal terminal restored)
@@ -2245,6 +2652,7 @@ Examples (legacy mode - DEPRECATED):
                     cooldown=args.cooldown,
                     no_dedup=args.no_dedup,
                     escalation_chains=not args.no_escalation_chains,
+                    use_pool=not args.no_pool,
                 )
             except HealthCheckError:
                 # API died mid-batch — loop back to health gate
@@ -2282,6 +2690,7 @@ Examples (legacy mode - DEPRECATED):
             cooldown=args.cooldown,
             no_dedup=args.no_dedup,
             escalation_chains=not args.no_escalation_chains,
+            use_pool=not args.no_pool,
         )
 
         if results:
