@@ -127,12 +127,12 @@ def _parse_architect_decision(response: str) -> dict:
                 fields[key.strip()] = val.strip()
 
         brief = fields.get("brief", parts_str)
-        delegate_to = fields.get("to", "coder_primary")
+        delegate_to = fields.get("to", "coder_escalation")
         delegate_mode = fields.get("mode", "react")
 
         # Clamp to valid role
         if delegate_to not in _VALID_DELEGATE_ROLES:
-            delegate_to = "coder_primary"
+            delegate_to = "coder_escalation"
         # Clamp to valid mode
         if delegate_mode not in ("react", "repl"):
             delegate_mode = "react"
@@ -157,9 +157,9 @@ def _parse_architect_decision(response: str) -> dict:
         if isinstance(obj, dict):
             mode = obj.get("mode", "direct")
             if mode == "investigate":
-                delegate_to = obj.get("delegate_to", obj.get("to", "coder_primary"))
+                delegate_to = obj.get("delegate_to", obj.get("to", "coder_escalation"))
                 if delegate_to not in _VALID_DELEGATE_ROLES:
-                    delegate_to = "coder_primary"
+                    delegate_to = "coder_escalation"
                 delegate_mode = obj.get("delegate_mode", obj.get("mode_detail", "react"))
                 if delegate_mode not in ("react", "repl"):
                     delegate_mode = "react"
@@ -310,7 +310,10 @@ def _architect_delegated_answer(
             # Uses _strip_think to also handle incomplete <think> blocks so
             # that deliberation *about* delegating isn't mistaken for a real
             # TOON decision.
-            _toon_re = re.compile(r"D\|[A-D](?=[^a-z]|$)|D\|.{2,}|I\|brief:")
+            # NOTE: I| pattern requires full line (brief + |to:role) before
+            # firing — old `I\|brief:` fired on the prefix alone, cutting off
+            # the brief content and producing empty delegations.
+            _toon_re = re.compile(r"D\|[A-D](?=[^a-z]|$)|D\|.+|I\|brief:.+\|to:\w+")
             primitives._early_stop_check = lambda text: bool(
                 _toon_re.search(_strip_think(text))
             )
@@ -341,7 +344,24 @@ def _architect_delegated_answer(
                 arch_response = stripped
                 break
 
-            # Otherwise treat as Python code — execute it
+            # Turn 0 must be a routing decision (D| or I|).  If the
+            # architect wrote prose or code instead, treat it as a direct
+            # answer.  DO NOT enter the computation loop — the architect
+            # models are slow (6-10 t/s) and 3 computation turns of 3375-
+            # 5150 tokens each can burn 10-26 minutes on a single question.
+            if _aturn == 0:
+                # Prose answer rescue: extract from "The answer is X"
+                from src.graph.nodes import _extract_prose_answer
+                prose = _extract_prose_answer(stripped)
+                if prose:
+                    arch_response = f"D|{prose}"
+                    log.info("Architect turn 0: no TOON, prose rescue -> D|%s", prose[:50])
+                else:
+                    arch_response = f"D|{stripped}" if stripped else raw
+                    log.info("Architect turn 0: no TOON, treating raw output as D|answer (%d chars)", len(stripped or raw))
+                break
+
+            # Turns 1+: treat as Python code — execute in mini-REPL
             from src.prompt_builders import extract_code_from_response
             code = extract_code_from_response(raw)
             if not code.strip():
@@ -438,11 +458,19 @@ def _architect_delegated_answer(
             )
             deleg_last_output = ""
             deleg_last_error = ""
+            # Build specialist task: full question + architect's brief as
+            # design guidance.  Previously only the brief was passed, so the
+            # specialist never saw the actual problem (constraints, examples,
+            # method signatures).
+            specialist_task = (
+                f"{question}\n\n"
+                f"## Architect guidance\n{brief}"
+            )
             for _turn in range(max_delegate_turns):
                 repl_state = deleg_repl.get_state()
                 deleg_prompt = build_root_lm_prompt(
                     state=repl_state,
-                    original_prompt=brief,
+                    original_prompt=specialist_task,
                     last_output=deleg_last_output,
                     last_error=deleg_last_error,
                     turn=_turn,
@@ -453,12 +481,34 @@ def _architect_delegated_answer(
                     code = primitives.llm_call(
                         deleg_prompt,
                         role=delegate_to,
+                        stop_sequences=["\n```\n"],
                     )
                 finally:
                     primitives._early_stop_check = None
+                raw_deleg_output = code
                 from src.prompt_builders import extract_code_from_response, auto_wrap_final
                 code = extract_code_from_response(code)
                 code = auto_wrap_final(code)
+                # Prose report rescue: specialist answered in prose without
+                # code or FINAL().  In delegation, the specialist's prose IS
+                # the investigation report — return it to the architect for
+                # synthesis instead of discarding it or looping.
+                if "FINAL(" not in code and not any(
+                    ln.strip() and not ln.strip().startswith("#")
+                    and any(ln.strip().startswith(kw) for kw in (
+                        "def ", "class ", "for ", "while ", "if ", "try:",
+                        "print(", "result =", "answer =",
+                    ))
+                    for ln in code.split("\n")
+                ):
+                    # No executable code found — treat raw prose as report
+                    report = raw_deleg_output.strip()
+                    if report:
+                        log.info(
+                            "Delegation prose report (turn %d): %d chars returned to architect",
+                            _turn, len(report),
+                        )
+                        break
                 # Comment-only guard
                 if all(
                     not ln.strip() or ln.strip().startswith("#")

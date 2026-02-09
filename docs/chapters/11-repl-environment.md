@@ -237,6 +237,16 @@ ResearchContext(
 6. Jupyter Notebook sandboxing: https://jupyter-notebook.readthedocs.io/en/stable/security.html
 7. PyPy sandboxing (deprecated): https://doc.pypy.org/en/latest/sandbox.html
 
+## Unicode Sanitizer (2026-02-09)
+
+Models frequently copy Unicode characters from question text into generated code. For example, a chemistry question containing "contact angle of 47°" leads the model to write `theta = 47°` which causes `SyntaxError: invalid character '°'`.
+
+The `sanitize_code_unicode()` function in `src/repl_environment/unicode_sanitizer.py` runs before all three execution paths (`execute()`, `_execute_structured()`, `_run_python_code()`). It replaces ~25 common Unicode characters with ASCII equivalents via a single-pass compiled regex.
+
+Key replacements: `°`→stripped, `×`→`*`, `−`→`-`, `²`→`**2`, curly quotes→straight quotes, non-breaking/zero-width spaces→stripped.
+
+Fast path: `code.isascii()` returns immediately (zero overhead for clean code).
+
 ---
 
 *Previous: [Chapter 10: Orchestration Architecture](10-orchestration-architecture.md)* | *Next: [Chapter 12: Production Server Stack](12-production-server-stack.md)*

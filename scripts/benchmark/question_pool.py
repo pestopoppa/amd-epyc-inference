@@ -190,11 +190,16 @@ def sample_from_pool(
     sample_per_suite: int,
     seed: int,
     seen: set[str] | None = None,
+    allow_reseen: bool = False,
 ) -> list[dict]:
     """Sample unseen questions from a loaded pool, interleaved across suites.
 
-    Mirrors the sampling logic of sample_unseen_questions():
-    oversample 3x, dedup against seen, truncate, interleave round-robin.
+    Shuffles the full suite list and picks the first ``sample_per_suite``
+    unseen questions.  This guarantees we draw from the entire pool instead
+    of a tiny 3x window that can overlap almost entirely with the seen set.
+
+    If ``allow_reseen`` is True (debug mode), backfills with seen questions
+    when unseen are exhausted.  In normal mode exhausted suites are skipped.
     """
     seen = seen or set()
     per_suite: list[list[dict]] = []
@@ -205,14 +210,27 @@ def sample_from_pool(
             per_suite.append([])
             continue
 
-        # Oversample 3x, then dedup
-        oversample = sample_per_suite * 3
+        # Shuffle full suite, then take first N unseen
         rng = random.Random(seed)
-        n = min(oversample, len(questions))
-        sampled = rng.sample(questions, n)
+        shuffled = list(questions)
+        rng.shuffle(shuffled)
 
-        fresh = [q for q in sampled if q.get("id", "") not in seen]
-        per_suite.append(fresh[:sample_per_suite])
+        fresh: list[dict] = []
+        reseen: list[dict] = []
+        for q in shuffled:
+            if q.get("id", "") not in seen:
+                fresh.append(q)
+                if len(fresh) >= sample_per_suite:
+                    break
+            elif allow_reseen and len(reseen) < sample_per_suite:
+                reseen.append(q)
+
+        # Backfill with seen questions only in debug mode
+        if allow_reseen and len(fresh) < sample_per_suite:
+            need = sample_per_suite - len(fresh)
+            fresh.extend(reseen[:need])
+
+        per_suite.append(fresh)
 
     # Interleave round-robin
     all_prompts: list[dict] = []

@@ -46,7 +46,7 @@ class TestParseArchitectDecision:
 
     def test_toon_investigate_invalid_role_clamps(self):
         result = _parse_architect_decision("I|brief:Check|to:nonexistent_role")
-        assert result["delegate_to"] == "coder_primary"  # clamped
+        assert result["delegate_to"] == "coder_escalation"  # clamped
 
     def test_toon_investigate_invalid_mode_clamps(self):
         result = _parse_architect_decision("I|brief:Check|to:worker_explore|mode:invalid")
@@ -71,7 +71,7 @@ class TestParseArchitectDecision:
         result = _parse_architect_decision(
             '{"mode": "investigate", "brief": "X", "to": "bad_role"}'
         )
-        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_to"] == "coder_escalation"
 
     # ── Markdown-wrapped JSON ──
 

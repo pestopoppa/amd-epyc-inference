@@ -32,6 +32,27 @@ try:
 except ImportError:
     KNOWLEDGE_PACKAGES_AVAILABLE = False
 
+
+def _http_probe(url: str, timeout: float = 5.0) -> bool:
+    """HTTP GET probe via subprocess curl — guaranteed to terminate."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["curl", "-sf", "--max-time", str(int(timeout)), "-o", "/dev/null", url],
+            timeout=timeout + 2,
+            capture_output=True,
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return False
+
+
+# Probe key APIs once at import time with hard curl timeout
+_SEMANTIC_SCHOLAR_UP = _http_probe("https://api.semanticscholar.org/graph/v1/paper/search?query=test&limit=1", timeout=2.0)
+_WIKIPEDIA_UP = _http_probe("https://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json")
+_GOOGLE_APIS_UP = _http_probe("https://www.googleapis.com/books/v1/volumes?q=test&maxResults=1")
+_ARXIV_UP = _http_probe("https://export.arxiv.org/api/query?search_query=test&max_results=1")
+
 pytestmark = [
     pytest.mark.skipif(
         MOCK_MODE,
@@ -43,7 +64,21 @@ pytestmark = [
     ),
 ]
 
+_skip_semantic_scholar = pytest.mark.skipif(
+    not _SEMANTIC_SCHOLAR_UP, reason="Semantic Scholar API unreachable"
+)
+_skip_wikipedia = pytest.mark.skipif(
+    not _WIKIPEDIA_UP, reason="Wikipedia API unreachable"
+)
+_skip_google = pytest.mark.skipif(
+    not _GOOGLE_APIS_UP, reason="Google APIs unreachable"
+)
+_skip_arxiv = pytest.mark.skipif(
+    not _ARXIV_UP, reason="arXiv API unreachable"
+)
 
+
+@_skip_arxiv
 class TestArXivSearch:
     """Live tests for arXiv search functionality."""
 
@@ -75,6 +110,7 @@ class TestArXivSearch:
         assert result["results"] == []
 
 
+@_skip_semantic_scholar
 class TestSemanticScholarSearch:
     """Live tests for Semantic Scholar search functionality."""
 
@@ -104,6 +140,7 @@ class TestSemanticScholarSearch:
         # Note: Some results may not have year data, so we just verify the query works
 
 
+@_skip_wikipedia
 class TestWikipediaSearch:
     """Live tests for Wikipedia search functionality."""
 
@@ -144,6 +181,7 @@ class TestWikipediaSearch:
         assert "not found" in result["error"].lower()
 
 
+@_skip_google
 class TestGoogleBooksSearch:
     """Live tests for Google Books search functionality."""
 

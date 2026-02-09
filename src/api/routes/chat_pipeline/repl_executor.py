@@ -237,10 +237,12 @@ async def _execute_repl(
 
     # ── Post-graph processing ────────────────────────────────────────
 
-    # Quality review gate (same logic as before, outside the graph)
+    # Quality review gate (skip when force_role is set —
+    # seeding/eval calls should not trigger expensive architect reviews)
     if (
         graph_result.success
         and request.real_mode
+        and not request.force_role
         and _should_review(state, task_id, current_role, answer)
     ):
         log.info(

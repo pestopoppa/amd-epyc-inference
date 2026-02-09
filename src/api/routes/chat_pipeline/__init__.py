@@ -38,7 +38,7 @@ from src.api.routes.chat_pipeline.stages import (
     _execute_react,
     _annotate_error,
 )
-from src.api.routes.chat_pipeline.vision_stage import _execute_vision
+from src.api.routes.chat_pipeline.vision_stage import _execute_vision, _execute_vision_multimodal
 from src.api.routes.chat_pipeline.delegation_stage import _execute_delegated
 from src.api.routes.chat_pipeline.proactive_stage import (
     _execute_proactive,
@@ -61,6 +61,7 @@ __all__ = [
     "_plan_review_gate",
     "_execute_mock",
     "_execute_vision",
+    "_execute_vision_multimodal",
     "_execute_delegated",
     "_parse_plan_steps",
     "_execute_proactive",

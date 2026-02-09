@@ -22,6 +22,7 @@ from src.repl_environment.types import (
     REPLTimeout,
 )
 from src.repl_environment.security import ASTSecurityVisitor
+from src.repl_environment.unicode_sanitizer import sanitize_code_unicode
 from src.repl_environment.file_tools import _FileToolsMixin
 from src.repl_environment.document_tools import _DocumentToolsMixin
 from src.repl_environment.routing import _RoutingMixin
@@ -192,6 +193,29 @@ class REPLEnvironment(
                 f"Mixin contract violated: missing required attribute '{attr}'"
             )
 
+    # Modules safe for import inside the REPL sandbox.  These are
+    # pure-computation or data-structure libraries — no filesystem,
+    # network, or process-spawning capabilities.
+    SAFE_IMPORT_MODULES: frozenset[str] = frozenset({
+        # Standard library — math & data
+        "math", "cmath", "decimal", "fractions", "statistics",
+        "random", "numbers",
+        # Standard library — data structures & iteration
+        "collections", "itertools", "functools", "operator",
+        "heapq", "bisect", "array", "queue",
+        # Standard library — string & text
+        "re", "string", "textwrap", "unicodedata",
+        # Standard library — time (read-only)
+        "time", "datetime", "calendar",
+        # Standard library — misc safe
+        "copy", "enum", "dataclasses", "typing",
+        "json", "csv", "io", "struct", "base64",
+        "hashlib", "hmac", "secrets",
+        "pprint", "reprlib",
+        # Scientific computing (if installed)
+        "numpy", "scipy", "sympy",
+    })
+
     def _build_globals(self) -> dict[str, Any]:
         """Build the restricted globals dict for exec()."""
         import builtins
@@ -201,6 +225,20 @@ class REPLEnvironment(
         for name in self.config.allowed_builtins:
             if hasattr(builtins, name):
                 safe_builtins[name] = getattr(builtins, name)
+
+        # Safe import: allows whitelisted modules only
+        _safe_modules = self.SAFE_IMPORT_MODULES
+
+        def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
+            top = name.split(".")[0]
+            if top not in _safe_modules:
+                raise ImportError(
+                    f"Module '{name}' is not allowed in the REPL sandbox. "
+                    f"Allowed: {', '.join(sorted(_safe_modules))}"
+                )
+            return builtins.__import__(name, globals, locals, fromlist, level)
+
+        safe_builtins["__import__"] = _safe_import
 
         # Import json for REPL use (needed for document processing)
         import json as _json
@@ -243,6 +281,7 @@ class REPLEnvironment(
             "delegate": self._delegate,
             # Shell tools (sandboxed)
             "run_shell": self._run_shell,
+            "run_python_code": self._run_python_code,
             # Self-management procedure tools
             "run_procedure": self._run_procedure,
             "list_procedures": self._list_procedures,
@@ -318,8 +357,28 @@ class REPLEnvironment(
         visitor.visit(tree)
 
         if visitor.violations:
-            # Report first violation (avoids info disclosure about all checks)
-            raise REPLSecurityError(f"Dangerous operation not allowed: {visitor.violations[0]}")
+            violation = visitor.violations[0]
+            # Provide actionable hints for common cases
+            hints = ""
+            if "exec()" in violation or "eval()" in violation:
+                hints = (
+                    " Hint: use run_python_code(code_string, stdin_data) "
+                    "to test code, or write code directly (it is executed "
+                    "automatically). Do NOT use exec()/eval()."
+                )
+            elif "open()" in violation:
+                hints = (
+                    " Hint: use peek(path) to read files or "
+                    "file_write_safe(path, content) to write."
+                )
+            elif "import " in violation:
+                hints = (
+                    " Hint: use run_shell() for operations requiring "
+                    "system modules, or use the available REPL tools."
+                )
+            raise REPLSecurityError(
+                f"Dangerous operation not allowed: {violation}.{hints}"
+            )
 
     def _execute_structured(self, code: str, start_time: float) -> ExecutionResult:
         """Execute in structured (React-style) mode: one tool call per turn.
@@ -339,6 +398,8 @@ class REPLEnvironment(
         """
         import re
         import time
+
+        code = sanitize_code_unicode(code)
 
         # Validate code for dangerous patterns first
         try:
@@ -403,6 +464,7 @@ class REPLEnvironment(
             "route_advice",
             "delegate",
             "run_shell",
+            "run_python_code",
             "run_procedure",
             "list_procedures",
             "get_procedure_status",
@@ -537,6 +599,9 @@ class REPLEnvironment(
         # Structured mode: React-style one-tool-per-turn execution
         if self._structured_mode:
             return self._execute_structured(code, start_time)
+
+        # Sanitize Unicode characters that models copy from question text
+        code = sanitize_code_unicode(code)
 
         # Validate code for dangerous patterns
         try:

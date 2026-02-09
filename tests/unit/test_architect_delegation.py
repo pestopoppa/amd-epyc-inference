@@ -93,7 +93,7 @@ class TestParseArchitectDecision:
 
         result = _parse_architect_decision("I|brief:Check something|to:nonexistent_role")
         assert result["mode"] == "investigate"
-        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_to"] == "coder_escalation"
 
     def test_invalid_mode_clamped(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
@@ -336,11 +336,11 @@ class TestArchitectDelegatedAnswer:
         assert answer == specialist_doc
 
     def test_delegate_role_validation(self):
-        """Invalid delegate role gets clamped to coder_primary."""
+        """Invalid delegate role gets clamped to coder_escalation."""
         from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision("I|brief:Do something|to:invalid_role_xyz")
-        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_to"] == "coder_escalation"
 
 
 # ── Feature Flag Gating ──────────────────────────────────────────────────

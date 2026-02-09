@@ -57,6 +57,9 @@ from src.prompt_builders.review import (
     build_revision_prompt,
 )
 
+# Prompt resolver (hot-swap)
+from src.prompt_builders.resolver import resolve_prompt
+
 # Code extraction and error classification
 from src.prompt_builders.code_utils import (
     auto_wrap_final,
@@ -110,4 +113,6 @@ __all__ = [
     # Formatting
     "detect_format_constraints",
     "build_formalizer_prompt",
+    # Resolver
+    "resolve_prompt",
 ]

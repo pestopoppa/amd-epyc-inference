@@ -231,3 +231,98 @@ class TestSafeEvalMath:
 
         with pytest.raises((ValueError, SyntaxError)):
             _safe_eval_math("[x for x in range(10)]")
+
+
+# ── _execute_vision_multimodal tests ──────────────────────────────────────
+
+
+class TestExecuteVisionMultimodal:
+    """Tests for _execute_vision_multimodal routing."""
+
+    def test_returns_none_for_non_vision_role(self):
+        """Non-vision roles return None (fall through)."""
+        from src.api.routes.chat_pipeline.vision_stage import _execute_vision_multimodal
+
+        request = MagicMock()
+        request.image_path = "/some/image.png"
+        request.image_base64 = None
+        routing = MagicMock()
+        result = _run_async(
+            _execute_vision_multimodal(
+                request, routing, MagicMock(), MagicMock(), 0.0, "frontdoor", "direct"
+            )
+        )
+        assert result is None
+
+    def test_returns_none_without_image(self):
+        """Vision role without image returns None (fall through)."""
+        from src.api.routes.chat_pipeline.vision_stage import _execute_vision_multimodal
+
+        request = MagicMock()
+        request.image_path = None
+        request.image_base64 = None
+        routing = MagicMock()
+        result = _run_async(
+            _execute_vision_multimodal(
+                request, routing, MagicMock(), MagicMock(), 0.0, "worker_vision", "direct"
+            )
+        )
+        assert result is None
+
+    @patch("src.api.routes.chat_vision._handle_vision_request", new_callable=AsyncMock)
+    def test_direct_mode_calls_handle_vision(self, mock_handle):
+        """Direct mode routes to _handle_vision_request."""
+        from src.api.routes.chat_pipeline.vision_stage import _execute_vision_multimodal
+
+        mock_handle.return_value = "Paris"
+
+        request = MagicMock()
+        request.image_path = "/some/chart.png"
+        request.image_base64 = None
+        request.real_mode = True
+        request.force_role = "worker_vision"
+        routing = MagicMock()
+        routing.task_id = "test-123"
+        routing.routing_strategy = "forced"
+        routing.formalization_applied = False
+        state = MagicMock()
+        state.progress_logger = None
+
+        result = _run_async(
+            _execute_vision_multimodal(
+                request, routing, MagicMock(), state, 0.0, "worker_vision", "direct"
+            )
+        )
+        assert result is not None
+        assert result.answer == "Paris"
+        assert result.routed_to == "worker_vision"
+        mock_handle.assert_awaited_once()
+
+    @patch("src.api.routes.chat_vision._handle_vision_request", new_callable=AsyncMock)
+    def test_fallthrough_on_exception(self, mock_handle):
+        """Exception in VL handler returns None (fall through to text)."""
+        from src.api.routes.chat_pipeline.vision_stage import _execute_vision_multimodal
+
+        mock_handle.side_effect = RuntimeError("VL server down")
+
+        request = MagicMock()
+        request.image_path = "/some/image.png"
+        request.image_base64 = None
+        routing = MagicMock()
+        routing.task_id = "test-err"
+        state = MagicMock()
+        state.progress_logger = None
+
+        result = _run_async(
+            _execute_vision_multimodal(
+                request, routing, MagicMock(), state, 0.0, "worker_vision", "direct"
+            )
+        )
+        assert result is None
+
+    def test_vision_escalation_role_accepted(self):
+        """vision_escalation role is accepted (not just worker_vision)."""
+        from src.api.routes.chat_pipeline.vision_stage import _VISION_ROLES
+
+        assert "worker_vision" in _VISION_ROLES
+        assert "vision_escalation" in _VISION_ROLES

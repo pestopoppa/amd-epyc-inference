@@ -25,9 +25,93 @@ from src.prompt_builders.constants import (
     DEFAULT_ROOT_LM_RULES,
     DEFAULT_ROOT_LM_TOOLS,
 )
+from src.prompt_builders.resolver import resolve_prompt
 from src.roles import Role, get_tier
 
 _log = logging.getLogger(__name__)
+
+# ── Fallback Constants ──────────────────────────────────────────────────────
+
+_ROOT_LM_SYSTEM_FALLBACK = (
+    "You are an assistant that completes tasks. "
+    "Match your response depth to the user's request. "
+    "For factual lookups and multiple-choice, answer concisely with FINAL(answer). "
+    "For explanations or reasoning, think thoroughly before FINAL(answer). "
+    "For tasks requiring file access, web search, or external data, use the available tools."
+)
+
+_CONFIDENCE_ESTIMATION_FALLBACK = """Estimate your probability of correctly answering this question.
+
+Question: {question}{context_section}
+
+Rate your confidence (0.0-1.0) for each approach:
+- SELF: You handle it (no escalation or delegation)
+- ARCHITECT: Escalate to architect for complex reasoning you cannot handle
+- WORKER: Delegate to faster worker models
+
+Score based on fit:
+- SELF: Within your capability
+- ARCHITECT: Needs deeper reasoning or complex design
+- WORKER: Simple/rote task, or can be split into parallel subtasks
+
+Output ONLY this format, nothing else:
+CONF|SELF:X.XX|ARCHITECT:X.XX|WORKER:X.XX"""
+
+_TASK_DECOMPOSITION_FALLBACK = """Decompose this task into 2-5 parallel-executable steps.
+Return ONLY a JSON array, no markdown fences, no explanation.
+
+Each step: {{"id":"S1","actor":"worker"|"coder"|"architect","action":"what to do","depends_on":[],"parallel_group":"group_name","outputs":["result"]}}
+
+Rules:
+- Independent steps share a parallel_group so they run simultaneously
+- Use depends_on only when a step needs another step's output
+- actor: "worker" for exploration/summarization, "coder" for code, "architect" for design
+- Keep actions concise (1-2 sentences)
+
+Task: {objective}{context_note}
+
+JSON:"""
+
+_ROLE_PROMPT_FALLBACKS = {
+    Role.FRONTDOOR: (
+        "You are an orchestrator AI. Your job is to understand user requests, "
+        "break them into tasks, and generate Python code that executes in a "
+        "sandboxed REPL environment. You can call sub-LMs for complex subtasks."
+    ),
+    Role.CODER_PRIMARY: (
+        "You are a senior software engineer. Write clean, efficient code that "
+        "follows best practices. Focus on correctness and maintainability."
+    ),
+    Role.CODER_ESCALATION: (
+        "You are a software architect. Design robust systems and APIs. "
+        "Consider scalability, security, and long-term maintainability."
+    ),
+    Role.ARCHITECT_GENERAL: (
+        "You are a system architect. You handle complex problems that require "
+        "deep reasoning and coordination across multiple domains."
+    ),
+    Role.ARCHITECT_CODING: (
+        "You are a principal engineer with expertise in complex codebases. "
+        "You solve the hardest coding problems and design critical systems."
+    ),
+    Role.INGEST_LONG_CONTEXT: (
+        "You are a document analysis specialist. Process and synthesize "
+        "information from long documents while maintaining accuracy."
+    ),
+    Role.WORKER_GENERAL: (
+        "You are a general-purpose assistant. Complete tasks efficiently "
+        "and accurately. Focus on the specific task at hand."
+    ),
+    Role.WORKER_MATH: (
+        "You are a mathematical reasoning specialist. Solve math problems "
+        "step by step, showing your work clearly."
+    ),
+    Role.WORKER_VISION: (
+        "You are a vision-language specialist. Analyze images and provide "
+        "accurate descriptions and interpretations."
+    ),
+}
+
 
 if TYPE_CHECKING:
     from src.context_manager import ContextManager
@@ -125,18 +209,17 @@ class PromptBuilder:
             Prompt string or RootLMPrompt if as_structured=True
         """
         prompt = RootLMPrompt(
-            system=(
-                "You are an assistant that completes tasks. "
-                "Match your response depth to the user's request. "
-                "For factual lookups and multiple-choice, answer concisely with FINAL(answer). "
-                "For explanations or reasoning, think thoroughly before FINAL(answer). "
-                "For tasks requiring file access, web search, or external data, use the available tools."
-            ),
+            system=resolve_prompt("root_lm_system", _ROOT_LM_SYSTEM_FALLBACK),
             tools=self._resolve_tools(),
             rules=self._resolve_rules(),
             state=f"Turn {turn + 1}\n{state}",
             task=original_prompt,
-            instruction="Complete the task. Output Python code with FINAL(answer):",
+            instruction=(
+                "Complete the task. Output Python code with FINAL(answer). "
+                "If asked to write/implement code, FINAL must contain the complete program text, "
+                "not a status word like 'done', 'implemented', or 'code'.\n"
+                "Example: FINAL('''import sys\\ndef solve(): ...\\nsolve()'''):"
+            ),
         )
 
         # Build context section based on last output/error
@@ -473,6 +556,9 @@ class PromptBuilder:
     def get_system_prompt(self, role: Role) -> str:
         """Get the system prompt for a specific role.
 
+        Hot-swappable: reads from orchestration/prompts/roles/{role.value}.md
+        if the file exists, otherwise uses the fallback constant.
+
         Args:
             role: The role to get the system prompt for.
 
@@ -482,53 +568,13 @@ class PromptBuilder:
         tier = get_tier(role)
         role_name = role.value
 
-        # Base system prompts by role
-        system_prompts = {
-            Role.FRONTDOOR: (
-                "You are an orchestrator AI. Your job is to understand user requests, "
-                "break them into tasks, and generate Python code that executes in a "
-                "sandboxed REPL environment. You can call sub-LMs for complex subtasks."
-            ),
-            Role.CODER_PRIMARY: (
-                "You are a senior software engineer. Write clean, efficient code that "
-                "follows best practices. Focus on correctness and maintainability."
-            ),
-            Role.CODER_ARCHITECT: (
-                "You are a software architect. Design robust systems and APIs. "
-                "Consider scalability, security, and long-term maintainability."
-            ),
-            Role.ARCHITECT_GENERAL: (
-                "You are a system architect. You handle complex problems that require "
-                "deep reasoning and coordination across multiple domains."
-            ),
-            Role.ARCHITECT_CODING: (
-                "You are a principal engineer with expertise in complex codebases. "
-                "You solve the hardest coding problems and design critical systems."
-            ),
-            Role.INGEST_LONG_CONTEXT: (
-                "You are a document analysis specialist. Process and synthesize "
-                "information from long documents while maintaining accuracy."
-            ),
-            Role.WORKER_GENERAL: (
-                "You are a general-purpose assistant. Complete tasks efficiently "
-                "and accurately. Focus on the specific task at hand."
-            ),
-            Role.WORKER_MATH: (
-                "You are a mathematical reasoning specialist. Solve math problems "
-                "step by step, showing your work clearly."
-            ),
-            Role.WORKER_VISION: (
-                "You are a vision-language specialist. Analyze images and provide "
-                "accurate descriptions and interpretations."
-            ),
-        }
-
-        # Return role-specific prompt or a generic one
-        return system_prompts.get(
+        fallback = _ROLE_PROMPT_FALLBACKS.get(
             role,
             f"You are a {tier.name.lower()}-tier {role_name} assistant. "
             f"Complete tasks efficiently and accurately.",
         )
+
+        return resolve_prompt(role_name, fallback, subdir="roles")
 
 
 # Module-level functions for backwards compatibility
@@ -794,20 +840,11 @@ def build_task_decomposition_prompt(objective: str, context: str = "") -> str:
         Prompt string for the architect model.
     """
     context_note = f"\nContext ({len(context)} chars): {context[:200]}..." if context else ""
-    return f"""Decompose this task into 2-5 parallel-executable steps.
-Return ONLY a JSON array, no markdown fences, no explanation.
-
-Each step: {{"id":"S1","actor":"worker"|"coder"|"architect","action":"what to do","depends_on":[],"parallel_group":"group_name","outputs":["result"]}}
-
-Rules:
-- Independent steps share a parallel_group so they run simultaneously
-- Use depends_on only when a step needs another step's output
-- actor: "worker" for exploration/summarization, "coder" for code, "architect" for design
-- Keep actions concise (1-2 sentences)
-
-Task: {objective[:500]}{context_note}
-
-JSON:"""
+    return resolve_prompt(
+        "task_decomposition", _TASK_DECOMPOSITION_FALLBACK,
+        objective=objective[:500],
+        context_note=context_note,
+    )
 
 
 def build_confidence_estimation_prompt(
@@ -838,19 +875,8 @@ def build_confidence_estimation_prompt(
     if context:
         context_section = f"\n\nContext ({len(context)} chars):\n{context[:max_context_chars]}{'...' if len(context) > max_context_chars else ''}"
 
-    return f"""Estimate your probability of correctly answering this question.
-
-Question: {question[:max_question_chars]}{'...' if len(question) > max_question_chars else ''}{context_section}
-
-Rate your confidence (0.0-1.0) for each approach:
-- SELF: You handle it (no escalation or delegation)
-- ARCHITECT: Escalate to architect for complex reasoning you cannot handle
-- WORKER: Delegate to faster worker models
-
-Score based on fit:
-- SELF: Within your capability
-- ARCHITECT: Needs deeper reasoning or complex design
-- WORKER: Simple/rote task, or can be split into parallel subtasks
-
-Output ONLY this format, nothing else:
-CONF|SELF:X.XX|ARCHITECT:X.XX|WORKER:X.XX"""
+    return resolve_prompt(
+        "confidence_estimation", _CONFIDENCE_ESTIMATION_FALLBACK,
+        question=f"{question[:max_question_chars]}{'...' if len(question) > max_question_chars else ''}",
+        context_section=context_section,
+    )

@@ -461,6 +461,18 @@ class LlamaServerBackend(ModelBackend):
                             early_stopped = True
                     if early_stopped:
                         tokens_generated = len(chunks)  # approximate
+                        # Early-stop breaks before the stop=True event which
+                        # carries timings. Compute generation_ms from wall
+                        # clock so timing telemetry isn't lost.
+                        _es_elapsed = (time.perf_counter() - http_start) * 1000
+                        timings = {
+                            "predicted_ms": _es_elapsed,
+                            "predicted_per_second": (
+                                tokens_generated / (_es_elapsed / 1000)
+                                if _es_elapsed > 0
+                                else 0.0
+                            ),
+                        }
                         break
 
                     if data.get("stop", False):

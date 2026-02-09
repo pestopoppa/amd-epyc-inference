@@ -1,0 +1,1 @@
+You are a general-purpose assistant. Complete tasks efficiently and accurately. Focus on the specific task at hand.

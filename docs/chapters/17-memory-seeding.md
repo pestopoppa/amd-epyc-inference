@@ -259,6 +259,31 @@ python scripts/benchmark/seed_specialist_routing.py --3way --dry-run --suites th
 - 3-way seeding uses binary rewards for faithful P(success) estimation
 - Cost is stored in metadata, not incorporated into Q-values
 
+### Question Pool (Pre-extracted)
+
+All ~53K questions from 18 HF dataset adapters + YAML suites are pre-extracted into `benchmarks/prompts/question_pool.jsonl`. Runtime sampling reads this file (~100ms) instead of loading 16 Arrow/Parquet datasets (~30s).
+
+- **Sampling**: Full shuffle per suite, take first N unseen. Guarantees coverage of entire pool.
+- **Seen tracking**: `benchmarks/results/eval/seen_questions.jsonl` — questions marked seen only when rewards are injected.
+- **Debug mode** (`--debug`): When a suite is exhausted, backfills with seen questions (via `allow_reseen`). Normal mode skips exhausted suites.
+- **Reset**: `scripts/session/reset_episodic_memory.sh` clears episodic DB + FAISS + seen set.
+- **Rebuild**: `--rebuild-pool` re-extracts from all adapters.
+
+### Claude-in-the-Loop Debugger
+
+The `--debug` flag (requires `--3way`) enables automatic pipeline debugging via a persistent Claude Code session. The `src/pipeline_monitor/` package computes 12 anomaly signals per answer (repetition loops, template echo, format violations, etc.), batches diagnostics, and invokes Claude when the batch is full or a critical anomaly fires. Claude reads diagnostics, examines raw inference tap output, and applies prompt hot-swaps or code patches.
+
+```bash
+# Live debugging (Claude analyzes every 5 answers)
+python scripts/benchmark/seed_specialist_routing.py --3way --continuous --debug
+
+# Dry run (log diagnostics without invoking Claude)
+python scripts/benchmark/seed_specialist_routing.py --3way --debug --debug-dry-run
+
+# Review diagnostics
+python scripts/benchmark/review_diagnostics.py --summary
+```
+
 ## Seeding Order & Dependencies
 
 **Recommended seeding order:**
@@ -353,6 +378,28 @@ plan now includes:
 - **Async safety**: all blocking LLM calls are offloaded from the event loop.
 - **3-way timeout cleanup**: slot erasure on infra timeouts to prevent stuck backends.
 - **Backend probes in /health**: detect hung backends even when circuit state is stale.
+
+## Architect Delegation in 3-Way Eval (2026-02-09)
+
+The 3-way ARCHITECT evaluation runs `architect_general` and `architect_coding` in
+delegated mode. The architect decides via TOON whether to answer directly (`D|answer`)
+or delegate to a specialist (`I|brief:<spec>|to:coder_escalation`).
+
+**Known issue (fixed):** The original architect prompt presented `D|` and `I|` as
+side-by-side template examples. Qwen3-235B echoed both, causing `_extract_toon_decision`
+to find `D|Answer` first and parse it as a direct answer. The delegation chain to
+`coder_escalation` (port 8081, Qwen2.5-Coder-32B) was never exercised.
+
+**Fix:** Prompt restructured as bullet-list alternatives with "EXACTLY ONE line" guard.
+Architect now correctly delegates code tasks and provides architectural design briefs
+(approach, data structures, algorithm, complexity) for the coding specialist.
+
+**Slot-erase for stuck backends:** When the seeding script's HTTP client times out, the
+llama-server may still be generating. `_erase_slots(port)` sends
+`POST /slots/{id}?action=erase` to cancel in-progress inference. If the server is stuck
+in prompt eval, the erase request itself may hang. The `_SLOT_ERASE_CAPABILITY` cache
+tracks which ports support slot erasure and disables erase attempts on ports that return
+404/405/501.
 
 ## Timeout + Telemetry Updates (2026-02-08)
 

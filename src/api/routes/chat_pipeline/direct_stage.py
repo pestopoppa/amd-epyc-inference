@@ -109,10 +109,12 @@ def _execute_direct(
         allow_escalation=not bool(request.force_role),
     )
 
-    # MemRL-informed quality review gate
+    # MemRL-informed quality review gate (skip when force_role is set —
+    # seeding/eval calls should not trigger expensive architect reviews)
     if (
         answer
         and not answer.startswith("[ERROR")
+        and not request.force_role
         and _should_review(state, routing.task_id, initial_role, answer)
     ):
         verdict = _architect_verdict(

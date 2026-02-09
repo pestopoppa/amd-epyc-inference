@@ -1,11 +1,11 @@
 """Rich split-screen TUI for the seeding script.
 
 Activated via ``--tui`` on ``seed_specialist_routing.py``.  Provides a
-single-command split-screen experience:
+four-panel split-screen experience with maximized inference visibility:
 
-- **Left panel**: Seeding progress log (captured from Python ``logging``)
-- **Right panel**: Live inference stream (tailed from the inference tap file)
-- **Bottom bar**: Current question index, suite, action, elapsed time
+- **Header**: Minimal 1-line status (index, suite, action, elapsed)
+- **Left column**: Seeding progress log (top) + current question (bottom)
+- **Right column**: Inference stream (top, large) + REPL execution (bottom)
 
 Requires ``rich>=13.7.0`` (already a project dependency).
 """
@@ -34,6 +34,7 @@ from rich.text import Text
 
 _SENTINEL_PATH = "/mnt/raid0/llm/tmp/.inference_tap_active"
 _DEFAULT_TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
+_DEFAULT_REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
 
 # ---------------------------------------------------------------------------
 # DequeHandler — capture log records for the left panel
@@ -60,22 +61,23 @@ class DequeHandler(logging.Handler):
 
 
 # ---------------------------------------------------------------------------
-# TapTailer — daemon thread that tails the inference tap file
+# TapTailer — daemon thread that tails a file (inference or REPL)
 # ---------------------------------------------------------------------------
 
 
 class TapTailer:
-    """Daemon thread that tails the inference tap file with polling.
+    """Daemon thread that tails a tap file with polling.
 
     Tracks the *current section* (text between ``========`` markers) so
-    that the right panel always shows the most recent inference call.
+    that the panel always shows the most recent inference call.
 
     Buffers partial lines so that character-at-a-time SSE streaming
     doesn't produce one-char-per-line output.
     """
 
     def __init__(self, tap_path: str, poll_interval: float = 0.10,
-                 max_lines: int = 200) -> None:
+                 max_lines: int = 200, name: str = "tap-tailer",
+                 section_aware: bool = True) -> None:
         self._path = tap_path
         self._poll = poll_interval
         self._stop = threading.Event()
@@ -83,12 +85,14 @@ class TapTailer:
         self._current_section: collections.deque[str] = collections.deque(maxlen=max_lines)
         self._role_chain: list[str] = []  # e.g. ["architect_general", "coder_escalation"]
         self._thread: threading.Thread | None = None
+        self._name = name
+        self._section_aware = section_aware
 
     # -- public API --
 
     def start(self) -> None:
         self._thread = threading.Thread(
-            target=self._run, daemon=True, name="tap-tailer"
+            target=self._run, daemon=True, name=self._name
         )
         self._thread.start()
 
@@ -113,6 +117,11 @@ class TapTailer:
         """Reset the role chain (called when a new question starts)."""
         with self._lock:
             self._role_chain.clear()
+
+    def reset_section(self) -> None:
+        """Clear the current section (e.g. when a new question starts)."""
+        with self._lock:
+            self._current_section.clear()
 
     # -- internal --
 
@@ -154,7 +163,7 @@ class TapTailer:
             for i, fragment in enumerate(lines):
                 # Detect new section (======== marker) → reset display content
                 # (role chain persists across sections; reset by reset_role_chain())
-                if fragment.startswith("=" * 20):
+                if self._section_aware and fragment.startswith("=" * 20):
                     self._current_section.clear()
                     self._current_section.append(fragment)
                     continue
@@ -175,7 +184,9 @@ class TapTailer:
                         long = self._current_section[-1]
                         self._current_section[-1] = long[:wrap_width]
                         self._current_section.append(long[wrap_width:])
-                elif fragment:  # skip empty strings from split
+                else:
+                    # i > 0 means a \n was present — start a new line.
+                    # Append even empty fragments to preserve blank lines.
                     self._current_section.append(fragment)
 
     def _semantic_break_last_line(self) -> None:
@@ -276,6 +287,56 @@ def _style_stream_lines(lines: list[str], in_code_initial: bool = False) -> Text
     return styled
 
 
+def _style_repl_lines(lines: list[str]) -> Text:
+    """Apply Rich styles to REPL execution lines."""
+    styled = Text()
+    for i, line in enumerate(lines):
+        if i > 0:
+            styled.append("\n")
+
+        # Turn headers and command lines
+        if line.startswith("[turn ") and "] $" in line:
+            styled.append(line, style="bold green")
+            continue
+        if line.startswith("[turn ") and "FINAL" in line:
+            styled.append(line, style="bold magenta")
+            continue
+        if line.startswith("[turn ") and "ERROR" in line:
+            styled.append(line, style="bold red")
+            continue
+        if line.startswith("[turn ") and "(no output)" in line:
+            styled.append(line, style="dim yellow")
+            continue
+        if line.startswith("[turn "):
+            styled.append(line, style="bold cyan")
+            continue
+        if line.startswith("CODE"):
+            styled.append(line, style="dim")
+            continue
+
+        # Python code (indented or keywords)
+        stripped = line.lstrip()
+        if stripped.startswith(("def ", "class ", "import ", "from ", "return ",
+                                "if ", "for ", "while ", "try:", "except",
+                                "with ", "raise ", "assert ")):
+            styled.append(line, style="cyan")
+            continue
+        # Indented code continuation
+        if line.startswith("    ") or line.startswith("\t"):
+            styled.append(line, style="cyan")
+            continue
+
+        # Error output
+        if "Error" in line or "Traceback" in line:
+            styled.append(line, style="red")
+            continue
+
+        # Default
+        styled.append(line)
+
+    return styled
+
+
 # ---------------------------------------------------------------------------
 # SeedingTUI — context manager orchestrating the Rich Live display
 # ---------------------------------------------------------------------------
@@ -283,6 +344,20 @@ def _style_stream_lines(lines: list[str], in_code_initial: bool = False) -> Text
 
 class SeedingTUI:
     """Context manager that runs the Rich TUI.
+
+    Layout::
+
+        ┌──────────────────────────────────────────────┐
+        │  [2/160] thinking/q1 | SELF:repl | 3m42s     │ ← 1-line header
+        ├──────────────────┬───────────────────────────┤
+        │ Seeding Progress │                           │
+        │ (log)            │   Inference Stream        │
+        │                  │   (model output, large)   │
+        ├──────────────────┤                           │
+        │ Question         ├───────────────────────────┤
+        │ (scrolling)      │   REPL Execution          │
+        │                  │   (code + output)         │
+        └──────────────────┴───────────────────────────┘
 
     Usage::
 
@@ -295,15 +370,21 @@ class SeedingTUI:
         self,
         session_id: str = "",
         tap_path: str = _DEFAULT_TAP_PATH,
+        repl_tap_path: str = _DEFAULT_REPL_TAP_PATH,
         refresh_per_second: int = 4,
     ) -> None:
         self._session_id = session_id
         self._tap_path = tap_path
+        self._repl_tap_path = repl_tap_path
         self._refresh = refresh_per_second
 
         self._console = Console()
         self._deque_handler = DequeHandler(maxlen=500)
-        self._tailer = TapTailer(tap_path)
+        self._tailer = TapTailer(tap_path, name="tap-inference")
+        self._repl_tailer = TapTailer(
+            repl_tap_path, name="tap-repl",
+            section_aware=False,  # REPL tap is append-only, no ======== sections
+        )
         self._progress = TUIProgress(session_id=session_id)
         self._live: Live | None = None
 
@@ -325,6 +406,9 @@ class SeedingTUI:
         # Reset role chain when action changes (new config for same question)
         if action != self._progress.current_action or qid != self._progress.current_qid:
             self._tailer.reset_role_chain()
+        # Reset REPL panel when question changes
+        if qid != self._progress.current_qid:
+            self._repl_tailer.reset_section()
         self._progress.current_index = idx
         self._progress.total_questions = total
         self._progress.current_suite = suite
@@ -337,6 +421,8 @@ class SeedingTUI:
     def __enter__(self) -> "SeedingTUI":
         # 1. Write sentinel so the API discovers the tap path
         self._write_sentinel()
+        # Truncate REPL tap on start (fresh per session)
+        self._truncate_repl_tap()
         atexit.register(self._cleanup)
 
         # 2. Swap log handlers
@@ -354,8 +440,9 @@ class SeedingTUI:
         for name in ("filelock", "datasets", "huggingface_hub", "urllib3", "fsspec"):
             logging.getLogger(name).setLevel(logging.WARNING)
 
-        # 3. Start tap tailer
+        # 3. Start tap tailers (inference + REPL)
         self._tailer.start()
+        self._repl_tailer.start()
 
         # 4. Start Rich Live with get_renderable callback.
         #    Rich Live's auto_refresh thread calls get_renderable() on each
@@ -378,8 +465,9 @@ class SeedingTUI:
             except Exception:
                 pass
 
-        # 2. Stop tailer
+        # 2. Stop tailers
         self._tailer.stop()
+        self._repl_tailer.stop()
 
         # 3. Restore log handlers
         root = logging.getLogger()
@@ -388,7 +476,7 @@ class SeedingTUI:
             root.addHandler(h)
         root.setLevel(self._saved_level)
 
-        # 4. Cleanup sentinel + tap file
+        # 4. Cleanup sentinel + tap files
         self._cleanup()
 
         return False
@@ -398,68 +486,101 @@ class SeedingTUI:
     def _make_layout(self) -> Layout:
         layout = Layout()
         layout.split_column(
-            Layout(name="main", ratio=9),
-            Layout(name="status", size=3),
-        )
-        layout["main"].split_row(
-            Layout(name="log", ratio=1),
-            Layout(name="right", ratio=1),
-        )
-        layout["right"].split_column(
-            Layout(name="question", size=5),
-            Layout(name="stream"),
+            Layout(name="header", size=1),
+            Layout(name="body"),
         )
 
-        # Left panel: seeding log
-        # Calculate visible lines based on terminal size.
-        # Panel border (2) + status bar (3) = 5 overhead, main ratio=9/10.
+        # ── Header: minimal 1-line status ──
+        p = self._progress
+        elapsed = time.monotonic() - p.start_time
+        mins, secs = divmod(int(elapsed), 60)
+        header_parts = [f" [{p.current_index}/{p.total_questions}]"]
+        if p.current_qid:
+            header_parts.append(f"{p.current_suite}/{p.current_qid}")
+        if p.current_action:
+            header_parts.append(p.current_action)
+        header_parts.append(f"{mins}m{secs:02d}s")
+        if p.session_id:
+            header_parts.append(p.session_id)
+        header_text = Text(" | ".join(header_parts), style="bold")
+        layout["header"].update(header_text)
+
+        # Body: left column (narrow) + right column (wide)
+        layout["body"].split_row(
+            Layout(name="left", ratio=3),
+            Layout(name="right", ratio=5),
+        )
+        layout["left"].split_column(
+            Layout(name="log", ratio=6),
+            Layout(name="question", ratio=4),
+        )
+        layout["right"].split_column(
+            Layout(name="stream", ratio=7),
+            Layout(name="repl", ratio=3),
+        )
+
+        # Calculate panel dimensions
+        # Panel borders consume 4 chars (│ + space on each side)
         try:
-            panel_height = max(10, (self._console.height - 5) * 9 // 10 - 2)
-            panel_width = max(20, self._console.width // 2 - 4)
+            total_height = self._console.height - 1  # minus header
+            left_width = max(20, self._console.width * 3 // 8 - 6)
+            right_width = max(30, self._console.width * 5 // 8 - 6)
+            log_height = max(5, total_height * 6 // 10 - 2)
+            q_height = max(3, total_height * 4 // 10 - 2)
+            stream_height = max(8, total_height * 7 // 10 - 2)
+            repl_height = max(3, total_height * 3 // 10 - 2)
         except Exception:
-            panel_height = 25
-            panel_width = 70
-        # Truncate each line to panel width so 1 record = 1 display line (no wrap)
-        raw = list(self._deque_handler.records)[-(panel_height):]
-        log_lines = [line[:panel_width] for line in raw]
-        log_text = Text("\n".join(log_lines) if log_lines else "(waiting for log output...)")
+            left_width, right_width = 50, 80
+            log_height, q_height = 15, 8
+            stream_height, repl_height = 20, 8
+
+        # ── Left top: Seeding progress log ──
+        # Subtract 2 for panel borders (top + bottom) so content isn't clipped
+        log_vis = max(3, log_height - 2)
+        # Wrap log lines instead of truncating — fits panel width
+        log_wrap_w = max(20, left_width - 4)  # account for panel border + padding
+        raw = list(self._deque_handler.records)
+        wrapped_log: list[str] = []
+        for line in raw:
+            if len(line) <= log_wrap_w:
+                wrapped_log.append(line)
+            else:
+                wrapped_log.extend(textwrap.wrap(line, width=log_wrap_w))
+        # Show the most recent lines that fit
+        log_lines = wrapped_log[-(log_vis):]
+        log_text = Text("\n".join(log_lines) if log_lines else "(waiting...)")
         layout["log"].update(Panel(
             log_text,
-            title=f"Seeding Progress ({len(self._deque_handler.records)} records)",
+            title=f"Log ({len(self._deque_handler.records)})",
             border_style="green",
         ))
 
-        # Question panel: show the current question being evaluated.
-        # If text exceeds visible lines, auto-scroll in a continuous loop.
-        q_visible_lines = 3  # panel size=5 minus 2 for border
-        p = self._progress
-        q_text = p.current_question
-        if q_text:
-            # Preserve explicit newlines (e.g., MCQ choices A/B/C/D)
-            # by wrapping each paragraph separately.
+        # ── Left bottom: Question (auto-scrolling) ──
+        q_visible = max(3, q_height - 2)
+        q_raw = p.current_question
+        if q_raw:
             wrapped: list[str] = []
-            for paragraph in q_text.split("\n"):
+            for paragraph in q_raw.split("\n"):
                 if paragraph.strip():
-                    wrapped.extend(textwrap.wrap(paragraph, width=panel_width))
+                    wrapped.extend(textwrap.wrap(paragraph, width=left_width))
                 else:
-                    wrapped.append("")  # blank line between paragraphs
-            if len(wrapped) <= q_visible_lines:
+                    wrapped.append("")
+            if len(wrapped) <= q_visible:
                 q_display = "\n".join(wrapped)
             else:
-                # Scroll: advance 1 line every 2 seconds, loop with a gap
-                total = len(wrapped) + 1  # +1 for visual gap at wrap point
+                total = len(wrapped) + 1
                 elapsed_q = time.monotonic() - p.start_time
                 offset = int(elapsed_q / 2.0) % total
                 visible = []
-                for j in range(q_visible_lines):
+                for j in range(q_visible):
                     idx = (offset + j) % total
                     if idx < len(wrapped):
                         visible.append(wrapped[idx])
                     else:
-                        visible.append("")  # gap line at wrap point
+                        visible.append("")
                 q_display = "\n".join(visible)
         else:
-            q_display = "(waiting for question...)"
+            q_display = "(waiting...)"
         q_title = f"{p.current_suite}/{p.current_qid}" if p.current_qid else "Question"
         layout["question"].update(Panel(
             Text(q_display),
@@ -467,9 +588,7 @@ class SeedingTUI:
             border_style="yellow",
         ))
 
-        # Stream panel: inference stream — filter out verbose PROMPT sections,
-        # keep headers, RESPONSE tokens, and TIMINGS.
-        stream_height = max(8, panel_height - 5)  # subtract question panel
+        # ── Right top: Inference stream (maximized) ──
         raw_section = self._tailer.get_current_section()
         filtered: list[str] = []
         in_prompt = False
@@ -479,63 +598,37 @@ class SeedingTUI:
                 filtered.append("PROMPT: [...]")
                 continue
             if in_prompt:
-                # End of prompt section: a line of dashes or a new section marker
                 if line.startswith("-" * 20) or line.startswith("=" * 20):
                     in_prompt = False
-                    # Don't add the dash separator — RESPONSE: follows
                 else:
                     continue
             if line.startswith("RESPONSE:"):
-                filtered.append("")  # visual separator
+                filtered.append("")
             filtered.append(line)
 
-        # Truncate each line to panel width so 1 logical line = 1 display line (no wrap)
-        # Compute in_code state from lines that scrolled off-screen
-        # so code blocks stay styled after the opening ``` scrolls away.
-        hidden_count = max(0, len(filtered) - stream_height)
+        stream_vis = max(5, stream_height - 2)
+        hidden_count = max(0, len(filtered) - stream_vis)
         in_code_init = False
         if hidden_count > 0:
             for hline in filtered[:hidden_count]:
                 if hline.lstrip().startswith("```"):
                     in_code_init = not in_code_init
-        display_lines = [line[:panel_width] for line in filtered[-(stream_height):]]
+        display_lines = [line[:right_width] for line in filtered[-(stream_vis):]]
         stream_text = _style_stream_lines(display_lines, in_code_init) if display_lines else Text("(waiting for inference tap...)")
         role_chain = self._tailer.get_role_chain()
-        if role_chain:
-            stream_title = f"Inference Stream ({' → '.join(role_chain)})"
-        else:
-            stream_title = "Inference Stream"
+        stream_title = f"Inference ({' \u2192 '.join(role_chain)})" if role_chain else "Inference Stream"
         layout["stream"].update(Panel(stream_text, title=stream_title, border_style="cyan"))
 
-        # Bottom bar: status — extract current action from last log line
-        p = self._progress
-        elapsed = time.monotonic() - p.start_time
-        mins, secs = divmod(int(elapsed), 60)
-        status_str = (
-            f"[{p.current_index}/{p.total_questions}] "
-            f"{p.current_suite}/{p.current_qid}"
-        )
-        # Show current action from last meaningful log line (e.g. "→ SELF:direct (frontdoor:direct)...")
-        last_action = ""
-        for rec in reversed(list(self._deque_handler.records)):
-            if "→ " in rec:
-                # Extract e.g. "SELF:direct (frontdoor:direct)"
-                try:
-                    last_action = rec.split("→ ", 1)[1].split("...")[0].strip()
-                except (IndexError, ValueError):
-                    pass
-                break
-        if last_action:
-            status_str += f" | {last_action}"
-        elif p.current_action:
-            status_str += f" | {p.current_action}"
-        status_str += f" | {mins}m{secs:02d}s"
-        if p.session_id:
-            status_str += f" | {p.session_id}"
-
-        layout["status"].update(
-            Panel(Text(status_str, justify="center"), border_style="yellow")
-        )
+        # ── Right bottom: REPL execution log ──
+        repl_vis = max(3, repl_height - 2)
+        repl_section = self._repl_tailer.get_current_section()
+        repl_display = [line[:right_width] for line in repl_section[-(repl_vis):]]
+        repl_text = _style_repl_lines(repl_display) if repl_display else Text("(no REPL activity)")
+        layout["repl"].update(Panel(
+            repl_text,
+            title="REPL Execution",
+            border_style="magenta",
+        ))
 
         return layout
 
@@ -549,8 +642,17 @@ class SeedingTUI:
         except OSError:
             pass
 
+    def _truncate_repl_tap(self) -> None:
+        """Truncate the REPL tap file at session start."""
+        try:
+            Path(self._repl_tap_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(self._repl_tap_path, "w") as f:
+                pass  # truncate
+        except OSError:
+            pass
+
     def _cleanup(self) -> None:
-        for path in (_SENTINEL_PATH, self._tap_path):
+        for path in (_SENTINEL_PATH, self._tap_path, self._repl_tap_path):
             try:
                 os.unlink(path)
             except FileNotFoundError:

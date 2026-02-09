@@ -185,6 +185,13 @@ class _ContextMixin:
                     f"Current exploration calls: {self._exploration_calls}. "
                     "Use peek() or grep() to examine the context first."
                 )
+        # Guard: model passed a function/class object instead of source text.
+        # str() on callables produces '<function foo at 0x...>' which is useless.
+        if callable(answer):
+            raise ValueError(
+                f"FINAL() received a {type(answer).__name__} object, not a string. "
+                "Pass the source code as a string: FINAL('''def foo(): ...''')"
+            )
         raise FinalSignal(str(answer))
 
     def _final_var(self, var_name: str) -> None:

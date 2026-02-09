@@ -1,0 +1,7 @@
+# Patch: add feature
+# Created: 2026-02-09T23:53:38.195929
+# Files: src/file.py
+# Status: PENDING APPROVAL
+#
+diff --git a/file.py b/file.py
++new line

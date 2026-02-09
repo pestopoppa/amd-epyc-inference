@@ -332,3 +332,59 @@ class TestLlamaServerBackend:
         """Test unload() is a no-op that returns True."""
         backend = LlamaServerBackend(base_url="http://test:8080")
         assert backend.unload(12345) is True
+
+
+class TestEarlyStopTiming:
+    """Tests for timing telemetry when early-stop breaks the SSE stream."""
+
+    def test_early_stop_produces_timing(self, role_config, server_config):
+        """When on_chunk raises StopIteration, timings should still be set."""
+        backend = LlamaServerBackend(config=server_config)
+
+        # Simulate SSE stream with 5 chunks before early-stop
+        sse_lines = [
+            'data: {"content": "Hello"}',
+            'data: {"content": " world"}',
+            'data: {"content": "!"}',
+            'data: {"content": " FINAL"}',
+            'data: {"content": "(42)"}',
+            # stop event would follow but early-stop breaks before it
+        ]
+
+        call_count = 0
+
+        def on_chunk(content):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 4:
+                raise StopIteration
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def iter_lines(self):
+                return iter(sse_lines)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        with patch.object(backend.client, "stream", return_value=FakeResponse()):
+            request = InferenceRequest(
+                role="test_role",
+                prompt="test",
+                n_tokens=100,
+                timeout=30,
+            )
+            result = backend.infer_stream_text(role_config, request, on_chunk=on_chunk)
+
+        # Before the fix: generation_ms == 0 because timings dict was empty
+        # After the fix: generation_ms > 0 computed from wall clock
+        assert result.tokens_generated == 4  # chunks before stop
+        assert result.generation_ms > 0, "Early-stop should still produce timing"
+        assert result.predicted_per_second > 0, "Early-stop should still produce TPS"

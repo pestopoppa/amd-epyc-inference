@@ -946,10 +946,10 @@ class TestBuildArchitectInvestigatePrompt:
         result = build_architect_investigate_prompt("What is the capital of France?")
         assert "What is the capital of France?" in result
         assert "D|" in result  # Direct answer format
-        assert "I|" in result  # Investigate format
-        # Structural: D| and I| should be on own lines
-        assert "\nD|" in result or result.startswith("D|")
-        assert "\nI|" in result
+        assert "I|" in result  # Investigate/delegate format
+        # Structural: D| and I| decision formats present
+        assert "D|<answer>" in result
+        assert "brief:" in result
 
     def test_with_context(self):
         from src.prompt_builders import build_architect_investigate_prompt

@@ -4,6 +4,15 @@ from __future__ import annotations
 
 import re
 
+from src.prompt_builders.resolver import resolve_prompt
+
+_FORMALIZER_FALLBACK = (
+    "Reformat the following answer to strictly satisfy this format constraint: {format_spec}\n\n"
+    "Original question: {prompt}\n\n"
+    "Original answer:\n{answer}\n\n"
+    "Output ONLY the reformatted answer. Do not add explanations or preamble."
+)
+
 
 # Patterns that indicate format constraints in a prompt
 _FORMAT_CONSTRAINT_PATTERNS = [
@@ -57,9 +66,9 @@ def build_formalizer_prompt(answer: str, prompt: str, format_spec: str) -> str:
     Returns:
         Formatted formalizer prompt string.
     """
-    return (
-        f"Reformat the following answer to strictly satisfy this format constraint: {format_spec}\n\n"
-        f"Original question: {prompt[:500]}\n\n"
-        f"Original answer:\n{answer}\n\n"
-        f"Output ONLY the reformatted answer. Do not add explanations or preamble."
+    return resolve_prompt(
+        "formalizer", _FORMALIZER_FALLBACK,
+        format_spec=format_spec,
+        prompt=prompt[:500],
+        answer=answer,
     )

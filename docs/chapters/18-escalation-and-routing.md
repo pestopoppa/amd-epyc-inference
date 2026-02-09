@@ -507,8 +507,53 @@ The model often writes `FINAL("D")` or `D|B` but continues generating hundreds o
 1. **`llama_server.py`**: `infer_stream_text()` catches `StopIteration` from `on_chunk` callback → breaks SSE loop
 2. **`inference.py`**: When `_early_stop_check` is set on the primitives instance, creates composite callback that accumulates text and raises `StopIteration` when the check returns True
 3. **Call sites**: Set `_early_stop_check` with appropriate regex before `llm_call()`, clear in `finally` block:
-   - TOON regex for architect routing decisions (`D|[A-D]`, `I|brief:`)
+   - TOON regex for architect routing decisions (`D|[A-D]`, `D|.+`, `I|brief:`)
    - `_FINAL_RE` for REPL FINAL() detection in all 3 REPL loops
+
+**Regex pitfall (fixed 2026-02-09)**: The original TOON regex used `D\|.{2,}` which required 2+ characters after `D|`. Single-character answers like `D|7` were missed because `.{2,}` needs 2+ chars and `.` doesn't match `\n`. Changed to `D\|.+` (1+ characters). Bare `D|` (partial streaming output) still correctly doesn't match.
+
+### Architect Delegation Prompt Design
+
+The architect investigate prompt must present `D|` and `I|` as **mutually exclusive alternatives**, not as a fill-in-the-blank template. MoE models (Qwen3-235B with expert reduction) are especially prone to echoing both formats when shown side by side.
+
+**Anti-pattern** (causes template echoing):
+```
+D|<your answer>
+I|brief:<spec>|to:coder_escalation
+```
+
+**Correct pattern** (bullet-list alternatives):
+```
+- Direct answer: D|<answer>
+- Delegate to specialist: I|brief:<spec>|to:<role>
+```
+
+Combined with explicit instruction: "Output ONE line only. Do NOT output both D| and I|."
+
+The architect prompt frames the role as "software architect" whose job is to design solutions (approach, data structures, algorithm, edge cases) for a coding specialist to implement. This produces architecturally useful briefs rather than problem restatements.
+
+## Vision Pipeline Routing (2026-02-09)
+
+The vision pipeline has a critical routing requirement: VL models (Qwen2.5-VL-7B on port 8086, Qwen3-VL-30B on port 8087) need multimodal payloads with base64-encoded images. The standard text-only paths (`_execute_direct`, `_execute_repl`) discard `image_path` from the request.
+
+**Stage 7.5 (`_execute_vision_multimodal`)** intercepts vision-role requests with image data and routes them to the appropriate multimodal handler:
+
+| Mode | Handler | What It Does |
+|------|---------|-------------|
+| `direct` | `_handle_vision_request()` | OCR preprocessing → multimodal chat completion → VL answer |
+| `repl` | `_vision_react_mode_answer()` | Multimodal ReAct loop with OCR/calculate tools |
+
+Falls through to text-only mode on exception (graceful degradation).
+
+**File**: `src/api/routes/chat_pipeline/vision_stage.py`
+
+## Early-Stop Timing Telemetry (2026-02-09)
+
+When early-stop streaming aborts generation (REPL's `FINAL()` detection raises `StopIteration`), the SSE `stop: true` event (which carries `timings`) is never reached. This caused `generation_ms=0` for 79/99 REPL results while `tokens_generated` was correct.
+
+**Fix**: On early-stop break, compute timing from wall clock elapsed time in `infer_stream_text()`. This is wall-clock time (includes prompt eval + HTTP overhead), not pure generation time, but far better than 0 for TPS estimation.
+
+**File**: `src/backends/llama_server.py` (early-stop branch in `infer_stream_text`)
 
 ## References
 

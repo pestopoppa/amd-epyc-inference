@@ -225,3 +225,73 @@ class _ExternalAccessMixin:
         except Exception as e:
             logger.debug("run_shell failed", exc_info=True)
             return f"[ERROR: {type(e).__name__}: {e}]"
+
+    def _run_python_code(
+        self, code: str, stdin_data: str = "", timeout: int = 60,
+    ) -> str:
+        """Run a Python code string as a subprocess.
+
+        Convenience wrapper: writes code to a temp file, runs it with python3,
+        and returns stdout/stderr.  Use this instead of exec() for testing
+        solutions that need stdin/stdout.
+
+        Args:
+            code: Python source code to run.
+            stdin_data: Optional input to feed via stdin.
+            timeout: Max execution time in seconds (capped at 120).
+
+        Returns:
+            Combined stdout + stderr output.
+        """
+        from src.repl_environment.unicode_sanitizer import sanitize_code_unicode
+
+        code = sanitize_code_unicode(code)
+        self._exploration_calls += 1
+        timeout = min(timeout, 120)
+
+        import tempfile
+        import os
+
+        tmp_dir = "/mnt/raid0/llm/tmp"
+        os.makedirs(tmp_dir, exist_ok=True)
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".py", dir=tmp_dir, delete=False,
+            ) as f:
+                f.write(code)
+                script_path = f.name
+
+            result = subprocess.run(
+                ["python3", script_path],
+                input=stdin_data or None,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=tmp_dir,
+            )
+
+            output = result.stdout
+            if result.stderr:
+                output += "\n[STDERR]\n" + result.stderr
+
+            if len(output) > 8000:
+                output = output[:8000] + "\n[... truncated at 8000 chars]"
+
+            self._exploration_log.add_event(
+                "run_python_code",
+                {"code_len": len(code), "has_stdin": bool(stdin_data)},
+                output,
+            )
+            return output
+
+        except subprocess.TimeoutExpired:
+            return f"[ERROR: Python code timed out after {timeout}s]"
+        except Exception as e:
+            logger.debug("run_python_code failed", exc_info=True)
+            return f"[ERROR: {type(e).__name__}: {e}]"
+        finally:
+            try:
+                os.unlink(script_path)
+            except Exception:
+                pass

@@ -368,12 +368,15 @@ def sample_unseen_questions(
     seed: int,
     *,
     use_pool: bool = True,
+    allow_reseen: bool = False,
 ) -> list[dict]:
     """Sample questions not in the seen set, interleaved across suites.
 
     If use_pool=True (default), tries the pre-extracted question pool first
     (~100ms). Falls back to HF dataset adapters, then YAML.
-    Oversamples by 3x to compensate for dedup filtering.
+
+    If ``allow_reseen`` (debug mode), backfills with seen questions when a
+    suite is exhausted.  Normal mode skips exhausted suites.
 
     Returns questions interleaved by suite (round-robin) so the orchestrator
     sees diverse question types early rather than processing one suite at a time.
@@ -391,7 +394,10 @@ def sample_unseen_questions(
 
             pool = load_pool()
             if pool:
-                result = sample_from_pool(pool, suite_names, sample_per_suite, seed, seen)
+                result = sample_from_pool(
+                    pool, suite_names, sample_per_suite, seed, seen,
+                    allow_reseen=allow_reseen,
+                )
                 if result:
                     logger.info(f"Sampled {len(result)} questions from pool (fast path)")
                     return result
@@ -402,7 +408,8 @@ def sample_unseen_questions(
     per_suite: list[list[dict]] = []
 
     for suite_name in suite_names:
-        oversample = sample_per_suite * 3
+        # Request 20x to ensure enough unseen after dedup (adapters may cap)
+        oversample = sample_per_suite * 20
 
         prompts = _load_from_dataset_adapter(suite_name, oversample, seed)
         if not prompts:
@@ -1933,8 +1940,11 @@ def run_batch(
     seen = load_seen_questions()
     logger.info(f"Checkpoint: {len(completed)} completed, {len(seen)} total seen")
 
-    # Sample unseen questions
-    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed, use_pool=use_pool)
+    # Sample unseen questions (debug mode backfills with seen when exhausted)
+    questions = sample_unseen_questions(
+        suites, sample_per_suite, seen, seed,
+        use_pool=use_pool, allow_reseen=debugger is not None,
+    )
     questions = [q for q in questions if q["id"] not in completed_ids]
 
     if not questions:
@@ -2176,6 +2186,7 @@ def run_batch_3way(
     dry_run: bool = False,
     on_progress: "Callable[[int, int, str, str], None] | None" = None,
     use_pool: bool = True,
+    debugger: "ClaudeDebugger | None" = None,
 ) -> list[ThreeWayResult]:
     """Run one 3-way evaluation batch.
 
@@ -2190,6 +2201,7 @@ def run_batch_3way(
         on_progress: Optional callback ``(idx, total, suite, qid)`` called
             at the start of each question.  Used by the TUI to update the
             status bar.
+        debugger: Optional ClaudeDebugger for pipeline monitoring.
     """
     import httpx as _httpx
 
@@ -2201,8 +2213,11 @@ def run_batch_3way(
     seen = load_seen_questions()
     logger.info(f"Previously seen questions: {len(seen)}")
 
-    # Sample unseen questions
-    questions = sample_unseen_questions(suites, sample_per_suite, seen, seed, use_pool=use_pool)
+    # Sample unseen questions (debug mode backfills with seen when exhausted)
+    questions = sample_unseen_questions(
+        suites, sample_per_suite, seen, seed,
+        use_pool=use_pool, allow_reseen=debugger is not None,
+    )
     if not questions:
         logger.info("No unseen questions available.")
         return []
@@ -2278,8 +2293,41 @@ def run_batch_3way(
             if rewards_injected > 0:
                 record_seen(qid, suite, session_id)
 
+            # Pipeline debugger: build diagnostics for each role result
+            if debugger is not None:
+                try:
+                    from src.pipeline_monitor.diagnostic import build_diagnostic, append_diagnostic
+
+                    for config_key, rr in role_results.items():
+                        diag = build_diagnostic(
+                            question_id=f"{suite}/{qid}",
+                            suite=suite,
+                            config=config_key,
+                            role=rr.role,
+                            mode=rr.mode,
+                            passed=rr.passed,
+                            answer=rr.answer,
+                            expected=prompt_info.get("expected", ""),
+                            scoring_method=prompt_info.get("scoring_method", "exact_match"),
+                            error=rr.error,
+                            error_type=rr.error_type,
+                            tokens_generated=rr.tokens_generated,
+                            elapsed_s=rr.elapsed_seconds,
+                            role_history=rr.role_history,
+                            delegation_events=rr.delegation_events,
+                            tools_used=rr.tools_used,
+                            tools_called=rr.tools_called,
+                        )
+                        append_diagnostic(diag)
+                        debugger.add_diagnostic(diag)
+                    debugger.end_question()
+                except Exception as e:
+                    logger.warning(f"[DEBUG] Debugger error (non-fatal): {e}")
+
     finally:
         _client.close()
+        if debugger is not None:
+            debugger.flush()
 
     return results
 
@@ -2461,6 +2509,27 @@ Examples (legacy mode - DEPRECATED):
         "--no-pool", action="store_true",
         help="Bypass the question pool and load from HF adapters directly (slow).",
     )
+    # Claude-in-the-loop debugging
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="Enable Claude-in-the-loop debugging (requires --3way).",
+    )
+    parser.add_argument(
+        "--debug-batch-size", type=int, default=5,
+        help="Diagnostic records per Claude invocation (default: 5).",
+    )
+    parser.add_argument(
+        "--debug-threshold", type=float, default=0.3,
+        help="Anomaly score threshold for diagnostics (default: 0.3).",
+    )
+    parser.add_argument(
+        "--debug-auto-commit", action="store_true",
+        help="Auto-commit each debug batch (easy git revert).",
+    )
+    parser.add_argument(
+        "--debug-dry-run", action="store_true",
+        help="Compute diagnostics and log what would be sent to Claude, but don't invoke.",
+    )
 
     args = parser.parse_args()
 
@@ -2496,6 +2565,28 @@ Examples (legacy mode - DEPRECATED):
 
     # Default seed
     base_seed = args.seed if args.seed is not None else int(time.time())
+
+    # ── Claude-in-the-loop debugger setup ──
+    # --debug-dry-run / --debug-auto-commit / --debug-batch-size / --debug-threshold
+    # all imply --debug
+    if args.debug_dry_run or args.debug_auto_commit:
+        args.debug = True
+    _debugger = None
+    if args.debug:
+        if not args.three_way:
+            logger.warning("--debug requires --3way. Ignoring.")
+        else:
+            from src.pipeline_monitor.claude_debugger import ClaudeDebugger
+            _debugger = ClaudeDebugger(
+                project_root=PROJECT_ROOT,
+                batch_size=args.debug_batch_size,
+                anomaly_threshold=args.debug_threshold,
+                auto_commit=args.debug_auto_commit,
+                dry_run=args.debug_dry_run,
+            )
+            logger.info(f"[DEBUG] Claude-in-the-loop debugger enabled "
+                        f"(batch_size={args.debug_batch_size}, "
+                        f"threshold={args.debug_threshold})")
 
     # ── Phase 4: 3-Way Routing Mode ──
     if args.three_way:
@@ -2560,6 +2651,7 @@ Examples (legacy mode - DEPRECATED):
                             dry_run=args.dry_run,
                             on_progress=_on_progress,
                             use_pool=not args.no_pool,
+                            debugger=_debugger,
                         )
                         all_results.extend(results)
 
@@ -2587,6 +2679,7 @@ Examples (legacy mode - DEPRECATED):
                     dry_run=args.dry_run,
                     on_progress=_on_progress,
                     use_pool=not args.no_pool,
+                    debugger=_debugger,
                 )
 
         # Summary printed AFTER TUI context exits (normal terminal restored)

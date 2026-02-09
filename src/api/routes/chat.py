@@ -79,6 +79,7 @@ from src.api.routes.chat_pipeline import (
     _init_primitives,
     _execute_mock,
     _execute_vision,
+    _execute_vision_multimodal,
     _plan_review_gate,
     _execute_proactive,
     _execute_delegated,
@@ -216,6 +217,16 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
         execution_mode = forced_mode
     else:
         execution_mode = _select_mode(request.prompt, request.context or "", state)
+
+    # Stage 7.5: Vision multimodal handler
+    # Text-only paths (_execute_direct, _execute_repl) discard image data.
+    # When a vision role has image data, route through the VL handler instead.
+    if str(initial_role) in vision_roles and (request.image_path or request.image_base64):
+        vision_mm = await _execute_vision_multimodal(
+            request, routing, primitives, state, start_time, initial_role, execution_mode,
+        )
+        if vision_mm is not None:
+            return _annotate_error(vision_mm)
 
     # Stage 8: Execute selected mode (with fallthrough on failure)
 

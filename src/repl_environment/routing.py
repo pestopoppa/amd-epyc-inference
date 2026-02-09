@@ -480,9 +480,24 @@ class _RoutingMixin:
             "parallel": False,
         }
 
+        # Build delegate prompt: include original task context so the
+        # target model knows WHAT to solve, not just the brief instruction.
+        # Without this, delegates only see terse briefs like "Implement X"
+        # without problem constraints, examples, or method signatures.
+        delegate_prompt = brief
+        if hasattr(self, "context") and self.context:
+            # Truncate context to avoid overwhelming small workers
+            ctx_preview = self.context[:4000]
+            if len(self.context) > 4000:
+                ctx_preview += "\n... [truncated]"
+            delegate_prompt = (
+                f"{ctx_preview}\n\n"
+                f"## Task\n{brief}"
+            )
+
         try:
             result = self.llm_primitives.llm_call(
-                brief,
+                delegate_prompt,
                 role=target_role,
                 persona=persona or None,
             )
@@ -612,9 +627,16 @@ class _RoutingMixin:
         persona: str = "",
     ) -> str:
         """Execute a single parallel work item (called from thread pool)."""
+        # Include original task context (same as _delegate_single)
+        delegate_prompt = item
+        if hasattr(self, "context") and self.context:
+            ctx_preview = self.context[:4000]
+            if len(self.context) > 4000:
+                ctx_preview += "\n... [truncated]"
+            delegate_prompt = f"{ctx_preview}\n\n## Task\n{item}"
         try:
             return self.llm_primitives.llm_call(
-                item,
+                delegate_prompt,
                 role=target_role,
                 persona=persona or None,
             )

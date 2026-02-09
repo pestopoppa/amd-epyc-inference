@@ -375,7 +375,8 @@ The orchestration layer is implemented in:
 - `src/dispatcher.py` - Task routing
 - `src/executor.py` - Step execution, escalation
 - `src/context_manager.py` - Context passing between steps
-- `src/prompt_builders/` - Prompt construction package (6 sub-modules: types, constants, builder, review, code_utils, formatting)
+- `src/prompt_builders/` - Prompt construction package (7 sub-modules: types, constants, builder, review, code_utils, formatting, resolver)
+- `orchestration/prompts/` - Hot-swappable prompt templates (18 .md files, read on every request via `resolve_prompt()`)
 - `src/gate_runner.py` - Verification gate execution (sequential + parallel via `asyncio.gather()`)
 - `src/features.py` - Feature flag system with dataclass validation (8 concept-integration flags added 2026-02-08)
 - `src/config.py` - Centralized configuration (~185 values)

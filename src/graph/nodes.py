@@ -37,6 +37,61 @@ log = logging.getLogger(__name__)
 Ctx = GraphRunContext[TaskState, TaskDeps]
 
 
+# ── REPL tap — separate file for REPL execution visibility ────────────
+
+_REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
+_repl_tap_lock = __import__("threading").Lock()
+
+
+def _tap_write_repl_exec(code: str, turn: int) -> None:
+    """Write REPL execution input to the REPL tap file (separate from inference tap)."""
+    try:
+        preview = code[:800]
+        if len(code) > 800:
+            preview += f"\n... [{len(code) - 800} chars truncated]"
+        text = (
+            f"[turn {turn}] $ python3 <<'CODE'\n"
+            f"{preview}\n"
+            f"CODE\n"
+        )
+        with _repl_tap_lock:
+            with open(_REPL_TAP_PATH, "a") as f:
+                f.write(text)
+                f.flush()
+    except Exception:
+        pass
+
+
+def _tap_write_repl_result(
+    output: str, error: str | None, is_final: bool, turn: int,
+) -> None:
+    """Write REPL execution result to the REPL tap file."""
+    try:
+        parts: list[str] = []
+        if is_final:
+            parts.append(f"[turn {turn}] FINAL")
+        if output:
+            out_preview = output[:500]
+            if len(output) > 500:
+                out_preview += f"\n... [{len(output) - 500} chars truncated]"
+            parts.append(out_preview)
+        elif not error:
+            parts.append(f"[turn {turn}] (no output)")
+        if error:
+            err_preview = error[:300]
+            if len(error) > 300:
+                err_preview += f"\n... [{len(error) - 300} chars truncated]"
+            parts.append(f"[turn {turn}] ERROR:\n{err_preview}")
+        parts.append("")  # trailing newline
+        text = "\n".join(parts)
+        with _repl_tap_lock:
+            with open(_REPL_TAP_PATH, "a") as f:
+                f.write(text)
+                f.flush()
+    except Exception:
+        pass
+
+
 # ── Shared helpers ─────────────────────────────────────────────────────
 
 
@@ -220,6 +275,43 @@ def _extract_final_from_raw(text: str) -> str | None:
     return None
 
 
+# Patterns for extracting answers from prose (no FINAL(), no code blocks).
+# Ordered most-specific first.  Captures the first non-whitespace token after
+# the trigger phrase so e.g. "The answer is: D" → "D".
+_PROSE_ANSWER_RE = re.compile(
+    r"(?:^|\n)\s*(?:"
+    r"[Tt]he\s+(?:correct\s+)?answer\s+is[:\s]+|"
+    r"[Aa]nswer[:\s]+|"
+    r"[Tt]herefore[,:\s]+(?:the\s+answer\s+is[:\s]+)?|"
+    r"[Ss]o\s+the\s+answer\s+is[:\s]+|"
+    r"[Ss]o,?\s+I\s+will\s+go\s+with[:\s]+|"
+    r"I(?:'ll|\s+will)\s+go\s+with[:\s]+|"
+    r"I\s+(?:choose|select|pick)[:\s]+|"
+    r"[Mm]y\s+answer\s+is[:\s]+|"
+    r"[Tt]he\s+correct\s+(?:option|choice)\s+is[:\s]+"
+    r")([A-Za-z0-9][A-Za-z0-9.)]*)",
+)
+
+
+def _extract_prose_answer(text: str) -> str | None:
+    """Extract answer from prose LLM output that lacks FINAL().
+
+    Catches common patterns like "The answer is D", "I will go with D",
+    "Answer: B", etc.  Falls back to a bare MCQ letter on its own line.
+    Returns None if no clear answer pattern found.
+    """
+    m = _PROSE_ANSWER_RE.search(text)
+    if m:
+        answer = m.group(1).rstrip(".)").strip()
+        if answer:
+            return answer
+    # Fallback: bare MCQ letter on its own line (e.g. just "D")
+    bare = re.search(r"(?:^|\n)\s*([A-D])\s*(?:\n|$)", text)
+    if bare:
+        return bare.group(1)
+    return None
+
+
 async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bool, dict]:
     """Execute one LLM → REPL turn.
 
@@ -284,15 +376,76 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     code = extract_code_from_response(code)
     code = auto_wrap_final(code)
 
+    # Prose answer rescue: model answered in prose (e.g. "The answer is D")
+    # without producing FINAL() or code blocks.  Extract the answer from
+    # the raw output and synthesize FINAL() to avoid an infinite REPL loop.
+    if "FINAL(" not in code:
+        prose_answer = _extract_prose_answer(raw_llm_output)
+        if prose_answer is not None:
+            log.info(
+                "Prose answer rescue (turn %d): extracted %r from raw output",
+                state.turns, prose_answer[:100],
+            )
+            code = f'FINAL("{prose_answer}")'
+
     # Comment-only guard: model reasoned in comments without executable code.
-    # Return explicit feedback instead of executing a no-op.
+    # Try to rescue the answer from the comments before nudging.
     if _is_comment_only(code):
-        log.info("Comment-only code detected (turn %d), nudging model", state.turns)
-        state.last_error = (
-            "Your output was all comments — no executable code ran. "
-            "Write Python code that computes the answer and call FINAL(answer)."
+        comment_text = "\n".join(
+            ln.strip().lstrip("#").strip()
+            for ln in code.split("\n") if ln.strip().startswith("#")
         )
-        return "", state.last_error, False, {}
+        prose_answer = _extract_prose_answer(comment_text)
+        if prose_answer:
+            log.info(
+                "Comment-only rescue (turn %d): extracted %r from comments",
+                state.turns, prose_answer[:50],
+            )
+            code = f'FINAL("{prose_answer}")'
+            # Fall through to execute FINAL()
+        else:
+            log.info("Comment-only code detected (turn %d), nudging model", state.turns)
+            state.last_error = (
+                "Your output was all comments — no executable code ran. "
+                "You already reasoned through the problem. Call FINAL(your_answer) NOW."
+            )
+            return "", state.last_error, False, {}
+
+    # Comment-ratio guard: model is reasoning in comments with minimal
+    # executable code (e.g. a bare `for` loop full of `# thinking...`).
+    # This wastes turns without progress.  Nudge toward file-based workflow.
+    code_lines = [ln for ln in code.split("\n") if ln.strip()]
+    if code_lines:
+        comment_lines = sum(1 for ln in code_lines if ln.strip().startswith("#"))
+        ratio = comment_lines / len(code_lines)
+        if ratio > 0.6 and len(code_lines) > 5 and "FINAL(" not in code:
+            # Try to extract the answer the model already reasoned to
+            comment_text = "\n".join(
+                ln.strip().lstrip("#").strip()
+                for ln in code_lines if ln.strip().startswith("#")
+            )
+            prose_answer = _extract_prose_answer(comment_text)
+            if prose_answer:
+                log.info(
+                    "Comment-ratio rescue (turn %d, %.0f%% comments): extracted %r",
+                    state.turns, ratio * 100, prose_answer[:50],
+                )
+                code = f'FINAL("{prose_answer}")'
+                # Fall through to execute FINAL()
+            else:
+                log.info(
+                    "High comment ratio (%.0f%%, turn %d), nudging to commit",
+                    ratio * 100, state.turns,
+                )
+                state.last_error = (
+                    f"Your code is {int(ratio*100)}% comments — you already reasoned through the problem. "
+                    "STOP re-deriving. Call FINAL(your_answer) NOW with the answer you reached. "
+                    "Do NOT start over. Do NOT re-explain. Just FINAL()."
+                )
+                return "", state.last_error, False, {}
+
+    # Write code to inference tap so the TUI shows what's being executed
+    _tap_write_repl_exec(code, state.turns)
 
     # REPL execution
     try:
@@ -309,6 +462,9 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             error=f"REPL execution timed out after {deps.repl.config.timeout_seconds}s",
         )
 
+    # Write execution result to inference tap
+    _tap_write_repl_result(result.output, result.error, result.is_final, state.turns)
+
     # FINAL() rescue: if REPL execution failed but the model DID write
     # FINAL("answer") in its output, extract the answer directly.
     # This prevents escalation when code before FINAL() has errors.
@@ -324,6 +480,19 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 is_final=True,
                 final_answer=final_rescue,
             )
+
+    # No-output guard: code ran successfully but produced no output, no error,
+    # and no FINAL().  Typical case: model generated a class/function definition
+    # that runs silently.  Without feedback the model repeats indefinitely.
+    if not result.is_final and not result.error and not result.output:
+        log.info("Silent execution detected (turn %d), nudging model", state.turns)
+        nudge = (
+            "Your code ran but produced no output and did not call FINAL(). "
+            "You must call FINAL(answer) with your answer. "
+            "If the task asks for code, call FINAL(your_code_as_string). "
+            "If the task needs computation, run the code and call FINAL(result)."
+        )
+        return "", nudge, False, {}
 
     artifacts = dict(deps.repl.artifacts) if hasattr(deps.repl, "artifacts") else {}
     # Prefer final_answer when is_final=True (FINAL() captures the answer
