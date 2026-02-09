@@ -81,6 +81,7 @@ class TapTailer:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._current_section: collections.deque[str] = collections.deque(maxlen=max_lines)
+        self._role_chain: list[str] = []  # e.g. ["architect_general", "coder_escalation"]
         self._thread: threading.Thread | None = None
 
     # -- public API --
@@ -102,6 +103,16 @@ class TapTailer:
             if tail > 0:
                 return items[-tail:]
             return items
+
+    def get_role_chain(self) -> list[str]:
+        """Return the role chain for the current inference, e.g. ["architect_general", "coder_escalation"]."""
+        with self._lock:
+            return list(self._role_chain)
+
+    def reset_role_chain(self) -> None:
+        """Reset the role chain (called when a new question starts)."""
+        with self._lock:
+            self._role_chain.clear()
 
     # -- internal --
 
@@ -141,6 +152,19 @@ class TapTailer:
         with self._lock:
             lines = chunk.split("\n")
             for i, fragment in enumerate(lines):
+                # Detect new section (======== marker) → reset display content
+                # (role chain persists across sections; reset by reset_role_chain())
+                if fragment.startswith("=" * 20):
+                    self._current_section.clear()
+                    self._current_section.append(fragment)
+                    continue
+                # Detect ROLE= header → append to chain
+                if "ROLE=" in fragment:
+                    role = fragment.split("ROLE=", 1)[1].strip()
+                    if role and (not self._role_chain or self._role_chain[-1] != role):
+                        self._role_chain.append(role)
+                    self._current_section.append(fragment)
+                    continue
                 if i == 0 and self._current_section:
                     # First fragment continues the last incomplete line
                     self._current_section[-1] += fragment
@@ -293,6 +317,9 @@ class SeedingTUI:
         action: str = "",
         question: str = "",
     ) -> None:
+        # Reset role chain when action changes (new config for same question)
+        if action != self._progress.current_action or qid != self._progress.current_qid:
+            self._tailer.reset_role_chain()
         self._progress.current_index = idx
         self._progress.total_questions = total
         self._progress.current_suite = suite
@@ -460,7 +487,12 @@ class SeedingTUI:
         # Truncate each line to panel width so 1 logical line = 1 display line (no wrap)
         display_lines = [line[:panel_width] for line in filtered[-(stream_height):]]
         stream_text = _style_stream_lines(display_lines) if display_lines else Text("(waiting for inference tap...)")
-        layout["stream"].update(Panel(stream_text, title="Inference Stream", border_style="cyan"))
+        role_chain = self._tailer.get_role_chain()
+        if role_chain:
+            stream_title = f"Inference Stream ({' → '.join(role_chain)})"
+        else:
+            stream_title = "Inference Stream"
+        layout["stream"].update(Panel(stream_text, title=stream_title, border_style="cyan"))
 
         # Bottom bar: status — extract current action from last log line
         p = self._progress
