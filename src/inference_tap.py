@@ -29,7 +29,7 @@ _ENV_STREAM_MODE = "INFERENCE_TAP_STREAM_MODE"
 
 # Sentinel file written by the TUI so that API workers (separate processes)
 # can discover the tap path without needing the env var.
-_SENTINEL = os.path.join(os.environ.get("TMPDIR", "/tmp"), ".inference_tap_active")
+_SENTINEL = "/mnt/raid0/llm/tmp/.inference_tap_active"
 
 # Module-level lock for serialising writes across threads
 _write_lock = threading.Lock()
@@ -41,10 +41,6 @@ _sentinel_cache: tuple[str, float] = ("", 0.0)
 # Roles that have shown the strongest contention/timeout behavior under
 # long-held locks. In "safe" tap mode these stay on non-stream inference.
 _HEAVY_STREAM_ROLES = frozenset({
-    "architect_general",
-    "architect_coding",
-    "vision_escalation",
-    "worker_vision",
     "ingest_long_context",
 })
 
