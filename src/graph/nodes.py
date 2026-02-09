@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import Union
 
@@ -195,6 +196,21 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
         log.debug("Session compaction failed (non-fatal): %s", exc)
 
 
+_FINAL_RE = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
+
+
+def _extract_final_from_raw(text: str) -> str | None:
+    """Extract answer from FINAL("answer") in raw LLM output.
+
+    Used as rescue when REPL execution fails but the model DID produce
+    a FINAL() call.  Returns None if no FINAL() found.
+    """
+    m = _FINAL_RE.search(text)
+    if m:
+        return m.group(1) or m.group(2) or ""
+    return None
+
+
 async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bool, dict]:
     """Execute one LLM → REPL turn.
 
@@ -243,6 +259,9 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     except Exception as e:
         return "", f"LLM call failed: {e}", False, {}
 
+    # Save raw LLM output for FINAL() rescue before code extraction
+    raw_llm_output = code
+
     # Extract and wrap code
     from src.prompt_builders import extract_code_from_response, auto_wrap_final
 
@@ -263,6 +282,22 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             is_final=False,
             error=f"REPL execution timed out after {deps.repl.config.timeout_seconds}s",
         )
+
+    # FINAL() rescue: if REPL execution failed but the model DID write
+    # FINAL("answer") in its output, extract the answer directly.
+    # This prevents escalation when code before FINAL() has errors.
+    if not result.is_final and result.error:
+        final_rescue = _extract_final_from_raw(raw_llm_output)
+        if final_rescue is not None:
+            log.info("FINAL() rescue: extracted %r from raw output (REPL error: %s)",
+                     final_rescue[:100], result.error[:80])
+            from src.repl_environment.types import ExecutionResult
+
+            result = ExecutionResult(
+                output="",
+                is_final=True,
+                final_answer=final_rescue,
+            )
 
     artifacts = dict(deps.repl.artifacts) if hasattr(deps.repl, "artifacts") else {}
     # Prefer final_answer when is_final=True (FINAL() captures the answer
