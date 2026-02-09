@@ -34,6 +34,44 @@ _VALID_DELEGATE_ROLES = frozenset(
 )
 
 
+def _extract_toon_decision(text: str) -> str | None:
+    """Extract D|answer or I|brief:...|to:... from anywhere in model output.
+
+    The model often embeds TOON decisions mid-sentence after reasoning:
+      "The answer is C. Decision: D|CTo confirm this..."
+    This function extracts "D|C" from that mess.
+
+    Strategy:
+      1. MCQ shortcut: D| followed by single letter [A-D] not followed by lowercase
+      2. Own-line: D|... on its own line
+      3. General: D| followed by text until newline (take first sentence)
+      4. I| delegation patterns
+    """
+    # 1. MCQ: D|X where X is A-D, followed by non-lowercase or end
+    mcq = re.search(r"D\|([A-D])(?=[^a-z]|$)", text)
+    if mcq:
+        return "D|" + mcq.group(1)
+
+    # 2. Own line: D|... on its own line
+    own_line = re.search(r"^D\|(.+)$", text, re.MULTILINE)
+    if own_line:
+        return "D|" + own_line.group(1).strip()
+
+    # 3. General D|: take text until period+space, newline, or next D|
+    general = re.search(r"D\|(.+?)(?:\.\s|\n|D\||$)", text)
+    if general:
+        answer = general.group(1).strip().rstrip(".")
+        if answer:
+            return "D|" + answer
+
+    # 4. I| delegation
+    invest = re.search(r"I\|(brief:.+?)(?:\n|$)", text)
+    if invest:
+        return "I|" + invest.group(1).strip()
+
+    return None
+
+
 def _parse_architect_decision(response: str) -> dict:
     """Parse architect's TOON-encoded decision.
 
@@ -253,18 +291,11 @@ def _architect_delegated_answer(
 
             # Strip <think>...</think> tags (reasoning models)
             stripped = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-            # Search for TOON decision anywhere in the response
-            # (model may prefix with reasoning before D|answer)
-            decision_match = re.search(r"^(D\|.+)$", stripped, re.MULTILINE)
-            if not decision_match:
-                decision_match = re.search(r"^(I\|.+)$", stripped, re.MULTILINE)
-            if decision_match:
-                arch_response = decision_match.group(1).strip()
+            # Extract TOON decision from anywhere in the response.
+            arch_response = _extract_toon_decision(stripped)
+            if arch_response:
                 break
-            # Check start-of-response for TOON/JSON (backward compat)
-            if stripped.startswith("D|") or stripped.startswith("I|"):
-                arch_response = stripped
-                break
+            # Check start-of-response for JSON (fallback TOON format)
             if stripped.startswith("{") or stripped.startswith("```"):
                 arch_response = stripped
                 break

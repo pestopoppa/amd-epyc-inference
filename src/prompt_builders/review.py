@@ -166,12 +166,12 @@ def build_architect_investigate_prompt(
 
 You have a Python REPL available. If you need to compute something (math, numerical estimation, symbolic manipulation), output Python code and the result will be returned to you. Then make your decision based on the computed result. Available: math, numpy, scipy, statistics, itertools, fractions, decimal.
 
-When ready to decide, respond with ONE of:
+When ready to decide, output your decision ON ITS OWN LINE:
 
-D|<your answer>  — answer directly (use after computation if needed)
+D|<your answer>
+I|brief:<plan>|to:coder_escalation
 
-I|brief:<step-by-step plan for the specialist>|to:coder_escalation  — delegate with a plan
-I|brief:<drafting request>|to:coder_escalation|mode:repl  — delegate document/code drafting
+Nothing else on the decision line. Stop generating after D|answer.
 
 Rules:
 - Be concise and essential. Give the answer, not an essay. No preamble, no restating the question — unless explicitly asked for elaboration.
