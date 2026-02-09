@@ -125,12 +125,17 @@ class TapTailer:
                 else:
                     self._stop.wait(self._poll)
 
+    # Patterns that should start on a new line for readability.
+    # When these appear mid-line in streaming output, force a line break.
+    _BREAK_BEFORE = ("```", "FINAL(", "CALL(", "import ", "def ", "class ")
+
     def _process_chunk(self, chunk: str, wrap_width: int = 70) -> None:
         """Process a chunk of text, appending to rolling buffer.
 
         For streaming SSE tokens (no newlines), soft-wraps long lines at
         *wrap_width* so the TUI right panel scrolls instead of silently
-        extending one invisible mega-line.
+        extending one invisible mega-line.  Also forces line breaks before
+        code fences and key REPL markers so code is visually separated.
         """
         with self._lock:
             lines = chunk.split("\n")
@@ -138,6 +143,8 @@ class TapTailer:
                 if i == 0 and self._current_section:
                     # First fragment continues the last incomplete line
                     self._current_section[-1] += fragment
+                    # Semantic break: split before code/REPL markers
+                    self._semantic_break_last_line()
                     # Soft-wrap if the line got too long (streaming tokens)
                     while len(self._current_section[-1]) > wrap_width:
                         long = self._current_section[-1]
@@ -145,6 +152,23 @@ class TapTailer:
                         self._current_section.append(long[wrap_width:])
                 elif fragment:  # skip empty strings from split
                     self._current_section.append(fragment)
+
+    def _semantic_break_last_line(self) -> None:
+        """Split the last deque line at semantic markers (code fences, etc.)."""
+        if not self._current_section:
+            return
+        line = self._current_section[-1]
+        for marker in self._BREAK_BEFORE:
+            # Find marker that isn't at position 0 (already on its own line)
+            pos = line.find(marker, 1)
+            if pos > 0:
+                before = line[:pos].rstrip()
+                after = line[pos:]
+                if before:
+                    self._current_section[-1] = before
+                    self._current_section.append(after)
+                # Only split on the first marker found
+                break
 
 
 # ---------------------------------------------------------------------------
