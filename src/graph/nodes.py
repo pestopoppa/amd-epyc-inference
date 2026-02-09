@@ -421,12 +421,12 @@ def _resolve_answer(output: str, tool_outputs: list) -> str:
 class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
     """Entry node for unclassified/frontdoor requests.
 
-    Escalates to CoderNode on failure.
+    Escalates to CoderEscalationNode on failure (port 8081, different model).
     """
 
     async def run(
         self, ctx: Ctx
-    ) -> Union["FrontdoorNode", "CoderNode", "WorkerNode", End[TaskResult]]:
+    ) -> Union["FrontdoorNode", "CoderEscalationNode", "WorkerNode", End[TaskResult]]:
         state = ctx.state
 
         if state.turns >= state.max_turns:
@@ -453,20 +453,20 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_PRIMARY)
-                _log_escalation(ctx, from_role, str(Role.CODER_PRIMARY), f"Early abort: {error[:100]}")
-                return CoderNode()
+                state.record_role(Role.CODER_ESCALATION)
+                _log_escalation(ctx, from_role, str(Role.CODER_ESCALATION), f"Early abort: {error[:100]}")
+                return CoderEscalationNode()
 
-            if _should_escalate(ctx, error_cat, Role.CODER_PRIMARY):
+            if _should_escalate(ctx, error_cat, Role.CODER_ESCALATION):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_PRIMARY)
+                state.record_role(Role.CODER_ESCALATION)
                 _log_escalation(
-                    ctx, from_role, str(Role.CODER_PRIMARY),
+                    ctx, from_role, str(Role.CODER_ESCALATION),
                     f"Escalating after {state.consecutive_failures} failures",
                 )
-                return CoderNode()
+                return CoderEscalationNode()
 
             if _should_retry(ctx, error_cat):
                 return FrontdoorNode()
