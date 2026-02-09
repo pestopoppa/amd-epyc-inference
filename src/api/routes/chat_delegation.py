@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any, TYPE_CHECKING
 
@@ -136,6 +137,12 @@ def _parse_architect_decision(response: str) -> dict:
     }
 
 
+_ARCHITECT_TOKEN_BUDGET: dict[str, int] = {
+    "architect_general": 3375,   # 6.75 t/s × 500s
+    "architect_coding": 5150,    # 10.3 t/s × 500s
+}
+
+
 def _architect_delegated_answer(
     question: str,
     context: str,
@@ -236,6 +243,7 @@ def _architect_delegated_answer(
                     full_prompt,
                     role=architect_role,
                     skip_suffix=True,
+                    n_tokens=_ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375),
                 )
             except Exception as e:
                 log.warning(f"Architect call failed (loop {loop}, turn {_aturn}): {e}")
@@ -243,12 +251,20 @@ def _architect_delegated_answer(
                     return reports[-1], stats
                 return f"[ERROR: Architect delegation failed: {e}]", stats
 
-            stripped = raw.strip()
-            # If output is a TOON decision, we're done
+            # Strip <think>...</think> tags (reasoning models)
+            stripped = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            # Search for TOON decision anywhere in the response
+            # (model may prefix with reasoning before D|answer)
+            decision_match = re.search(r"^(D\|.+)$", stripped, re.MULTILINE)
+            if not decision_match:
+                decision_match = re.search(r"^(I\|.+)$", stripped, re.MULTILINE)
+            if decision_match:
+                arch_response = decision_match.group(1).strip()
+                break
+            # Check start-of-response for TOON/JSON (backward compat)
             if stripped.startswith("D|") or stripped.startswith("I|"):
                 arch_response = stripped
                 break
-            # Check if it looks like JSON (fallback TOON format)
             if stripped.startswith("{") or stripped.startswith("```"):
                 arch_response = stripped
                 break
@@ -261,10 +277,10 @@ def _architect_delegated_answer(
                 arch_response = raw
                 break
             result = arch_repl.execute(code)
-            if result.get("final"):
-                arch_response = result["final"]
+            if result.is_final:
+                arch_response = result.final_answer or ""
                 break
-            arch_last_output = result.get("output") or result.get("error") or ""
+            arch_last_output = result.output or result.error or ""
             log.info(f"Architect computation turn {_aturn}: {len(arch_last_output)} chars output")
         else:
             # Exhausted computation turns, use last raw response
@@ -344,11 +360,11 @@ def _architect_delegated_answer(
                 code = extract_code_from_response(code)
                 code = auto_wrap_final(code)
                 result = deleg_repl.execute(code)
-                if result.get("final"):
-                    report = result["final"]
+                if result.is_final:
+                    report = result.final_answer or ""
                     break
-                deleg_last_output = result.get("output", "")
-                deleg_last_error = result.get("error", "")
+                deleg_last_output = result.output or ""
+                deleg_last_error = result.error or ""
             else:
                 report = deleg_repl.get_state()
             total_tools += deleg_repl._tool_invocations

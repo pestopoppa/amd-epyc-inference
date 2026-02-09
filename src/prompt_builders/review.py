@@ -175,6 +175,7 @@ I|brief:<drafting request>|to:coder_escalation|mode:repl  — delegate document/
 
 Rules:
 - Be concise and essential. Give the answer, not an essay. No preamble, no restating the question — unless explicitly asked for elaboration.
+- After reaching a conclusion, COMMIT to it. Do not second-guess, revise, or restart your analysis. Your first well-reasoned answer is your final answer.
 - For computation-heavy questions: compute first, then D|answer
 - For investigation/search: delegate with I| and a detailed plan
 - List ALL steps in the brief — you get one report per loop
@@ -216,7 +217,7 @@ def build_architect_synthesis_prompt(
 
     return f"""You are an architect synthesizing an answer from an investigation report.
 
-Review the report below and provide a final answer. Be concise — give the answer directly, no preamble.
+Review the report below and provide a final answer. Be concise — give the answer directly, no preamble. Commit to your best answer; do not second-guess or restart analysis.
 
 Respond with:
 D|<your final answer>
