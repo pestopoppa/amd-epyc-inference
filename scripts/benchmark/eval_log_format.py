@@ -16,24 +16,35 @@ from collections import Counter
 from typing import Any
 
 
-def compute_tps(resp: dict[str, Any]) -> float:
+def compute_tps(resp: dict[str, Any], elapsed: float = 0.0) -> float:
     """Compute tokens/second from response dict.
 
-    Prefers predicted_tps from llama.cpp, falls back to
-    tokens_generated / generation_ms.
+    When *elapsed* (wall-clock seconds) is provided and positive, uses
+    ``tokens_generated / elapsed`` for accurate pipeline throughput.
+    Falls back to ``generation_ms``-based calculation, then ``predicted_tps``.
     """
+    tokens = int(resp.get("tokens_generated", 0) or 0)
+    if elapsed > 0 and tokens > 0:
+        return tokens / elapsed
+    gen_ms = resp.get("generation_ms", 0.0)
+    if gen_ms > 0 and tokens > 0:
+        return tokens / (gen_ms / 1000.0)
     tps = resp.get("predicted_tps", 0.0)
     if tps and tps > 0:
         return tps
-    gen_ms = resp.get("generation_ms", 0.0)
-    tokens = resp.get("tokens_generated", 0)
-    if gen_ms > 0 and tokens > 0:
-        return tokens / (gen_ms / 1000.0)
     return 0.0
 
 
 def _tps_str(tps: float) -> str:
     return f", {tps:.1f} t/s" if tps > 0 else ""
+
+
+def _token_str(resp: dict[str, Any], status: str) -> str:
+    tokens = int(resp.get("tokens_generated", 0) or 0)
+    est = int(resp.get("tokens_generated_estimate", 0) or 0)
+    if status == "INFRA" and tokens == 0 and est > 0:
+        return f"{tokens} tok, est {est} tok"
+    return f"{tokens} tok"
 
 
 def _status_str(passed: bool | None, error: str | None) -> str:
@@ -72,10 +83,10 @@ def format_self_direct(
         SELF:direct → PASS (4.6s, 23.5 t/s, 85 tok)
     """
     status = _status_str(None if infra else passed, error)
-    tps = compute_tps(resp)
-    tokens = resp.get("tokens_generated", 0)
+    tps = compute_tps(resp, elapsed)
+    token_info = _token_str(resp, status)
     return [
-        f"    {action_key} → {status} ({elapsed:.1f}s{_tps_str(tps)}, {tokens} tok)"
+        f"    {action_key} → {status} ({elapsed:.1f}s{_tps_str(tps)}, {token_info})"
     ]
 
 
@@ -97,14 +108,14 @@ def format_self_repl(
           FINAL: 10ms (ok)
     """
     status = _status_str(None if infra else passed, error)
-    tps = compute_tps(resp)
-    tokens = resp.get("tokens_generated", 0)
+    tps = compute_tps(resp, elapsed)
+    token_info = _token_str(resp, status)
     tools_used = resp.get("tools_used", 0)
     tools_called = resp.get("tools_called", [])
     tool_timings = resp.get("tool_timings", [])
 
     lines = [
-        f"    {action_key} → {status} ({elapsed:.1f}s{_tps_str(tps)}, {tokens} tok, {tools_used} tools)"
+        f"    {action_key} → {status} ({elapsed:.1f}s{_tps_str(tps)}, {token_info}, {tools_used} tools)"
     ]
     if tools_used > 0 and tools_called:
         lines.append(f"      tools: {', '.join(_dedup_consecutive(tools_called))}")
@@ -133,8 +144,8 @@ def format_architect_result(
           chain: architect_general → coder_escalation → worker_explore
     """
     status = _status_str(passed, error)
-    tps = compute_tps(resp)
-    tokens = resp.get("tokens_generated", 0)
+    tps = compute_tps(resp, elapsed)
+    token_info = _token_str(resp, status)
     tools_used = resp.get("tools_used", 0)
     tools_called = resp.get("tools_called", [])
     tool_timings = resp.get("tool_timings", [])
@@ -142,7 +153,7 @@ def format_architect_result(
     role_history = resp.get("role_history", [])
 
     lines = [
-        f"    {action_key} → {status} ({elapsed:.1f}s{_tps_str(tps)}, {tokens} tok)"
+        f"    {action_key} → {status} ({elapsed:.1f}s{_tps_str(tps)}, {token_info})"
     ]
 
     # Tool list

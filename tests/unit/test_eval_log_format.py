@@ -115,12 +115,18 @@ _RESP_ARCH_SINGLE_DELEGATE = {
 
 
 class TestComputeTps:
-    def test_uses_predicted_tps_when_available(self):
-        assert compute_tps({"predicted_tps": 23.5}) == 23.5
+    def test_wall_clock_preferred_when_elapsed_provided(self):
+        """Wall-clock throughput (tokens/elapsed) takes priority."""
+        tps = compute_tps({"tokens_generated": 100, "predicted_tps": 50.0}, elapsed=10.0)
+        assert tps == 10.0  # 100/10, NOT 50.0
 
-    def test_computes_from_generation_ms(self):
+    def test_falls_back_to_generation_ms(self):
         tps = compute_tps({"predicted_tps": 0, "generation_ms": 1000.0, "tokens_generated": 50})
         assert tps == 50.0
+
+    def test_falls_back_to_predicted_tps(self):
+        """predicted_tps used only when no tokens/elapsed available."""
+        assert compute_tps({"predicted_tps": 23.5}) == 23.5
 
     def test_returns_zero_when_no_data(self):
         assert compute_tps({}) == 0.0
@@ -150,7 +156,7 @@ class TestFormatSelfDirect:
         lines = format_self_direct("SELF:direct", True, None, 4.6, _RESP_DIRECT)
         assert len(lines) == 1
         assert "SELF:direct → PASS" in lines[0]
-        assert "23.5 t/s" in lines[0]
+        assert "18.5 t/s" in lines[0]  # wall-clock: 85/4.6
         assert "85 tok" in lines[0]
 
     def test_fail_format(self):
@@ -165,8 +171,13 @@ class TestFormatSelfDirect:
         lines = format_self_direct("SELF:direct", False, "timeout", 120.0, _RESP_DIRECT, infra=True)
         assert "→ INFRA" in lines[0]
 
+    def test_infra_includes_estimated_tokens(self):
+        resp = {**_RESP_DIRECT, "tokens_generated": 0, "tokens_generated_estimate": 512}
+        lines = format_self_direct("SELF:direct", False, "timeout", 120.0, resp, infra=True)
+        assert "0 tok, est 512 tok" in lines[0]
+
     def test_no_tps_omits_field(self):
-        resp = {**_RESP_DIRECT, "predicted_tps": 0, "generation_ms": 0}
+        resp = {**_RESP_DIRECT, "tokens_generated": 0, "predicted_tps": 0, "generation_ms": 0}
         lines = format_self_direct("SELF:direct", True, None, 1.0, resp)
         assert "t/s" not in lines[0]
         assert "tok" in lines[0]
@@ -184,7 +195,7 @@ class TestFormatSelfRepl:
     def test_status_line_includes_tool_count(self):
         lines = format_self_repl("SELF:repl", True, None, 16.2, _RESP_REPL)
         assert "3 tools" in lines[0]
-        assert "18.3 t/s" in lines[0]
+        assert "14.8 t/s" in lines[0]  # wall-clock: 240/16.2
 
     def test_tool_list_present(self):
         lines = format_self_repl("SELF:repl", True, None, 16.2, _RESP_REPL)

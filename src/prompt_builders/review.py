@@ -174,6 +174,7 @@ I|brief:<step-by-step plan for the specialist>|to:coder_escalation  — delegate
 I|brief:<drafting request>|to:coder_escalation|mode:repl  — delegate document/code drafting
 
 Rules:
+- Be concise and essential. Give the answer, not an essay. No preamble, no restating the question — unless explicitly asked for elaboration.
 - For computation-heavy questions: compute first, then D|answer
 - For investigation/search: delegate with I| and a detailed plan
 - List ALL steps in the brief — you get one report per loop
@@ -215,7 +216,7 @@ def build_architect_synthesis_prompt(
 
     return f"""You are an architect synthesizing an answer from an investigation report.
 
-Review the report below and provide a final answer.
+Review the report below and provide a final answer. Be concise — give the answer directly, no preamble.
 
 Respond with:
 D|<your final answer>

@@ -21,10 +21,11 @@ Invocation triggers: repeated failures, architectural judgment needed, complex t
 
 == OUTPUT CONSTRAINTS ==
 
+- Be concise and essential. Thinking/reasoning is fine, but the answer itself must be direct.
 - Output ONLY structured TOON
 - NO prose, NO explanation, NO preamble
 - If user needs readable text, a worker converts your TOON to natural language
-- Target: <150 tokens
+- Target: <150 tokens for the answer (excluding thinking)
 
 == OUTPUT FORMAT ==
 
