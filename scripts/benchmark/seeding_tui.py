@@ -16,6 +16,7 @@ import atexit
 import collections
 import logging
 import os
+import textwrap
 import threading
 import time
 from dataclasses import dataclass, field
@@ -396,18 +397,33 @@ class SeedingTUI:
             border_style="green",
         ))
 
-        # Question panel: show the current question being evaluated
+        # Question panel: show the current question being evaluated.
+        # If text exceeds visible lines, auto-scroll in a continuous loop.
+        q_visible_lines = 3  # panel size=5 minus 2 for border
         p = self._progress
         q_text = p.current_question
         if q_text:
-            # Truncate to ~3 lines worth of text
-            max_q = panel_width * 3
-            q_display = q_text[:max_q] + ("..." if len(q_text) > max_q else "")
+            wrapped = textwrap.wrap(q_text, width=panel_width) or [""]
+            if len(wrapped) <= q_visible_lines:
+                q_display = "\n".join(wrapped)
+            else:
+                # Scroll: advance 1 line every 2 seconds, loop with a gap
+                total = len(wrapped) + 1  # +1 for visual gap at wrap point
+                elapsed_q = time.monotonic() - p.start_time
+                offset = int(elapsed_q / 2.0) % total
+                visible = []
+                for j in range(q_visible_lines):
+                    idx = (offset + j) % total
+                    if idx < len(wrapped):
+                        visible.append(wrapped[idx])
+                    else:
+                        visible.append("")  # gap line at wrap point
+                q_display = "\n".join(visible)
         else:
             q_display = "(waiting for question...)"
         q_title = f"{p.current_suite}/{p.current_qid}" if p.current_qid else "Question"
         layout["question"].update(Panel(
-            Text(q_display, overflow="fold"),
+            Text(q_display),
             title=q_title,
             border_style="yellow",
         ))
