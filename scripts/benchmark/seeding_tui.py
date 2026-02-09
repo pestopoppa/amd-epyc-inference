@@ -31,8 +31,8 @@ from rich.text import Text
 # Constants
 # ---------------------------------------------------------------------------
 
-_SENTINEL_PATH = os.path.join(os.environ.get("TMPDIR", "/tmp"), ".inference_tap_active")
-_DEFAULT_TAP_PATH = os.path.join(os.environ.get("TMPDIR", "/tmp"), "inference_tap.log")
+_SENTINEL_PATH = "/mnt/raid0/llm/tmp/.inference_tap_active"
+_DEFAULT_TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
 
 # ---------------------------------------------------------------------------
 # DequeHandler — capture log records for the left panel
@@ -125,14 +125,24 @@ class TapTailer:
                 else:
                     self._stop.wait(self._poll)
 
-    def _process_chunk(self, chunk: str) -> None:
-        """Process a chunk of text, appending to rolling buffer."""
+    def _process_chunk(self, chunk: str, wrap_width: int = 70) -> None:
+        """Process a chunk of text, appending to rolling buffer.
+
+        For streaming SSE tokens (no newlines), soft-wraps long lines at
+        *wrap_width* so the TUI right panel scrolls instead of silently
+        extending one invisible mega-line.
+        """
         with self._lock:
             lines = chunk.split("\n")
             for i, fragment in enumerate(lines):
                 if i == 0 and self._current_section:
                     # First fragment continues the last incomplete line
                     self._current_section[-1] += fragment
+                    # Soft-wrap if the line got too long (streaming tokens)
+                    while len(self._current_section[-1]) > wrap_width:
+                        long = self._current_section[-1]
+                        self._current_section[-1] = long[:wrap_width]
+                        self._current_section.append(long[wrap_width:])
                 elif fragment:  # skip empty strings from split
                     self._current_section.append(fragment)
 
