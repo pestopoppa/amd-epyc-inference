@@ -230,12 +230,15 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             turn=state.turns - 1,
         )
 
-    # LLM call
+    # LLM call — stop at first code block close to prevent repetition loops.
+    # REPL expects one action per turn; without this, the model can generate
+    # FINAL("X") then repeat the same code block hundreds of tokens.
     try:
         code = await asyncio.to_thread(
             deps.primitives.llm_call,
             prompt,
             role=str(role),
+            stop_sequences=["\n```\n"],
         )
     except Exception as e:
         return "", f"LLM call failed: {e}", False, {}
