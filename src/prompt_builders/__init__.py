@@ -24,6 +24,7 @@ from src.prompt_builders.types import (
 
 # Constants and ReAct
 from src.prompt_builders.constants import (
+    COMPACT_ROOT_LM_TOOLS,
     DEFAULT_ROOT_LM_RULES,
     DEFAULT_ROOT_LM_TOOLS,
     REACT_FORMAT,
@@ -77,6 +78,7 @@ __all__ = [
     "EscalationPrompt",
     "StepPrompt",
     # Constants
+    "COMPACT_ROOT_LM_TOOLS",
     "DEFAULT_ROOT_LM_TOOLS",
     "DEFAULT_ROOT_LM_RULES",
     "REACT_TOOL_WHITELIST",

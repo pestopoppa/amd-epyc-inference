@@ -41,6 +41,12 @@ class PromptConfig:
     include_examples: bool = False
     """Include usage examples in prompts."""
 
+    tools_file: str | None = None
+    """Path to external tools prompt file. Overrides style-based selection when set."""
+
+    rules_file: str | None = None
+    """Path to external rules prompt file. Overrides DEFAULT_ROOT_LM_RULES when set."""
+
 
 @dataclass
 class RootLMPrompt:

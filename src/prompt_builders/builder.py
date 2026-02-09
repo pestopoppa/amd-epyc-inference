@@ -9,16 +9,25 @@ Contains:
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.prompt_builders.types import (
     EscalationPrompt,
     PromptConfig,
+    PromptStyle,
     RootLMPrompt,
     StepPrompt,
 )
-from src.prompt_builders.constants import DEFAULT_ROOT_LM_RULES, DEFAULT_ROOT_LM_TOOLS
+from src.prompt_builders.constants import (
+    COMPACT_ROOT_LM_TOOLS,
+    DEFAULT_ROOT_LM_RULES,
+    DEFAULT_ROOT_LM_TOOLS,
+)
 from src.roles import Role, get_tier
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.context_manager import ContextManager
@@ -61,6 +70,33 @@ class PromptBuilder:
         """
         self.config = config or PromptConfig()
 
+    def _resolve_tools(self) -> str:
+        """Resolve tools prompt text from file, style, or default.
+
+        Priority: tools_file > style-based selection > DEFAULT.
+        File read is ~1ms — no caching needed (enables hot-swap).
+        """
+        if self.config.tools_file:
+            try:
+                return Path(self.config.tools_file).read_text().strip()
+            except OSError as exc:
+                _log.warning("Failed to read tools_file %s: %s", self.config.tools_file, exc)
+        if self.config.style == PromptStyle.MINIMAL:
+            return COMPACT_ROOT_LM_TOOLS
+        return DEFAULT_ROOT_LM_TOOLS
+
+    def _resolve_rules(self) -> str:
+        """Resolve rules prompt text from file or default.
+
+        Priority: rules_file > DEFAULT_ROOT_LM_RULES.
+        """
+        if self.config.rules_file:
+            try:
+                return Path(self.config.rules_file).read_text().strip()
+            except OSError as exc:
+                _log.warning("Failed to read rules_file %s: %s", self.config.rules_file, exc)
+        return DEFAULT_ROOT_LM_RULES
+
     def build_root_lm_prompt(
         self,
         state: str,
@@ -96,8 +132,8 @@ class PromptBuilder:
                 "For explanations or reasoning, think thoroughly before FINAL(answer). "
                 "For tasks requiring file access, web search, or external data, use the available tools."
             ),
-            tools=DEFAULT_ROOT_LM_TOOLS,
-            rules=DEFAULT_ROOT_LM_RULES,
+            tools=self._resolve_tools(),
+            rules=self._resolve_rules(),
             state=f"Turn {turn + 1}\n{state}",
             task=original_prompt,
             instruction="Complete the task. Output Python code with FINAL(answer):",

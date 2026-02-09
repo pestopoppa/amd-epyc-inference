@@ -9,6 +9,8 @@ from src.inference_tap import (
     _NullWriter,
     _read_sentinel,
     is_active,
+    should_stream_role,
+    stream_mode,
     tap_section,
 )
 
@@ -16,17 +18,49 @@ from src.inference_tap import (
 class TestIsActive:
     """Tests for tap activation check."""
 
-    def test_inactive_by_default(self, monkeypatch):
+    def test_inactive_by_default(self, monkeypatch, tmp_path):
         monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(tmp_path / "nope"))
+        import src.inference_tap as _mod
+        _mod._sentinel_cache = ("", 0.0)
         assert is_active() is False
 
     def test_active_with_env_var(self, monkeypatch):
         monkeypatch.setenv("INFERENCE_TAP_FILE", "/tmp/tap.log")
         assert is_active() is True
 
-    def test_inactive_with_empty_env_var(self, monkeypatch):
+    def test_inactive_with_empty_env_var(self, monkeypatch, tmp_path):
         monkeypatch.setenv("INFERENCE_TAP_FILE", "")
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(tmp_path / "nope"))
+        import src.inference_tap as _mod
+        _mod._sentinel_cache = ("", 0.0)
         assert is_active() is False
+
+
+class TestStreamPolicy:
+    """Tests for tap stream-mode policy."""
+
+    def test_stream_mode_default_safe(self, monkeypatch):
+        monkeypatch.delenv("INFERENCE_TAP_STREAM_MODE", raising=False)
+        assert stream_mode() == "safe"
+
+    def test_stream_mode_invalid_falls_back_to_safe(self, monkeypatch):
+        monkeypatch.setenv("INFERENCE_TAP_STREAM_MODE", "invalid")
+        assert stream_mode() == "safe"
+
+    def test_should_stream_role_safe_mode(self, monkeypatch):
+        monkeypatch.setenv("INFERENCE_TAP_STREAM_MODE", "safe")
+        assert should_stream_role("frontdoor") is True
+        assert should_stream_role("architect_general") is False
+        assert should_stream_role("vision_escalation") is False
+
+    def test_should_stream_role_force_mode(self, monkeypatch):
+        monkeypatch.setenv("INFERENCE_TAP_STREAM_MODE", "force")
+        assert should_stream_role("architect_general") is True
+
+    def test_should_stream_role_off_mode(self, monkeypatch):
+        monkeypatch.setenv("INFERENCE_TAP_STREAM_MODE", "off")
+        assert should_stream_role("frontdoor") is False
 
 
 class TestTapWriter:
@@ -99,6 +133,19 @@ class TestTapWriter:
             for i in range(20):
                 assert f"[T{t}:{i}]" in content
 
+    def test_write_response(self, tmp_path):
+        path = str(tmp_path / "tap.log")
+        w = TapWriter(path)
+        w.write_header("frontdoor")
+        w.write_prompt("hello")
+        w.write_response("final answer")
+        w.write_timings(3, 10.0, 20.0, 100.0)
+        w.close()
+
+        with open(path) as f:
+            content = f.read()
+        assert "final answer" in content
+
 
 class TestNullWriter:
     """Verify _NullWriter is a silent no-op."""
@@ -109,14 +156,19 @@ class TestNullWriter:
         w.write_header("x")
         w.write_prompt("x")
         w.write_chunk("x")
+        w.write_response("x")
         w.write_timings(0, 0.0, 0.0, 0.0)
+        w.close()
 
 
 class TestTapSection:
     """Tests for tap_section context manager."""
 
-    def test_yields_null_writer_when_inactive(self, monkeypatch):
+    def test_yields_null_writer_when_inactive(self, monkeypatch, tmp_path):
         monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+        monkeypatch.setattr("src.inference_tap._SENTINEL", str(tmp_path / "nope"))
+        import src.inference_tap as _mod
+        _mod._sentinel_cache = ("", 0.0)
         with tap_section("coder", "prompt") as w:
             assert isinstance(w, _NullWriter)
 

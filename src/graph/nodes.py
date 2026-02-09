@@ -217,10 +217,12 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
         prompt = state.escalation_prompt
         state.escalation_prompt = ""
     else:
-        from src.prompt_builders import build_root_lm_prompt
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig, PromptStyle
 
         repl_state = deps.repl.get_state()
-        prompt = build_root_lm_prompt(
+        builder = PromptBuilder(PromptConfig(style=PromptStyle.MINIMAL))
+        prompt = builder.build_root_lm_prompt(
             state=repl_state,
             original_prompt=state.prompt,
             last_output=state.last_output,

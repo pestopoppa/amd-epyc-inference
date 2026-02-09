@@ -1264,3 +1264,114 @@ class TestConstants:
         assert "{max_turns}" in REACT_FORMAT
         # Structural: Should be substantial template
         assert len(REACT_FORMAT) > 100
+
+
+# ── Compact Tools & File Loading ─────────────────────────────────────────
+
+
+class TestCompactTools:
+    """Test COMPACT_ROOT_LM_TOOLS constant and MINIMAL style."""
+
+    def test_compact_tools_has_core_functions(self):
+        """Verify all core REPL functions are present."""
+        from src.prompt_builders.constants import COMPACT_ROOT_LM_TOOLS
+
+        for name in ("FINAL", "peek", "grep", "llm_call", "escalate", "CALL", "list_tools"):
+            assert name in COMPACT_ROOT_LM_TOOLS, f"Missing core function: {name}"
+        assert "context" in COMPACT_ROOT_LM_TOOLS
+        assert "artifacts" in COMPACT_ROOT_LM_TOOLS
+
+    def test_compact_tools_smaller(self):
+        """COMPACT should be < 25% of DEFAULT size."""
+        from src.prompt_builders.constants import COMPACT_ROOT_LM_TOOLS, DEFAULT_ROOT_LM_TOOLS
+
+        ratio = len(COMPACT_ROOT_LM_TOOLS) / len(DEFAULT_ROOT_LM_TOOLS)
+        assert ratio < 0.25, f"Compact tools ratio {ratio:.2%} >= 25%"
+
+    def test_minimal_style_uses_compact(self):
+        """PromptBuilder with MINIMAL style should use compact tools."""
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig, PromptStyle
+        from src.prompt_builders.constants import COMPACT_ROOT_LM_TOOLS
+
+        builder = PromptBuilder(PromptConfig(style=PromptStyle.MINIMAL))
+        prompt = builder.build_root_lm_prompt(
+            state="ready", original_prompt="test", as_structured=True,
+        )
+        assert prompt.tools == COMPACT_ROOT_LM_TOOLS
+
+    def test_structured_style_uses_default(self):
+        """PromptBuilder with STRUCTURED style should use DEFAULT tools."""
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig, PromptStyle
+        from src.prompt_builders.constants import DEFAULT_ROOT_LM_TOOLS
+
+        builder = PromptBuilder(PromptConfig(style=PromptStyle.STRUCTURED))
+        prompt = builder.build_root_lm_prompt(
+            state="ready", original_prompt="test", as_structured=True,
+        )
+        assert prompt.tools == DEFAULT_ROOT_LM_TOOLS
+
+
+class TestFileLoading:
+    """Test tools_file and rules_file hot-swap loading."""
+
+    def test_tools_file_overrides_style(self, tmp_path):
+        """tools_file should override style-based tool selection."""
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig, PromptStyle
+
+        tools_file = tmp_path / "custom_tools.md"
+        tools_file.write_text("custom_tool_1()\ncustom_tool_2()")
+
+        builder = PromptBuilder(PromptConfig(
+            style=PromptStyle.STRUCTURED,
+            tools_file=str(tools_file),
+        ))
+        prompt = builder.build_root_lm_prompt(
+            state="ready", original_prompt="test", as_structured=True,
+        )
+        assert prompt.tools == "custom_tool_1()\ncustom_tool_2()"
+
+    def test_rules_file_overrides_default(self, tmp_path):
+        """rules_file should override DEFAULT_ROOT_LM_RULES."""
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig
+
+        rules_file = tmp_path / "custom_rules.md"
+        rules_file.write_text("Rule 1: Always FINAL()\nRule 2: No imports")
+
+        builder = PromptBuilder(PromptConfig(rules_file=str(rules_file)))
+        prompt = builder.build_root_lm_prompt(
+            state="ready", original_prompt="test", as_structured=True,
+        )
+        assert prompt.rules == "Rule 1: Always FINAL()\nRule 2: No imports"
+
+    def test_missing_tools_file_falls_back(self):
+        """Missing tools_file should fall back to style-based selection."""
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig, PromptStyle
+        from src.prompt_builders.constants import COMPACT_ROOT_LM_TOOLS
+
+        builder = PromptBuilder(PromptConfig(
+            style=PromptStyle.MINIMAL,
+            tools_file="/nonexistent/path/tools.md",
+        ))
+        prompt = builder.build_root_lm_prompt(
+            state="ready", original_prompt="test", as_structured=True,
+        )
+        assert prompt.tools == COMPACT_ROOT_LM_TOOLS
+
+    def test_missing_rules_file_falls_back(self):
+        """Missing rules_file should fall back to DEFAULT_ROOT_LM_RULES."""
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig
+        from src.prompt_builders.constants import DEFAULT_ROOT_LM_RULES
+
+        builder = PromptBuilder(PromptConfig(
+            rules_file="/nonexistent/path/rules.md",
+        ))
+        prompt = builder.build_root_lm_prompt(
+            state="ready", original_prompt="test", as_structured=True,
+        )
+        assert prompt.rules == DEFAULT_ROOT_LM_RULES
