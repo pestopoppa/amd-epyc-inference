@@ -1984,7 +1984,8 @@ def run_batch(
 
             # Checkpoint immediately
             append_checkpoint(session_id, result)
-            record_seen(result.question_id, result.suite, session_id)
+            if result.rewards_injected > 0:
+                record_seen(result.question_id, result.suite, session_id)
             new_results.append(result)
 
             # Track consecutive failures for abort
@@ -2273,8 +2274,9 @@ def run_batch_3way(
             # Checkpoint immediately (answers, scores, timing for post-hoc analysis)
             _checkpoint_3way(session_id, result)
 
-            # Record as seen
-            record_seen(qid, suite, session_id)
+            # Only mark as seen when rewards were actually injected
+            if rewards_injected > 0:
+                record_seen(qid, suite, session_id)
 
     finally:
         _client.close()
