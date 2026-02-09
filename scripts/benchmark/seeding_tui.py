@@ -218,15 +218,20 @@ class TUIProgress:
 # ---------------------------------------------------------------------------
 
 
-def _style_stream_lines(lines: list[str]) -> Text:
+def _style_stream_lines(lines: list[str], in_code_initial: bool = False) -> Text:
     """Apply Rich styles to inference stream lines.
 
     Re-parses the full visible buffer each tick so that code blocks,
     FINAL() calls, and structural markers are always correctly styled
     even while content is still streaming in.
+
+    Args:
+        lines: Visible lines to style.
+        in_code_initial: Whether we're already inside a code block
+            (computed from lines that scrolled off-screen).
     """
     styled = Text()
-    in_code = False
+    in_code = in_code_initial
     for i, line in enumerate(lines):
         if i > 0:
             styled.append("\n")
@@ -485,8 +490,16 @@ class SeedingTUI:
             filtered.append(line)
 
         # Truncate each line to panel width so 1 logical line = 1 display line (no wrap)
+        # Compute in_code state from lines that scrolled off-screen
+        # so code blocks stay styled after the opening ``` scrolls away.
+        hidden_count = max(0, len(filtered) - stream_height)
+        in_code_init = False
+        if hidden_count > 0:
+            for hline in filtered[:hidden_count]:
+                if hline.lstrip().startswith("```"):
+                    in_code_init = not in_code_init
         display_lines = [line[:panel_width] for line in filtered[-(stream_height):]]
-        stream_text = _style_stream_lines(display_lines) if display_lines else Text("(waiting for inference tap...)")
+        stream_text = _style_stream_lines(display_lines, in_code_init) if display_lines else Text("(waiting for inference tap...)")
         role_chain = self._tailer.get_role_chain()
         if role_chain:
             stream_title = f"Inference Stream ({' → '.join(role_chain)})"
