@@ -54,8 +54,7 @@ class TestStreamPolicy:
         assert should_stream_role("architect_general") is True
         assert should_stream_role("architect_coding") is True
         assert should_stream_role("vision_escalation") is True
-        # SSM model stays non-streaming (incompatible architecture)
-        assert should_stream_role("ingest_long_context") is False
+        assert should_stream_role("ingest_long_context") is True
 
     def test_should_stream_role_force_mode(self, monkeypatch):
         monkeypatch.setenv("INFERENCE_TAP_STREAM_MODE", "force")
