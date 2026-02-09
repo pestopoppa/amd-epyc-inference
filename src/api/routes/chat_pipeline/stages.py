@@ -16,6 +16,7 @@ This file retains:
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from src.api.models import ChatRequest, ChatResponse
@@ -168,18 +169,34 @@ def _execute_react(
                 last_error=react_last_error,
                 turn=_turn,
             )
-            code = primitives.llm_call(
-                react_prompt,
-                role=str(initial_role),
-            )
+            _final_re = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
+            primitives._early_stop_check = lambda text: bool(_final_re.search(text))
+            try:
+                code = primitives.llm_call(
+                    react_prompt,
+                    role=str(initial_role),
+                )
+            finally:
+                primitives._early_stop_check = None
             code = extract_code_from_response(code)
             code = auto_wrap_final(code)
+            # Comment-only guard: skip execution if code is all comments
+            if all(
+                not ln.strip() or ln.strip().startswith("#")
+                for ln in code.split("\n")
+            ):
+                react_last_error = (
+                    "Your output was all comments — no executable code ran. "
+                    "Write Python code that computes the answer and call FINAL(answer)."
+                )
+                react_last_output = ""
+                continue
             result = react_repl.execute(code)
-            if result.get("final"):
-                answer = result["final"]
+            if result.is_final:
+                answer = result.final_answer or ""
                 break
-            react_last_output = result.get("output", "")
-            react_last_error = result.get("error", "")
+            react_last_output = result.output or ""
+            react_last_error = result.error or ""
         else:
             answer = react_repl.get_state()
         react_tools_used = react_repl._tool_invocations

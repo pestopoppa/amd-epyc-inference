@@ -55,6 +55,9 @@ class TestRoleResult:
         assert rr.role_history == []
         assert rr.predicted_tps == 0.0
         assert rr.generation_ms == 0.0
+        assert rr.tokens_generated_estimate == 0
+        assert rr.backend_task_id == 0
+        assert rr.slot_progress_source == ""
 
     def test_asdict_roundtrip(self):
         rr = RoleResult(

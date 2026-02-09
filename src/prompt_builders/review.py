@@ -164,26 +164,35 @@ def build_architect_investigate_prompt(
 
     return f"""You are an architect deciding how to answer a question.
 
-You have a Python REPL available. If you need to compute something (math, numerical estimation, symbolic manipulation), output Python code and the result will be returned to you. Then make your decision based on the computed result. Available: math, numpy, scipy, statistics, itertools, fractions, decimal.
+You have a Python REPL for quick calculations only (math, estimation, symbolic). Do NOT write full programs, algorithms, or solutions — delegate those to coder_escalation.
 
-When ready to decide, output your decision ON ITS OWN LINE:
+Output your decision ON ITS OWN LINE:
 
 D|<your answer>
-I|brief:<plan>|to:coder_escalation
+I|brief:<spec>|to:coder_escalation
 
-Nothing else on the decision line. Stop generating after D|answer.
+Stop generating after the decision line.
 
 Rules:
-- Be concise and essential. Give the answer, not an essay. No preamble, no restating the question — unless explicitly asked for elaboration.
-- After reaching a conclusion, COMMIT to it. Do not second-guess, revise, or restart your analysis. Your first well-reasoned answer is your final answer.
-- For computation-heavy questions: compute first, then D|answer
+- Be concise. Give the answer, not an essay.
+- COMMIT to your first well-reasoned answer. No second-guessing.
+- For factual/reasoning questions: think, then D|answer
+- For quick math: compute in REPL, then D|answer
+- For code/algorithms/implementation: ALWAYS delegate. Write a clear spec (inputs, outputs, constraints, approach), then I|brief:<spec>|to:coder_escalation. NEVER write the code yourself.
 - For investigation/search: delegate with I| and a detailed plan
-- List ALL steps in the brief — you get one report per loop
-- "to:" must be a valid role: coder_escalation, worker_explore, worker_summarize, worker_vision, vision_escalation
+- Valid roles: coder_escalation, worker_explore, worker_summarize, worker_vision, vision_escalation
 {context_section}
 Question: {question[:2000]}
 
 Decision:"""
+
+
+def _specialist_clearly_failed(report: str) -> bool:
+    """Return True if the specialist report is empty or an explicit error."""
+    if not report or not report.strip():
+        return True
+    prefixes = ("[ERROR", "[FAILED", "[Investigation failed", "[Delegation failed")
+    return report.strip().startswith(prefixes)
 
 
 def build_architect_synthesis_prompt(
@@ -194,9 +203,10 @@ def build_architect_synthesis_prompt(
 ) -> str:
     """Build prompt for architect to synthesize from investigation report.
 
-    The architect reviews the specialist's report and either:
-    - Emits a final answer: ``D|<answer>``
-    - Requests another investigation: ``I|brief:...|to:<role>``
+    The architect extracts/approves the specialist's answer.  Re-delegation
+    is only offered when the specialist clearly failed (empty output or
+    error prefix).  This prevents pointless loops where the architect
+    repeatedly delegates without progress.
 
     Args:
         question: The original user question.
@@ -207,27 +217,33 @@ def build_architect_synthesis_prompt(
     Returns:
         Prompt string for architect synthesis.
     """
-    can_investigate = loop_num < max_loops
-    investigate_option = ""
-    if can_investigate:
+    # Only offer re-delegation if specialist clearly failed AND loops remain
+    can_reinvestigate = (
+        loop_num < max_loops and _specialist_clearly_failed(report)
+    )
+    if can_reinvestigate:
         investigate_option = (
-            f"\nIf you need MORE investigation (loop {loop_num}/{max_loops}), respond with:\n"
-            "I|brief:<what else to investigate>|to:coder_escalation\n"
+            f"\nThe specialist FAILED. If you need to retry (loop {loop_num}/{max_loops}), respond with:\n"
+            "I|brief:<what to investigate differently>|to:coder_escalation\n"
+        )
+    else:
+        investigate_option = (
+            "\nDo NOT delegate or request further investigation. Answer now.\n"
         )
 
-    return f"""You are an architect synthesizing an answer from an investigation report.
+    return f"""The specialist has investigated and reported back. Extract the answer from their report.
 
-Review the report below and provide a final answer. Be concise — give the answer directly, no preamble. Commit to your best answer; do not second-guess or restart analysis.
-
-Respond with:
-D|<your final answer>
+Respond ONLY with:
+D|<the answer>
 {investigate_option}
-If the specialist produced a complete document/code and it looks correct, respond with:
+If the report contains a complete correct answer, respond with:
 D|Approved
+
+If the report is unclear, use your own reasoning to answer. Do NOT re-delegate.
 
 Question: {question[:2000]}
 
-Investigation Report:
+Specialist Report:
 {report[:6000]}
 
 Decision:"""

@@ -40,7 +40,8 @@ MEMORY_THRESHOLD_GB = 100
 IS_CI = os.environ.get("CI") == "true" or os.environ.get("ORCHESTRATOR_MOCK_MODE") == "true"
 
 # Maximum safe parallel workers for this machine
-MAX_SAFE_WORKERS = 4
+# -n 8 gives 4x speedup (67s → 17s), -n 4 gives 3x (67s → 23s)
+MAX_SAFE_WORKERS = 8
 
 
 def pytest_addoption(parser):

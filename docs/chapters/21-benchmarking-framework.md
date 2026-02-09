@@ -212,6 +212,42 @@ Phase 2 aggregate:
 
 Each response includes `routed_to`, `role_history`, `routing_strategy`, and `tokens_generated` fields for debugging routing decisions.
 
+## 3-Way Seeding Infra Hardening (2026-02-08)
+
+To reduce pathological wait on stalled inference ports while preserving reward signal:
+
+- Per-call timeout is now adaptive by role/mode/modality.
+- Timeout is bumped from observed earlier legs for the same question.
+
+## 3-Way Live Progress Telemetry (2026-02-09)
+
+To make long forced-role calls debuggable without waiting for final HTTP return:
+
+- Seeding now polls llama-server `/slots` once per second during each forced call.
+- Terminal logs emit periodic progress lines:
+  - `[slot-progress] <ACTION> port=<PORT> task=<ID> decoded=<N> remain=<M> elapsed=<S>`
+- `RoleResult` now carries:
+  - `tokens_generated_estimate`
+  - `backend_task_id`
+  - `slot_progress_source`
+- If a run ends as `INFRA` with `tokens_generated=0` but slot counters advanced, logs show:
+  - `0 tok, est <N> tok`
+
+This specifically addresses cases where backend generation happened but the orchestrator response closed early and returned no token count.
+- Heavy ports are prechecked before architect calls.
+- Zero-token infra on heavy paths gets one recovery retry.
+- Tool telemetry fields are normalized together (`tools_used`, `tools_called`, `tool_timings`).
+
+### VL Dry-run Behavior Snapshot
+
+| Phase | Before (example logs) | After (2026-02-08 dry-run `vl_ocr_0149`) |
+|-------|------------------------|-------------------------------------------|
+| SELF direct route key | `worker_vision` | `worker_vision:direct` |
+| SELF repl route key | `worker_vision:react` (legacy logs) | `worker_vision:repl` |
+| ARCHITECT route key | `vision_escalation` | `vision_escalation:direct` |
+| Timeout behavior shown | often implicit global timeout | explicit per-call timeout logged (`148s`, `240s`, `212s`) |
+| Vision architect token output | mixed in prior runs | generated (`2241 tok` in `159.6s`) |
+
 ### Results Location
 
 ```

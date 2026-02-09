@@ -220,15 +220,44 @@ class InferenceMixin:
         from src.inference_lock import inference_lock
 
         with inference_lock(role):
-            from src.inference_tap import is_active as _tap_active
+            from src.inference_tap import (
+                is_active as _tap_active,
+                should_stream_role as _tap_should_stream_role,
+                tap_section,
+            )
 
-            if _tap_active() and hasattr(backend, "infer_stream_text"):
-                from src.inference_tap import tap_section
-
+            tap_enabled = _tap_active()
+            can_stream = (
+                tap_enabled
+                and hasattr(backend, "infer_stream_text")
+                and _tap_should_stream_role(role)
+            )
+            if tap_enabled:
                 with tap_section(role, prompt) as tap:
-                    result = backend.infer_stream_text(
-                        role_config, request, on_chunk=tap.write_chunk
-                    )
+                    if can_stream:
+                        # Early-stop: if _early_stop_check is set, wrap the
+                        # tap callback to also check accumulated output and
+                        # raise StopIteration to abort streaming.
+                        _stop_check = getattr(self, "_early_stop_check", None)
+                        if _stop_check is not None:
+                            _acc: list[str] = []
+
+                            def _on_chunk_with_stop(content: str) -> None:
+                                tap.write_chunk(content)
+                                _acc.append(content)
+                                if _stop_check("".join(_acc)):
+                                    raise StopIteration
+
+                            result = backend.infer_stream_text(
+                                role_config, request, on_chunk=_on_chunk_with_stop
+                            )
+                        else:
+                            result = backend.infer_stream_text(
+                                role_config, request, on_chunk=tap.write_chunk
+                            )
+                    else:
+                        result = backend.infer(role_config, request)
+                        tap.write_response(result.output)
                     tap.write_timings(
                         result.tokens_generated,
                         result.prompt_eval_ms,

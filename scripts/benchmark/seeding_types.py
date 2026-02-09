@@ -171,6 +171,11 @@ class RoleResult:
     error: str | None = None
     error_type: str = "none"
     tokens_generated: int = 0
+    # Slot-observed decoded token estimate for timed-out infra calls where
+    # payload-derived tokens are unavailable (kept separate from tokens_generated).
+    tokens_generated_estimate: int = 0
+    backend_task_id: int = 0
+    slot_progress_source: str = ""
     tools_used: int = 0
     tools_called: list[str] = field(default_factory=list)
     delegation_events: list[dict] = field(default_factory=list)

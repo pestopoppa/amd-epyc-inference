@@ -194,6 +194,11 @@ class TestFrontdoorNode:
                 MockREPLResult(error="SyntaxError in code"),
                 MockREPLResult(output="fixed", is_final=True),
             ],
+            llm_responses=[
+                "x = broken_code()",  # error turn — no FINAL to avoid rescue
+                "x = broken_code()",  # error turn — no FINAL to avoid rescue
+                "FINAL('fixed')",     # success turn after escalation
+            ],
             config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
         )
         result = await orchestration_graph.run(FrontdoorNode(), state=state, deps=deps)
@@ -250,6 +255,11 @@ class TestArchitectNode:
                 MockREPLResult(error="Logic error"),
                 MockREPLResult(error="Logic error"),
             ],
+            llm_responses=[
+                "x = attempt()",  # error turn — no FINAL to avoid rescue
+                "x = attempt()",  # error turn — no FINAL to avoid rescue
+                "x = attempt()",  # error turn — no FINAL to avoid rescue
+            ],
             config=GraphConfig(max_retries=2, max_escalations=0, max_turns=10),
         )
         result = await orchestration_graph.run(ArchitectNode(), state=state, deps=deps)
@@ -269,6 +279,11 @@ class TestEscalationCountIncrement:
                 MockREPLResult(error="SyntaxError"),
                 # After escalation to coder
                 MockREPLResult(output="fixed", is_final=True),
+            ],
+            llm_responses=[
+                "x = broken()",   # error turn — no FINAL to avoid rescue
+                "x = broken()",   # error turn — no FINAL to avoid rescue
+                "FINAL('fixed')", # success turn after escalation
             ],
             config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
         )

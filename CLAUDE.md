@@ -94,11 +94,13 @@ An agent ran orchestration liveness tests with parallel execution. Each pytest w
 ### Safe Test Commands
 
 ```bash
-# Safe: Sequential test execution
+# Default: 8 parallel workers (configured in pyproject.toml addopts)
+# 4x speedup: 67s → 17s, zero failures, safe memory usage
 pytest tests/
 
-# Safe: Limited parallelism (max 4 workers)
-pytest tests/ -n 4
+# Explicit parallelism
+pytest tests/ -n 8   # 4x speedup (recommended default)
+pytest tests/ -n 4   # 3x speedup (conservative)
 
 # DANGEROUS: Do NOT use!
 pytest tests/ -n auto  # Spawns ~192 workers!
@@ -240,6 +242,13 @@ Tools:      REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
 - **Embedder switch**: TaskEmbedder now uses **BGE-large** (1024-dim) instead of Qwen 0.5B.
 - **FAISS rebuild required** after the switch; existing 896-d FAISS indexes are incompatible.
 - **Reset/backfill flow** now recreates FAISS at 1024-d and updates SQLite `embedding_idx`.
+
+### Knowledgebase Updates (2026-02-09)
+
+- **Early-stop streaming**: `_early_stop_check` on LLMPrimitives + StopIteration from `on_chunk` aborts generation the moment FINAL() or D| detected. Saves 100-3000 tokens of post-answer rambling.
+- **FrontdoorNode escalation**: Now escalates to `CoderEscalationNode` (port 8081, Qwen2.5-Coder-32B) instead of `CoderNode` (port 8080, same model as frontdoor).
+- **REPL defensive mechanisms**: Comment-only guard (all 4 loops), FINAL() rescue (extracts answer from failed code), early-stop (all 3 REPL loops). See Chapter 18.
+- **Test parallelism**: `pytest -n 8` is default via pyproject.toml. 4x speedup (67s → 17s). Safe on this machine.
 
 **Visual topology**: `logs/canvases/component_topology.canvas` (for Obsidian)
 

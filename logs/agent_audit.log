@@ -918,3 +918,23 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 [2026-02-09T20:06:00Z] TEST_RUN result=pass count=83 details="eval_log_format + inference_tap + seeding_types: 83/83 pass"
 [2026-02-09T20:07:00Z] GIT_PUSH commits="899d406,c19bcad,b871a58" details="MCQ newline fix, token budget+commitment, TOON extraction"
 [2026-02-09T20:08:00Z] TASK_END description="Fix architect self-doubt loops" result=success
+
+2026-02-09T05:15:00 [SESSION] Continued session: comment guard, architect early-stop, REPL strategy
+2026-02-09T05:15:01 [TASK_START] "Comment-only guard in all 4 REPL loops" "Model generates comment-only Python that silently loops"
+2026-02-09T05:15:02 [TASK_END] "Comment-only guard in all 4 REPL loops" "success" — Added guard to stages.py (_execute_react), chat_delegation.py (specialist loop + architect mini-REPL)
+2026-02-09T05:20:00 [TASK_START] "Architect prompt: never write code" "Architect writes full algorithms instead of delegating"
+2026-02-09T05:20:01 [TASK_END] "Architect prompt: never write code" "success" — Rewrote investigate prompt: REPL for calculations only, delegate code tasks
+2026-02-09T05:25:00 [TASK_START] "Architect decision budget + early-stop streaming" "D|B answer not picked up, 3800 tokens wasted"
+2026-02-09T05:25:01 [TASK_END] "Architect decision budget + early-stop streaming" "success" — 500-tok decision budget + StopIteration-based stream abort on D|/I| detection
+2026-02-09T05:30:00 [TASK_START] "REPL prompt: file-based code editing + escalation" "Model regenerates 2000-tok programs from scratch each turn"
+2026-02-09T05:30:01 [TASK_END] "REPL prompt: file-based code editing + escalation" "success" — Added file_write_safe to compact tools, COMPLEX CODE section, 3-mode escalation
+
+2026-02-09T06:00:00 [SESSION] Continued session: FINAL early-stop, test fixes, parallel testing
+2026-02-09T06:00:01 [TASK_START] "FINAL() early-stop in all REPL loops" "FINAL('D') not stopping generation, 500+ tokens wasted"
+2026-02-09T06:00:02 [TASK_END] "FINAL() early-stop in all REPL loops" "success" — _early_stop_check + _FINAL_RE in nodes.py, stages.py, chat_delegation.py
+2026-02-09T06:05:00 [TASK_START] "Fix 9 pre-existing test failures" "Dict mocks, graph topology, FINAL rescue interaction"
+2026-02-09T06:05:01 [TASK_END] "Fix 9 pre-existing test failures" "success" — Fixed tests in test_chat_pipeline_stages, test_architect_delegation, test_graph_mermaid, test_graph_nodes, test_orchestration_graph
+2026-02-09T06:10:00 [TASK_START] "Enable pytest -n 8 parallel testing" "CPU idle during tests, 192 threads available"
+2026-02-09T06:10:01 [TASK_END] "Enable pytest -n 8 parallel testing" "success" — 4x speedup: 67s → 17s. pyproject.toml addopts now includes -n 8. 3116 passed, 0 failed.
+2026-02-09T06:15:00 [TASK_START] "Update docs: chapter 18, CLAUDE.md, progress report"
+2026-02-09T06:15:01 [TASK_END] "Update docs" "success" — FrontdoorNode return type, REPL defensive mechanisms section, test parallelization in CLAUDE.md

@@ -587,7 +587,7 @@ class ProgressReader:
                 if line:
                     try:
                         entries.append(ProgressEntry.from_json(line))
-                    except (json.JSONDecodeError, KeyError):
+                    except (json.JSONDecodeError, KeyError, ValueError):
                         # Skip malformed entries
                         continue
         return entries

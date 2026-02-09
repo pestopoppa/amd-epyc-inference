@@ -92,7 +92,7 @@ from pydantic_graph import BaseNode, Graph, End, GraphRunContext
 
 @dataclass
 class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
-    async def run(self, ctx) -> FrontdoorNode | CoderNode | WorkerNode | End[TaskResult]: ...
+    async def run(self, ctx) -> FrontdoorNode | CoderEscalationNode | WorkerNode | End[TaskResult]: ...
 
 @dataclass
 class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
@@ -234,6 +234,14 @@ class ChatRequest(BaseModel):
 ```
 
 Used by the 3-way evaluation script to test delegation value.
+
+### Forced-role Semantics in 3-way Eval
+
+For benchmark/seeding calls that set `force_role`, role identity is treated as an invariant for that call path:
+
+- Quality-escalation role hopping is disabled under forced-role eval.
+- Delegation is still allowed when `allow_delegation=True`.
+- Result: eval keeps action identity stable (`SELF:*`, `ARCHITECT`) while still measuring delegation/tool value inside that action.
 
 ---
 
@@ -473,6 +481,34 @@ After `_classify_and_route()` returns a role, `binding_router.resolve(task_type)
 Implementation: `src/routing_bindings.py` (`BindingRouter`), integrated in `src/api/routes/chat_routing.py`.
 
 Feature flag: `binding_routing`.
+
+## REPL Defensive Mechanisms (February 2026)
+
+The REPL execution loops have three defensive mechanisms that prevent infinite loops, wasted tokens, and unnecessary escalation.
+
+### Comment-Only Guard
+
+When the model generates Python code that is entirely comments (`# reasoning...`), the REPL executes it as valid Python — but produces no output, no error, no `FINAL()`. The turn loop continues indefinitely.
+
+**Detection**: `_is_comment_only(code)` checks if all non-blank lines start with `#`.
+
+**Response**: Returns explicit error to trigger `consecutive_failures` and eventually escalation: "Your output was all comments — no executable code ran."
+
+Applied in all 4 REPL loops: `_execute_turn()` (graph), `_execute_react()` (ReAct), specialist delegation, and architect mini-REPL.
+
+### FINAL() Rescue
+
+When the model generates `FINAL("C")` inside code that has a syntax error before the FINAL line, the REPL crashes at the error and FINAL() never executes. The `_FINAL_RE` regex extracts the answer directly from the raw LLM output when REPL fails but FINAL() is present, preventing unnecessary escalation.
+
+### Early-Stop Streaming
+
+The model often writes `FINAL("D")` or `D|B` but continues generating hundreds of tokens of post-answer rambling. A three-layer `StopIteration`-based stream abort mechanism:
+
+1. **`llama_server.py`**: `infer_stream_text()` catches `StopIteration` from `on_chunk` callback → breaks SSE loop
+2. **`inference.py`**: When `_early_stop_check` is set on the primitives instance, creates composite callback that accumulates text and raises `StopIteration` when the check returns True
+3. **Call sites**: Set `_early_stop_check` with appropriate regex before `llm_call()`, clear in `finally` block:
+   - TOON regex for architect routing decisions (`D|[A-D]`, `I|brief:`)
+   - `_FINAL_RE` for REPL FINAL() detection in all 3 REPL loops
 
 ## References
 

@@ -47,6 +47,11 @@ class TestRunTask:
                 MockREPLResult(error="SyntaxError in test"),
                 MockREPLResult(output="coder fixed", is_final=True),
             ],
+            llm_responses=[
+                "x = broken()",       # error turn — no FINAL to avoid rescue
+                "x = broken()",       # error turn — no FINAL to avoid rescue
+                "FINAL('coder fixed')",  # success turn after escalation
+            ],
             config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
         )
         result = await run_task(state, deps, start_role=Role.WORKER_GENERAL)
@@ -68,6 +73,13 @@ class TestRunTask:
                 MockREPLResult(error="Logic error"),
                 # Architect succeeds
                 MockREPLResult(output="architect solution", is_final=True),
+            ],
+            llm_responses=[
+                "x = broken()",           # frontdoor error turn 1
+                "x = broken()",           # frontdoor error turn 2
+                "x = broken()",           # coder error turn 1
+                "x = broken()",           # coder error turn 2
+                "FINAL('architect solution')",  # architect success
             ],
             config=GraphConfig(max_retries=2, max_escalations=3, max_turns=15),
         )
@@ -101,6 +113,11 @@ class TestRunTask:
                 MockREPLResult(error="ruff format check failed"),
                 MockREPLResult(error="ruff format check failed"),
                 MockREPLResult(error="ruff format check failed"),
+            ],
+            llm_responses=[
+                "x = attempt()",  # error turn — no FINAL to avoid rescue
+                "x = attempt()",  # error turn — no FINAL to avoid rescue
+                "x = attempt()",  # error turn — no FINAL to avoid rescue
             ],
             config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
         )

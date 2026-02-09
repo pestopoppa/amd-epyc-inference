@@ -1,10 +1,25 @@
 # Orchestration System Architecture
 
-**Version**: 2.5 (Research Context Tracker)
-**Last Updated**: 2026-02-05
+**Version**: 2.7 (Seeding Slot Progress Telemetry)
+**Last Updated**: 2026-02-09
 
 > **This is the living technical reference** — updated continuously as the system evolves.
 > For narrative explanations of each subsystem, see the [Research Chapters](chapters/INDEX.md).
+
+### Recent Updates (2026-02-09)
+
+- **Live Slot Progress in Seeding**: 3-way forced calls now poll backend `/slots` during inference and emit `[slot-progress]` logs (task id + decoded/remain counters) for near-real-time visibility.
+- **INFRA Token Estimate**: when API returns `0 tok` on timeout/disconnect, seeding now stores and logs `tokens_generated_estimate` from slot counters (`0 tok, est N tok`) to distinguish true no-generation from accounting loss.
+- **Reward Telemetry Extension**: reward context now includes `tokens_generated_estimate`, `tokens_generated_effective`, `backend_task_id`, and `slot_progress_source`.
+- **Architect Token Caps Reverted**: delegated architect path no longer forces `n_tokens` caps; generation limits remain controlled by runtime/server settings and seeding timeout policy.
+
+### Recent Updates (2026-02-08)
+
+- **Forced-role Integrity**: Eval/seed forced runs now preserve `force_role` invariants (no quality-escalation role hopping), while still allowing delegation when explicitly enabled.
+- **Vision Forced-route Fix**: Forced VL roles are preserved for image workflows; document workflows still use frontdoor synthesis where intended.
+- **3-way Seeding Hardening**: Adaptive per-call timeouts + heavy-port precheck reduce long blocked waits on stalled heavy ports.
+- **Telemetry Consistency**: `tools_used`, `tools_called`, `tool_timings` are normalized together in seeding caller output.
+- **Delegation Runtime Fix**: `ExecutionResult` dataclass fields are now used correctly in delegation paths, avoiding `'ExecutionResult' object has no attribute 'get'` failures.
 
 ### Recent Updates (2026-02-05)
 

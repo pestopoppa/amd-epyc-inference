@@ -199,6 +199,15 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
 _FINAL_RE = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
 
 
+def _is_comment_only(code: str) -> bool:
+    """Return True if code has no executable lines (all comments/blank)."""
+    for line in code.split("\n"):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            return False
+    return True
+
+
 def _extract_final_from_raw(text: str) -> str | None:
     """Extract answer from FINAL("answer") in raw LLM output.
 
@@ -249,6 +258,10 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     # LLM call — stop at first code block close to prevent repetition loops.
     # REPL expects one action per turn; without this, the model can generate
     # FINAL("X") then repeat the same code block hundreds of tokens.
+    # Early-stop streaming: abort generation the moment FINAL(...) is
+    # detected so the model doesn't keep reasoning after the answer.
+    if deps.primitives is not None:
+        deps.primitives._early_stop_check = lambda text: bool(_FINAL_RE.search(text))
     try:
         code = await asyncio.to_thread(
             deps.primitives.llm_call,
@@ -258,6 +271,9 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
         )
     except Exception as e:
         return "", f"LLM call failed: {e}", False, {}
+    finally:
+        if deps.primitives is not None:
+            deps.primitives._early_stop_check = None
 
     # Save raw LLM output for FINAL() rescue before code extraction
     raw_llm_output = code
@@ -267,6 +283,16 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
 
     code = extract_code_from_response(code)
     code = auto_wrap_final(code)
+
+    # Comment-only guard: model reasoned in comments without executable code.
+    # Return explicit feedback instead of executing a no-op.
+    if _is_comment_only(code):
+        log.info("Comment-only code detected (turn %d), nudging model", state.turns)
+        state.last_error = (
+            "Your output was all comments — no executable code ran. "
+            "Write Python code that computes the answer and call FINAL(answer)."
+        )
+        return "", state.last_error, False, {}
 
     # REPL execution
     try:

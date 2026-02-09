@@ -137,6 +137,27 @@ class BaseAdapter:
         rng.shuffle(results)
         return results
 
+    def extract_all(self) -> list[dict]:
+        """Extract ALL questions from this adapter as prompt dicts.
+
+        Calls _ensure_loaded() then iterates the full dataset through
+        _row_to_prompt(). Used by question_pool.py to pre-extract the
+        complete question corpus into a JSONL file.
+        """
+        self._ensure_loaded()
+        if not self._dataset:
+            return []
+        results = []
+        for i in range(len(self._dataset)):
+            try:
+                row = self._dataset[i] if not isinstance(self._dataset[i], int) else {}
+                prompt = self._row_to_prompt(i, row)
+                if prompt:
+                    results.append(prompt)
+            except Exception:
+                continue
+        return results
+
     def _get_tier_for_index(self, idx: int) -> int:
         """Return tier for a given dataset index. Override in adapters with real tiers."""
         return 1
@@ -712,6 +733,18 @@ class VLAdapter(BaseAdapter):
 
     def _row_to_prompt(self, idx: int, row: dict) -> dict:
         return {}  # Not used — sample() delegates directly
+
+    def extract_all(self) -> list[dict]:
+        """VL adapter delegates to VLDatasetAdapter — sample everything."""
+        self._ensure_loaded()
+        if self._vl_adapter:
+            try:
+                return self._vl_adapter.sample(
+                    n=self._vl_adapter.total_available, seed=0, extract_images=True,
+                )
+            except Exception:
+                return []
+        return []
 
 
 # ── GAIA (Multi-step tool use) ───────────────────────────────────────────

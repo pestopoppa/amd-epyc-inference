@@ -451,10 +451,17 @@ class LlamaServerBackend(ModelBackend):
                         continue
 
                     content = data.get("content", "")
-                    if content and on_chunk is not None:
-                        on_chunk(content)
                     if content:
                         chunks.append(content)
+                    early_stopped = False
+                    if content and on_chunk is not None:
+                        try:
+                            on_chunk(content)
+                        except StopIteration:
+                            early_stopped = True
+                    if early_stopped:
+                        tokens_generated = len(chunks)  # approximate
+                        break
 
                     if data.get("stop", False):
                         timings = data.get("timings", {})

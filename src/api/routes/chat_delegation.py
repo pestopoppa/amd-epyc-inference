@@ -34,6 +34,21 @@ _VALID_DELEGATE_ROLES = frozenset(
 )
 
 
+def _strip_think(text: str) -> str:
+    """Strip complete and incomplete <think> blocks.
+
+    During streaming, models may produce ``<think>I should delegate with
+    I|brief:...`` without closing the tag.  The incomplete block must be
+    stripped so that deliberation about delegation isn't mistaken for an
+    actual TOON decision.
+    """
+    # 1. Complete blocks
+    result = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # 2. Trailing incomplete block (opened but never closed)
+    result = re.sub(r"<think>.*$", "", result, flags=re.DOTALL)
+    return result
+
+
 def _extract_toon_decision(text: str) -> str | None:
     """Extract D|answer or I|brief:...|to:... from anywhere in model output.
 
@@ -175,10 +190,15 @@ def _parse_architect_decision(response: str) -> dict:
     }
 
 
+# Full budget for computation turns (code execution in mini-REPL)
 _ARCHITECT_TOKEN_BUDGET: dict[str, int] = {
     "architect_general": 3375,   # 6.75 t/s × 500s
     "architect_coding": 5150,    # 10.3 t/s × 500s
 }
+
+# Tight budget for the routing decision (D|answer or I|brief:...|to:role).
+# Enough for <think> reasoning (~300 tok) + decision + brief (~200 tok).
+_ARCHITECT_DECISION_BUDGET: int = 500
 
 
 def _architect_delegated_answer(
@@ -242,6 +262,7 @@ def _architect_delegated_answer(
 
     tool_registry = getattr(state, "tool_registry", None)
     reports: list[str] = []
+    previous_briefs: list[str] = []  # Track briefs to detect zero-progress loops
 
     for loop in range(max_loops + 1):  # +1 for initial decision
         phase_start = time.perf_counter()
@@ -276,21 +297,41 @@ def _architect_delegated_answer(
                     f"Computation result:\n{arch_last_output}\n\n"
                     f"Now make your decision (D|answer or I|brief:...|to:role):"
                 )
+            # Turn 0 = routing decision (tight budget).
+            # Turns 1+ = computation follow-up (full budget).
+            n_tok = (
+                _ARCHITECT_DECISION_BUDGET
+                if _aturn == 0
+                else _ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375)
+            )
+            # Early-stop streaming: abort generation the moment D| or I|
+            # is detected in the output. Saves 3000+ tokens of post-decision
+            # rambling on the architect model.
+            # Uses _strip_think to also handle incomplete <think> blocks so
+            # that deliberation *about* delegating isn't mistaken for a real
+            # TOON decision.
+            _toon_re = re.compile(r"D\|[A-D](?=[^a-z]|$)|D\|.{2,}|I\|brief:")
+            primitives._early_stop_check = lambda text: bool(
+                _toon_re.search(_strip_think(text))
+            )
             try:
                 raw = primitives.llm_call(
                     full_prompt,
                     role=architect_role,
                     skip_suffix=True,
-                    n_tokens=_ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375),
+                    n_tokens=n_tok,
                 )
             except Exception as e:
                 log.warning(f"Architect call failed (loop {loop}, turn {_aturn}): {e}")
                 if reports:
                     return reports[-1], stats
                 return f"[ERROR: Architect delegation failed: {e}]", stats
+            finally:
+                primitives._early_stop_check = None
 
-            # Strip <think>...</think> tags (reasoning models)
-            stripped = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+            # Strip <think>...</think> tags (reasoning models), including
+            # incomplete trailing blocks so mid-thought I|/D| aren't parsed.
+            stripped = _strip_think(raw).strip()
             # Extract TOON decision from anywhere in the response.
             arch_response = _extract_toon_decision(stripped)
             if arch_response:
@@ -305,6 +346,14 @@ def _architect_delegated_answer(
             code = extract_code_from_response(raw)
             if not code.strip():
                 # No code extracted, treat raw output as direct answer
+                arch_response = raw
+                break
+            # Comment-only guard: architect is reasoning in comments, not computing
+            if all(
+                not ln.strip() or ln.strip().startswith("#")
+                for ln in code.split("\n")
+            ):
+                log.info("Architect computation turn %d: comment-only, treating as direct answer", _aturn)
                 arch_response = raw
                 break
             result = arch_repl.execute(code)
@@ -349,10 +398,25 @@ def _architect_delegated_answer(
             stats["tools_called"] = all_tools_called
             return answer, stats
 
+        # ── Last-loop guard: skip specialist, go to forced synthesis ──
+        # Running the specialist on the final iteration wastes hundreds of
+        # seconds and the result is thrown away by forced synthesis anyway.
+        if loop >= max_loops:
+            log.info("Architect still wants to investigate on last loop (%d), forcing synthesis", loop)
+            break
+
         # ── Phase B: Specialist execution ──
         brief = decision["brief"]
         delegate_to = decision["delegate_to"]
         delegate_mode = decision["delegate_mode"]
+
+        # Zero-progress guard: if the architect re-delegates with the same
+        # brief, it's looping without making progress.  Break immediately.
+        brief_key = brief.strip().lower()[:200]
+        if brief_key in previous_briefs:
+            log.warning("Architect re-delegated with duplicate brief (loop %d), breaking zero-progress loop", loop)
+            break
+        previous_briefs.append(brief_key)
 
         log.info(f"Delegating to {delegate_to} (mode={delegate_mode}): {brief[:100]}...")
 
@@ -383,13 +447,29 @@ def _architect_delegated_answer(
                     last_error=deleg_last_error,
                     turn=_turn,
                 )
-                code = primitives.llm_call(
-                    deleg_prompt,
-                    role=delegate_to,
-                )
+                _final_re = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
+                primitives._early_stop_check = lambda text: bool(_final_re.search(text))
+                try:
+                    code = primitives.llm_call(
+                        deleg_prompt,
+                        role=delegate_to,
+                    )
+                finally:
+                    primitives._early_stop_check = None
                 from src.prompt_builders import extract_code_from_response, auto_wrap_final
                 code = extract_code_from_response(code)
                 code = auto_wrap_final(code)
+                # Comment-only guard
+                if all(
+                    not ln.strip() or ln.strip().startswith("#")
+                    for ln in code.split("\n")
+                ):
+                    deleg_last_error = (
+                        "Your output was all comments — no executable code ran. "
+                        "Write Python code that computes the answer and call FINAL(answer)."
+                    )
+                    deleg_last_output = ""
+                    continue
                 result = deleg_repl.execute(code)
                 if result.is_final:
                     report = result.final_answer or ""

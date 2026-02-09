@@ -308,8 +308,14 @@ class TestArchitectDelegatedAnswer:
             # Mock REPL to produce a document
             mock_repl = MagicMock()
             mock_repl.get_prompt.return_value = "prompt"
-            mock_repl.execute.return_value = {"final": specialist_doc}
+            mock_result = MagicMock()
+            mock_result.is_final = True
+            mock_result.final_answer = specialist_doc
+            mock_result.output = ""
+            mock_result.error = None
+            mock_repl.execute.return_value = mock_result
             mock_repl.get_state.return_value = ""
+            mock_repl._tool_invocations = 0
             mock_repl_cls.return_value = mock_repl
 
             # Need to add the REPL primitives call
@@ -406,7 +412,8 @@ class TestArchitectPromptBuilders:
         assert "Report: found Y" in prompt
         assert "Question:" in prompt
 
-    def test_synthesis_prompt_shows_loop_count(self):
+    def test_synthesis_prompt_no_reinvestigate_on_good_report(self):
+        """Non-failed specialist report suppresses I| re-delegation option."""
         from src.prompt_builders import build_architect_synthesis_prompt
 
         prompt = build_architect_synthesis_prompt(
@@ -415,8 +422,21 @@ class TestArchitectPromptBuilders:
             loop_num=2,
             max_loops=3,
         )
-        assert "2" in prompt
-        assert "3" in prompt
+        assert "Do NOT" in prompt
+        assert "I|brief" not in prompt
+
+    def test_synthesis_prompt_reinvestigate_on_failed_report(self):
+        """Failed specialist report allows re-delegation with loop count."""
+        from src.prompt_builders import build_architect_synthesis_prompt
+
+        prompt = build_architect_synthesis_prompt(
+            "Q",
+            "[ERROR: specialist crashed]",
+            loop_num=1,
+            max_loops=3,
+        )
+        assert "I|brief" in prompt
+        assert "1" in prompt and "3" in prompt
 
 
 # ── Whitelist Tests ──────────────────────────────────────────────────────

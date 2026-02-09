@@ -1055,7 +1055,12 @@ class TestExecuteReact:
 
         mock_repl = MagicMock()
         mock_repl.get_prompt.return_value = "prompt"
-        mock_repl.execute.return_value = {"final": "ReAct result"}
+        mock_result = MagicMock()
+        mock_result.is_final = True
+        mock_result.final_answer = "ReAct result"
+        mock_result.output = ""
+        mock_result.error = None
+        mock_repl.execute.return_value = mock_result
         mock_repl._tool_invocations = 2
         mock_repl.tool_registry = None
         with patch("src.api.routes.chat_pipeline.stages.REPLEnvironment", return_value=mock_repl):
@@ -1146,7 +1151,12 @@ class TestExecuteReact:
 
         mock_repl = MagicMock()
         mock_repl.get_prompt.return_value = "prompt"
-        mock_repl.execute.return_value = {"final": "Low quality answer"}
+        mock_result = MagicMock()
+        mock_result.is_final = True
+        mock_result.final_answer = "Low quality answer"
+        mock_result.output = ""
+        mock_result.error = None
+        mock_repl.execute.return_value = mock_result
         mock_repl._tool_invocations = 1
         mock_repl.tool_registry = None
         with patch("src.api.routes.chat_pipeline.stages.REPLEnvironment", return_value=mock_repl):

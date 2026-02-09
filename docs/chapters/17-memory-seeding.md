@@ -361,6 +361,8 @@ plan now includes:
 - **Structured error normalization**: benchmark caller now maps `error_code`/`error_detail` into a unified `error` field.
 - **Telemetry consistency invariant**: `tools_used`, `tools_called`, and `tool_timings` are normalized and kept internally consistent for debugging and post-hoc analysis.
 - **Slot-erase capability guard**: 3-way cleanup now detects unsupported `/slots/{id}?action=erase` behavior on llama-server builds and disables repeated failing erase attempts instead of logging false success.
+- **Live slot progress polling (2026-02-09)**: forced 3-way calls poll backend `/slots` during execution and emit `[slot-progress]` logs with task id + decoded token counters.
+- **INFRA token estimate (2026-02-09)**: when API returns `0 tok` under timeout/disconnect, seeding records `tokens_generated_estimate` from slot counters and surfaces it in logs (`0 tok, est N tok`).
 
 ## References
 
