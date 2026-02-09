@@ -2228,7 +2228,7 @@ def run_batch_3way(
             logger.info(f"[{i+1}/{len(questions)}] {suite}/{qid}")
 
             if on_progress is not None:
-                on_progress(i + 1, len(questions), suite, qid)
+                on_progress(i + 1, len(questions), suite, qid, prompt_info.get("prompt", ""))
 
             # Run 3-way evaluation
             role_results, rewards, metadata = evaluate_question_3way(
@@ -2508,9 +2508,9 @@ Examples (legacy mode - DEPRECATED):
             tui = None
             tui_ctx = nullcontext()
 
-        def _on_progress(idx: int, total: int, suite: str, qid: str) -> None:
+        def _on_progress(idx: int, total: int, suite: str, qid: str, question: str = "") -> None:
             if tui is not None:
-                tui.update_progress(idx, total, suite, qid)
+                tui.update_progress(idx, total, suite, qid, question=question)
 
         with tui_ctx:
             if args.continuous:

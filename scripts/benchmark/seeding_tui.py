@@ -159,6 +159,7 @@ class TUIProgress:
     current_suite: str = ""
     current_qid: str = ""
     current_action: str = ""
+    current_question: str = ""
     session_id: str = ""
     start_time: float = field(default_factory=time.monotonic)
 
@@ -265,12 +266,14 @@ class SeedingTUI:
         suite: str,
         qid: str,
         action: str = "",
+        question: str = "",
     ) -> None:
         self._progress.current_index = idx
         self._progress.total_questions = total
         self._progress.current_suite = suite
         self._progress.current_qid = qid
         self._progress.current_action = action
+        self._progress.current_question = question
 
     # -- context manager --
 
@@ -343,7 +346,11 @@ class SeedingTUI:
         )
         layout["main"].split_row(
             Layout(name="log", ratio=1),
-            Layout(name="stream", ratio=1),
+            Layout(name="right", ratio=1),
+        )
+        layout["right"].split_column(
+            Layout(name="question", size=5),
+            Layout(name="stream"),
         )
 
         # Left panel: seeding log
@@ -365,8 +372,25 @@ class SeedingTUI:
             border_style="green",
         ))
 
-        # Right panel: inference stream — filter out verbose PROMPT sections,
+        # Question panel: show the current question being evaluated
+        p = self._progress
+        q_text = p.current_question
+        if q_text:
+            # Truncate to ~3 lines worth of text
+            max_q = panel_width * 3
+            q_display = q_text[:max_q] + ("..." if len(q_text) > max_q else "")
+        else:
+            q_display = "(waiting for question...)"
+        q_title = f"{p.current_suite}/{p.current_qid}" if p.current_qid else "Question"
+        layout["question"].update(Panel(
+            Text(q_display, overflow="fold"),
+            title=q_title,
+            border_style="yellow",
+        ))
+
+        # Stream panel: inference stream — filter out verbose PROMPT sections,
         # keep headers, RESPONSE tokens, and TIMINGS.
+        stream_height = max(8, panel_height - 5)  # subtract question panel
         raw_section = self._tailer.get_current_section()
         filtered: list[str] = []
         in_prompt = False
@@ -387,7 +411,7 @@ class SeedingTUI:
             filtered.append(line)
 
         # Truncate each line to panel width so 1 logical line = 1 display line (no wrap)
-        display_lines = [line[:panel_width] for line in filtered[-(panel_height):]]
+        display_lines = [line[:panel_width] for line in filtered[-(stream_height):]]
         stream_text = _style_stream_lines(display_lines) if display_lines else Text("(waiting for inference tap...)")
         layout["stream"].update(Panel(stream_text, title="Inference Stream", border_style="cyan"))
 
