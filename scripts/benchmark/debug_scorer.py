@@ -143,6 +143,70 @@ def _score_multiple_choice(
     return False
 
 
+def _score_stdin_program(
+    code: str, test_code: str, preamble: str, timeout: int
+) -> bool:
+    """Run a stdin/stdout program against TEST_CASES.
+
+    For competitive programming (USACO, etc.) where solutions read from stdin
+    and write to stdout.  Each test case is (input_str, expected_output_str).
+    The program passes if ALL test cases produce the expected output.
+
+    Strategy: write solution to a temp file, then run it once per test case
+    with stdin piped in.  Compare stdout to expected output.
+    """
+    # Parse TEST_CASES from the test_code string
+    try:
+        ns: dict = {}
+        exec(test_code, ns)
+        cases = ns.get("TEST_CASES", [])
+    except Exception:
+        return False
+
+    if not cases:
+        return False
+
+    full_code = preamble + code
+
+    try:
+        sol_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False,
+            dir="/mnt/raid0/llm/tmp",
+        )
+        sol_file.write(full_code)
+        sol_file.flush()
+        sol_file.close()
+
+        for inp, expected_out in cases:
+            try:
+                result = subprocess.run(
+                    ["python3", sol_file.name],
+                    input=inp,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                    cwd="/mnt/raid0/llm/tmp",
+                )
+            except subprocess.TimeoutExpired:
+                Path(sol_file.name).unlink(missing_ok=True)
+                return False
+
+            if result.returncode != 0:
+                Path(sol_file.name).unlink(missing_ok=True)
+                return False
+
+            got = result.stdout.strip()
+            want = expected_out.strip()
+            if got != want:
+                Path(sol_file.name).unlink(missing_ok=True)
+                return False
+
+        Path(sol_file.name).unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
 def _score_code_execution(
     answer: str, expected: str, config: dict[str, Any]
 ) -> bool:
@@ -177,6 +241,14 @@ def _score_code_execution(
         "from collections import defaultdict, deque, Counter\n"
         "import math, heapq, bisect, itertools, functools\n\n"
     )
+
+    # Detect stdin-based competitive programming solutions (USACO etc.)
+    # These use input() to read from stdin, so we must feed test cases via stdin.
+    _uses_stdin = "input()" in code or "sys.stdin" in code
+    _has_test_cases = test_code.strip().startswith("TEST_CASES")
+
+    if _uses_stdin and _has_test_cases:
+        return _score_stdin_program(code, test_code, _TYPING_PREAMBLE, timeout)
 
     # Build full test script
     full_code = _TYPING_PREAMBLE + code
