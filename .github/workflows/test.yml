@@ -55,7 +55,7 @@ jobs:
           echo "✓ Path check passed (only fallback defaults found)"
 
       - name: Run tests with coverage
-        run: pytest tests/ -x --timeout=120 -q --cov=src --cov-report=term-missing --cov-fail-under=30
+        run: pytest tests/ -x --timeout=120 -q --cov=src --cov-report=term-missing --cov-fail-under=30 -n 0 -o "addopts="
         env:
           ORCHESTRATOR_MOCK_MODE: "true"
           # Redirect /mnt/raid0 paths to CI-safe locations
