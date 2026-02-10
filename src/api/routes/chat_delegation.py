@@ -468,6 +468,34 @@ def _architect_delegated_answer(
                 except Exception as exc:
                     log.warning("MCQ misroute re-prompt failed: %s", exc)
 
+        # ── Competitive programming direct-answer guard ──
+        # If the question is competitive programming (USACO, stdin/stdout, etc.)
+        # and the architect gives a short direct answer instead of delegating,
+        # force delegation to coder.  The scorer expects runnable code, not a
+        # numeric value like "4" or "no".
+        if decision["mode"] == "direct" and loop == 0:
+            _cp_signals = (
+                "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT", "SAMPLE OUTPUT",
+                "reads from stdin", "writes to stdout", "USACO", "Codeforces",
+                "Write a Python solution",
+            )
+            if any(sig in question for sig in _cp_signals):
+                short_answer = decision["answer"].strip()
+                # Only intercept short answers (not full programs)
+                if len(short_answer) < 50 and not short_answer.startswith("import"):
+                    log.warning(
+                        "CP direct-answer blocked: architect answered D|%s for competitive "
+                        "programming question, forcing delegation to coder_escalation",
+                        short_answer[:30],
+                    )
+                    decision = {
+                        "mode": "investigate",
+                        "answer": "",
+                        "brief": f"Implement a complete stdin/stdout solution. {short_answer}",
+                        "delegate_to": "coder_escalation",
+                        "delegate_mode": "repl",
+                    }
+
         # ── Direct/final answer ──
         if decision["mode"] == "direct":
             answer = decision["answer"]
