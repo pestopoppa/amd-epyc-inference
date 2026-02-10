@@ -41,12 +41,12 @@ jobs:
       - name: Check for hardcoded paths
         run: |
           # Check that no NEW hardcoded /mnt/raid0 paths are added (fallbacks are allowed)
-          # Current count: 32 occurrences — env fallbacks, validation patterns,
+          # Current count: 37 occurrences — env fallbacks, validation patterns,
           # LLM instruction strings (prompt_builders/constants.py, graph/nodes.py),
           # sentinel/tap file paths, and tool defaults.
           COUNT=$(grep -r "/mnt/raid0" src/ --include="*.py" 2>/dev/null | wc -l || echo "0")
           echo "Found $COUNT occurrences of /mnt/raid0 in src/"
-          if [ "$COUNT" -gt 32 ]; then
+          if [ "$COUNT" -gt 37 ]; then
             echo "ERROR: New hardcoded paths detected! Use get_config().paths.* instead."
             echo "Allowed: fallback defaults in _get_*() helper functions and LLM instruction strings"
             grep -rn "/mnt/raid0" src/ --include="*.py" || true

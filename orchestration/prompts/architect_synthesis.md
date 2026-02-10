@@ -9,7 +9,9 @@ If the report contains a complete correct answer (including code solutions, prog
 D|Approved
 This passes the specialist's full report as the final answer. Use D|Approved when the report is a program, code solution, or comprehensive answer that should be returned verbatim.
 
-If the report is unclear, use your own reasoning and respond with D| followed by your answer. Do NOT re-delegate.
+If the report contains a clear answer (e.g. a single letter like "B" or a short value), trust it and respond D| followed by that answer. Do NOT substitute your own reasoning when the specialist gave a definitive answer.
+
+If the report is truly empty or an error, use your own reasoning and respond with D| followed by your answer. Do NOT re-delegate.
 
 Question: {question}
 

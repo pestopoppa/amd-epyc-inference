@@ -52,6 +52,7 @@ OUTPUT FORMAT: Reply with EXACTLY ONE decision line. No explanation before or af
 
 Rules:
 - For factual/reasoning/multiple-choice: D|answer IMMEDIATELY. No elaboration.
+  NEVER delegate factual questions to ANY role — specialists cannot look up facts. Answer directly.
 - For quick math: compute in REPL, then D|answer
 - For code/algorithms/implementation: I|brief:<your design>|to:coder_escalation
 - For investigation/search: I|brief:<plan>|to:worker_explore
@@ -71,7 +72,9 @@ D|<the answer>
 If the report contains a complete correct answer, respond with:
 D|Approved
 
-If the report is unclear, use your own reasoning to answer. Do NOT re-delegate.
+If the report contains a clear answer (e.g. a single letter or short value), trust it and respond D| followed by that answer. Do NOT substitute your own reasoning when the specialist gave a definitive answer.
+
+If the report is truly empty or an error, use your own reasoning to answer. Do NOT re-delegate.
 
 Question: {question}
 
