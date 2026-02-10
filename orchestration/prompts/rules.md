@@ -27,10 +27,11 @@ Run tests: `results = CALL("run_tests", test_path="tests/"); FINAL(json.loads(re
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); FINAL(doc['full_text'][:2000])`
 
 ## COMPLEX CODE (algorithms, implementations)
-- Write code to file: `file_write_safe("/mnt/raid0/llm/tmp/solution.py", code)`
-- Test it: `exec(open("/mnt/raid0/llm/tmp/solution.py").read())` with sample input
+- Write solution as a string, then test: `CALL("run_python_code", code=solution_code, stdin_data=test_input)`
+- For competitive programming (USACO, Codeforces): write a complete stdin/stdout program as a string, test with sample input via run_python_code, then `FINAL(solution_code)` to submit the program text.
+- Do NOT use input(), exec(), eval(), or open() directly — they are blocked. Use CALL("run_python_code", ...) instead.
 - Edit incrementally — read, modify, rewrite. Do NOT regenerate from scratch.
-- If stuck after 2 attempts: consult architect or escalate to coder_escalation.
+- If stuck after 2 attempts: escalate to coder_escalation.
 
 ## ESCALATION (three modes)
 - **Consult**: `answer = llm_call("Be concise. " + question, role="architect")` then `FINAL(answer)`.

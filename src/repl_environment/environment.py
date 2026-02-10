@@ -360,7 +360,15 @@ class REPLEnvironment(
             violation = visitor.violations[0]
             # Provide actionable hints for common cases
             hints = ""
-            if "exec()" in violation or "eval()" in violation:
+            if "input()" in violation:
+                hints = (
+                    " Hint: input() is not available in the REPL. "
+                    "For competitive programming solutions that read from stdin, "
+                    "wrap your solution in a string and use "
+                    'CALL("run_python_code", code=your_code_string, stdin_data=test_input) '
+                    "to test it, then FINAL(your_code_string) to submit."
+                )
+            elif "exec()" in violation or "eval()" in violation:
                 hints = (
                     " Hint: use run_python_code(code_string, stdin_data) "
                     "to test code, or write code directly (it is executed "
