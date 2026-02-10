@@ -91,13 +91,15 @@ def _extract_proposed_signals(text: str) -> list[dict]:
 
 def _persist_proposed_signals(
     proposals: list[dict], batch_id: int, session_id: str | None,
+    path: Path | None = None,
 ) -> None:
     """Append proposed signals to the discovery log."""
     if not proposals:
         return
     from datetime import datetime, timezone
-    _PROPOSED_SIGNALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(_PROPOSED_SIGNALS_PATH, "a") as f:
+    target = path or _PROPOSED_SIGNALS_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with open(target, "a") as f:
         for p in proposals:
             entry = {
                 "ts": datetime.now(timezone.utc).isoformat(),
@@ -187,7 +189,7 @@ class ClaudeDebugger:
         self._retry_queue: list[tuple[str, str]] = []   # (suite, qid)
         self._retry_suites: set[str] = set()             # suites affected by fix
         self._retried: set[tuple[str, str]] = set()      # prevent infinite retry loops
-        self._retry_path = retry_path or _RETRY_QUEUE_PATH
+        self._retry_path = retry_path or (project_root / "logs" / "retry_queue.jsonl")
         self._load_persisted_retries()
 
         # Background invocation state
@@ -427,7 +429,10 @@ class ClaudeDebugger:
                 f"[DEBUG] Claude proposed {len(proposals)} new anomaly signal(s): "
                 f"{[p['name'] for p in proposals]}"
             )
-            _persist_proposed_signals(proposals, self.batch_count, self.session_id)
+            _persist_proposed_signals(
+                proposals, self.batch_count, self.session_id,
+                path=self.project_root / "logs" / "proposed_signals.jsonl",
+            )
 
         # Detect changes by comparing before/after snapshots
         snapshot_after = capture_git_diff_stat(self.project_root)

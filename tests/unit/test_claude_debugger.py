@@ -465,7 +465,7 @@ class TestClaudeDebuggerRetryQueue:
         self, mock_restart, mock_git_diff, mock_stat_after, mock_diff, tmp_path: Path,
     ):
         """When Claude changes files and batch has failures, they're queued."""
-        debugger = ClaudeDebugger(project_root=tmp_path, retry_path=tmp_path / "retry_queue.jsonl")
+        debugger = ClaudeDebugger(project_root=tmp_path)
 
         mock_stat_after.return_value = {"src/nodes.py": "new"}
         mock_diff.return_value = ["src/nodes.py"]
