@@ -92,6 +92,11 @@ def extract_code_from_response(response: str) -> str:
         if any(stripped.startswith(kw) for kw in code_starters):
             in_code = True
 
+        if not in_code and ("=" in stripped or "()" in stripped):
+            # Assignment or call expression — treat as code even before
+            # seeing a formal code starter keyword.
+            in_code = True
+
         if in_code:
             # Once we've seen a code starter, include continuation lines
             # (comments, assignments, expressions)
