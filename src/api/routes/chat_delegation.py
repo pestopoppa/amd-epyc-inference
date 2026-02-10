@@ -507,7 +507,7 @@ def _architect_delegated_answer(
             answer = decision["answer"]
             # If architect just says "Approved" and we have specialist output,
             # the specialist's document IS the final answer
-            if answer.lower().strip() in ("approved", "approved.") and stats["specialist_output"]:
+            if answer.lower().strip().startswith("approved") and stats["specialist_output"]:
                 answer = stats["specialist_output"]
             stats["loops"] = loop
             stats["tools_used"] = max(
