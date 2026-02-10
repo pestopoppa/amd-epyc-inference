@@ -1,124 +1,128 @@
-# Understanding CLAUDE.md
+# Understanding the Agent Configuration
 
-This guide helps human readers navigate CLAUDE.md - the AI context file for this project.
+This guide helps human readers understand how Claude Code is configured in this project.
 
-## What is CLAUDE.md?
+## Architecture Overview
 
-CLAUDE.md is a context file that Claude Code reads at session start. It provides:
-- Project-specific rules and constraints
-- Hardware and system specifications
-- Workflow procedures
-- Quick reference commands
+The agent configuration is split across four layers:
 
-**It is NOT documentation for humans** - it's optimized for AI parsing. This guide explains its structure.
+```
+CLAUDE.md              ← Always loaded. Core rules, system identity, routing tables.
+.claude/commands/*.md  ← On-demand skills. Loaded only when invoked via /skill-name.
+.claude/settings.json  ← Hooks. Run automatically on tool use to enforce safety rules.
+CHANGELOG.md           ← Dated record of system changes. Referenced, not loaded.
+```
 
-## Why Is It Organized This Way?
+This layered design keeps the always-loaded context small (~370 lines / 16KB) while making situational knowledge available on demand.
 
-### Monolithic Design
+## File-by-File Breakdown
 
-Claude Code loads CLAUDE.md entirely into context at session start. A single file:
-- Ensures all context loads together
-- Avoids partial reads or missing context
-- Enables cross-referencing within the document
+### `CLAUDE.md` — Core Context (Always Loaded)
 
-### Tables and Code Blocks
+Loaded into every Claude Code session. Contains only what the agent needs on every task:
 
-AI models parse structured formats better than prose:
-- **Tables**: Quick lookup of model/command mappings
-- **Code blocks**: Copy-paste ready commands
-- **Headers**: Section navigation
+| Section | What It Does |
+|---------|--------------|
+| Critical Constraints | Filesystem rules (`/mnt/raid0/` only), env vars |
+| Test Memory Safety | `pytest -n auto` prohibition (192-thread machine) |
+| System Identity | Host, user, key file paths |
+| Hardware Specs | CPU, RAM, storage for inference planning |
+| Available Skills | Table of `/skill-name` commands |
+| Current Status | Best speedups achieved, deprecated approaches |
+| Orchestration System | Agent tiers (A-D), model assignments, component flow |
+| Directory Structure | Project layout, branch safety rules |
+| Session Startup | 3-command quickstart sequence |
+| Model Routing | Which model/port for which task type |
+| Logging | Mandatory agent audit log pattern |
+| Code Style / Git | Conventions and commit workflow |
 
-### Repetition
+**Design principle**: If the agent needs it on >50% of sessions, it stays in CLAUDE.md. Otherwise, it's a skill.
 
-Some information appears multiple times in different forms:
-- Table (quick reference)
-- Prose (context)
-- Commands (action)
+### `.claude/commands/*.md` — Skills (On-Demand)
 
-This is intentional - different query types need different formats.
+Skills are loaded only when the agent (or user) invokes them with `/skill-name`. Each skill is a self-contained reference document for a specific workflow.
 
-## Section Guide
+| Skill | File | Lines | When It's Needed |
+|-------|------|-------|------------------|
+| `/benchmark` | `benchmark.md` | 308 | Running benchmarks, scoring models, analyzing eval logs |
+| `/draft-compat` | `draft-compat.md` | 49 | Validating speculative decoding draft-target pairs |
+| `/research-update` | `research-update.md` | 39 | Updating results tables after benchmarking |
+| `/new-model` | `new-model.md` | — | Onboarding a new model into the registry |
+| `/refactor` | `refactor.md` | — | Code technical debt analysis |
+| `/mcp-knowledge` | `mcp-knowledge.md` | — | Knowledge tools integration |
 
-| Section | Purpose | Update Frequency |
-|---------|---------|------------------|
-| **Critical Constraints** | Filesystem rules | Rarely |
-| **System Identity** | Host/user info | Never |
-| **Hardware Specifications** | CPU/RAM specs | Never |
-| **Current Status** | Best results, production tracks | Per benchmark |
-| **Hierarchical Orchestration** | Agent tiers, philosophy | Rarely |
-| **Directory Structure** | Project layout | Per restructure |
-| **Session Startup** | Required commands | Rarely |
-| **Quick Reference Commands** | Inference commands | Per optimization |
-| **Orchestration Workflow** | TaskIR, routing | Per design change |
-| **Verification Gates** | Gate order | Rarely |
-| **Model Routing** | Tier selection | Per benchmark |
-| **Logging Requirements** | Log patterns | Rarely |
-| **Model Testing Workflow** | New model process | Per discovery |
-| **Benchmarking Pitfalls** | Common mistakes | Per discovery |
-| **Claude-as-Judge** | Scoring rubric | Per hardening |
-| **Benchmark Hardening** | Suite changes | Per hardening |
-| **Key Resources** | Document links | Per restructure |
+**Why skills?** Benchmarking, eval scoring, and draft compatibility validation are detailed workflows that are only relevant ~10-20% of sessions. Keeping them as skills saves ~500 lines of context on every other session.
 
-## Finding Information
+### `.claude/settings.json` — Hooks (Automatic)
 
-### "How do I run inference?"
+Hooks run automatically before certain tool calls. They enforce safety rules that were previously only written as prose in CLAUDE.md.
 
-→ **Quick Reference Commands** section
+| Hook | Trigger | What It Does |
+|------|---------|--------------|
+| `check_pytest_safety.sh` | Any `Bash` call | Blocks `pytest -n auto` and `-n N` where N > 16 |
+| `check_filesystem_path.sh` | `Write` or `Edit` | Blocks file writes outside `/mnt/raid0/` |
+| `benchmark_context.sh` | `Write` or `Edit` | Reminds agent to use `/benchmark` when editing benchmark files |
 
-### "What model should I use?"
+Hook scripts live in `scripts/hooks/`. The configuration in `.claude/settings.json` maps tool names to hook scripts. A separate `.claude/settings.local.json` (not committed) holds permission allow-lists.
 
-→ **Model Routing Strategy** section, or **Hierarchical Orchestration** for role definitions
+### `CHANGELOG.md` — Change Log (Referenced)
 
-### "What are the rules?"
+Dated entries documenting system changes (new features, bug fixes, architecture updates). CLAUDE.md links to it but doesn't include its content. The agent reads it when it needs historical context about what changed and when.
 
-→ **Critical Constraints** (filesystem), **Verification Gates** (quality)
+## How It All Fits Together
 
-### "Something broke, what's the workaround?"
+```
+Session Start
+│
+├── CLAUDE.md loaded (370 lines, ~16KB, ~4K tokens)
+│   ├── Safety rules in memory
+│   ├── Routing tables in memory
+│   └── Skill table in memory (agent knows skills exist)
+│
+├── Hooks registered from .claude/settings.json
+│   └── Run before every Write/Edit/Bash call
+│
+│   User asks: "benchmark the new Qwen model"
+│   │
+│   ├── Agent sees /benchmark in skill table
+│   ├── Agent loads benchmark.md (308 lines, one-time)
+│   └── Agent follows the workflow
+│
+│   Agent tries: Write to /tmp/results.json
+│   │
+│   └── check_filesystem_path.sh → BLOCKED (exit 2)
+│       "All files must be on /mnt/raid0/"
+```
 
-→ **Benchmarking Pitfalls**, or [docs/reference/models/QUIRKS.md](docs/reference/models/QUIRKS.md)
+## For Human Reading
 
-### "What's the current best configuration?"
+If you're a human trying to understand the project (not configure the agent), these are better starting points:
 
-→ **Current Status** section (Best Results table)
-
-## Human-Friendly Alternatives
-
-For human reading, these documents are better organized:
-
-| Topic | Read This Instead |
-|-------|-------------------|
+| Topic | Read This |
+|-------|-----------|
 | Research journey | [docs/chapters/INDEX.md](docs/chapters/INDEX.md) |
 | Model reference | [docs/reference/models/MODELS.md](docs/reference/models/MODELS.md) |
-| Commands | [docs/reference/commands/QUICK_REFERENCE.md](docs/reference/commands/QUICK_REFERENCE.md) |
+| Launch commands | [docs/reference/commands/QUICK_REFERENCE.md](docs/reference/commands/QUICK_REFERENCE.md) |
 | Benchmark results | [docs/reference/benchmarks/RESULTS.md](docs/reference/benchmarks/RESULTS.md) |
 | Getting started | [docs/guides/getting-started.md](docs/guides/getting-started.md) |
 
-## How Claude Uses CLAUDE.md
+## Updating This Configuration
 
-1. **Session start**: Full file loaded into context
-2. **Task routing**: Checks Model Routing section
-3. **Command execution**: Copies from Quick Reference
-4. **Constraint checking**: References Critical Constraints
-5. **Error handling**: Checks Benchmarking Pitfalls
+### Adding a new skill
+1. Create `.claude/commands/your-skill.md`
+2. Add a row to the "Available Skills" table in `CLAUDE.md`
+3. The skill is immediately available as `/your-skill`
 
-## Updating CLAUDE.md
+### Adding a new hook
+1. Create `scripts/hooks/your-hook.sh` (must read JSON from stdin, exit 0 to allow, exit 2 to block)
+2. Add the hook to `.claude/settings.json` under the appropriate tool matcher
+3. Make it executable: `chmod +x scripts/hooks/your-hook.sh`
 
-If you need to update CLAUDE.md:
-
-1. **Add to existing sections** rather than creating new ones
-2. **Use tables** for collections of items
-3. **Include commands** with full paths
-4. **Keep sections focused** - CLAUDE.md is already long
-5. **Test with Claude Code** to verify AI can find new content
-
-## Size and Performance
-
-CLAUDE.md is approximately 750 lines / 26KB. This is large but acceptable because:
-- Claude Code has sufficient context window
-- All information loads in one operation
-- Cross-referencing works within the document
-
-If CLAUDE.md exceeds 1000 lines, consider extracting to reference docs.
+### Updating CLAUDE.md
+- Keep it under 500 lines — if a section grows beyond ~20 lines and is only needed sometimes, extract it to a skill
+- Use tables over prose for structured data
+- Include full paths in commands
+- Test that Claude Code can find new content
 
 ---
 
