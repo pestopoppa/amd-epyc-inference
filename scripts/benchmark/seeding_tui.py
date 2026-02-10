@@ -630,7 +630,8 @@ class SeedingTUI:
         display_lines = [_sanitize_display(line[:right_width]) for line in filtered[-(stream_vis):]]
         stream_text = _style_stream_lines(display_lines, in_code_init) if display_lines else Text("(waiting for inference tap...)")
         role_chain = self._tailer.get_role_chain()
-        stream_title = f"Inference ({' \u2192 '.join(role_chain)})" if role_chain else "Inference Stream"
+        _arrow = " \u2192 "
+        stream_title = f"Inference ({_arrow.join(role_chain)})" if role_chain else "Inference Stream"
         layout["stream"].update(Panel(stream_text, title=stream_title, border_style="cyan"))
 
         # ── Right bottom: REPL execution log ──
