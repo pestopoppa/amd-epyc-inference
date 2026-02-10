@@ -72,6 +72,12 @@ def _extract_toon_decision(text: str) -> str | None:
     if mcq:
         return "D|" + mcq.group(1)
 
+    # 1b. D|I| hybrid: architect emits "D|I|brief:...|to:role" — strip
+    # the leading D| and treat as delegation.  4+ sightings across batches.
+    hybrid = re.search(r"D\|(I\|.+?)(?:\n|$)", text)
+    if hybrid:
+        return hybrid.group(1).strip()
+
     # 2. Own line: D|... on its own line
     own_line = re.search(r"^D\|(.+)$", text, re.MULTILINE)
     if own_line:
