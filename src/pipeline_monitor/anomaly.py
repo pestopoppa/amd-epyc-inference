@@ -25,6 +25,11 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "self_escalation": 0.5,
     "vision_blindness": 1.0,
     "silent_execution": 0.5,
+    "repl_no_tools": 0.5,
+    "slow_delegation": 0.5,
+    "misrouted_to_coder": 1.0,
+    "function_repr_leak": 1.0,
+    "status_phrase_final": 1.0,
 }
 
 # ── Restart phrases for self-doubt detection ──
@@ -124,8 +129,8 @@ def detect_near_empty(
     """Answer has fewer than N tokens and no error — model produced almost nothing."""
     if error:
         return False
-    if scoring_method == "multiple_choice":
-        # Single-letter answers are valid for MCQ
+    if scoring_method in ("multiple_choice", "exact_match"):
+        # Short answers are valid for MCQ and exact-match scoring
         return False
     tokens = answer.split()
     return len(tokens) < threshold
@@ -163,10 +168,14 @@ def detect_self_escalation(role_history: list[str]) -> bool:
 
 
 def detect_vision_blindness(
-    answer: str, role: str, threshold: int = 10,
+    answer: str, role: str, mode: str = "", threshold: int = 10,
 ) -> bool:
     """Vision role but answer has fewer than N tokens — model didn't see the image."""
     if "vision" not in role:
+        return False
+    # REPL mode produces concise FINAL() answers — a single-word answer
+    # like "Cancer" is valid, not blind.
+    if mode == "repl" and answer.strip():
         return False
     tokens = answer.split()
     return len(tokens) < threshold
@@ -183,6 +192,67 @@ def detect_silent_execution(
     return not answer.strip()
 
 
+def detect_repl_no_tools(mode: str, tools_used: int) -> bool:
+    """REPL mode but no tools were used — model ignored its tool capability."""
+    if mode != "repl":
+        return False
+    return tools_used <= 0
+
+
+def detect_slow_delegation(
+    delegation_events: list[dict],
+    threshold_ms: int = 120_000,
+) -> bool:
+    """Any delegation hop took longer than threshold — bottleneck in chain."""
+    for ev in delegation_events:
+        if ev.get("elapsed_ms", 0) > threshold_ms:
+            return True
+    return False
+
+
+_FUNCTION_REPR_RE = re.compile(r"<function \w+ at 0x[0-9a-fA-F]+>")
+
+
+def detect_function_repr_leak(answer: str) -> bool:
+    """Answer contains a Python function repr — callable passed to FINAL instead of called."""
+    return bool(_FUNCTION_REPR_RE.search(answer))
+
+
+_STATUS_PHRASES = {
+    "code execution complete", "execution complete",
+    "done", "complete", "completed", "implemented",
+    "implementation complete", "finished", "success",
+    "task complete", "task completed", "code complete",
+    "answer", "your answer", "your_answer",
+    "your answer here", "your_answer_here",
+    "result", "the answer", "the result",
+}
+
+
+def detect_status_phrase_final(answer: str) -> bool:
+    """Answer is a status phrase rather than an actual answer (e.g. 'Done', 'Complete')."""
+    stripped = answer.strip().rstrip(".!").lower()
+    if not stripped:
+        return False
+    return stripped in _STATUS_PHRASES
+
+
+def detect_misrouted_to_coder(
+    scoring_method: str,
+    role: str,
+    delegation_events: list[dict],
+) -> bool:
+    """Architect delegated to coder for a non-code question (factual/MCQ/QA)."""
+    if scoring_method in ("code_execution", "substring"):
+        return False
+    if "architect" not in role:
+        return False
+    for ev in delegation_events:
+        if ev.get("to_role", "") == "coder_escalation":
+            return True
+    return False
+
+
 # ── Aggregation ──
 
 
@@ -195,8 +265,10 @@ def compute_anomaly_signals(
     scoring_method: str = "",
     role_history: list[str] | None = None,
     tools_used: int = 0,
+    delegation_events: list[dict] | None = None,
 ) -> dict[str, bool]:
-    """Run all 12 anomaly detectors, return dict of signal_name → bool."""
+    """Run all 17 anomaly detectors, return dict of signal_name → bool."""
+    deleg = delegation_events or []
     return {
         "repetition_loop": detect_repetition_loop(answer),
         "comment_only": detect_comment_only(answer),
@@ -210,8 +282,15 @@ def compute_anomaly_signals(
         ),
         "delegation_format_error": detect_delegation_format_error(answer),
         "self_escalation": detect_self_escalation(role_history or []),
-        "vision_blindness": detect_vision_blindness(answer, role),
+        "vision_blindness": detect_vision_blindness(answer, role, mode),
         "silent_execution": detect_silent_execution(answer, tools_used, error),
+        "repl_no_tools": detect_repl_no_tools(mode, tools_used),
+        "slow_delegation": detect_slow_delegation(deleg),
+        "function_repr_leak": detect_function_repr_leak(answer),
+        "status_phrase_final": detect_status_phrase_final(answer),
+        "misrouted_to_coder": detect_misrouted_to_coder(
+            scoring_method, role, deleg,
+        ),
     }
 
 

@@ -54,6 +54,7 @@ def build_diagnostic(
         scoring_method=scoring_method,
         role_history=role_history,
         tools_used=tools_used,
+        delegation_events=delegation_events,
     )
     score = anomaly_score(signals)
 

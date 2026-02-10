@@ -35,8 +35,8 @@ _log = logging.getLogger(__name__)
 _ROOT_LM_SYSTEM_FALLBACK = (
     "You are an assistant that completes tasks. "
     "Match your response depth to the user's request. "
-    "For factual lookups and multiple-choice, answer concisely with FINAL(answer). "
-    "For explanations or reasoning, think thoroughly before FINAL(answer). "
+    "For factual lookups and multiple-choice, answer concisely — e.g. FINAL(\"B\") or FINAL(\"Paris\"). "
+    "For explanations or reasoning, think step-by-step in code comments, then call FINAL with ONLY the final value — e.g. FINAL(42) or FINAL(\"the mitochondria\"). Never put reasoning, explanation, or the literal word \"answer\" inside FINAL. "
     "For tasks requiring file access, web search, or external data, use the available tools."
 )
 
@@ -217,7 +217,7 @@ class PromptBuilder:
             instruction=(
                 "Complete the task. Output Python code with FINAL(answer). "
                 "If asked to write/implement code, FINAL must contain the complete program text, "
-                "not a status word like 'done', 'implemented', or 'code'.\n"
+                "not a status phrase like 'done', 'implemented', 'code', or 'Code execution complete'.\n"
                 "Example: FINAL('''import sys\\ndef solve(): ...\\nsolve()'''):"
             ),
         )

@@ -152,11 +152,34 @@ def auto_wrap_final(code: str) -> str:
     if not lines:
         return code
 
-    # Code starting with def/class is likely a complete answer
+    # Code starting with def/class is likely a complete answer —
+    # UNLESS it also calls print() or has a trailing expression that
+    # invokes the function.  In that case the model wants the code to
+    # execute and produce output, not be returned as a string.
     if lines[0].startswith(("def ", "class ")):
-        # Escape triple quotes in the code to avoid breaking the wrapper
-        escaped_code = code.replace("'''", r"\'\'\'")
-        return f"FINAL('''{escaped_code}''')"
+        has_print = any("print(" in ln for ln in lines)
+        # Trailing call: check original (unstripped) lines for a top-level
+        # statement after the def/class (not indented = not part of the body)
+        raw_nonempty = [
+            ln for ln in code.split("\n")
+            if ln.strip() and not ln.strip().startswith("#")
+        ]
+        # Check if ANY top-level line (after the opening def/class) calls
+        # or assigns — indicating the model wants the code to execute.
+        has_trailing_call = False
+        for raw_ln in raw_nonempty[1:]:
+            if raw_ln.startswith((" ", "\t")):
+                continue  # inside a function/class body
+            s = raw_ln.strip()
+            if s.startswith(("def ", "class ")):
+                continue  # another definition, not a call
+            if "(" in s or "=" in s:
+                has_trailing_call = True
+                break
+        if not has_print and not has_trailing_call:
+            # Pure definition — the code IS the answer
+            escaped_code = code.replace("'''", r"\'\'\'")
+            return f"FINAL('''{escaped_code}''')"
 
     # Single expression/value is likely a final answer
     # Exclude control flow and imports

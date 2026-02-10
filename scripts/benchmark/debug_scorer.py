@@ -83,7 +83,7 @@ def _score_exact_match(
             Default: ``#### (\\S+)`` (GSM8K standard).
         normalize: If True, strip whitespace and lowercase both sides.
     """
-    pattern = config.get("extract_pattern", r"####\s*(\S+)")
+    pattern = config.get("extract_pattern", r"####[ \t]*\n?(\S+)")
     normalize = config.get("normalize", True)
 
     # Try to extract via pattern first
@@ -170,8 +170,16 @@ def _score_code_execution(
     if not code:
         return False
 
+    # Prepend common imports so extracted code with type annotations
+    # (e.g. List[int], Optional[str]) doesn't crash on NameError.
+    _TYPING_PREAMBLE = (
+        "from typing import List, Optional, Tuple, Dict, Set, Any\n"
+        "from collections import defaultdict, deque, Counter\n"
+        "import math, heapq, bisect, itertools, functools\n\n"
+    )
+
     # Build full test script
-    full_code = code
+    full_code = _TYPING_PREAMBLE + code
     if test_code:
         full_code += "\n\n" + test_code
     elif entry_point and expected:
@@ -374,15 +382,24 @@ def _score_f1(
         threshold: Minimum F1 to count as correct (default: 0.5).
         normalize: Whether to normalize text (default: True).
     """
-    pattern = config.get("extract_pattern", r"####\s*(.+)")
+    pattern = config.get("extract_pattern", r"####[ \t]*\n?(.+)")
     threshold = config.get("threshold", 0.5)
     normalize = config.get("normalize", True)
 
-    # Extract answer if pattern provided
-    extracted = _extract_answer(answer, pattern)
+    # Extract answer if pattern provided.
+    # For #### patterns, find the LAST occurrence — models often emit
+    # #### before explanation then #### before the final answer.
+    # Pattern allows optional newline after #### to handle models that
+    # put the marker and answer on separate lines.
+    matches = re.findall(pattern, answer, re.IGNORECASE)
+    if matches:
+        extracted = matches[-1].strip()
+    else:
+        extracted = _extract_answer(answer, pattern)
     if extracted is None:
-        # Fallback: use last line
-        extracted = answer.strip().split("\n")[-1].strip()
+        # Fallback: use last non-empty line
+        lines = [ln.strip() for ln in answer.strip().split("\n") if ln.strip()]
+        extracted = lines[-1] if lines else ""
 
     if normalize:
         extracted = _normalize_text(extracted)

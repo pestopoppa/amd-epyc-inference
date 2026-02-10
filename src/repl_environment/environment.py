@@ -412,8 +412,15 @@ class REPLEnvironment(
                 elapsed_seconds=time.perf_counter() - start_time,
             )
 
-        # Check for FINAL() call - treat as completion
-        final_match = re.search(r'\bFINAL\s*\(\s*["\'](.+?)["\']\s*\)', code, re.DOTALL)
+        # Check for FINAL() call - treat as completion.
+        # Try triple-quoted strings first (models wrap multi-line code in
+        # FINAL('''...''') or FINAL(\"\"\"...\"\"\") — auto_wrap_final
+        # also generates this form), then fall back to single-quoted.
+        final_match = (
+            re.search(r"""\bFINAL\s*\(\s*'{3}(.+?)'{3}\s*\)""", code, re.DOTALL)
+            or re.search(r'''\bFINAL\s*\(\s*"{3}(.+?)"{3}\s*\)''', code, re.DOTALL)
+            or re.search(r'\bFINAL\s*\(\s*["\'](.+?)["\']\s*\)', code, re.DOTALL)
+        )
         final_var_match = re.search(r'\bFINAL_VAR\s*\(\s*["\'](\w+)["\']\s*\)', code)
 
         if final_match:

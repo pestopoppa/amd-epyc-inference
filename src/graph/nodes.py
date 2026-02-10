@@ -251,7 +251,10 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
         log.debug("Session compaction failed (non-fatal): %s", exc)
 
 
-_FINAL_RE = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
+_FINAL_RE = re.compile(
+    r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
+    re.DOTALL,
+)
 
 
 def _is_comment_only(code: str) -> bool:
@@ -271,7 +274,7 @@ def _extract_final_from_raw(text: str) -> str | None:
     """
     m = _FINAL_RE.search(text)
     if m:
-        return m.group(1) or m.group(2) or ""
+        return m.group(1) or m.group(2) or m.group(3) or m.group(4) or ""
     return None
 
 
@@ -407,7 +410,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             log.info("Comment-only code detected (turn %d), nudging model", state.turns)
             state.last_error = (
                 "Your output was all comments — no executable code ran. "
-                "You already reasoned through the problem. Call FINAL(your_answer) NOW."
+                "You already reasoned through the problem. Call FINAL now with the actual value — e.g. FINAL(\"B\") or FINAL(42)."
             )
             return "", state.last_error, False, {}
 
@@ -439,8 +442,8 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 )
                 state.last_error = (
                     f"Your code is {int(ratio*100)}% comments — you already reasoned through the problem. "
-                    "STOP re-deriving. Call FINAL(your_answer) NOW with the answer you reached. "
-                    "Do NOT start over. Do NOT re-explain. Just FINAL()."
+                    "STOP re-deriving. Call FINAL now with the value you reached — e.g. FINAL(\"B\") or FINAL(42). "
+                    "Do NOT start over. Do NOT re-explain."
                 )
                 return "", state.last_error, False, {}
 
@@ -488,11 +491,42 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
         log.info("Silent execution detected (turn %d), nudging model", state.turns)
         nudge = (
             "Your code ran but produced no output and did not call FINAL(). "
-            "You must call FINAL(answer) with your answer. "
-            "If the task asks for code, call FINAL(your_code_as_string). "
-            "If the task needs computation, run the code and call FINAL(result)."
+            "You must call FINAL with the actual computed value — e.g. FINAL(\"B\") or FINAL(42). "
+            "If the task asks for code, call FINAL with the complete program text as a string."
         )
         return "", nudge, False, {}
+
+    # Status-message guard: model called FINAL() with a status phrase
+    # instead of the actual answer (e.g. "Code execution complete.",
+    # "Done", "Function implemented and tested successfully").  Reject and nudge.
+    if result.is_final and hasattr(result, "final_answer") and result.final_answer:
+        _fa = result.final_answer.strip().rstrip(".!").lower()
+        _STATUS_PHRASES = {
+            "code execution complete", "execution complete",
+            "done", "complete", "completed", "implemented",
+            "implementation complete", "finished", "success",
+            "task complete", "task completed", "code complete",
+            # Template placeholder echoes — model copied the example
+            # instead of substituting the actual value
+            "answer", "your answer", "your_answer",
+            "your answer here", "your_answer_here",
+            "result", "the answer", "the result",
+        }
+        # Keyword detection: catch longer status messages that aren't in the
+        # exact set (e.g. "Function implemented and tested successfully").
+        # Only flag if the answer has NO code-like content.
+        _STATUS_KEYWORDS = {"implemented", "completed", "successfully", "finished", "executed"}
+        _CODE_MARKERS = {"def ", "class ", "import ", "return ", "print(", "for ", "while ", "if ", "= "}
+        _has_status_kw = any(kw in _fa for kw in _STATUS_KEYWORDS)
+        _has_code = any(m in result.final_answer for m in _CODE_MARKERS)
+        if _fa in _STATUS_PHRASES or (_has_status_kw and not _has_code and len(_fa.split()) < 12):
+            log.info("Status-message FINAL rejected (turn %d): %r", state.turns, result.final_answer)
+            nudge = (
+                f'FINAL("{result.final_answer}") is a status message, not an answer. '
+                "FINAL must contain the actual answer or complete program text. "
+                "If the task asks for code, call FINAL(your_code_as_string)."
+            )
+            return "", nudge, False, {}
 
     artifacts = dict(deps.repl.artifacts) if hasattr(deps.repl, "artifacts") else {}
     # Prefer final_answer when is_final=True (FINAL() captures the answer

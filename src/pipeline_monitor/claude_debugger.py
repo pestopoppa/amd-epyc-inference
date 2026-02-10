@@ -38,6 +38,8 @@ from src.pipeline_monitor.change_log import (
 logger = logging.getLogger(__name__)
 
 STACK_SCRIPT = Path("/mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py")
+_RETRY_QUEUE_PATH = Path("/mnt/raid0/llm/claude/logs/retry_queue.jsonl")
+_PROPOSED_SIGNALS_PATH = Path("/mnt/raid0/llm/claude/logs/proposed_signals.jsonl")
 
 _TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
 _REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
@@ -59,6 +61,51 @@ def _read_tap_inline(offset: int, length: int, path: str | None = None, max_char
         return text
     except (FileNotFoundError, OSError):
         return ""
+
+
+import re as _re
+
+_NEW_SIGNAL_RE = _re.compile(
+    r"NEW_SIGNAL:\s*name=(?P<name>\w+)\s+"
+    r"weight=(?P<weight>[\d.]+)\s+"
+    r"description=(?P<desc>.+?)\n"
+    r"detector=(?P<detector>.+?)\n"
+    r"evidence=(?P<evidence>.+)",
+    _re.MULTILINE,
+)
+
+
+def _extract_proposed_signals(text: str) -> list[dict]:
+    """Parse NEW_SIGNAL: proposals from Claude's response text."""
+    proposals = []
+    for m in _NEW_SIGNAL_RE.finditer(text):
+        proposals.append({
+            "name": m.group("name"),
+            "weight": float(m.group("weight")),
+            "description": m.group("desc").strip(),
+            "detector": m.group("detector").strip(),
+            "evidence": [e.strip() for e in m.group("evidence").split(",")],
+        })
+    return proposals
+
+
+def _persist_proposed_signals(
+    proposals: list[dict], batch_id: int, session_id: str | None,
+) -> None:
+    """Append proposed signals to the discovery log."""
+    if not proposals:
+        return
+    from datetime import datetime, timezone
+    _PROPOSED_SIGNALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_PROPOSED_SIGNALS_PATH, "a") as f:
+        for p in proposals:
+            entry = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "batch_id": batch_id,
+                "session_id": session_id,
+                **p,
+            }
+            f.write(json.dumps(entry) + "\n")
 
 
 # System prompt sent on the first invocation of each session.
@@ -86,10 +133,22 @@ Key files:
 - src/prompt_builders/resolver.py — prompt resolution (uncached file reads)
 
 Known bug classes: repetition loops, comment-only code, template echo (D| AND I| both output),\
- self-doubt loops, format violations, think-tag leaks, delegation format errors.
+ self-doubt loops, format violations, think-tag leaks, delegation format errors, REPL without\
+ tool use, slow delegations (>120s), misrouted-to-coder (factual Q sent to code specialist),\
+ function repr leaks (<function ... at 0x...>), status-phrase FINAL ("Done", "Complete").
 
 IMPORTANT: Only edit files when you're confident in the fix. For uncertain cases, describe the\
  issue and proposed fix but don't apply it.
+
+6. ANOMALY PATTERN DISCOVERY: If you observe a recurring failure pattern NOT covered by the\
+ existing anomaly_signals, propose a new detector by including a line in this exact format:
+
+NEW_SIGNAL: name=<signal_name> weight=<0.5|1.0> description=<one-line description>
+detector=<python boolean expression using available vars: answer, role, mode, tokens_generated, scoring_method, role_history, tools_used, elapsed_s, delegation_events>
+evidence=<comma-separated question_ids where you observed this pattern>
+
+Only propose a signal when you've seen the same pattern in 2+ answers within the batch or\
+ across recent batches. The pipeline maintainer will review proposals and codify the best ones.
 """)
 
 
@@ -109,6 +168,7 @@ class ClaudeDebugger:
         anomaly_threshold: float = 0.3,
         auto_commit: bool = False,
         dry_run: bool = False,
+        retry_path: Path | None = None,
     ):
         self.project_root = project_root
         self.session_id: str | None = None
@@ -122,10 +182,13 @@ class ClaudeDebugger:
         self.change_log = ChangeLog()
         self._urgent = False  # set when a critical anomaly is added
 
-        # Retry queue: failed questions pending post-fix verification
+        # Retry queue: failed questions pending post-fix verification.
+        # Persisted to disk so script restarts don't lose pending retries.
         self._retry_queue: list[tuple[str, str]] = []   # (suite, qid)
         self._retry_suites: set[str] = set()             # suites affected by fix
         self._retried: set[tuple[str, str]] = set()      # prevent infinite retry loops
+        self._retry_path = retry_path or _RETRY_QUEUE_PATH
+        self._load_persisted_retries()
 
         # Background invocation state
         self._bg_process: subprocess.Popen | None = None
@@ -174,13 +237,61 @@ class ClaudeDebugger:
 
         Called by the eval loop after end_question() to check whether
         a post-fix mini regression suite should run.
+
+        Uses _wait_background() (blocking) instead of _collect_background()
+        to ensure Claude's analysis is complete before checking for retries.
+        Without blocking, the background process is almost always still
+        running when this is called, resulting in empty retry queues.
         """
-        self._collect_background()
+        self._wait_background()
         retries = list(self._retry_queue)
         suites = set(self._retry_suites)
         self._retry_queue.clear()
         self._retry_suites.clear()
+        self._clear_persisted_retries()
         return retries, suites
+
+    # ── Retry persistence ────────────────────────────────────────────
+
+    def _persist_retries(self) -> None:
+        """Append pending retries to disk so script restarts don't lose them."""
+        if not self._retry_queue:
+            return
+        self._retry_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._retry_path, "a") as f:
+            for suite, qid in self._retry_queue:
+                entry = {"suite": suite, "qid": qid}
+                f.write(json.dumps(entry) + "\n")
+
+    def _load_persisted_retries(self) -> None:
+        """Load any retries persisted by a previous session."""
+        if not self._retry_path.is_file():
+            return
+        try:
+            with open(self._retry_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    entry = json.loads(line)
+                    key = (entry["suite"], entry["qid"])
+                    if key not in self._retried:
+                        self._retry_queue.append(key)
+                        self._retry_suites.add(entry["suite"])
+            if self._retry_queue:
+                logger.info(
+                    f"[DEBUG] Loaded {len(self._retry_queue)} persisted "
+                    f"retries from previous session"
+                )
+        except (json.JSONDecodeError, KeyError, OSError) as e:
+            logger.warning(f"[DEBUG] Failed to load persisted retries: {e}")
+
+    def _clear_persisted_retries(self) -> None:
+        """Remove the persisted retry file after retries are consumed."""
+        try:
+            self._retry_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # ── Background dispatch ─────────────────────────────────────────
 
@@ -308,6 +419,16 @@ class ClaudeDebugger:
             self.session_id = response["session_id"]
             logger.info(f"[DEBUG] Session ID: {self.session_id}")
 
+        # Extract any proposed new anomaly signals from Claude's response
+        result_text = response.get("result", "")
+        proposals = _extract_proposed_signals(result_text)
+        if proposals:
+            logger.info(
+                f"[DEBUG] Claude proposed {len(proposals)} new anomaly signal(s): "
+                f"{[p['name'] for p in proposals]}"
+            )
+            _persist_proposed_signals(proposals, self.batch_count, self.session_id)
+
         # Detect changes by comparing before/after snapshots
         snapshot_after = capture_git_diff_stat(self.project_root)
         changed_files = diff_snapshots(snapshot_before, snapshot_after)
@@ -354,6 +475,7 @@ class ClaudeDebugger:
             self._retry_suites.update(affected_suites)
 
             if failed_qids:
+                self._persist_retries()
                 logger.info(
                     f"[DEBUG] Queued {len(failed_qids)} failed questions for retry "
                     f"(suites: {affected_suites})"

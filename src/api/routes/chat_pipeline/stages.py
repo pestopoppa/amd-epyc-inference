@@ -169,7 +169,10 @@ def _execute_react(
                 last_error=react_last_error,
                 turn=_turn,
             )
-            _final_re = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
+            _final_re = re.compile(
+                r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
+                re.DOTALL,
+            )
             primitives._early_stop_check = lambda text: bool(_final_re.search(text))
             try:
                 code = primitives.llm_call(

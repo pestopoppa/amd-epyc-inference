@@ -948,7 +948,7 @@ class TestBuildArchitectInvestigatePrompt:
         assert "D|" in result  # Direct answer format
         assert "I|" in result  # Investigate/delegate format
         # Structural: D| and I| decision formats present
-        assert "D|<answer>" in result
+        assert "D|" in result and ("D|42" in result or "D|B" in result)
         assert "brief:" in result
 
     def test_with_context(self):

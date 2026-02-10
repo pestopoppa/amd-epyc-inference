@@ -57,32 +57,50 @@ def _extract_toon_decision(text: str) -> str | None:
     This function extracts "D|C" from that mess.
 
     Strategy:
-      1. MCQ shortcut: D| followed by single letter [A-D] not followed by lowercase
+      1. MCQ shortcut: D| followed by single letter [A-D] not followed by alpha
       2. Own-line: D|... on its own line
       3. General: D| followed by text until newline (take first sentence)
       4. I| delegation patterns
     """
-    # 1. MCQ: D|X where X is A-D, followed by non-lowercase or end
-    mcq = re.search(r"D\|([A-D])(?=[^a-z]|$)", text)
+    # Template-echo blocklist: model echoed the placeholder instead of
+    # substituting an actual answer.  Return None so the caller falls
+    # through to prose rescue or raw-output handling.
+    _TEMPLATE_ECHOES = {"answer", "<answer>", "the answer", "your answer"}
+
+    # 1. MCQ: D|X where X is A-D, followed by non-alpha or end
+    mcq = re.search(r"D\|([A-D])(?=[^a-zA-Z]|$)", text)
     if mcq:
         return "D|" + mcq.group(1)
 
     # 2. Own line: D|... on its own line
     own_line = re.search(r"^D\|(.+)$", text, re.MULTILINE)
     if own_line:
-        return "D|" + own_line.group(1).strip()
+        val = own_line.group(1).strip()
+        if val.lower() in _TEMPLATE_ECHOES:
+            return None
+        return "D|" + val
 
     # 3. General D|: take text until period+space, newline, or next D|
     general = re.search(r"D\|(.+?)(?:\.\s|\n|D\||$)", text)
     if general:
         answer = general.group(1).strip().rstrip(".")
-        if answer:
+        if answer and answer.lower() not in _TEMPLATE_ECHOES:
             return "D|" + answer
 
-    # 4. I| delegation
-    invest = re.search(r"I\|(brief:.+?)(?:\n|$)", text)
+    # 4. I| delegation — accept with or without "brief:" prefix.
+    # Models sometimes emit I|description|to:role without "brief:".
+    invest = re.search(r"I\|(brief:.+?)(?:\n|$)", text, re.IGNORECASE)
     if invest:
         return "I|" + invest.group(1).strip()
+
+    # 4b. Lenient I|: no "brief:" prefix but has "|to:" somewhere
+    invest_lenient = re.search(r"I\|(.+?\|to:\w+)", text)
+    if invest_lenient:
+        raw_val = invest_lenient.group(1).strip()
+        # Normalize: prepend "brief:" if missing
+        if not raw_val.lower().startswith("brief:"):
+            raw_val = "brief:" + raw_val
+        return "I|" + raw_val
 
     return None
 
@@ -124,7 +142,7 @@ def _parse_architect_decision(response: str) -> dict:
         for segment in parts_str.split("|"):
             if ":" in segment:
                 key, _, val = segment.partition(":")
-                fields[key.strip()] = val.strip()
+                fields[key.strip().lower()] = val.strip()
 
         brief = fields.get("brief", parts_str)
         delegate_to = fields.get("to", "coder_escalation")
@@ -304,16 +322,18 @@ def _architect_delegated_answer(
                 if _aturn == 0
                 else _ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375)
             )
-            # Early-stop streaming: abort generation the moment D| or I|
-            # is detected in the output. Saves 3000+ tokens of post-decision
+            # Early-stop streaming: abort generation once a complete TOON
+            # decision line is detected.  Saves 3000+ tokens of post-decision
             # rambling on the architect model.
             # Uses _strip_think to also handle incomplete <think> blocks so
             # that deliberation *about* delegating isn't mistaken for a real
             # TOON decision.
-            # NOTE: I| pattern requires full line (brief + |to:role) before
-            # firing — old `I\|brief:` fired on the prefix alone, cutting off
-            # the brief content and producing empty delegations.
-            _toon_re = re.compile(r"D\|[A-D](?=[^a-z]|$)|D\|.+|I\|brief:.+\|to:\w+")
+            # IMPORTANT: Free-form D| answers must wait for a trailing newline
+            # before firing.  The old pattern `D\|.+` fired after a single
+            # token (e.g. "D|The" → answer="The"), truncating multi-word
+            # answers.  MCQ answers (D|A through D|D) still fire immediately
+            # via the lookahead shortcut.
+            _toon_re = re.compile(r"D\|[A-D](?=[^a-zA-Z]|$)|D\|[^\n]+\n|I\|.+\|to:\w+")
             primitives._early_stop_check = lambda text: bool(
                 _toon_re.search(_strip_think(text))
             )
@@ -339,8 +359,10 @@ def _architect_delegated_answer(
             arch_response = _extract_toon_decision(stripped)
             if arch_response:
                 break
-            # Check start-of-response for JSON (fallback TOON format)
-            if stripped.startswith("{") or stripped.startswith("```"):
+            # Check start-of-response for JSON (fallback TOON format).
+            # Require minimum length to avoid accepting truncated fragments
+            # like '{"' that the model emits when confused by the prompt.
+            if (stripped.startswith("{") or stripped.startswith("```")) and len(stripped) > 5:
                 arch_response = stripped
                 break
 
@@ -475,7 +497,10 @@ def _architect_delegated_answer(
                     last_error=deleg_last_error,
                     turn=_turn,
                 )
-                _final_re = re.compile(r"""FINAL\(\s*(?:["'](.+?)["']|(\S+?))\s*\)""")
+                _final_re = re.compile(
+                    r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
+                    re.DOTALL,
+                )
                 primitives._early_stop_check = lambda text: bool(_final_re.search(text))
                 try:
                     code = primitives.llm_call(

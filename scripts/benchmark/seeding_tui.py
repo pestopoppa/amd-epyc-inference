@@ -16,6 +16,7 @@ import atexit
 import collections
 import logging
 import os
+import re
 import textwrap
 import threading
 import time
@@ -27,6 +28,18 @@ from rich.layout import Layout
 from rich.live import Live
 from rich.panel import Panel
 from rich.text import Text
+
+# Zero-width and invisible Unicode that breaks terminal column counting.
+# These chars have zero visual width but count as 1 in len()/textwrap,
+# causing Rich to miscalculate line widths and corrupt panel borders.
+_INVISIBLE_RE = re.compile(
+    r'[\u200b\u200c\u200d\u200e\u200f\ufeff\u00ad\u2060-\u2064\u2066-\u2069\u206a-\u206f\ufff9-\ufffb]'
+)
+
+
+def _sanitize_display(text: str) -> str:
+    """Strip invisible Unicode that corrupts terminal column counting."""
+    return _INVISIBLE_RE.sub('', text)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -241,7 +254,7 @@ def _style_stream_lines(lines: list[str], in_code_initial: bool = False) -> Text
         in_code_initial: Whether we're already inside a code block
             (computed from lines that scrolled off-screen).
     """
-    styled = Text()
+    styled = Text(overflow="crop")
     in_code = in_code_initial
     for i, line in enumerate(lines):
         if i > 0:
@@ -289,7 +302,7 @@ def _style_stream_lines(lines: list[str], in_code_initial: bool = False) -> Text
 
 def _style_repl_lines(lines: list[str]) -> Text:
     """Apply Rich styles to REPL execution lines."""
-    styled = Text()
+    styled = Text(overflow="crop")
     for i, line in enumerate(lines):
         if i > 0:
             styled.append("\n")
@@ -548,7 +561,7 @@ class SeedingTUI:
                 wrapped_log.extend(textwrap.wrap(line, width=log_wrap_w))
         # Show the most recent lines that fit
         log_lines = wrapped_log[-(log_vis):]
-        log_text = Text("\n".join(log_lines) if log_lines else "(waiting...)")
+        log_text = Text("\n".join(log_lines) if log_lines else "(waiting...)", overflow="crop")
         layout["log"].update(Panel(
             log_text,
             title=f"Log ({len(self._deque_handler.records)})",
@@ -557,12 +570,13 @@ class SeedingTUI:
 
         # ── Left bottom: Question (auto-scrolling) ──
         q_visible = max(3, q_height - 2)
-        q_raw = p.current_question
+        q_raw = _sanitize_display(p.current_question)
         if q_raw:
+            q_wrap_w = max(20, left_width - 4)  # account for panel border + padding
             wrapped: list[str] = []
             for paragraph in q_raw.split("\n"):
                 if paragraph.strip():
-                    wrapped.extend(textwrap.wrap(paragraph, width=left_width))
+                    wrapped.extend(textwrap.wrap(paragraph, width=q_wrap_w))
                 else:
                     wrapped.append("")
             if len(wrapped) <= q_visible:
@@ -583,7 +597,7 @@ class SeedingTUI:
             q_display = "(waiting...)"
         q_title = f"{p.current_suite}/{p.current_qid}" if p.current_qid else "Question"
         layout["question"].update(Panel(
-            Text(q_display),
+            Text(q_display, overflow="crop"),
             title=q_title,
             border_style="yellow",
         ))
@@ -613,7 +627,7 @@ class SeedingTUI:
             for hline in filtered[:hidden_count]:
                 if hline.lstrip().startswith("```"):
                     in_code_init = not in_code_init
-        display_lines = [line[:right_width] for line in filtered[-(stream_vis):]]
+        display_lines = [_sanitize_display(line[:right_width]) for line in filtered[-(stream_vis):]]
         stream_text = _style_stream_lines(display_lines, in_code_init) if display_lines else Text("(waiting for inference tap...)")
         role_chain = self._tailer.get_role_chain()
         stream_title = f"Inference ({' \u2192 '.join(role_chain)})" if role_chain else "Inference Stream"
@@ -622,7 +636,7 @@ class SeedingTUI:
         # ── Right bottom: REPL execution log ──
         repl_vis = max(3, repl_height - 2)
         repl_section = self._repl_tailer.get_current_section()
-        repl_display = [line[:right_width] for line in repl_section[-(repl_vis):]]
+        repl_display = [_sanitize_display(line[:right_width]) for line in repl_section[-(repl_vis):]]
         repl_text = _style_repl_lines(repl_display) if repl_display else Text("(no REPL activity)")
         layout["repl"].update(Panel(
             repl_text,

@@ -271,17 +271,23 @@ All ~53K questions from 18 HF dataset adapters + YAML suites are pre-extracted i
 
 ### Claude-in-the-Loop Debugger
 
-The `--debug` flag (requires `--3way`) enables automatic pipeline debugging via a persistent Claude Code session. The `src/pipeline_monitor/` package computes 12 anomaly signals per answer (repetition loops, template echo, format violations, etc.), batches diagnostics, and invokes Claude when the batch is full or a critical anomaly fires. Claude reads diagnostics, examines raw inference tap output, and applies prompt hot-swaps or code patches.
+The `--debug` flag (requires `--3way`) enables automatic pipeline debugging via a persistent Claude Code session. See [Chapter 26](26-claude-debugger.md) for full documentation: 17 anomaly signals, hot-swap/code fixes, 3-phase regression suite (verify/generalize/regress), MemRL interaction (TD-learning on retried questions), auto-discovery of new failure patterns, and audit trail.
+
+**Anomaly signals (17):** repetition_loop, comment_only, template_echo, self_doubt_loop, format_violation, think_tag_leak, near_empty, excessive_tokens, delegation_format_error, self_escalation, vision_blindness, silent_execution, repl_no_tools, slow_delegation, function_repr_leak, status_phrase_final, misrouted_to_coder.
+
+**Auto-discovery:** The debugger instructs Claude to propose new anomaly detectors via structured `NEW_SIGNAL:` output. Proposals are persisted to `logs/proposed_signals.jsonl` for human review and optional inclusion in `anomaly.py`.
+
+**Retry persistence:** Retry queue survives script crashes via JSONL persistence (`logs/retry_queue.jsonl`). Previous sessions' pending retries are loaded on startup.
 
 ```bash
 # Live debugging (Claude analyzes every 5 answers)
 python scripts/benchmark/seed_specialist_routing.py --3way --continuous --debug
 
+# With auto-commit of debugger fixes
+python scripts/benchmark/seed_specialist_routing.py --3way --continuous --debug --debug-auto-commit
+
 # Dry run (log diagnostics without invoking Claude)
 python scripts/benchmark/seed_specialist_routing.py --3way --debug --debug-dry-run
-
-# Review diagnostics
-python scripts/benchmark/review_diagnostics.py --summary
 ```
 
 ## Seeding Order & Dependencies

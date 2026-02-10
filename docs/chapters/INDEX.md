@@ -1,6 +1,6 @@
 # Research Chapters Index
 
-25 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
+26 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
 
 ## Reading Paths
 
@@ -85,6 +85,7 @@ Novel contributions (recommended reading order):
 | 23 | [Security & Monitoring](23-security-and-monitoring.md) | AST sandbox, entropy detection |
 | 24 | [Benchmark Suite Construction](24-benchmark-suite-construction.md) | 325 questions, 5 scoring methods |
 | 25 | [Cost-Aware Rewards](25-cost-aware-rewards.md) | Binary rewards for P(success), cost stored separately |
+| 26 | [Claude-in-the-Loop Debugger](26-claude-debugger.md) | 12 anomaly signals, hot-swap fixes, 3-phase regression |
 
 ---
 

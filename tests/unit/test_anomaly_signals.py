@@ -9,11 +9,16 @@ from src.pipeline_monitor.anomaly import (
     detect_delegation_format_error,
     detect_excessive_tokens,
     detect_format_violation,
+    detect_function_repr_leak,
+    detect_misrouted_to_coder,
     detect_near_empty,
     detect_repetition_loop,
+    detect_repl_no_tools,
     detect_self_doubt_loop,
     detect_self_escalation,
     detect_silent_execution,
+    detect_slow_delegation,
+    detect_status_phrase_final,
     detect_template_echo,
     detect_think_tag_leak,
     detect_vision_blindness,
@@ -203,8 +208,11 @@ class TestNearEmpty:
     def test_mcq_empty_not_flagged(self):
         assert detect_near_empty("", None, scoring_method="multiple_choice") is False
 
+    def test_exact_match_single_token_not_flagged(self):
+        assert detect_near_empty("A", None, scoring_method="exact_match") is False
+
     def test_non_mcq_single_letter_flagged(self):
-        assert detect_near_empty("A", None, scoring_method="exact_match") is True
+        assert detect_near_empty("A", None, scoring_method="substring") is True
 
 
 # ── excessive_tokens ──
@@ -272,6 +280,18 @@ class TestVisionBlindness:
     def test_non_vision_role(self):
         assert detect_vision_blindness("OK", "frontdoor") is False
 
+    def test_vision_repl_short_answer_not_flagged(self):
+        # REPL mode produces concise FINAL() answers — not blind
+        assert detect_vision_blindness("Cancer", "worker_vision", mode="repl") is False
+
+    def test_vision_repl_empty_still_flagged(self):
+        # Empty answer in REPL mode is still blind
+        assert detect_vision_blindness("", "worker_vision", mode="repl") is True
+
+    def test_vision_direct_short_answer_flagged(self):
+        # Direct mode short answer IS suspicious
+        assert detect_vision_blindness("OK", "worker_vision", mode="direct") is True
+
 
 # ── silent_execution ──
 
@@ -288,6 +308,138 @@ class TestSilentExecution:
 
     def test_tools_with_error(self):
         assert detect_silent_execution("", 2, "timeout") is False
+
+
+# ── repl_no_tools ──
+
+
+class TestReplNoTools:
+    def test_repl_mode_no_tools(self):
+        assert detect_repl_no_tools("repl", 0) is True
+
+    def test_repl_mode_with_tools(self):
+        assert detect_repl_no_tools("repl", 3) is False
+
+    def test_direct_mode_no_tools(self):
+        assert detect_repl_no_tools("direct", 0) is False
+
+    def test_delegated_mode_no_tools(self):
+        assert detect_repl_no_tools("delegated", 0) is False
+
+
+# ── slow_delegation ──
+
+
+class TestSlowDelegation:
+    def test_slow_hop(self):
+        events = [{"from_role": "architect", "to_role": "coder", "elapsed_ms": 200_000}]
+        assert detect_slow_delegation(events) is True
+
+    def test_fast_hop(self):
+        events = [{"from_role": "architect", "to_role": "coder", "elapsed_ms": 30_000}]
+        assert detect_slow_delegation(events) is False
+
+    def test_empty_events(self):
+        assert detect_slow_delegation([]) is False
+
+    def test_custom_threshold(self):
+        events = [{"elapsed_ms": 50_000}]
+        assert detect_slow_delegation(events, threshold_ms=40_000) is True
+        assert detect_slow_delegation(events, threshold_ms=60_000) is False
+
+    def test_multiple_hops_one_slow(self):
+        events = [
+            {"elapsed_ms": 30_000},
+            {"elapsed_ms": 150_000},
+        ]
+        assert detect_slow_delegation(events) is True
+
+
+# ── function_repr_leak ──
+
+
+class TestFunctionReprLeak:
+    def test_function_repr_detected(self):
+        answer = "<function find_substrings at 0x739cb5f182c0>"
+        assert detect_function_repr_leak(answer) is True
+
+    def test_function_in_context(self):
+        answer = "The result is <function my_func at 0x7f8a1234abcd> which is wrong"
+        assert detect_function_repr_leak(answer) is True
+
+    def test_normal_answer(self):
+        assert detect_function_repr_leak("The answer is 42") is False
+
+    def test_code_mentioning_function(self):
+        # "function" in normal text should not trigger
+        assert detect_function_repr_leak("This function computes the sum") is False
+
+
+# ── status_phrase_final ──
+
+
+class TestStatusPhraseFinal:
+    def test_done(self):
+        assert detect_status_phrase_final("Done") is True
+
+    def test_done_with_period(self):
+        assert detect_status_phrase_final("Done.") is True
+
+    def test_code_execution_complete(self):
+        assert detect_status_phrase_final("Code execution complete.") is True
+
+    def test_your_answer(self):
+        assert detect_status_phrase_final("your_answer") is True
+
+    def test_case_insensitive(self):
+        assert detect_status_phrase_final("COMPLETED") is True
+
+    def test_real_answer(self):
+        assert detect_status_phrase_final("42") is False
+
+    def test_real_code_answer(self):
+        assert detect_status_phrase_final("def solve(): return 42") is False
+
+    def test_empty(self):
+        assert detect_status_phrase_final("") is False
+
+    def test_real_single_letter(self):
+        assert detect_status_phrase_final("B") is False
+
+
+# ── misrouted_to_coder ──
+
+
+class TestMisroutedToCoder:
+    def test_mcq_delegated_to_coder(self):
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        assert detect_misrouted_to_coder("multiple_choice", "architect_general", events) is True
+
+    def test_exact_match_delegated_to_coder(self):
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        assert detect_misrouted_to_coder("exact_match", "architect_general", events) is True
+
+    def test_code_execution_delegated_to_coder(self):
+        # Code tasks SHOULD go to coder — not a misroute
+        events = [{"from_role": "architect_coding", "to_role": "coder_escalation"}]
+        assert detect_misrouted_to_coder("code_execution", "architect_coding", events) is False
+
+    def test_substring_delegated_to_coder(self):
+        # substring scoring often used for code — not a misroute
+        events = [{"from_role": "architect_coding", "to_role": "coder_escalation"}]
+        assert detect_misrouted_to_coder("substring", "architect_coding", events) is False
+
+    def test_mcq_delegated_to_worker(self):
+        # Not going to coder — not this signal
+        events = [{"from_role": "architect_general", "to_role": "worker_explore"}]
+        assert detect_misrouted_to_coder("multiple_choice", "architect_general", events) is False
+
+    def test_non_architect_role(self):
+        events = [{"from_role": "frontdoor", "to_role": "coder_escalation"}]
+        assert detect_misrouted_to_coder("multiple_choice", "frontdoor", events) is False
+
+    def test_no_delegation(self):
+        assert detect_misrouted_to_coder("multiple_choice", "architect_general", []) is False
 
 
 # ── compute_anomaly_signals (aggregate) ──
@@ -310,9 +462,9 @@ class TestComputeAnomalySignals:
         )
         assert signals["format_violation"] is True
 
-    def test_returns_all_12_signals(self):
+    def test_returns_all_17_signals(self):
         signals = compute_anomaly_signals(answer="test")
-        assert len(signals) == 12
+        assert len(signals) == 17
         assert set(signals.keys()) == set(SIGNAL_WEIGHTS.keys())
 
 
