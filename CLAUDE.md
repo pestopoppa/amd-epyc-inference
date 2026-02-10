@@ -22,7 +22,7 @@
 
 > **For human readers**: See [CLAUDE_GUIDE.md](CLAUDE_GUIDE.md) for a guide to navigating this document.
 > **For detailed reference**: See [docs/reference/](docs/reference/) for extracted reference material.
-> **Recent changes**: See [CHANGELOG.md](CHANGELOG.md)
+> **Recent changes**: See [CHANGELOG.md](CHANGELOG.md). **New changelog entries go there, NEVER in this file.**
 
 ---
 
