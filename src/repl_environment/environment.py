@@ -381,8 +381,10 @@ class REPLEnvironment(
                 )
             elif "import " in violation:
                 hints = (
-                    " Hint: use run_shell() for operations requiring "
-                    "system modules, or use the available REPL tools."
+                    " Hint: for competitive programming solutions that need sys/os, "
+                    "wrap your solution in a string and use "
+                    'CALL("run_python_code", code=your_code_string, stdin_data=test_input) '
+                    "to test it, then FINAL(your_code_string) to submit."
                 )
             raise REPLSecurityError(
                 f"Dangerous operation not allowed: {violation}.{hints}"
