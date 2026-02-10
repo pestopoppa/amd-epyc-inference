@@ -12,6 +12,9 @@
    you have enough information.
 
 ## EXAMPLES: Direct Answer (NO tools needed)
+For these, output ONLY a FINAL() call. Do NOT call peek(), grep(), or any tool first.
+BAD: `peek(420)` then `FINAL("D")` — the peek is wasted, you already know the question.
+GOOD: `FINAL("B")` — answer immediately from your knowledge.
 Factual: `FINAL("Paris")`  # "What is the capital of France?"
 Multiple choice: `FINAL("B")`  # "Which option is correct? A) ... B) ..."
 Short math: `FINAL("42")`  # "What is 6 * 7?"
