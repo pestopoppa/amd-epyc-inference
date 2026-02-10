@@ -447,6 +447,33 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 )
                 return "", state.last_error, False, {}
 
+    # Pre-REPL FINAL shortcut: if extracted code contains FINAL() mixed
+    # with non-Python prose (common when code extraction pulls in markdown/
+    # LaTeX), isolate just the FINAL line to avoid SyntaxError.
+    if "FINAL(" in code:
+        code_nontrivial = [
+            ln for ln in code.split("\n")
+            if ln.strip() and not ln.strip().startswith("#")
+        ]
+        final_lines = [ln for ln in code_nontrivial if "FINAL(" in ln]
+        non_final_lines = [ln for ln in code_nontrivial if "FINAL(" not in ln]
+        # If there are non-FINAL lines that look like prose (contain LaTeX
+        # escapes, markdown bullets, or non-Python chars), discard them
+        if final_lines and non_final_lines:
+            suspect_count = sum(
+                1 for ln in non_final_lines
+                if ln.strip().startswith(("-", "*", ">"))
+                or "\\" in ln  # LaTeX escapes
+                or any(c in ln for c in "λθπ≈∈∀∃")  # math Unicode
+            )
+            if suspect_count > 0 and suspect_count >= len(non_final_lines) * 0.5:
+                log.info(
+                    "Pre-REPL shortcut (turn %d): %d/%d non-FINAL lines look like prose, "
+                    "isolating FINAL line",
+                    state.turns, suspect_count, len(non_final_lines),
+                )
+                code = "\n".join(final_lines)
+
     # Write code to inference tap so the TUI shows what's being executed
     _tap_write_repl_exec(code, state.turns)
 
