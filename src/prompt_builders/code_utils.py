@@ -92,7 +92,12 @@ def extract_code_from_response(response: str) -> str:
         if any(stripped.startswith(kw) for kw in code_starters):
             in_code = True
 
-        if in_code or stripped.startswith("#") or "=" in line or "()" in line:
+        if in_code:
+            # Once we've seen a code starter, include continuation lines
+            # (comments, assignments, expressions)
+            code_lines.append(line)
+        elif stripped.startswith("#"):
+            # Standalone comments before code — include as potential preamble
             code_lines.append(line)
 
     if code_lines:
