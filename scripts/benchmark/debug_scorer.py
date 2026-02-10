@@ -122,23 +122,32 @@ def _score_multiple_choice(
     if expected_letter not in "ABCDEFGH":
         return False
 
-    # Strategy 1: Look for explicit "Answer: X" or "(X)" pattern
-    patterns = [
-        r"(?:answer|choice|option)\s*(?:is|:)\s*\(?([A-H])\)?",
-        r"\b([A-H])\)?\s*$",  # Letter at end of output
-        r"^\s*\(?([A-H])\)?\s*[.:\-]",  # Letter at start
-        r"\*\*([A-H])\*\*",  # Bold letter
-    ]
-    for pat in patterns:
-        match = re.search(pat, answer, re.IGNORECASE | re.MULTILINE)
-        if match:
-            found = match.group(1).upper()
-            return found == expected_letter
+    # Strategy 1: Explicit "Answer: X" — take LAST match (verbose models repeat)
+    explicit_pat = r"(?:answer|choice|option)\s*(?:is|:)\s*\(?([A-H])\)?"
+    explicit_matches = re.findall(explicit_pat, answer, re.IGNORECASE)
+    if explicit_matches:
+        return explicit_matches[-1].upper() == expected_letter
 
-    # Strategy 2: First standalone letter found
-    match = re.search(r"\b([A-H])\b", answer)
+    # Strategy 2: Letter on its own line near the end of output
+    last_line_pat = r"^\s*\(?([A-H])\)?\s*$"
+    line_matches = re.findall(last_line_pat, answer, re.MULTILINE)
+    if line_matches:
+        return line_matches[-1].upper() == expected_letter
+
+    # Strategy 3: Letter at very start of output (before any prose)
+    match = re.match(r"\s*\(?([A-H])\)?\s*[.:\-\n]", answer)
     if match:
         return match.group(1).upper() == expected_letter
+
+    # Strategy 4: Bold letter — take LAST match
+    bold_matches = re.findall(r"\*\*([A-H])\*\*", answer)
+    if bold_matches:
+        return bold_matches[-1].upper() == expected_letter
+
+    # Strategy 5: Last standalone letter A-H in the text (not first!)
+    standalone = re.findall(r"\b([A-H])\b", answer)
+    if standalone:
+        return standalone[-1].upper() == expected_letter
 
     return False
 
