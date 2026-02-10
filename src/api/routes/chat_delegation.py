@@ -424,6 +424,50 @@ def _architect_delegated_answer(
 
         log.info(f"Architect loop {loop}: {decision['mode']} ({phase_a_ms:.0f}ms, {_aturn+1} turns)")
 
+        # ── MCQ misroute guard ──
+        # If the question is multiple-choice (has A/B/C/D options) and the
+        # architect tries to delegate, force a direct answer.  Specialists
+        # cannot reason about factual/science MCQ — delegation just wastes
+        # 50-300s and usually returns a wrong answer.
+        if decision["mode"] == "investigate" and loop == 0:
+            _mcq_re = re.compile(
+                r"(?:^|\n)\s*[A-D]\s*[).\]]",  # A) or A. or A]
+                re.MULTILINE,
+            )
+            if _mcq_re.search(question):
+                log.warning(
+                    "MCQ misroute blocked: architect tried to delegate factual MCQ "
+                    "(brief=%s), forcing direct answer",
+                    decision["brief"][:80],
+                )
+                # Re-prompt the architect with a forced direct-answer instruction
+                force_prompt = (
+                    f"This is a multiple-choice question. You MUST answer directly.\n"
+                    f"Respond with D| followed by the letter (A, B, C, or D). No delegation.\n\n"
+                    f"Question: {question[:2000]}\n\nDecision:"
+                )
+                try:
+                    forced_raw = primitives.llm_call(
+                        force_prompt,
+                        role=architect_role,
+                        skip_suffix=True,
+                        n_tokens=50,
+                    )
+                    forced_stripped = _strip_think(forced_raw).strip()
+                    forced_decision = _extract_toon_decision(forced_stripped)
+                    if forced_decision and forced_decision.startswith("D|"):
+                        decision = _parse_architect_decision(forced_decision)
+                        log.info("MCQ misroute recovered: architect answered D|%s", decision["answer"])
+                    else:
+                        # Last resort: extract any single letter A-D
+                        letter_match = re.search(r"\b([A-D])\b", forced_stripped)
+                        if letter_match:
+                            decision = {"mode": "direct", "answer": letter_match.group(1),
+                                        "brief": "", "delegate_to": "", "delegate_mode": "react"}
+                            log.info("MCQ misroute recovered (letter extract): D|%s", decision["answer"])
+                except Exception as exc:
+                    log.warning("MCQ misroute re-prompt failed: %s", exc)
+
         # ── Direct/final answer ──
         if decision["mode"] == "direct":
             answer = decision["answer"]

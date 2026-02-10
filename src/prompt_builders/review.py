@@ -72,7 +72,9 @@ D|<the answer>
 If the report contains a complete correct answer, respond with:
 D|Approved
 
-If the report contains a clear answer (e.g. a single letter or short value), trust it and respond D| followed by that answer. Do NOT substitute your own reasoning when the specialist gave a definitive answer.
+If the report contains a clear answer (e.g. a single letter or short value), use it — respond D| followed by that answer. For code solutions, programs, or computed values, trust the specialist's result.
+
+For factual/science/MCQ questions: if the specialist's answer contradicts your own strong knowledge, use YOUR answer instead. The specialist may lack domain expertise.
 
 If the report is truly empty or an error, use your own reasoning to answer. Do NOT re-delegate.
 
