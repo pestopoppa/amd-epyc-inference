@@ -39,6 +39,28 @@ logger = logging.getLogger(__name__)
 
 STACK_SCRIPT = Path("/mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py")
 
+_TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
+_REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
+_MAX_TAP_INLINE = 12_000  # chars — ~3000 tokens, fits in Claude's context
+_MAX_REPL_TAP_INLINE = 4_000  # chars — REPL output is more compact
+
+
+def _read_tap_inline(offset: int, length: int, path: str | None = None, max_chars: int = _MAX_TAP_INLINE) -> str:
+    """Read tap section and truncate if too large."""
+    if path is None:
+        path = _TAP_PATH
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read(min(length, max_chars * 4))  # UTF-8 worst case
+        text = data.decode("utf-8", errors="replace")
+        if len(text) > max_chars:
+            text = text[:max_chars] + f"\n... [{length - max_chars} bytes truncated]"
+        return text
+    except (FileNotFoundError, OSError):
+        return ""
+
+
 # System prompt sent on the first invocation of each session.
 DEBUGGER_SYSTEM_PROMPT = textwrap.dedent("""\
 You are debugging the orchestration pipeline for a local LLM inference system.
@@ -47,8 +69,10 @@ You will receive batches of diagnostic records from seeding evaluation runs.
 For each batch:
 1. Scan anomaly_signals for flagged issues
 2. Read the full answer text to diagnose the root cause
-3. If needed, read the inference tap section for deep context:
-   python scripts/benchmark/read_tap_section.py --offset {tap_offset_bytes} --length {tap_length_bytes}
+3. The inference log shows every LLM call in the delegation chain — prompts, responses, timings.
+   Use it to trace WHY each delegation hop happened (architect decisions, specialist outputs, escalation triggers).
+   The REPL execution log shows code that was executed and its stdout/stderr (NameErrors, SyntaxErrors, etc.).
+   Use it to diagnose code generation bugs (undefined variables, wrong FINAL() usage, import failures).
 4. Apply fixes:
    - Prompt issues: Edit orchestration/prompts/{relevant_prompt}.md
    - Code issues: Edit src/ files (note: requires API restart)
@@ -98,6 +122,11 @@ class ClaudeDebugger:
         self.change_log = ChangeLog()
         self._urgent = False  # set when a critical anomaly is added
 
+        # Retry queue: failed questions pending post-fix verification
+        self._retry_queue: list[tuple[str, str]] = []   # (suite, qid)
+        self._retry_suites: set[str] = set()             # suites affected by fix
+        self._retried: set[tuple[str, str]] = set()      # prevent infinite retry loops
+
         # Background invocation state
         self._bg_process: subprocess.Popen | None = None
         self._bg_snapshot: dict[str, str] = {}
@@ -139,6 +168,19 @@ class ClaudeDebugger:
         if self.batch:
             self._dispatch()
         self._wait_background()
+
+    def pop_retries(self) -> tuple[list[tuple[str, str]], set[str]]:
+        """Return (failed_qids, affected_suites) and clear queue.
+
+        Called by the eval loop after end_question() to check whether
+        a post-fix mini regression suite should run.
+        """
+        self._collect_background()
+        retries = list(self._retry_queue)
+        suites = set(self._retry_suites)
+        self._retry_queue.clear()
+        self._retry_suites.clear()
+        return retries, suites
 
     # ── Background dispatch ─────────────────────────────────────────
 
@@ -293,6 +335,30 @@ class ClaudeDebugger:
                 commit_sha=commit_sha,
             )
 
+            # Queue failed questions for post-fix verification
+            failed_qids: set[tuple[str, str]] = set()
+            affected_suites: set[str] = set()
+            for diag in batch_copy:
+                suite = diag.get("suite", "")
+                affected_suites.add(suite)
+                if not diag.get("passed", True):
+                    raw_qid = diag.get("question_id", "")
+                    qid = raw_qid.split("/", 1)[1] if "/" in raw_qid else raw_qid
+                    key = (suite, qid)
+                    if key not in self._retried:
+                        failed_qids.add(key)
+
+            for key in failed_qids:
+                self._retried.add(key)
+                self._retry_queue.append(key)
+            self._retry_suites.update(affected_suites)
+
+            if failed_qids:
+                logger.info(
+                    f"[DEBUG] Queued {len(failed_qids)} failed questions for retry "
+                    f"(suites: {affected_suites})"
+                )
+
             # Hot-restart API only if Claude's changes include .py files
             py_changes = [f for f in changed_files if f.endswith(".py")]
             if py_changes:
@@ -358,11 +424,19 @@ class ClaudeDebugger:
             parts.append(f"- **Role history**: {' → '.join(diag.get('role_history', []))}")
             parts.append(f"- **Tools**: {diag.get('tools_used', 0)} ({', '.join(diag.get('tools_called', []))})")
 
-            if diag.get("tap_offset_bytes") and diag.get("tap_length_bytes"):
-                parts.append(
-                    f"- **Tap**: offset={diag['tap_offset_bytes']}, "
-                    f"length={diag['tap_length_bytes']}"
-                )
+            tap_off = diag.get("tap_offset_bytes", 0)
+            tap_len = diag.get("tap_length_bytes", 0)
+            if tap_len > 0:
+                tap_text = _read_tap_inline(tap_off, tap_len)
+                if tap_text:
+                    parts.append(f"\n**Inference log** ({tap_len} bytes):\n```\n{tap_text}\n```")
+
+            repl_off = diag.get("repl_tap_offset_bytes", 0)
+            repl_len = diag.get("repl_tap_length_bytes", 0)
+            if repl_len > 0:
+                repl_text = _read_tap_inline(repl_off, repl_len, _REPL_TAP_PATH, _MAX_REPL_TAP_INLINE)
+                if repl_text:
+                    parts.append(f"\n**REPL execution log** ({repl_len} bytes):\n```\n{repl_text}\n```")
 
             # Include answer text (truncated for very long answers)
             answer = diag.get("answer", "")

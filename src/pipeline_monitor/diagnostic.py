@@ -38,6 +38,8 @@ def build_diagnostic(
     tools_called: list[str],
     tap_offset_bytes: int = 0,
     tap_length_bytes: int = 0,
+    repl_tap_offset_bytes: int = 0,
+    repl_tap_length_bytes: int = 0,
 ) -> dict[str, Any]:
     """Build a diagnostic record from evaluation results.
 
@@ -78,6 +80,8 @@ def build_diagnostic(
         "anomaly_score": score,
         "tap_offset_bytes": tap_offset_bytes,
         "tap_length_bytes": tap_length_bytes,
+        "repl_tap_offset_bytes": repl_tap_offset_bytes,
+        "repl_tap_length_bytes": repl_tap_length_bytes,
     }
 
 

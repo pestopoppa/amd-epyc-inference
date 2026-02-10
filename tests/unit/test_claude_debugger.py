@@ -6,7 +6,16 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.pipeline_monitor.claude_debugger import ClaudeDebugger
+
+
+@pytest.fixture(autouse=True)
+def _isolate_change_log(tmp_path: Path):
+    """Prevent tests from writing to the production debug_changes.jsonl."""
+    with patch("src.pipeline_monitor.change_log.LOG_PATH", tmp_path / "debug_changes.jsonl"):
+        yield
 
 
 def _make_diag(
@@ -38,6 +47,8 @@ def _make_diag(
         "anomaly_score": anomaly_score,
         "tap_offset_bytes": 0,
         "tap_length_bytes": 0,
+        "repl_tap_offset_bytes": 0,
+        "repl_tap_length_bytes": 0,
     }
     base.update(overrides)
     return base
@@ -142,6 +153,140 @@ class TestClaudeDebuggerPromptBuilding:
         prompt = debugger._build_prompt([_make_diag("q1")])
         assert "debugging the orchestration pipeline" not in prompt
         assert "Diagnostic Batch #2" in prompt
+
+    def test_tap_inlined_when_present(self, tmp_path: Path):
+        """Diagnostic with tap data + tap file present → inlined in prompt."""
+        # Create a fake tap file
+        tap_file = tmp_path / "tap.log"
+        tap_content = "ROLE=architect_general PROMPT=test\nRESPONSE: D|coder\n"
+        tap_file.write_text(tap_content)
+
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+
+        diag = _make_diag(
+            "q1",
+            tap_offset_bytes=0,
+            tap_length_bytes=len(tap_content.encode()),
+        )
+
+        with patch("src.pipeline_monitor.claude_debugger._TAP_PATH", str(tap_file)):
+            prompt = debugger._build_prompt([diag])
+
+        assert "Inference log" in prompt
+        assert "ROLE=architect_general" in prompt
+
+    def test_tap_not_inlined_when_zero(self, tmp_path: Path):
+        """Diagnostic with tap_offset=0 and tap_length=0 → no tap in prompt."""
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+        prompt = debugger._build_prompt([_make_diag("q1")])
+        assert "Inference log" not in prompt
+
+    def test_tap_graceful_when_file_missing(self, tmp_path: Path):
+        """Tap file missing → no crash, no tap in prompt."""
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+
+        diag = _make_diag("q1", tap_offset_bytes=100, tap_length_bytes=500)
+
+        with patch(
+            "src.pipeline_monitor.claude_debugger._TAP_PATH",
+            str(tmp_path / "nonexistent.log"),
+        ):
+            prompt = debugger._build_prompt([diag])
+
+        assert "Inference log" not in prompt
+
+    def test_tap_truncated_when_too_large(self, tmp_path: Path):
+        """Tap content exceeding _MAX_TAP_INLINE is truncated."""
+        tap_file = tmp_path / "tap.log"
+        big_content = "x" * 20_000
+        tap_file.write_text(big_content)
+
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+
+        diag = _make_diag(
+            "q1",
+            tap_offset_bytes=0,
+            tap_length_bytes=len(big_content.encode()),
+        )
+
+        with patch("src.pipeline_monitor.claude_debugger._TAP_PATH", str(tap_file)):
+            prompt = debugger._build_prompt([diag])
+
+        assert "Inference log" in prompt
+        assert "truncated" in prompt
+
+    def test_repl_tap_inlined_when_present(self, tmp_path: Path):
+        """Diagnostic with REPL tap data + file present → inlined in prompt."""
+        repl_file = tmp_path / "repl_tap.log"
+        repl_content = "[EXEC] x = 42\n[RESULT] NameError: name 'answer' is not defined\n"
+        repl_file.write_text(repl_content)
+
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+
+        diag = _make_diag(
+            "q1",
+            repl_tap_offset_bytes=0,
+            repl_tap_length_bytes=len(repl_content.encode()),
+        )
+
+        with patch("src.pipeline_monitor.claude_debugger._REPL_TAP_PATH", str(repl_file)):
+            prompt = debugger._build_prompt([diag])
+
+        assert "REPL execution log" in prompt
+        assert "NameError" in prompt
+
+    def test_repl_tap_not_inlined_when_zero(self, tmp_path: Path):
+        """Diagnostic with repl_tap_length=0 → no REPL tap in prompt."""
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+        prompt = debugger._build_prompt([_make_diag("q1")])
+        assert "REPL execution log" not in prompt
+
+    def test_repl_tap_graceful_when_file_missing(self, tmp_path: Path):
+        """REPL tap file missing → no crash, no REPL tap in prompt."""
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+
+        diag = _make_diag("q1", repl_tap_offset_bytes=50, repl_tap_length_bytes=200)
+
+        with patch(
+            "src.pipeline_monitor.claude_debugger._REPL_TAP_PATH",
+            str(tmp_path / "nonexistent_repl.log"),
+        ):
+            prompt = debugger._build_prompt([diag])
+
+        assert "REPL execution log" not in prompt
+
+    def test_both_taps_inlined_together(self, tmp_path: Path):
+        """Both inference and REPL taps present → both inlined."""
+        tap_file = tmp_path / "tap.log"
+        tap_file.write_text("ROLE=frontdoor PROMPT=test\nRESPONSE: D|42\n")
+
+        repl_file = tmp_path / "repl_tap.log"
+        repl_file.write_text("[EXEC] print(42)\n[RESULT] 42\n")
+
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=5, dry_run=True)
+        debugger.batch_count = 2
+
+        diag = _make_diag(
+            "q1",
+            tap_offset_bytes=0,
+            tap_length_bytes=tap_file.stat().st_size,
+            repl_tap_offset_bytes=0,
+            repl_tap_length_bytes=repl_file.stat().st_size,
+        )
+
+        with patch("src.pipeline_monitor.claude_debugger._TAP_PATH", str(tap_file)), \
+             patch("src.pipeline_monitor.claude_debugger._REPL_TAP_PATH", str(repl_file)):
+            prompt = debugger._build_prompt([diag])
+
+        assert "Inference log" in prompt
+        assert "REPL execution log" in prompt
 
 
 class TestClaudeDebuggerInvocation:
@@ -302,3 +447,167 @@ class TestClaudeDebuggerCodeChanges:
         debugger._process_result(mock_proc, before, [_make_diag("q1")])
 
         mock_restart.assert_not_called()
+
+
+class TestClaudeDebuggerRetryQueue:
+    def test_pop_retries_empty_when_no_changes(self, tmp_path: Path):
+        """No file changes → pop_retries returns empty."""
+        debugger = ClaudeDebugger(project_root=tmp_path, dry_run=True)
+        retries, suites = debugger.pop_retries()
+        assert retries == []
+        assert suites == set()
+
+    @patch("src.pipeline_monitor.claude_debugger.diff_snapshots")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff_stat")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff")
+    @patch("src.pipeline_monitor.claude_debugger.ClaudeDebugger._hot_restart_api")
+    def test_failed_questions_queued_on_file_change(
+        self, mock_restart, mock_git_diff, mock_stat_after, mock_diff, tmp_path: Path,
+    ):
+        """When Claude changes files and batch has failures, they're queued."""
+        debugger = ClaudeDebugger(project_root=tmp_path)
+
+        mock_stat_after.return_value = {"src/nodes.py": "new"}
+        mock_diff.return_value = ["src/nodes.py"]
+        mock_git_diff.return_value = "diff"
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout.read.return_value = json.dumps({"result": "ok"})
+        mock_proc.stderr.read.return_value = ""
+
+        batch = [
+            _make_diag("thinking/t1_q1", passed=True, suite="thinking"),
+            _make_diag("thinking/t1_q2", passed=False, suite="thinking"),
+            _make_diag("math/m1_q1", passed=False, suite="math"),
+        ]
+        debugger._process_result(mock_proc, {"src/nodes.py": "old"}, batch)
+
+        retries, suites = debugger.pop_retries()
+        assert len(retries) == 2
+        assert ("thinking", "t1_q2") in retries
+        assert ("math", "m1_q1") in retries
+        assert suites == {"thinking", "math"}
+
+    @patch("src.pipeline_monitor.claude_debugger.diff_snapshots")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff_stat")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff")
+    @patch("src.pipeline_monitor.claude_debugger.ClaudeDebugger._hot_restart_api")
+    def test_same_question_retried_only_once(
+        self, mock_restart, mock_git_diff, mock_stat_after, mock_diff, tmp_path: Path,
+    ):
+        """_retried set prevents the same question from being queued twice."""
+        debugger = ClaudeDebugger(project_root=tmp_path)
+
+        mock_stat_after.return_value = {"src/x.py": "new"}
+        mock_diff.return_value = ["src/x.py"]
+        mock_git_diff.return_value = "diff"
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout.read.return_value = json.dumps({"result": "ok"})
+        mock_proc.stderr.read.return_value = ""
+
+        batch = [_make_diag("thinking/t1_q1", passed=False, suite="thinking")]
+
+        # First batch with changes → queued
+        debugger._process_result(mock_proc, {"src/x.py": "v1"}, batch)
+        retries1, _ = debugger.pop_retries()
+        assert len(retries1) == 1
+
+        # Second batch with same question failing again → NOT re-queued
+        mock_stat_after.return_value = {"src/x.py": "v3"}
+        debugger._process_result(mock_proc, {"src/x.py": "v2"}, batch)
+        retries2, _ = debugger.pop_retries()
+        assert len(retries2) == 0
+
+    @patch("src.pipeline_monitor.claude_debugger.diff_snapshots")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff_stat")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff")
+    @patch("src.pipeline_monitor.claude_debugger.ClaudeDebugger._hot_restart_api")
+    def test_no_retries_when_no_failures(
+        self, mock_restart, mock_git_diff, mock_stat_after, mock_diff, tmp_path: Path,
+    ):
+        """File changes with all passing → retries empty, but suites tracked."""
+        debugger = ClaudeDebugger(project_root=tmp_path)
+
+        mock_stat_after.return_value = {"src/x.py": "new"}
+        mock_diff.return_value = ["src/x.py"]
+        mock_git_diff.return_value = "diff"
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout.read.return_value = json.dumps({"result": "ok"})
+        mock_proc.stderr.read.return_value = ""
+
+        batch = [_make_diag("thinking/t1_q1", passed=True, suite="thinking")]
+        debugger._process_result(mock_proc, {"src/x.py": "old"}, batch)
+
+        retries, suites = debugger.pop_retries()
+        assert retries == []
+        assert suites == {"thinking"}  # suite still tracked even with no failures
+
+    def test_pop_retries_clears_queue(self, tmp_path: Path):
+        """pop_retries drains the queue — second call returns empty."""
+        debugger = ClaudeDebugger(project_root=tmp_path, dry_run=True)
+        # Manually populate to test clearing
+        debugger._retry_queue = [("thinking", "q1"), ("math", "q2")]
+        debugger._retry_suites = {"thinking", "math"}
+
+        retries1, suites1 = debugger.pop_retries()
+        assert len(retries1) == 2
+        assert len(suites1) == 2
+
+        retries2, suites2 = debugger.pop_retries()
+        assert retries2 == []
+        assert suites2 == set()
+
+    @patch("src.pipeline_monitor.claude_debugger.diff_snapshots")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff_stat")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff")
+    def test_no_retries_when_no_file_changes(
+        self, mock_git_diff, mock_stat_after, mock_diff, tmp_path: Path,
+    ):
+        """No file changes → failures are NOT queued (fix didn't happen)."""
+        debugger = ClaudeDebugger(project_root=tmp_path)
+
+        mock_stat_after.return_value = {}
+        mock_diff.return_value = []  # No changes
+        mock_git_diff.return_value = ""
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout.read.return_value = json.dumps({"result": "ok"})
+        mock_proc.stderr.read.return_value = ""
+
+        batch = [_make_diag("thinking/t1_q1", passed=False, suite="thinking")]
+        debugger._process_result(mock_proc, {}, batch)
+
+        retries, suites = debugger.pop_retries()
+        assert retries == []
+        assert suites == set()
+
+    @patch("src.pipeline_monitor.claude_debugger.diff_snapshots")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff_stat")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff")
+    @patch("src.pipeline_monitor.claude_debugger.ClaudeDebugger._hot_restart_api")
+    def test_qid_stripped_from_suite_prefix(
+        self, mock_restart, mock_git_diff, mock_stat_after, mock_diff, tmp_path: Path,
+    ):
+        """question_id='thinking/t1_q1' → qid='t1_q1' (suite prefix stripped)."""
+        debugger = ClaudeDebugger(project_root=tmp_path)
+
+        mock_stat_after.return_value = {"src/x.py": "new"}
+        mock_diff.return_value = ["src/x.py"]
+        mock_git_diff.return_value = "diff"
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout.read.return_value = json.dumps({"result": "ok"})
+        mock_proc.stderr.read.return_value = ""
+
+        batch = [_make_diag("thinking/t1_q1", passed=False, suite="thinking")]
+        debugger._process_result(mock_proc, {"src/x.py": "old"}, batch)
+
+        retries, _ = debugger.pop_retries()
+        assert retries == [("thinking", "t1_q1")]

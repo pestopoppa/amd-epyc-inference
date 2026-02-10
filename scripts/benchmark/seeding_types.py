@@ -193,6 +193,12 @@ class RoleResult:
     generation_ms: float = 0.0
     prompt_eval_ms: float = 0.0
     http_overhead_ms: float = 0.0
+    # Inference tap byte range for this call (0/0 = not captured)
+    tap_offset_bytes: int = 0
+    tap_length_bytes: int = 0
+    # REPL tap byte range (code execution output/errors)
+    repl_tap_offset_bytes: int = 0
+    repl_tap_length_bytes: int = 0
 
 
 @dataclass

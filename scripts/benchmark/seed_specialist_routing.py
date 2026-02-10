@@ -2317,6 +2317,10 @@ def run_batch_3way(
                             delegation_events=rr.delegation_events,
                             tools_used=rr.tools_used,
                             tools_called=rr.tools_called,
+                            tap_offset_bytes=rr.tap_offset_bytes,
+                            tap_length_bytes=rr.tap_length_bytes,
+                            repl_tap_offset_bytes=rr.repl_tap_offset_bytes,
+                            repl_tap_length_bytes=rr.repl_tap_length_bytes,
                         )
                         append_diagnostic(diag)
                         debugger.add_diagnostic(diag)
