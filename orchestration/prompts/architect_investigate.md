@@ -23,8 +23,9 @@ Rules:
 - For investigation/search: I|brief:plan|to:worker_explore
 - Valid roles: coder_escalation, worker_explore, worker_summarize, worker_vision, vision_escalation
 
-CRITICAL: Output the decision line ONLY. Stop generating after the decision line. Do NOT explain your reasoning, justify your choice, or add any text after the decision. Never output the literal word "answer" — always substitute the actual answer.
 {context_section}
 Question: {question}
+
+CRITICAL: Output the decision line ONLY. One line. No explanation before or after. For USACO/competitive programming: I|brief:algorithm hint|to:coder_escalation
 
 Decision:
