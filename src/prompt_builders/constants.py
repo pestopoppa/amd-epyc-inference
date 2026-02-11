@@ -133,11 +133,28 @@ Research: `results = CALL("search_arxiv", query="speculative decoding"); FINAL(j
 Run tests: `results = CALL("run_tests", test_path="tests/"); FINAL(json.loads(results))`
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); FINAL(doc['full_text'][:2000])`
 
+## EXAMPLES: Competitive Programming (USACO, Codeforces, etc.)
+solution = '''
+import sys
+input = sys.stdin.readline
+n = int(input())
+a = list(map(int, input().split()))
+best = cur = a[0]
+for x in a[1:]:
+    cur = max(x, cur + x)
+    best = max(best, cur)
+print(best)
+'''
+test_out = CALL("run_python_code", code=solution, stdin_data="5\n-2 1 -3 4 -1")
+# verify output, then submit the code itself
+FINAL(solution)
+
 ## COMPLEX CODE (algorithms, implementations)
 - Write code to file: `file_write_safe("/mnt/raid0/llm/tmp/solution.py", code)`
 - Test it: `exec(open("/mnt/raid0/llm/tmp/solution.py").read())` with sample input
 - Edit incrementally — read, modify, rewrite. Do NOT regenerate from scratch.
 - If stuck after 2 attempts: consult architect or escalate to coder_escalation.
+- For stdin/stdout programs: wrap in string, use `CALL("run_python_code", code=..., stdin_data=...)` to test. Do NOT use `import sys` or `input()` directly — they are blocked.
 
 ## ESCALATION (three modes)
 - **Consult**: `answer = llm_call("Be concise. " + question, role="architect")` then `FINAL(answer)`.
