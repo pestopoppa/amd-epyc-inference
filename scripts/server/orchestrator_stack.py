@@ -223,6 +223,40 @@ WARM_SERVERS = [
 DEV_MODEL = "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
 DEV_MODEL_PATH = str(_PATHS["models_dir"] / DEV_MODEL)
 
+# =============================================================================
+# Docker Services (NextPLAID multi-vector retrieval)
+# =============================================================================
+
+DOCKER_SERVICES = [
+    {
+        "name": "nextplaid-code",
+        "port": 8088,
+        "image": "ghcr.io/lightonai/next-plaid:cpu-1.0.4",
+        "model": "lightonai/LateOn-Code-edge",
+        "description": "Multi-vector code retrieval (ColBERT)",
+        # Separate index subdir to avoid cross-contamination (different models = incompatible embeddings)
+        "volumes": [
+            f"{_PATHS['project_root']}/cache/next-plaid/code-indices:/data/indices",
+            f"{_PATHS['cache_dir']}/huggingface:/root/.cache/huggingface",
+        ],
+        "args": ["--host", "0.0.0.0", "--port", "8080", "--index-dir", "/data/indices",
+                 "--model", "lightonai/LateOn-Code-edge", "--int8"],
+    },
+    {
+        "name": "nextplaid-docs",
+        "port": 8089,
+        "image": "ghcr.io/lightonai/next-plaid:cpu-1.0.4",
+        "model": "lightonai/answerai-colbert-small-v1-onnx",
+        "description": "Multi-vector doc retrieval (ColBERT)",
+        "volumes": [
+            f"{_PATHS['project_root']}/cache/next-plaid/docs-indices:/data/indices",
+            f"{_PATHS['cache_dir']}/huggingface:/root/.cache/huggingface",
+        ],
+        "args": ["--host", "0.0.0.0", "--port", "8080", "--index-dir", "/data/indices",
+                 "--model", "lightonai/answerai-colbert-small-v1-onnx", "--int8"],
+    },
+]
+
 
 # =============================================================================
 # Model Path Validation
@@ -366,6 +400,97 @@ def kill_process(pid: int, timeout: int = 5) -> bool:
         return False
 
 
+# =============================================================================
+# Docker Container Management (NextPLAID services)
+# =============================================================================
+
+
+def _docker_available() -> bool:
+    """Check if docker CLI is available."""
+    try:
+        result = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def docker_container_running(name: str) -> bool:
+    """Check if a named Docker container is running."""
+    try:
+        result = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", name],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() == "true"
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def start_docker_container(service: dict) -> ProcessInfo | None:
+    """Start a Docker service. Removes any existing container with the same name first."""
+    name = service["name"]
+    port = service["port"]
+
+    # Remove existing container (stopped or running) with same name
+    subprocess.run(
+        ["docker", "rm", "-f", name],
+        capture_output=True, timeout=10,
+    )
+
+    cmd = ["docker", "run", "-d", "--name", name, "-p", f"{port}:8080"]
+    for vol in service.get("volumes", []):
+        cmd.extend(["-v", vol])
+    cmd.append(service["image"])
+    cmd.extend(service.get("args", []))
+
+    print(f"  Starting {name} on port {port}...")
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        print(f"    [FAIL] docker run failed: {result.stderr.strip()[:200]}")
+        return None
+
+    container_id = result.stdout.strip()[:12]
+    print(f"    Container: {container_id}")
+
+    # Wait for health
+    print(f"    Waiting for health...")
+    if wait_for_health(port, timeout=60):
+        print(f"    [OK] {name} ready ({service['description']})")
+        # Use container_id as PID placeholder (Docker manages the actual process)
+        return ProcessInfo(
+            role=name,
+            pid=-1,  # Docker-managed, not a host PID
+            port=port,
+            started_at=datetime.now().isoformat(),
+            model_path=service.get("model", service["image"]),
+            log_file=f"docker logs {name}",
+        )
+    else:
+        print(f"    [FAIL] {name} health check timed out")
+        # Show last few log lines for debugging
+        logs = subprocess.run(
+            ["docker", "logs", "--tail", "10", name],
+            capture_output=True, text=True, timeout=5,
+        )
+        if logs.stdout:
+            print(f"    Last logs: {logs.stdout.strip()[:300]}")
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=5)
+        return None
+
+
+def stop_docker_container(name: str) -> bool:
+    """Stop and remove a named Docker container."""
+    result = subprocess.run(
+        ["docker", "rm", "-f", name],
+        capture_output=True, text=True, timeout=15,
+    )
+    return result.returncode == 0
+
+
 def wait_for_health(port: int, timeout: int = _HEALTH_SERVER_STARTUP) -> bool:
     """Wait for server health endpoint."""
     import urllib.request
@@ -378,7 +503,7 @@ def wait_for_health(port: int, timeout: int = _HEALTH_SERVER_STARTUP) -> bool:
             with urllib.request.urlopen(url, timeout=5) as resp:
                 if resp.status == 200:
                     return True
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError, ConnectionResetError, OSError):
             pass
         time.sleep(2)
     return False
@@ -1006,6 +1131,21 @@ def cmd_start(args: argparse.Namespace) -> int:
 
         print()
 
+        # Start Docker services (NextPLAID retrieval containers)
+        if _docker_available():
+            print("[5.5] Starting Docker services (NextPLAID retrieval)...")
+            for service in DOCKER_SERVICES:
+                info = start_docker_container(service)
+                if info:
+                    state[service["name"]] = info
+                else:
+                    print(f"  [!] {service['name']} failed (non-fatal, code_search degrades gracefully)")
+            print()
+        else:
+            print("[5.5] Docker not available, skipping NextPLAID containers")
+            print("  code_search/doc_search will be unavailable")
+            print()
+
         # Initialize MemRL databases and tool registry
         init_memrl_and_tools()
 
@@ -1045,12 +1185,21 @@ def cmd_stop(args: argparse.Namespace) -> int:
     for name in targets:
         if name in state:
             info = state[name]
-            print(f"Stopping {name} (PID {info.pid})...")
-            if kill_process(info.pid):
-                del state[name]
-                print(f"  [OK] Stopped")
+            if info.pid == -1:
+                # Docker-managed container
+                print(f"Stopping Docker container {name}...")
+                if stop_docker_container(info.role):
+                    del state[name]
+                    print(f"  [OK] Stopped")
+                else:
+                    print(f"  [!] Failed to stop container {name}")
             else:
-                print(f"  [!] Failed to stop")
+                print(f"Stopping {name} (PID {info.pid})...")
+                if kill_process(info.pid):
+                    del state[name]
+                    print(f"  [OK] Stopped")
+                else:
+                    print(f"  [!] Failed to stop")
         else:
             print(f"  [?] {name} not found in state")
 
@@ -1174,7 +1323,25 @@ def cmd_reload(args: argparse.Namespace) -> int:
                 return 1
 
         else:
-            print(f"  [?] Unknown component: {component}")
+            # Check if it's a Docker service
+            docker_service = None
+            for svc in DOCKER_SERVICES:
+                if component == svc["name"]:
+                    docker_service = svc
+                    break
+
+            if docker_service:
+                print(f"  Reloading Docker service {component}...")
+                stop_docker_container(component)
+                time.sleep(2)
+                info = start_docker_container(docker_service)
+                if info:
+                    state[component] = info
+                else:
+                    print(f"  [!] Failed to restart {component}")
+                    return 1
+            else:
+                print(f"  [?] Unknown component: {component}")
 
     save_state(state)
     return 0
@@ -1194,26 +1361,30 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     seen_pids = set()
     for name, info in sorted(state.items()):
-        if info.pid in seen_pids:
+        if info.pid != -1 and info.pid in seen_pids:
             continue  # Skip duplicates (roles sharing servers)
         seen_pids.add(info.pid)
 
-        # Check if process is alive
-        try:
-            os.kill(info.pid, 0)
-            alive = True
-        except ProcessLookupError:
-            alive = False
+        if info.pid == -1:
+            # Docker-managed container
+            alive = docker_container_running(info.role)
+            healthy = wait_for_health(info.port, timeout=3) if alive else False
+            status = "healthy" if healthy else ("running" if alive else "stopped")
+            pid_str = "docker"
+        else:
+            # Native process
+            try:
+                os.kill(info.pid, 0)
+                alive = True
+            except ProcessLookupError:
+                alive = False
+            healthy = wait_for_health(info.port, timeout=3) if alive else False
+            status = "healthy" if healthy else ("running" if alive else "dead")
+            pid_str = str(info.pid)
 
-        # Check health endpoint
-        healthy = False
-        if alive:
-            healthy = wait_for_health(info.port, timeout=3)
-
-        status = "healthy" if healthy else ("running" if alive else "dead")
         model = Path(info.model_path).stem if info.model_path != "uvicorn" else "uvicorn"
 
-        print(f"{name:<25} {info.port:<8} {info.pid:<10} {status:<10} {model[:30]}")
+        print(f"{name:<25} {info.port:<8} {pid_str:<10} {status:<10} {model[:30]}")
 
     print()
     print(f"State file: {STATE_FILE}")

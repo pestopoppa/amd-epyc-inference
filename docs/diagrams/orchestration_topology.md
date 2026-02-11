@@ -48,10 +48,11 @@ flowchart TB
         TPR[TwoPhaseRetriever]
     end
 
-    subgraph Retrieval["Code Retrieval Layer"]
-        NP[("NextPLAID<br/>:8088")]
+    subgraph Retrieval["Code Retrieval Layer (Phase 4: Dual Containers)"]
+        NPC[("NextPLAID-code<br/>:8088")]
+        NPD[("NextPLAID-docs<br/>:8089")]
         CI[(code index<br/>LateOn-Code-edge)]
-        DI[(docs index)]
+        DI[(docs index<br/>answerai-colbert-sm)]
     end
 
     %% Entry flow
@@ -98,12 +99,16 @@ flowchart TB
     TPR -.->|"suggest escalation"| CP
     TPR -.->|"suggest escalation"| WG
 
-    %% Code retrieval (REPL code_search/doc_search)
-    FD -.->|"code_search()"| NP
-    CP -.->|"code_search()"| NP
-    WG -.->|"code_search()"| NP
-    NP --> CI
-    NP --> DI
+    %% Code retrieval (REPL code_search/doc_search) — Phase 4 dual containers
+    FD -.->|"code_search()"| NPC
+    CP -.->|"code_search()"| NPC
+    WG -.->|"code_search()"| NPC
+    FD -.->|"doc_search()"| NPD
+    CP -.->|"doc_search()"| NPD
+    WG -.->|"doc_search()"| NPD
+    NPC --> CI
+    NPD --> DI
+    NPD -.->|"fallback"| NPC
 
     %% Styling
     classDef tierA fill:#4CAF50,color:white

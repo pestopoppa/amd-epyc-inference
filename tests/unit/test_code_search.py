@@ -1,4 +1,9 @@
-"""Unit tests for NextPLAID code_search / doc_search REPL tools."""
+"""Unit tests for NextPLAID code_search / doc_search REPL tools.
+
+Phase 4: Tests cover dual-client routing (code→:8088, docs→:8089),
+fallback behavior (docs container down → code container), and
+both-down graceful degradation.
+"""
 
 from __future__ import annotations
 
@@ -68,6 +73,26 @@ class FakeNextPlaidClient:
         )
 
 
+class FakeUnhealthyClient:
+    """Mock NextPLAID client that reports unhealthy."""
+
+    def __init__(self, url: str):
+        self.url = url
+
+    def health(self) -> FakeHealthResponse:
+        return FakeHealthResponse(status="unhealthy")
+
+
+class FakeConnectionErrorClient:
+    """Mock NextPLAID client that raises on health check."""
+
+    def __init__(self, url: str):
+        self.url = url
+
+    def health(self):
+        raise ConnectionError(f"Cannot reach {self.url}")
+
+
 # ---------------------------------------------------------------------------
 # Fixture: build a minimal REPLEnvironment with code_search wired up
 # ---------------------------------------------------------------------------
@@ -78,11 +103,14 @@ def repl():
     from src.repl_environment.environment import REPLEnvironment
 
     env = REPLEnvironment(context="test context", role="frontdoor")
+    # Reset any cached clients from previous tests
+    env._code_client = None
+    env._docs_client = None
     return env
 
 
 # ---------------------------------------------------------------------------
-# Tests
+# Tests: Basic Functionality
 # ---------------------------------------------------------------------------
 
 class TestCodeSearchMixin:
@@ -114,7 +142,7 @@ class TestCodeSearchMixin:
     @patch("src.repl_environment.code_search._CodeSearchMixin._get_nextplaid_client")
     def test_doc_search_uses_docs_index(self, mock_get_client, repl):
         """doc_search routes to the 'docs' index."""
-        fake_client = FakeNextPlaidClient("http://localhost:8088")
+        fake_client = FakeNextPlaidClient("http://localhost:8089")
         mock_get_client.return_value = fake_client
 
         repl._doc_search("benchmark results")
@@ -136,8 +164,8 @@ class TestCodeSearchMixin:
 
     def test_code_search_unavailable_graceful(self, repl):
         """When NextPLAID is down, returns empty results without error."""
-        # Don't mock — client will fail to connect to real server (likely not running in CI)
-        repl._nextplaid_client = None  # Force re-probe
+        repl._code_client = None
+        repl._docs_client = None
 
         with patch("src.repl_environment.code_search._CodeSearchMixin._get_nextplaid_client", return_value=None):
             raw = repl._code_search("anything")
@@ -190,7 +218,7 @@ class TestCodeSearchMixin:
     @patch("src.repl_environment.code_search._CodeSearchMixin._get_nextplaid_client")
     def test_doc_search_tracks_research_context_ds_prefix(self, mock_get_client, repl):
         """doc_search nodes use DS prefix in research context."""
-        fake_client = FakeNextPlaidClient("http://localhost:8088")
+        fake_client = FakeNextPlaidClient("http://localhost:8089")
         mock_get_client.return_value = fake_client
 
         repl._doc_search("model quirks")
@@ -211,6 +239,115 @@ class TestCodeSearchMixin:
         assert result["results"] == []
         assert "connection reset" in result["error"]
 
+
+# ---------------------------------------------------------------------------
+# Tests: Dual-Client Routing (Phase 4)
+# ---------------------------------------------------------------------------
+
+class TestDualClientRouting:
+    """Tests for Phase 4 dual-container routing logic."""
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._init_nextplaid_client")
+    def test_code_search_uses_code_client(self, mock_init, repl):
+        """code_search() routes to :8088 code client."""
+        code_client = FakeNextPlaidClient("http://localhost:8088")
+        mock_init.return_value = code_client
+
+        repl._code_search("def retrieve")
+
+        # _init_nextplaid_client called with code URL
+        mock_init.assert_called_with("http://localhost:8088")
+        assert len(code_client._search_calls) == 1
+        assert code_client._search_calls[0][0] == "code"
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._init_nextplaid_client")
+    def test_doc_search_uses_docs_client(self, mock_init, repl):
+        """doc_search() routes to :8089 docs client."""
+        docs_client = FakeNextPlaidClient("http://localhost:8089")
+        mock_init.return_value = docs_client
+
+        repl._doc_search("escalation policy")
+
+        # _init_nextplaid_client called with docs URL
+        mock_init.assert_called_with("http://localhost:8089")
+        assert len(docs_client._search_calls) == 1
+        assert docs_client._search_calls[0][0] == "docs"
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._init_nextplaid_client")
+    def test_docs_fallback_to_code_client(self, mock_init, repl):
+        """When docs container (:8089) is down, doc_search falls back to code container (:8088)."""
+        code_client = FakeNextPlaidClient("http://localhost:8088")
+
+        def init_side_effect(url):
+            if url == "http://localhost:8089":
+                return None  # Docs container down
+            return code_client
+
+        mock_init.side_effect = init_side_effect
+
+        raw = repl._doc_search("escalation policy")
+        output = raw.replace("<<<TOOL_OUTPUT>>>", "").replace("<<<END_TOOL_OUTPUT>>>", "").strip()
+        result = json.loads(output)
+
+        # Should still return results (from code client fallback)
+        assert len(result["results"]) == 2
+        assert result["index"] == "docs"
+        # Code client was used as fallback
+        assert len(code_client._search_calls) == 1
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._init_nextplaid_client")
+    def test_both_containers_down_graceful(self, mock_init, repl):
+        """When both containers are down, returns graceful error."""
+        mock_init.return_value = None  # Both unavailable
+
+        raw = repl._doc_search("anything")
+        output = raw.replace("<<<TOOL_OUTPUT>>>", "").replace("<<<END_TOOL_OUTPUT>>>", "").strip()
+        result = json.loads(output)
+
+        assert result["results"] == []
+        assert "error" in result
+        assert "not available" in result["error"]
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._init_nextplaid_client")
+    def test_both_containers_down_code_search(self, mock_init, repl):
+        """code_search with code container down returns graceful error."""
+        mock_init.return_value = None
+
+        raw = repl._code_search("anything")
+        output = raw.replace("<<<TOOL_OUTPUT>>>", "").replace("<<<END_TOOL_OUTPUT>>>", "").strip()
+        result = json.loads(output)
+
+        assert result["results"] == []
+        assert "not available" in result["error"]
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._init_nextplaid_client")
+    def test_clients_are_cached(self, mock_init, repl):
+        """Clients are lazy-loaded and cached — _init only called once per URL."""
+        code_client = FakeNextPlaidClient("http://localhost:8088")
+        docs_client = FakeNextPlaidClient("http://localhost:8089")
+
+        def init_side_effect(url):
+            if url == "http://localhost:8088":
+                return code_client
+            return docs_client
+
+        mock_init.side_effect = init_side_effect
+
+        # Two code searches → only one init call
+        repl._code_search("query1")
+        repl._code_search("query2")
+
+        # Two doc searches → only one init call
+        repl._doc_search("query3")
+        repl._doc_search("query4")
+
+        # _init called twice total: once for code URL, once for docs URL
+        assert mock_init.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: REPL Sandbox Integration
+# ---------------------------------------------------------------------------
 
 class TestCodeSearchRepl:
     """Integration-style: execute code_search via REPL sandbox exec."""

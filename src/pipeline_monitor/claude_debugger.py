@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import subprocess
 import sys
 import textwrap
@@ -41,6 +42,15 @@ logger = logging.getLogger(__name__)
 STACK_SCRIPT = Path("/mnt/raid0/llm/claude/scripts/server/orchestrator_stack.py")
 _RETRY_QUEUE_PATH = Path("/mnt/raid0/llm/claude/logs/retry_queue.jsonl")
 _PROPOSED_SIGNALS_PATH = Path("/mnt/raid0/llm/claude/logs/proposed_signals.jsonl")
+
+# Services the debugger is allowed to reload via orchestrator_stack.py.
+# Keys = service names recognized by the stack script.
+# Values = health check endpoints (port, path).
+RELOADABLE_SERVICES: dict[str, tuple[int, str]] = {
+    "orchestrator": (8000, "/health"),
+    "nextplaid-code": (8088, "/health"),
+    "nextplaid-docs": (8089, "/health"),
+}
 
 _TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
 _REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
@@ -75,6 +85,10 @@ _NEW_SIGNAL_RE = _re.compile(
     _re.MULTILINE,
 )
 
+_RELOAD_SERVICE_RE = _re.compile(
+    r"RELOAD_SERVICE:\s*(?P<service>\S+)(?:\s+reason=(?P<reason>.+))?",
+)
+
 
 def _extract_proposed_signals(text: str) -> list[dict]:
     """Parse NEW_SIGNAL: proposals from Claude's response text."""
@@ -88,6 +102,51 @@ def _extract_proposed_signals(text: str) -> list[dict]:
             "evidence": [e.strip() for e in m.group("evidence").split(",")],
         })
     return proposals
+
+
+def _extract_reload_requests(text: str) -> list[dict[str, str]]:
+    """Parse RELOAD_SERVICE: directives from Claude's response text."""
+    reloads = []
+    for m in _RELOAD_SERVICE_RE.finditer(text):
+        service = m.group("service")
+        if service in RELOADABLE_SERVICES:
+            reloads.append({
+                "service": service,
+                "reason": (m.group("reason") or "").strip(),
+            })
+        else:
+            logger.warning(
+                f"[DEBUG] Claude requested reload of unknown service '{service}' "
+                f"(allowed: {list(RELOADABLE_SERVICES)})"
+            )
+    return reloads
+
+
+def _check_service_health(port: int, path: str = "/health", timeout: float = 3.0) -> bool:
+    """Quick TCP+HTTP health check for a service."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            if s.connect_ex(("localhost", port)) != 0:
+                return False
+    except OSError:
+        return False
+    # Port is open — try HTTP health endpoint
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"http://localhost:{port}{path}")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def check_infra_health() -> dict[str, bool]:
+    """Check health of all reloadable services. Returns {name: healthy}."""
+    status = {}
+    for name, (port, path) in RELOADABLE_SERVICES.items():
+        status[name] = _check_service_health(port, path)
+    return status
 
 
 def _persist_proposed_signals(
@@ -120,6 +179,7 @@ You will receive batches of diagnostic records from seeding evaluation runs.
 Scan anomaly_signals, read the answer and inference logs, diagnose root causes, apply fixes.
 Edit orchestration/prompts/*.md for prompt issues, src/ for code issues.
 rules.md uses few-shot examples — only edit to add/improve examples, never add rules.
+For infra issues, use RELOAD_SERVICE: orchestrator|nextplaid-code|nextplaid-docs reason=...
 """)
 
 
@@ -403,6 +463,11 @@ class ClaudeDebugger:
                 path=self.project_root / "logs" / "proposed_signals.jsonl",
             )
 
+        # Execute any RELOAD_SERVICE: directives from Claude
+        reload_requests = _extract_reload_requests(result_text)
+        for req in reload_requests:
+            self._reload_service(req["service"], reason=req.get("reason", ""))
+
         # Detect changes by comparing before/after snapshots
         snapshot_after = capture_git_diff_stat(self.project_root)
         changed_files = diff_snapshots(snapshot_before, snapshot_after)
@@ -472,22 +537,53 @@ class ClaudeDebugger:
 
     # ── Helpers ──────────────────────────────────────────────────────
 
+    def _reload_service(self, service_name: str, reason: str = "") -> bool:
+        """Reload a service via orchestrator_stack.py.
+
+        Allowed services are defined in RELOADABLE_SERVICES.
+        Returns True if the service came back healthy after reload.
+        """
+        if service_name not in RELOADABLE_SERVICES:
+            logger.error(
+                f"[DEBUG] Cannot reload '{service_name}' — "
+                f"not in allowed list: {list(RELOADABLE_SERVICES)}"
+            )
+            return False
+
+        reason_str = f" (reason: {reason})" if reason else ""
+        logger.warning(f"[DEBUG] Reloading service '{service_name}'{reason_str}")
+
+        try:
+            result = subprocess.run(
+                [sys.executable, str(STACK_SCRIPT), "reload", service_name],
+                cwd=str(self.project_root),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                logger.error(
+                    f"[DEBUG] Reload of '{service_name}' failed (exit {result.returncode}): "
+                    f"{result.stderr[:300]}"
+                )
+                return False
+        except (subprocess.TimeoutExpired, OSError) as e:
+            logger.error(f"[DEBUG] Reload of '{service_name}' failed: {e}")
+            return False
+
+        # Verify health after reload
+        port, path = RELOADABLE_SERVICES[service_name]
+        if _check_service_health(port, path, timeout=5.0):
+            logger.info(f"[DEBUG] Service '{service_name}' healthy after reload")
+            return True
+        else:
+            logger.warning(f"[DEBUG] Service '{service_name}' NOT healthy after reload")
+            return False
+
     def _hot_restart_api(self, py_files: list[str]) -> bool:
         """Hot-restart the API if Python files were changed by Claude."""
         logger.warning(f"[DEBUG] Code changes detected in: {py_files}")
-        logger.warning("[DEBUG] Hot-restarting orchestrator API...")
-
-        try:
-            subprocess.run(
-                [sys.executable, str(STACK_SCRIPT), "reload", "orchestrator"],
-                cwd=str(self.project_root),
-                timeout=120,
-            )
-        except (subprocess.TimeoutExpired, OSError) as e:
-            logger.error(f"[DEBUG] API reload failed: {e}")
-            return False
-
-        return True
+        return self._reload_service("orchestrator", reason=f"code changes: {py_files}")
 
     def _build_prompt(self, batch: list[dict]) -> str:
         """Build the prompt for Claude with diagnostic batch."""
@@ -500,6 +596,18 @@ class ClaudeDebugger:
 
         parts.append(f"## Diagnostic Batch #{self.batch_count}")
         parts.append(f"**{len(batch)} answers analyzed**\n")
+
+        # Include infrastructure health status
+        infra = check_infra_health()
+        degraded = [name for name, ok in infra.items() if not ok]
+        if degraded:
+            parts.append(f"**INFRA DEGRADED**: {', '.join(degraded)} not healthy")
+            parts.append(
+                "Use `RELOAD_SERVICE: <name>` to restart. "
+                "See Reloadable Services in system prompt.\n"
+            )
+        else:
+            parts.append("**Infra**: all services healthy\n")
 
         for i, diag in enumerate(batch, 1):
             triggered = [

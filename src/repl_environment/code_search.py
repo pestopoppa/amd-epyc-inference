@@ -7,8 +7,11 @@ code and documentation using token-level ColBERT matching — finding specific
 function names, class definitions, and code patterns rather than past routing
 decisions.
 
-Requires: NextPLAID server on localhost:8088, pip install next-plaid-client.
-Degrades gracefully when unavailable.
+Phase 4 architecture: two NextPLAID containers with specialized models.
+  :8088  nextplaid-code   LateOn-Code-edge (48-dim, INT8)     → code index
+  :8089  nextplaid-docs   answerai-colbert-small-v1-onnx      → docs index
+
+Degrades gracefully: if docs container down, falls back to code container.
 """
 
 from __future__ import annotations
@@ -21,7 +24,8 @@ from src.repl_environment.types import wrap_tool_output
 
 logger = logging.getLogger(__name__)
 
-NEXTPLAID_URL = "http://localhost:8088"
+CODE_SEARCH_URL = "http://localhost:8088"
+DOC_SEARCH_URL = "http://localhost:8089"
 VALID_INDICES = frozenset({"code", "docs"})
 
 
@@ -37,28 +41,50 @@ class _CodeSearchMixin:
         _last_research_node: str | None
     """
 
-    _nextplaid_client: Any = None  # Lazy-loaded
+    _code_client: Any = None  # Lazy-loaded, :8088
+    _docs_client: Any = None  # Lazy-loaded, :8089
 
-    def _get_nextplaid_client(self) -> Any:
-        """Lazy-load the NextPLAID client. Returns None if unavailable."""
-        if self._nextplaid_client is None:
-            try:
-                from next_plaid_client import NextPlaidClient
+    def _init_nextplaid_client(self, url: str) -> Any:
+        """Create and health-check a NextPLAID client. Returns None if unavailable."""
+        try:
+            from next_plaid_client import NextPlaidClient
 
-                client = NextPlaidClient(NEXTPLAID_URL)
-                # Lightweight health probe — fail fast if server is down
-                health = client.health()
-                if health.status != "healthy":
-                    logger.warning("NextPLAID unhealthy: %s", health.status)
-                    return None
-                self._nextplaid_client = client
-            except ImportError:
-                logger.debug("next-plaid-client not installed")
+            client = NextPlaidClient(url)
+            health = client.health()
+            if health.status != "healthy":
+                logger.warning("NextPLAID at %s unhealthy: %s", url, health.status)
                 return None
-            except Exception as e:
-                logger.debug("NextPLAID unavailable: %s", e)
-                return None
-        return self._nextplaid_client
+            return client
+        except ImportError:
+            logger.debug("next-plaid-client not installed")
+            return None
+        except Exception as e:
+            logger.debug("NextPLAID at %s unavailable: %s", url, e)
+            return None
+
+    def _get_nextplaid_client(self, index: str = "code") -> Any:
+        """Return the appropriate NextPLAID client for the given index.
+
+        Routing:
+            code → :8088 (_code_client)
+            docs → :8089 (_docs_client), falls back to :8088 if unavailable
+        """
+        if index == "code":
+            if self._code_client is None:
+                self._code_client = self._init_nextplaid_client(CODE_SEARCH_URL)
+            return self._code_client
+
+        # docs index → try dedicated docs container first
+        if self._docs_client is None:
+            self._docs_client = self._init_nextplaid_client(DOC_SEARCH_URL)
+        if self._docs_client is not None:
+            return self._docs_client
+
+        # Fallback: docs container down → use code container (lower quality but functional)
+        logger.info("Docs container (:8089) unavailable, falling back to code container (:8088)")
+        if self._code_client is None:
+            self._code_client = self._init_nextplaid_client(CODE_SEARCH_URL)
+        return self._code_client
 
     def _code_search(self, query: str, limit: int = 5) -> str:
         """Search project source code for relevant passages.
@@ -107,7 +133,7 @@ class _CodeSearchMixin:
             self.artifacts.setdefault("_tool_outputs", []).append(output)
             return wrap_tool_output(output)
 
-        client = self._get_nextplaid_client()
+        client = self._get_nextplaid_client(index)
         if client is None:
             output = json.dumps(
                 {"results": [], "error": "NextPLAID not available"}

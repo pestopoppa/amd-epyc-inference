@@ -52,12 +52,32 @@ Category: leak (weight 0.5-1.0)
 2. Read the answer text — is it a real answer or garbage?
 3. Read the inference log — trace the full LLM generation to find WHERE it went wrong
 4. Read the REPL execution log — check for NameErrors, SyntaxErrors, wrong FINAL() usage
-5. Classify the root cause:
+5. Check the **INFRA DEGRADED** line — are services down?
+6. Classify the root cause:
    a) Model didn't understand task type → add/improve a few-shot example in rules.md
    b) Model generated bad code → check src/graph/nodes.py guards
    c) Delegation went wrong → check architect prompt or chat_delegation.py
-   d) Infrastructure issue (timeout, OOM) → describe it, don't edit
+   d) Infrastructure issue (service down, timeout, connection error) → request reload
    e) Model capability limit → describe it, don't edit
+
+## Reloadable Services
+
+You can restart infrastructure services by outputting a directive:
+
+RELOAD_SERVICE: <service_name> reason=<one-line explanation>
+
+Allowed services:
+- `orchestrator` — the API on :8000 (auto-reloaded when you edit .py files too)
+- `nextplaid-code` — multi-vector code retrieval on :8088
+- `nextplaid-docs` — multi-vector doc retrieval on :8089
+
+When to reload:
+- INFRA DEGRADED line shows a service down
+- Inference logs show connection errors, timeouts, or 502/503 responses to these services
+- REPL logs show "NextPLAID not available" errors
+- After editing code that these services depend on
+
+Do NOT reload speculatively. Only reload when evidence points to a service being down or stale.
 
 ## Rules for Editing
 

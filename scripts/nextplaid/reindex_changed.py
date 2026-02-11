@@ -4,6 +4,10 @@
 Designed for `make gates` — runs quickly when few files changed, skips entirely
 when no changes detected. Uses git diff against a stored commit hash.
 
+Phase 4: Dual-container architecture.
+  Code files → :8088 (LateOn-Code-edge)
+  Doc files  → :8089 (answerai-colbert-small-v1-onnx)
+
 Usage:
     python scripts/nextplaid/reindex_changed.py          # Incremental
     python scripts/nextplaid/reindex_changed.py --full    # Force full reindex
@@ -15,9 +19,11 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path("/mnt/raid0/llm/claude")
-CLIENT_URL = "http://localhost:8088"
+CODE_URL = "http://localhost:8088"
+DOCS_URL = "http://localhost:8089"
 STAMP_FILE = PROJECT_ROOT / "cache" / "next-plaid" / ".last_indexed_commit"
 
 # File patterns (must match index_codebase.py)
@@ -139,12 +145,22 @@ def chunk_file(path: Path, max_chars: int = 1800) -> list[dict]:
     return chunks
 
 
-def reindex_files(client, files_by_index: dict[str, list[str]]) -> int:
-    """Re-index changed files into their respective indices."""
+def reindex_files(clients: dict[str, Any], files_by_index: dict[str, list[str]]) -> int:
+    """Re-index changed files into their respective indices.
+
+    Args:
+        clients: Mapping of index name → NextPLAID client (or None if unavailable).
+        files_by_index: Mapping of index name → list of relative file paths.
+    """
     total = 0
 
     for index_name, rel_paths in files_by_index.items():
         if not rel_paths:
+            continue
+
+        client = clients.get(index_name)
+        if client is None:
+            print(f"  [{index_name}] Skipping — server not available")
             continue
 
         all_texts: list[str] = []
@@ -182,37 +198,65 @@ def reindex_files(client, files_by_index: dict[str, list[str]]) -> int:
     return total
 
 
+def _try_client(url: str):
+    """Try to connect to a NextPLAID server. Returns client or None."""
+    try:
+        from next_plaid_client import NextPlaidClient
+        client = NextPlaidClient(url)
+        client.health()
+        return client
+    except ImportError:
+        return None
+    except Exception:
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Incremental NextPLAID reindex")
     parser.add_argument("--full", action="store_true", help="Force full reindex via index_codebase.py")
-    parser.add_argument("--url", default=CLIENT_URL, help="NextPLAID server URL")
+    parser.add_argument("--code-url", default=CODE_URL, help="NextPLAID code server URL (default :8088)")
+    parser.add_argument("--docs-url", default=DOCS_URL, help="NextPLAID docs server URL (default :8089)")
+    # Legacy single-URL flag (overrides both if set)
+    parser.add_argument("--url", default=None, help="Override both code and docs URLs (legacy)")
     args = parser.parse_args()
+
+    if args.url:
+        args.code_url = args.url
+        args.docs_url = args.url
 
     if args.full:
         # Delegate to full indexer
-        result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "nextplaid" / "index_codebase.py"),
-             "--reindex", "--url", args.url],
-            cwd=PROJECT_ROOT,
-        )
+        cmd = [
+            sys.executable, str(PROJECT_ROOT / "scripts" / "nextplaid" / "index_codebase.py"),
+            "--reindex", "--code-url", args.code_url, "--docs-url", args.docs_url,
+        ]
+        result = subprocess.run(cmd, cwd=PROJECT_ROOT)
         if result.returncode == 0:
             save_commit(current_head())
         return
 
     try:
-        from next_plaid_client import NextPlaidClient
+        from next_plaid_client import NextPlaidClient  # noqa: F401
     except ImportError:
         print("Warning: next-plaid-client not installed, skipping reindex", file=sys.stderr)
         return
 
-    client = NextPlaidClient(args.url)
+    # Health check both endpoints independently
+    code_client = _try_client(args.code_url)
+    docs_client = _try_client(args.docs_url)
 
-    # Health check
-    try:
-        client.health()
-    except Exception:
-        print("Warning: NextPLAID not reachable, skipping reindex", file=sys.stderr)
+    if code_client is None and docs_client is None:
+        print("Warning: No NextPLAID servers reachable, skipping reindex", file=sys.stderr)
         return
+
+    if code_client:
+        print(f"  Code server ({args.code_url}): OK")
+    else:
+        print(f"  Code server ({args.code_url}): unavailable, skipping code reindex")
+    if docs_client:
+        print(f"  Docs server ({args.docs_url}): OK")
+    else:
+        print(f"  Docs server ({args.docs_url}): unavailable, skipping docs reindex")
 
     last_commit = get_last_commit()
     head = current_head()
@@ -223,11 +267,11 @@ def main():
 
     if last_commit is None:
         print("  No previous index stamp — running full index")
-        result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "scripts" / "nextplaid" / "index_codebase.py"),
-             "--reindex", "--url", args.url],
-            cwd=PROJECT_ROOT,
-        )
+        cmd = [
+            sys.executable, str(PROJECT_ROOT / "scripts" / "nextplaid" / "index_codebase.py"),
+            "--reindex", "--code-url", args.code_url, "--docs-url", args.docs_url,
+        ]
+        result = subprocess.run(cmd, cwd=PROJECT_ROOT)
         if result.returncode == 0:
             save_commit(head)
         return
@@ -257,7 +301,8 @@ def main():
     print(f"  {code_count} code + {doc_count} doc files changed since {last_commit[:8]}")
     t0 = time.time()
 
-    total = reindex_files(client, files_by_index)
+    clients = {"code": code_client, "docs": docs_client}
+    total = reindex_files(clients, files_by_index)
 
     elapsed = time.time() - t0
     print(f"  Reindexed {total} chunks in {elapsed:.1f}s")

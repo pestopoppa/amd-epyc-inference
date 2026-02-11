@@ -29,7 +29,8 @@ Managed by `orchestrator_stack.py`, the system provides graceful start/stop, hea
 | Port | Service | Model | Purpose |
 |------|---------|-------|---------|
 | 8000 | orchestrator API | uvicorn | FastAPI HTTP entrypoint |
-| 8088 | nextplaid | LateOn-Code-edge (ONNX INT8) | Multi-vector code & doc retrieval |
+| 8088 | nextplaid-code | LateOn-Code-edge (ONNX INT8) | Multi-vector code retrieval |
+| 8089 | nextplaid-docs | answerai-colbert-small-v1 (ONNX INT8) | Multi-vector doc retrieval |
 | 9001 | document_formalizer | LightOnOCR-2-1B | PDF OCR, figure extraction |
 
 ### WARM Tier (Load on Demand)
@@ -55,7 +56,7 @@ Total RAM: 1130GB
 │   ├── Ingest: 45GB
 │   ├── Vision: 28GB
 │   ├── Embedder: 1GB
-│   └── NextPLAID: <1GB (Docker + ONNX + mmap'd index)
+│   └── NextPLAID (2x): <1GB (2 Docker containers + ONNX models + mmap'd indices)
 ├── KV Cache: ~460GB (41%) - Dynamic allocation
 └── OS + Buffers: ~135GB (12%)
 ```

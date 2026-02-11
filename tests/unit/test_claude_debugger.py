@@ -358,8 +358,10 @@ class TestClaudeDebuggerInvocation:
 
 
 class TestClaudeDebuggerCodeChanges:
+    @patch("src.pipeline_monitor.claude_debugger._check_service_health", return_value=True)
     @patch("src.pipeline_monitor.claude_debugger.subprocess.run")
-    def test_py_change_triggers_reload(self, mock_run, tmp_path: Path):
+    def test_py_change_triggers_reload(self, mock_run, mock_health, tmp_path: Path):
+        mock_run.return_value.returncode = 0
         debugger = ClaudeDebugger(project_root=tmp_path)
         result = debugger._hot_restart_api(["src/graph/nodes.py"])
         assert result is True
@@ -611,3 +613,130 @@ class TestClaudeDebuggerRetryQueue:
 
         retries, _ = debugger.pop_retries()
         assert retries == [("thinking", "t1_q1")]
+
+
+class TestInfraHealthAndReload:
+    """Tests for infrastructure health checks and service reload."""
+
+    @patch("src.pipeline_monitor.claude_debugger._check_service_health")
+    def test_check_infra_health_all_up(self, mock_health):
+        from src.pipeline_monitor.claude_debugger import check_infra_health
+
+        mock_health.return_value = True
+        result = check_infra_health()
+        assert result == {
+            "orchestrator": True,
+            "nextplaid-code": True,
+            "nextplaid-docs": True,
+        }
+
+    @patch("src.pipeline_monitor.claude_debugger._check_service_health")
+    def test_check_infra_health_partial_down(self, mock_health):
+        from src.pipeline_monitor.claude_debugger import check_infra_health
+
+        def side_effect(port, path, timeout=3.0):
+            return port != 8089  # nextplaid-docs is down
+
+        mock_health.side_effect = side_effect
+        result = check_infra_health()
+        assert result["orchestrator"] is True
+        assert result["nextplaid-code"] is True
+        assert result["nextplaid-docs"] is False
+
+    @patch("src.pipeline_monitor.claude_debugger._check_service_health", return_value=True)
+    @patch("src.pipeline_monitor.claude_debugger.subprocess.run")
+    def test_reload_service_allowed(self, mock_run, mock_health, tmp_path: Path):
+        mock_run.return_value.returncode = 0
+        debugger = ClaudeDebugger(project_root=tmp_path)
+        result = debugger._reload_service("nextplaid-code", reason="test")
+        assert result is True
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        assert "reload" in args
+        assert "nextplaid-code" in args
+
+    def test_reload_service_unknown_rejected(self, tmp_path: Path):
+        debugger = ClaudeDebugger(project_root=tmp_path)
+        result = debugger._reload_service("unknown-service")
+        assert result is False
+
+    @patch("src.pipeline_monitor.claude_debugger._check_service_health", return_value=False)
+    @patch("src.pipeline_monitor.claude_debugger.subprocess.run")
+    def test_reload_service_unhealthy_after(self, mock_run, mock_health, tmp_path: Path):
+        """Service reloaded but health check fails → returns False."""
+        mock_run.return_value.returncode = 0
+        debugger = ClaudeDebugger(project_root=tmp_path)
+        result = debugger._reload_service("orchestrator")
+        assert result is False  # healthy check failed
+
+    def test_extract_reload_requests_valid(self):
+        from src.pipeline_monitor.claude_debugger import _extract_reload_requests
+
+        text = (
+            "Analysis complete.\n"
+            "RELOAD_SERVICE: nextplaid-docs reason=container not responding to health checks\n"
+            "RELOAD_SERVICE: orchestrator reason=stale API after code edit\n"
+        )
+        reloads = _extract_reload_requests(text)
+        assert len(reloads) == 2
+        assert reloads[0]["service"] == "nextplaid-docs"
+        assert "not responding" in reloads[0]["reason"]
+        assert reloads[1]["service"] == "orchestrator"
+
+    def test_extract_reload_requests_unknown_service_ignored(self):
+        from src.pipeline_monitor.claude_debugger import _extract_reload_requests
+
+        text = "RELOAD_SERVICE: unknown-svc reason=test\n"
+        reloads = _extract_reload_requests(text)
+        assert len(reloads) == 0
+
+    @patch("src.pipeline_monitor.claude_debugger.ClaudeDebugger._reload_service")
+    @patch("src.pipeline_monitor.claude_debugger.diff_snapshots")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff_stat")
+    @patch("src.pipeline_monitor.claude_debugger.capture_git_diff")
+    def test_process_result_executes_reload_directives(
+        self, mock_git_diff, mock_stat_after, mock_diff, mock_reload, tmp_path: Path,
+    ):
+        """RELOAD_SERVICE: in Claude's response triggers _reload_service()."""
+        debugger = ClaudeDebugger(project_root=tmp_path)
+        mock_stat_after.return_value = {}
+        mock_diff.return_value = []
+        mock_git_diff.return_value = ""
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = 0
+        mock_proc.stdout.read.return_value = json.dumps({
+            "result": "RELOAD_SERVICE: nextplaid-docs reason=down during REPL execution"
+        })
+        mock_proc.stderr.read.return_value = ""
+
+        debugger._process_result(mock_proc, {}, [_make_diag("q1")])
+
+        mock_reload.assert_called_once_with("nextplaid-docs", reason="down during REPL execution")
+
+    @patch("src.pipeline_monitor.claude_debugger.check_infra_health")
+    def test_build_prompt_includes_infra_status(self, mock_infra, tmp_path: Path):
+        """Prompt includes INFRA DEGRADED when services are down."""
+        mock_infra.return_value = {
+            "orchestrator": True,
+            "nextplaid-code": True,
+            "nextplaid-docs": False,
+        }
+        debugger = ClaudeDebugger(project_root=tmp_path)
+        debugger.batch_count = 0  # Will become 1 in _build_prompt context
+        prompt = debugger._build_prompt([_make_diag("q1")])
+        assert "INFRA DEGRADED" in prompt
+        assert "nextplaid-docs" in prompt
+
+    @patch("src.pipeline_monitor.claude_debugger.check_infra_health")
+    def test_build_prompt_all_healthy(self, mock_infra, tmp_path: Path):
+        """Prompt shows 'all services healthy' when nothing is degraded."""
+        mock_infra.return_value = {
+            "orchestrator": True,
+            "nextplaid-code": True,
+            "nextplaid-docs": True,
+        }
+        debugger = ClaudeDebugger(project_root=tmp_path)
+        prompt = debugger._build_prompt([_make_diag("q1")])
+        assert "all services healthy" in prompt
+        assert "INFRA DEGRADED" not in prompt

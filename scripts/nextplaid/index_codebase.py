@@ -4,8 +4,13 @@
 Usage:
     python scripts/nextplaid/index_codebase.py [--reindex]
 
-Creates a 'code' index containing chunked Python source files.
-Chunks preserve function/class boundaries where possible.
+Phase 4: Dual-container architecture.
+  Code index → :8088 (LateOn-Code-edge)
+  Docs index → :8089 (answerai-colbert-small-v1-onnx)
+
+Each index is served by a dedicated NextPLAID container with a model
+optimized for that content type. Embeddings are model-specific and
+cannot be mixed across containers.
 """
 from __future__ import annotations
 
@@ -15,7 +20,8 @@ import time
 from pathlib import Path
 
 PROJECT_ROOT = Path("/mnt/raid0/llm/claude")
-CLIENT_URL = "http://localhost:8088"
+CODE_URL = "http://localhost:8088"
+DOCS_URL = "http://localhost:8089"
 
 CODE_PATTERNS = [
     "src/**/*.py",
@@ -172,13 +178,31 @@ def index_files(
     return len(all_texts)
 
 
+def _health_check(client, url: str) -> bool:
+    """Print health info and return True if server is healthy."""
+    try:
+        health = client.health()
+        print(f"  NextPLAID at {url}: v{health.version}, {health.loaded_indices} indices, {health.memory_usage_bytes // 1024 // 1024}MB RAM")
+        return True
+    except Exception as e:
+        print(f"  Warning: Cannot reach NextPLAID at {url}: {e}", file=sys.stderr)
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Index codebase into NextPLAID")
     parser.add_argument("--reindex", action="store_true", help="Delete and rebuild indices")
     parser.add_argument("--code-only", action="store_true", help="Only index code, skip docs")
     parser.add_argument("--docs-only", action="store_true", help="Only index docs, skip code")
-    parser.add_argument("--url", default=CLIENT_URL, help="NextPLAID server URL")
+    parser.add_argument("--code-url", default=CODE_URL, help="NextPLAID code server URL (default :8088)")
+    parser.add_argument("--docs-url", default=DOCS_URL, help="NextPLAID docs server URL (default :8089)")
+    # Legacy single-URL flag (overrides both if set)
+    parser.add_argument("--url", default=None, help="Override both code and docs URLs (legacy)")
     args = parser.parse_args()
+
+    if args.url:
+        args.code_url = args.url
+        args.docs_url = args.url
 
     try:
         from next_plaid_client import NextPlaidClient
@@ -186,30 +210,27 @@ def main():
         print("Error: pip install next-plaid-client", file=sys.stderr)
         sys.exit(1)
 
-    client = NextPlaidClient(args.url)
-
-    # Health check
-    try:
-        health = client.health()
-        print(f"NextPLAID {health.version} — {health.loaded_indices} loaded indices, {health.memory_usage_bytes // 1024 // 1024}MB RAM")
-    except Exception as e:
-        print(f"Error: Cannot reach NextPLAID at {args.url}: {e}", file=sys.stderr)
-        sys.exit(1)
-
     total = 0
     t0 = time.time()
 
     if not args.docs_only:
-        print("\n[code] Indexing source files...")
-        total += index_files(client, "code", CODE_PATTERNS, reindex=args.reindex)
+        code_client = NextPlaidClient(args.code_url)
+        if _health_check(code_client, args.code_url):
+            print("\n[code] Indexing source files...")
+            total += index_files(code_client, "code", CODE_PATTERNS, reindex=args.reindex)
+        else:
+            print(f"Error: Code server at {args.code_url} not reachable, skipping code index", file=sys.stderr)
 
     if not args.code_only:
-        print("\n[docs] Indexing documentation...")
-        total += index_files(client, "docs", DOC_PATTERNS, reindex=args.reindex)
+        docs_client = NextPlaidClient(args.docs_url)
+        if _health_check(docs_client, args.docs_url):
+            print("\n[docs] Indexing documentation...")
+            total += index_files(docs_client, "docs", DOC_PATTERNS, reindex=args.reindex)
+        else:
+            print(f"Error: Docs server at {args.docs_url} not reachable, skipping docs index", file=sys.stderr)
 
     elapsed = time.time() - t0
     print(f"\nDone. {total} total documents indexed in {elapsed:.1f}s")
-    print(f"Indices: {client.list_indices()}")
 
 
 if __name__ == "__main__":
