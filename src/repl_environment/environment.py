@@ -240,16 +240,49 @@ class REPLEnvironment(
 
         safe_builtins["__import__"] = _safe_import
 
-        # Import json for REPL use (needed for document processing)
+        # Pre-load commonly used safe modules so _strip_import_lines()
+        # doesn't cause NameErrors when it removes import statements.
         import json as _json
+        import math as _math
+        import re as _re
+        import collections as _collections
+        import itertools as _itertools
+        import functools as _functools
+        import statistics as _statistics
+        import datetime as _datetime
+        import fractions as _fractions
+        import decimal as _decimal
+        import copy as _copy
+
+        # Optional scientific modules (may not be installed)
+        try:
+            import numpy as _numpy
+        except ImportError:
+            _numpy = None
+        try:
+            import scipy as _scipy
+        except ImportError:
+            _scipy = None
 
         globals_dict = {
             "__builtins__": safe_builtins,
             # Context variables
             "context": self.context,
             "artifacts": self.artifacts,
-            # Safe modules
+            # Safe modules (pre-loaded to match _strip_import_lines behavior)
             "json": _json,
+            "math": _math,
+            "re": _re,
+            "collections": _collections,
+            "itertools": _itertools,
+            "functools": _functools,
+            "statistics": _statistics,
+            "datetime": _datetime,
+            "fractions": _fractions,
+            "decimal": _decimal,
+            "copy": _copy,
+            **({"numpy": _numpy} if _numpy else {}),
+            **({"scipy": _scipy} if _scipy else {}),
             # Built-in functions
             "peek": self._peek,
             "grep": self._grep,

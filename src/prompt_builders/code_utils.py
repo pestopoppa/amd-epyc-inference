@@ -10,10 +10,11 @@ if TYPE_CHECKING:
 
 
 def _strip_import_lines(code: str) -> str:
-    """Strip import/from lines since all needed modules are pre-loaded in REPL globals.
+    """Strip import/from lines since safe modules are pre-loaded in REPL globals.
 
-    Models frequently generate 'import json' or 'import os' even when told not to.
-    Safe modules (json) are already available; unsafe modules would be blocked anyway.
+    Models frequently generate 'import math' or 'import os' even when told not to.
+    Safe modules (math, json, re, collections, numpy, scipy, etc.) are pre-loaded
+    in _build_globals(); unsafe modules would be blocked by _safe_import() anyway.
     """
     lines = code.split("\n")
     filtered = [
