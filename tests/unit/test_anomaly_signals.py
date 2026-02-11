@@ -22,6 +22,8 @@ from src.pipeline_monitor.anomaly import (
     detect_template_echo,
     detect_think_tag_leak,
     detect_vision_blindness,
+    detect_wasteful_delegation,
+    detect_repl_max_turns,
     SIGNAL_WEIGHTS,
 )
 
@@ -442,6 +444,109 @@ class TestMisroutedToCoder:
         assert detect_misrouted_to_coder("multiple_choice", "architect_general", []) is False
 
 
+# ── wasteful_delegation ──
+
+
+class TestWastefulDelegation:
+    def test_short_numeric_after_delegation(self):
+        """Architect delegated, answer is just a number — wasteful."""
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        assert detect_wasteful_delegation("1.50", "architect_general", events) is True
+
+    def test_short_answer_after_delegation(self):
+        """Architect delegated, answer is short text — wasteful."""
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        assert detect_wasteful_delegation("Paris", "architect_general", events) is True
+
+    def test_long_answer_after_delegation(self):
+        """Architect delegated, answer is substantial — NOT wasteful."""
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        long_answer = "def solve():\n    bottles = 6\n    cost = 5.55\n    return cost / bottles"
+        assert detect_wasteful_delegation(long_answer, "architect_general", events) is False
+
+    def test_code_execution_exempt(self):
+        """Code tasks are expected to delegate — not wasteful."""
+        events = [{"from_role": "architect_coding", "to_role": "coder_escalation"}]
+        assert detect_wasteful_delegation(
+            "42", "architect_coding", events, scoring_method="code_execution",
+        ) is False
+
+    def test_no_delegation_no_signal(self):
+        """No delegation happened — no signal."""
+        assert detect_wasteful_delegation("42", "architect_general", []) is False
+
+    def test_non_architect_no_signal(self):
+        """Non-architect role — not applicable."""
+        events = [{"from_role": "frontdoor", "to_role": "coder_escalation"}]
+        assert detect_wasteful_delegation("42", "frontdoor", events) is False
+
+    def test_negative_number(self):
+        """Negative numeric answer after delegation — wasteful."""
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        assert detect_wasteful_delegation("-4.8", "architect_general", events) is True
+
+    def test_percentage_answer(self):
+        """Percentage answer after delegation — wasteful."""
+        events = [{"from_role": "architect_general", "to_role": "coder_escalation"}]
+        assert detect_wasteful_delegation("25%", "architect_general", events) is True
+
+
+# ── repl_max_turns ──
+
+
+class TestReplMaxTurns:
+    def test_max_turns_message(self):
+        """Standard max-turns message triggers signal."""
+        assert detect_repl_max_turns(
+            "[Max turns (10) reached without FINAL()]", mode="repl"
+        ) is True
+
+    def test_max_turns_with_output(self):
+        """Max-turns message with appended output still triggers."""
+        assert detect_repl_max_turns(
+            "[Max turns (10) reached without FINAL()]\n\nLast output:\nresult = 42",
+            mode="repl",
+        ) is True
+
+    def test_not_repl_mode(self):
+        """Non-REPL mode never triggers."""
+        assert detect_repl_max_turns(
+            "[Max turns (10) reached without FINAL()]", mode="direct"
+        ) is False
+
+    def test_normal_answer(self):
+        """Normal answer doesn't trigger."""
+        assert detect_repl_max_turns("42", mode="repl") is False
+
+    def test_different_turn_count(self):
+        """Different max turn number still triggers."""
+        assert detect_repl_max_turns(
+            "[Max turns (5) reached without FINAL()]", mode="repl"
+        ) is True
+
+
+# ── status_phrase_final (extended) ──
+
+
+class TestStatusPhraseFinalExtended:
+    """Tests for newly added status phrases."""
+
+    def test_code_as_answer(self):
+        assert detect_status_phrase_final("code") is True
+
+    def test_explanation_of_code(self):
+        assert detect_status_phrase_final("Explanation of code or reasoning") is True
+
+    def test_code_execution_check_output(self):
+        assert detect_status_phrase_final("Code execution complete. Check output.") is True
+
+    def test_your_computed_value(self):
+        assert detect_status_phrase_final("your_computed_value") is True
+
+    def test_real_code_not_flagged(self):
+        assert detect_status_phrase_final("def solve(): return 42") is False
+
+
 # ── compute_anomaly_signals (aggregate) ──
 
 
@@ -462,9 +567,9 @@ class TestComputeAnomalySignals:
         )
         assert signals["format_violation"] is True
 
-    def test_returns_all_17_signals(self):
+    def test_returns_all_19_signals(self):
         signals = compute_anomaly_signals(answer="test")
-        assert len(signals) == 17
+        assert len(signals) == 19
         assert set(signals.keys()) == set(SIGNAL_WEIGHTS.keys())
 
 

@@ -474,6 +474,51 @@ def _architect_delegated_answer(
                 except Exception as exc:
                     log.warning("MCQ misroute re-prompt failed: %s", exc)
 
+        # ── Short-answer delegation guard ──
+        # If the architect wants to delegate but the brief is essentially a
+        # computed answer (short, numeric, or a factual statement), force
+        # direct answer.  This catches: architect solves "soda bottle costs
+        # $1.50" in <think>, then delegates "compute the cost" to coder who
+        # has nothing to add.  The coder burns 50-300s round-tripping the
+        # answer the architect already has.
+        if decision["mode"] == "investigate" and loop == 0:
+            brief = decision["brief"]
+            _code_delegate = decision["delegate_to"] in ("coder_escalation", "coder_primary")
+            _code_signals_in_q = any(
+                sig in question for sig in (
+                    "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT",
+                    "USACO", "Codeforces", "Write a Python", "def ",
+                    "```python",
+                )
+            )
+            # If delegating to coder but the question is NOT a coding task,
+            # the architect is misrouting a factual/math question.
+            if _code_delegate and not _code_signals_in_q:
+                # Check if the brief looks like a computed answer rather
+                # than a genuine implementation task.
+                brief_words = brief.split()
+                brief_is_short = len(brief_words) < 15
+                brief_has_number = bool(re.search(r"\d+\.?\d*", brief))
+                if brief_is_short and brief_has_number:
+                    log.warning(
+                        "Short-answer delegation blocked: architect delegated "
+                        "D|%s to %s for non-code question, forcing direct. "
+                        "Brief: %s",
+                        brief[:30],
+                        decision["delegate_to"],
+                        brief[:80],
+                    )
+                    # Extract the numeric answer from the brief
+                    number_match = re.search(r"[\d]+\.?\d*", brief)
+                    forced_answer = number_match.group(0) if number_match else brief
+                    decision = {
+                        "mode": "direct",
+                        "answer": forced_answer,
+                        "brief": "",
+                        "delegate_to": "",
+                        "delegate_mode": "react",
+                    }
+
         # ── Coding task direct-answer guard ──
         # If the question asks for code (CP, LeetCode, implementation tasks)
         # and the architect gives a short direct answer instead of delegating,

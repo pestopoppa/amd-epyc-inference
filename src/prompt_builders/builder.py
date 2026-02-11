@@ -33,11 +33,10 @@ _log = logging.getLogger(__name__)
 # ── Fallback Constants ──────────────────────────────────────────────────────
 
 _ROOT_LM_SYSTEM_FALLBACK = (
-    "You are an assistant that completes tasks. "
-    "Match your response depth to the user's request. "
-    "For factual lookups and multiple-choice, answer concisely — e.g. FINAL(\"B\") or FINAL(\"Paris\"). "
-    "For explanations or reasoning, think step-by-step in code comments, then call FINAL with ONLY the final value — e.g. FINAL(42) or FINAL(\"the mitochondria\"). Never put reasoning, explanation, or the literal word \"answer\" inside FINAL. "
-    "For tasks requiring file access, web search, or external data, use the available tools."
+    "You complete tasks by writing Python code that runs in a sandboxed REPL. "
+    "Every task must end with a FINAL() call containing the actual answer. "
+    "Study the examples in the Rules section — they show the exact pattern "
+    "for each task type. Output only valid Python. No markdown."
 )
 
 _CONFIDENCE_ESTIMATION_FALLBACK = """Estimate your probability of correctly answering this question.
@@ -214,12 +213,7 @@ class PromptBuilder:
             rules=self._resolve_rules(),
             state=f"Turn {turn + 1}\n{state}",
             task=original_prompt,
-            instruction=(
-                "Complete the task. Output Python code with FINAL(answer). "
-                "If asked to write/implement code, FINAL must contain the complete program text, "
-                "not a status phrase like 'done', 'implemented', 'code', or 'Code execution complete'.\n"
-                "Example: FINAL('''import sys\\ndef solve(): ...\\nsolve()'''):"
-            ),
+            instruction="Write Python code. End with FINAL(). See examples above.",
         )
 
         # Build context section based on last output/error

@@ -30,6 +30,8 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "misrouted_to_coder": 1.0,
     "function_repr_leak": 1.0,
     "status_phrase_final": 1.0,
+    "wasteful_delegation": 0.5,
+    "repl_max_turns": 1.0,
 }
 
 # ── Restart phrases for self-doubt detection ──
@@ -226,6 +228,9 @@ _STATUS_PHRASES = {
     "answer", "your answer", "your_answer",
     "your answer here", "your_answer_here",
     "result", "the answer", "the result",
+    "your_computed_value", "your computed value",
+    "code", "explanation of code or reasoning",
+    "code execution complete. check output",
 }
 
 
@@ -253,6 +258,45 @@ def detect_misrouted_to_coder(
     return False
 
 
+def detect_wasteful_delegation(
+    answer: str,
+    role: str,
+    delegation_events: list[dict],
+    scoring_method: str = "",
+) -> bool:
+    """Delegation occurred but final answer is short/numeric — specialist added no value.
+
+    The architect already computed the answer (visible in its <think> block or
+    brief text), then delegated to a specialist who round-tripped it back
+    unchanged.  Wastes 50-300s of specialist time.
+
+    Triggers when:
+    - Architect role delegated at least once
+    - Final answer is short (<30 chars) or purely numeric
+    - Scoring method is NOT code_execution (code tasks legitimately delegate)
+    """
+    if scoring_method == "code_execution":
+        return False
+    if "architect" not in role:
+        return False
+    if not delegation_events:
+        return False
+    stripped = answer.strip()
+    if not stripped:
+        return False
+    # Short answer after delegation = likely wasteful
+    is_short = len(stripped) < 30
+    is_numeric = bool(re.fullmatch(r"-?[\d,]+\.?\d*\s*%?", stripped))
+    return is_short or is_numeric
+
+
+def detect_repl_max_turns(answer: str, mode: str) -> bool:
+    """REPL exhausted all turns without calling FINAL() — model never submitted an answer."""
+    if mode != "repl":
+        return False
+    return "[Max turns" in answer and "without FINAL()" in answer
+
+
 # ── Aggregation ──
 
 
@@ -267,7 +311,7 @@ def compute_anomaly_signals(
     tools_used: int = 0,
     delegation_events: list[dict] | None = None,
 ) -> dict[str, bool]:
-    """Run all 17 anomaly detectors, return dict of signal_name → bool."""
+    """Run all 19 anomaly detectors, return dict of signal_name → bool."""
     deleg = delegation_events or []
     return {
         "repetition_loop": detect_repetition_loop(answer),
@@ -291,6 +335,10 @@ def compute_anomaly_signals(
         "misrouted_to_coder": detect_misrouted_to_coder(
             scoring_method, role, deleg,
         ),
+        "wasteful_delegation": detect_wasteful_delegation(
+            answer, role, deleg, scoring_method,
+        ),
+        "repl_max_turns": detect_repl_max_turns(answer, mode),
     }
 
 

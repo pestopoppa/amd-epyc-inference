@@ -15,6 +15,12 @@
 - **Function repr leak defense**: `FINAL(str(func))` bypassed the `callable()` check. New `_FUNC_REPR_RE` regex in `context.py` catches `<function|class|method X at 0x...>` strings in `_final()`. Safety nets at both `FinalSignal` catch sites in `environment.py` return error results instead of leaking reprs.
 - **Debugger prompt bias fix**: System prompt rewritten — code fixes listed FIRST with signal→fix-type taxonomy, edit budget (3 edits/file/session), "When NOT to edit" section. `_edit_counts` dict tracks edits per file; `_build_prompt()` shows history with "BUDGET EXCEEDED" tags.
 - **Architect prompt clarification**: `architect_investigate.md` D| format instruction now says "on its own line" to align with own-line extraction regex.
+- **REPL prompt rewrite — few-shot examples replace instruction stacking**: 40-hour seeding analysis (1,673 records) revealed REPL mode 10 points behind direct mode (46.8% vs 56.7%), with 17% of REPL runs exhausting max turns without calling FINAL(). Root cause: models learn protocols from examples, not instruction lists. `rules.md` rewritten from 51 lines of rules to 8 concrete input/output examples covering factual, MCQ, math, web search, competitive programming, explanation, document reading, and architect consultation. `root_lm_system.md` and `builder.py` simplified to point at examples instead of repeating rules.
+- **Wasteful delegation guard + signal**: Architect solves answer in `<think>`, delegates to coder anyway, coder round-trips unchanged. New runtime guard in `chat_delegation.py` intercepts short-answer delegations for non-code questions. New `wasteful_delegation` anomaly signal (weight 0.5).
+- **REPL max-turns signal**: 76 records with `[Max turns (N) reached without FINAL()]` were invisible to all 17 detectors (score 0.0). New `repl_max_turns` signal (weight 1.0). Signal count 17→19.
+- **Status-phrase set expanded**: `"code"`, `"explanation of code or reasoning"`, `"code execution complete. check output"`, `"your_computed_value"` added to both `anomaly.py` and `nodes.py` rejection sets. 10 records had these as final answers with zero anomaly signals.
+- **Late-game FINAL() nudge**: When ≤3 REPL turns remain, DEADLINE message injected into prompt forcing immediate FINAL() submission. Targets the 69 max-turns failures.
+- **Template echo prevention**: `FINAL(answer)` → `FINAL(value)` in tools.md, `FINAL(your_computed_value)` in rules.md. 5 records had literal `"answer"` as their final answer from echoing the prompt template.
 
 ## 2026-02-10
 

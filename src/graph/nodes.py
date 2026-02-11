@@ -350,6 +350,17 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             turn=state.turns - 1,
         )
 
+    # Late-game FINAL() nudge: when running low on turns, inject urgency
+    # so the model doesn't waste remaining turns re-deriving.
+    remaining = state.max_turns - state.turns
+    if remaining <= 3:
+        prompt += (
+            f"\n\n** DEADLINE: {remaining} turn(s) remaining. "
+            "You MUST call FINAL(your_computed_value) NOW with your best answer. "
+            "Do NOT start over. Do NOT re-derive. Do NOT reason in comments. "
+            "Submit what you have."
+        )
+
     # LLM call — stop at first code block close to prevent repetition loops.
     # REPL expects one action per turn; without this, the model can generate
     # FINAL("X") then repeat the same code block hundreds of tokens.
@@ -538,6 +549,10 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             "answer", "your answer", "your_answer",
             "your answer here", "your_answer_here",
             "result", "the answer", "the result",
+            "your_computed_value", "your computed value",
+            # Prompt-echo artifacts seen in seeding diagnostics
+            "code", "explanation of code or reasoning",
+            "code execution complete. check output",
         }
         # Keyword detection: catch longer status messages that aren't in the
         # exact set (e.g. "Function implemented and tested successfully").
