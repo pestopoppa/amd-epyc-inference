@@ -133,9 +133,30 @@ def _parse_architect_decision(response: str) -> dict:
 
     # ── TOON: D|<answer> ──
     if text.startswith("D|"):
+        raw_answer = text[2:].strip()
+        # Guard: model emitted D| then started reasoning instead of answering.
+        # If the "answer" is suspiciously long, try to rescue an MCQ letter
+        # from the first line or from the reasoning body.
+        if len(raw_answer) > 50:
+            # Try MCQ letter on the same line as D|
+            first_line = raw_answer.split("\n", 1)[0].strip()
+            mcq_match = re.match(r"^([A-D])(?:[^a-zA-Z]|$)", first_line)
+            if mcq_match:
+                raw_answer = mcq_match.group(1)
+            else:
+                # Try to find a clear MCQ answer in the reasoning
+                # Pattern: "Answer: B" or "Correct Answer: B" or standalone letter
+                rescue = re.search(
+                    r"(?:answer|correct)[:\s]+([A-D])(?=[^a-zA-Z]|$)",
+                    raw_answer,
+                    re.IGNORECASE,
+                )
+                if rescue:
+                    raw_answer = rescue.group(1)
+                # else: keep raw_answer as-is (best effort)
         return {
             "mode": "direct",
-            "answer": text[2:].strip(),
+            "answer": raw_answer,
             "brief": "",
             "delegate_to": "",
             "delegate_mode": "react",
