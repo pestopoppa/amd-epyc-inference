@@ -192,17 +192,21 @@ class TestThinkTagLeak:
 
 
 class TestNearEmpty:
-    def test_empty_no_error(self):
-        assert detect_near_empty("", None) is True
+    def test_empty_no_error_code_execution(self):
+        assert detect_near_empty("", None, scoring_method="code_execution") is True
 
-    def test_few_tokens_no_error(self):
-        assert detect_near_empty("A B", None) is True
+    def test_few_tokens_no_error_code_execution(self):
+        assert detect_near_empty("A B", None, scoring_method="code_execution") is True
 
     def test_few_tokens_with_error(self):
-        assert detect_near_empty("A B", "timeout") is False
+        assert detect_near_empty("A B", "timeout", scoring_method="code_execution") is False
 
     def test_sufficient_tokens(self):
-        assert detect_near_empty("The answer is clearly forty two", None) is False
+        assert detect_near_empty("The answer is clearly forty two", None, scoring_method="code_execution") is False
+
+    def test_no_scoring_method_not_flagged(self):
+        # When scoring_method is unknown/empty, don't flag — only code_execution matters
+        assert detect_near_empty("", None) is False
 
     def test_mcq_single_letter_not_flagged(self):
         assert detect_near_empty("A", None, scoring_method="multiple_choice") is False
@@ -213,8 +217,22 @@ class TestNearEmpty:
     def test_exact_match_single_token_not_flagged(self):
         assert detect_near_empty("A", None, scoring_method="exact_match") is False
 
-    def test_non_mcq_single_letter_flagged(self):
-        assert detect_near_empty("A", None, scoring_method="substring") is True
+    def test_substring_single_letter_not_flagged(self):
+        # substring scoring can have legitimately short answers
+        assert detect_near_empty("A", None, scoring_method="substring") is False
+
+    def test_f1_short_not_flagged(self):
+        assert detect_near_empty("Paris", None, scoring_method="f1") is False
+
+    def test_programmatic_short_not_flagged(self):
+        assert detect_near_empty("42", None, scoring_method="programmatic") is False
+
+    def test_code_execution_short_flagged(self):
+        # code_execution should produce substantial code output
+        assert detect_near_empty("x", None, scoring_method="code_execution") is True
+
+    def test_code_execution_sufficient_not_flagged(self):
+        assert detect_near_empty("def solve():\n    result = 42\n    return result", None, scoring_method="code_execution") is False
 
 
 # ── excessive_tokens ──

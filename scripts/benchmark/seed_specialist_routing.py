@@ -462,9 +462,9 @@ def run_batch_3way(
             # Checkpoint immediately
             checkpoint_result(session_id, result)
 
-            # Only mark as seen when rewards were actually injected
-            if rewards_injected > 0:
-                record_seen(qid, suite, session_id)
+            # Always mark seen after checkpoint — re-evaluating wastes compute
+            # and injects duplicate/conflicting rewards regardless of injection
+            record_seen(qid, suite, session_id)
 
             # Track passing questions for regression testing
             if any(rr.passed for rr in role_results.values()):

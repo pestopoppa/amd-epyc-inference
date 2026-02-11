@@ -132,8 +132,10 @@ def detect_near_empty(
     """Answer has fewer than N tokens and no error — model produced almost nothing."""
     if error:
         return False
-    if scoring_method in ("multiple_choice", "exact_match"):
-        # Short answers are valid for MCQ and exact-match scoring
+    if scoring_method != "code_execution":
+        # Only code_execution should produce substantial output;
+        # all other scoring methods (MCQ, exact_match, substring, f1,
+        # programmatic) can legitimately have short answers.
         return False
     tokens = answer.split()
     return len(tokens) < threshold

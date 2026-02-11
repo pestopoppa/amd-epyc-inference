@@ -243,10 +243,14 @@ async def _execute_vision_multimodal(
             real_mode=request.real_mode,
         )
 
+    # Estimate tokens from answer length — vision backends don't expose
+    # completion token counts, but word count is a reasonable proxy.
+    tokens_est = len(answer.split()) if answer else 0
+
     return ChatResponse(
         answer=answer,
         turns=1,
-        tokens_used=0,
+        tokens_used=tokens_est,
         elapsed_seconds=elapsed,
         mock_mode=False,
         real_mode=request.real_mode,
@@ -254,7 +258,7 @@ async def _execute_vision_multimodal(
         role_history=[str(initial_role)],
         routing_strategy=routing.routing_strategy,
         mode=execution_mode,
-        tokens_generated=0,
+        tokens_generated=tokens_est,
         formalization_applied=routing.formalization_applied,
         tools_used=tools_used,
         tools_called=tools_called,

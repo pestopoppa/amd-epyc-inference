@@ -229,10 +229,16 @@ def _eval_single_config(
 
     # Retry logic for zero-token infra failures on heavy paths
     if error_type == "infrastructure" and resp.get("tokens_generated", 0) == 0:
+        error_msg = (resp.get("error") or "").lower()
+        is_timeout = "timed out" in error_msg or "timeout" in error_msg or "readtimeout" in error_msg
         target_port = ROLE_PORT.get(role, 0)
         if target_port:
             _force_erase_and_verify(target_port)
-        if port in HEAVY_PORTS and not did_recover_precheck:
+        if is_timeout:
+            # Don't retry timeouts — server was processing but too slow;
+            # retrying with the same budget just doubles elapsed time.
+            logger.info(f"  [skip-retry] {log_label} timeout — not retrying")
+        elif port in HEAVY_PORTS and not did_recover_precheck:
             busy_now = _busy_heavy_ports(timeout_s=2.0)
             if _recover_heavy_ports_if_stuck(url, busy_now):
                 logger.info(f"  [retry] {log_label} retry after recovery")
