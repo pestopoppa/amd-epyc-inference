@@ -33,6 +33,8 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "wasteful_delegation": 0.5,
     "repl_max_turns": 1.0,
     "escalation_cycle": 1.0,
+    "assistant_help_request": 1.0,
+    "prose_only_code_task": 1.0,
 }
 
 # ── Restart phrases for self-doubt detection ──
@@ -318,6 +320,40 @@ def detect_repl_max_turns(answer: str, mode: str) -> bool:
     return "[Max turns" in answer and "without FINAL()" in answer
 
 
+_HELP_REQUEST_RE = re.compile(
+    r"\b(?:Can you (?:help|assist|clarify|provide)|"
+    r"Could you (?:help|assist|clarify|provide)|"
+    r"Would you (?:like me to|help)|"
+    r"Please (?:provide|share|clarify)|"
+    r"I(?:'d| would) need (?:more|additional|the)|"
+    r"help me (?:fix|solve|debug|understand))\b",
+    re.IGNORECASE,
+)
+
+
+def detect_assistant_help_request(answer: str) -> bool:
+    """Model asks the user for help instead of answering — role reversal failure."""
+    matches = _HELP_REQUEST_RE.findall(answer)
+    return len(matches) >= 2
+
+
+_CODE_INDICATOR_RE = re.compile(
+    r"(?:def |class |import |from .+ import |for .+ in |while |"
+    r"if __name__|print\(|return |CALL\(|FINAL\(|```)",
+)
+
+
+def detect_prose_only_code_task(
+    answer: str, scoring_method: str,
+) -> bool:
+    """Code execution task answered with pure prose — no executable code at all."""
+    if scoring_method != "code_execution":
+        return False
+    if not answer.strip():
+        return False
+    return not bool(_CODE_INDICATOR_RE.search(answer))
+
+
 # ── Aggregation ──
 
 
@@ -332,7 +368,7 @@ def compute_anomaly_signals(
     tools_used: int = 0,
     delegation_events: list[dict] | None = None,
 ) -> dict[str, bool]:
-    """Run all 20 anomaly detectors, return dict of signal_name → bool."""
+    """Run all 22 anomaly detectors, return dict of signal_name → bool."""
     deleg = delegation_events or []
     return {
         "repetition_loop": detect_repetition_loop(answer),
@@ -361,6 +397,10 @@ def compute_anomaly_signals(
         ),
         "repl_max_turns": detect_repl_max_turns(answer, mode),
         "escalation_cycle": detect_escalation_cycle(role_history or []),
+        "assistant_help_request": detect_assistant_help_request(answer),
+        "prose_only_code_task": detect_prose_only_code_task(
+            answer, scoring_method,
+        ),
     }
 
 
