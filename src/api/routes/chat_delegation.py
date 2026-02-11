@@ -242,8 +242,13 @@ _ARCHITECT_TOKEN_BUDGET: dict[str, int] = {
 }
 
 # Tight budget for the routing decision (D|answer or I|brief:...|to:role).
-# Enough for <think> reasoning (~300 tok) + decision + brief (~200 tok).
-_ARCHITECT_DECISION_BUDGET: int = 500
+# architect_coding uses <think> tags so 500 visible tokens suffices.
+# architect_general (Qwen3-235B) reasons in plain text, exhausting 500 tokens
+# before emitting D|.  Give it 1500 so ~1000 goes to reasoning + 500 to answer.
+_ARCHITECT_DECISION_BUDGET: dict[str, int] = {
+    "architect_general": 1500,
+    "architect_coding": 500,
+}
 
 
 def _architect_delegated_answer(
@@ -345,7 +350,7 @@ def _architect_delegated_answer(
             # Turn 0 = routing decision (tight budget).
             # Turns 1+ = computation follow-up (full budget).
             n_tok = (
-                _ARCHITECT_DECISION_BUDGET
+                _ARCHITECT_DECISION_BUDGET.get(architect_role, 500)
                 if _aturn == 0
                 else _ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375)
             )

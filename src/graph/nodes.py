@@ -419,11 +419,11 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             # Fall through to execute FINAL()
         else:
             log.info("Comment-only code detected (turn %d), nudging model", state.turns)
-            state.last_error = (
+            nudge = (
                 "Your output was all comments — no executable code ran. "
                 "You already reasoned through the problem. Call FINAL now with the actual value — e.g. FINAL(\"B\") or FINAL(42)."
             )
-            return "", state.last_error, False, {}
+            return "", None, False, {"_nudge": nudge}
 
     # Comment-ratio guard: model is reasoning in comments with minimal
     # executable code (e.g. a bare `for` loop full of `# thinking...`).
@@ -451,12 +451,12 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                     "High comment ratio (%.0f%%, turn %d), nudging to commit",
                     ratio * 100, state.turns,
                 )
-                state.last_error = (
+                nudge = (
                     f"Your code is {int(ratio*100)}% comments — you already reasoned through the problem. "
                     "STOP re-deriving. Call FINAL now with the value you reached — e.g. FINAL(\"B\") or FINAL(42). "
                     "Do NOT start over. Do NOT re-explain."
                 )
-                return "", state.last_error, False, {}
+                return "", None, False, {"_nudge": nudge}
 
     # Pre-REPL FINAL shortcut: if extracted code contains FINAL() mixed
     # with non-Python prose (common when code extraction pulls in markdown/
@@ -532,7 +532,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             "You must call FINAL with the actual computed value — e.g. FINAL(\"B\") or FINAL(42). "
             "If the task asks for code, call FINAL with the complete program text as a string."
         )
-        return "", nudge, False, {}
+        return "", None, False, {"_nudge": nudge}
 
     # Status-message guard: model called FINAL() with a status phrase
     # instead of the actual answer (e.g. "Code execution complete.",
@@ -568,7 +568,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 "FINAL must contain the actual answer or complete program text. "
                 "If the task asks for code, call FINAL(your_code_as_string)."
             )
-            return "", nudge, False, {}
+            return "", None, False, {"_nudge": nudge}
 
     artifacts = dict(deps.repl.artifacts) if hasattr(deps.repl, "artifacts") else {}
     # Prefer final_answer when is_final=True (FINAL() captures the answer
@@ -584,6 +584,32 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
         code[:200] if code else "",
     )
     return output, result.error if result.error else None, result.is_final, artifacts
+
+
+MAX_CONSECUTIVE_NUDGES = 3
+"""After this many nudges without progress, promote to a real error."""
+
+
+def _detect_role_cycle(role_history: list[str]) -> bool:
+    """Detect A→B→A→B bouncing patterns in role history.
+
+    Catches period-2 cycles (ABAB) and period-3 cycles (ABCABC)
+    that indicate cross-chain delegation loops.
+    """
+    if len(role_history) < 4:
+        return False
+    # Period-2: ...A, B, A, B
+    if role_history[-1] == role_history[-3] and role_history[-2] == role_history[-4]:
+        return True
+    # Period-3: ...A, B, C, A, B, C
+    if len(role_history) >= 6:
+        if (
+            role_history[-1] == role_history[-4]
+            and role_history[-2] == role_history[-5]
+            and role_history[-3] == role_history[-6]
+        ):
+            return True
+    return False
 
 
 def _should_escalate(
@@ -605,6 +631,14 @@ def _should_escalate(
 
     # Max escalations reached
     if state.escalation_count >= cfg.max_escalations:
+        return False
+
+    # Cross-chain cycle detection: block A→B→A→B bouncing
+    if _detect_role_cycle(state.role_history):
+        log.warning(
+            "Escalation cycle detected, refusing escalation: %s",
+            state.role_history[-6:],
+        )
         return False
 
     # Retries exhausted → escalate
@@ -692,12 +726,12 @@ def _resolve_answer(output: str, tool_outputs: list) -> str:
 class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
     """Entry node for unclassified/frontdoor requests.
 
-    Escalates to CoderEscalationNode on failure (port 8081, different model).
+    Escalates to CoderNode on failure (via escalation map: FRONTDOOR → CODER_PRIMARY).
     """
 
     async def run(
         self, ctx: Ctx
-    ) -> Union["FrontdoorNode", "CoderEscalationNode", "WorkerNode", End[TaskResult]]:
+    ) -> Union["FrontdoorNode", "CoderNode", "WorkerNode", End[TaskResult]]:
         state = ctx.state
 
         if state.turns >= state.max_turns:
@@ -724,29 +758,40 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_ESCALATION)
-                _log_escalation(ctx, from_role, str(Role.CODER_ESCALATION), f"Early abort: {error[:100]}")
-                return CoderEscalationNode()
+                state.record_role(Role.CODER_PRIMARY)
+                _log_escalation(ctx, from_role, str(Role.CODER_PRIMARY), f"Early abort: {error[:100]}")
+                return CoderNode()
 
-            if _should_escalate(ctx, error_cat, Role.CODER_ESCALATION):
+            if _should_escalate(ctx, error_cat, Role.CODER_PRIMARY):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_ESCALATION)
+                state.record_role(Role.CODER_PRIMARY)
                 _log_escalation(
-                    ctx, from_role, str(Role.CODER_ESCALATION),
+                    ctx, from_role, str(Role.CODER_PRIMARY),
                     f"Escalating after {state.consecutive_failures} failures",
                 )
-                return CoderEscalationNode()
+                return CoderNode()
 
             if _should_retry(ctx, error_cat):
                 return FrontdoorNode()
 
             return _make_end_result(ctx, f"[FAILED: {error}]", False)
 
-        state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return FrontdoorNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return FrontdoorNode()
 
 
@@ -807,8 +852,20 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             return _make_end_result(ctx, f"[FAILED: {error}]", False)
 
         state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return WorkerNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return WorkerNode()
 
 
@@ -885,8 +942,20 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             return _make_end_result(ctx, f"[FAILED: {error}]", False)
 
         state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return CoderNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return CoderNode()
 
 
@@ -949,8 +1018,20 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             return _make_end_result(ctx, f"[FAILED: {error}]", False)
 
         state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return CoderEscalationNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return CoderEscalationNode()
 
 
@@ -1013,8 +1094,20 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             return _make_end_result(ctx, f"[FAILED: {error}]", False)
 
         state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return IngestNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return IngestNode()
 
 
@@ -1066,8 +1159,20 @@ class ArchitectNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             )
 
         state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return ArchitectNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return ArchitectNode()
 
 
@@ -1118,8 +1223,20 @@ class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             )
 
         state.consecutive_failures = 0
-        state.last_error = ""
         state.last_output = output
+        nudge = artifacts.get("_nudge")
+        if nudge:
+            state.consecutive_nudges += 1
+            state.last_error = nudge
+            if state.consecutive_nudges >= MAX_CONSECUTIVE_NUDGES:
+                log.warning("Max nudges (%d) reached at %s, promoting to error", state.consecutive_nudges, state.current_role)
+                state.consecutive_failures += 1
+                state.consecutive_nudges = 0
+                return ArchitectCodingNode()
+        else:
+            state.consecutive_failures = 0
+            state.consecutive_nudges = 0
+            state.last_error = ""
         return ArchitectCodingNode()
 
 

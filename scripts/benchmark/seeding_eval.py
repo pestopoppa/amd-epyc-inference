@@ -170,6 +170,12 @@ def _eval_single_config(
     """
     port = ROLE_PORT.get(role, 0)
     did_recover_precheck = False
+
+    # Proactive slot erase: clear stale KV cache from previous requests
+    # to prevent context contamination between questions.
+    if port > 0:
+        _erase_slots(port)
+
     if port in HEAVY_PORTS:
         idle_wait_cap = max(30, min(120, int(timeout // 2) if timeout else 120))
         _wait_for_heavy_models_idle(max_wait=idle_wait_cap)

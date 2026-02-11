@@ -75,6 +75,7 @@ class TaskState:
     context: str = ""
     current_role: Role | str = Role.FRONTDOOR
     consecutive_failures: int = 0
+    consecutive_nudges: int = 0
     escalation_count: int = 0
     role_history: list[str] = field(default_factory=list)
     escalation_prompt: str = ""

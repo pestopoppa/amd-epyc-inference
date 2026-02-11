@@ -32,6 +32,7 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "status_phrase_final": 1.0,
     "wasteful_delegation": 0.5,
     "repl_max_turns": 1.0,
+    "escalation_cycle": 1.0,
 }
 
 # ── Restart phrases for self-doubt detection ──
@@ -290,6 +291,24 @@ def detect_wasteful_delegation(
     return is_short or is_numeric
 
 
+def detect_escalation_cycle(role_history: list[str]) -> bool:
+    """A→B→A→B or A→B→C→A→B→C bouncing pattern in role history."""
+    if len(role_history) < 4:
+        return False
+    # Period-2: ABAB
+    if role_history[-1] == role_history[-3] and role_history[-2] == role_history[-4]:
+        return True
+    # Period-3: ABCABC
+    if len(role_history) >= 6:
+        if (
+            role_history[-1] == role_history[-4]
+            and role_history[-2] == role_history[-5]
+            and role_history[-3] == role_history[-6]
+        ):
+            return True
+    return False
+
+
 def detect_repl_max_turns(answer: str, mode: str) -> bool:
     """REPL exhausted all turns without calling FINAL() — model never submitted an answer."""
     if mode != "repl":
@@ -311,7 +330,7 @@ def compute_anomaly_signals(
     tools_used: int = 0,
     delegation_events: list[dict] | None = None,
 ) -> dict[str, bool]:
-    """Run all 19 anomaly detectors, return dict of signal_name → bool."""
+    """Run all 20 anomaly detectors, return dict of signal_name → bool."""
     deleg = delegation_events or []
     return {
         "repetition_loop": detect_repetition_loop(answer),
@@ -339,6 +358,7 @@ def compute_anomaly_signals(
             answer, role, deleg, scoring_method,
         ),
         "repl_max_turns": detect_repl_max_turns(answer, mode),
+        "escalation_cycle": detect_escalation_cycle(role_history or []),
     }
 
 
