@@ -21,6 +21,7 @@
 - **Status-phrase set expanded**: `"code"`, `"explanation of code or reasoning"`, `"code execution complete. check output"`, `"your_computed_value"` added to both `anomaly.py` and `nodes.py` rejection sets. 10 records had these as final answers with zero anomaly signals.
 - **Late-game FINAL() nudge**: When ≤3 REPL turns remain, DEADLINE message injected into prompt forcing immediate FINAL() submission. Targets the 69 max-turns failures.
 - **Template echo prevention**: `FINAL(answer)` → `FINAL(value)` in tools.md, `FINAL(your_computed_value)` in rules.md. 5 records had literal `"answer"` as their final answer from echoing the prompt template.
+- **Debugger system prompt hot-swap**: Extracted `DEBUGGER_SYSTEM_PROMPT` from `claude_debugger.py` into `orchestration/prompts/debugger_system.md`. Now resolved via `resolve_prompt()` — editable at runtime without restarting seeding script. Short `_DEBUGGER_SYSTEM_FALLBACK` constant kept as fallback.
 
 ## 2026-02-10
 

@@ -27,6 +27,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from src.prompt_builders.resolver import resolve_prompt
 from src.pipeline_monitor.change_log import (
     ChangeLog,
     capture_git_diff,
@@ -111,46 +112,14 @@ def _persist_proposed_signals(
 
 
 # System prompt sent on the first invocation of each session.
-DEBUGGER_SYSTEM_PROMPT = textwrap.dedent("""\
+# Fallback used when orchestration/prompts/debugger_system.md is missing.
+# The .md file is the primary source (hot-swappable without restart).
+_DEBUGGER_SYSTEM_FALLBACK = textwrap.dedent("""\
 You are debugging the orchestration pipeline for a local LLM inference system.
 You will receive batches of diagnostic records from seeding evaluation runs.
-
-For each batch:
-1. Scan anomaly_signals for flagged issues
-2. Read the full answer text to diagnose the root cause
-3. The inference log shows every LLM call in the delegation chain — prompts, responses, timings.
-   Use it to trace WHY each delegation hop happened (architect decisions, specialist outputs, escalation triggers).
-   The REPL execution log shows code that was executed and its stdout/stderr (NameErrors, SyntaxErrors, etc.).
-   Use it to diagnose code generation bugs (undefined variables, wrong FINAL() usage, import failures).
-4. Apply fixes:
-   - Prompt issues: Edit orchestration/prompts/{relevant_prompt}.md
-   - Code issues: Edit src/ files (note: requires API restart)
-5. Report what you fixed and why
-
-Key files:
-- orchestration/prompts/*.md — hot-swappable, edits take effect on next request
-- orchestration/prompts/roles/*.md — per-role system prompts
-- src/graph/nodes.py — REPL loop, escalation, defenses
-- src/api/routes/chat_delegation.py — architect delegation parsing
-- src/prompt_builders/resolver.py — prompt resolution (uncached file reads)
-
-Known bug classes: repetition loops, comment-only code, template echo (D| AND I| both output),\
- self-doubt loops, format violations, think-tag leaks, delegation format errors, REPL without\
- tool use, slow delegations (>120s), misrouted-to-coder (factual Q sent to code specialist),\
- function repr leaks (<function ... at 0x...>), status-phrase FINAL ("Done", "Complete").
-
-IMPORTANT: Only edit files when you're confident in the fix. For uncertain cases, describe the\
- issue and proposed fix but don't apply it.
-
-6. ANOMALY PATTERN DISCOVERY: If you observe a recurring failure pattern NOT covered by the\
- existing anomaly_signals, propose a new detector by including a line in this exact format:
-
-NEW_SIGNAL: name=<signal_name> weight=<0.5|1.0> description=<one-line description>
-detector=<python boolean expression using available vars: answer, role, mode, tokens_generated, scoring_method, role_history, tools_used, elapsed_s, delegation_events>
-evidence=<comma-separated question_ids where you observed this pattern>
-
-Only propose a signal when you've seen the same pattern in 2+ answers within the batch or\
- across recent batches. The pipeline maintainer will review proposals and codify the best ones.
+Scan anomaly_signals, read the answer and inference logs, diagnose root causes, apply fixes.
+Edit orchestration/prompts/*.md for prompt issues, src/ for code issues.
+rules.md uses few-shot examples — only edit to add/improve examples, never add rules.
 """)
 
 
@@ -526,7 +495,7 @@ class ClaudeDebugger:
 
         # Include system prompt on first invocation only
         if self.batch_count == 1:
-            parts.append(DEBUGGER_SYSTEM_PROMPT)
+            parts.append(resolve_prompt("debugger_system", _DEBUGGER_SYSTEM_FALLBACK))
             parts.append("---")
 
         parts.append(f"## Diagnostic Batch #{self.batch_count}")
