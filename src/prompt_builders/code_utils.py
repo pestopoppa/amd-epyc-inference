@@ -10,18 +10,43 @@ if TYPE_CHECKING:
 
 
 def _strip_import_lines(code: str) -> str:
-    """Strip import/from lines since safe modules are pre-loaded in REPL globals.
+    """Strip top-level import/from lines since safe modules are pre-loaded in REPL globals.
 
     Models frequently generate 'import math' or 'import os' even when told not to.
     Safe modules (math, json, re, collections, numpy, scipy, etc.) are pre-loaded
     in _build_globals(); unsafe modules would be blocked by _safe_import() anyway.
+
+    Skips lines inside triple-quoted strings to avoid corrupting embedded code
+    (e.g., USACO solutions wrapped in solution = \"\"\"import sys...\"\"\" ).
     """
     lines = code.split("\n")
-    filtered = [
-        line
-        for line in lines
-        if not line.strip().startswith("import ") and not line.strip().startswith("from ")
-    ]
+    filtered = []
+    in_triple_quote = False
+    triple_char = None
+    for line in lines:
+        # Track triple-quoted string boundaries
+        stripped = line.strip()
+        if not in_triple_quote:
+            # Check if this line opens a triple-quoted string
+            for tq in ('"""', "'''"):
+                count = stripped.count(tq)
+                if count % 2 == 1:  # Odd number = we entered/exited
+                    in_triple_quote = True
+                    triple_char = tq
+                    break
+            # Only strip imports at top level (outside strings)
+            if not in_triple_quote and (
+                stripped.startswith("import ") or stripped.startswith("from ")
+            ):
+                continue
+        else:
+            # Inside a triple-quoted string — check if it closes
+            if triple_char and triple_char in stripped:
+                count = stripped.count(triple_char)
+                if count % 2 == 1:
+                    in_triple_quote = False
+                    triple_char = None
+        filtered.append(line)
     return "\n".join(filtered).strip()
 
 

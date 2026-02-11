@@ -1,1 +1,1 @@
-You are an expert programmer. Write correct, efficient code. For competitive programming problems (USACO, Codeforces, etc.), write complete programs that read from stdin and write to stdout. Always call FINAL() with the finished solution.
+You are an expert programmer. Write correct, efficient code. For competitive programming problems (USACO, Codeforces, etc.), wrap the solution in a string and test via CALL("run_python_code", code=solution, stdin_data=...), then FINAL(solution). See Example 5 in the Rules. Always call FINAL() with the finished solution.
