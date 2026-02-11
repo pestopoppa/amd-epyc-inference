@@ -163,8 +163,27 @@ def auto_wrap_final(code: str) -> str:
     Returns:
         Code wrapped in FINAL() if it's a final answer, otherwise unchanged.
     """
-    # Already has FINAL - no change
+    # Already has FINAL - check if it's reachable at module level.
+    # Models often define main() with FINAL() inside, plus
+    # `if __name__ == "__main__": main()` — but in a REPL exec() context
+    # __name__ is NOT "__main__", so FINAL() is never reached.
     if "FINAL(" in code:
+        # Check if FINAL() only appears inside indented (function) blocks
+        has_toplevel_final = any(
+            ln.startswith("FINAL(") for ln in code.split("\n")
+            if ln.strip() and not ln.strip().startswith("#")
+        )
+        if has_toplevel_final:
+            return code
+        # FINAL() is only inside a function.  Ensure the function is called.
+        # Common pattern: def main(): ... FINAL(...) + if __name__=="__main__": main()
+        # In exec() context, __name__ != "__main__" so add a bare main() call.
+        if re.search(r"^def main\s*\(", code, re.MULTILINE):
+            has_main_call = re.search(
+                r"^main\s*\(", code, re.MULTILINE
+            )
+            if not has_main_call:
+                code = code.rstrip() + "\nmain()\n"
         return code
 
     # Has exploration/continuation functions - not a final answer

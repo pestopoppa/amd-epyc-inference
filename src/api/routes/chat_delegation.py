@@ -508,8 +508,11 @@ def _architect_delegated_answer(
                         decision = _parse_architect_decision(forced_decision)
                         log.info("MCQ misroute recovered: architect answered D|%s", decision["answer"])
                     else:
-                        # Last resort: extract any single letter A-D
-                        letter_match = re.search(r"\b([A-D])\b", forced_stripped)
+                        # Last resort: extract any single letter A-D.
+                        # Strip D|/I| prefix first to avoid matching the
+                        # protocol marker as an MCQ letter.
+                        _cleaned = re.sub(r"^[DI]\|", "", forced_stripped).strip()
+                        letter_match = re.search(r"\b([A-D])\b", _cleaned)
                         if letter_match:
                             decision = {"mode": "direct", "answer": letter_match.group(1),
                                         "brief": "", "delegate_to": "", "delegate_mode": "react"}
@@ -588,10 +591,14 @@ def _architect_delegated_answer(
                         "question, forcing delegation to coder_escalation",
                         short_answer[:30],
                     )
+                    # Don't leak the architect's numeric guess to the
+                    # coder — it causes hardcoded FINAL(N) instead of
+                    # a general solution.
+                    hint = "" if re.fullmatch(r"-?\d+\.?\d*", short_answer.strip()) else f" {short_answer}"
                     decision = {
                         "mode": "investigate",
                         "answer": "",
-                        "brief": f"Implement a complete Python solution. {short_answer}",
+                        "brief": f"Implement a complete Python solution that reads from stdin and writes to stdout.{hint}",
                         "delegate_to": "coder_escalation",
                         "delegate_mode": "repl",
                     }
@@ -652,6 +659,7 @@ def _architect_delegated_answer(
             )
             deleg_last_output = ""
             deleg_last_error = ""
+            _prev_code_hash = ""  # dedup guard
             # Build specialist task: full question + architect's brief as
             # design guidance.  Previously only the brief was passed, so the
             # specialist never saw the actual problem (constraints, examples,
@@ -686,6 +694,21 @@ def _architect_delegated_answer(
                 from src.prompt_builders import extract_code_from_response, auto_wrap_final
                 code = extract_code_from_response(code)
                 code = auto_wrap_final(code)
+                # Dedup guard: if coder generates identical code twice in a
+                # row, inject an error to break the loop instead of wasting
+                # another turn on the same silent execution.
+                import hashlib
+                _code_hash = hashlib.md5(code.encode()).hexdigest()
+                if _code_hash == _prev_code_hash:
+                    deleg_last_error = (
+                        "You generated the exact same code as last turn. "
+                        "It didn't work because FINAL() was never reached at top level. "
+                        "Do NOT wrap code in main(). Write flat top-level code ending with FINAL(answer)."
+                    )
+                    deleg_last_output = ""
+                    _prev_code_hash = _code_hash
+                    continue
+                _prev_code_hash = _code_hash
                 # Prose report rescue: specialist answered in prose without
                 # code or FINAL().  In delegation, the specialist's prose IS
                 # the investigation report — return it to the architect for
