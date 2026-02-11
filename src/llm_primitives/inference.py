@@ -211,79 +211,93 @@ class InferenceMixin:
             cache_prompt=self.cache_prompt,
         )
 
-        # Circuit breaker: fast-fail if backend is known to be down
+        # Admission control: reject early if backend queue is full
         backend_url = self.server_urls.get(role, "") if self.server_urls else ""
-        if backend_url and self.health_tracker:
-            if not self.health_tracker.is_available(backend_url):
-                raise RuntimeError(f"Backend unavailable (circuit open): {backend_url}")
+        admission = getattr(self, "admission_controller", None)
+        admitted = False
+        if backend_url and admission:
+            if not admission.try_acquire(backend_url):
+                raise RuntimeError(
+                    f"[ERROR: admission] Backend queue full for {backend_url}"
+                )
+            admitted = True
 
-        from src.inference_lock import inference_lock
+        try:
+            # Circuit breaker: fast-fail if backend is known to be down
+            if backend_url and self.health_tracker:
+                if not self.health_tracker.is_available(backend_url):
+                    raise RuntimeError(f"Backend unavailable (circuit open): {backend_url}")
 
-        with inference_lock(role):
-            from src.inference_tap import (
-                is_active as _tap_active,
-                should_stream_role as _tap_should_stream_role,
-                tap_section,
-            )
+            from src.inference_lock import inference_lock
 
-            tap_enabled = _tap_active()
-            can_stream = (
-                tap_enabled
-                and hasattr(backend, "infer_stream_text")
-                and _tap_should_stream_role(role)
-            )
-            if tap_enabled:
-                with tap_section(role, prompt) as tap:
-                    if can_stream:
-                        # Early-stop: if _early_stop_check is set, wrap the
-                        # tap callback to also check accumulated output and
-                        # raise StopIteration to abort streaming.
-                        _stop_check = getattr(self, "_early_stop_check", None)
-                        if _stop_check is not None:
-                            _acc: list[str] = []
+            with inference_lock(role):
+                from src.inference_tap import (
+                    is_active as _tap_active,
+                    should_stream_role as _tap_should_stream_role,
+                    tap_section,
+                )
 
-                            def _on_chunk_with_stop(content: str) -> None:
-                                tap.write_chunk(content)
-                                _acc.append(content)
-                                if _stop_check("".join(_acc)):
-                                    raise StopIteration
+                tap_enabled = _tap_active()
+                can_stream = (
+                    tap_enabled
+                    and hasattr(backend, "infer_stream_text")
+                    and _tap_should_stream_role(role)
+                )
+                if tap_enabled:
+                    with tap_section(role, prompt) as tap:
+                        if can_stream:
+                            # Early-stop: if _early_stop_check is set, wrap the
+                            # tap callback to also check accumulated output and
+                            # raise StopIteration to abort streaming.
+                            _stop_check = getattr(self, "_early_stop_check", None)
+                            if _stop_check is not None:
+                                _acc: list[str] = []
 
-                            result = backend.infer_stream_text(
-                                role_config, request, on_chunk=_on_chunk_with_stop
-                            )
+                                def _on_chunk_with_stop(content: str) -> None:
+                                    tap.write_chunk(content)
+                                    _acc.append(content)
+                                    if _stop_check("".join(_acc)):
+                                        raise StopIteration
+
+                                result = backend.infer_stream_text(
+                                    role_config, request, on_chunk=_on_chunk_with_stop
+                                )
+                            else:
+                                result = backend.infer_stream_text(
+                                    role_config, request, on_chunk=tap.write_chunk
+                                )
                         else:
-                            result = backend.infer_stream_text(
-                                role_config, request, on_chunk=tap.write_chunk
-                            )
-                    else:
-                        result = backend.infer(role_config, request)
-                        tap.write_response(result.output)
-                    tap.write_timings(
-                        result.tokens_generated,
-                        result.prompt_eval_ms,
-                        result.generation_ms,
-                        result.predicted_per_second,
-                    )
-            else:
-                result = backend.infer(role_config, request)
+                            result = backend.infer(role_config, request)
+                            tap.write_response(result.output)
+                        tap.write_timings(
+                            result.tokens_generated,
+                            result.prompt_eval_ms,
+                            result.generation_ms,
+                            result.predicted_per_second,
+                        )
+                else:
+                    result = backend.infer(role_config, request)
 
-        # Record success/failure for circuit breaker
-        if backend_url and self.health_tracker:
-            if result.success:
-                self.health_tracker.record_success(backend_url)
-            else:
-                self.health_tracker.record_failure(backend_url)
+            # Record success/failure for circuit breaker
+            if backend_url and self.health_tracker:
+                if result.success:
+                    self.health_tracker.record_success(backend_url)
+                else:
+                    self.health_tracker.record_failure(backend_url)
 
-        if not result.success:
-            raise RuntimeError(f"Inference failed: {result.error_message}")
+            if not result.success:
+                raise RuntimeError(f"Inference failed: {result.error_message}")
 
-        self.total_tokens_generated += result.tokens_generated
-        self.total_prompt_eval_ms += result.prompt_eval_ms
-        self.total_generation_ms += result.generation_ms
-        self.total_http_overhead_ms += result.http_overhead_ms
-        if result.predicted_per_second > 0:
-            self._last_predicted_tps = result.predicted_per_second
-        return result.output
+            self.total_tokens_generated += result.tokens_generated
+            self.total_prompt_eval_ms += result.prompt_eval_ms
+            self.total_generation_ms += result.generation_ms
+            self.total_http_overhead_ms += result.http_overhead_ms
+            if result.predicted_per_second > 0:
+                self._last_predicted_tps = result.predicted_per_second
+            return result.output
+        finally:
+            if admitted and admission:
+                admission.release(backend_url)
 
     def _real_batch(self, prompts: list[str], role: str) -> list[str]:
         """Make real inference calls in parallel.

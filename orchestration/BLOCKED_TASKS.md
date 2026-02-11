@@ -731,6 +731,7 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 | Figure Analysis Missing | `handoffs/completed/figure_analysis_missing.md` | ✅ RESOLVED |
 | Claude-as-Judge BLIND Re-Scoring | `docs/deprecated/claude_as_judge_consistency_review_2026-01-16.md` | ✅ COMPLETE (77 models scored, deprecated 2026-01-30) |
 | Model Registry: Paged Attention Flag | `orchestration/model_registry.yaml` | ✅ COMPLETE (flag in 13 model entries) |
+| KV Cache Pressure / Cascading Timeouts | `handoffs/active/bug-kv-cache-pressure-cascading-timeouts.md` | ✅ RESOLVED (6 mitigations: diff timeouts, HTTP codes, admission ctrl, KV budgets, NUMA, workers) |
 | MTP ISWA Fix | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ FIXED (3 commits on mtp-branch) |
 | Gemma-3 SWA Spec Decode | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
 | Prompt Lookup/Lookahead Bugs | `handoffs/completed/swa_prompt_lookup.md` | ✅ PRs #18729 + #18730 SUBMITTED |

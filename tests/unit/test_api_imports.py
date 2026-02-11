@@ -246,10 +246,10 @@ class TestRoutingResult:
         from src.api.routes.chat_utils import RoutingResult
 
         r = RoutingResult(task_id="t", task_ir={}, use_mock=False)
-        # All roles have uniform 600s timeout for seeding fairness
-        assert r.timeout_for_role("worker_explore") == 600
+        # Differentiated timeouts by role size/speed
+        assert r.timeout_for_role("worker_explore") == 60
         assert r.timeout_for_role("architect_general") == 600
-        assert r.timeout_for_role("frontdoor") == 600
+        assert r.timeout_for_role("frontdoor") == 90
 
 
 class TestRoleTimeouts:
@@ -271,12 +271,14 @@ class TestRoleTimeouts:
         for role in expected_roles:
             assert role in ROLE_TIMEOUTS, f"Missing timeout for {role}"
 
-    def test_worker_timeouts_equal_to_architect(self):
+    def test_worker_timeouts_shorter_than_architect(self):
         from src.api.routes.chat_utils import ROLE_TIMEOUTS
 
-        # All roles have uniform 600s timeout for seeding fairness
-        assert ROLE_TIMEOUTS["worker_explore"] == ROLE_TIMEOUTS["architect_general"]
-        assert ROLE_TIMEOUTS["worker_math"] == ROLE_TIMEOUTS["architect_coding"]
+        # Workers get shorter timeouts for faster circuit breaker response
+        assert ROLE_TIMEOUTS["worker_explore"] < ROLE_TIMEOUTS["architect_general"]
+        assert ROLE_TIMEOUTS["worker_math"] < ROLE_TIMEOUTS["architect_coding"]
+        assert ROLE_TIMEOUTS["worker_explore"] == 60
+        assert ROLE_TIMEOUTS["architect_general"] == 600
 
     def test_default_timeout_exists(self):
         from src.api.routes.chat_utils import DEFAULT_TIMEOUT_S
@@ -321,13 +323,39 @@ class TestAnnotateError:
         from src.api.routes.chat_pipeline import _annotate_error
 
         resp = ChatResponse(
-            answer="[ERROR: Direct LLM call failed after retry: Backend unavailable]",
+            answer="[ERROR: Direct LLM call failed after retry: Backend connection refused]",
             turns=1,
             elapsed_seconds=1.0,
             mock_mode=False,
         )
         result = _annotate_error(resp)
         assert result.error_code == 502
+
+    def test_circuit_open_gets_503(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="[ERROR: Backend unavailable (circuit open): http://localhost:8083]",
+            turns=1,
+            elapsed_seconds=1.0,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code == 503
+
+    def test_admission_rejected_gets_429(self):
+        from src.api.models.responses import ChatResponse
+        from src.api.routes.chat_pipeline import _annotate_error
+
+        resp = ChatResponse(
+            answer="[ERROR: admission] Backend queue full for http://localhost:8084",
+            turns=1,
+            elapsed_seconds=1.0,
+            mock_mode=False,
+        )
+        result = _annotate_error(resp)
+        assert result.error_code == 429
 
     def test_generic_error_gets_500(self):
         from src.api.models.responses import ChatResponse

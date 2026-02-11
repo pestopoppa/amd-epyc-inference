@@ -64,22 +64,24 @@ runtime_defaults:
     # Single source of truth for ALL timeouts in the system
     default: 600  # Fallback for any unspecified timeout
 
-    # Per-role inference timeouts (seconds) — uniform 600s for seeding fairness
+    # Per-role inference timeouts (seconds) — differentiated by model size/speed
+    # Workers (7B @ 44 t/s, 1.5B @ fast) get short timeouts so circuit breaker
+    # opens quickly; architects (235B/480B) keep 600s for complex reasoning.
     roles:
-      worker_explore: 600
-      worker_math: 600
-      worker_vision: 600
-      worker_summarize: 600
-      worker_general: 600
-      worker_code: 600
-      worker_fast: 600
-      frontdoor: 600
-      coder_primary: 600
-      coder_escalation: 600
-      vision_escalation: 600
-      ingest_long_context: 600
-      architect_general: 600
-      architect_coding: 600
+      worker_explore: 60       # 7B @ 44 t/s — expected <5s, 60s = 12x headroom
+      worker_math: 60
+      worker_vision: 60
+      worker_summarize: 120    # 32B summarization, longer outputs
+      worker_general: 60
+      worker_code: 60
+      worker_fast: 30          # 1.5B — expected <2s, 30s = 15x headroom
+      frontdoor: 90            # 30B MoE @ 18 t/s — expected <15s
+      coder_primary: 90
+      coder_escalation: 120    # 32B @ 39 t/s — 500 tok ~45s. 120s = 2.5x headroom
+      vision_escalation: 120   # 30B MoE VL, multimodal processing
+      ingest_long_context: 300 # 80B SSM, long document ingestion
+      architect_general: 600   # 235B MoE, complex multi-step reasoning
+      architect_coding: 600    # 480B MoE, complex multi-step reasoning
 
     # Server/connection timeouts
     server:

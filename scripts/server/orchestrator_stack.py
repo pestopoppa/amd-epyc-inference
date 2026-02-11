@@ -129,6 +129,27 @@ HOT_ROLES = {
     "worker_vision", "vision_escalation",
 }
 
+# NUMA memory placement for large models — reduces page migration overhead.
+# EPYC 9655 has 2 NUMA nodes (~580GB each, distance 10 local / 12 remote).
+# Uses --preferred (not --membind) so models allocate on a home node but still
+# use all 96 cores and full memory bandwidth across both nodes.
+# This prevents the OS from interleaving 235B/480B weights across nodes, which
+# causes page migration when the other model triggers memory pressure.
+NUMA_PREFERRED_MAP: dict[str, str] = {
+    "architect_general": "0",     # 235B → prefer node 0
+    "architect_coding": "1",      # 480B → prefer node 1
+    "ingest_long_context": "1",   # 80B SSM → prefer node 1
+}
+
+
+def _numa_prefix(role: str) -> list[str]:
+    """Return numactl prefix for a role: preferred placement or interleaved."""
+    node = NUMA_PREFERRED_MAP.get(role)
+    if node is not None:
+        return ["numactl", f"--preferred={node}"]
+    return ["numactl", "--interleave=all"]
+
+
 # Roles that must never run concurrently (large models).
 SERIAL_ROLES = {
     "frontdoor",
@@ -476,16 +497,32 @@ def build_server_command(
     accel = role_config.acceleration
     parallel_slots = "1" if role_config.name in SERIAL_ROLES else "2"
 
+    # KV cache budgets: role-aware context sizes to prevent memory pressure.
+    # Total KV ~82GB across all servers, well within 475GB available budget.
+    _KV_CONTEXT_SIZES = {
+        "architect_general": "16384",   # 235B MoE → ~32GB KV
+        "architect_coding": "8192",     # 480B MoE → ~24GB KV
+        "ingest_long_context": "32768", # 80B SSM, needs long context
+    }
+    # Architect roles benefit from quantized KV cache (halves KV memory)
+    _KV_QUANTIZED_ROLES = {"architect_general", "architect_coding"}
+
+    context_size = _KV_CONTEXT_SIZES.get(role_config.name, "32768")
+
     cmd = [
         str(LLAMA_SERVER),
         "-m", model_path,
         "--host", "127.0.0.1",
         "--port", str(port),
         "-np", parallel_slots,  # Parallel slots (1 for large roles, 2 otherwise)
-        "-c", "32768",  # Context size (16K per slot with np=2)
+        "-c", context_size,     # Role-aware context size
         "-t", "96",  # Threads
         "--flash-attn", "on",  # Flash attention
     ]
+
+    # Quantized KV cache for large architects (halves KV memory usage)
+    if role_config.name in _KV_QUANTIZED_ROLES:
+        cmd.extend(["--cache-type-k", "q8_0"])
 
     # Add acceleration based on type
     if accel.type == "moe_expert_reduction" and accel.experts:
@@ -546,7 +583,7 @@ def start_server(
         with open(log_file, "w") as log:
             env = os.environ.copy()
             proc = subprocess.Popen(
-                ["numactl", "--interleave=all"] + cmd,
+                _numa_prefix(roles[0]) + cmd,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=env,
@@ -590,7 +627,7 @@ def start_server(
             env = os.environ.copy()
             # NOTE: Do NOT set OMP_NUM_THREADS=1 - it disables parallel tensor repack (2.2x slower loading)
             proc = subprocess.Popen(
-                ["numactl", "--interleave=all"] + cmd,
+                _numa_prefix(roles[0]) + cmd,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=env,
@@ -638,7 +675,7 @@ def start_server(
             env = os.environ.copy()
             # NOTE: Do NOT set OMP_NUM_THREADS=1 - it disables parallel tensor repack (2.2x slower loading)
             proc = subprocess.Popen(
-                ["numactl", "--interleave=all"] + cmd,
+                _numa_prefix(roles[0]) + cmd,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=env,
@@ -685,12 +722,12 @@ def start_server(
     print(f"    Roles: {', '.join(roles)}")
     print(f"    Command: {' '.join(cmd[:5])}...")
 
-    # Start process
+    # Start process — NUMA-pinned for architects, interleaved for others
     with open(log_file, "w") as log:
         env = os.environ.copy()
         # NOTE: Do NOT set OMP_NUM_THREADS=1 - it disables parallel tensor repack (2.2x slower loading)
         proc = subprocess.Popen(
-            ["numactl", "--interleave=all"] + cmd,
+            _numa_prefix(primary_role) + cmd,
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
@@ -741,7 +778,7 @@ def start_orchestrator() -> ProcessInfo | None:
     env["ORCHESTRATOR_REACT_MODE"] = "1"
 
     with open(log_file, "w") as log:
-        workers = int(os.environ.get("ORCHESTRATOR_UVICORN_WORKERS", "2"))
+        workers = int(os.environ.get("ORCHESTRATOR_UVICORN_WORKERS", "6"))
         proc = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn",
@@ -749,6 +786,7 @@ def start_orchestrator() -> ProcessInfo | None:
                 "--host", "127.0.0.1",
                 "--port", "8000",
                 "--workers", str(workers),
+                "--limit-concurrency", "4",  # Prevent request pile-up per worker
             ],
             cwd=str(_PATHS["project_root"]),
             stdout=log,

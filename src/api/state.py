@@ -11,6 +11,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
+from src.api.admission import AdmissionController
 from src.api.health_tracker import BackendHealthTracker
 
 if TYPE_CHECKING:
@@ -84,6 +85,9 @@ class AppState:
 
     # Backend health tracking (circuit breaker)
     health_tracker: BackendHealthTracker = field(default_factory=BackendHealthTracker)
+
+    # Per-backend admission control (concurrency limiter)
+    admission: AdmissionController = field(default_factory=AdmissionController.from_defaults)
 
     # Binding-based routing (OpenClaw pattern, Phase 4B)
     binding_router: Any | None = None  # RoutingBindings.BindingRouter

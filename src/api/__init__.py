@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI):
         mock_mode=f.mock_mode,
         registry=state.registry,
         health_tracker=state.health_tracker,
+        admission_controller=state.admission,
     )
     state.progress_logger = ProgressLogger() if ProgressLogger else None
     state.gate_runner = GateRunner(progress_logger=state.progress_logger)

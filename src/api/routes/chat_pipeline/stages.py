@@ -305,6 +305,16 @@ def _annotate_error(response: ChatResponse) -> ChatResponse:
         response.error_code = 504
         response.error_detail = answer
     elif answer.startswith("[ERROR:") and (
+        "circuit open" in answer.lower() or "unavailable" in answer.lower()
+    ):
+        response.error_code = 503
+        response.error_detail = answer
+    elif answer.startswith("[ERROR:") and (
+        "admission" in answer.lower() or "queue full" in answer.lower()
+    ):
+        response.error_code = 429
+        response.error_detail = answer
+    elif answer.startswith("[ERROR:") and (
         "backend" in answer.lower() or "failed" in answer.lower()
     ):
         response.error_code = 502

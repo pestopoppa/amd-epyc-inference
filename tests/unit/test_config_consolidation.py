@@ -238,16 +238,19 @@ class TestTimeoutsDefaults:
         assert cfg.default_request == DEFAULT_TIMEOUT_S
 
     def test_specific_timeout_values(self):
-        """Spot-check critical timeout values."""
+        """Spot-check critical timeout values — differentiated by role."""
         cfg = TimeoutsConfig()
-        # All roles: uniform 600s for seeding fairness
-        assert cfg.worker_explore == 600
-        assert cfg.worker_math == 600
-        assert cfg.worker_vision == 600
-        assert cfg.worker_summarize == 600
-        assert cfg.frontdoor == 600
-        assert cfg.coder_primary == 600
-        assert cfg.coder_escalation == 600
+        # Workers: short timeouts (fast circuit breaker)
+        assert cfg.worker_explore == 60
+        assert cfg.worker_math == 60
+        assert cfg.worker_vision == 60
+        assert cfg.worker_summarize == 120
+        assert cfg.worker_fast == 30
+        # Frontdoor/coder: medium
+        assert cfg.frontdoor == 90
+        assert cfg.coder_primary == 90
+        assert cfg.coder_escalation == 120
+        # Architects: long (complex reasoning)
         assert cfg.architect_general == 600
         assert cfg.architect_coding == 600
         # Backend: unified 600s timeout

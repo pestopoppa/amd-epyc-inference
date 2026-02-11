@@ -61,6 +61,7 @@ class LLMPrimitives(
         worker_pool: Any | None = None,
         use_worker_pool: bool = False,
         health_tracker: Any | None = None,
+        admission_controller: Any | None = None,
     ):
         """Initialize LLM primitives.
 
@@ -76,10 +77,12 @@ class LLMPrimitives(
             worker_pool: Optional WorkerPoolManager for worker role routing.
             use_worker_pool: If True and worker_pool provided, route worker calls through pool.
             health_tracker: Optional BackendHealthTracker for circuit breaker integration.
+            admission_controller: Optional AdmissionController for per-backend queue limiting.
         """
         self.model_server = model_server
         self.mock_mode = mock_mode
         self.health_tracker = health_tracker
+        self.admission_controller = admission_controller
         self.config = config if config is not None else LLMPrimitivesConfig()
         self.mock_responses = mock_responses if mock_responses is not None else {}
         self.server_urls = server_urls

@@ -20,7 +20,7 @@ import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.api.dependencies import dep_app_state
 from src.api.models import ChatRequest, ChatResponse, RewardRequest
@@ -113,7 +113,18 @@ async def chat(
     # Track active requests for idle-time Q-scoring (thread-safe)
     state.increment_active()
     try:
-        return await _handle_chat(request, state)
+        response = await _handle_chat(request, state)
+        # Return appropriate HTTP status instead of silent 200 OK on failure
+        if response.error_code:
+            headers = {}
+            if response.error_code == 503:
+                headers["Retry-After"] = "30"
+            return JSONResponse(
+                status_code=response.error_code,
+                content=response.model_dump(),
+                headers=headers or None,
+            )
+        return response
     finally:
         state.decrement_active()
 
@@ -387,7 +398,11 @@ async def chat_stream(
         server_urls = request.server_urls or get_config().server_urls.as_dict()
         try:
             primitives = LLMPrimitives(
-                mock_mode=False, server_urls=server_urls, registry=state.registry
+                mock_mode=False,
+                server_urls=server_urls,
+                registry=state.registry,
+                health_tracker=state.health_tracker,
+                admission_controller=getattr(state, "admission", None),
             )
         except Exception as e:
             # Log failure (MemRL)

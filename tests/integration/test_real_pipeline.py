@@ -609,7 +609,8 @@ class TestQualityCheckIntegration:
                     },
                 )
                 data = response.json()
-                assert response.status_code == 200
+                # Errors now return proper HTTP status codes (not silent 200)
+                assert response.status_code == 502
                 # llm_call catches exceptions and returns [ERROR:...]
                 assert "[ERROR:" in data["answer"]
                 assert "Simulated backend failure" in data["answer"]

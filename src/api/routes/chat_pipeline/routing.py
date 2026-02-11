@@ -182,6 +182,8 @@ def _init_primitives(request: ChatRequest, state) -> LLMPrimitives:
                     mock_mode=False,
                     server_urls=server_urls,
                     registry=state.registry,
+                    health_tracker=getattr(state, "health_tracker", None),
+                    admission_controller=getattr(state, "admission", None),
                 )
                 if not request.server_urls:
                     state._real_primitives = primitives
