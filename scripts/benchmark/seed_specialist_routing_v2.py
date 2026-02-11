@@ -146,6 +146,7 @@ from seeding_orchestrator import (  # noqa: E402, F401
     _busy_heavy_ports,
     _call_orchestrator_with_slot_poll,
     _erase_slots,
+    _force_erase_and_verify,
     _normalize_tool_telemetry,
     _read_slot_progress,
     _recover_heavy_ports_if_stuck,

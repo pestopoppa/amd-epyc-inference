@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """MemRL Episodic Seeding for 3-Way Routing.
 
+.. deprecated::
+    This monolithic file is **DEPRECATED** in favour of
+    ``seed_specialist_routing_v2.py`` + the extracted ``seeding_*.py`` modules.
+    All new development MUST target the v2 modules.  This file is kept only for
+    backwards-compatible test imports (``from seed_specialist_routing import ...``).
+    Run ``seed_specialist_routing_v2.py`` for production seeding.
+
 THE canonical evaluation script for training frontdoor probability estimation.
 Runs each question through multiple configurations, scores deterministically,
 and injects rewards so MemRL learns optimal routing decisions.

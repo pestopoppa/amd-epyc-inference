@@ -48,11 +48,17 @@ _SLOT_ERASE_CAPABILITY: dict[int, str | None | bool] = {}
 # ── Slot management ──────────────────────────────────────────────────
 
 
-def _erase_slots(port: int) -> None:
+def _erase_slots(port: int, *, all_slots: bool = False) -> None:
     """Force-cancel in-progress inference on a llama-server port.
 
     After a timeout the server may still be grinding on the old request.
     Erasing slots prevents cascading timeouts on subsequent requests.
+
+    Args:
+        port: llama-server port.
+        all_slots: If True, erase ALL slots (including idle ones) to clear
+            stale KV cache and prevent cross-request context contamination.
+            Use this between independent eval questions.
     """
     import httpx
 
@@ -82,46 +88,50 @@ def _erase_slots(port: int) -> None:
         if resp.status_code != 200:
             return
         for slot in resp.json():
-            if slot.get("is_processing"):
-                slot_id = slot.get("id", 0)
-                cap = _SLOT_ERASE_CAPABILITY.get(port)
-                if cap is False:
-                    continue
-                strategies: list[str]
-                if isinstance(cap, str):
-                    strategies = [cap]
-                else:
-                    strategies = ["POST_QUERY", "GET_QUERY", "POST_JSON"]
+            # When all_slots=True, erase every slot (idle or processing)
+            # to clear stale KV cache between eval questions.
+            # When all_slots=False (default), only erase processing slots.
+            if not all_slots and not slot.get("is_processing"):
+                continue
+            slot_id = slot.get("id", 0)
+            cap = _SLOT_ERASE_CAPABILITY.get(port)
+            if cap is False:
+                continue
+            strategies: list[str]
+            if isinstance(cap, str):
+                strategies = [cap]
+            else:
+                strategies = ["POST_QUERY", "GET_QUERY", "POST_JSON"]
 
-                unsupported_codes = {404, 405, 501}
-                saw_transient = False
-                erased = False
-                for strategy in strategies:
-                    try:
-                        status = _erase_slot_with_strategy(slot_id, strategy)
-                    except Exception:
-                        saw_transient = True
-                        continue
-
-                    if status == 200:
-                        _SLOT_ERASE_CAPABILITY[port] = strategy
-                        logger.info(f"  → erased slot {slot_id} on port {port}")
-                        erased = True
-                        break
-                    if status not in unsupported_codes:
-                        saw_transient = True
-
-                if erased:
+            unsupported_codes = {404, 405, 501}
+            saw_transient = False
+            erased = False
+            for strategy in strategies:
+                try:
+                    status = _erase_slot_with_strategy(slot_id, strategy)
+                except Exception:
+                    saw_transient = True
                     continue
 
-                if isinstance(cap, str):
-                    # Cached strategy failed; reset to unknown so we can probe again.
-                    _SLOT_ERASE_CAPABILITY[port] = None
-                elif not saw_transient:
-                    _SLOT_ERASE_CAPABILITY[port] = False
-                    logger.warning(
-                        f"  slot erase unsupported on port {port}; disabling erase attempts"
-                    )
+                if status == 200:
+                    _SLOT_ERASE_CAPABILITY[port] = strategy
+                    logger.info(f"  → erased slot {slot_id} on port {port}")
+                    erased = True
+                    break
+                if status not in unsupported_codes:
+                    saw_transient = True
+
+            if erased:
+                continue
+
+            if isinstance(cap, str):
+                # Cached strategy failed; reset to unknown so we can probe again.
+                _SLOT_ERASE_CAPABILITY[port] = None
+            elif not saw_transient:
+                _SLOT_ERASE_CAPABILITY[port] = False
+                logger.warning(
+                    f"  slot erase unsupported on port {port}; disabling erase attempts"
+                )
     except Exception as e:
         logger.warning("  [erase-slots] port %d: %s", port, e)
 
@@ -290,6 +300,33 @@ def _call_orchestrator_with_slot_poll(
                 elapsed = time.perf_counter() - t0
                 break
             except concurrent.futures.TimeoutError:
+                elapsed_now = time.perf_counter() - t0
+
+                # ── Proactive timeout: erase slot before httpx timeout ──
+                # When approaching the timeout, preemptively kill the
+                # server-side generation so the chain (llama.cpp →
+                # orchestrator → httpx) unwinds cleanly and the port is
+                # free for the next strategy.
+                erase_margin = 15
+                if elapsed_now >= timeout - erase_margin and poll_port > 0:
+                    logger.warning(
+                        "  [timeout-erase] %s at %.0fs/%.0fs — erasing port %d",
+                        log_label, elapsed_now, timeout, poll_port,
+                    )
+                    _force_erase_and_verify(poll_port, max_attempts=2, verify_delay=1.0)
+                    # Give httpx a moment to receive the response now
+                    # that the server-side generation is stopped.
+                    try:
+                        resp = fut.result(timeout=12.0)
+                        elapsed = time.perf_counter() - t0
+                    except (concurrent.futures.TimeoutError, Exception):
+                        elapsed = time.perf_counter() - t0
+                        resp = {
+                            "answer": "",
+                            "error": f"timeout after slot erase ({elapsed:.0f}s)",
+                        }
+                    break
+
                 if poll_port <= 0:
                     now_hb = time.perf_counter()
                     if (now_hb - last_heartbeat) >= heartbeat_interval:

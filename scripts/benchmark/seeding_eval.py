@@ -32,6 +32,7 @@ from seeding_orchestrator import (
     _busy_heavy_ports,
     _call_orchestrator_with_slot_poll,
     _erase_slots,
+    _force_erase_and_verify,
     _recover_heavy_ports_if_stuck,
     call_orchestrator_forced,
 )
@@ -171,10 +172,11 @@ def _eval_single_config(
     port = ROLE_PORT.get(role, 0)
     did_recover_precheck = False
 
-    # Proactive slot erase: clear stale KV cache from previous requests
-    # to prevent context contamination between questions.
+    # Proactive slot erase: clear ALL slots (including idle ones) to flush
+    # stale KV cache from previous questions and prevent cross-question
+    # context contamination (e.g. USACO text leaking into GPQA answers).
     if port > 0:
-        _erase_slots(port)
+        _erase_slots(port, all_slots=True)
 
     if port in HEAVY_PORTS:
         idle_wait_cap = max(30, min(120, int(timeout // 2) if timeout else 120))
@@ -229,7 +231,7 @@ def _eval_single_config(
     if error_type == "infrastructure" and resp.get("tokens_generated", 0) == 0:
         target_port = ROLE_PORT.get(role, 0)
         if target_port:
-            _erase_slots(target_port)
+            _force_erase_and_verify(target_port)
         if port in HEAVY_PORTS and not did_recover_precheck:
             busy_now = _busy_heavy_ports(timeout_s=2.0)
             if _recover_heavy_ports_if_stuck(url, busy_now):
@@ -405,6 +407,14 @@ def evaluate_question_3way(
 
     role_results: dict[str, RoleResult] = {}
 
+    # Flush KV cache from ALL model servers between questions to prevent
+    # cross-question context contamination.  Without this, idle slots
+    # retain stale KV state from the previous question (e.g. USACO text
+    # leaking into GPQA organic chemistry answers).
+    for _port in set(ROLE_PORT.values()):
+        if _port > 0:
+            _erase_slots(_port, all_slots=True)
+
     from eval_log_format import (
         format_self_direct, format_self_repl, format_architect_result,
         format_reward_skip, format_all_infra_skip,
@@ -438,6 +448,12 @@ def evaluate_question_3way(
         log_label=ACTION_SELF_DIRECT, format_fn=format_self_direct,
     )
     role_results[f"{self_role}:{self_direct_mode}"] = rr_direct
+
+    # ── Cleanup: ensure port is idle before next strategy ──
+    if rr_direct.error_type == "infrastructure" or rr_direct.error:
+        direct_port = ROLE_PORT.get(self_role, 0)
+        if direct_port in HEAVY_PORTS:
+            _force_erase_and_verify(direct_port)
 
     # ── Configuration 2: SELF:repl ──
     timeout_repl = _adaptive_timeout_s(
