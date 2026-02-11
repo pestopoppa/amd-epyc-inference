@@ -144,15 +144,24 @@ def _parse_architect_decision(response: str) -> dict:
             if mcq_match:
                 raw_answer = mcq_match.group(1)
             else:
-                # Try to find a clear MCQ answer in the reasoning
-                # Pattern: "Answer: B" or "Correct Answer: B" or standalone letter
+                # Try to find a clear MCQ answer in the reasoning.
+                # Patterns (checked in priority order):
+                #   "Answer: B", "Correct Answer: B"
+                #   "answer is A", "answer would be A", "answer should be A"
+                #   "option A seems", "option A with"
                 rescue = re.search(
-                    r"(?:answer|correct)[:\s]+([A-D])(?=[^a-zA-Z]|$)",
+                    r"(?:the\s+)?(?:correct\s+)?answer\s*(?:is|would\s+be|should\s+be|:)\s*([A-D])(?=[^a-zA-Z]|$)",
                     raw_answer,
                     re.IGNORECASE,
                 )
+                if not rescue:
+                    rescue = re.search(
+                        r"\boption\s+([A-D])(?:\s+(?:seems|with|is|looks)\b|[^a-zA-Z]|$)",
+                        raw_answer,
+                        re.IGNORECASE,
+                    )
                 if rescue:
-                    raw_answer = rescue.group(1)
+                    raw_answer = rescue.group(1).upper()
                 # else: keep raw_answer as-is (best effort)
         return {
             "mode": "direct",
@@ -411,7 +420,15 @@ def _architect_delegated_answer(
                     arch_response = f"D|{prose}"
                     log.info("Architect turn 0: no TOON, prose rescue -> D|%s", prose[:50])
                 else:
-                    arch_response = f"D|{stripped}" if stripped else raw
+                    # Avoid double-wrapping: if stripped already starts with
+                    # D| or I| (but _extract_toon_decision couldn't parse it,
+                    # e.g. bare "D|\n<reasoning>"), pass it through directly
+                    # so _parse_architect_decision's long-answer rescue can
+                    # extract the MCQ letter from the reasoning body.
+                    if stripped and re.match(r"^[DI]\|", stripped):
+                        arch_response = stripped
+                    else:
+                        arch_response = f"D|{stripped}" if stripped else raw
                     log.info("Architect turn 0: no TOON, treating raw output as D|answer (%d chars)", len(stripped or raw))
                 break
 
