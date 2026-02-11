@@ -41,6 +41,58 @@ def _sanitize_display(text: str) -> str:
     """Strip invisible Unicode that corrupts terminal column counting."""
     return _INVISIBLE_RE.sub('', text)
 
+
+# ---------------------------------------------------------------------------
+# LaTeX → Unicode rendering
+# ---------------------------------------------------------------------------
+
+# Match $...$ (inline) and $$...$$ (display) but not \$ escapes.
+# Also matches \(...\) and \[...\] delimiters.
+_LATEX_INLINE_RE = re.compile(
+    r'(?<![\\])\$\$(.+?)\$\$'   # $$...$$ (display, greedy-first)
+    r'|(?<![\\])\$(.+?)\$'       # $...$   (inline)
+    r'|(?<![\\])\\\((.+?)\\\)'   # \(...\)
+    r'|(?<![\\])\\\[(.+?)\\\]',  # \[...\]
+)
+
+_flatlatex_converter = None
+
+
+def _get_latex_converter():
+    """Lazy-init flatlatex converter (import is ~15ms, reuse thereafter)."""
+    global _flatlatex_converter
+    if _flatlatex_converter is None:
+        try:
+            import flatlatex
+            _flatlatex_converter = flatlatex.converter()
+        except ImportError:
+            return None
+    return _flatlatex_converter
+
+
+def _latex_to_unicode(line: str) -> str:
+    """Replace LaTeX math spans with Unicode equivalents.
+
+    Falls back to the original LaTeX on conversion errors so streaming
+    partial expressions never crash the TUI.
+    """
+    conv = _get_latex_converter()
+    if conv is None:
+        return line
+
+    def _replace(m: re.Match) -> str:
+        # Pick whichever capture group matched
+        raw = m.group(1) or m.group(2) or m.group(3) or m.group(4)
+        if not raw:
+            return m.group(0)
+        try:
+            return conv.convert(raw)
+        except Exception:
+            return m.group(0)
+
+    return _LATEX_INLINE_RE.sub(_replace, line)
+
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -284,10 +336,13 @@ def _style_stream_lines(lines: list[str], in_code_initial: bool = False) -> Text
             styled.append(line, style="dim cyan")
             continue
 
-        # Inside code block
+        # Inside code block — no LaTeX conversion (it's code)
         if in_code:
             styled.append(line, style="cyan")
             continue
+
+        # LaTeX → Unicode for prose lines (outside code blocks)
+        line = _latex_to_unicode(line)
 
         # FINAL() answer — highlight prominently
         if "FINAL(" in line:

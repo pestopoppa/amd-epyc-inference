@@ -7,6 +7,36 @@ from typing import Any
 
 from .types import LLMResult
 
+log = logging.getLogger(__name__)
+
+
+def _detect_streaming_repetition(text: str, min_block: int = 60, min_repeats: int = 3) -> bool:
+    """Detect paragraph-level repetition in streaming text.
+
+    Scans the most recent output for any line-aligned block of >= *min_block*
+    chars that appears *min_repeats* or more times.  Designed to catch
+    degenerate generation loops where the model repeats the same paragraph.
+
+    Only called periodically (every ~50 chunks) to avoid overhead.
+    """
+    if len(text) < min_block * min_repeats:
+        return False
+    # Work on a reasonable tail to limit cost.
+    tail = text[-4000:] if len(text) > 4000 else text
+    # Split into lines and check line-aligned blocks.
+    lines = tail.split("\n")
+    if len(lines) < 6:
+        return False
+    # Slide a window of 3 consecutive lines over the tail.  If the same
+    # 3-line block appears min_repeats times, it's a repetition loop.
+    for i in range(len(lines) - 2):
+        block = "\n".join(lines[i : i + 3])
+        if len(block) < min_block or not block.strip():
+            continue
+        if tail.count(block) >= min_repeats:
+            return True
+    return False
+
 
 class InferenceMixin:
     """Mixin for real inference methods."""
@@ -250,22 +280,33 @@ class InferenceMixin:
                             # tap callback to also check accumulated output and
                             # raise StopIteration to abort streaming.
                             _stop_check = getattr(self, "_early_stop_check", None)
-                            if _stop_check is not None:
-                                _acc: list[str] = []
+                            # Always accumulate for repetition detection,
+                            # even when no _early_stop_check is set.
+                            _acc: list[str] = []
+                            _chunk_count = 0
+                            _REP_CHECK_INTERVAL = 50  # check every ~50 chunks
 
-                                def _on_chunk_with_stop(content: str) -> None:
-                                    tap.write_chunk(content)
-                                    _acc.append(content)
-                                    if _stop_check("".join(_acc)):
+                            def _on_chunk_guarded(content: str) -> None:
+                                nonlocal _chunk_count
+                                tap.write_chunk(content)
+                                _acc.append(content)
+                                _chunk_count += 1
+                                # Caller-provided early-stop (FINAL, TOON, etc.)
+                                if _stop_check is not None and _stop_check("".join(_acc)):
+                                    raise StopIteration
+                                # Repetition guard: check periodically
+                                if _chunk_count % _REP_CHECK_INTERVAL == 0:
+                                    if _detect_streaming_repetition("".join(_acc)):
+                                        log.warning(
+                                            "Repetition loop detected after %d chunks, "
+                                            "aborting generation",
+                                            _chunk_count,
+                                        )
                                         raise StopIteration
 
-                                result = backend.infer_stream_text(
-                                    role_config, request, on_chunk=_on_chunk_with_stop
-                                )
-                            else:
-                                result = backend.infer_stream_text(
-                                    role_config, request, on_chunk=tap.write_chunk
-                                )
+                            result = backend.infer_stream_text(
+                                role_config, request, on_chunk=_on_chunk_guarded
+                            )
                         else:
                             result = backend.infer(role_config, request)
                             tap.write_response(result.output)

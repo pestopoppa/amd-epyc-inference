@@ -81,6 +81,10 @@ knowledge = [
     "semanticscholar>=0.11.0",
     "google-api-python-client>=2.100.0",
 ]
+retrieval = [
+    # Multi-vector code search via NextPLAID (src/repl_environment/code_search.py)
+    "next-plaid-client>=0.2.0",
+]
 tuning = [
     # Hyperparameter optimization (Phase 7, not yet in use)
     "optuna>=3.5.0",

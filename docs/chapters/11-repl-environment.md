@@ -56,6 +56,15 @@ RestrictedPython (optional) provides battle-tested sandbox used by Zope/Plone, w
 | `grep(pattern)` | Regex search | Free | Find specific content |
 | `FINAL(answer)` | Terminate with result | Free | Return final answer |
 
+### Code & Document Retrieval (NextPLAID)
+
+| Function | Purpose | Example |
+|----------|---------|---------|
+| `code_search(query)` | Multi-vector code search | Find function definitions, patterns |
+| `doc_search(query)` | Multi-vector doc search | Find relevant documentation sections |
+
+Uses ColBERT token-level matching via NextPLAID (:8088). Complements `recall()` (episodic memory) — `code_search` finds actual source code, `recall` finds past routing decisions.
+
 ### Extended Functions (Archive/Web)
 
 | Function | Purpose | Example |
@@ -144,6 +153,8 @@ Each tool invocation receives a prefixed, auto-incrementing ID:
 | D | list_dir | D1 |
 | W | web_fetch | W1 |
 | R | recall | R1 |
+| CS | code_search | CS1 |
+| DS | doc_search | DS1 |
 
 ### Cross-Reference Detection
 

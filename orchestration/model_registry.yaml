@@ -461,6 +461,30 @@ server_mode:
       - "2026-01-24: Increased timeout from 120s to 300s - complex pages with figures can take 24-30s each"
       - "Use server-side /v1/document/pdf endpoint for PDFs - client-side per-page requests add HTTP overhead"
 
+  # Multi-vector code & document retrieval (Docker, not llama.cpp)
+  nextplaid:
+    url: http://localhost:8088
+    port: 8088
+    model_role: code_retrieval
+    description: Multi-vector code & doc search using ColBERT late interaction
+    model: lightonai/LateOn-Code-edge
+    model_type: onnx_int8
+    docker_image: ghcr.io/lightonai/next-plaid:cpu-1.0.4
+    memory_gb: 0.2  # <200MB (Docker + ONNX + mmap'd indices)
+    tier: always  # Starts with infrastructure, soft dependency
+    indices: [code, docs]
+    health_endpoint: /health
+    launch_command: >
+      docker run -d --name nextplaid
+      -p 8088:8080
+      -v /mnt/raid0/llm/claude/cache/next-plaid:/data/indices
+      -v /mnt/raid0/llm/cache/huggingface:/root/.cache/huggingface
+      ghcr.io/lightonai/next-plaid:cpu-1.0.4
+      --host 0.0.0.0 --port 8080 --index-dir /data/indices
+      --model lightonai/LateOn-Code-edge --int8
+    reindex_command: python3 scripts/nextplaid/index_codebase.py
+    notes: "CPU-optimized ColBERT/PLAID retrieval. 48-dim token embeddings, MaxSim matching. ~40ms p95 query latency. Complementary to FAISS/BGE episodic memory."
+
   # Development mode - single small model for all roles
   dev:
     frontdoor:

@@ -48,6 +48,12 @@ flowchart TB
         TPR[TwoPhaseRetriever]
     end
 
+    subgraph Retrieval["Code Retrieval Layer"]
+        NP[("NextPLAID<br/>:8088")]
+        CI[(code index<br/>LateOn-Code-edge)]
+        DI[(docs index)]
+    end
+
     %% Entry flow
     REQ --> ROUTE
     ROUTE -->|"simple"| FD
@@ -91,6 +97,13 @@ flowchart TB
     TPR -.->|"suggest target"| ROUTE
     TPR -.->|"suggest escalation"| CP
     TPR -.->|"suggest escalation"| WG
+
+    %% Code retrieval (REPL code_search/doc_search)
+    FD -.->|"code_search()"| NP
+    CP -.->|"code_search()"| NP
+    WG -.->|"code_search()"| NP
+    NP --> CI
+    NP --> DI
 
     %% Styling
     classDef tierA fill:#4CAF50,color:white

@@ -30,6 +30,7 @@ __all__ = [
     "_busy_heavy_ports",
     "_call_orchestrator_with_slot_poll",
     "_erase_slots",
+    "_force_erase_and_verify",
     "_normalize_tool_telemetry",
     "_read_slot_progress",
     "_recover_heavy_ports_if_stuck",
@@ -59,18 +60,18 @@ def _erase_slots(port: int) -> None:
         if strategy == "POST_QUERY":
             resp = httpx.post(
                 f"http://localhost:{port}/slots/{slot_id}?action=erase",
-                timeout=3,
+                timeout=8,
             )
         elif strategy == "GET_QUERY":
             resp = httpx.get(
                 f"http://localhost:{port}/slots/{slot_id}?action=erase",
-                timeout=3,
+                timeout=8,
             )
         elif strategy == "POST_JSON":
             resp = httpx.post(
                 f"http://localhost:{port}/slots/{slot_id}",
                 json={"action": "erase"},
-                timeout=3,
+                timeout=8,
             )
         else:
             return None
@@ -121,8 +122,47 @@ def _erase_slots(port: int) -> None:
                     logger.warning(
                         f"  slot erase unsupported on port {port}; disabling erase attempts"
                     )
-    except Exception:
-        pass  # best-effort cleanup
+    except Exception as e:
+        logger.warning("  [erase-slots] port %d: %s", port, e)
+
+
+def _force_erase_and_verify(
+    port: int, max_attempts: int = 3, verify_delay: float = 1.5,
+) -> bool:
+    """Aggressively erase slots and verify they stopped.
+
+    Unlike ``_erase_slots`` this resets the capability cache so we never
+    skip a port due to stale ``False`` entries, and it retries with
+    verification polling between attempts.
+
+    Returns True if the port is idle after cleanup.
+    """
+    import httpx
+
+    if port <= 0:
+        return True
+    _SLOT_ERASE_CAPABILITY.pop(port, None)
+
+    for attempt in range(1, max_attempts + 1):
+        _erase_slots(port)
+        time.sleep(verify_delay)
+        try:
+            resp = httpx.get(f"http://localhost:{port}/slots", timeout=5)
+            if resp.status_code == 200:
+                slots = resp.json()
+                if not any(s.get("is_processing", False) for s in slots):
+                    logger.info(
+                        "  [force-erase] port %d idle after attempt %d", port, attempt,
+                    )
+                    return True
+        except Exception:
+            pass
+        logger.warning(
+            "  [force-erase] port %d still busy after attempt %d/%d",
+            port, attempt, max_attempts,
+        )
+    logger.warning("  [force-erase] port %d stuck after %d attempts", port, max_attempts)
+    return False
 
 
 def _busy_heavy_ports(timeout_s: float = 2.0) -> list[int]:

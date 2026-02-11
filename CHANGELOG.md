@@ -2,6 +2,7 @@
 
 ## 2026-02-11
 
+- **NextPLAID multi-vector code & doc retrieval**: Deployed NextPLAID (Rust, Apache 2.0) on :8088 with LateOn-Code-edge ColBERT model (48-dim, ONNX INT8). Indexed 460 source files (4,599 chunks) + 140 doc files (1,345 chunks). New REPL tools `code_search()` and `doc_search()` provide token-level code retrieval — complementary to episodic memory `recall()`. 12/12 unit tests, 153/153 REPL regression tests pass. ~40ms p95 query latency, <200MB RAM overhead. See `handoffs/active/nextplaid-code-retrieval.md`.
 - **KV cache pressure / cascading timeouts fix** (resolves handoff `bug-kv-cache-pressure-cascading-timeouts.md`):
   - Differentiated timeouts: workers 30-60s, frontdoor/coder 90-120s, architects 600s (was uniform 600s). Circuit breaker opens 10x faster for stalled workers.
   - Explicit HTTP error codes: chat endpoint returns 502/503/504/429 instead of silent 200 OK. `Retry-After` header on 503.

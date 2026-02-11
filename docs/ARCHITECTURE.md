@@ -190,6 +190,7 @@ Execute decision (retry/escalate/fail)
 | `src/executor.py` | Task execution engine | escalation |
 | `src/repl_environment/` | Sandboxed Python REPL (modular) | - |
 | `src/research_context.py` | REPL tool result DAG tracking | repl_memory (optional) |
+| `src/repl_environment/code_search.py` | Multi-vector code/doc retrieval (NextPLAID) | next-plaid-client |
 | `src/registry_loader.py` | Model registry YAML | - |
 
 ### API Module Structure

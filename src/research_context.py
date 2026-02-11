@@ -38,6 +38,8 @@ TOOL_PREFIXES = {
     "ocr_document": "O",
     "analyze_figure": "A",
     "run_shell": "S",
+    "code_search": "CS",
+    "doc_search": "DS",
 }
 
 DEFAULT_PREFIX = "X"

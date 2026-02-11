@@ -154,12 +154,13 @@ Each <response> must include a <text> and a numeric <probability>.  Please sampl
 
 ### Component Flow
 
-> Last updated: 2026-02-09
+> Last updated: 2026-02-11
 
 ```
 Request:    API(:8000) → AppState → ChatPipeline → REPLExecutor → run_task() → [graph nodes]
 Graph:      orchestration_graph (pydantic-graph) → 7 node classes → LLMPrimitives → [model servers]
 Memory:     EpisodicStore(SQLite) → FAISSStore(4042 vectors) → ParallelEmbedder → BGE pool(:8090-8095)
+Retrieval:  NextPLAID(:8088) → LateOn-Code-edge(ONNX INT8) → code+docs indices(mmap) — multi-vector search
 Escalation: Graph nodes use EscalationPolicy(rules) + MemRL(advisory) via TaskDeps injection
 Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
 Tools:      REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
@@ -197,7 +198,8 @@ REPL:       sanitize_code_unicode() → exec(code) — strips non-ASCII before e
     ├── benchmarks/         # prompts/, results/ (runs/, reviews/)
     ├── handoffs/           # active/, blocked/
     ├── research/           # Research docs & findings
-    ├── scripts/            # benchmark/, session/, hooks/, utils/
+    ├── scripts/            # benchmark/, session/, hooks/, utils/, nextplaid/
+    ├── cache/next-plaid/   # NextPLAID indices (mmap'd, Docker volume)
     └── logs/               # Runtime logs, agent_audit.log
 ```
 
@@ -273,6 +275,7 @@ Every artifact must pass, in order:
 4. **Markdown lint** (`markdownlint`)
 5. **Unit tests** (when applicable)
 6. **Integration tests** (when applicable)
+7. **Index freshness** (`make nextplaid-reindex`) — when NextPLAID is running
 
 Run via `make gates`.
 

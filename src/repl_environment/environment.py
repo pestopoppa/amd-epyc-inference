@@ -26,6 +26,7 @@ from src.repl_environment.unicode_sanitizer import sanitize_code_unicode
 from src.repl_environment.file_tools import _FileToolsMixin
 from src.repl_environment.document_tools import _DocumentToolsMixin
 from src.repl_environment.routing import _RoutingMixin
+from src.repl_environment.code_search import _CodeSearchMixin
 from src.repl_environment.procedure_tools import _ProcedureToolsMixin
 from src.repl_environment.context import _ContextMixin
 from src.repl_environment.state import _StateMixin
@@ -55,6 +56,7 @@ class REPLEnvironment(
     _FileToolsMixin,
     _DocumentToolsMixin,
     _RoutingMixin,
+    _CodeSearchMixin,
     _ProcedureToolsMixin,
     _ContextMixin,
     _StateMixin,
@@ -304,6 +306,9 @@ class REPLEnvironment(
             "web_fetch": self._web_fetch,
             # Memory tools
             "recall": self._recall,
+            # Code & document retrieval (NextPLAID multi-vector search)
+            "code_search": self._code_search,
+            "doc_search": self._doc_search,
             # Session persistence tools
             "mark_finding": self._mark_finding,
             "list_findings": self._list_findings,

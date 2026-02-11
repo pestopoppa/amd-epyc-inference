@@ -449,18 +449,18 @@ def _erase_slots(port: int) -> None:
         if strategy == "POST_QUERY":
             resp = httpx.post(
                 f"http://localhost:{port}/slots/{slot_id}?action=erase",
-                timeout=3,
+                timeout=8,
             )
         elif strategy == "GET_QUERY":
             resp = httpx.get(
                 f"http://localhost:{port}/slots/{slot_id}?action=erase",
-                timeout=3,
+                timeout=8,
             )
         elif strategy == "POST_JSON":
             resp = httpx.post(
                 f"http://localhost:{port}/slots/{slot_id}",
                 json={"action": "erase"},
-                timeout=3,
+                timeout=8,
             )
         else:
             return None
@@ -512,7 +512,48 @@ def _erase_slots(port: int) -> None:
                         f"  slot erase unsupported on port {port}; disabling erase attempts"
                     )
     except Exception as e:
-        pass  # best-effort cleanup
+        logger.warning("  [erase-slots] port %d: %s", port, e)
+
+
+def _force_erase_and_verify(
+    port: int, max_attempts: int = 3, verify_delay: float = 1.5,
+) -> bool:
+    """Aggressively erase slots and verify they stopped.
+
+    Unlike ``_erase_slots`` this resets the capability cache so we never
+    skip a port due to stale ``False`` entries, and it retries with
+    verification polling between attempts.
+
+    Returns True if the port is idle after cleanup.
+    """
+    import httpx
+
+    if port <= 0:
+        return True
+    # Reset capability cache — a previous transient failure should not
+    # permanently disable erase attempts.
+    _SLOT_ERASE_CAPABILITY.pop(port, None)
+
+    for attempt in range(1, max_attempts + 1):
+        _erase_slots(port)
+        time.sleep(verify_delay)
+        try:
+            resp = httpx.get(f"http://localhost:{port}/slots", timeout=5)
+            if resp.status_code == 200:
+                slots = resp.json()
+                if not any(s.get("is_processing", False) for s in slots):
+                    logger.info(
+                        "  [force-erase] port %d idle after attempt %d", port, attempt,
+                    )
+                    return True
+        except Exception:
+            pass
+        logger.warning(
+            "  [force-erase] port %d still busy after attempt %d/%d",
+            port, attempt, max_attempts,
+        )
+    logger.warning("  [force-erase] port %d stuck after %d attempts", port, max_attempts)
+    return False
 
 
 def _busy_heavy_ports(timeout_s: float = 2.0) -> list[int]:
@@ -638,6 +679,33 @@ def _call_orchestrator_with_slot_poll(
                 elapsed = time.perf_counter() - t0
                 break
             except concurrent.futures.TimeoutError:
+                elapsed_now = time.perf_counter() - t0
+
+                # ── Proactive timeout: erase slot before httpx timeout ──
+                # When approaching the timeout, preemptively kill the
+                # server-side generation so the chain (llama.cpp →
+                # orchestrator → httpx) unwinds cleanly and the port is
+                # free for the next strategy.
+                erase_margin = 15
+                if elapsed_now >= timeout - erase_margin and poll_port > 0:
+                    logger.warning(
+                        "  [timeout-erase] %s at %.0fs/%.0fs — erasing port %d",
+                        log_label, elapsed_now, timeout, poll_port,
+                    )
+                    _force_erase_and_verify(poll_port, max_attempts=2, verify_delay=1.0)
+                    # Give httpx a moment to receive the response now
+                    # that the server-side generation is stopped.
+                    try:
+                        resp = fut.result(timeout=12.0)
+                        elapsed = time.perf_counter() - t0
+                    except (concurrent.futures.TimeoutError, Exception):
+                        elapsed = time.perf_counter() - t0
+                        resp = {
+                            "answer": "",
+                            "error": f"timeout after slot erase ({elapsed:.0f}s)",
+                        }
+                    break
+
                 if poll_port <= 0:
                     now_hb = time.perf_counter()
                     if (now_hb - last_heartbeat) >= heartbeat_interval:
@@ -1045,7 +1113,7 @@ def _eval_single_config(
     if error_type == "infrastructure" and resp.get("tokens_generated", 0) == 0:
         target_port = ROLE_PORT.get(role, 0)
         if target_port:
-            _erase_slots(target_port)
+            _force_erase_and_verify(target_port)
         # One recovery retry for zero-token infra failures on heavy paths.
         if port in HEAVY_PORTS and not did_recover_precheck:
             busy_now = _busy_heavy_ports(timeout_s=2.0)
@@ -1273,6 +1341,12 @@ def evaluate_question_3way(
         log_label=ACTION_SELF_DIRECT, format_fn=format_self_direct,
     )
     role_results[f"{self_role}:{self_direct_mode}"] = rr_direct
+
+    # ── Cleanup: ensure port is idle before next strategy ──
+    if rr_direct.error_type == "infrastructure" or rr_direct.error:
+        direct_port = ROLE_PORT.get(self_role, 0)
+        if direct_port in HEAVY_PORTS:
+            _force_erase_and_verify(direct_port)
 
     # ── Configuration 2: SELF:repl ──
     timeout_repl = _adaptive_timeout_s(

@@ -8,7 +8,7 @@
 # Run specific:  make shellcheck
 
 SHELL := /usr/bin/env bash
-.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell
+.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell nextplaid-reindex
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -25,7 +25,7 @@ MD_FILES := $(shell find . -maxdepth 2 -name '*.md' -not -path './tmp/*' -not -p
 all: gates
 
 # Full gate chain (ordered)
-gates: schema shellcheck format lint
+gates: schema shellcheck format lint nextplaid-reindex
 	@echo ""
 	@echo "✅ All gates passed"
 
@@ -200,6 +200,17 @@ bench:
 	@echo "==> bench (stub)"
 	@# Add benchmark harness when needed
 	@echo "  (no benchmarks configured)"
+
+# ── NextPLAID Index ──────────────────────────────────────────────────────────
+
+# Re-index changed files into NextPLAID (skips gracefully if container not running)
+nextplaid-reindex:
+	@echo "==> nextplaid-reindex"
+	@if curl -sf http://localhost:8088/health >/dev/null 2>&1; then \
+		$(PY) scripts/nextplaid/reindex_changed.py && echo "  ✓ nextplaid reindex complete"; \
+	else \
+		echo "  ⚠ NextPLAID not running on :8088 (skipping)"; \
+	fi
 
 # ── Repo Hygiene ──────────────────────────────────────────────────────────────
 
