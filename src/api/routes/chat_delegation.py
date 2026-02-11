@@ -160,6 +160,15 @@ def _parse_architect_decision(response: str) -> dict:
                         raw_answer,
                         re.IGNORECASE,
                     )
+                if not rescue:
+                    # Last resort: find the last D|X (MCQ) in the reasoning.
+                    # Handles models that emit empty D| first, then reason,
+                    # then conclude with D|B at the end.
+                    last_toon = list(re.finditer(
+                        r"D\|([A-D])(?=[^a-zA-Z]|$)", raw_answer
+                    ))
+                    if last_toon:
+                        rescue = last_toon[-1]
                 if rescue:
                     raw_answer = rescue.group(1).upper()
                 # else: keep raw_answer as-is (best effort)

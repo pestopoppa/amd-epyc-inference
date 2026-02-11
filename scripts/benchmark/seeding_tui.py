@@ -54,6 +54,8 @@ _LATEX_INLINE_RE = re.compile(
     r'|(?<![\\])\\\((.+?)\\\)'   # \(...\)
     r'|(?<![\\])\\\[(.+?)\\\]',  # \[...\]
 )
+_LEFT_RIGHT_RE = re.compile(r'\\(?:left|right)\s*')
+_BARE_LATEX_CMD = re.compile(r'\\[a-zA-Z]{2,}')
 
 _flatlatex_converter = None
 
@@ -86,11 +88,39 @@ def _latex_to_unicode(line: str) -> str:
         if not raw:
             return m.group(0)
         try:
-            return conv.convert(raw)
+            result = conv.convert(raw)
+            result = _LEFT_RIGHT_RE.sub('', result)
+            return result
         except Exception:
             return m.group(0)
 
-    return _LATEX_INLINE_RE.sub(_replace, line)
+    result = _LATEX_INLINE_RE.sub(_replace, line)
+    return _convert_bare_latex(result)
+
+
+def _convert_bare_latex(line: str) -> str:
+    """Convert bare LaTeX commands (no $ delimiters) to Unicode.
+
+    Splits on spaces so prose words survive flatlatex's space-eating.
+    Only activates when the line contains at least one \\command.
+    """
+    conv = _get_latex_converter()
+    if conv is None:
+        return line
+    line = _LEFT_RIGHT_RE.sub('', line)
+    if not _BARE_LATEX_CMD.search(line):
+        return line
+    tokens = line.split(' ')
+    out = []
+    for tok in tokens:
+        if _BARE_LATEX_CMD.search(tok) or '^{' in tok or '_{' in tok:
+            try:
+                out.append(conv.convert(tok))
+            except Exception:
+                out.append(tok)
+        else:
+            out.append(tok)
+    return ' '.join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -631,6 +661,7 @@ class SeedingTUI:
             wrapped: list[str] = []
             for paragraph in q_raw.split("\n"):
                 if paragraph.strip():
+                    paragraph = _latex_to_unicode(paragraph)
                     wrapped.extend(textwrap.wrap(paragraph, width=q_wrap_w))
                 else:
                     wrapped.append("")
