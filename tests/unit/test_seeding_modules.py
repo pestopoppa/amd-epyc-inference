@@ -345,13 +345,13 @@ class TestReExportCompatibility:
     """Verify that symbols imported from the hub match what tests expect."""
 
     def test_classify_error_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert v2._classify_error("ReadTimeout: timed out") == "infrastructure"
         assert v2._classify_error(None) == "none"
 
     def test_build_role_mode_combos_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         combos = v2._build_role_mode_combos(
             roles=["frontdoor", "architect_general"],
@@ -364,17 +364,17 @@ class TestReExportCompatibility:
         assert arch_modes == {"direct", "delegated"}
 
     def test_call_orchestrator_forced_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2.call_orchestrator_forced)
 
     def test_evaluate_question_3way_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2.evaluate_question_3way)
 
     def test_checkpoint_functions_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2.checkpoint_result)
         assert callable(v2.append_checkpoint)
@@ -382,41 +382,41 @@ class TestReExportCompatibility:
         assert v2.append_checkpoint is v2.checkpoint_result
 
     def test_three_way_result_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         r = v2.ThreeWayResult(suite="t", question_id="q", prompt="p", expected="e")
         assert r.suite == "t"
 
     def test_scoring_functions_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2.score_answer_deterministic)
         assert callable(v2._is_coding_task)
         assert isinstance(v2.INFRA_PATTERNS, list)
 
     def test_orchestrator_functions_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2._normalize_tool_telemetry)
         assert callable(v2._erase_slots)
         assert isinstance(v2._SLOT_ERASE_CAPABILITY, dict)
 
     def test_injection_functions_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2._inject_3way_rewards_http)
         assert callable(v2._precompute_embedding)
         assert isinstance(v2.EMBEDDER_PORTS, list)
 
     def test_eval_functions_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2._build_role_result)
         assert callable(v2._compute_3way_metadata)
         assert callable(v2._eval_single_config)
 
     def test_legacy_functions_via_hub(self):
-        import seed_specialist_routing_v2 as v2
+        import seed_specialist_routing as v2
 
         assert callable(v2._deduplicate_roles)
         assert callable(v2._modes_for_role)

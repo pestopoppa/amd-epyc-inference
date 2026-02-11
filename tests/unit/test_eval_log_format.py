@@ -454,9 +454,12 @@ class TestEvalLogIntegration:
             "scoring_method": "exact_match",
         }
         with (
-            patch("seed_specialist_routing.call_orchestrator_forced", side_effect=_mock_call_orchestrator),
-            patch("seed_specialist_routing.score_answer_deterministic", return_value=True),
-            patch("seed_specialist_routing._wait_for_heavy_models_idle"),
+            patch("seeding_orchestrator.call_orchestrator_forced", side_effect=_mock_call_orchestrator),
+            patch("seeding_eval.score_answer_deterministic", return_value=True),
+            patch("seeding_eval._wait_for_heavy_models_idle"),
+            patch("seeding_eval._erase_slots"),
+            patch("seeding_eval._force_erase_and_verify", return_value=True),
+            patch("seeding_eval._busy_heavy_ports", return_value=[]),
         ):
             from seed_specialist_routing import evaluate_question_3way
 
