@@ -49,6 +49,26 @@ _UNICODE_REPLACEMENTS: dict[str, str] = {
     # Superscripts/subscripts that break identifiers
     "\u00b2": "**2",  # ² superscript 2
     "\u00b3": "**3",  # ³ superscript 3
+    # Subscript digits (models copy from physics notation like ω₁, E₂)
+    "\u2080": "0",  # ₀
+    "\u2081": "1",  # ₁
+    "\u2082": "2",  # ₂
+    "\u2083": "3",  # ₃
+    "\u2084": "4",  # ₄
+    "\u2085": "5",  # ₅
+    "\u2086": "6",  # ₆
+    "\u2087": "7",  # ₇
+    "\u2088": "8",  # ₈
+    "\u2089": "9",  # ₉
+    # Superscript digits beyond ² and ³
+    "\u2070": "**0",  # ⁰
+    "\u00b9": "**1",  # ¹
+    "\u2074": "**4",  # ⁴
+    "\u2075": "**5",  # ⁵
+    "\u2076": "**6",  # ⁶
+    "\u2077": "**7",  # ⁷
+    "\u2078": "**8",  # ⁸
+    "\u2079": "**9",  # ⁹
 }
 
 # Pre-compile regex for all replaceable chars
