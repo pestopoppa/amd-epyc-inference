@@ -268,6 +268,7 @@ class REPLEnvironment(
 
         globals_dict = {
             "__builtins__": safe_builtins,
+            "__name__": "__main__",  # Needed for class definitions in exec()
             # Context variables
             "context": self.context,
             "artifacts": self.artifacts,

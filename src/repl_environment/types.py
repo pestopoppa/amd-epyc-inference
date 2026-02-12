@@ -239,6 +239,8 @@ class REPLConfig:
                 "FileNotFoundError",
                 "IOError",
                 "OSError",
+                # Internals (needed for class/super in exec())
+                "__build_class__",
                 # Constants
                 "True",
                 "False",
