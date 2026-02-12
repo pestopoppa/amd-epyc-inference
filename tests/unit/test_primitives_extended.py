@@ -46,6 +46,8 @@ class TestRecursionDepthLimit:
             skip_suffix=False,
             stop_sequences=None,
             persona=None,
+            json_schema=None,
+            grammar=None,
         ):
             # Call llm_call again (which will check recursion depth)
             if prims._recursion_depth < 5:  # Try to exceed limit of 2

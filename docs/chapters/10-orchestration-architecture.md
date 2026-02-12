@@ -153,6 +153,7 @@ User Request
 - Repetition loop detected (entropy spike)
 - Context size exceeds model limit
 - Explicit `max_escalation_level` in TaskIR
+- THINK_HARDER exhausted on penultimate retry (see [Pipeline Intelligence](#pipeline-intelligence-february-2026))
 
 **Implementation** (as of 2026-02-07): The escalation loop is driven by `src/graph/` — a pydantic-graph `Graph` with 7 node classes. Each node encodes valid transitions in its Union return type (e.g., `CoderNode.run()` returns `CoderNode | ArchitectNode | End[TaskResult]`). The graph replaces the manual for-loop in `repl_executor.py` and wires MemRL anti-memory functions (see [Chapter 15](15-memrl-system.md) and [Chapter 18](18-escalation-and-routing.md)).
 
@@ -326,6 +327,82 @@ Models sometimes generate natural-language role names in `delegate()` and `escal
 3. **Verification gates** replace consensus
 4. **Explicit routing** prevents over-thinking
 
+## Pipeline Intelligence (February 2026)
+
+Three optimizations that improve speed and quality without changing the core graph structure. Each acts as a wrapper around the existing escalation flow.
+
+### Try-Cheap-First Speculative Pre-Filter
+
+Before the normal pipeline, a speculative attempt with the 7B worker model (44 t/s) is tried. If it passes the quality gate, the response is returned at 2-3x normal speed. On failure, the result is discarded and the request falls through to the normal pipeline with no penalty.
+
+```
+Request
+   │
+   ▼
+┌─────────────────────────────────────────────────────────────┐
+│  SPECULATIVE PRE-FILTER (worker_explore, 7B @ 44 t/s)      │
+│                                                             │
+│  • Single-turn attempt, no REPL, no escalation              │
+│  • Quality gate: MemRL Q-score + length/coherence checks    │
+│  • Pass → return immediately (2-3x faster)                  │
+│  • Fail → discard, fall through to normal pipeline          │
+└─────────────────────────────────────────────────────────────┘
+   │ [quality gate failed]
+   ▼
+Normal Pipeline (frontdoor → coder → architect)
+```
+
+**Rollout phases**:
+
+| Phase | Gate Logic | Purpose |
+|-------|-----------|---------|
+| **A** | All requests attempted | Bootstrap Q-value data for MemRL |
+| **B** | MemRL Q-value gated | Only attempt when Q-score predicts success |
+| **C** | Fully learned | Adaptive threshold from accumulated rewards |
+
+**Parallel in Claude's stack**: This mirrors Anthropic's Haiku -> Sonnet -> Opus tier routing, where cheap models handle easy requests and expensive models are reserved for hard ones. The key difference is that our pre-filter runs speculatively (try-and-verify) rather than classifying upfront.
+
+Feature flag: `try_cheap_first`.
+
+### Think-Harder Escalation
+
+New `THINK_HARDER` action fires on the penultimate retry (one attempt before model escalation). Instead of immediately escalating to a more expensive model, the same model is re-invoked with an enhanced configuration:
+
+- **2x token budget** (doubled `max_tokens`)
+- **Chain-of-thought prefix** injected into the system prompt
+- **Slightly higher temperature** (0.7 -> 0.85) for more diverse reasoning
+
+This often matches the quality of the next-tier model at 6x the speed. The action is inserted into the retry logic in each graph node: when `consecutive_failures == max_retries - 1` and the error category is `CODE` or `LOGIC`, `THINK_HARDER` fires instead of a normal retry.
+
+```
+Retry sequence (max_retries=3):
+  Attempt 1 → fail → retry (same config)
+  Attempt 2 → fail → THINK_HARDER (2x budget, CoT, higher temp)
+  Attempt 3 → fail → escalate to next tier
+```
+
+**Parallel in Claude's stack**: Analogous to Claude's extended thinking (`budget_tokens`), where the same model is given more compute before falling back to a different approach.
+
+Feature flag: `think_harder`.
+
+### Streaming Tool Use
+
+Token-level SSE (Server-Sent Events) streaming during REPL execution, providing real-time visibility into LLM generation and tool invocations.
+
+**New SSE event types**:
+
+| Event | Payload | When |
+|-------|---------|------|
+| `tool_start_event` | `{tool_name, args_preview}` | Tool registry dispatches a tool call |
+| `tool_end_event` | `{tool_name, elapsed_ms, success}` | Tool execution completes |
+| `token` | `{text, role}` | Each generated token during `llm_call_stream()` |
+
+**Implementation**: `llm_call_stream()` method on `LLMPrimitives` yields tokens incrementally via the llama.cpp `/completion` endpoint with `stream: true`. The chat pipeline wraps this in SSE frames (`text/event-stream`) so the TUI and API clients can display partial output. Tool events are emitted by the `ToolRegistry` dispatch hooks added alongside the existing `InvocationRecord` logging.
+
+**Integration point**: The REPL executor (`src/api/routes/chat_pipeline/repl_executor.py`) can optionally yield SSE events instead of buffering the full response. Callers opt in via `Accept: text/event-stream` header.
+
+Feature flag: `streaming_tool_use`.
+
 ## Cross-Cutting Concerns (February 2026)
 
 Eight concepts from OpenClaw and Lobster were integrated behind feature flags. All default off.
@@ -378,7 +455,7 @@ The orchestration layer is implemented in:
 - `src/prompt_builders/` - Prompt construction package (7 sub-modules: types, constants, builder, review, code_utils, formatting, resolver)
 - `orchestration/prompts/` - Hot-swappable prompt templates (18 .md files, read on every request via `resolve_prompt()`)
 - `src/gate_runner.py` - Verification gate execution (sequential + parallel via `asyncio.gather()`)
-- `src/features.py` - Feature flag system with dataclass validation (8 concept-integration flags added 2026-02-08)
+- `src/features.py` - Feature flag system with dataclass validation (8 concept-integration flags + 3 pipeline intelligence flags)
 - `src/config.py` - Centralized configuration (~185 values)
 - `src/llm_cache.py` - Content-addressable LLM response cache
 - `src/routing_bindings.py` - Priority-ordered routing bindings

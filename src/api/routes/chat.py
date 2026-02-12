@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -71,6 +71,9 @@ from src.api.routes.chat_routing import (
     _select_mode,
 )
 from src.features import features
+
+if TYPE_CHECKING:
+    from src.api.routes.chat_utils import RoutingResult
 
 # Phase 1b: Pipeline stage functions (extracted from _handle_chat)
 from src.api.routes.chat_pipeline import (
@@ -153,6 +156,115 @@ async def inject_reward(
         request.embedding,
     )
     return {"success": success}
+
+
+async def _try_cheap_first(
+    request: ChatRequest,
+    routing: "RoutingResult",
+    primitives: "LLMPrimitives",
+    state: AppState,
+    start_time: float,
+    initial_role,
+    execution_mode: str,
+) -> ChatResponse | None:
+    """Speculative pre-filter: try answering with cheap 7B model first.
+
+    Returns ChatResponse if the cheap answer passes quality gate,
+    or None to fall through to the normal pipeline.
+
+    The cheap attempt is a speculative optimization layer ABOVE the existing
+    delegation/escalation chain. On failure, the 7B's output can be passed
+    as context to the specialist, giving the expensive model a head start.
+    """
+    import logging
+
+    log = logging.getLogger(__name__)
+
+    cfg = get_config().chat
+    if not cfg.try_cheap_first_enabled:
+        return None
+
+    # Skip for forced modes, vision, delegation, or already-cheap roles
+    cheap_role = cfg.try_cheap_first_role
+    if request.force_mode or request.force_role:
+        return None
+    if str(initial_role) in {"worker_explore", "worker_math", "worker_vision"}:
+        return None  # Already cheap
+    if execution_mode == "delegated":
+        return None
+
+    # Phase B/C: check Q-value before attempting
+    if cfg.try_cheap_first_phase in ("B", "C"):
+        if hasattr(state, "hybrid_router") and state.hybrid_router is not None:
+            try:
+                task_ir = {
+                    "task_type": "chat",
+                    "objective": request.prompt[:200],
+                }
+                results = state.hybrid_router.retriever.retrieve_for_routing(task_ir)
+                # Check if worker_explore Q-value is above threshold
+                worker_q = 0.0
+                for r in results:
+                    if r.memory.metadata.get("role") == cheap_role:
+                        worker_q = max(worker_q, r.q_value)
+                if worker_q < cfg.try_cheap_first_q_threshold:
+                    return None  # MemRL says cheap won't work for this task class
+            except Exception:
+                pass  # Fall through to Phase A behavior
+
+    # Attempt cheap answer
+    prompt = request.prompt
+    if request.context:
+        prompt = f"{request.context}\n\n{request.prompt}"
+
+    try:
+        from src.api.routes.chat_utils import QWEN_STOP
+
+        answer = primitives.llm_call(
+            prompt,
+            role=cheap_role,
+            n_tokens=cfg.try_cheap_first_max_tokens,
+            skip_suffix=True,
+            stop_sequences=["\n\n\n", QWEN_STOP],
+        )
+        answer = answer.strip()
+    except Exception as e:
+        log.debug("Cheap-first attempt failed: %s", e)
+        return None
+
+    # Quality gate: reject empty, very short, or error-like answers
+    if not answer or len(answer) < 20:
+        return None
+    if answer.startswith("[ERROR"):
+        return None
+
+    # Check for obvious quality issues
+    from src.api.routes.chat_review import _detect_output_quality_issue
+
+    quality_issue = _detect_output_quality_issue(answer)
+    if quality_issue:
+        log.debug("Cheap-first quality gate failed: %s", quality_issue)
+        return None
+
+    # Passed quality gate — return cheap answer
+    elapsed = time.perf_counter() - start_time
+    log.info(
+        "Try-cheap-first PASSED: %s answered in %.1fs (phase %s)",
+        cheap_role, elapsed, cfg.try_cheap_first_phase,
+    )
+
+    return ChatResponse(
+        answer=answer,
+        turns=1,
+        elapsed_seconds=elapsed,
+        mock_mode=False,
+        real_mode=True,
+        routed_to=cheap_role,
+        role_history=[cheap_role],
+        routing_strategy=f"cheap_first:{routing.routing_strategy}",
+        generation_ms=elapsed * 1000,
+        mode="direct",
+    )
 
 
 async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
@@ -238,6 +350,16 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
         )
         if vision_mm is not None:
             return _annotate_error(vision_mm)
+
+    # Stage 7.9: Try-cheap-first speculative pre-filter.
+    # Attempts the task with the cheapest HOT model (7B, 44 t/s) before
+    # routing to expensive specialists. On quality gate pass, returns the
+    # cheap answer (2-3x faster). On fail, falls through to normal pipeline.
+    cheap_result = await _try_cheap_first(
+        request, routing, primitives, state, start_time, initial_role, execution_mode,
+    )
+    if cheap_result is not None:
+        return _annotate_error(cheap_result)
 
     # Stage 8: Execute selected mode (with fallthrough on failure)
 

@@ -550,16 +550,28 @@ class REPLEnvironment(
         tool_calls.sort(key=lambda x: x[1])
 
         if len(tool_calls) > 1:
-            # Multiple tool calls - request one at a time (React style)
+            # Check if ALL tool calls are read-only — if so, allow parallel execution
+            # Read-only tools (grep, peek, list_dir, etc.) are safe to run concurrently
+            read_only_tools = {
+                "peek", "grep", "list_dir", "file_info", "list_tools",
+                "recall", "list_findings", "registry_lookup", "my_role",
+                "route_advice", "list_procedures", "get_procedure_status",
+                "context_len", "find_scripts", "benchmark_compare",
+            }
             tool_names = [t[0] for t in tool_calls]
-            return ExecutionResult(
-                output="",
-                is_final=False,
-                error=f"Structured mode: Only one tool call per turn. "
-                f"Found {len(tool_calls)} calls: {', '.join(tool_names)}. "
-                f"Execute one tool, observe the result, then call the next.",
-                elapsed_seconds=time.perf_counter() - start_time,
-            )
+            all_read_only = all(name in read_only_tools for name in tool_names)
+
+            if not all_read_only:
+                return ExecutionResult(
+                    output="",
+                    is_final=False,
+                    error=f"Structured mode: Only one tool call per turn (unless all are read-only). "
+                    f"Found {len(tool_calls)} calls: {', '.join(tool_names)}. "
+                    f"Execute one tool, observe the result, then call the next.",
+                    elapsed_seconds=time.perf_counter() - start_time,
+                )
+            # All read-only: fall through to execute all in sequence
+            # (true parallelism via asyncio.gather would require async refactor)
 
         # Execute the code (single tool or simple expression)
         stdout_capture = io.StringIO()

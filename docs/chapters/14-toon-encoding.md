@@ -86,6 +86,14 @@ Each encoder targets a specific orchestration data shape:
 
 **Heuristic gating**: `should_use_toon()` returns `True` only for arrays with 3+ uniform objects, preventing overhead on small or non-uniform data.
 
+### Activated Escalation Encoding
+
+`encode_escalation_context()` in `toon_encoder.py` is now wired into escalation paths (graph node escalation and multi-step failure chains). Escalation metadata -- failure context, role history, prior attempts -- compresses at ~55% token reduction via TOON's tabular encoding. Previously, escalation context was passed as raw JSON dicts. The integration point is the escalation node's context builder, which calls `encode_escalation_context()` before injecting context into the architect prompt.
+
+### Grammar-Constrained Output Bypass
+
+When `json_schema` or `grammar` is passed to `InferenceRequest`, the formalization post-processing step (TOON decode + re-encode cycle) can be skipped. Grammar-constrained outputs are already structurally valid -- running them through formalization is redundant work and risks mangling the constrained output. The bypass is automatic: if the request carries a schema/grammar field, the response pipeline short-circuits past the TOON formalization stage.
+
 ## Performance Results
 
 ### Token Reduction by Scenario

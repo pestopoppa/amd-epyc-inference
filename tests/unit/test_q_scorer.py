@@ -146,10 +146,15 @@ class TestComputeRewardNoCost:
 # ===== _compute_reward with cost metrics =====
 
 
+def _latency_only_config(**overrides) -> ScoringConfig:
+    """Config with quality-gap and memory penalties zeroed (isolate latency tests)."""
+    return ScoringConfig(cost_lambda_quality_gap=0.0, cost_lambda_memory=0.0, **overrides)
+
+
 class TestComputeRewardWithCost:
     def test_at_expected_speed_no_penalty(self):
-        """Running at exactly baseline speed → cost_ratio=1.0 → no penalty."""
-        s = _scorer()
+        """Running at exactly baseline speed → cost_ratio=1.0 → no latency penalty."""
+        s = _scorer(_latency_only_config())
         # frontdoor at 18.3 t/s, 183 tokens in 10s → exactly expected
         cost = {"tokens_generated": 183, "elapsed_seconds": 10.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
@@ -157,7 +162,7 @@ class TestComputeRewardWithCost:
 
     def test_faster_than_expected_no_penalty(self):
         """Running faster than baseline → cost_ratio < 1.0 → no penalty."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         # frontdoor at 18.3 t/s, 183 tokens in 5s → 2x faster
         cost = {"tokens_generated": 183, "elapsed_seconds": 5.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
@@ -165,7 +170,7 @@ class TestComputeRewardWithCost:
 
     def test_slower_than_expected_penalized(self):
         """Running 2x slower → cost_ratio=2.0 → penalty = 0.15 * (2.0 - 1.0) = 0.15."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         # frontdoor at 18.3 t/s, 183 tokens in 20s → 2x slower
         cost = {"tokens_generated": 183, "elapsed_seconds": 20.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
@@ -173,42 +178,42 @@ class TestComputeRewardWithCost:
 
     def test_much_slower_higher_penalty(self):
         """Running 5x slower → penalty = 0.15 * 4.0 = 0.60."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         cost = {"tokens_generated": 183, "elapsed_seconds": 50.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
         assert r == pytest.approx(0.4)  # 1.0 - 0.60
 
     def test_incorrect_no_cost_penalty(self):
         """Failed tasks get failure_reward regardless of cost."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         cost = {"tokens_generated": 183, "elapsed_seconds": 100.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("failure"), [], [], cost_metrics=cost)
         assert r == -0.5  # No cost penalty applied (reward <= 0)
 
     def test_unknown_role_no_penalty(self):
         """Unknown role has no baseline → no cost penalty."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         cost = {"tokens_generated": 100, "elapsed_seconds": 100.0, "role": "unknown_role"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
         assert r == 1.0
 
     def test_zero_tokens_no_penalty(self):
         """Zero tokens_generated → skip cost computation."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         cost = {"tokens_generated": 0, "elapsed_seconds": 10.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
         assert r == 1.0
 
     def test_zero_elapsed_no_penalty(self):
         """Zero elapsed → skip cost computation (avoid division by zero)."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         cost = {"tokens_generated": 100, "elapsed_seconds": 0.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
         assert r == 1.0
 
     def test_cost_plus_gate_penalties_stack(self):
         """Cost penalty stacks with gate failure penalties."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         # 2x slower + 1 gate failure
         cost = {"tokens_generated": 183, "elapsed_seconds": 20.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [_make_gate_fail()], [], cost_metrics=cost)
@@ -217,7 +222,7 @@ class TestComputeRewardWithCost:
 
     def test_clamp_lower_bound(self):
         """Extreme cost penalty clamped to -1.0."""
-        cfg = ScoringConfig(cost_penalty_lambda=10.0)  # Very aggressive
+        cfg = _latency_only_config(cost_penalty_lambda=10.0)  # Very aggressive
         s = _scorer(cfg)
         cost = {"tokens_generated": 183, "elapsed_seconds": 50.0, "role": "frontdoor"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
@@ -225,7 +230,7 @@ class TestComputeRewardWithCost:
 
     def test_custom_lambda(self):
         """Custom lambda changes penalty magnitude."""
-        cfg = ScoringConfig(cost_penalty_lambda=0.5)
+        cfg = _latency_only_config(cost_penalty_lambda=0.5)
         s = _scorer(cfg)
         # 2x slower with lambda=0.5 → penalty = 0.5 * 1.0 = 0.5
         cost = {"tokens_generated": 183, "elapsed_seconds": 20.0, "role": "frontdoor"}
@@ -233,8 +238,8 @@ class TestComputeRewardWithCost:
         assert r == pytest.approx(0.5)
 
     def test_architect_role_slower_baseline(self):
-        """Architect (6.75 t/s) at expected speed → no penalty."""
-        s = _scorer()
+        """Architect (6.75 t/s) at expected speed → no latency penalty."""
+        s = _scorer(_latency_only_config())
         # 675 tokens at 6.75 t/s → 100s expected; actual 100s
         cost = {"tokens_generated": 675, "elapsed_seconds": 100.0, "role": "architect_general"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
@@ -242,7 +247,7 @@ class TestComputeRewardWithCost:
 
     def test_architect_role_2x_slower(self):
         """Architect at 2x slower → penalty = 0.15 * 1.0 = 0.15."""
-        s = _scorer()
+        s = _scorer(_latency_only_config())
         cost = {"tokens_generated": 675, "elapsed_seconds": 200.0, "role": "architect_general"}
         r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
         assert r == pytest.approx(0.85)
@@ -466,3 +471,82 @@ class TestComparativeRewardsCostAware:
         }
         rewards = fn(results)
         assert rewards["architect_general:direct"] == 0.1  # Floored
+
+
+# ===== Multi-dimensional cost model tests =====
+
+
+class TestMultiDimensionalCost:
+    """Test quality-gap and memory-tier cost dimensions."""
+
+    def test_config_has_quality_baselines(self):
+        cfg = ScoringConfig()
+        assert "architect_general" in cfg.baseline_quality_by_role
+        assert "worker_explore" in cfg.baseline_quality_by_role
+        assert cfg.baseline_quality_by_role["architect_general"] > cfg.baseline_quality_by_role["worker_explore"]
+
+    def test_config_has_memory_costs(self):
+        cfg = ScoringConfig()
+        assert cfg.memory_cost_by_role["worker_explore"] < 1.0  # Small model
+        assert cfg.memory_cost_by_role["architect_general"] > 1.0  # WARM tier
+
+    def test_quality_gap_penalty_architect(self):
+        """Architect (quality=0.94) gets penalized for quality gap above 0.75 baseline."""
+        s = _scorer()
+        # At expected speed, no latency penalty
+        cost = {"tokens_generated": 675, "elapsed_seconds": 100.0, "role": "architect_general"}
+        r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
+        # quality_gap = 0.94 - 0.75 = 0.19, penalty = 0.10 * 0.19 = 0.019
+        # memory_cost = 3.0, penalty = 0.05 * (3.0 - 1.0) = 0.10
+        # total = 1.0 - 0.019 - 0.10 = 0.881
+        assert r < 1.0  # Should be penalized
+        assert r > 0.8  # But not too much
+
+    def test_quality_gap_penalty_worker(self):
+        """Worker (quality=0.745) has minimal quality gap penalty."""
+        s = _scorer()
+        cost = {"tokens_generated": 279, "elapsed_seconds": 10.0, "role": "worker_explore"}
+        r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
+        # quality_gap = max(0, 0.745 - 0.75) = 0.0 → no quality penalty
+        # memory_cost = 0.5 < 1.0 → no memory penalty
+        assert r == 1.0  # No penalty at all for worker at expected speed
+
+    def test_memory_tier_penalty_warm(self):
+        """WARM tier models (architect) get memory penalty."""
+        cfg = ScoringConfig(cost_penalty_lambda=0.0, cost_lambda_quality_gap=0.0)
+        s = _scorer(cfg)
+        # Isolate memory penalty only (zero out other dimensions)
+        cost = {"tokens_generated": 675, "elapsed_seconds": 100.0, "role": "architect_general"}
+        r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
+        # memory_cost = 3.0, penalty = 0.05 * (3.0 - 1.0) = 0.10
+        assert r == pytest.approx(0.9)
+
+    def test_memory_tier_no_penalty_hot(self):
+        """HOT tier models (worker) have no memory penalty."""
+        cfg = ScoringConfig(cost_penalty_lambda=0.0, cost_lambda_quality_gap=0.0)
+        s = _scorer(cfg)
+        cost = {"tokens_generated": 279, "elapsed_seconds": 10.0, "role": "worker_explore"}
+        r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=cost)
+        assert r == 1.0  # No memory penalty for HOT
+
+    def test_worker_beats_architect_on_simple_task(self):
+        """Worker on simple task should get higher reward than architect."""
+        s = _scorer()
+        # Worker at expected speed, correct
+        worker_cost = {"tokens_generated": 279, "elapsed_seconds": 10.0, "role": "worker_explore"}
+        worker_r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=worker_cost)
+
+        # Architect at expected speed, correct — but quality gap + memory penalty
+        arch_cost = {"tokens_generated": 675, "elapsed_seconds": 100.0, "role": "architect_general"}
+        arch_r = s._compute_reward(_make_outcome("success"), [], [], cost_metrics=arch_cost)
+
+        assert worker_r > arch_r, (
+            f"Worker reward ({worker_r}) should beat architect ({arch_r}) on simple correct tasks"
+        )
+
+    def test_no_quality_memory_penalty_on_failure(self):
+        """Quality and memory penalties only apply to correct answers."""
+        s = _scorer()
+        cost = {"tokens_generated": 675, "elapsed_seconds": 100.0, "role": "architect_general"}
+        r = s._compute_reward(_make_outcome("failure"), [], [], cost_metrics=cost)
+        assert r == -0.5  # Pure failure reward, no cost penalty

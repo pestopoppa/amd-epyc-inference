@@ -73,6 +73,37 @@ class ScoringConfig:
         "vision_escalation": 27.6,
     })
 
+    # Per-role quality baselines (from RESULTS.md relative benchmark scores).
+    # Used for quality-gap penalty: penalize using expensive model when cheap suffices.
+    baseline_quality_by_role: Dict[str, float] = field(default_factory=lambda: {
+        "frontdoor": 0.895,
+        "coder_primary": 0.895,
+        "coder_escalation": 0.915,
+        "architect_general": 0.94,
+        "architect_coding": 0.885,
+        "worker_explore": 0.745,
+        "worker_math": 0.85,
+        "worker_vision": 0.81,
+    })
+
+    # Per-role memory tier cost (normalized: 1.0 = HOT baseline ~20GB).
+    # WARM tier models incur mmap load penalty and higher memory pressure.
+    memory_cost_by_role: Dict[str, float] = field(default_factory=lambda: {
+        "frontdoor": 1.0,         # 19GB, HOT
+        "coder_primary": 1.0,     # 20GB, HOT
+        "coder_escalation": 1.05, # 20GB, HOT
+        "worker_explore": 0.5,    # 4.4GB, HOT
+        "worker_math": 0.5,       # 4.4GB, HOT
+        "architect_general": 3.0,  # 133GB, WARM (mmap load penalty)
+        "architect_coding": 5.0,   # 271GB, WARM (huge)
+        "ingest_long_context": 1.5, # 46GB, WARM
+    })
+
+    # Multi-dimensional cost weights (tunable).
+    # cost_lambda_latency is the existing cost_penalty_lambda.
+    cost_lambda_quality_gap: float = 0.10  # Penalize using higher-quality model than needed
+    cost_lambda_memory: float = 0.05       # Penalize WARM tier when HOT sufficient
+
     # Scoring frequency
     min_score_interval_seconds: int = 300  # 5 minutes
 
@@ -307,11 +338,27 @@ class QScorer:
             else:
                 elapsed = cost_metrics.get("elapsed_seconds", 0)
 
+            # Dimension 1: Latency penalty (existing)
             if baseline_tps > 0 and tokens_gen > 0 and elapsed > 0:
                 expected_elapsed = tokens_gen / baseline_tps
                 cost_ratio = elapsed / expected_elapsed  # >1 = slower than expected
                 cost_penalty = self.config.cost_penalty_lambda * max(0.0, cost_ratio - 1.0)
                 reward -= cost_penalty
+
+            # Dimension 2: Quality gap penalty — penalize using expensive model
+            # when a cheaper one could suffice. If worker (0.745) got it right,
+            # architect (0.94) was wasteful. Gap is relative to worker baseline.
+            if role in self.config.baseline_quality_by_role:
+                model_quality = self.config.baseline_quality_by_role[role]
+                quality_gap = max(0.0, model_quality - 0.75)  # 0.75 ≈ worker baseline
+                reward -= self.config.cost_lambda_quality_gap * quality_gap
+
+            # Dimension 3: Memory tier penalty — discourage WARM models when HOT
+            # tier can handle the task. Reduces memory pressure on the system.
+            if role in self.config.memory_cost_by_role:
+                mem_cost = self.config.memory_cost_by_role[role]
+                if mem_cost > 1.0:
+                    reward -= self.config.cost_lambda_memory * (mem_cost - 1.0)
 
         # Final reward (clamped to [-1, 1])
         return max(-1.0, min(1.0, reward))

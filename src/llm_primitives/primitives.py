@@ -161,6 +161,8 @@ class LLMPrimitives(
         skip_suffix: bool = False,
         stop_sequences: list[str] | None = None,
         persona: str | None = None,
+        json_schema: dict | None = None,
+        grammar: str | None = None,
     ) -> str:
         """Call a sub-LM with optional context slice.
 
@@ -176,6 +178,8 @@ class LLMPrimitives(
             persona: Optional persona name (e.g., "security_auditor"). When set and
                 the personas feature is enabled, injects the persona's system prompt
                 before the user prompt.
+            json_schema: Optional JSON schema to constrain output structure.
+            grammar: Optional GBNF grammar for constrained generation.
 
         Returns:
             Sub-LM response (capped at output_cap chars).
@@ -197,7 +201,8 @@ class LLMPrimitives(
 
         try:
             return self._llm_call_impl(
-                prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences, persona
+                prompt, context_slice, role, n_tokens, skip_suffix, stop_sequences,
+                persona, json_schema, grammar,
             )
         finally:
             self._recursion_depth -= 1
@@ -211,6 +216,8 @@ class LLMPrimitives(
         skip_suffix: bool = False,
         stop_sequences: list[str] | None = None,
         persona: str | None = None,
+        json_schema: dict | None = None,
+        grammar: str | None = None,
     ) -> str:
         """Internal implementation of llm_call (after recursion check)."""
         start_time = time.perf_counter()
@@ -258,7 +265,10 @@ class LLMPrimitives(
             if self.mock_mode:
                 result = self._mock_call(full_prompt, role)
             else:
-                result = self._real_call(full_prompt, role, n_tokens, stop_sequences)
+                result = self._real_call(
+                    full_prompt, role, n_tokens, stop_sequences,
+                    json_schema=json_schema, grammar=grammar,
+                )
 
             # Cap output
             if len(result) > self.config.output_cap:
@@ -288,6 +298,55 @@ class LLMPrimitives(
             log_entry.elapsed_seconds = time.perf_counter() - start_time
             self.call_log.append(log_entry)
             return f"[ERROR: {e}]"
+
+    def llm_call_stream(
+        self,
+        prompt: str,
+        role: str = "worker",
+        n_tokens: int | None = None,
+        stop_sequences: list[str] | None = None,
+    ):
+        """Stream tokens from a sub-LM call.
+
+        Yields individual tokens as they are generated. Useful for
+        real-time streaming in the REPL loop.
+
+        Args:
+            prompt: The prompt for the sub-LM.
+            role: Role determining which model to use.
+            n_tokens: Max tokens to generate.
+            stop_sequences: Optional stop sequences.
+
+        Yields:
+            str: Individual tokens as generated.
+        """
+        # Check for streaming backend support
+        backend = self._backends.get(role) if hasattr(self, "_backends") else None
+        if backend is not None and hasattr(backend, "infer_stream_text"):
+            from src.model_server import InferenceRequest
+            from src.config import get_config
+
+            role_timeout = get_config().timeouts.role_timeouts_dict().get(
+                role, self.config.call_timeout
+            )
+            request = InferenceRequest(
+                role=role,
+                prompt=prompt,
+                n_tokens=n_tokens or -1,
+                timeout=role_timeout,
+                stop_sequences=stop_sequences,
+                cache_prompt=getattr(self, "cache_prompt", True),
+                stream=True,
+            )
+            from src.inference_lock import inference_lock
+
+            with inference_lock(role):
+                for chunk in backend.infer_stream_text(None, request):
+                    yield chunk.text if hasattr(chunk, "text") else str(chunk)
+        else:
+            # Fallback: non-streaming call, yield entire result at once
+            result = self.llm_call(prompt, role=role, n_tokens=n_tokens, stop_sequences=stop_sequences)
+            yield result
 
     def llm_batch(
         self,

@@ -628,6 +628,25 @@ class ClaudeDebugger:
             parts.append(f"- **Role history**: {' → '.join(diag.get('role_history', []))}")
             parts.append(f"- **Tools**: {diag.get('tools_used', 0)} ({', '.join(diag.get('tools_called', []))})")
 
+            # Orchestrator intelligence tunables (only show when relevant)
+            cost_dims = diag.get("cost_dimensions", {})
+            if cost_dims:
+                dims_str = ", ".join(f"{k}={v:.3f}" for k, v in cost_dims.items())
+                parts.append(f"- **Cost dimensions**: {dims_str}")
+            if diag.get("think_harder_attempted"):
+                th_result = "succeeded" if diag.get("think_harder_succeeded") else "failed→escalated"
+                parts.append(f"- **Think-harder**: attempted, {th_result}")
+            if diag.get("cheap_first_attempted"):
+                cf_result = "passed quality gate" if diag.get("cheap_first_passed") else "failed→normal pipeline"
+                parts.append(f"- **Cheap-first**: attempted, {cf_result}")
+            if diag.get("grammar_enforced"):
+                parts.append("- **Grammar**: GBNF-constrained generation active")
+            if diag.get("parallel_tools_used"):
+                parts.append("- **Parallel tools**: read-only tools executed in parallel")
+            affinity = diag.get("cache_affinity_bonus", 0.0)
+            if affinity > 0:
+                parts.append(f"- **Cache affinity**: +{affinity:.0%} bonus applied")
+
             tap_off = diag.get("tap_offset_bytes", 0)
             tap_len = diag.get("tap_length_bytes", 0)
             if tap_len > 0:

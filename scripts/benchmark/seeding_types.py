@@ -199,6 +199,15 @@ class RoleResult:
     # REPL tap byte range (code execution output/errors)
     repl_tap_offset_bytes: int = 0
     repl_tap_length_bytes: int = 0
+    # New tunable fields (orchestrator intelligence improvements)
+    cost_dimensions: dict[str, float] = field(default_factory=dict)
+    think_harder_attempted: bool = False
+    think_harder_succeeded: bool | None = None
+    cheap_first_attempted: bool = False
+    cheap_first_passed: bool | None = None
+    grammar_enforced: bool = False
+    parallel_tools_used: bool = False
+    cache_affinity_bonus: float = 0.0
 
 
 @dataclass

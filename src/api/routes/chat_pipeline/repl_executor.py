@@ -279,6 +279,17 @@ async def _execute_repl(
 
     # If max turns reached without FINAL() and graph returned empty
     if not answer:
+        # Try rescue: extract answer from last LLM output before generating error
+        last_output = task_state.last_output
+        if last_output:
+            from src.graph.nodes import _rescue_from_last_output
+
+            rescued = _rescue_from_last_output(last_output)
+            if rescued:
+                log.info("Post-graph rescue: %r", rescued[:100])
+                answer = rescued
+
+    if not answer:
         last_output = task_state.last_output
         tool_outputs = repl.artifacts.get("_tool_outputs", [])
         cleaned_output = _strip_tool_outputs(last_output, tool_outputs) if last_output else ""

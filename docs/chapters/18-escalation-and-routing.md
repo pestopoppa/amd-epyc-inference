@@ -12,10 +12,14 @@ As of 2026-02-07, the legacy `FailureRouter` and `RoutingFacade` have been delet
 
 ```python
 class EscalationAction(str, Enum):
-    RETRY = "retry"      # Retry with same role
-    ESCALATE = "escalate"  # Escalate to next tier
-    FAIL = "fail"        # Terminal failure
-    SKIP = "skip"        # Skip the gate/step (optional gates only)
+    RETRY = "retry"          # Retry with same role
+    THINK_HARDER = "think_harder"  # Same model, boosted config (CoT, 2x tokens)
+    ESCALATE = "escalate"    # Escalate to next tier
+    DELEGATE = "delegate"    # Route DOWN to a specific lower-tier role
+    REVIEW = "review"        # Quality check by higher-tier model
+    FAIL = "fail"            # Terminal failure
+    SKIP = "skip"            # Skip the gate/step (optional gates only)
+    EXPLORE = "explore"      # Fall back to REPL exploration (terminal roles)
 
 class ErrorCategory(str, Enum):
     CODE = "code"              # Syntax/type errors, test failures
@@ -30,16 +34,38 @@ class ErrorCategory(str, Enum):
 
 **Early Abort**: When a model shows failure signs (incomplete generation, error patterns), immediately escalate instead of wasting retries. Detected via gate checks or output analysis.
 
+### THINK_HARDER Action (February 2026)
+
+Before escalating to a more expensive tier, the policy tries to squeeze more quality out of the current model. On the penultimate retry (`failure_count == max_retries - 1`), the decision is `THINK_HARDER` instead of `RETRY`. This returns the same role with a `config_override` that doubles the token budget, prepends a chain-of-thought prefix, and raises temperature slightly for diversity:
+
+```python
+EscalationDecision(
+    action=EscalationAction.THINK_HARDER,
+    target_role=context.current_role,   # Same model, not escalated
+    config_override={
+        "n_tokens": 4096,               # 2x default
+        "cot_prefix": "Think step by step before answering.\n\n",
+        "temperature": 0.5,             # Slightly higher for diversity
+    },
+)
+```
+
+The `config_override` field was added to `EscalationDecision` to carry these overrides. The calling node applies the overrides to the LLM call parameters for the retry turn.
+
+**Rationale**: A model that failed once may succeed with explicit CoT prompting and more tokens to think. This is a "free" escalation axis -- often matching bigger-model quality without the cost or latency of tier escalation. Parallels Claude's extended thinking capability.
+
+**Firing conditions**: Only fires for standard error categories (CODE, LOGIC, TIMEOUT on required gates, UNKNOWN). Format/schema errors and early-abort are excluded (they use retry-only or immediate-escalate paths respectively).
+
 ### Decision Rules
 
-| Error Category | First Failure | Second Failure | Third+ Failure |
-|----------------|---------------|----------------|----------------|
-| CODE, LOGIC | RETRY | RETRY | ESCALATE |
-| FORMAT, SCHEMA | RETRY | RETRY | FAIL (never escalate) |
-| TIMEOUT (optional gate) | SKIP | — | — |
-| TIMEOUT (required gate) | RETRY | ESCALATE | FAIL |
-| EARLY_ABORT | ESCALATE | — | — |
-| INFRASTRUCTURE | — | — | Skip reward injection (seeding only); rules handle escalation |
+| Error Category | First Failure | Penultimate Retry | Final Retry | Post-Exhaustion |
+|----------------|---------------|---------------------|-------------|-----------------|
+| CODE, LOGIC | RETRY | THINK_HARDER | (exhausted) | ESCALATE |
+| FORMAT, SCHEMA | RETRY | RETRY | FAIL | FAIL (never escalate) |
+| TIMEOUT (optional gate) | SKIP | — | — | — |
+| TIMEOUT (required gate) | RETRY | THINK_HARDER | (exhausted) | ESCALATE → FAIL |
+| EARLY_ABORT | ESCALATE | — | — | — |
+| INFRASTRUCTURE | — | — | — | Skip reward injection (seeding only); rules handle escalation |
 
 **Config Defaults**:
 
@@ -411,6 +437,43 @@ In `_real_call_impl()`: primary call via `_real_call_single()` catches `RuntimeE
 
 Feature flag: `model_fallback`.
 
+## Cache Affinity Phase 2.5 (February 2026)
+
+The `TwoPhaseRetriever` has a Phase 2.5 step between Q-value ranking (Phase 2) and final sorting (Phase 3). It gives a 15% score bonus to memories whose role matches the last-used role, biasing routing toward warm KV caches.
+
+### Mechanism
+
+```python
+class TwoPhaseRetriever:
+    CACHE_AFFINITY_BONUS: float = 0.15
+
+    def __init__(self, ...):
+        self._last_role_used: Optional[str] = None
+
+    def _retrieve(self, embedding, ...):
+        # Phase 1: Semantic filtering → candidates
+        # Phase 2: Q-value × similarity → combined_score
+
+        # Phase 2.5: Cache affinity bonus
+        if self._last_role_used:
+            for result in results:
+                if result.memory.metadata.get("role") == self._last_role_used:
+                    result.combined_score *= (1.0 + self.CACHE_AFFINITY_BONUS)
+                    result.cache_affinity = self.CACHE_AFFINITY_BONUS
+
+        # Phase 3: Sort by combined_score → top-n
+```
+
+### Lifecycle
+
+`HybridRouter.route()` calls `retriever.update_last_role(role)` after every routing decision (both learned and rule-based paths). The next retrieval then applies the bonus. The `RetrievalResult` dataclass carries `cache_affinity: float` and appends a warning string when the bonus fires.
+
+### Why This Matters
+
+When the same role serves consecutive requests, the KV cache from the previous request is warm -- prompt evaluation drops to near-zero. A 15% bonus is conservative; on this hardware (DDR5-5600, 460 GB/s), a warm-cache hit saves 50-200ms of prompt eval depending on context length. This parallels Claude's prompt caching TTL economics: recently-used contexts are cheap to re-enter.
+
+**Files**: `orchestration/repl_memory/retriever.py` (`TwoPhaseRetriever._retrieve`, `HybridRouter.route`)
+
 ## Approval Gates (February 2026)
 
 Human approval gates at escalation boundaries and destructive tool invocations. The graph halts, serializes state via resume token, waits for approval, then continues or rejects.
@@ -482,6 +545,40 @@ Implementation: `src/routing_bindings.py` (`BindingRouter`), integrated in `src/
 
 Feature flag: `binding_routing`.
 
+## Tool Requirement Detection (February 2026)
+
+`detect_tool_requirement()` in `chat_routing.py` is a keyword-based heuristic that identifies prompts requiring tool invocation. It populates `tool_required` and `tool_hint` fields on `RoutingResult`, which downstream execution stages can use to force first-turn tool use or select REPL mode.
+
+### Keyword Map
+
+```python
+_TOOL_REQUIRED_KEYWORDS = {
+    "search for": "grep",
+    "find in": "grep",
+    "grep": "grep",
+    "look up": "peek",
+    "read the file": "peek",
+    "list the files": "list_dir",
+    "calculate": None,       # Needs tools but no specific hint
+    "compute": None,
+    "run the": "run_shell",
+}
+```
+
+### RoutingResult Integration
+
+```python
+@dataclass
+class RoutingResult:
+    # ... existing fields ...
+    tool_required: bool = False   # True when task needs tools
+    tool_hint: str | None = None  # Specific tool name if deterministic (e.g., "grep")
+```
+
+When `tool_required=True`, execution stages can: (a) force REPL mode even if the heuristic would have selected direct, and (b) inject the `tool_hint` into the system prompt so the model knows which tool to invoke first.
+
+**Files**: `src/api/routes/chat_routing.py` (`detect_tool_requirement`, `_TOOL_REQUIRED_KEYWORDS`), `src/api/routes/chat_utils.py` (`RoutingResult`)
+
 ## REPL Defensive Mechanisms (February 2026)
 
 The REPL execution loops have three defensive mechanisms that prevent infinite loops, wasted tokens, and unnecessary escalation.
@@ -547,6 +644,47 @@ Falls through to text-only mode on exception (graceful degradation).
 
 **File**: `src/api/routes/chat_pipeline/vision_stage.py`
 
+## Try-Cheap-First Speculative Pre-Filter (February 2026)
+
+Before the normal routing pipeline runs, a speculative pre-filter attempts the task with the cheapest HOT model (7B worker at 44 t/s). If the answer passes a quality gate, it is returned 2-3x faster. On failure, the request falls through to the normal pipeline completely unchanged.
+
+### Pipeline Position
+
+```
+Request → _route_request() → [Try-Cheap-First] → _execute_direct / _execute_repl / ...
+                                    |
+                                    +-- Pass quality gate → return ChatResponse (fast path)
+                                    +-- Fail quality gate → fall through (normal pipeline)
+```
+
+The pre-filter inserts as Stage 7.9, BEFORE the existing execution stages. The downstream escalation chain (worker -> coder -> architect, `max_retries=3`, `max_escalations=2`) is completely untouched.
+
+### Configuration
+
+```python
+# src/config.py — ChatConfig
+try_cheap_first_enabled: bool = True
+try_cheap_first_phase: str = "A"        # A=try all, B=Q-value guided, C=fully learned
+try_cheap_first_role: str = "worker_explore"
+try_cheap_first_max_tokens: int = 1024  # Keep short to minimize waste
+try_cheap_first_quality_threshold: float = 0.6
+try_cheap_first_q_threshold: float = 0.65  # Min Q-value for Phase B/C
+```
+
+### Skip Conditions
+
+The pre-filter is bypassed when any of these hold:
+- `force_mode` or `force_role` is set on the request
+- The initial role is already a cheap worker (`worker_explore`, `worker_math`, `worker_vision`)
+- Execution mode is `delegated`
+- Phase B/C: MemRL Q-value for the cheap role is below `try_cheap_first_q_threshold`
+
+### Quality Gate
+
+The cheap answer must pass `try_cheap_first_quality_threshold` (default 0.6) via the existing `QScorer`. Answers that are too short, contain hedging, or fail structural checks are rejected and the normal pipeline handles the request.
+
+**Files**: `src/api/routes/chat.py` (`_try_cheap_first`), `src/config.py` (`ChatConfig`)
+
 ## Early-Stop Timing Telemetry (2026-02-09)
 
 When early-stop streaming aborts generation (REPL's `FINAL()` detection raises `StopIteration`), the SSE `stop: true` event (which carries `timings`) is never reached. This caused `generation_ms=0` for 79/99 REPL results while `tokens_generated` was correct.
@@ -562,11 +700,15 @@ When early-stop streaming aborts generation (REPL's `FINAL()` detection raises `
 1. `src/graph/nodes.py`: Pydantic-graph node classes with escalation logic
 2. `src/graph/state.py`: TaskState, TaskDeps, TaskResult, GraphConfig
 3. `src/graph/graph.py`: Graph singleton, `run_task()`, `generate_mermaid()`
-4. `src/escalation.py`: Unified escalation policy (EscalationAction, ErrorCategory, EscalationConfig)
+4. `src/escalation.py`: Unified escalation policy (EscalationAction, ErrorCategory, EscalationConfig, THINK_HARDER)
 5. `src/proactive_delegation/`: Complexity-aware routing package (types, complexity, review_service, delegator)
 6. `src/roles.py`: Role definitions, escalation chains, and fallback map
 7. `src/graph/approval_gate.py`: Halt/resume protocol types and approval gates
 8. `src/routing_bindings.py`: Priority-ordered routing bindings
+9. `orchestration/repl_memory/retriever.py`: TwoPhaseRetriever (Phase 2.5 cache affinity), HybridRouter
+10. `src/api/routes/chat.py`: Try-cheap-first speculative pre-filter (`_try_cheap_first`)
+11. `src/api/routes/chat_routing.py`: Tool requirement detection (`detect_tool_requirement`)
+12. `src/api/routes/chat_utils.py`: RoutingResult (tool_required, tool_hint fields)
 
 ### Theoretical Foundations
 

@@ -235,6 +235,74 @@ class TestEscalationPolicy:
         assert path[2] == Role.ARCHITECT_GENERAL
 
 
+class TestThinkHarder:
+    """Test THINK_HARDER escalation action."""
+
+    @pytest.fixture
+    def policy(self):
+        config = EscalationConfig(
+            max_retries=3,
+            max_escalations=2,
+            optional_gates=frozenset({"lint", "format"}),
+        )
+        return EscalationPolicy(config)
+
+    def test_think_harder_on_penultimate_retry(self, policy):
+        """THINK_HARDER fires on penultimate retry (failure_count == max_retries - 1)."""
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
+            failure_count=2,  # max_retries=3, so this is penultimate
+            error_category=ErrorCategory.CODE,
+        )
+        decision = policy.decide(context)
+
+        assert decision.action == EscalationAction.THINK_HARDER
+        assert decision.target_role == Role.WORKER_GENERAL  # Same model
+        assert decision.config_override is not None
+        assert "cot_prefix" in decision.config_override
+        assert decision.config_override["n_tokens"] == 4096
+
+    def test_think_harder_has_correct_properties(self, policy):
+        """THINK_HARDER decision has should_think_harder=True."""
+        decision = EscalationDecision(action=EscalationAction.THINK_HARDER)
+        assert decision.should_think_harder is True
+        assert decision.should_escalate is False
+        assert decision.should_retry is False
+
+    def test_regular_retry_before_penultimate(self, policy):
+        """Normal RETRY still fires before penultimate retry."""
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
+            failure_count=0,
+            error_category=ErrorCategory.CODE,
+        )
+        decision = policy.decide(context)
+        assert decision.action == EscalationAction.RETRY
+
+    def test_escalate_after_think_harder(self, policy):
+        """After THINK_HARDER fails, next failure triggers ESCALATE."""
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
+            failure_count=3,  # All retries (including think-harder) exhausted
+            error_category=ErrorCategory.CODE,
+            escalation_count=0,
+        )
+        decision = policy.decide(context)
+        assert decision.action == EscalationAction.ESCALATE
+
+    def test_think_harder_not_for_format_errors(self, policy):
+        """Format/schema errors don't trigger THINK_HARDER (just retry)."""
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
+            failure_count=2,
+            error_category=ErrorCategory.FORMAT,
+        )
+        decision = policy.decide(context)
+        # Format errors use no_escalate_categories path → RETRY (not THINK_HARDER)
+        assert decision.action == EscalationAction.RETRY
+        assert decision.action != EscalationAction.THINK_HARDER
+
+
 class TestGlobalPolicy:
     """Test global policy functions."""
 

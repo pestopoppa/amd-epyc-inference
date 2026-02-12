@@ -258,3 +258,43 @@ def done_event() -> dict[str, Any]:
         Done event dictionary.
     """
     return {"event": "done", "data": "[DONE]"}
+
+
+def tool_start_event(tool_name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Create a tool_start event (tool execution beginning).
+
+    Args:
+        tool_name: Name of the tool being invoked.
+        args: Tool arguments (optional, may be large).
+
+    Returns:
+        Tool start event dictionary.
+    """
+    data: dict[str, Any] = {"type": "tool_start", "tool": tool_name}
+    if args:
+        data["args"] = args
+    return sse_event("tool_start", data)
+
+
+def tool_end_event(
+    tool_name: str, elapsed_ms: int, success: bool = True
+) -> dict[str, Any]:
+    """Create a tool_end event (tool execution completed).
+
+    Args:
+        tool_name: Name of the tool that completed.
+        elapsed_ms: Execution time in milliseconds.
+        success: Whether the tool invocation succeeded.
+
+    Returns:
+        Tool end event dictionary.
+    """
+    return sse_event(
+        "tool_end",
+        {
+            "type": "tool_end",
+            "tool": tool_name,
+            "elapsed_ms": elapsed_ms,
+            "success": success,
+        },
+    )

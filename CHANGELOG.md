@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-02-13
+
+- **Orchestrator Intelligence Improvements (Claude-Inspired)**: 7 improvements to the orchestration intelligence layer — routing, escalation, cost modeling, quality gating. Inspired by Anthropic's Claude architecture patterns. See `handoffs/active/orchestrator-intelligence-improvements.md` for full design.
+  - **#8 Prefix Cache Expansion**: `prefix_length` 256→4096 in `model_registry.yaml`. Role prompts (1000-5000 tokens) now fully cacheable. All 9 role prompts audited for prefix stability (static first, variable last). Parallels Claude's prompt caching prefix stability.
+  - **#3 Grammar-Constrained Structured Outputs**: `json_schema` and `grammar` (GBNF) fields added to `InferenceRequest` (`protocol.py`), threaded through `llama_server.py`, `primitives.py`, `inference.py`. Enables constrained generation without post-hoc formalization.
+  - **#4 Cache Affinity Bonus**: Phase 2.5 in `TwoPhaseRetriever` gives 15% score bonus to memories matching last-used role. `_last_role_used` tracked by `HybridRouter.route()`. Improves KV cache hit rates. Parallels Claude's prompt caching TTL economics.
+  - **#1 Multi-Dimensional Cost Model**: QScorer extended with 3 cost dimensions: latency (existing), quality gap penalty (`cost_lambda_quality_gap=0.10`, penalizes over-qualified model), memory tier penalty (`cost_lambda_memory=0.05`, penalizes WARM when HOT suffices). Per-role baselines from benchmarks.
+  - **#7 Reliable Tool Use**: `generate_gbnf_grammar()` on ToolRegistry creates GBNF from registered tools. `get_read_only_tools()` identifies safe parallel tools. `_execute_structured()` relaxed for parallel read-only tool execution. `detect_tool_requirement()` in routing detects tool-needing tasks.
+  - **#2 Think-Harder Escalation**: New `THINK_HARDER` action in `EscalationAction` enum. Fires on penultimate retry with `config_override: {n_tokens: 4096, cot_prefix: "Think step by step...", temperature: 0.5}`. Tries same model harder before expensive model swap. Parallels Claude's extended thinking.
+  - **#5 Try-Cheap-First**: Speculative pre-filter in `chat.py`. 7B worker attempts answer, quality-gated. Phase A=all requests, B=MemRL Q-value gated, C=fully learned. Existing escalation chain untouched. Parallels Claude's Haiku→Sonnet→Opus routing.
+  - **#6 Streaming Tool Use**: `llm_call_stream()` method for token-level streaming. `tool_start_event()` / `tool_end_event()` SSE types added.
+  - **Debugger integration**: Diagnostic records extended with `cost_dimensions`, `think_harder_attempted/succeeded`, `cheap_first_attempted/passed`, `grammar_enforced`, `parallel_tools_used`, `cache_affinity_bonus`. ClaudeDebugger prompt builder surfaces these.
+  - **Test infrastructure**: `pytest-timeout` installed, default timeout 120→30s per test. 3746 passed, 67 skipped, 42s with `-n 8`.
+
+## 2026-02-12
+
+- **`repl_no_tools` signal fix — direct-mode routing**: New `_should_use_direct()` heuristic in `chat_routing.py` short-circuits obvious simple questions (MCQ with 3+ choices <2000 chars, short factual <300 chars with question-word prefix) to direct mode before MemRL/REPL. Prevents false `repl_no_tools` signals on questions that don't need tools. Conservative — coding tasks, long context, research indicators always fall through to REPL.
+- **`repl_no_tools` signal fix — max-turns answer rescue**: New `_rescue_from_last_output()` in `nodes.py` extracts answers (FINAL pattern → prose answer → code block) from `state.last_output` when max turns hit without FINAL(). Applied to all 7 graph node classes and as post-graph fallback in `repl_executor.py`. Recovers correct answers that models computed but failed to submit via FINAL().
+- **`repl_no_tools` signal fix — graduated turn nudge**: Midpoint soft reminder at `remaining == max_turns // 2` ("Start converging on your answer") complements existing hard deadline at `remaining <= 3`. Reduces last-minute panic responses by giving models earlier awareness of turn budget.
+
 ## 2026-02-11
 
 - **Slot erase timeout fix**: SELF:direct 600s timeout left server-side generation running (23k+ tokens), blocking all subsequent strategies. `_erase_slots` HTTP timeouts raised 3s→8s; new `_force_erase_and_verify()` resets capability cache + retries with verification; proactive slot erasure in polling loop at `timeout-15s`; inter-strategy cleanup between SELF:direct→SELF:repl. `_erase_slots(all_slots=True)` flushes stale KV cache between eval questions. All fixes applied to both monolithic file and v2 extracted modules.

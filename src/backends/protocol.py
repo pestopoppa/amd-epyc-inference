@@ -52,6 +52,8 @@ class InferenceRequest:
     timeout: int = field(
         default_factory=lambda: int(_registry_timeout("backends", "inference_default", 120))
     )
+    json_schema: dict[str, Any] | None = None  # Constrain output to JSON schema
+    grammar: str | None = None  # GBNF grammar for constrained generation
     extra: dict[str, Any] = field(default_factory=dict)
 
 

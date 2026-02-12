@@ -52,6 +52,8 @@ class RoutingResult:
     formalization_applied: bool = False
     timeout_s: int = DEFAULT_TIMEOUT_S
     document_result: PreprocessingResult | None = None
+    tool_required: bool = False  # True when task needs tools (file search, computation)
+    tool_hint: str | None = None  # Specific tool name if deterministic
 
     @property
     def role(self) -> str:

@@ -779,6 +779,20 @@ class ChatPipelineConfig:
     plan_review_phase_c_skip_rate: float = 0.90
     """Fraction of reviews skipped in Phase C (spot-check)."""
 
+    # Try-cheap-first: speculative pre-filter using 7B worker before specialist.
+    # Phase A = try all, Phase B = MemRL-guided, Phase C = fully learned.
+    try_cheap_first_enabled: bool = True
+    try_cheap_first_phase: str = "A"
+    """A = try all non-forced, B = Q-value guided, C = fully learned."""
+    try_cheap_first_role: str = "worker_explore"
+    """Role used for cheap attempts (fastest HOT model)."""
+    try_cheap_first_max_tokens: int = 1024
+    """Token budget for cheap attempt (keep short to minimize waste)."""
+    try_cheap_first_quality_threshold: float = 0.6
+    """Minimum quality score to accept cheap answer."""
+    try_cheap_first_q_threshold: float = 0.65
+    """Min Q-value for cheap-first in Phase B/C (skip cheap if below)."""
+
 
 @dataclass
 class DelegationConfig:

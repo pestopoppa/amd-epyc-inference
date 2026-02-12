@@ -95,6 +95,8 @@ class InferenceRequest:
     cache_prompt: bool | None = (
         None  # Override cache_prompt for this request (None = use backend default)
     )
+    json_schema: dict[str, Any] | None = None  # Constrain output to JSON schema
+    grammar: str | None = None  # GBNF grammar for constrained generation
     max_tokens: int | None = field(default=None, repr=False)
 
     def __post_init__(self):

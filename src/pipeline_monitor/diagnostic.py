@@ -40,6 +40,15 @@ def build_diagnostic(
     tap_length_bytes: int = 0,
     repl_tap_offset_bytes: int = 0,
     repl_tap_length_bytes: int = 0,
+    # Orchestrator intelligence tunable fields
+    cost_dimensions: dict[str, float] | None = None,
+    think_harder_attempted: bool = False,
+    think_harder_succeeded: bool | None = None,
+    cheap_first_attempted: bool = False,
+    cheap_first_passed: bool | None = None,
+    grammar_enforced: bool = False,
+    parallel_tools_used: bool = False,
+    cache_affinity_bonus: float = 0.0,
 ) -> dict[str, Any]:
     """Build a diagnostic record from evaluation results.
 
@@ -83,6 +92,15 @@ def build_diagnostic(
         "tap_length_bytes": tap_length_bytes,
         "repl_tap_offset_bytes": repl_tap_offset_bytes,
         "repl_tap_length_bytes": repl_tap_length_bytes,
+        # Orchestrator intelligence tunables
+        "cost_dimensions": cost_dimensions or {},
+        "think_harder_attempted": think_harder_attempted,
+        "think_harder_succeeded": think_harder_succeeded,
+        "cheap_first_attempted": cheap_first_attempted,
+        "cheap_first_passed": cheap_first_passed,
+        "grammar_enforced": grammar_enforced,
+        "parallel_tools_used": parallel_tools_used,
+        "cache_affinity_bonus": cache_affinity_bonus,
     }
 
 

@@ -305,6 +305,34 @@ The stored cost metrics provide the ground truth for optimization without corrup
 
 ---
 
+## Extended Reward Dimensions (February 2026)
+
+Two additional penalty terms have been added to the reward formula for finer-grained routing signal.
+
+### quality_gap_penalty
+
+Penalizes over-qualified model selection. When a simpler model (e.g., frontdoor) produces an equally correct answer, the routing system should prefer it. The quality gap penalty fires when the chosen specialist's quality score matches a cheaper alternative that was also evaluated:
+
+```
+quality_gap_penalty = gamma * (cost_tier[chosen] - cost_tier[cheapest_correct])
+```
+
+With gamma=0.1, routing an easy question to architect (tier 4) when frontdoor (tier 2) also passed costs 0.2 reward. This drives the router toward the cheapest correct specialist over time.
+
+### memory_tier_penalty
+
+Penalizes WARM tier usage when HOT tier is sufficient. The orchestrator stack has tiered model loading: HOT models are always resident in RAM, WARM models require loading from NVMe (~2-5s startup). When a HOT model can handle the task, routing to a WARM model wastes startup latency:
+
+```
+memory_tier_penalty = delta * is_warm_when_hot_sufficient
+```
+
+With delta=0.1, a single flat penalty discourages unnecessary WARM tier activation.
+
+### Claude's Combinatorial Pricing Space
+
+These dimensions mirror the complexity of Claude's own pricing structure, where cost depends on model (Opus/Sonnet/Haiku) x cache status (uncached/cached/write) x thinking (standard/extended) x batch mode (interactive/batch at 50% discount). Our local model routing faces the same combinatorial space: model tier x memory tier x acceleration method x contention state. The extended reward dimensions begin to capture this -- quality_gap_penalty addresses model tier and memory_tier_penalty addresses memory tier, while cost_ratio (existing) captures contention.
+
 ## Future Work
 
 1. **Dynamic lambda by task priority**: interactive queries use higher lambda (latency-sensitive); batch uses lower lambda (quality-sensitive).

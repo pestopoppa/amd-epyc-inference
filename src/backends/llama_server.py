@@ -580,6 +580,12 @@ class LlamaServerBackend(ModelBackend):
         if stop_seqs:
             payload["stop"] = stop_seqs
 
+        # Grammar-constrained generation (llama-server native support)
+        if request.json_schema:
+            payload["json_schema"] = request.json_schema
+        if request.grammar:
+            payload["grammar"] = request.grammar
+
         return payload
 
     def get_slots(self) -> list[SlotInfo]:

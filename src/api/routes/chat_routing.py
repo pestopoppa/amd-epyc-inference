@@ -11,11 +11,112 @@ The _select_mode() function now only returns "direct" or "repl".
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 
 log = logging.getLogger(__name__)
 
+
+# ── Direct-mode heuristic ─────────────────────────────────────────────
+
+# MCQ answer patterns: "(A)", "A)", "A.", etc. — at least 3 choices
+_MCQ_CHOICE_RE = re.compile(
+    r"(?:^|\n)\s*(?:\(?[A-E]\)|[A-E]\.|[A-E]\))\s+\S",
+)
+
+# Question-word prefixes for short factual questions
+_QUESTION_WORDS = (
+    "what", "which", "who", "whom", "where", "when",
+    "is", "are", "was", "were", "do", "does", "did", "can", "could",
+    "will", "would", "should", "has", "have", "had",
+    "name", "list", "define",
+)
+
+# Keywords that indicate the prompt needs REPL (code execution, tools, etc.)
+_REPL_KEYWORDS = (
+    "implement", "code", "function", "class ", "method", "debug",
+    "refactor", "write a program", "write a script", "write code",
+    "algorithm", "data structure", "fix the bug", "compile",
+    "step by step", "step-by-step", "multi-step", "research",
+    "analyze", "investigate", "explore", "search for",
+    "read the file", "run the", "execute", "calculate",
+    "```",  # code blocks in prompt
+)
+
+# Keywords that strongly indicate tool use is required (not just REPL mode).
+# Used for forced tool use: if matched, model must invoke a tool on first turn.
+_TOOL_REQUIRED_KEYWORDS = {
+    "search for": "grep",
+    "find in": "grep",
+    "grep": "grep",
+    "look up": "peek",
+    "read the file": "peek",
+    "list the files": "list_dir",
+    "calculate": None,  # Need tools but no specific hint
+    "compute": None,
+    "run the": "run_shell",
+}
+
+
+def detect_tool_requirement(prompt: str) -> tuple[bool, str | None]:
+    """Detect if a prompt strongly requires tool use.
+
+    Returns:
+        (tool_required, tool_hint) — tool_hint is a specific tool name or None.
+    """
+    prompt_lower = prompt.lower()
+    for keyword, hint in _TOOL_REQUIRED_KEYWORDS.items():
+        if keyword in prompt_lower:
+            return True, hint
+    return False, None
+
+
+def _should_use_direct(prompt: str, context: str | None) -> bool:
+    """Heuristic: should this prompt bypass REPL and use direct mode?
+
+    Conservative — only short-circuits obvious simple questions:
+    - MCQ with choices in prompt (< 2000 chars)
+    - Short factual questions (< 300 chars, starts with question word)
+
+    Always returns False for coding tasks, long contexts, or multi-step
+    indicators, letting MemRL/REPL handle those.
+
+    Args:
+        prompt: The user's prompt.
+        context: Optional context text.
+
+    Returns:
+        True if direct mode is appropriate.
+    """
+    prompt_len = len(prompt)
+    context_len = len(context) if context else 0
+
+    # Never short-circuit long contexts — REPL needed for exploration
+    if context_len > 8000 or prompt_len > 4000:
+        return False
+
+    prompt_lower = prompt.lower()
+
+    # Never short-circuit coding tasks or multi-step indicators
+    if any(kw in prompt_lower for kw in _REPL_KEYWORDS):
+        return False
+
+    # MCQ pattern: at least 3 answer choices + prompt under 2000 chars
+    if prompt_len < 2000:
+        choices = _MCQ_CHOICE_RE.findall(prompt)
+        if len(choices) >= 3:
+            log.debug("Direct-mode heuristic: MCQ detected (%d choices)", len(choices))
+            return True
+
+    # Short factual question: < 300 chars, starts with question word
+    if prompt_len < 300:
+        first_word = prompt_lower.lstrip().split()[0] if prompt_lower.strip() else ""
+        if first_word in _QUESTION_WORDS:
+            log.debug("Direct-mode heuristic: short factual question (%r...)", prompt[:50])
+            return True
+
+    return False
 
 
 def _select_mode(
@@ -28,7 +129,8 @@ def _select_mode(
     React mode has been unified into REPL with structured_mode=True.
     This function now only returns "direct" or "repl".
 
-    Uses MemRL route_with_mode() if available, falls back to REPL as default.
+    Uses a conservative heuristic for obvious simple questions (MCQ, short
+    factual), then MemRL route_with_mode() if available, falls back to REPL.
     REPL is the universal superset: models can FINAL() immediately for simple
     questions, or use tools/escalate/delegate for complex ones.
 
@@ -40,6 +142,11 @@ def _select_mode(
     Returns:
         One of "direct" or "repl".
     """
+    # Heuristic short-circuit for obviously simple questions
+    if _should_use_direct(prompt, context):
+        log.debug("Heuristic: direct mode for simple question")
+        return "direct"
+
     # Try MemRL-based mode selection if available
     if hasattr(state, "hybrid_router") and state.hybrid_router is not None:
         try:

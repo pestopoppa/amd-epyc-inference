@@ -498,6 +498,14 @@ def run_batch_3way(
                             tap_length_bytes=rr.tap_length_bytes,
                             repl_tap_offset_bytes=rr.repl_tap_offset_bytes,
                             repl_tap_length_bytes=rr.repl_tap_length_bytes,
+                            cost_dimensions=rr.cost_dimensions,
+                            think_harder_attempted=rr.think_harder_attempted,
+                            think_harder_succeeded=rr.think_harder_succeeded,
+                            cheap_first_attempted=rr.cheap_first_attempted,
+                            cheap_first_passed=rr.cheap_first_passed,
+                            grammar_enforced=rr.grammar_enforced,
+                            parallel_tools_used=rr.parallel_tools_used,
+                            cache_affinity_bonus=rr.cache_affinity_bonus,
                         )
                         append_diagnostic(diag)
                         debugger.add_diagnostic(diag)

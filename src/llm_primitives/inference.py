@@ -47,6 +47,8 @@ class InferenceMixin:
         role: str,
         n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
+        json_schema: dict | None = None,
+        grammar: str | None = None,
     ) -> str:
         """Make a real inference call via CachingBackend or legacy ModelServer.
 
@@ -55,6 +57,8 @@ class InferenceMixin:
             role: The role determining which model to use.
             n_tokens: Maximum tokens to generate.
             stop_sequences: Optional stop sequences to halt generation.
+            json_schema: Optional JSON schema to constrain output structure.
+            grammar: Optional GBNF grammar for constrained generation.
 
         Returns:
             Model response.
@@ -65,8 +69,14 @@ class InferenceMixin:
         acquire = getattr(self, "_acquire_role", None)
         if acquire:
             with acquire(role):
-                return self._real_call_impl(prompt, role, n_tokens, stop_sequences)
-        return self._real_call_impl(prompt, role, n_tokens, stop_sequences)
+                return self._real_call_impl(
+                    prompt, role, n_tokens, stop_sequences,
+                    json_schema=json_schema, grammar=grammar,
+                )
+        return self._real_call_impl(
+            prompt, role, n_tokens, stop_sequences,
+            json_schema=json_schema, grammar=grammar,
+        )
 
     def _real_call_impl(
         self,
@@ -74,6 +84,8 @@ class InferenceMixin:
         role: str,
         n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
+        json_schema: dict | None = None,
+        grammar: str | None = None,
     ) -> str:
         """Internal real call implementation (no concurrency gating)."""
         # Content-addressable cache check
@@ -94,7 +106,10 @@ class InferenceMixin:
 
         result = None
         try:
-            result = self._real_call_single(prompt, role, n_tokens, stop_sequences)
+            result = self._real_call_single(
+                prompt, role, n_tokens, stop_sequences,
+                json_schema=json_schema, grammar=grammar,
+            )
         except RuntimeError as primary_error:
             # Model fallback: try same-tier alternatives on infrastructure failure
             if not _get_features().model_fallback:
@@ -120,7 +135,8 @@ class InferenceMixin:
                 )
                 try:
                     result = self._real_call_single(
-                        prompt, fb_role_str, n_tokens, stop_sequences
+                        prompt, fb_role_str, n_tokens, stop_sequences,
+                        json_schema=json_schema, grammar=grammar,
                     )
                     break
                 except RuntimeError:
@@ -141,12 +157,17 @@ class InferenceMixin:
         role: str,
         n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
+        json_schema: dict | None = None,
+        grammar: str | None = None,
     ) -> str:
         """Execute a single inference call against one role's backend."""
         # Try CachingBackend first (RadixAttention)
         backend = self._backends.get(role)
         if backend is not None:
-            return self._call_caching_backend(backend, prompt, role, n_tokens, stop_sequences)
+            return self._call_caching_backend(
+                backend, prompt, role, n_tokens, stop_sequences,
+                json_schema=json_schema, grammar=grammar,
+            )
 
         # Fall back to legacy ModelServer
         if self.model_server is None:
@@ -168,6 +189,8 @@ class InferenceMixin:
             timeout=role_timeout,
             stop_sequences=stop_sequences,
             cache_prompt=self.cache_prompt,
+            json_schema=json_schema,
+            grammar=grammar,
         )
         from src.inference_lock import inference_lock
 
@@ -188,6 +211,8 @@ class InferenceMixin:
         role: str,
         n_tokens: int = -1,
         stop_sequences: list[str] | None = None,
+        json_schema: dict | None = None,
+        grammar: str | None = None,
     ) -> str:
         """Call a CachingBackend with RadixAttention prefix caching.
 
@@ -197,6 +222,8 @@ class InferenceMixin:
             role: The role name.
             n_tokens: Maximum tokens to generate.
             stop_sequences: Optional stop sequences to halt generation.
+            json_schema: Optional JSON schema to constrain output structure.
+            grammar: Optional GBNF grammar for constrained generation.
 
         Returns:
             Model response.
@@ -239,6 +266,8 @@ class InferenceMixin:
             timeout=role_timeout,
             stop_sequences=stop_sequences,
             cache_prompt=self.cache_prompt,
+            json_schema=json_schema,
+            grammar=grammar,
         )
 
         # Admission control: reject early if backend queue is full

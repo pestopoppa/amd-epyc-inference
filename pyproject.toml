@@ -126,7 +126,7 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short -n 8"
 asyncio_mode = "auto"
-timeout = 120
+timeout = 30
 # WARNING: Do NOT use pytest-xdist with -n auto on this 192-thread machine!
 # Each worker initializes the API which may load models, causing memory exhaustion.
 # -n 8 gives 4x speedup (67s → 17s). Safe limit tested: -n 8.

@@ -315,6 +315,40 @@ def _extract_prose_answer(text: str) -> str | None:
     return None
 
 
+def _rescue_from_last_output(text: str) -> str | None:
+    """Try to extract a usable answer from the last LLM output.
+
+    Used as a last-resort rescue when max turns are reached without FINAL().
+    Tries, in order:
+    1. FINAL("answer") pattern in the text
+    2. Prose answer patterns ("The answer is D", etc.)
+    3. Code blocks (for coding questions where the answer is a program)
+
+    Returns None if no usable answer can be extracted.
+    """
+    if not text or not text.strip():
+        return None
+
+    # 1. Try FINAL() extraction
+    final_answer = _extract_final_from_raw(text)
+    if final_answer is not None:
+        return final_answer
+
+    # 2. Try prose answer extraction
+    prose_answer = _extract_prose_answer(text)
+    if prose_answer is not None:
+        return prose_answer
+
+    # 3. Try to find a code block (for coding tasks)
+    code_block = re.search(r"```(?:\w*\n)?(.*?)```", text, re.DOTALL)
+    if code_block:
+        code_content = code_block.group(1).strip()
+        if len(code_content) > 20:  # Non-trivial code
+            return code_content
+
+    return None
+
+
 async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bool, dict]:
     """Execute one LLM → REPL turn.
 
@@ -350,8 +384,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             turn=state.turns - 1,
         )
 
-    # Late-game FINAL() nudge: when running low on turns, inject urgency
-    # so the model doesn't waste remaining turns re-deriving.
+    # Graduated FINAL() nudge: midpoint soft reminder, then hard deadline.
     remaining = state.max_turns - state.turns
     if remaining <= 3:
         prompt += (
@@ -359,6 +392,11 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             "You MUST call FINAL(your_computed_value) NOW with your best answer. "
             "Do NOT start over. Do NOT re-derive. Do NOT reason in comments. "
             "Submit what you have."
+        )
+    elif remaining == state.max_turns // 2 and state.turns > 1:
+        prompt += (
+            f"\n\n** REMINDER: {remaining} turn(s) remaining. "
+            "Start converging on your answer. Call FINAL() when ready."
         )
 
     # LLM call — stop at first code block close to prevent repetition loops.
@@ -735,6 +773,10 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (frontdoor): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )
@@ -808,6 +850,10 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (worker): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )
@@ -882,6 +928,10 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (coder): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )
@@ -972,6 +1022,10 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (coder_escalation): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )
@@ -1048,6 +1102,10 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (ingest): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )
@@ -1124,6 +1182,10 @@ class ArchitectNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (architect): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )
@@ -1189,6 +1251,10 @@ class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
         state = ctx.state
 
         if state.turns >= state.max_turns:
+            rescued = _rescue_from_last_output(state.last_output)
+            if rescued:
+                log.info("Max-turns rescue (architect_coding): %r", rescued[:100])
+                return _make_end_result(ctx, rescued, True)
             return _make_end_result(
                 ctx, f"[Max turns ({state.max_turns}) reached]", False
             )

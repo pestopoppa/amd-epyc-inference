@@ -63,6 +63,7 @@ class EscalationAction(str, Enum):
     """Actions that can result from an escalation decision."""
 
     RETRY = "retry"  # Retry with same role
+    THINK_HARDER = "think_harder"  # Same model, boosted config (CoT, 2x tokens)
     ESCALATE = "escalate"  # Escalate to next tier
     DELEGATE = "delegate"  # Route DOWN to a specific lower-tier role
     REVIEW = "review"  # Quality check by higher-tier model
@@ -130,6 +131,7 @@ class EscalationDecision:
     reason: str = ""
     include_context: bool = True
     retries_remaining: int = 0
+    config_override: dict | None = None  # For THINK_HARDER: {n_tokens, cot_prefix, temperature}
 
     @property
     def should_escalate(self) -> bool:
@@ -140,6 +142,11 @@ class EscalationDecision:
     def should_retry(self) -> bool:
         """Check if decision is to retry."""
         return self.action == EscalationAction.RETRY
+
+    @property
+    def should_think_harder(self) -> bool:
+        """Check if decision is to retry with boosted config (CoT, more tokens)."""
+        return self.action == EscalationAction.THINK_HARDER
 
     @property
     def should_delegate(self) -> bool:
@@ -274,6 +281,21 @@ class EscalationPolicy:
 
         # Standard retry/escalate logic
         if context.failure_count < max_retries:
+            # On penultimate retry, try "think harder" before escalating:
+            # same model with CoT prefix, 2x token budget, slightly higher temperature.
+            # This is a free escalation axis — often matches the bigger model's quality.
+            if context.failure_count == max_retries - 1 and isinstance(context.current_role, Role):
+                return EscalationDecision(
+                    action=EscalationAction.THINK_HARDER,
+                    target_role=context.current_role,
+                    reason=f"Think harder before escalating from {context.current_role}",
+                    retries_remaining=0,
+                    config_override={
+                        "n_tokens": 4096,  # 2x default
+                        "cot_prefix": "Think step by step before answering.\n\n",
+                        "temperature": 0.5,  # Slightly higher for diversity
+                    },
+                )
             return EscalationDecision(
                 action=EscalationAction.RETRY,
                 target_role=context.current_role,

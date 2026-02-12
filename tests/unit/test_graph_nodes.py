@@ -19,6 +19,7 @@ from src.graph.nodes import (
     IngestNode,
     WorkerNode,
     _classify_error,
+    _rescue_from_last_output,
     select_start_node,
 )
 from src.graph.state import GraphConfig, TaskDeps, TaskResult, TaskState
@@ -290,3 +291,70 @@ class TestEscalationCountIncrement:
         await orchestration_graph.run(FrontdoorNode(), state=state, deps=deps)
         # escalation_count should be > 0 since we escalated
         assert state.escalation_count > 0
+
+
+# ── Rescue from last output tests ─────────────────────────────────────
+
+
+class TestRescueFromLastOutput:
+    """Test _rescue_from_last_output() extraction logic."""
+
+    def test_rescues_final_pattern(self):
+        text = 'Some reasoning...\nFINAL("42")\nMore text'
+        assert _rescue_from_last_output(text) == "42"
+
+    def test_rescues_prose_answer(self):
+        text = "After analyzing the options.\nThe answer is D"
+        assert _rescue_from_last_output(text) == "D"
+
+    def test_rescues_code_block(self):
+        text = "Here is the solution:\n```python\ndef solve(n):\n    return n * 2\n```"
+        result = _rescue_from_last_output(text)
+        assert result is not None
+        assert "def solve" in result
+
+    def test_returns_none_on_empty(self):
+        assert _rescue_from_last_output("") is None
+        assert _rescue_from_last_output("   ") is None
+
+    def test_returns_none_on_no_pattern(self):
+        assert _rescue_from_last_output("Just some random text without any answer") is None
+
+    def test_prefers_final_over_prose(self):
+        text = 'The answer is B\nFINAL("C")'
+        assert _rescue_from_last_output(text) == "C"
+
+    def test_small_code_block_ignored(self):
+        text = "```\nx=1\n```"
+        # Code block with < 20 chars should be ignored
+        assert _rescue_from_last_output(text) is None
+
+
+class TestMaxTurnsRescue:
+    """Test that max-turns triggers rescue instead of immediate failure."""
+
+    @pytest.mark.asyncio
+    async def test_max_turns_rescues_prose_answer(self):
+        """When max turns hit and last_output has a prose answer, rescue it."""
+        state = make_state(current_role=Role.FRONTDOOR, max_turns=1)
+        deps = make_deps(
+            # REPL output contains a rescuable prose answer pattern
+            repl_results=[MockREPLResult(output="The answer is B", is_final=False)],
+        )
+        result = await orchestration_graph.run(FrontdoorNode(), state=state, deps=deps)
+        # Turn 1 executes (non-final, sets last_output="The answer is B"),
+        # then turn 2 hits max_turns → rescue extracts "B"
+        assert result.output.success is True
+        assert "B" in result.output.answer
+
+    @pytest.mark.asyncio
+    async def test_max_turns_no_rescue_without_answer(self):
+        """When max turns hit and last_output has no extractable answer, fail."""
+        state = make_state(current_role=Role.FRONTDOOR, max_turns=1)
+        state.last_output = "Still thinking about it..."
+        deps = make_deps(
+            repl_results=[MockREPLResult(output="partial", is_final=False)],
+        )
+        result = await orchestration_graph.run(FrontdoorNode(), state=state, deps=deps)
+        assert result.output.success is False
+        assert "Max turns" in result.output.answer

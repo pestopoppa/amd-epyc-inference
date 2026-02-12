@@ -87,10 +87,18 @@ This ensures semantically equivalent prompts match even with superficial differe
 # In model_registry.yaml
 prefix_cache:
   enabled: true
-  prefix_length: 256          # Min prefix length to cache
+  prefix_length: 4096         # Min prefix length to cache (was 256)
   canonicalize: true          # Enable prompt canonicalization
   cache_dir: /mnt/raid0/llm/cache/prefix
 ```
+
+### Prefix Length Expansion (February 2026)
+
+`prefix_length` increased from 256 to 4096 in `model_registry.yaml`. The original 256-token threshold was conservative -- most orchestrator role prompts span 1000-5000 tokens, meaning the cache was already capturing them, but the longer threshold ensures multi-turn system context also qualifies.
+
+All role prompts were audited for prefix stability: each places static system instructions first and variable content (task description, user query) last. This layout maximizes RadixAttention cache hit rates because the shared prefix is a contiguous block at the start of the prompt. Prompts that mixed static and variable content (2 of 11) were restructured.
+
+This parallels Claude's prompt caching prefix stability requirements, where Anthropic recommends placing static content at the beginning of the prompt so that the cacheable prefix is as long as possible. The same principle applies here: a stable 4K prefix cached across 10 sub-calls saves ~36K tokens of redundant prefill computation.
 
 ## Performance Targets
 

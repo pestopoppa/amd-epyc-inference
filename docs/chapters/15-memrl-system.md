@@ -235,6 +235,52 @@ class QScorer:
 
 Keeps Q-updates off the critical inference path. Runs periodically via cron or on-demand trigger.
 
+### Multi-Dimensional Cost Model
+
+QScorer penalizes cost across 3 independent dimensions, each with its own lambda:
+
+```python
+# Dimension 1: Latency cost (original)
+latency_penalty = cost_penalty_lambda * cost_ratio
+# cost_ratio = actual_elapsed / expected_elapsed
+
+# Dimension 2: Quality gap penalty (new)
+quality_gap_penalty = cost_lambda_quality_gap * max(0, model_quality - 0.75)
+# Applied only when answer is correct. Penalizes using expensive models
+# when cheaper ones would suffice.
+
+# Dimension 3: Memory tier penalty (new)
+memory_tier_penalty = cost_lambda_memory * (mem_cost - 1.0)
+# Applied only for WARM tier models (loaded on demand).
+# mem_cost normalized: HOT=1.0, architect_general=3.0, architect_coding=5.0
+
+total_cost_penalty = latency_penalty + quality_gap_penalty + memory_tier_penalty
+reward = base_reward - total_cost_penalty
+```
+
+**Quality gap baseline scores** (from benchmark suite, `baseline_quality_by_role`):
+
+| Model | Role | Baseline Quality |
+|-------|------|-----------------|
+| Qwen3-235B-A22B | architect_general | 0.94 |
+| Qwen2.5-Coder-32B | coder | 0.915 |
+| Qwen3-Coder-30B-A3B | orchestrator | 0.895 |
+| Qwen2.5-7B | worker_explore | 0.745 |
+
+**Interpretation**: If a task is answered correctly by the 235B architect (quality=0.94), dimension 2 penalizes with `lambda * (0.94 - 0.75) = lambda * 0.19`. The same correct answer from 7B (quality=0.745) receives zero quality gap penalty. This teaches the system to prefer cheap models when they can solve the task.
+
+### Try-Cheap-First Q-Value Convergence
+
+The cost model drives a "try cheap first" routing strategy through Q-value convergence:
+
+```
+Q(task_class, "worker_explore") learns from:
+  - Success → high reward (correct + zero quality gap penalty + HOT tier)
+  - Failure → low reward → system escalates to coder/architect
+```
+
+During orchestration, Phase B/C nodes check `Q(task_class, "worker_explore") > threshold` to decide whether to attempt the cheap model first. As Q-values converge, the system learns which task classes the 7B worker can handle — routing those directly — and which require immediate escalation, avoiding wasted cheap attempts.
+
 ## MemRL Phases
 
 | Phase | Capability | Status (2026-01) |

@@ -170,6 +170,23 @@ python scripts/benchmark/seed_specialist_routing.py --3way --continuous --debug
 --debug --debug-batch-size 10 --debug-threshold 0.5
 ```
 
+## Extended Observation Patterns (February 2026)
+
+Diagnostic records now include additional tunable fields that the ClaudeDebugger prompt builder surfaces when present. These fields provide Claude with richer context about the orchestrator's decision-making during each inference cycle.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cost_dimensions` | dict | Breakdown of cost signals: model tier, memory tier, elapsed ratio, tokens |
+| `think_harder_attempted` | bool | Whether the pipeline invoked extended thinking mode |
+| `think_harder_succeeded` | bool | Whether extended thinking produced a correct answer after standard mode failed |
+| `cheap_first_attempted` | bool | Whether cheap-first cascade was tried (frontdoor before escalation) |
+| `cheap_first_passed` | bool | Whether cheap-first produced a correct answer (no escalation needed) |
+| `grammar_enforced` | bool | Whether json_schema/grammar constraint was active on the request |
+| `parallel_tools_used` | int | Number of parallel tool invocations in REPL mode |
+| `cache_affinity_bonus` | float | RadixAttention cache hit benefit (0.0 = miss, 1.0 = full prefix cached) |
+
+The ClaudeDebugger prompt builder (`_build_batch_prompt()`) conditionally includes these fields only when they carry non-default values. This keeps batch prompts compact for simple cases while giving Claude full visibility into complex routing and cost decisions when debugging failures. For example, a `think_harder_attempted=True, think_harder_succeeded=False` pair signals that the pipeline already tried its escalation strategy and still failed -- Claude should look for prompt or tool issues rather than suggesting "try harder."
+
 ## File Locations
 
 | File | Purpose |

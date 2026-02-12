@@ -40,6 +40,7 @@ class RetrievalResult:
     failure_penalty: float = 0.0  # Risk score from failure graph (0-1)
     hypothesis_confidence: float = 1.0  # Confidence from hypothesis graph (0-1)
     adjusted_score: float = 0.0  # Final score after graph adjustments
+    cache_affinity: float = 0.0  # Bonus for warm KV cache on same role (0-0.15)
     warnings: List[str] = field(default_factory=list)  # Low-confidence warnings
 
 
@@ -77,6 +78,10 @@ class TwoPhaseRetriever:
     - Return top-n by combined score
     """
 
+    # Cache affinity bonus: reward routing to the same role as last request
+    # (warm KV cache → near-zero prompt eval). 15% bonus is conservative.
+    CACHE_AFFINITY_BONUS: float = 0.15
+
     def __init__(
         self,
         store: EpisodicStore,
@@ -86,6 +91,7 @@ class TwoPhaseRetriever:
         self.store = store
         self.embedder = embedder
         self.config = config or RetrievalConfig()
+        self._last_role_used: Optional[str] = None
 
     def retrieve_for_routing(
         self,
@@ -214,6 +220,19 @@ class TwoPhaseRetriever:
                 )
             )
 
+        # Phase 2.5: Cache affinity bonus — reward routing to same role as
+        # last request. Warm KV cache means near-zero prompt eval time.
+        if self._last_role_used:
+            for result in results:
+                role_in_memory = result.memory.metadata.get("role", "")
+                if role_in_memory == self._last_role_used:
+                    bonus = self.CACHE_AFFINITY_BONUS
+                    result.combined_score *= (1.0 + bonus)
+                    result.cache_affinity = bonus
+                    result.warnings.append(
+                        f"cache_affinity_bonus: +{bonus:.0%} (warm KV for {self._last_role_used})"
+                    )
+
         # Sort by combined score (descending)
         results.sort(key=lambda r: r.combined_score, reverse=True)
 
@@ -241,6 +260,14 @@ class TwoPhaseRetriever:
             return (best.memory.action, best.combined_score)
 
         return None
+
+    def update_last_role(self, role: str) -> None:
+        """Update the last-used role for cache affinity tracking.
+
+        Call this after each routing decision to enable Phase 2.5
+        cache affinity bonus on the next retrieval.
+        """
+        self._last_role_used = role
 
     def should_use_learned(
         self,
@@ -319,10 +346,16 @@ class HybridRouter:
                 action, confidence = best_action
                 # Parse action as routing decision
                 routing = self._parse_routing_action(action)
+                # Track last role for cache affinity (Phase 2.5)
+                if routing:
+                    self.retriever.update_last_role(routing[0])
                 return (routing, "learned")
 
         # Fall back to rule-based routing
         routing = self.rule_based.route(task_ir)
+        # Track last role for cache affinity (Phase 2.5)
+        if routing:
+            self.retriever.update_last_role(routing[0])
         return (routing, "rules")
 
     def route_with_mode(

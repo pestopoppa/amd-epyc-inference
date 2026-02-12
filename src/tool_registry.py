@@ -516,6 +516,57 @@ class ToolRegistry:
                 result.append(info)
         return result
 
+    def generate_gbnf_grammar(self, role: str | None = None) -> str:
+        """Generate GBNF grammar for valid tool call syntax.
+
+        Constrains model output to valid TOOL() calls for the given role's
+        permitted tools. Used with llama-server's --grammar for structured mode.
+
+        Args:
+            role: Optional role to filter available tools.
+
+        Returns:
+            GBNF grammar string.
+        """
+        tools = self.list_tools(role)
+        tool_names = [t["name"] for t in tools]
+
+        if not tool_names:
+            # Fallback: allow any string if no tools
+            return 'root ::= [^\\x00]+'
+
+        # Build tool-name alternation
+        name_alts = " | ".join(f'"{name}"' for name in tool_names)
+
+        grammar = f"""\
+root ::= thought action
+thought ::= "# " [^\\n]+ "\\n"
+action ::= tool-call | final-call | code-line
+tool-call ::= "TOOL(\\"" tool-name "\\"" args ")\\n"
+tool-name ::= {name_alts}
+args ::= ("," ws arg)*
+arg ::= [a-zA-Z_]+ "=" value
+value ::= quoted-string | number | "True" | "False" | "None"
+quoted-string ::= "\\"" [^\\"]* "\\""
+number ::= "-"? [0-9]+ ("." [0-9]+)?
+final-call ::= "FINAL(" value ")\\n"
+code-line ::= [^\\n]+ "\\n"
+ws ::= " "*
+"""
+        return grammar
+
+    def get_read_only_tools(self) -> set[str]:
+        """Return set of tool names with READ_ONLY side effect.
+
+        Used by parallel tool execution to determine which tools
+        can safely run concurrently.
+        """
+        return {
+            tool.name
+            for tool in self._tools.values()
+            if SideEffect.READ_ONLY in tool.side_effects
+        }
+
     def get_invocation_log(self) -> list[ToolInvocation]:
         """Get the invocation log."""
         return self._invocation_log.copy()
