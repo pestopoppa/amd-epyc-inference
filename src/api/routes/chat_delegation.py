@@ -501,15 +501,17 @@ def _architect_delegated_answer(
                 # Re-prompt the architect with a forced direct-answer instruction
                 force_prompt = (
                     f"This is a multiple-choice question. You MUST answer directly.\n"
-                    f"Respond with D| followed by the letter (A, B, C, or D). No delegation.\n\n"
-                    f"Question: {question[:2000]}\n\nDecision:"
+                    f"Respond with D| followed by the letter (A, B, C, or D). No delegation.\n"
+                    f"Do NOT explain your reasoning. Output ONLY the decision line.\n\n"
+                    f"Question: {question[:2000]}\n\n"
+                    f"Answer with the letter only (A, B, C, or D).\n\nDecision:"
                 )
                 try:
                     forced_raw = primitives.llm_call(
                         force_prompt,
                         role=architect_role,
                         skip_suffix=True,
-                        n_tokens=50,
+                        n_tokens=128,
                     )
                     forced_stripped = _strip_think(forced_raw).strip()
                     forced_decision = _extract_toon_decision(forced_stripped)
