@@ -2,6 +2,8 @@
 
 ## 2026-02-13
 
+- **SoftMatcha v2 research + Corpus-Augmented Speculative Decoding plan**: Reviewed SoftMatcha v2 (arxiv 2602.10908) — fast fuzzy pattern matcher for trillion-scale corpora (Python+Rust, Apache 2.0). Assessed relevance to orchestration architecture: high for corpus-augmented prompt lookup (extend draft source beyond input prompt to 100GB code corpus), medium as NextPLAID complement for verbatim matching. Identified critical finding: 480B prompt lookup `forbid` in registry likely overgeneralized (MoE ≠ SSM, prompt lookup is architecture-agnostic). Merged all findings into expanded `handoffs/active/hybrid-lookup-spec-decode.md` (205→409 lines, PROPOSAL→ACTIVE). Phased plan: Phase 0 (test lookup on 480B), Phase 0.5 (jukofyork draft), Phase 1 (all non-SSM models), Phase 2A (SoftMatcha corpus stuffing), Phase 2B (sidecar draft injection). Updated `BLOCKED_TASKS.md` status.
+
 - **Orchestrator wiring: 4 scaffolded improvements connected to live pipeline**:
   - **#2 Think-Harder**: `_should_think_harder()` helper in `nodes.py` triggers on penultimate retry (before model escalation). All 7 graph node error paths updated to try same-model CoT (4096 tokens, "Think step by step" prefix) before escalating. Success/failure tracked in TaskState.
   - **#7 GBNF Grammar Enforcement**: `detect_tool_requirement()` wired into `_route_request()`. On first REPL turn when `tool_required=True`, `generate_gbnf_grammar()` constrains model output to valid tool call syntax via `llm_call(grammar=...)`.

@@ -16,7 +16,7 @@
 | **Draft model benchmarks** | — | **HIGH** | `handoffs/active/draft-benchmark.md` | 📋 PARTIAL (Gemma-3 + Qwen3-1.7B→32B done, 5 combos remaining) |
 | **Formalizer eval** | — | **HIGH** | `handoffs/active/formalizer-evaluation.md` | 📋 READY (not yet executed) |
 | **Paged Attention CoW** | PR #18747 reviewer response | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
-| **Prompt Lookup Integration** | — | **MEDIUM** | `handoffs/active/prompt_lookup_integration.md` | ✅ PARTIAL (combined spec+lookup works in production; standalone `--lookup-ngram-min` flag unavailable) |
+| **Hybrid Lookup + Corpus-Augmented Spec Decode** | — | **HIGH** | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔥 ACTIVE Phase 0: Test prompt lookup on 480B (registry `forbid` likely wrong — MoE≠SSM). Phase 0.5: jukofyork draft. Phase 2: SoftMatcha v2 corpus augmentation. |
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
@@ -737,7 +737,7 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 | Gemma-3 SWA Spec Decode | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
 | Prompt Lookup/Lookahead Bugs | `handoffs/completed/swa_prompt_lookup.md` | ✅ PRs #18729 + #18730 SUBMITTED |
 | Qwen3-A3B MoE Instability | — | ✅ RESOLVED (stale build issue) |
-| Hybrid Lookup+Spec Decode | `handoffs/active/hybrid-lookup-spec-decode.md` | ✅ COMPLETE (production: `--lookup` + spec K=24 on ports 8081/8082) |
+| Hybrid Lookup+Spec Decode (original) | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔄 EXPANDED → Corpus-Augmented Spec Decode (SoftMatcha v2 research, 480B testing, multi-model rollout) |
 | AVX-512 VNNI Q8_0 | See section below | ❌ NOT SUBMITTING (8% speedup) |
 | Tree speculation | `handoffs/active/cpu-optimization.md` | ✅ COMPLETE (K=24 optimal, in production) |
 | RadixAttention | `handoffs/active/radix-attention.md` | ✅ VERIFIED (80% hit rate) |
