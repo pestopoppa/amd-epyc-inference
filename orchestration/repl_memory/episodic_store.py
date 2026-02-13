@@ -55,6 +55,7 @@ class MemoryEntry:
     updated_at: datetime = field(default_factory=datetime.utcnow)
     update_count: int = 0  # Number of Q-value updates
     similarity_score: float = 0.0  # Similarity score from retrieval (set by retrieve methods)
+    model_id: Optional[str] = None  # Model that produced this memory (for warm-start)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize for storage (embedding stored separately)."""
@@ -68,6 +69,7 @@ class MemoryEntry:
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
             "update_count": self.update_count,
+            "model_id": self.model_id,
         }
 
     @classmethod
@@ -84,6 +86,7 @@ class MemoryEntry:
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
             update_count=data.get("update_count", 0),
+            model_id=data.get("model_id"),
         )
 
 
@@ -179,6 +182,11 @@ class EpisodicStore:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_type_q ON memories(action_type, q_value DESC)
             """)
+            # model_id column for warm-start protocol (backward-compatible, default NULL)
+            try:
+                conn.execute("ALTER TABLE memories ADD COLUMN model_id TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
             conn.commit()
 
     def _init_embedding_store(self) -> None:
@@ -217,6 +225,7 @@ class EpisodicStore:
         context: Dict[str, Any],
         outcome: Optional[str] = None,
         initial_q: float = 0.5,
+        model_id: Optional[str] = None,
     ) -> str:
         """
         Store a new memory entry.
@@ -228,6 +237,7 @@ class EpisodicStore:
             context: Original task context
             outcome: Optional immediate outcome
             initial_q: Initial Q-value
+            model_id: Optional model identifier for warm-start tracking
 
         Returns:
             Memory ID
@@ -243,8 +253,8 @@ class EpisodicStore:
             conn.execute(
                 """
                 INSERT INTO memories
-                (id, embedding_idx, action, action_type, context, outcome, q_value, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, embedding_idx, action, action_type, context, outcome, q_value, created_at, updated_at, model_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     memory_id,
@@ -256,6 +266,7 @@ class EpisodicStore:
                     initial_q,
                     now,
                     now,
+                    model_id,
                 ),
             )
             conn.commit()
@@ -370,7 +381,7 @@ class EpisodicStore:
         placeholders = ",".join("?" * len(memory_ids))
         query = f"""
             SELECT id, embedding_idx, action, action_type, context, outcome, q_value,
-                   created_at, updated_at, update_count
+                   created_at, updated_at, update_count, model_id
             FROM memories
             WHERE id IN ({placeholders})
         """
@@ -417,6 +428,7 @@ class EpisodicStore:
                 updated_at=datetime.fromisoformat(row[8]),
                 update_count=row[9],
                 similarity_score=score_map.get(memory_id, 0.0),
+                model_id=row[10] if len(row) > 10 else None,
             )
             results.append(entry)
 
@@ -504,7 +516,7 @@ class EpisodicStore:
             row = conn.execute(
                 """
                 SELECT id, embedding_idx, action, action_type, context, outcome, q_value,
-                       created_at, updated_at, update_count
+                       created_at, updated_at, update_count, model_id
                 FROM memories
                 WHERE id = ?
             """,
@@ -531,6 +543,7 @@ class EpisodicStore:
             created_at=datetime.fromisoformat(row[7]),
             updated_at=datetime.fromisoformat(row[8]),
             update_count=row[9],
+            model_id=row[10] if len(row) > 10 else None,
         )
 
     def count(self, action_type: Optional[str] = None) -> int:
@@ -619,7 +632,7 @@ class EpisodicStore:
             rows = conn.execute(
                 """
                 SELECT id, embedding_idx, action, action_type, context, outcome, q_value,
-                       created_at, updated_at, update_count
+                       created_at, updated_at, update_count, model_id
                 FROM memories
                 WHERE q_value < ? OR q_value > ?
                 ORDER BY
@@ -649,6 +662,7 @@ class EpisodicStore:
                     created_at=datetime.fromisoformat(row[7]),
                     updated_at=datetime.fromisoformat(row[8]),
                     update_count=row[9],
+                    model_id=row[10] if len(row) > 10 else None,
                 )
             )
 

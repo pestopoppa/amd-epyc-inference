@@ -39,7 +39,8 @@ CREATE TABLE memories (
     q_value REAL DEFAULT 0.5,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    update_count INTEGER DEFAULT 0
+    update_count INTEGER DEFAULT 0,
+    model_id TEXT               -- tracks which model produced this memory (warm-start)
 );
 
 CREATE INDEX idx_action_type ON memories(action_type);
@@ -369,6 +370,72 @@ These were previously dead code (declared but never invoked) in the old `repl_ex
 
 With 500K memories (projected), FAISS search would be ~2ms, total ~10-20ms.
 
+## Replay Evaluation Harness
+
+As of 2026-02-13, the MemRL system includes an offline replay evaluation harness for meta-learning memory configurations. Motivated by ALMA (Xiong et al., Feb 2026), which shows meta-learned memory designs consistently outperform hand-crafted ones.
+
+### Architecture
+
+```
+ProgressReader → TrajectoryExtractor → [Trajectory]
+                                            ↓
+DesignCandidate ──→ ReplayEngine ──→ ReplayMetrics
+  (RetrievalConfig,    (isolated       (routing_accuracy,
+   ScoringConfig)       EpisodicStore)  cumulative_reward,
+                                        q_convergence)
+                                            ↓
+                                      DesignArchive (SQLite)
+                                            ↓
+                                      MetaAgentWorkflow
+                                        (Claude proposes →
+                                         replay evaluates →
+                                         human approves)
+```
+
+### Modules
+
+| Module | File | LOC | Purpose |
+|--------|------|-----|---------|
+| Trajectory | `replay/trajectory.py` | 374 | Extract complete trajectories from progress logs, stratified sampling, embedding pre-computation |
+| Engine | `replay/engine.py` | 339 | Create isolated EpisodicStore per candidate, replay chronologically, collect per-step results |
+| Metrics | `replay/metrics.py` | 102 | Aggregate replay results into comparable metrics (routing accuracy, reward, Q-convergence) |
+| Candidates | `replay/candidates.py` | 305 | DesignCandidate (config bundle with lineage) + DesignArchive (SQLite-backed results store) |
+| Warm Start | `replay/warm_start.py` | 265 | Model swap detection, Q-value reset, warmup learning rate doubling |
+| Meta Agent | `replay/meta_agent.py` | 470 | Claude-as-meta-agent workflow: reflection prompt, candidate parsing, evaluation, promotion recommendation |
+
+**Tests**: 75 tests across 5 files (1,250 LOC). Total production: 1,885 LOC.
+
+### Key Design Decisions
+
+- **No live embedder calls**: Replay uses pre-computed embeddings from `TrajectoryExtractor`. A `NullEmbedder` safety guard raises if the engine ever tries to call the live embedder.
+- **Isolated stores**: Each candidate gets a fresh `EpisodicStore(tmp_dir)` — no cross-contamination between evaluations. Cleaned up after run.
+- **No graph integration in v1**: FailureGraph/HypothesisGraph deferred (Kuzu per-candidate too expensive).
+- **Human-in-the-loop promotion**: Meta-agent recommends but never auto-promotes. Human reviews markdown report, manually updates `model_registry.yaml`.
+- **Stratified sampling**: Default 1000 trajectories, proportional by task_type, reproducible via fixed seed.
+
+### model_id Field (Warm-Start Support)
+
+Added `model_id TEXT` column to `memories` table (backward-compatible ALTER TABLE, default NULL). Enables:
+- **Retrieval affinity**: Same-model memories get +15% score bonus in TwoPhaseRetriever Phase 2
+- **Model swap detection**: `WarmStartProtocol.detect_model_swap()` checks if majority of role's memories come from a different model
+- **Q-value reset**: On swap, reset Q-values to 0.5 and double learning rate for 50-task warmup period
+
+### Baseline Replay Results (2026-02-13)
+
+First baseline run against 31 days of progress logs:
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Trajectories extracted | 1160 (1000 sampled) | 160 skipped incomplete |
+| Task types | chat, chat_stream | Seeding/eval mock routing |
+| Routing accuracy | 0.0% | Expected: all routing_decision="unknown" (mock strategy) |
+| Cumulative reward | 997.0 | Nearly all success outcomes |
+| Avg reward | 0.997 | |
+| Q convergence step | 10 | Quick convergence on homogeneous data |
+| Replay duration | 0.18s | 1000 trajectories, no inference |
+
+Routing accuracy will become meaningful once live orchestration produces real routing decisions (not mock/seeding).
+
 ## References
 
 ### Core Concepts
@@ -385,10 +452,19 @@ With 500K memories (projected), FAISS search would be ~2ms, total ~10-20ms.
 6. `orchestration/repl_memory/retriever.py`: Two-phase retrieval (608 lines)
 7. `orchestration/repl_memory/q_scorer.py`: Async Q-learning (502 lines)
 
+### Replay Harness
+
+8. `orchestration/repl_memory/replay/trajectory.py`: Trajectory extraction (374 lines)
+9. `orchestration/repl_memory/replay/engine.py`: Offline replay engine (339 lines)
+10. `orchestration/repl_memory/replay/candidates.py`: Design candidate archive (305 lines)
+11. `orchestration/repl_memory/replay/warm_start.py`: Model swap warm-start (265 lines)
+12. `orchestration/repl_memory/replay/meta_agent.py`: Claude meta-agent workflow (470 lines)
+
 ### Related Systems
 
-8. Prioritized Experience Replay (Schaul et al., 2015): https://arxiv.org/abs/1511.05952
-9. Episodic Memory in Lifelong Learning (Kemker et al., 2018): https://arxiv.org/abs/1802.07569
+13. Prioritized Experience Replay (Schaul et al., 2015): https://arxiv.org/abs/1511.05952
+14. Episodic Memory in Lifelong Learning (Kemker et al., 2018): https://arxiv.org/abs/1802.07569
+15. ALMA: Meta-Learned Memory Architectures (Xiong et al., 2026): Motivates offline replay evaluation
 
 ---
 

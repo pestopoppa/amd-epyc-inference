@@ -2,6 +2,19 @@
 
 ## 2026-02-13
 
+- **Replay Evaluation Harness (MemRL meta-learning)**: Full 8-phase implementation of offline replay harness for meta-learned memory configurations. Motivated by ALMA (Xiong et al., 2026). 7 new modules (1,885 LOC production + 1,250 LOC tests = 3,135 LOC total):
+  - **Trajectory extraction** (`replay/trajectory.py`): Reads progress logs, groups by task_id, builds complete Trajectory objects. Stratified sampling (default 1000), embedding pre-computation with cache.
+  - **Replay engine** (`replay/engine.py`): Creates isolated EpisodicStore per candidate, replays chronologically, collects per-step routing accuracy and reward. NullEmbedder safety guard prevents live embedding calls.
+  - **Metrics** (`replay/metrics.py`): Aggregate metrics — routing accuracy (overall + per-type), escalation precision/recall, Q-convergence step, cumulative/avg reward, cost efficiency.
+  - **Design candidates + archive** (`replay/candidates.py`): DesignCandidate bundles (RetrievalConfig, ScoringConfig, StagedConfig) with lineage tracking. DesignArchive (SQLite) stores results, supports top-k queries, lineage traversal, diverse sampling for reflection.
+  - **Warm-start protocol** (`replay/warm_start.py`): Detects model swap (majority model_id mismatch), resets Q-values to 0.5, doubles learning rate for 50-task warmup. RoleConfig for per-role memory schemas.
+  - **model_id field**: Added `model_id TEXT` column to MemoryEntry + ALTER TABLE in episodic_store.py. Enables retrieval affinity (+15% same-model bonus) and model swap detection.
+  - **Meta-agent workflow** (`replay/meta_agent.py`): Claude-as-meta-agent — builds reflection prompt, parses candidate proposals, runs replay evaluation, generates comparison report. Human-in-the-loop promotion (no auto-promote). Dual CLI + library interface.
+  - **Prompt template** (`orchestration/prompts/meta_agent_reflect.md`): Structured prompt for Claude to propose memory config mutations.
+  - **Baseline replay**: 1000 trajectories replayed in 0.18s. Routing accuracy 0% (expected: historical logs use mock routing). Cumulative reward 997.0 (nearly all success).
+  - **Tests**: 75 new tests across 5 files, all passing. Full suite: 3386 passed, 0 failures.
+  - **Shellcheck fix**: Fixed pre-existing SC2294 warning in `scripts/benchmark/deprecated/run_phase3_validation.sh` (`eval "$@"` → `"$@"`).
+
 - **SoftMatcha v2 research + Corpus-Augmented Speculative Decoding plan**: Reviewed SoftMatcha v2 (arxiv 2602.10908) — fast fuzzy pattern matcher for trillion-scale corpora (Python+Rust, Apache 2.0). Assessed relevance to orchestration architecture: high for corpus-augmented prompt lookup (extend draft source beyond input prompt to 100GB code corpus), medium as NextPLAID complement for verbatim matching. Identified critical finding: 480B prompt lookup `forbid` in registry likely overgeneralized (MoE ≠ SSM, prompt lookup is architecture-agnostic). Merged all findings into expanded `handoffs/active/hybrid-lookup-spec-decode.md` (205→409 lines, PROPOSAL→ACTIVE). Phased plan: Phase 0 (test lookup on 480B), Phase 0.5 (jukofyork draft), Phase 1 (all non-SSM models), Phase 2A (SoftMatcha corpus stuffing), Phase 2B (sidecar draft injection). Updated `BLOCKED_TASKS.md` status.
 
 - **Orchestrator wiring: 4 scaffolded improvements connected to live pipeline**:

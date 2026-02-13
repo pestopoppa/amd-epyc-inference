@@ -27,6 +27,23 @@ from .embedder import TaskEmbedder
 from .retriever import TwoPhaseRetriever, GraphEnhancedRetriever, RetrievalConfig, RetrievalResult
 from .progress_logger import ProgressLogger, ProgressEntry
 from .q_scorer import QScorer
+from .progress_logger import ProgressReader
+
+# Replay evaluation harness (optional — all deps are local)
+try:
+    from .replay import (
+        Trajectory,
+        TrajectoryExtractor,
+        ReplayEngine,
+        ReplayMetrics,
+        DesignCandidate,
+        DesignArchive,
+        WarmStartProtocol,
+        MetaAgentWorkflow,
+    )
+    _REPLAY_AVAILABLE = True
+except ImportError:
+    _REPLAY_AVAILABLE = False
 
 # Graph modules are optional (require kuzu)
 try:
@@ -56,6 +73,16 @@ __all__ = [
     "ProgressEntry",
     # Q-learning
     "QScorer",
+    "ProgressReader",
+    # Replay harness
+    "Trajectory",
+    "TrajectoryExtractor",
+    "ReplayEngine",
+    "ReplayMetrics",
+    "DesignCandidate",
+    "DesignArchive",
+    "WarmStartProtocol",
+    "MetaAgentWorkflow",
     # Graphs (optional)
     "FailureGraph",
     "FailureMode",

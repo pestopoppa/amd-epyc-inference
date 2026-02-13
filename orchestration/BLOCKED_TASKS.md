@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-13 (Orchestrator Intelligence Improvements complete)
+**Last Updated**: 2026-02-13 (Replay Evaluation Harness: all 8 phases implemented, 75 tests passing)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -28,6 +28,7 @@
 | **Document Pipeline Tests** | — | **LOW** | `handoffs/active/document_test_failures.md` | 📋 READY (pytest-asyncio now installed) |
 | **Orchestrator real mode** | — | **LOW** | `handoffs/active/orchestrator.md` | 📋 READY (stack infrastructure complete, live verification pending) |
 | **JSON Canvas + Plugin Architecture** | — | **MEDIUM** | `handoffs/active/json-canvas-plugin-architecture.md` | 📋 NEW (visual reasoning + MCP tool plugins) |
+| **Replay Evaluation Harness** | — | **HIGH** | `handoffs/active/replay-evaluation-harness.md` | ✅ IMPLEMENTATION COMPLETE (8/8 phases done, 75 unit tests passing, 3386 full suite. Live smoke tests + baseline replay run pending.) |
 | **Orchestrator Intelligence Improvements** | — | **HIGH** | `handoffs/active/orchestrator-intelligence-improvements.md` | ✅ COMPLETE (7/7 improvements implemented, 3746 tests pass). Live validation pending (seeding with new tunables). |
 
 ---

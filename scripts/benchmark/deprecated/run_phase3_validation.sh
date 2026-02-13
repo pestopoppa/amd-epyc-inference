@@ -87,7 +87,7 @@ run_cmd() {
     log "[DRY-RUN] $*"
   else
     log "Running: $*"
-    eval "$@" 2>&1 | tee -a "${PHASE3_LOG}"
+    "$@" 2>&1 | tee -a "${PHASE3_LOG}"
     return "${PIPESTATUS[0]}"
   fi
 }

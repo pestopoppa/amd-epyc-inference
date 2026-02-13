@@ -604,6 +604,14 @@ class ProgressReader:
 
         return entries
 
+    def read_all(self, days: int = 31) -> List[ProgressEntry]:
+        """Read all entries from the last N days (bulk loading).
+
+        Convenience wrapper over read_recent with a configurable range,
+        intended for trajectory extraction and replay evaluation.
+        """
+        return self.read_recent(days=days)
+
     def get_unscored_tasks(self, days: int = 7) -> List[str]:
         """
         Find task IDs that have completed but not been Q-scored.
