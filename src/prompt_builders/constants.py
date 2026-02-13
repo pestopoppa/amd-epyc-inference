@@ -133,7 +133,9 @@ Research: `results = CALL("search_arxiv", query="speculative decoding"); FINAL(j
 Run tests: `results = CALL("run_tests", test_path="tests/"); FINAL(json.loads(results))`
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); FINAL(doc['full_text'][:2000])`
 
-## EXAMPLES: Competitive Programming (USACO, Codeforces, etc.)
+## EXAMPLES: Competitive Programming (stdin/stdout: USACO, Codeforces, etc.)
+NOTE: input() is BLOCKED in the REPL. Wrap code in a string, test with CALL, submit with FINAL.
+```
 solution = '''
 import sys
 input = sys.stdin.readline
@@ -146,8 +148,9 @@ for x in a[1:]:
 print(best)
 '''
 test_out = CALL("run_python_code", code=solution, stdin_data="5\n-2 1 -3 4 -1")
-# verify output, then submit the code itself
+# verify output looks correct, then submit the code itself
 FINAL(solution)
+```
 
 ## COMPLEX CODE (algorithms, implementations)
 - Write code to file: `file_write_safe("/mnt/raid0/llm/tmp/solution.py", code)`
