@@ -152,6 +152,26 @@ test_out = CALL("run_python_code", code=solution, stdin_data="5\n-2 1 -3 4 -1")
 FINAL(solution)
 ```
 
+## EXAMPLES: Write/Fix a Function (LeetCode, DebugBench, etc.)
+When the task says "write a function" or "fix the bug", submit the CODE ITSELF as a string.
+```
+solution = '''
+def shortestPalindrome(s: str) -> str:
+    if not s: return s
+    combined = s + "#" + s[::-1]
+    lps = [0] * len(combined)
+    length = 0
+    for i in range(1, len(combined)):
+        while length and combined[i] != combined[length]:
+            length = lps[length - 1]
+        if combined[i] == combined[length]:
+            length += 1
+        lps[i] = length
+    return s[lps[-1]:][::-1] + s
+'''
+FINAL(solution)
+```
+
 ## COMPLEX CODE (algorithms, implementations)
 - Write code to file: `file_write_safe("/mnt/raid0/llm/tmp/solution.py", code)`
 - Test it: `exec(open("/mnt/raid0/llm/tmp/solution.py").read())` with sample input
