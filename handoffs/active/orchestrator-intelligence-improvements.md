@@ -1,7 +1,7 @@
 # Handoff: Orchestrator Intelligence Improvements (Claude-Inspired)
 
 - **Created**: 2026-02-12
-- **Status**: COMPLETE
+- **Status**: COMPLETE (scaffolding + wiring)
 - **Priority**: High
 - **Blocked by**: None
 
@@ -146,6 +146,8 @@
 - [x] Debugger integration (diagnostic records extended with new tunables)
 - [x] Architecture docs updated (7 chapters)
 - [x] CHANGELOG, progress report, BLOCKED_TASKS updated
+- [x] Wiring session: #2 think-harder, #7 GBNF grammar, #9 diagnostics, #6 tool events connected to live pipeline
+- [x] Test fixes: stale signal count (20→22), wrong escalation edge assertion
 
 ---
 

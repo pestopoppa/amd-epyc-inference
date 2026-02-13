@@ -7,8 +7,8 @@ code and documentation using token-level ColBERT matching — finding specific
 function names, class definitions, and code patterns rather than past routing
 decisions.
 
-Phase 4 architecture: two NextPLAID containers with specialized models.
-  :8088  nextplaid-code   LateOn-Code-edge (48-dim, INT8)     → code index
+Phase 5 architecture: two NextPLAID containers with specialized models.
+  :8088  nextplaid-code   LateOn-Code (130M, 128-dim, INT8)   → code index (AST-chunked)
   :8089  nextplaid-docs   answerai-colbert-small-v1-onnx      → docs index
 
 Degrades gracefully: if docs container down, falls back to code container.
@@ -153,11 +153,19 @@ class _CodeSearchMixin:
                 for doc_id, score, meta in zip(qr.document_ids, qr.scores, qr.metadata):
                     if len(results) >= limit:
                         break
-                    results.append({
+                    entry = {
                         "file": meta.get("file", "unknown"),
                         "lines": f"{meta.get('start_line', '?')}-{meta.get('end_line', '?')}",
                         "score": round(float(score), 3),
-                    })
+                    }
+                    # Include AST metadata when available (Phase 5)
+                    unit_name = meta.get("unit_name")
+                    if unit_name:
+                        entry["unit"] = f"{meta.get('unit_type', '')}:{unit_name}"
+                        sig = meta.get("signature", "")
+                        if sig:
+                            entry["signature"] = sig[:100]
+                    results.append(entry)
 
             response = {"results": results, "index": index, "query": query}
 

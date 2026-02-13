@@ -4,8 +4,8 @@
 Designed for `make gates` — runs quickly when few files changed, skips entirely
 when no changes detected. Uses git diff against a stored commit hash.
 
-Phase 4: Dual-container architecture.
-  Code files → :8088 (LateOn-Code-edge)
+Phase 5: Dual-container architecture with AST-aware chunking.
+  Code files → :8088 (LateOn-Code 130M, 128-dim)
   Doc files  → :8089 (answerai-colbert-small-v1-onnx)
 
 Usage:
@@ -35,6 +35,10 @@ DOC_PREFIXES = ("docs/", "handoffs/", "orchestration/")
 DOC_ROOT_FILES = {"CLAUDE.md", "CHANGELOG.md"}
 
 SKIP_FRAGMENTS = {"__pycache__", ".pyc", "node_modules", ".git", "cache/"}
+
+# Add script dir to path for ast_chunker import
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ast_chunker import chunk_file  # AST-aware chunking (Phase 5)
 
 
 def get_last_commit() -> str | None:
@@ -99,52 +103,6 @@ def classify_file(rel_path: str) -> str | None:
     return None
 
 
-def chunk_file(path: Path, max_chars: int = 1800) -> list[dict]:
-    """Split file into chunks (same logic as index_codebase.py)."""
-    try:
-        text = path.read_text(errors="replace")
-    except Exception:
-        return []
-
-    if not text.strip():
-        return []
-
-    lines = text.split("\n")
-    chunks: list[dict] = []
-    chunk_lines: list[str] = []
-    char_count = 0
-    start_line = 1
-
-    for i, line in enumerate(lines, 1):
-        chunk_lines.append(line)
-        char_count += len(line) + 1
-
-        at_boundary = (line.strip() == "" and char_count >= max_chars * 0.7)
-        at_limit = char_count >= max_chars
-
-        if at_boundary or at_limit:
-            chunks.append({
-                "text": "\n".join(chunk_lines),
-                "file": str(path.relative_to(PROJECT_ROOT)),
-                "start_line": start_line,
-                "end_line": i,
-            })
-            overlap = chunk_lines[-3:] if len(chunk_lines) >= 3 else chunk_lines[-1:]
-            chunk_lines = list(overlap)
-            char_count = sum(len(ln) + 1 for ln in chunk_lines)
-            start_line = max(1, i - len(overlap) + 1)
-
-    if chunk_lines and char_count > 10:
-        chunks.append({
-            "text": "\n".join(chunk_lines),
-            "file": str(path.relative_to(PROJECT_ROOT)),
-            "start_line": start_line,
-            "end_line": len(lines),
-        })
-
-    return chunks
-
-
 def reindex_files(clients: dict[str, Any], files_by_index: dict[str, list[str]]) -> int:
     """Re-index changed files into their respective indices.
 
@@ -178,13 +136,17 @@ def reindex_files(clients: dict[str, Any], files_by_index: dict[str, list[str]])
                     "file": chunk["file"],
                     "start_line": str(chunk["start_line"]),
                     "end_line": str(chunk["end_line"]),
+                    "unit_type": chunk.get("unit_type", ""),
+                    "unit_name": chunk.get("unit_name", ""),
+                    "signature": chunk.get("signature", ""),
+                    "has_docstring": str(chunk.get("has_docstring", False)),
                 })
 
         if not all_texts:
             continue
 
-        # Batch update
-        BATCH = 100
+        # Batch update (32 for LateOn-Code 130M encoding time)
+        BATCH = 32
         for i in range(0, len(all_texts), BATCH):
             client.update_documents_with_encoding(
                 index_name,

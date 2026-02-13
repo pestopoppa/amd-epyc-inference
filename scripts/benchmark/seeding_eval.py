@@ -142,6 +142,15 @@ def _build_role_result(
         tokens_generated_estimate=resp.get("tokens_generated_estimate", 0),
         backend_task_id=resp.get("backend_task_id", 0),
         slot_progress_source=resp.get("slot_progress_source", ""),
+        # Orchestrator intelligence diagnostics
+        cost_dimensions=resp.get("cost_dimensions", {}),
+        think_harder_attempted=resp.get("think_harder_attempted", False),
+        think_harder_succeeded=resp.get("think_harder_succeeded"),
+        cheap_first_attempted=resp.get("cheap_first_attempted", False),
+        cheap_first_passed=resp.get("cheap_first_passed"),
+        grammar_enforced=resp.get("grammar_enforced", False),
+        parallel_tools_used=resp.get("parallel_tools_used", False),
+        cache_affinity_bonus=resp.get("cache_affinity_bonus", 0.0),
     )
     return rr, error_type
 

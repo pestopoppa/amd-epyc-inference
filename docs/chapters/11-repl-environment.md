@@ -63,7 +63,7 @@ RestrictedPython (optional) provides battle-tested sandbox used by Zope/Plone, w
 | `code_search(query)` | Multi-vector code search | Find function definitions, patterns |
 | `doc_search(query)` | Multi-vector doc search | Find relevant documentation sections |
 
-Uses ColBERT token-level matching via NextPLAID (:8088). Complements `recall()` (episodic memory) — `code_search` finds actual source code, `recall` finds past routing decisions.
+Uses ColBERT token-level matching via NextPLAID (:8088, LateOn-Code 130M, 128-dim). AST-chunked code units (functions, classes, methods with signatures) instead of naive character splits. Complements `recall()` (episodic memory) — `code_search` finds actual source code, `recall` finds past routing decisions. ColGrep CLI (`colgrep`) provides agent-facing hybrid search over the same codebase index.
 
 ### Extended Functions (Archive/Web)
 

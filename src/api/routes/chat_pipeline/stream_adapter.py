@@ -37,6 +37,8 @@ from src.sse_utils import (
     final_event,
     thinking_event,
     token_event,
+    tool_end_event,
+    tool_start_event,
     turn_end_event,
     turn_start_event,
 )
@@ -146,6 +148,7 @@ async def _stream_repl(
     last_output = ""
     last_error = ""
     result = None
+    prev_tool_count = 0
 
     current_role = request.role or Role.FRONTDOOR
     consecutive_failures = 0
@@ -200,6 +203,14 @@ async def _stream_repl(
             yield token_event(line + "\n")
 
         result = repl.execute(code)
+
+        # Emit tool events for any tool invocations in this turn
+        if repl.tool_registry:
+            inv_log = repl.tool_registry.get_invocation_log()
+            for inv in inv_log[prev_tool_count:]:
+                yield tool_start_event(inv.tool_name)
+                yield tool_end_event(inv.tool_name, int(inv.elapsed_ms), inv.success)
+            prev_tool_count = len(inv_log)
 
         # Model-initiated routing
         if repl.artifacts.get("_escalation_requested"):
@@ -316,7 +327,13 @@ async def _stream_repl(
             )
             decision = EscalationPolicy().decide(esc_ctx)
 
-            if decision.should_escalate and decision.target_role:
+            if decision.should_think_harder and decision.config_override:
+                # Same model, boosted config — prepend CoT, don't escalate
+                cot_prefix = decision.config_override.get("cot_prefix", "")
+                if cot_prefix:
+                    escalation_prompt = cot_prefix + root_prompt
+                log.info("Think-harder in stream: %s", decision.reason)
+            elif decision.should_escalate and decision.target_role:
                 current_role = str(decision.target_role)
                 role_history.append(current_role)
                 consecutive_failures = 0

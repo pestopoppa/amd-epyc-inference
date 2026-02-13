@@ -585,9 +585,9 @@ class TestComputeAnomalySignals:
         )
         assert signals["format_violation"] is True
 
-    def test_returns_all_20_signals(self):
+    def test_returns_all_22_signals(self):
         signals = compute_anomaly_signals(answer="test")
-        assert len(signals) == 20
+        assert len(signals) == 22
         assert set(signals.keys()) == set(SIGNAL_WEIGHTS.keys())
 
 

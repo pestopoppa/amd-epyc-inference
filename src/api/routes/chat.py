@@ -15,9 +15,12 @@ extracted into focused modules during Phase 1 decomposition:
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from typing import TYPE_CHECKING, AsyncGenerator
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -56,6 +59,8 @@ from src.sse_utils import (
     error_event,
     final_event,
     done_event,
+    tool_start_event,
+    tool_end_event,
 )
 
 # Decomposed modules (Phase 1 — extract-and-move, no behavior changes)
@@ -264,6 +269,8 @@ async def _try_cheap_first(
         routing_strategy=f"cheap_first:{routing.routing_strategy}",
         generation_ms=elapsed * 1000,
         mode="direct",
+        cheap_first_attempted=True,
+        cheap_first_passed=True,
     )
 
 
@@ -555,6 +562,7 @@ async def chat_stream(
         last_output = ""
         last_error = ""
         result = None
+        prev_tool_count = 0
 
         # Escalation tracking (parity with main endpoint)
         current_role = request.role or Role.FRONTDOOR
@@ -614,6 +622,14 @@ async def chat_stream(
 
             # Execute in REPL
             result = repl.execute(code)
+
+            # Emit tool events for any tool invocations in this turn
+            if repl.tool_registry:
+                inv_log = repl.tool_registry.get_invocation_log()
+                for inv in inv_log[prev_tool_count:]:
+                    yield tool_start_event(inv.tool_name)
+                    yield tool_end_event(inv.tool_name, int(inv.elapsed_ms), inv.success)
+                prev_tool_count = len(inv_log)
 
             # Check model-initiated routing artifacts
             if repl.artifacts.get("_escalation_requested"):
@@ -731,7 +747,12 @@ async def chat_stream(
                 )
                 decision = EscalationPolicy().decide(esc_ctx)
 
-                if decision.should_escalate and decision.target_role:
+                if decision.should_think_harder and decision.config_override:
+                    cot_prefix = decision.config_override.get("cot_prefix", "")
+                    if cot_prefix:
+                        escalation_prompt = cot_prefix + root_prompt
+                    log.info("Think-harder in legacy stream: %s", decision.reason)
+                elif decision.should_escalate and decision.target_role:
                     current_role = str(decision.target_role)
                     role_history.append(current_role)
                     consecutive_failures = 0

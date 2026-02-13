@@ -399,6 +399,29 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             "Start converging on your answer. Call FINAL() when ready."
         )
 
+    # Apply think-harder config override if set (same model, boosted params)
+    llm_kwargs: dict = {}
+    if state.think_harder_config:
+        cot_prefix = state.think_harder_config.get("cot_prefix", "")
+        if cot_prefix:
+            prompt = cot_prefix + prompt
+        n_tokens = state.think_harder_config.get("n_tokens")
+        if n_tokens:
+            llm_kwargs["n_tokens"] = n_tokens
+        state.think_harder_config = None  # Clear after use
+
+    # Apply GBNF grammar on first turn when tool use is required
+    if state.tool_required and state.turns == 1 and deps.repl is not None:
+        try:
+            tool_reg = deps.repl.tool_registry if hasattr(deps.repl, "tool_registry") else None
+            if tool_reg is not None:
+                grammar = tool_reg.generate_gbnf_grammar(str(role))
+                if grammar:
+                    llm_kwargs["grammar"] = grammar
+                    state.grammar_enforced = True
+        except Exception:
+            pass  # Fall back to unconstrained generation
+
     # LLM call — stop at first code block close to prevent repetition loops.
     # REPL expects one action per turn; without this, the model can generate
     # FINAL("X") then repeat the same code block hundreds of tokens.
@@ -412,6 +435,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             prompt,
             role=str(role),
             stop_sequences=["\n```\n"],
+            **llm_kwargs,
         )
     except Exception as e:
         return "", f"LLM call failed: {e}", False, {}
@@ -683,6 +707,26 @@ def _should_escalate(
     return state.consecutive_failures >= cfg.max_retries
 
 
+def _should_think_harder(ctx: Ctx, error_category: ErrorCategory) -> bool:
+    """On penultimate retry, try same model with boosted config (CoT, 2x tokens).
+
+    Returns True exactly once: when consecutive_failures == max_retries - 1
+    and think_harder hasn't been attempted yet for this role.
+    """
+    cfg = ctx.deps.config
+    state = ctx.state
+
+    # Format/schema errors: just retry, don't think harder
+    if error_category in cfg.no_escalate_categories:
+        return False
+
+    # Only try once per role
+    if state.think_harder_attempted:
+        return False
+
+    return state.consecutive_failures == cfg.max_retries - 1
+
+
 def _should_retry(ctx: Ctx, error_category: ErrorCategory) -> bool:
     """Determine if we should retry with the same role."""
     cfg = ctx.deps.config
@@ -804,9 +848,24 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 _log_escalation(ctx, from_role, str(Role.CODER_PRIMARY), f"Early abort: {error[:100]}")
                 return CoderNode()
 
+            # Think-harder: same model with CoT + 2x tokens before escalating
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s (attempt before escalation)", state.current_role)
+                return FrontdoorNode()
+
             if _should_escalate(ctx, error_cat, Role.CODER_PRIMARY):
+                # If think-harder was attempted and we still escalate, it failed
+                if state.think_harder_attempted:
+                    state.think_harder_succeeded = False
                 state.escalation_count += 1
                 state.consecutive_failures = 0
+                state.think_harder_attempted = False  # Reset for next role
                 from_role = str(state.current_role)
                 state.record_role(Role.CODER_PRIMARY)
                 _log_escalation(
@@ -821,6 +880,9 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             return _make_end_result(ctx, f"[FAILED: {error}]", False)
 
         state.last_output = output
+        # If think-harder was attempted and we got a successful turn, it worked
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1
@@ -881,9 +943,22 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 _log_escalation(ctx, from_role, str(Role.CODER_PRIMARY), f"Early abort: {error[:100]}")
                 return CoderNode()
 
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s", state.current_role)
+                return WorkerNode()
+
             if _should_escalate(ctx, error_cat, Role.CODER_PRIMARY):
+                if state.think_harder_attempted:
+                    state.think_harder_succeeded = False
                 state.escalation_count += 1
                 state.consecutive_failures = 0
+                state.think_harder_attempted = False
                 from_role = str(state.current_role)
                 state.record_role(Role.CODER_PRIMARY)
                 _log_escalation(
@@ -899,6 +974,8 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
         state.consecutive_failures = 0
         state.last_output = output
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1
@@ -975,9 +1052,22 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 _log_escalation(ctx, from_role, str(Role.ARCHITECT_GENERAL), f"Early abort: {error[:100]}")
                 return ArchitectNode()
 
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s", state.current_role)
+                return CoderNode()
+
             if _should_escalate(ctx, error_cat, Role.ARCHITECT_GENERAL):
+                if state.think_harder_attempted:
+                    state.think_harder_succeeded = False
                 state.escalation_count += 1
                 state.consecutive_failures = 0
+                state.think_harder_attempted = False
                 from_role = str(state.current_role)
                 state.record_role(Role.ARCHITECT_GENERAL)
                 _log_escalation(
@@ -993,6 +1083,8 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
         state.consecutive_failures = 0
         state.last_output = output
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1
@@ -1055,9 +1147,22 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 _log_escalation(ctx, from_role, str(Role.ARCHITECT_CODING), f"Early abort: {error[:100]}")
                 return ArchitectCodingNode()
 
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s", state.current_role)
+                return CoderEscalationNode()
+
             if _should_escalate(ctx, error_cat, Role.ARCHITECT_CODING):
+                if state.think_harder_attempted:
+                    state.think_harder_succeeded = False
                 state.escalation_count += 1
                 state.consecutive_failures = 0
+                state.think_harder_attempted = False
                 from_role = str(state.current_role)
                 state.record_role(Role.ARCHITECT_CODING)
                 _log_escalation(
@@ -1073,6 +1178,8 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
         state.consecutive_failures = 0
         state.last_output = output
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1
@@ -1135,9 +1242,22 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 _log_escalation(ctx, from_role, str(Role.ARCHITECT_GENERAL), f"Early abort: {error[:100]}")
                 return ArchitectNode()
 
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s", state.current_role)
+                return IngestNode()
+
             if _should_escalate(ctx, error_cat, Role.ARCHITECT_GENERAL):
+                if state.think_harder_attempted:
+                    state.think_harder_succeeded = False
                 state.escalation_count += 1
                 state.consecutive_failures = 0
+                state.think_harder_attempted = False
                 from_role = str(state.current_role)
                 state.record_role(Role.ARCHITECT_GENERAL)
                 _log_escalation(
@@ -1153,6 +1273,8 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
         state.consecutive_failures = 0
         state.last_output = output
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1
@@ -1209,6 +1331,16 @@ class ArchitectNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             error_cat = _classify_error(error)
             _record_failure(ctx, error_cat, error)
 
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s (terminal role)", state.current_role)
+                return ArchitectNode()
+
             if _should_retry(ctx, error_cat):
                 return ArchitectNode()
 
@@ -1222,6 +1354,8 @@ class ArchitectNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
         state.consecutive_failures = 0
         state.last_output = output
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1
@@ -1278,6 +1412,16 @@ class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             error_cat = _classify_error(error)
             _record_failure(ctx, error_cat, error)
 
+            if _should_think_harder(ctx, error_cat):
+                state.think_harder_attempted = True
+                state.think_harder_config = {
+                    "n_tokens": 4096,
+                    "cot_prefix": "Think step by step before answering.\n\n",
+                    "temperature": 0.5,
+                }
+                log.info("Think-harder triggered at %s (terminal role)", state.current_role)
+                return ArchitectCodingNode()
+
             if _should_retry(ctx, error_cat):
                 return ArchitectCodingNode()
 
@@ -1290,6 +1434,8 @@ class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
         state.consecutive_failures = 0
         state.last_output = output
+        if state.think_harder_attempted and state.think_harder_succeeded is None:
+            state.think_harder_succeeded = True
         nudge = artifacts.get("_nudge")
         if nudge:
             state.consecutive_nudges += 1

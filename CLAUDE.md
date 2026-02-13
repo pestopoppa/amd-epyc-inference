@@ -160,7 +160,7 @@ Each <response> must include a <text> and a numeric <probability>.  Please sampl
 Request:    API(:8000) → AppState → ChatPipeline → REPLExecutor → run_task() → [graph nodes]
 Graph:      orchestration_graph (pydantic-graph) → 7 node classes → LLMPrimitives → [model servers]
 Memory:     EpisodicStore(SQLite) → FAISSStore(4042 vectors) → ParallelEmbedder → BGE pool(:8090-8095)
-Retrieval:  NextPLAID-code(:8088) → LateOn-Code-edge(ONNX INT8) → code index | NextPLAID-docs(:8089) → answerai-colbert-small-v1(ONNX INT8) → docs index
+Retrieval:  NextPLAID-code(:8088) → LateOn-Code(130M, 128-dim) → code index | NextPLAID-docs(:8089) → answerai-colbert-small-v1(ONNX INT8) → docs index
 Escalation: Graph nodes use EscalationPolicy(rules) + MemRL(advisory) via TaskDeps injection
 Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
 Tools:      REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)

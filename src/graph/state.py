@@ -97,6 +97,21 @@ class TaskState:
     # Pending approval for halt-and-resume (Phase 4A)
     pending_approval: Any = None
 
+    # Think-harder escalation (same model, boosted config before model swap)
+    think_harder_config: dict | None = None
+    think_harder_attempted: bool = False
+    think_harder_succeeded: bool | None = None
+
+    # Tool requirement (from routing classification)
+    tool_required: bool = False
+    tool_hint: str | None = None
+
+    # Grammar enforcement tracking
+    grammar_enforced: bool = False
+
+    # Cache affinity bonus applied during routing
+    cache_affinity_bonus: float = 0.0
+
     def record_role(self, role: Role | str) -> None:
         """Append a role to history and update current_role."""
         self.current_role = role

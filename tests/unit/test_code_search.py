@@ -64,8 +64,24 @@ class FakeNextPlaidClient:
                     document_ids=[42, 7],
                     scores=[8.5, 5.2],
                     metadata=[
-                        {"file": "src/escalation.py", "start_line": "10", "end_line": "25"},
-                        {"file": "tests/test_escalation.py", "start_line": "1", "end_line": "15"},
+                        {
+                            "file": "src/escalation.py",
+                            "start_line": "10",
+                            "end_line": "25",
+                            "unit_type": "class",
+                            "unit_name": "EscalationPolicy",
+                            "signature": "class EscalationPolicy:",
+                            "has_docstring": "True",
+                        },
+                        {
+                            "file": "tests/test_escalation.py",
+                            "start_line": "1",
+                            "end_line": "15",
+                            "unit_type": "function",
+                            "unit_name": "test_escalation_basic",
+                            "signature": "def test_escalation_basic():",
+                            "has_docstring": "False",
+                        },
                     ],
                 )
             ],
@@ -238,6 +254,54 @@ class TestCodeSearchMixin:
 
         assert result["results"] == []
         assert "connection reset" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: AST Metadata in Results (Phase 5)
+# ---------------------------------------------------------------------------
+
+class TestASTMetadata:
+    """Tests for Phase 5 AST-chunked metadata in search results."""
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._get_nextplaid_client")
+    def test_results_include_unit_field(self, mock_get_client, repl):
+        """Results include unit field when AST metadata is present."""
+        fake_client = FakeNextPlaidClient("http://localhost:8088")
+        mock_get_client.return_value = fake_client
+
+        raw = repl._code_search("escalation policy")
+        output = raw.replace("<<<TOOL_OUTPUT>>>", "").replace("<<<END_TOOL_OUTPUT>>>", "").strip()
+        result = json.loads(output)
+
+        assert len(result["results"]) == 2
+        assert result["results"][0]["unit"] == "class:EscalationPolicy"
+        assert result["results"][0]["signature"] == "class EscalationPolicy:"
+        assert result["results"][1]["unit"] == "function:test_escalation_basic"
+
+    @patch("src.repl_environment.code_search._CodeSearchMixin._get_nextplaid_client")
+    def test_results_omit_unit_when_no_metadata(self, mock_get_client, repl):
+        """Results omit unit field when AST metadata is absent."""
+        mock_client = MagicMock()
+        mock_client.search_with_encoding.return_value = FakeSearchResult(
+            results=[
+                FakeQueryResult(
+                    query_id=0,
+                    document_ids=[1],
+                    scores=[5.0],
+                    metadata=[{"file": "README.md", "start_line": "1", "end_line": "10"}],
+                )
+            ],
+            num_queries=1,
+        )
+        mock_get_client.return_value = mock_client
+
+        raw = repl._code_search("readme")
+        output = raw.replace("<<<TOOL_OUTPUT>>>", "").replace("<<<END_TOOL_OUTPUT>>>", "").strip()
+        result = json.loads(output)
+
+        assert len(result["results"]) == 1
+        assert "unit" not in result["results"][0]
+        assert "signature" not in result["results"][0]
 
 
 # ---------------------------------------------------------------------------

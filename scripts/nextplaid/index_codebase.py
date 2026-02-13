@@ -4,8 +4,8 @@
 Usage:
     python scripts/nextplaid/index_codebase.py [--reindex]
 
-Phase 4: Dual-container architecture.
-  Code index → :8088 (LateOn-Code-edge)
+Phase 5: Dual-container architecture with AST-aware chunking.
+  Code index → :8088 (LateOn-Code 130M, 128-dim)
   Docs index → :8089 (answerai-colbert-small-v1-onnx)
 
 Each index is served by a dedicated NextPLAID container with a model
@@ -41,6 +41,8 @@ DOC_PATTERNS = [
 
 SKIP_FRAGMENTS = {"__pycache__", ".pyc", "node_modules", ".git", "cache/"}
 
+from ast_chunker import chunk_file  # AST-aware chunking (Phase 5)
+
 
 def collect_files(patterns: list[str], root: Path) -> list[Path]:
     files: list[Path] = []
@@ -51,59 +53,6 @@ def collect_files(patterns: list[str], root: Path) -> list[Path]:
             if path.is_file():
                 files.append(path)
     return sorted(set(files))
-
-
-def chunk_file(path: Path, max_chars: int = 1800) -> list[dict]:
-    """Split file into chunks, preferring blank-line boundaries.
-
-    Each chunk carries metadata: relative file path, start/end line numbers.
-    Overlap of 3 lines ensures context continuity across chunk boundaries.
-    """
-    try:
-        text = path.read_text(errors="replace")
-    except Exception:
-        return []
-
-    if not text.strip():
-        return []
-
-    lines = text.split("\n")
-    chunks: list[dict] = []
-    chunk_lines: list[str] = []
-    char_count = 0
-    start_line = 1
-
-    for i, line in enumerate(lines, 1):
-        chunk_lines.append(line)
-        char_count += len(line) + 1
-
-        # Split on blank lines near the limit, or hard-split at limit
-        at_boundary = (line.strip() == "" and char_count >= max_chars * 0.7)
-        at_limit = char_count >= max_chars
-
-        if at_boundary or at_limit:
-            chunks.append({
-                "text": "\n".join(chunk_lines),
-                "file": str(path.relative_to(PROJECT_ROOT)),
-                "start_line": start_line,
-                "end_line": i,
-            })
-            # Overlap: keep last 3 lines for context continuity
-            overlap = chunk_lines[-3:] if len(chunk_lines) >= 3 else chunk_lines[-1:]
-            chunk_lines = list(overlap)
-            char_count = sum(len(ln) + 1 for ln in chunk_lines)
-            start_line = max(1, i - len(overlap) + 1)
-
-    # Remaining lines
-    if chunk_lines and char_count > 10:
-        chunks.append({
-            "text": "\n".join(chunk_lines),
-            "file": str(path.relative_to(PROJECT_ROOT)),
-            "start_line": start_line,
-            "end_line": len(lines),
-        })
-
-    return chunks
 
 
 def index_files(
@@ -142,6 +91,10 @@ def index_files(
                 "file": chunk["file"],
                 "start_line": str(chunk["start_line"]),
                 "end_line": str(chunk["end_line"]),
+                "unit_type": chunk.get("unit_type", ""),
+                "unit_name": chunk.get("unit_name", ""),
+                "signature": chunk.get("signature", ""),
+                "has_docstring": str(chunk.get("has_docstring", False)),
             })
 
     print(f"  Total chunks: {len(all_texts)}")
@@ -151,7 +104,8 @@ def index_files(
         return 0
 
     # Batch ingest — NextPLAID handles encoding server-side
-    BATCH = 100
+    # Batch size 32 for LateOn-Code 130M (larger model needs more encoding time per batch)
+    BATCH = 32
     for i in range(0, len(all_texts), BATCH):
         batch_docs = all_texts[i : i + BATCH]
         batch_meta = all_metadata[i : i + BATCH]
@@ -213,8 +167,9 @@ def main():
     total = 0
     t0 = time.time()
 
+    # 120s timeout for LateOn-Code 130M (larger model, slower encoding per batch)
     if not args.docs_only:
-        code_client = NextPlaidClient(args.code_url)
+        code_client = NextPlaidClient(args.code_url, timeout=120.0)
         if _health_check(code_client, args.code_url):
             print("\n[code] Indexing source files...")
             total += index_files(code_client, "code", CODE_PATTERNS, reindex=args.reindex)
@@ -222,7 +177,7 @@ def main():
             print(f"Error: Code server at {args.code_url} not reachable, skipping code index", file=sys.stderr)
 
     if not args.code_only:
-        docs_client = NextPlaidClient(args.docs_url)
+        docs_client = NextPlaidClient(args.docs_url, timeout=120.0)
         if _health_check(docs_client, args.docs_url):
             print("\n[docs] Indexing documentation...")
             total += index_files(docs_client, "docs", DOC_PATTERNS, reindex=args.reindex)

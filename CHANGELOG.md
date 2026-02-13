@@ -2,6 +2,23 @@
 
 ## 2026-02-13
 
+- **Orchestrator wiring: 4 scaffolded improvements connected to live pipeline**:
+  - **#2 Think-Harder**: `_should_think_harder()` helper in `nodes.py` triggers on penultimate retry (before model escalation). All 7 graph node error paths updated to try same-model CoT (4096 tokens, "Think step by step" prefix) before escalating. Success/failure tracked in TaskState.
+  - **#7 GBNF Grammar Enforcement**: `detect_tool_requirement()` wired into `_route_request()`. On first REPL turn when `tool_required=True`, `generate_gbnf_grammar()` constrains model output to valid tool call syntax via `llm_call(grammar=...)`.
+  - **#9 Diagnostic Fields**: 8 fields populated end-to-end: ChatResponse → seeding_eval `_build_role_result()`. Fields: `cheap_first_attempted/passed`, `think_harder_attempted/succeeded`, `grammar_enforced`, `parallel_tools_used`, `cache_affinity_bonus`, `cost_dimensions`.
+  - **#6 Streaming Tool Events**: `tool_start_event`/`tool_end_event` SSE events emitted after each `repl.execute()` in both `chat.py` legacy streaming and `stream_adapter.py` unified path. Invocation log delta tracking avoids double-emission.
+  - **Test fixes**: `test_returns_all_20_signals` → `test_returns_all_22_signals` (stale count after signal additions). `test_contains_escalation_edges` assertion corrected: `FrontdoorNode → CoderNode` (not CoderEscalationNode).
+  - **Files modified**: `nodes.py`, `state.py`, `responses.py`, `chat.py`, `routing.py`, `repl_executor.py`, `stream_adapter.py`, `seeding_eval.py`
+
+- **NextPLAID Phase 5: LateOn-Code 130M + AST chunking + ColGrep**:
+  - **Model upgrade**: LateOn-Code-edge (17M, 48-dim) → LateOn-Code (130M, 128-dim). +11.2% on MTEB Code benchmark (74.12 vs 66.64). Memory cost: 0.2GB → 1.2GB (trivial on 1.13TB machine).
+  - **AST chunking**: `scripts/nextplaid/ast_chunker.py` — tree-sitter Python parser extracts semantic code units (functions, classes, methods with signatures + docstring detection) instead of naive 1800-char splits. `FallbackChunker` for non-Python files. Both `index_codebase.py` and `reindex_changed.py` updated.
+  - **ColGrep CLI**: Installed colgrep 1.0.6 (LightOn agent-facing hybrid search). Storage paths configured on RAID.
+  - **Search results enriched**: `code_search()` now returns `unit` (e.g. `class:EscalationPolicy`) and `signature` fields when AST metadata available.
+  - **Files modified**: `orchestrator_stack.py`, `model_registry.yaml`, `index_codebase.py`, `reindex_changed.py`, `code_search.py`, `test_code_search.py`
+  - **Files created**: `scripts/nextplaid/ast_chunker.py`, `handoffs/active/nextplaid-phase5-upgrade.md`
+  - **Tests**: 20/20 code_search tests pass (18 existing + 2 new AST metadata tests)
+
 - **Orchestrator Intelligence Improvements (Claude-Inspired)**: 7 improvements to the orchestration intelligence layer — routing, escalation, cost modeling, quality gating. Inspired by Anthropic's Claude architecture patterns. See `handoffs/active/orchestrator-intelligence-improvements.md` for full design.
   - **#8 Prefix Cache Expansion**: `prefix_length` 256→4096 in `model_registry.yaml`. Role prompts (1000-5000 tokens) now fully cacheable. All 9 role prompts audited for prefix stability (static first, variable last). Parallels Claude's prompt caching prefix stability.
   - **#3 Grammar-Constrained Structured Outputs**: `json_schema` and `grammar` (GBNF) fields added to `InferenceRequest` (`protocol.py`), threaded through `llama_server.py`, `primitives.py`, `inference.py`. Enables constrained generation without post-hoc formalization.

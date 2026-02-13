@@ -13,7 +13,7 @@ As of 2026-02-02, the seeding pipeline was enriched with 90 mode-advantage tasks
 > **Scope**: The MemRL episodic store handles *routing memories* (task→action→outcome with Q-values).
 > For *codebase retrieval* (finding source code and documentation passages), see
 > the NextPLAID integration in [Ch11: REPL Environment](11-repl-environment.md).
-> These are complementary systems: BGE 1024-dim single-vector vs ColBERT 48-dim multi-vector.
+> These are complementary systems: BGE 1024-dim single-vector vs ColBERT 128-dim multi-vector.
 
 ### Storage Layout
 

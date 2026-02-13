@@ -215,6 +215,8 @@ async def _execute_repl(
         current_role=initial_role,
         role_history=[str(initial_role)],
         max_turns=max_turns,
+        tool_required=routing.tool_required,
+        tool_hint=routing.tool_hint,
     )
 
     task_deps = TaskDeps(
@@ -345,6 +347,14 @@ async def _execute_repl(
     ]
     tools_used = max(repl._tool_invocations, len(tools_called), len(tool_timings))
 
+    # Detect parallel tool usage from invocation log
+    parallel_tools = False
+    if len(tools_called) >= 2:
+        read_only = {"peek", "grep", "list_dir", "file_info", "list_tools",
+                     "recall", "list_findings", "registry_lookup", "my_role",
+                     "route_advice", "context_len", "benchmark_compare"}
+        parallel_tools = all(t in read_only for t in tools_called) and len(tools_called) >= 2
+
     return ChatResponse(
         answer=answer,
         turns=turns,
@@ -369,4 +379,10 @@ async def _execute_repl(
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,
         http_overhead_ms=primitives.total_http_overhead_ms,
+        # Orchestrator intelligence diagnostics
+        think_harder_attempted=task_state.think_harder_attempted,
+        think_harder_succeeded=task_state.think_harder_succeeded,
+        grammar_enforced=task_state.grammar_enforced,
+        parallel_tools_used=parallel_tools,
+        cache_affinity_bonus=task_state.cache_affinity_bonus,
     )

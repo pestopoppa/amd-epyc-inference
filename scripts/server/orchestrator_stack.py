@@ -232,7 +232,7 @@ DOCKER_SERVICES = [
         "name": "nextplaid-code",
         "port": 8088,
         "image": "ghcr.io/lightonai/next-plaid:cpu-1.0.4",
-        "model": "lightonai/LateOn-Code-edge",
+        "model": "lightonai/LateOn-Code",
         "description": "Multi-vector code retrieval (ColBERT)",
         # Separate index subdir to avoid cross-contamination (different models = incompatible embeddings)
         "volumes": [
@@ -240,7 +240,7 @@ DOCKER_SERVICES = [
             f"{_PATHS['cache_dir']}/huggingface:/root/.cache/huggingface",
         ],
         "args": ["--host", "0.0.0.0", "--port", "8080", "--index-dir", "/data/indices",
-                 "--model", "lightonai/LateOn-Code-edge", "--int8"],
+                 "--model", "lightonai/LateOn-Code", "--int8"],
     },
     {
         "name": "nextplaid-docs",

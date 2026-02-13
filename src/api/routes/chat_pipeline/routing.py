@@ -113,6 +113,11 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
     role_str = str(routing_decision[0]) if routing_decision else str(Role.FRONTDOOR)
     timeout_s = ROLE_TIMEOUTS.get(role_str, DEFAULT_TIMEOUT_S)
 
+    # Detect tool requirement for forced tool use
+    from src.api.routes.chat_routing import detect_tool_requirement
+
+    tool_required, tool_hint = detect_tool_requirement(request.prompt)
+
     return RoutingResult(
         task_id=task_id,
         task_ir=task_ir,
@@ -120,6 +125,8 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
         routing_decision=routing_decision,
         routing_strategy=routing_strategy,
         timeout_s=timeout_s,
+        tool_required=tool_required,
+        tool_hint=tool_hint,
     )
 
 

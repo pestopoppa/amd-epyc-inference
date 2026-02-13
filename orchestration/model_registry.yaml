@@ -469,10 +469,10 @@ server_mode:
     port: 8088
     model_role: code_retrieval
     description: Multi-vector code search using ColBERT late interaction (code-optimized)
-    model: lightonai/LateOn-Code-edge
+    model: lightonai/LateOn-Code
     model_type: onnx_int8
     docker_image: ghcr.io/lightonai/next-plaid:cpu-1.0.4
-    memory_gb: 0.2  # <200MB (Docker + ONNX + mmap'd indices)
+    memory_gb: 1.2  # ~1.2GB (Docker + 130M ONNX model + mmap'd indices)
     tier: always  # Starts with infrastructure, soft dependency
     indices: [code]
     health_endpoint: /health
@@ -483,9 +483,9 @@ server_mode:
       -v /mnt/raid0/llm/cache/huggingface:/root/.cache/huggingface
       ghcr.io/lightonai/next-plaid:cpu-1.0.4
       --host 0.0.0.0 --port 8080 --index-dir /data/indices
-      --model lightonai/LateOn-Code-edge --int8
+      --model lightonai/LateOn-Code --int8
     reindex_command: python3 scripts/nextplaid/index_codebase.py --code-only
-    notes: "Code-optimized ColBERT/PLAID retrieval. 48-dim token embeddings, MaxSim matching. ~40ms p95 query latency."
+    notes: "LateOn-Code 130M, 128-dim token embeddings. +11.2% vs LateOn-Code-edge on MTEB Code (74.12 vs 66.64). AST-chunked code units."
 
   nextplaid_docs:
     url: http://localhost:8089
