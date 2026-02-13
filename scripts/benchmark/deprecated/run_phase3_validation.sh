@@ -33,10 +33,19 @@ PIPELINE_SEED=""
 # Parse args
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --step)  START_STEP="$2"; shift 2 ;;
-    --seed)  PIPELINE_SEED="$2"; shift 2 ;;
-    --dry-run) DRY_RUN=true; shift ;;
-    -h|--help)
+    --step)
+      START_STEP="$2"
+      shift 2
+      ;;
+    --seed)
+      PIPELINE_SEED="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    -h | --help)
       echo "Usage: $0 [--step N] [--seed N] [--dry-run]"
       echo "  --step N    Resume from step N (0-7)"
       echo "              0=health, 1=baseline, 2=seeding, 3=policy, 4=learning,"
@@ -45,7 +54,10 @@ while [[ $# -gt 0 ]]; do
       echo "  --dry-run   Print commands without executing"
       exit 0
       ;;
-    *) echo "Unknown arg: $1"; exit 1 ;;
+    *)
+      echo "Unknown arg: $1"
+      exit 1
+      ;;
   esac
 done
 
@@ -103,13 +115,13 @@ restart_api() {
 
   # Launch with env vars
   local api_log="${LOG_DIR}/orchestrator_phase3.log"
-  ( cd "${PROJECT_ROOT}" && \
+  (cd "${PROJECT_ROOT}" &&
     env ${env_vars} \
       HF_HOME=/mnt/raid0/llm/cache/huggingface \
       TMPDIR=/mnt/raid0/llm/tmp \
       ${PYTHON} -m uvicorn src.api:app \
-        --host 127.0.0.1 --port 8000 \
-        > "${api_log}" 2>&1 ) &
+      --host 127.0.0.1 --port 8000 \
+      >"${api_log}" 2>&1) &
 
   # Wait for health
   log "  Waiting for API health..."
@@ -144,11 +156,11 @@ step0_health_check() {
   local health_results="/tmp/phase3_health_$$"
   mkdir -p "$health_results"
   for port in 8080 8081 8082 8083 8086 8087 8090 9001; do
-    ( if check_port "$port"; then
-        echo "OK" > "${health_results}/${port}"
-      else
-        echo "DOWN" > "${health_results}/${port}"
-      fi ) &
+    (if check_port "$port"; then
+      echo "OK" >"${health_results}/${port}"
+    else
+      echo "DOWN" >"${health_results}/${port}"
+    fi) &
   done
   wait
   for port in 8080 8081 8082 8083 8086 8087 8090 9001; do
@@ -520,7 +532,7 @@ step5b_plan_review() {
   if ! $DRY_RUN; then
     curl -sf -X POST http://localhost:8000/config \
       -H 'Content-Type: application/json' \
-      -d '{"plan_review": true}' > /dev/null
+      -d '{"plan_review": true}' >/dev/null
   else
     log "[DRY-RUN] Would POST /config {plan_review: true}"
   fi
@@ -646,7 +658,7 @@ step6_kill_switch() {
   if ! $DRY_RUN; then
     curl -sf -X POST http://localhost:8000/config \
       -H 'Content-Type: application/json' \
-      -d '{"specialist_routing": false, "architect_delegation": false, "plan_review": false}' > /dev/null
+      -d '{"specialist_routing": false, "architect_delegation": false, "plan_review": false}' >/dev/null
   else
     log "[DRY-RUN] Would POST /config {specialist_routing: false, architect_delegation: false, plan_review: false}"
   fi
@@ -734,10 +746,10 @@ pipeline_start=$SECONDS
 [[ $START_STEP -le 6 ]] && step5b_plan_review
 [[ $START_STEP -le 7 ]] && step6_kill_switch
 
-elapsed=$(( SECONDS - pipeline_start ))
+elapsed=$((SECONDS - pipeline_start))
 log "=========================================="
 log "PHASE 3 PIPELINE COMPLETE"
-log "Total elapsed: $(( elapsed / 3600 ))h $(( (elapsed % 3600) / 60 ))m $(( elapsed % 60 ))s"
+log "Total elapsed: $((elapsed / 3600))h $(((elapsed % 3600) / 60))m $((elapsed % 60))s"
 log "Results: ${RESULTS_DIR}/phase3_*"
 log "Full log: ${PHASE3_LOG}"
 log "=========================================="

@@ -28,11 +28,11 @@ _PROJECT_ROOT="$(cd "${_ENV_SH_DIR}/../.." && pwd)"
 # =============================================================================
 
 if [[ -f "${_PROJECT_ROOT}/.env" ]]; then
-    # Export variables from .env (skip comments and empty lines)
-    set -a
-    # shellcheck disable=SC1091
-    source "${_PROJECT_ROOT}/.env" 2>/dev/null || true
-    set +a
+  # Export variables from .env (skip comments and empty lines)
+  set -a
+  # shellcheck disable=SC1091
+  source "${_PROJECT_ROOT}/.env" 2>/dev/null || true
+  set +a
 fi
 
 # =============================================================================
@@ -125,40 +125,40 @@ export TMPDIR="${TMPDIR:-${TMP_DIR}}"
 
 # Check if a path is under the required prefix (security check)
 check_path_prefix() {
-    local path="$1"
-    local prefix="${ORCHESTRATOR_PATHS_RAID_PREFIX}"
+  local path="$1"
+  local prefix="${ORCHESTRATOR_PATHS_RAID_PREFIX}"
 
-    # If prefix is empty, skip check
-    if [[ -z "$prefix" ]]; then
-        return 0
-    fi
+  # If prefix is empty, skip check
+  if [[ -z "$prefix" ]]; then
+    return 0
+  fi
 
-    if [[ "$path" == "$prefix"* ]]; then
-        return 0
-    else
-        echo "ERROR: Path '$path' is not under required prefix '$prefix'" >&2
-        return 1
-    fi
+  if [[ "$path" == "$prefix"* ]]; then
+    return 0
+  else
+    echo "ERROR: Path '$path' is not under required prefix '$prefix'" >&2
+    return 1
+  fi
 }
 
 # Get absolute path to a binary in llama.cpp
 llama_bin() {
-    local bin_name="$1"
-    echo "${LLAMA_CPP_BIN}/${bin_name}"
+  local bin_name="$1"
+  echo "${LLAMA_CPP_BIN}/${bin_name}"
 }
 
 # Get absolute path to a model
 model_path() {
-    local relative_path="$1"
-    echo "${MODEL_BASE}/${relative_path}"
+  local relative_path="$1"
+  echo "${MODEL_BASE}/${relative_path}"
 }
 
 # Ensure a directory exists (under raid prefix)
 ensure_dir() {
-    local dir="$1"
-    if check_path_prefix "$dir"; then
-        mkdir -p "$dir"
-    fi
+  local dir="$1"
+  if check_path_prefix "$dir"; then
+    mkdir -p "$dir"
+  fi
 }
 
 # =============================================================================

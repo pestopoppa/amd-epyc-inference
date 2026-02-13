@@ -21,64 +21,67 @@ killed_something=false
 echo "==> Looking for seeding script..."
 seed_pids=$(pgrep -f 'seed_specialist_routing' 2>/dev/null || true)
 if [[ -n "$seed_pids" ]]; then
-    for pid in $seed_pids; do
-        echo "    Killing seeding script PID $pid"
-        if $FORCE; then kill -9 "$pid" 2>/dev/null || true
-        else             kill    "$pid" 2>/dev/null || true; fi
-    done
-    killed_something=true
-    sleep 1
+  for pid in $seed_pids; do
+    echo "    Killing seeding script PID $pid"
+    if $FORCE; then
+      kill -9 "$pid" 2>/dev/null || true
+    else kill "$pid" 2>/dev/null || true; fi
+  done
+  killed_something=true
+  sleep 1
 fi
 
 # ── 2. Kill orchestrator API (uvicorn on :8000) ─────────────────────
 echo "==> Looking for orchestrator API (uvicorn :8000)..."
 api_pids=$(pgrep -f 'uvicorn.*src.api:app' 2>/dev/null || true)
 if [[ -n "$api_pids" ]]; then
-    # Kill entire process group (uvicorn parent + multiprocessing workers)
-    for pid in $api_pids; do
-        pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
-        if [[ -n "$pgid" && "$pgid" != "0" ]]; then
-            echo "    Killing uvicorn process group (PGID $pgid)"
-            if $FORCE; then kill -9 -"$pgid" 2>/dev/null || true
-            else             kill    -"$pgid" 2>/dev/null || true; fi
-        else
-            echo "    Killing uvicorn PID $pid"
-            if $FORCE; then kill -9 "$pid" 2>/dev/null || true
-            else             kill    "$pid" 2>/dev/null || true; fi
-        fi
-    done
-    killed_something=true
-    sleep 1
+  # Kill entire process group (uvicorn parent + multiprocessing workers)
+  for pid in $api_pids; do
+    pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')
+    if [[ -n "$pgid" && "$pgid" != "0" ]]; then
+      echo "    Killing uvicorn process group (PGID $pgid)"
+      if $FORCE; then
+        kill -9 -"$pgid" 2>/dev/null || true
+      else kill -"$pgid" 2>/dev/null || true; fi
+    else
+      echo "    Killing uvicorn PID $pid"
+      if $FORCE; then
+        kill -9 "$pid" 2>/dev/null || true
+      else kill "$pid" 2>/dev/null || true; fi
+    fi
+  done
+  killed_something=true
+  sleep 1
 fi
 
 # Also catch orphaned multiprocessing workers from uvicorn
 orphan_pids=$(pgrep -f 'multiprocessing.spawn.*spawn_main' 2>/dev/null || true)
 if [[ -n "$orphan_pids" ]]; then
-    for pid in $orphan_pids; do
-        echo "    Killing orphaned worker PID $pid"
-        kill -9 "$pid" 2>/dev/null || true
-    done
-    killed_something=true
-    sleep 1
+  for pid in $orphan_pids; do
+    echo "    Killing orphaned worker PID $pid"
+    kill -9 "$pid" 2>/dev/null || true
+  done
+  killed_something=true
+  sleep 1
 fi
 
 # ── 3. Verify port 8000 is free ─────────────────────────────────────
 if ss -tnlp 2>/dev/null | grep -q ':8000 '; then
-    echo "    Port 8000 still occupied — force-killing with fuser"
-    fuser -k 8000/tcp 2>/dev/null || true
-    sleep 1
+  echo "    Port 8000 still occupied — force-killing with fuser"
+  fuser -k 8000/tcp 2>/dev/null || true
+  sleep 1
 fi
 
 # ── 4. Erase active inference slots (don't kill servers) ─────────────
 echo "==> Erasing active inference slots..."
 for port in "${ALL_MODEL_PORTS[@]}"; do
-    # Quick check: is this port even up?
-    if ! curl -sf --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-        continue
-    fi
+  # Quick check: is this port even up?
+  if ! curl -sf --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+    continue
+  fi
 
-    slots_json=$(curl -sf --max-time 2 "http://127.0.0.1:$port/slots" 2>/dev/null || echo "[]")
-    processing=$(echo "$slots_json" | python3 -c "
+  slots_json=$(curl -sf --max-time 2 "http://127.0.0.1:$port/slots" 2>/dev/null || echo "[]")
+  processing=$(echo "$slots_json" | python3 -c "
 import sys, json
 try:
     slots = json.load(sys.stdin)
@@ -88,30 +91,30 @@ try:
 except: pass
 " 2>/dev/null)
 
-    if [[ -n "$processing" ]]; then
-        for slot_id in $processing; do
-            echo "    Port $port slot $slot_id: erasing..."
-            # Try POST first, fall back to GET — with short timeout
-            curl -sf --max-time 3 -X POST \
-                "http://127.0.0.1:$port/slots/${slot_id}?action=erase" \
-                >/dev/null 2>&1 || \
-            curl -sf --max-time 3 \
-                "http://127.0.0.1:$port/slots/${slot_id}?action=erase" \
-                >/dev/null 2>&1 || \
-            echo "    Port $port slot $slot_id: erase timed out (server may need restart)"
-        done
-    fi
+  if [[ -n "$processing" ]]; then
+    for slot_id in $processing; do
+      echo "    Port $port slot $slot_id: erasing..."
+      # Try POST first, fall back to GET — with short timeout
+      curl -sf --max-time 3 -X POST \
+        "http://127.0.0.1:$port/slots/${slot_id}?action=erase" \
+        >/dev/null 2>&1 ||
+        curl -sf --max-time 3 \
+          "http://127.0.0.1:$port/slots/${slot_id}?action=erase" \
+          >/dev/null 2>&1 ||
+        echo "    Port $port slot $slot_id: erase timed out (server may need restart)"
+    done
+  fi
 done
 
 # ── 5. Verify: check all slots are idle ──────────────────────────────
 echo "==> Verifying all slots idle..."
 any_stuck=false
 for port in "${ALL_MODEL_PORTS[@]}"; do
-    if ! curl -sf --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
-        continue
-    fi
-    still_processing=$(curl -sf --max-time 2 "http://127.0.0.1:$port/slots" 2>/dev/null | \
-        python3 -c "
+  if ! curl -sf --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1; then
+    continue
+  fi
+  still_processing=$(curl -sf --max-time 2 "http://127.0.0.1:$port/slots" 2>/dev/null |
+    python3 -c "
 import sys, json
 try:
     slots = json.load(sys.stdin)
@@ -119,24 +122,24 @@ try:
     if stuck: print(f'port $port: slots {stuck} still processing')
 except: pass
 " 2>/dev/null)
-    if [[ -n "$still_processing" ]]; then
-        echo "    WARNING: $still_processing"
-        any_stuck=true
-    fi
+  if [[ -n "$still_processing" ]]; then
+    echo "    WARNING: $still_processing"
+    any_stuck=true
+  fi
 done
 
 if $any_stuck; then
-    echo ""
-    echo "WARNING: Some slots are still processing. The erase call may have"
-    echo "timed out. You can force-restart those servers with:"
-    echo "    python3 scripts/server/orchestrator_stack.py restart --port <PORT>"
-    echo "Or re-run with: scripts/benchmark/kill_seeding.sh --force"
+  echo ""
+  echo "WARNING: Some slots are still processing. The erase call may have"
+  echo "timed out. You can force-restart those servers with:"
+  echo "    python3 scripts/server/orchestrator_stack.py restart --port <PORT>"
+  echo "Or re-run with: scripts/benchmark/kill_seeding.sh --force"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""
 if $killed_something; then
-    echo "Done. Seeding script, TUI, and orchestrator API stopped. Model servers untouched."
+  echo "Done. Seeding script, TUI, and orchestrator API stopped. Model servers untouched."
 else
-    echo "Nothing to kill — no seeding processes found."
+  echo "Nothing to kill — no seeding processes found."
 fi

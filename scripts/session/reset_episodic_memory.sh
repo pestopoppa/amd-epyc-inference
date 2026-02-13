@@ -42,41 +42,41 @@ export ORCHESTRATOR_UVICORN_WORKERS="1"
 
 KEEP_SEEN=false
 if [[ "${1:-}" == "--keep-seen" ]]; then
-    KEEP_SEEN=true
+  KEEP_SEEN=true
 fi
 
 echo "=== Episodic Memory Reset ==="
 
 get_api_pid() {
-    local pid=""
-    if command -v lsof >/dev/null 2>&1; then
-        pid=$(lsof -ti :8000 2>/dev/null || true)
-    fi
-    if [[ -z "$pid" ]] && command -v fuser >/dev/null 2>&1; then
-        pid=$(fuser -n tcp 8000 2>/dev/null | awk '{print $1}' || true)
-    fi
-    echo "$pid"
+  local pid=""
+  if command -v lsof >/dev/null 2>&1; then
+    pid=$(lsof -ti :8000 2>/dev/null || true)
+  fi
+  if [[ -z "$pid" ]] && command -v fuser >/dev/null 2>&1; then
+    pid=$(fuser -n tcp 8000 2>/dev/null | awk '{print $1}' || true)
+  fi
+  echo "$pid"
 }
 
 restart_api() {
-    local log_file="/mnt/raid0/llm/claude/logs/orchestrator_autolaunch.log"
-    cd /mnt/raid0/llm/claude
-    python3 -m uvicorn src.api:app --host 127.0.0.1 --port 8000 --log-level warning \
-        >> "$log_file" 2>&1 &
-    sleep 3
-    if curl -s http://127.0.0.1:8000/health > /dev/null 2>&1; then
-        echo "  API: restarted OK"
-    else
-        echo "  API: WARNING — failed to restart, check logs"
-    fi
+  local log_file="/mnt/raid0/llm/claude/logs/orchestrator_autolaunch.log"
+  cd /mnt/raid0/llm/claude
+  python3 -m uvicorn src.api:app --host 127.0.0.1 --port 8000 --log-level warning \
+    >>"$log_file" 2>&1 &
+  sleep 3
+  if curl -s http://127.0.0.1:8000/health >/dev/null 2>&1; then
+    echo "  API: restarted OK"
+  else
+    echo "  API: WARNING — failed to restart, check logs"
+  fi
 }
 
 # 0. Stop API before touching on-disk state (avoid concurrent reads)
 API_PID=$(get_api_pid)
 if [[ -n "$API_PID" ]]; then
-    echo "  API (PID $API_PID): stopping before reset..."
-    kill "$API_PID" 2>/dev/null || true
-    sleep 2
+  echo "  API (PID $API_PID): stopping before reset..."
+  kill "$API_PID" 2>/dev/null || true
+  sleep 2
 fi
 
 # 1. Clear SQLite memories table
@@ -117,22 +117,22 @@ except ImportError:
 
 # 3. Archive checkpoint JSONL files (contain seen question IDs)
 if [[ "$KEEP_SEEN" == "false" ]]; then
-    checkpoint_count=$(find "$EVAL_DIR" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l)
-    if [[ "$checkpoint_count" -gt 0 ]]; then
-        archive_dir="$EVAL_DIR/archive_$(date +%Y%m%d_%H%M%S)"
-        mkdir -p "$archive_dir"
-        mv "$EVAL_DIR"/*.jsonl "$archive_dir/" 2>/dev/null || true
-        echo "  checkpoints: archived $checkpoint_count files to $(basename "$archive_dir")"
-    else
-        echo "  checkpoints: none found"
-    fi
+  checkpoint_count=$(find "$EVAL_DIR" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l)
+  if [[ "$checkpoint_count" -gt 0 ]]; then
+    archive_dir="$EVAL_DIR/archive_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$archive_dir"
+    mv "$EVAL_DIR"/*.jsonl "$archive_dir/" 2>/dev/null || true
+    echo "  checkpoints: archived $checkpoint_count files to $(basename "$archive_dir")"
+  else
+    echo "  checkpoints: none found"
+  fi
 
-    # Recreate empty seen_questions.jsonl
-    touch "$SEEN_PATH"
-    echo "  seen_questions.jsonl: reset"
+  # Recreate empty seen_questions.jsonl
+  touch "$SEEN_PATH"
+  echo "  seen_questions.jsonl: reset"
 else
-    echo "  checkpoints: kept (--keep-seen)"
-    echo "  seen_questions.jsonl: kept (--keep-seen)"
+  echo "  checkpoints: kept (--keep-seen)"
+  echo "  seen_questions.jsonl: kept (--keep-seen)"
 fi
 
 # 4. Restart API to pick up empty state
