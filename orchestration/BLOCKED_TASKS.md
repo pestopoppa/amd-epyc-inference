@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-13 (Replay Evaluation Harness: all 8 phases implemented, 75 tests passing)
+**Last Updated**: 2026-02-14 (SkillBank Experience Distillation: spec complete, implementation starting)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -16,7 +16,9 @@
 | **Draft model benchmarks** | — | **HIGH** | `handoffs/active/draft-benchmark.md` | 📋 PARTIAL (Gemma-3 + Qwen3-1.7B→32B done, 5 combos remaining) |
 | **Formalizer eval** | — | **HIGH** | `handoffs/active/formalizer-evaluation.md` | 📋 READY (not yet executed) |
 | **Paged Attention CoW** | PR #18747 reviewer response | **MEDIUM** | `handoffs/active/paged-attention.md` (Section 9) | 🔄 BLOCKED |
-| **Hybrid Lookup + Corpus-Augmented Spec Decode** | — | **HIGH** | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔥 ACTIVE Phase 0: Test prompt lookup on 480B (registry `forbid` likely wrong — MoE≠SSM). Phase 0.5: jukofyork draft. Phase 2: SoftMatcha v2 corpus augmentation. |
+| **SkillBank Experience Distillation** | — | **HIGH** | `handoffs/active/skillbank-distillation.md` | 🔥 ACTIVE Phase 1: SkillBank core (schema, CRUD, FAISS, retriever). 8 phases total. Paper: SkillRL (arXiv:2602.08234). |
+| **Delegation/Escalation Factual-Risk Routing Track** | — | **HIGH** | `handoffs/active/delegation-escalation-factual-risk-routing-track.md` | 🔥 ACTIVE Research handoff complete. Next: Phase 0 telemetry integrity (logger contract fixes), then shadow-mode factual-risk routing with seeding+ClaudeDebugger tuning loop. |
+| **Hybrid Lookup + Corpus-Augmented Spec Decode** | — | **HIGH** | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔥 ACTIVE Phases 0+0.5+1 COMPLETE. 480B: MoE3+spec=12.74 t/s (2.16x). 30B: MoE6+spec+lookup=47.11 t/s (2.58x). Phase 2: SoftMatcha v2 corpus augmentation pending. |
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
@@ -738,7 +740,7 @@ Items moved from Active table on 2026-01-29. Kept for historical reference.
 | Gemma-3 SWA Spec Decode | `handoffs/active/gemma3-swa-spec-decode-fix.md` | ✅ PR #18720 SUBMITTED (94% mem reduction) |
 | Prompt Lookup/Lookahead Bugs | `handoffs/completed/swa_prompt_lookup.md` | ✅ PRs #18729 + #18730 SUBMITTED |
 | Qwen3-A3B MoE Instability | — | ✅ RESOLVED (stale build issue) |
-| Hybrid Lookup+Spec Decode (original) | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔄 EXPANDED → Corpus-Augmented Spec Decode (SoftMatcha v2 research, 480B testing, multi-model rollout) |
+| Hybrid Lookup+Spec Decode (original) | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔥 PHASES 0-1 COMPLETE. 480B: 12.74 t/s (2.16x). 30B: 47.11 t/s (2.58x). Phase 2 (SoftMatcha corpus augmentation) pending. |
 | AVX-512 VNNI Q8_0 | See section below | ❌ NOT SUBMITTING (8% speedup) |
 | Tree speculation | `handoffs/active/cpu-optimization.md` | ✅ COMPLETE (K=24 optimal, in production) |
 | RadixAttention | `handoffs/active/radix-attention.md` | ✅ VERIFIED (80% hit rate) |

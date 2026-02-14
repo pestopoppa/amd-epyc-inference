@@ -665,9 +665,21 @@ def build_server_command(
                 "--draft-max", str(accel.k or 16),
             ])
 
-    # Add prompt n-gram lookup (spec-first, lookup-fallback) for servers with spec decode
+    # MoE + spec decode combo (e.g., 480B with jukofyork draft + expert reduction)
+    # draft_role is populated from speculative_decoding sub-config in registry
+    if accel.type == "moe_expert_reduction" and accel.draft_role:
+        registry = RegistryLoader()
+        draft_config = registry.get_role(accel.draft_role)
+        if draft_config:
+            cmd.extend([
+                "-md", draft_config.model.full_path,
+                "--draft-max", str(accel.k or 16),
+            ])
+
+    # Add prompt n-gram lookup (spec-first, lookup-fallback) when enabled in registry
+    # Per-role flag: beneficial on dense/small-MoE models (30B: +27%), net-negative on large MoE (480B)
     # Combined mode: 5.4x vs 5.2x spec-only (production-consolidated commit 8e35dbc01)
-    if accel.type == "speculative_decoding":
+    if accel.lookup:
         cmd.append("--lookup")
 
     return cmd

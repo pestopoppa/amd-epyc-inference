@@ -54,6 +54,7 @@ class AccelerationConfig:
     experts: int | None = None  # Expert count for MoE reduction
     override_key: str | None = None
     ngram_min: int | None = None  # For prompt lookup
+    lookup: bool = False  # Enable --lookup (prompt n-gram fallback)
     temperature: float | None = None
 
 
@@ -314,13 +315,24 @@ class RegistryLoader:
             model.full_path = str(self._model_base_path / model.path)
 
         # Build acceleration config
+        # Support MoE + spec decode combo: if moe_expert_reduction has a
+        # speculative_decoding sub-config, populate draft_role and k from it
+        draft_role = accel_data.get("draft_role")
+        draft_k = accel_data.get("k")
+        spec_sub = accel_data.get("speculative_decoding", {})
+        if spec_sub:
+            draft_role = draft_role or spec_sub.get("draft_role")
+            draft_k = draft_k or spec_sub.get("k")
+        # Resolve lookup flag: check spec_sub first, then top-level
+        lookup = spec_sub.get("lookup", accel_data.get("lookup", False))
         acceleration = AccelerationConfig(
             type=accel_data.get("type", "none"),
-            draft_role=accel_data.get("draft_role"),
-            k=accel_data.get("k"),
+            draft_role=draft_role,
+            k=draft_k,
             experts=accel_data.get("experts"),
             override_key=accel_data.get("override_key"),
             ngram_min=accel_data.get("ngram_min", 3),
+            lookup=bool(lookup),
             temperature=accel_data.get("temperature"),
         )
 
@@ -425,10 +437,12 @@ class RegistryLoader:
         return [r for r in self._roles.values() if r.tier == tier]
 
     def get_draft_for_role(self, role_name: str) -> RoleConfig | None:
-        """Get the draft model configuration for a role using speculative decoding."""
+        """Get the draft model configuration for a role using speculative decoding.
+
+        Supports both pure spec decode roles and MoE+spec combo roles
+        (e.g., 480B with expert reduction + jukofyork draft).
+        """
         role = self.get_role(role_name)
-        if role.acceleration.type != "speculative_decoding":
-            return None
         draft_role = role.acceleration.draft_role
         if draft_role and draft_role in self._roles:
             return self._roles[draft_role]

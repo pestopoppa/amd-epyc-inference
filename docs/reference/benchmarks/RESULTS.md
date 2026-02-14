@@ -33,12 +33,14 @@ See [Chapter 24](../../chapters/24-benchmark-suite-construction.md) for suite co
 |---------------|-------|---------|---------|----------|
 | Prompt Lookup (summarization) | 95.18 t/s | 12.7x | — | Document QA with source |
 | **Qwen2.5-7B + spec (K=24)** | **46.6 t/s** | **2.5x** | 90% | Fast general tasks |
-| Qwen3-Coder-30B-A3B + MoE4 + spec (K=8) | 31.9 t/s | +45% | **100%** | Code generation |
+| **Qwen3-Coder-30B-A3B + MoE6 + spec + lookup** | **47.11 t/s** | **1.61x** | — | **Code gen (NEW 2026-02-13)** |
 | **Qwen3-VL-4B Q4_K_M** | **18.0 t/s** | — | **94%** | Vision tasks (best quality) |
 | Qwen3-VL-30B-A3B + MoE4 | 27.6 t/s | +111% | 75% | Vision tasks (faster, lower quality) |
 | Prompt Lookup (code editing) | 25.82 t/s | 8.6x | — | Refactoring, code review |
 | **Qwen3-4B-Thinking + spec (K=4)** | **24.2 t/s** | **2.1x** | 88% | Fast thinking |
 | Qwen3-Coder-30B-A3B + MoE4 | 22.0 t/s | +83% | **100%** | Code (no spec) |
+| **Qwen3-Coder-480B + full + spec (K=16)** | **9.00 t/s** | **1.38x** | — | **480B architect (NEW 2026-02-13)** |
+| **Qwen3-235B-A22B + full + spec (K=16)** | **6.08 t/s** | **1.15x** | — | **235B architect (NEW 2026-02-13)** |
 | **Qwen2.5-Coder-32B + spec (K=24)** | **21.3 t/s** | **6.3x** | 93% | Code generation |
 | **gemma-3-27B + spec (K=16)** | **19.6 t/s** | **8.9x** | 95% | General tasks |
 | **gemma-3-12b + spec (K=16)** | **14.8 t/s** | **1.6x** | 97% | General tasks |
@@ -76,20 +78,21 @@ See [Chapter 24](../../chapters/24-benchmark-suite-construction.md) for suite co
 
 | Model | Baseline | Optimized | Method | Quality |
 |-------|----------|-----------|--------|---------|
-| **Qwen3-Coder-30B-A3B-Instruct** | 12.0 t/s | **17.7 t/s** | MoE 4 experts | ⭐⭐⭐⭐⭐ |
+| **Qwen3-Coder-30B-A3B-Instruct** | 29.28 t/s | **47.11 t/s** | MoE6 + spec + lookup | ⭐⭐⭐⭐⭐ |
 | Qwen3-Coder-53B-A3B-TOTAL-RECALL | 10.3 t/s | 14.0 t/s | MoE 4 experts | ⭐⭐⭐⭐⭐ |
-| Qwen2.5-Coder-32B-Instruct | 3.4 t/s | 21.3 t/s | Spec decode K=24 | ⭐⭐⭐⭐⭐ |
+| Qwen2.5-Coder-32B-Instruct | 3.4 t/s | 39.44 t/s | Spec decode K=24 + lookup | ⭐⭐⭐⭐⭐ |
+| **Qwen3-Coder-480B-A35B-Instruct** | 6.53 t/s | **9.00 t/s** | Full experts + spec K=16 | ⭐⭐⭐⭐⭐ |
 
-**Finding:** All three models produce equivalent quality code (docstrings, edge cases, correct algorithm). Speed is the only differentiator.
+**Finding:** All models produce equivalent quality code. Speed is the only differentiator. jukofyork vocab transplant draft verified for all Qwen3-Coder models (2026-02-13). Architect roles use full experts (no MoE) for maximum quality.
 
-**Decision:**
-- `coder_primary` = Qwen2.5-Coder-32B-Instruct (21.3 t/s with spec) - fastest with quality
-- `coder_escalation` = Qwen3-Coder-30B-A3B-Instruct (17.7 t/s MoE4) - generalist support
-- `architect_coding` = Qwen3-Coder-480B (6.6 t/s MoE4) - ultimate escalation
+**Decision (updated 2026-02-13):**
+- `frontdoor/coder_primary` = Qwen3-Coder-30B-A3B-Instruct (47.11 t/s MoE6+spec+lookup) - fastest
+- `coder_escalation` = Qwen2.5-Coder-32B-Instruct (39.44 t/s spec+lookup) - dense fallback
+- `architect_coding` = Qwen3-Coder-480B (9.00 t/s full+spec) - ultimate escalation (full quality)
 
 **Coding Escalation Hierarchy:**
 ```
-coder_primary (21 t/s) → coder_escalation (18 t/s) → architect_coding (7 t/s)
+frontdoor (47 t/s) → coder_escalation (39 t/s) → architect_coding (9 t/s)
 ```
 
 ---
@@ -162,17 +165,18 @@ coder_primary (21 t/s) → coder_escalation (18 t/s) → architect_coding (7 t/s
 
 | Model Type | Best Approach | Reasoning |
 |------------|---------------|-----------|
-| **SSM/Hybrid (Qwen3-Next)** | Expert reduction only | Speculation incompatible |
-| **30B MoE** | Hard Mask only | Already fast; lookup adds overhead |
-| **235B+ MoE** | Hard Mask only | Large active params limit lookup benefit |
+| **SSM/Hybrid (Qwen3-Next)** | Expert reduction only | Speculation incompatible (consecutive positions) |
+| **30B MoE** | MoE6 + spec + lookup | **47.11 t/s** (jukofyork draft, 2026-02-13) |
+| **480B MoE** | Full experts + spec (no MoE) | **9.00 t/s** (quality over speed for architect) |
+| **235B MoE** | Full experts + spec (no MoE) | **6.08 t/s** (0.6B Q8_0 draft, 53% accept) |
 
 **Commands:**
 ```bash
 # SSM models (Qwen3-Next): Expert reduction only
 llama-cli -m Qwen3-Next-80B-A3B.gguf --override-kv qwen3next.expert_used_count=int:4 -t 96
 
-# 30B MoE: Expert reduction only (fastest)
-llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
+# 30B MoE: Expert reduction + spec + lookup (fastest, 47.11 t/s)
+llama-server -m Qwen3-Coder-30B-A3B.gguf -md jukofyork-0.75B-Q8_0.gguf --draft-max 16 --override-kv qwen3moe.expert_used_count=int:6 --lookup -t 96
 ```
 
 ### Qwen3-Next-80B (SSM+MoE Hybrid)
@@ -326,10 +330,13 @@ llama-cli -m Qwen3-Coder-30B-A3B.gguf --moe-n-expert 4 -t 96
 - More speculation rounds beat higher acceptance rates
 - **Rule:** Use smallest compatible draft model
 
-### 2. MoE Models Don't Need Speculative Decoding
-- Qwen3-VL-30B-A3B MoE4: 27.6 t/s
-- With speculation: ~20 t/s (0.72x slower)
-- **Why:** 3B active params already "draft speed"
+### 2. MoE + Speculative Decoding: It Depends
+- **Qwen3-VL-30B-A3B MoE4**: 27.6 t/s; with standard spec: ~20 t/s (0.72x slower) -- spec HURTS
+- **Qwen3-Coder-30B-A3B MoE6**: 30.84 t/s; with jukofyork spec+lookup: **47.11 t/s** (1.53x faster) -- spec HELPS
+- **Qwen3-Coder-480B full experts**: 6.53 t/s; with jukofyork spec: **9.00 t/s** (1.38x faster) -- spec HELPS
+- **Qwen3-235B-A22B full experts**: 5.30 t/s; with 0.6B spec: **6.08 t/s** (1.15x faster) -- spec HELPS
+- **Key:** jukofyork vocab transplant draft (BOS=comma match) enables high acceptance (70-82%) on Coder family. Standard 0.6B draft gets 53% on 235B. Architect roles use full experts for quality.
+- **Policy:** Frontdoor/coder: MoE + spec + lookup (speed). Architects: full experts + spec (quality).
 
 ### 3. K-Value Tuning
 | Model Size | Optimal K | Reason |
@@ -728,9 +735,9 @@ Complete production model lineup with relative scoring validation.
 
 | Role | Model | Score | Speed | Configuration | Size |
 |------|-------|-------|-------|---------------|------|
-| **frontdoor** | Qwen3-Coder-30B-A3B-Instruct | 89.5% | 18.3 t/s | MoE6 experts | 17.5GB |
-| **coder_primary** | *(shared with frontdoor)* | 89.5% | 18.3 t/s | MoE6 experts | — |
-| **coder_escalation** | Qwen2.5-Coder-32B | 91.5% | 33 t/s | spec K=24 + draft | 18.5GB |
+| **frontdoor** | Qwen3-Coder-30B-A3B-Instruct | 89.5% | 47.11 t/s | MoE6 + spec + lookup | 20GB |
+| **coder_primary** | *(shared with frontdoor)* | 89.5% | 47.11 t/s | MoE6 + spec + lookup | — |
+| **coder_escalation** | Qwen2.5-Coder-32B | 91.5% | 39.44 t/s | spec K=24 + lookup | 18.5GB |
 | **worker** | Qwen2.5-7B-Instruct | 74.5% | 50 t/s | spec K=16 + draft | 4.4GB |
 | **voice_server** | faster-whisper large-v3-turbo | — | 2.8x RT | CPU int8, port 9000 | 4GB |
 
@@ -791,7 +798,7 @@ Complete production model lineup with relative scoring validation.
 **HOT POOL (~35 GB) - Always Resident:**
 | Model | Size | Speed | Purpose |
 |-------|------|-------|---------|
-| frontdoor (Qwen3-Coder-30B + MoE6) | 17.5 GB | 17.6 t/s | Orchestrator (always on) |
+| frontdoor (Qwen3-Coder-30B + MoE6+spec+lookup) | 20 GB | 47.11 t/s | Orchestrator (always on) |
 | draft_qwen25_coder (0.5B Q4_K_M) | 0.4 GB | 142 t/s | Draft for Qwen2.5-Coder family |
 | draft_qwen25 (0.5B Q8_0) | 0.5 GB | 157 t/s | Draft for Qwen2.5 family |
 | draft_pard_llama (1B Q4_0) | 0.9 GB | 76 t/s | Draft for Llama family |
@@ -811,9 +818,9 @@ Complete production model lineup with relative scoring validation.
 | **thinking_deepseek_r1_14b** | 8 GB | **98%** | 8.5 t/s | spec K=8 | Chain-of-thought |
 | **thinking_reasoning** (Next-80B) | 45 GB | **99%** | 9.8 t/s | MoE4 | Deep reasoning |
 | **ingest_long_context** (Next-80B) | 45 GB | **99%** | 9.8 t/s | MoE4 | Very long docs |
-| **architect_general** (235B) | 133 GB | 91% | 7.2 t/s | MoE4 | System design |
+| **architect_general** (235B) | 134 GB | 91% | 6.08 t/s | Full+spec | System design (full quality) |
 | vision_escalation (30B-A3B) | 18 GB | - | 27.6 t/s | MoE4 | Complex vision |
-| architect_coding (480B) | 271 GB | **94%** | 6.6 t/s | MoE4 | Ultimate escalation |
+| architect_coding (480B) | 272 GB | **94%** | 9.00 t/s | Full+spec | Ultimate escalation (full quality) |
 
 ---
 
@@ -825,10 +832,10 @@ Complete production model lineup with relative scoring validation.
 
 | Priority | Model | Quality | Speed | When to Use |
 |----------|-------|---------|-------|-------------|
-| **PRIMARY** | **Qwen3-Coder-30B-A3B + MoE6** | **100%** | 17.6 t/s | Default for all routing ⭐ |
-| FAST | Qwen3-Coder-30B-A3B + MoE4 | 89% | 17.7 t/s | When speed > quality |
+| **PRIMARY** | **Qwen3-Coder-30B-A3B + MoE6+spec+lookup** | **90%** | 47.11 t/s | Default for all routing ⭐ |
+| FAST | Qwen3-Coder-30B-A3B + MoE4 | 89% | 17.7 t/s | When speed > quality (no draft) |
 
-**Note (2026-01-11):** MoE6 is now recommended over MoE4. Quality increases from 89% → 100% with modest speed reduction. MoE2 is BROKEN (0%).
+**Note (2026-02-13):** MoE6+spec+lookup is now the production config (2.58x over baseline). jukofyork vocab transplant draft verified. MoE2 is BROKEN (0%).
 
 **Tier B: Architects (Quality > Speed)**
 

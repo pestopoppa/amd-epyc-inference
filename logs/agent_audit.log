@@ -1076,3 +1076,4 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 [2026-02-14T00:00:19Z] task_start: Documentation | progress, changelog, CLAUDE.md, chapter 27
 [2026-02-14T00:00:20Z] task_end: Documentation | success
 [2026-02-14T00:00:21Z] session_end: SkillBank End-to-End Integration | success | 19 files modified, 1 new
+[2026-02-15T00:05:10+01:00] TASK_END | description="Spec decode Phase 1 complete: 30B (47.11 t/s), 235B (6.08 t/s), 480B (9.00 t/s). Architect policy: full experts + spec. All docs updated." | status=success

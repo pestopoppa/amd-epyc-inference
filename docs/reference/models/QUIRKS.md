@@ -27,9 +27,22 @@ llama-speculative -m Qwen3-Next-80B.gguf -md draft.gguf
 
 **Issue**: BOS token is `,` (comma) instead of standard
 
-**Symptoms**: 0% acceptance rate with any draft model
+**Symptoms**: 0% acceptance rate with standard draft models (BOS mismatch)
 
-**Workaround**: Expert reduction only, no speculation
+**Solution (2026-02-13)**: jukofyork vocab transplant draft (`Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf`) has matching BOS=comma. **Verified working**: 74-82% acceptance on code refactoring, 57% on novel generation.
+
+**Recommended config (480B architect)**: Full experts + spec decode with jukofyork draft (K=16). Achieves 9.0 t/s (1.38x). Quality preserved — no MoE reduction for architect roles.
+**Recommended config (30B frontdoor)**: MoE6 + spec + lookup = 47.11 t/s (2.58x). Lookup is net-positive on small MoE.
+
+**Note on prompt lookup**: Works mechanically on MoE (18.4% acceptance on 480B) but net speed regression on large models. Net-positive on 30B (+27% on top of spec).
+
+### Qwen3-235B-A22B Spec Decode
+
+**Finding (2026-02-13)**: 0.6B Q8_0 draft dramatically outperforms 1.7B for 235B (55% vs 21% acceptance). Smaller draft wins on CPU due to faster proposal generation.
+
+**Recommended config**: Full experts + 0.6B spec (K=16) = 6.08 t/s. Quality preserved for architect role.
+
+**Note**: MoE4+spec was faster (8.21 t/s) but architect roles prioritize quality over speed.
 
 ### DeepSeek-R1-Distill-* Models
 

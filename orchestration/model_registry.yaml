@@ -309,13 +309,15 @@ server_mode:
     shared_with: [coder_primary]  # Same model serves both roles
     description: Root LM - generates Python code each turn
     model: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
-    memory_gb: 19
+    draft_model: jukofyork-Qwen3-Coder-0.75B-Instruct-Q8_0.gguf
+    memory_gb: 20
     tier: hot
     acceleration:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
-    throughput: 18.3  # t/s
+      lookup: true
+    throughput: 47.11  # t/s (MoE6 + spec + lookup, verified 2026-02-13)
 
   coder_escalation:
     url: http://localhost:8081
@@ -356,30 +358,30 @@ server_mode:
     port: 8083
     slots: 2
     model_role: architect_general
-    description: System architecture decisions - large MoE
+    description: System architecture decisions - large MoE (full experts for quality)
     model: Qwen3-235B-A22B-Q4_K_M.gguf
-    memory_gb: 133
+    draft_model: Qwen_Qwen3-0.6B-Q8_0.gguf
+    memory_gb: 134
     tier: warm
     acceleration:
-      type: moe_expert_reduction
-      experts: 4
-      override_key: qwen3moe.expert_used_count
-    throughput: 6.75  # t/s
+      type: speculative_decoding
+      draft_k: 16
+    throughput: 6.08  # t/s (full experts + spec, quality over speed, verified 2026-02-13)
 
   architect_coding:
     url: http://localhost:8084
     port: 8084
     slots: 2
     model_role: architect_coding
-    description: Hardest coding escalation - largest MoE
+    description: Hardest coding escalation - largest MoE (full experts for quality)
     model: Qwen3-Coder-480B-A35B-Instruct-Q4_K_M.gguf
-    memory_gb: 271
+    draft_model: Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf
+    memory_gb: 272
     tier: warm
     acceleration:
-      type: moe_expert_reduction
-      experts: 3
-      override_key: qwen3moe.expert_used_count
-    throughput: 10.3  # t/s
+      type: speculative_decoding
+      draft_k: 16
+    throughput: 9.00  # t/s (full experts + spec, quality over speed, verified 2026-02-13)
 
   ingest_long_context:
     url: http://localhost:8085
@@ -623,15 +625,28 @@ roles:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
-      alternative:
+      speculative_decoding:
         type: speculative_decoding
         draft_role: draft_qwen3_coder_0_75b
         k: 16
+        lookup: true
+        notes: >
+          jukofyork vocab transplant draft VERIFIED (2026-02-13).
+          BOS matched (comma token 11). 70-77% acceptance.
+          MoE6 + spec + lookup = 47.11 t/s (best config).
+        benchmarked: 2026-02-13
     performance:
-      baseline_tps: 17.1
-      optimized_tps: 18.3
+      baseline_tps: 29.28
+      moe6_baseline_tps: 30.84
+      moe6_spec_tps: 37.08
+      moe6_spec_lookup_tps: 47.11
+      full_spec_tps: 41.75
+      optimized_tps: 47.11
       quality_pct: 90
-      speedup: 1.07x
+      speedup: 1.61x
+      spec_acceptance_moe6: 70.1%
+      spec_acceptance_full: 78.1%
+      spec_acceptance_moe6_lookup: 77.4%
     memory:
       residency: hot
       pinned: true
@@ -663,15 +678,27 @@ roles:
       type: moe_expert_reduction
       experts: 6
       override_key: qwen3moe.expert_used_count
-      alternative:
+      speculative_decoding:
         type: speculative_decoding
         draft_role: draft_qwen3_coder_0_75b
         k: 16
+        lookup: true
+        notes: >
+          jukofyork vocab transplant draft VERIFIED (2026-02-13).
+          BOS matched (comma token 11). 70-77% acceptance.
+          MoE6 + spec + lookup = 47.11 t/s (best config).
+        benchmarked: 2026-02-13
     performance:
-      baseline_tps: 17.1
-      optimized_tps: 18.3
-      quality_pct: 90
-      speedup: 1.07x
+      baseline_tps: 29.28
+      moe6_baseline_tps: 30.84
+      moe6_spec_tps: 37.08
+      moe6_spec_lookup_tps: 47.11
+      full_spec_tps: 41.75
+      optimized_tps: 47.11
+      speedup: 1.61x
+      spec_acceptance_moe6: 70.1%
+      spec_acceptance_full: 78.1%
+      spec_acceptance_moe6_lookup: 77.4%
     memory:
       residency: hot
       pinned: true
@@ -783,17 +810,24 @@ roles:
     - architect
     - general
     acceleration:
-      type: moe_expert_reduction
-      experts: 4
-      override_key: qwen3moe.expert_used_count
-      alternative:
-        type: speculative_decoding
-        draft_role: draft_qwen3_0_6b_q8_0
-        k: 16
+      type: speculative_decoding
+      draft_role: draft_qwen3_0_6b_q8_0
+      k: 16
+      notes: >
+        0.6B Q8_0 draft VERIFIED (2026-02-13).
+        BOS matched (both 151643). 52-55% acceptance.
+        Full experts + spec = recommended (quality over speed).
+        MoE4+spec was 8.21 t/s but full+spec at 6.08 preserves quality.
+      benchmarked: 2026-02-13
     performance:
-      baseline_tps: 3.6
-      optimized_tps: 6.75
-      speedup: 1.87x
+      baseline_tps: 5.30
+      moe4_baseline_tps: 3.87
+      moe4_spec_tps: 8.21
+      full_spec_tps: 6.08
+      optimized_tps: 6.08
+      speedup: 1.15x
+      spec_acceptance_moe4: 54.8%
+      spec_acceptance_full: 52.7%
     memory:
       residency: warm
       pinned: false
@@ -824,23 +858,33 @@ roles:
     - architect
     - coder
     acceleration:
-      type: moe_expert_reduction
-      experts: 3
-      baseline_experts: 8
-      override_key: qwen3moe.expert_used_count
-      alternative:
-        type: speculative_decoding
-        draft_role: draft_qwen3_coder_0_75b
-        k: 16
-        notes: jukofyork vocab transplant draft fixes BOS mismatch - UNTESTED, benchmark needed
+      type: speculative_decoding
+      draft_role: draft_qwen3_coder_0_75b
+      k: 16
+      notes: >
+        jukofyork vocab transplant draft VERIFIED (2026-02-13).
+        BOS matched (both comma token 11). 74-82% acceptance.
+        Full experts + spec = recommended (quality over speed for architect role).
+        MoE3+spec was 12.74 t/s but full+spec at 9.00 preserves full quality.
+      benchmarked: 2026-02-13
     constraints:
-      forbid:
-      - prompt_lookup
-      reason: No prompt lookup - MoE architecture
+      notes: >
+        Prompt lookup works mechanically (18.4% accept on refactoring)
+        but is net-negative on speed due to MoE verification overhead.
+        Spec decode (74-82% accept) is the correct acceleration method.
+        SSM ban does NOT apply — MoE is architecture-agnostic for lookup.
     performance:
       baseline_tps: 6.53
-      optimized_tps: 10.3
-      speedup: 1.58x
+      full_spec_tps: 9.00
+      moe3_baseline_tps: 5.91
+      moe3_spec_tps: 12.74
+      moe3_spec_lookup_tps: 13.05
+      optimized_tps: 9.00
+      speedup: 1.38x
+      spec_acceptance_full: 80.5%
+      spec_acceptance_refactor: 74.2%
+      spec_acceptance_novel: 57.4%
+      spec_acceptance_summarize: 46.7%
       moe2_tps: 11.51
       moe4_tps: 9.25
       moe5_tps: 8.5
@@ -2397,11 +2441,14 @@ roles:
     memory:
       residency: cold
       pinned: false
-    compatible_targets: []  # NONE - all tested pairings fail
-    # REMOVED: qwen3_coder_30b - 15% accept, counterproductive (2026-01-28)
-    # REMOVED: qwen3_coder_480b - 8.65% accept, counterproductive (2026-01-28)
-    # UNTESTED: qwen3_coder_53b - likely same issue
-    notes: DEPRECATED (2026-01-28) - Spec decode FAILS with ALL Qwen3-Coder targets. 30B-A3B=15% accept (0.5x), 480B=8.65% accept (0.5x). Use MoE reduction instead (MoE3 for 480B gives 2.1x speedup).
+    compatible_targets:
+    - qwen3-coder-30b-a3b
+    - qwen3-coder-480b-a35b
+    notes: >
+      VERIFIED (2026-02-13) — works with ALL Qwen3-Coder targets. BOS=comma (token 11) matches.
+      30B-A3B: 70-78% accept (MoE6+spec+lookup = 47.11 t/s).
+      480B-A35B: 74-82% accept (full+spec = 9.00 t/s).
+      Previous testing (2026-01-28) showed 15%/8.65% — likely a build or config issue at the time.
   draft_qwen3_1_7b_q8_0:
     tier: D
     description: Draft model - Qwen3-1.7B-Q8_0 (higher quality for spec decode)
@@ -2421,10 +2468,13 @@ roles:
     - qwen3-235b
     - qwen3-4b
     # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch). BENCHMARKED (2026-01-28) Qwen3-1.7B→Qwen3-32B=31% accept (2.4x speedup). Qwen3-1.7B→235B-A22B=21% accept (SLOWER than baseline, use MoE4 instead).
+    notes: >
+      Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
+      BENCHMARKED: 1.7B→32B=31% accept (2.4x). 1.7B→235B=21% accept (SLOWER — use 0.6B instead).
+      The 0.6B Q8_0 draft is strictly superior for 235B (55% vs 21% acceptance).
   draft_qwen3_0_6b_q8_0:
     tier: D
-    description: Draft model - Qwen3-0.6B-Q8_0 (higher quality for spec decode)
+    description: Draft model - Qwen3-0.6B-Q8_0 (production draft for 235B architect)
     model:
       name: Qwen_Qwen3-0.6B-Q8_0
       path: /mnt/raid0/llm/models/Qwen_Qwen3-0.6B-Q8_0.gguf
@@ -2441,7 +2491,11 @@ roles:
     - qwen3-235b
     - qwen3-4b
     # REMOVED: qwen3-30b-a3b-thinking - missing BOS token in GGUF
-    notes: Generic Qwen3 draft. NOT compatible with Qwen3-Coder or Qwen3-Thinking (BOS mismatch).
+    notes: >
+      Generic Qwen3 draft. BOS=151643 matches standard Qwen3 models.
+      NOT compatible with Qwen3-Coder (BOS=comma) or Qwen3-Thinking (missing BOS).
+      BENCHMARKED (2026-02-13): 0.6B→235B = 53-55% accept (6.08 t/s full+spec).
+      Dramatically outperforms 1.7B draft (55% vs 21%) — smaller draft wins on CPU.
   draft_qwen3_embedding_0_6b:
     tier: D
     deprecated: true
@@ -3101,9 +3155,14 @@ runtime_quirks:
     description: Qwen3-Coder-480B-A35B-Instruct
     quirks:
     - issue: BOS token mismatch - standard drafts incompatible
-      workaround: Use jukofyork draft (draft_qwen3_coder_0_75b) with vocab transplant - verified compatible 2026-01-09
+      solution: jukofyork vocab transplant draft (draft_qwen3_coder_0_75b) — BOS matched (comma token 11)
+      status: VERIFIED WORKING (2026-02-13) — 74-82% acceptance, 2.16x speedup
       discovered: 2025-12-15
-      updated: 2026-01-09
+      updated: 2026-02-13
+    - issue: Prompt lookup net-negative despite working mechanically
+      details: 18.4% acceptance on refactoring, but -34% speed due to MoE verification overhead
+      workaround: Use spec decode instead (74% acceptance, +2.16x speed)
+      discovered: 2026-02-13
     - issue: MOE2 (2 experts) produces garbage output despite being faster
       workaround: Use MOE3 (3 experts) - 10.30 t/s with good quality (+58% speedup)
       discovered: 2025-12-21
