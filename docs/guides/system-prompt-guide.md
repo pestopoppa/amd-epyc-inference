@@ -104,43 +104,24 @@ Always output benchmark commands with full environment setup.
 
 ---
 
-## 5. Subagents
+## 5. Role Prompts
 
-Create specialized agents for specific tasks.
+Use repository role prompts for specialist behavior.
 
 ### Location:
 ```
-.claude/agents/perf-tuner.md
+agents/
 ```
 
-### Example content:
-```markdown
-# Performance Tuning Agent
-
-You are a Linux performance tuning specialist focused on:
-- CPU frequency scaling and governors
-- NUMA optimization
-- Memory management (hugepages, THP, cgroups)
-- Process affinity and scheduling
-
-When asked to optimize, always:
-1. First gather current system state
-2. Explain what each change does
-3. Provide rollback commands
-4. Warn about potential stability impacts
-
-Never make changes without explicit confirmation.
-```
-
-### Usage:
-```
-@perf-tuner help me configure hugepages for a 150GB model
-```
+### Structure:
+- `agents/AGENT_INSTRUCTIONS.md` (execution contract)
+- `agents/shared/*.md` (shared policy)
+- `agents/*.md` (lean role overlays)
 
 ### Best for:
-- Domain expert personas
-- Delegating specialized subtasks
-- Parallel workstreams
+- Consistent role behavior across sessions
+- Shared policy without duplication
+- Stable handoff contracts by role
 
 ---
 
@@ -150,30 +131,35 @@ Automatically inject context or run scripts at specific points.
 
 ### Location:
 ```
-.claude/hooks.json
+.claude/settings.json
 ```
 
-### Example — inject system state before every prompt:
+### Example — PreToolUse hooks:
 ```json
 {
-  "hooks": [
-    {
-      "name": "system-context",
-      "event": "before_prompt",
-      "script": ".claude/scripts/gather-system-state.sh",
-      "inject_output": true
-    }
-  ]
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/hooks/check_pytest_safety.sh\""
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-### Example script (.claude/scripts/gather-system-state.sh):
+### Example script (`scripts/hooks/check_pytest_safety.sh`):
 ```bash
 #!/bin/bash
-echo "=== Current System State ==="
-echo "CPU Governor: $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'unknown')"
-echo "Hugepages: $(grep HugePages_Total /proc/meminfo)"
-echo "NUMA nodes: $(numactl --hardware 2>/dev/null | grep 'available:' || echo 'unknown')"
+set -euo pipefail
+INPUT=$(cat)
+CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+echo "$CMD" | grep -qP 'pytest.*-n\s*auto' && exit 2 || exit 0
 ```
 
 ### Best for:
@@ -209,9 +195,12 @@ For your AMD EPYC 9655 system, I recommend this structure:
 │   │   ├── benchmark.md           # /benchmark command
 │   │   ├── audit.md               # /audit command
 │   │   └── configure.md           # /configure command
-│   └── agents/
-│       ├── sysadmin.md            # @sysadmin for low-level Linux
-│       └── llama-expert.md        # @llama-expert for llama.cpp
+│   ├── skills/                    # Packaged local skills (SKILL.md format)
+│   └── settings.json              # Hook configuration
+├── agents/                        # Role prompts + shared agent policy
+│   ├── AGENT_INSTRUCTIONS.md
+│   ├── shared/
+│   └── *.md
 ├── UTILS/
 │   ├── system_audit.sh            # Pre-change state capture
 │   ├── bench_zen5.sh              # Systematic benchmarking

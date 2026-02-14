@@ -193,7 +193,7 @@ $PROJECT_ROOT/                 # Set via ORCHESTRATOR_PATHS_PROJECT_ROOT
 │
 ├── src/                       # Python source (orchestrator, REPL, services)
 ├── orchestration/             # Model registry, TaskIR schema, procedures, MemRL
-├── agents/                    # 8 agent role definitions
+├── agents/                    # Agent map, execution contract, shared policy, role overlays
 ├── scripts/                   # Server management, benchmarking, utilities
 ├── benchmarks/                # Test prompts and results (8 suites)
 ├── progress/                  # Lab notebook (daily entries)

@@ -1,0 +1,4 @@
+name: claude-md-accounting
+display_name: CLAUDE MD Accounting
+short_description: Track governed and excluded CLAUDE.md files.
+default_prompt: Audit CLAUDE.md coverage and update governance matrix files.

@@ -1,0 +1,4 @@
+name: agent-file-architecture
+display_name: Agent File Architecture
+short_description: Refactor and validate agent prompt files.
+default_prompt: Refactor agent files with shared policy and lean role overlays.

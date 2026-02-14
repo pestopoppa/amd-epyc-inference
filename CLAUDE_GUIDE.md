@@ -4,11 +4,13 @@ This guide helps human readers understand how Claude Code is configured in this 
 
 ## Architecture Overview
 
-The agent configuration is split across four layers:
+The agent configuration is split across five layers:
 
 ```
 CLAUDE.md              ← Always loaded. Core rules, system identity, routing tables.
 .claude/commands/*.md  ← On-demand skills. Loaded only when invoked via /skill-name.
+.claude/skills/*       ← Packaged local skills (SKILL.md + references/scripts) for reusable workflows.
+agents/*               ← Agent execution contract, shared policy, and role overlays.
 .claude/settings.json  ← Hooks. Run automatically on tool use to enforce safety rules.
 CHANGELOG.md           ← Dated record of system changes. Referenced, not loaded.
 ```
@@ -38,7 +40,7 @@ Loaded into every Claude Code session. Contains only what the agent needs on eve
 
 **Design principle**: If the agent needs it on >50% of sessions, it stays in CLAUDE.md. Otherwise, it's a skill.
 
-### `.claude/commands/*.md` — Skills (On-Demand)
+### `.claude/commands/*.md` — Command Skills (On-Demand)
 
 Skills are loaded only when the agent (or user) invokes them with `/skill-name`. Each skill is a self-contained reference document for a specific workflow.
 
@@ -50,8 +52,30 @@ Skills are loaded only when the agent (or user) invokes them with `/skill-name`.
 | `/new-model` | `new-model.md` | — | Onboarding a new model into the registry |
 | `/refactor` | `refactor.md` | — | Code technical debt analysis |
 | `/mcp-knowledge` | `mcp-knowledge.md` | — | Knowledge tools integration |
+| `/agent-files` | `agent-files.md` | — | Agent file schema and migration workflow |
+| `/agent-governance` | `agent-governance.md` | — | Prompt governance checks and CLAUDE accounting |
 
 **Why skills?** Benchmarking, eval scoring, and draft compatibility validation are detailed workflows that are only relevant ~10-20% of sessions. Keeping them as skills saves ~500 lines of context on every other session.
+
+### `.claude/skills/*` — Packaged Local Skills
+
+Packaged skills are local reusable bundles with `SKILL.md`, references, and scripts.
+
+| Skill | Path | Purpose |
+|------|------|---------|
+| Agent File Architecture | `.claude/skills/agent-file-architecture/` | Role schema, migration guardrails, validation runner |
+| CLAUDE MD Accounting | `.claude/skills/claude-md-accounting/` | Governance scoping and matrix consistency |
+
+### `agents/` — Agent Prompt Architecture
+
+`agents/` now follows a split design:
+
+- `agents/AGENT_INSTRUCTIONS.md`: top-level execution contract
+- `agents/shared/*.md`: cross-cutting policy
+- `agents/*.md`: lean role overlays
+- `docs/guides/agent-workflows/`: operational detail moved out of prompts
+
+Design details: `docs/reference/agent-config/AGENT_FILE_LOGIC.md`
 
 ### `.claude/settings.json` — Hooks (Automatic)
 
@@ -62,6 +86,10 @@ Hooks run automatically before certain tool calls. They enforce safety rules tha
 | `check_pytest_safety.sh` | Any `Bash` call | Blocks `pytest -n auto` and `-n N` where N > 16 |
 | `check_filesystem_path.sh` | `Write` or `Edit` | Blocks file writes outside `/mnt/raid0/` |
 | `benchmark_context.sh` | `Write` or `Edit` | Reminds agent to use `/benchmark` when editing benchmark files |
+| `agents_schema_guard.sh` | `Write` or `Edit` | Blocks non-conforming role schema changes in `agents/*.md` |
+| `agents_reference_guard.sh` | `Write` or `Edit` | Blocks unresolved local markdown references in governance files |
+| `claude_accounting_context.sh` | `Write` or `Edit` | Reminds CLAUDE matrix sync when editing CLAUDE policy files |
+| `skills_context.sh` | `Write` or `Edit` | Reminds command-skill and packaged-skill parity |
 
 Hook scripts live in `scripts/hooks/`. The configuration in `.claude/settings.json` maps tool names to hook scripts. A separate `.claude/settings.local.json` (not committed) holds permission allow-lists.
 

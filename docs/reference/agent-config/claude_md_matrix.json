@@ -1,0 +1,38 @@
+{
+  "governed": [
+    {
+      "path": "CLAUDE.md",
+      "scope": "project_root",
+      "action": "maintain"
+    },
+    {
+      "path": "kernel-dev/llama-cpp-dev/CLAUDE.md",
+      "scope": "kernel_dev_subproject",
+      "action": "account_only"
+    }
+  ],
+  "related": [
+    {
+      "path": "kernel-dev/llama-cpp-dev/AGENTS.md",
+      "scope": "kernel_dev_rules"
+    },
+    {
+      "path": "CLAUDE_GUIDE.md",
+      "scope": "human_guide"
+    }
+  ],
+  "excluded_classes": [
+    {
+      "prefix": "config/plugins/",
+      "classification": "external"
+    },
+    {
+      "prefix": "config/.claude/plugins/",
+      "classification": "external"
+    },
+    {
+      "prefix": "backups/",
+      "classification": "archival"
+    }
+  ]
+}

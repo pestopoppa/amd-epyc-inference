@@ -1077,3 +1077,13 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 [2026-02-14T00:00:20Z] task_end: Documentation | success
 [2026-02-14T00:00:21Z] session_end: SkillBank End-to-End Integration | success | 19 files modified, 1 new
 [2026-02-15T00:05:10+01:00] TASK_END | description="Spec decode Phase 1 complete: 30B (47.11 t/s), 235B (6.08 t/s), 480B (9.00 t/s). Architect policy: full experts + spec. All docs updated." | status=success
+{"ts":"2026-02-15T00:21:03+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"SESSION_START","msg":"Agent file refactor completion track","details":"new_session=ses_20260215_002103_211674"}
+{"ts":"2026-02-15T00:21:03+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"TASK_START","msg":"Implement agent governance refactor","details":"Complete handoff, hooks, skills, validators, docs, and reporting updates"}
+{"ts":"2026-02-15T00:25:57+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"OBSERVE","msg":"agent_refactor_handoff","details":"handoffs/active/agent-files-refactor-complete.md status=IMPLEMENTATION COMPLETE"}
+{"ts":"2026-02-15T00:25:57+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"OBSERVE","msg":"agent_refactor_validation","details":"check-agent-config=pass"}
+{"ts":"2026-02-15T00:25:57+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"DECISION","msg":"Ship broad hook suite + dual skill surfaces","details":"Enforces agent prompt architecture mechanically while keeping operational depth in docs"}
+{"ts":"2026-02-15T00:25:57+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"TASK_END","msg":"Implement agent governance refactor","details":"outcome=success"}
+{"ts":"2026-02-15T00:25:57+01:00","session":"ses_20260215_002103_211674","level":"INFO","cat":"SESSION_END","msg":"Session complete","details":"Agent governance refactor completed with validations passing"}
+{"ts":"2026-02-15T00:30:59+01:00","session":"ses_20260215_003059_233108","level":"INFO","cat":"OBSERVE","msg":"skills_shell_tips_integration","details":"Folded routing-boundary skill guidance and added AGENT_FILE_LOGIC.md"}
+{"ts":"2026-02-15T00:30:59+01:00","session":"ses_20260215_003059_233108","level":"INFO","cat":"TASK_END","msg":"Agent governance refinement","details":"outcome=success"}
+2026-02-14T23:32:08Z [TASK_END] SkillBank teacher fixes + full seeding (200 traj × 2 teachers → 138 skills) | success

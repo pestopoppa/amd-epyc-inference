@@ -45,7 +45,7 @@
 
 Set `HF_HOME`, `TRANSFORMERS_CACHE`, `HF_DATASETS_CACHE` → `/mnt/raid0/llm/cache/huggingface`; `PIP_CACHE_DIR` → `/mnt/raid0/llm/cache/pip`; `TMPDIR` → `/mnt/raid0/llm/tmp`; `XDG_CACHE_HOME` → `/mnt/raid0/llm/claude/cache`; `XDG_DATA_HOME` → `/mnt/raid0/llm/claude/share`; `XDG_STATE_HOME` → `/mnt/raid0/llm/claude/state`.
 
-> A hook (`scripts/hooks/check_filesystem_path.sh`) enforces this automatically on Write/Edit.
+> Hooks enforce this automatically on Write/Edit (`check_filesystem_path.sh`, `agents_schema_guard.sh`, `agents_reference_guard.sh`).
 
 ---
 
@@ -108,6 +108,8 @@ Each <response> must include a <text> and a numeric <probability>.  Please sampl
 | `/research-update` | Update results across tracking docs |
 | `/refactor` | Code technical debt analysis |
 | `/mcp-knowledge` | Knowledge tools integration |
+| `/agent-files` | Agent file schema, migration, and validation workflow |
+| `/agent-governance` | CLAUDE accounting, hooks/skills parity, and governance checks |
 
 ---
 

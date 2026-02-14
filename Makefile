@@ -8,7 +8,7 @@
 # Run specific:  make shellcheck
 
 SHELL := /usr/bin/env bash
-.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell nextplaid-reindex
+.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell nextplaid-reindex check-agent-config
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -60,6 +60,7 @@ help:
 	@echo "  make unit       - Run unit tests"
 	@echo "  make validate-registry - Validate model registry and paths"
 	@echo "  make check-memory - Check available RAM before tests (prevents crashes)"
+	@echo "  make check-agent-config - Validate agent prompt structure and CLAUDE matrix"
 	@echo ""
 	@echo "Formatting:"
 	@echo "  make shfmt      - Format shell scripts (in-place)"
@@ -190,6 +191,13 @@ test: unit integration
 	@echo "  ✓ all tests passed"
 
 # ── Optional Gates ────────────────────────────────────────────────────────────
+
+check-agent-config:
+	@echo "==> check-agent-config"
+	@$(PY) scripts/validate/validate_agents_structure.py
+	@$(PY) scripts/validate/validate_agents_references.py
+	@$(PY) scripts/validate/validate_claude_md_matrix.py
+	@echo "  ✓ agent config checks passed"
 
 security:
 	@echo "==> security (stub)"

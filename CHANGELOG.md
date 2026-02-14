@@ -2,6 +2,29 @@
 
 ## 2026-02-14
 
+- **Agent governance refactor (harness-aligned) completed**:
+  - Finalized layered agent prompt architecture in `agents/` (thin execution contract, shared policy, lean role overlays).
+  - Added operational depth docs in `docs/guides/agent-workflows/` to keep prompts concise.
+  - Added CLAUDE coverage governance artifacts:
+    - `docs/reference/agent-config/CLAUDE_MD_MATRIX.md`
+    - `docs/reference/agent-config/claude_md_matrix.json`
+    - Explicit governed scope for `CLAUDE.md` and `kernel-dev/llama-cpp-dev/CLAUDE.md`.
+  - Added broad hook suite in `scripts/hooks/` and wired into `.claude/settings.json`:
+    - `agents_schema_guard.sh`
+    - `agents_reference_guard.sh`
+    - `claude_accounting_context.sh`
+    - `skills_context.sh`
+  - Added dual skill surfaces:
+    - Command skills: `.claude/commands/agent-files.md`, `.claude/commands/agent-governance.md`
+    - Packaged local skills: `.claude/skills/agent-file-architecture/`, `.claude/skills/claude-md-accounting/`
+  - Added lightweight validators and make target:
+    - `scripts/validate/validate_agents_structure.py`
+    - `scripts/validate/validate_agents_references.py`
+    - `scripts/validate/validate_claude_md_matrix.py`
+    - `make check-agent-config` (all checks passing)
+  - Added explicit design logic doc: `docs/reference/agent-config/AGENT_FILE_LOGIC.md`
+  - Folded skills-shell guidance into skill boundaries (`use when` / `do not use when`) for packaged local skills.
+
 - **SkillBank End-to-End Integration**: Wired SkillBank infrastructure (122 tests, 10 files) into `seed_specialist_routing.py` and `ClaudeDebugger`. Five gaps closed:
   - **CLI bootstrap** (`scripts/skillbank/seed_skills.py`): Populates SkillBank from episodic memory or progress logs via `--teacher claude|codex|mock`.
   - **Debugger integration**: +2 anomaly signals (`skill_mismatch`, `no_skills_available`), skill retrieval data in diagnostics, `SkillAwareReplayEngine` in replay summary, skill health via `EvolutionMonitor`.
@@ -10,6 +33,8 @@
   - **OutcomeTracker**: Records skill×task outcomes for evolution. Enabled via `ORCHESTRATOR_SKILLBANK=1`.
   - **Evolution trigger**: `--evolve` flag runs `EvolutionMonitor.run_evolution_cycle()` after seeding, prints promotion/decay/deprecation report.
   - **Tests**: 17 new tests (`test_skill_diagnostics.py`), 3525 total unit tests passing, 0 failures.
+  - **Teacher fixes**: ClaudeTeacher rewrote from Anthropic SDK to `claude -p` CLI subprocess (no API key); CodexTeacher fixed CLI flags (`--full-auto`) and JSONL parser (`item.completed`/`agent_message`); both strip `CLAUDECODE` env var for nested invocation.
+  - **Full seeding run**: 200 trajectories × 2 teachers → 138 skills stored (64 Claude + 58 Codex + 16 test). Zero merges, zero rejections. ~11 min total.
 
 ## 2026-02-13
 
