@@ -82,6 +82,10 @@ async def _execute_repl(
     if request.context:
         combined_context += f"\n\nContext:\n{request.context}"
 
+    # Inject SkillBank skill context if available (SkillRL §3.2)
+    if routing.skill_context:
+        combined_context = f"{routing.skill_context}\n\n{combined_context}"
+
     if routing.document_result and routing.document_result.document_result:
         from src.repl_document import DocumentREPLEnvironment, DocumentContext
 
@@ -175,6 +179,8 @@ async def _execute_repl(
                 generation_ms=primitives.total_generation_ms,
                 predicted_tps=primitives._last_predicted_tps,
                 http_overhead_ms=primitives.total_http_overhead_ms,
+                skills_retrieved=len(routing.skill_ids),
+                skill_ids=routing.skill_ids,
             )
         except Exception as e:
             logging.warning(f"Two-stage summarization failed: {type(e).__name__}: {e}")
@@ -385,4 +391,7 @@ async def _execute_repl(
         grammar_enforced=task_state.grammar_enforced,
         parallel_tools_used=parallel_tools,
         cache_affinity_bonus=task_state.cache_affinity_bonus,
+        # SkillBank integration
+        skills_retrieved=len(routing.skill_ids),
+        skill_ids=routing.skill_ids,
     )

@@ -614,10 +614,31 @@ class ClaudeDebugger:
                 self._replay_summary = ""
                 return ""
 
-            engine = ReplayEngine()
-            metrics = engine.run_with_metrics(
-                RetrievalConfig(), ScoringConfig(), trajectories, "debugger_baseline",
-            )
+            # Try skill-aware replay if SkillBank available
+            skill_metrics = None
+            try:
+                from orchestration.repl_memory.replay.skill_replay import (
+                    SkillAwareReplayEngine, SkillBankConfig,
+                )
+                from orchestration.repl_memory.skill_bank import SkillBank
+
+                skill_db = Path("orchestration/repl_memory/sessions/skills.db")
+                if skill_db.exists():
+                    sb = SkillBank(db_path=skill_db)
+                    engine = SkillAwareReplayEngine(skill_bank=sb)
+                    skill_metrics = engine.run_with_skill_metrics(
+                        RetrievalConfig(), ScoringConfig(), SkillBankConfig(),
+                        trajectories, "debugger_skill_baseline",
+                    )
+                    metrics = skill_metrics.base_metrics
+            except ImportError:
+                pass
+
+            if skill_metrics is None:
+                engine = ReplayEngine()
+                metrics = engine.run_with_metrics(
+                    RetrievalConfig(), ScoringConfig(), trajectories, "debugger_baseline",
+                )
 
             by_type = ", ".join(
                 f"{t}: {a:.0%}" for t, a in metrics.routing_accuracy_by_type.items()
@@ -627,6 +648,26 @@ class ClaudeDebugger:
                     metrics.tier_usage.items(), key=lambda x: -x[1],
                 )[:5]
             )
+            skill_lines = ""
+            if skill_metrics is not None:
+                skill_lines = (
+                    f"- **Skills**: {skill_metrics.total_skills_retrieved} retrieved, "
+                    f"coverage={skill_metrics.skill_coverage:.1%}, "
+                    f"avg/step={skill_metrics.avg_skills_per_step:.1f}\n"
+                )
+                # Skill health via EvolutionMonitor
+                try:
+                    from orchestration.repl_memory.skill_evolution import EvolutionMonitor
+                    monitor = EvolutionMonitor(sb)
+                    evo_summary = monitor.get_evolution_summary()
+                    skill_lines += (
+                        f"- **Skill health**: {evo_summary.get('total', 0)} total, "
+                        f"{evo_summary.get('active', 0)} active, "
+                        f"{evo_summary.get('deprecated', 0)} deprecated\n"
+                    )
+                except Exception:
+                    pass
+
             self._replay_summary = (
                 f"\n## MemRL Replay Context (last 14 days)\n"
                 f"- **Trajectories**: {metrics.num_trajectories} "
@@ -639,6 +680,7 @@ class ClaudeDebugger:
                 f"- **Tier usage**: {tier or 'N/A'}\n"
                 f"- **Escalation**: precision={metrics.escalation_precision:.0%}, "
                 f"recall={metrics.escalation_recall:.0%}\n"
+                f"{skill_lines}"
             )
             logger.info(
                 f"[DEBUG] Replay context loaded: {metrics.num_trajectories} trajectories, "
@@ -714,6 +756,14 @@ class ClaudeDebugger:
             affinity = diag.get("cache_affinity_bonus", 0.0)
             if affinity > 0:
                 parts.append(f"- **Cache affinity**: +{affinity:.0%} bonus applied")
+
+            skill_data = diag.get("skill_retrieval", {})
+            if skill_data:
+                parts.append(
+                    f"- **Skills**: {skill_data.get('skills_retrieved', 0)} retrieved "
+                    f"({', '.join(skill_data.get('skill_types', []))}), "
+                    f"~{skill_data.get('skill_context_tokens', 0)} tokens injected"
+                )
 
             tap_off = diag.get("tap_offset_bytes", 0)
             tap_len = diag.get("tap_length_bytes", 0)

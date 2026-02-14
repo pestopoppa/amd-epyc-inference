@@ -262,4 +262,6 @@ async def _execute_vision_multimodal(
         formalization_applied=routing.formalization_applied,
         tools_used=tools_used,
         tools_called=tools_called,
+        skills_retrieved=len(routing.skill_ids),
+        skill_ids=routing.skill_ids,
     )

@@ -35,6 +35,9 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     "escalation_cycle": 1.0,
     "assistant_help_request": 1.0,
     "prose_only_code_task": 1.0,
+    # SkillBank signals
+    "skill_mismatch": 0.5,
+    "no_skills_available": 0.3,
 }
 
 # ── Restart phrases for self-doubt detection ──
@@ -354,6 +357,16 @@ def detect_prose_only_code_task(
     return not bool(_CODE_INDICATOR_RE.search(answer))
 
 
+def detect_skill_mismatch(passed: bool, skills_retrieved: int) -> bool:
+    """Skills were retrieved but the task still failed — skill quality issue."""
+    return not passed and skills_retrieved > 0
+
+
+def detect_no_skills_available(skills_retrieved: int, skill_coverage: bool) -> bool:
+    """SkillBank is enabled but returned nothing for this task type — coverage gap."""
+    return skill_coverage and skills_retrieved == 0
+
+
 # ── Aggregation ──
 
 
@@ -367,8 +380,12 @@ def compute_anomaly_signals(
     role_history: list[str] | None = None,
     tools_used: int = 0,
     delegation_events: list[dict] | None = None,
+    # SkillBank signals (optional, backward-compatible)
+    skills_retrieved: int = 0,
+    skill_coverage: bool = False,
+    passed: bool = True,
 ) -> dict[str, bool]:
-    """Run all 22 anomaly detectors, return dict of signal_name → bool."""
+    """Run all anomaly detectors, return dict of signal_name → bool."""
     deleg = delegation_events or []
     return {
         "repetition_loop": detect_repetition_loop(answer),
@@ -400,6 +417,11 @@ def compute_anomaly_signals(
         "assistant_help_request": detect_assistant_help_request(answer),
         "prose_only_code_task": detect_prose_only_code_task(
             answer, scoring_method,
+        ),
+        # SkillBank signals
+        "skill_mismatch": detect_skill_mismatch(passed, skills_retrieved),
+        "no_skills_available": detect_no_skills_available(
+            skills_retrieved, skill_coverage,
         ),
     }
 

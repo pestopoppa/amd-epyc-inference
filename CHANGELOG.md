@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-02-14
+
+- **SkillBank End-to-End Integration**: Wired SkillBank infrastructure (122 tests, 10 files) into `seed_specialist_routing.py` and `ClaudeDebugger`. Five gaps closed:
+  - **CLI bootstrap** (`scripts/skillbank/seed_skills.py`): Populates SkillBank from episodic memory or progress logs via `--teacher claude|codex|mock`.
+  - **Debugger integration**: +2 anomaly signals (`skill_mismatch`, `no_skills_available`), skill retrieval data in diagnostics, `SkillAwareReplayEngine` in replay summary, skill health via `EvolutionMonitor`.
+  - **API data flow**: `skill_ids` + `skills_retrieved` propagated through `RoutingResult → ChatResponse → RoleResult → diagnostic`. All 8 `ChatResponse` construction sites updated.
+  - **Replay integration**: `--debug-replay` tries skill-aware replay first, prints skill metrics (coverage, avg/step).
+  - **OutcomeTracker**: Records skill×task outcomes for evolution. Enabled via `ORCHESTRATOR_SKILLBANK=1`.
+  - **Evolution trigger**: `--evolve` flag runs `EvolutionMonitor.run_evolution_cycle()` after seeding, prints promotion/decay/deprecation report.
+  - **Tests**: 17 new tests (`test_skill_diagnostics.py`), 3525 total unit tests passing, 0 failures.
+
 ## 2026-02-13
 
 - **Replay Evaluation Harness (MemRL meta-learning)**: Full 8-phase implementation of offline replay harness for meta-learned memory configurations. Motivated by ALMA (Xiong et al., 2026). 7 new modules (1,885 LOC production + 1,250 LOC tests = 3,135 LOC total):
@@ -15,7 +26,17 @@
   - **Tests**: 75 new tests across 5 files, all passing. Full suite: 3386 passed, 0 failures.
   - **Shellcheck fix**: Fixed pre-existing SC2294 warning in `scripts/benchmark/deprecated/run_phase3_validation.sh` (`eval "$@"` → `"$@"`).
 
-- **SoftMatcha v2 research + Corpus-Augmented Speculative Decoding plan**: Reviewed SoftMatcha v2 (arxiv 2602.10908) — fast fuzzy pattern matcher for trillion-scale corpora (Python+Rust, Apache 2.0). Assessed relevance to orchestration architecture: high for corpus-augmented prompt lookup (extend draft source beyond input prompt to 100GB code corpus), medium as NextPLAID complement for verbatim matching. Identified critical finding: 480B prompt lookup `forbid` in registry likely overgeneralized (MoE ≠ SSM, prompt lookup is architecture-agnostic). Merged all findings into expanded `handoffs/active/hybrid-lookup-spec-decode.md` (205→409 lines, PROPOSAL→ACTIVE). Phased plan: Phase 0 (test lookup on 480B), Phase 0.5 (jukofyork draft), Phase 1 (all non-SSM models), Phase 2A (SoftMatcha corpus stuffing), Phase 2B (sidecar draft injection). Updated `BLOCKED_TASKS.md` status.
+- **Speculative Decoding VERIFIED across all MoE models (Phases 0+0.5+1 + 235B)**:
+  - **Phase 0 (480B prompt lookup)**: Works mechanically (18.4% acceptance), but net-negative on speed (-34%). Registry `forbid` was wrong (MoE ≠ SSM).
+  - **Phase 0.5 (480B jukofyork draft)**: vocab transplant draft with matching BOS (comma token 11). 74-82% acceptance, full+spec = 9.00 t/s.
+  - **Phase 1 (30B full matrix)**: **Best: MoE6 + spec + lookup = 47.11 t/s (2.58x over baseline)**. Lookup net-positive on 30B.
+  - **235B spec decode (NEW)**: 0.6B Q8_0 draft, 53-55% acceptance. MoE4+spec = 8.21 t/s (fastest), full+spec = 6.08 t/s (production: quality). Previously untested — 0.6B draft dramatically outperforms 1.7B (55% vs 21% acceptance).
+  - **Architect policy change**: Architect roles (235B, 480B) now use full experts + spec (no MoE reduction). Quality over speed for the hardest tasks.
+  - **Per-role lookup flag**: `AccelerationConfig.lookup` field. 30B/coder_escalation: lookup=True; architects: lookup=False.
+  - **Production shipped**: All models updated across `model_registry.yaml`, `orchestrator_stack.py`, `CLAUDE.md`, `RESULTS.md`.
+  - **Tests**: 125/125 registry-related tests pass.
+
+- **SoftMatcha v2 research + Corpus-Augmented Speculative Decoding plan**: Reviewed SoftMatcha v2 (arxiv 2602.10908) — fast fuzzy pattern matcher for trillion-scale corpora (Python+Rust, Apache 2.0). Identified corpus-augmented prompt lookup opportunity for models where spec decode isn't available. Expanded `handoffs/active/hybrid-lookup-spec-decode.md` (PROPOSAL→ACTIVE). Phase 2 (SoftMatcha corpus augmentation) remains pending — may help models without compatible draft models.
 
 - **Orchestrator wiring: 4 scaffolded improvements connected to live pipeline**:
   - **#2 Think-Harder**: `_should_think_harder()` helper in `nodes.py` triggers on penultimate retry (before model escalation). All 7 graph node error paths updated to try same-model CoT (4096 tokens, "Think step by step" prefix) before escalating. Success/failure tracked in TaskState.

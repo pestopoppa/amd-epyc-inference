@@ -48,6 +48,7 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
     }
 
     use_mock = request.mock_mode and not request.real_mode
+    skill_context = ""  # Populated by SkillAugmentedRouter when skillbank is enabled
 
     # Initialize MemRL early for real_mode to enable HybridRouter
     if request.real_mode and not use_mock:
@@ -64,7 +65,14 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
         routing_decision = [request.role]
         routing_strategy = "explicit"
     elif state.hybrid_router and request.real_mode:
-        routing_decision, routing_strategy = state.hybrid_router.route(task_ir)
+        # Use skill-augmented routing if available (SkillAugmentedRouter)
+        if hasattr(state.hybrid_router, "route_with_skills") and features().skillbank:
+            routing_decision, routing_strategy, skill_context = (
+                state.hybrid_router.route_with_skills(task_ir)
+            )
+        else:
+            routing_decision, routing_strategy = state.hybrid_router.route(task_ir)
+            skill_context = ""
     else:
         has_image = bool(request.image_path or request.image_base64)
         classified_role, routing_strategy = _classify_and_route(
@@ -118,6 +126,15 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
 
     tool_required, tool_hint = detect_tool_requirement(request.prompt)
 
+    # Extract skill IDs from skill-augmented routing results
+    skill_ids: list[str] = []
+    if skill_context and hasattr(state, "hybrid_router") and state.hybrid_router:
+        try:
+            if hasattr(state.hybrid_router, "_last_skill_ids"):
+                skill_ids = list(state.hybrid_router._last_skill_ids)
+        except Exception:
+            pass
+
     return RoutingResult(
         task_id=task_id,
         task_ir=task_ir,
@@ -127,6 +144,8 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
         timeout_s=timeout_s,
         tool_required=tool_required,
         tool_hint=tool_hint,
+        skill_context=skill_context,
+        skill_ids=skill_ids,
     )
 
 

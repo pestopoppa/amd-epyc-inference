@@ -102,6 +102,9 @@ class ChatResponse(BaseModel):
     parallel_tools_used: bool = Field(default=False, description="Whether read-only tools executed in parallel")
     cache_affinity_bonus: float = Field(default=0.0, description="Cache affinity bonus applied during routing")
     cost_dimensions: dict[str, float] = Field(default_factory=dict, description="Multi-dimensional cost breakdown")
+    # SkillBank integration
+    skills_retrieved: int = Field(default=0, description="Number of skills retrieved from SkillBank")
+    skill_ids: list[str] = Field(default_factory=list, description="IDs of skills used for this request")
 
 
 class HealthResponse(BaseModel):

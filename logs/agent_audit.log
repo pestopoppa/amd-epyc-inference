@@ -1050,3 +1050,29 @@ LightOnOCR-2 is NOT a custom architecture - it's Mistral3-based (Pixtral + Qwen3
 {"ts":"2026-02-13T16:15:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"FILE_MODIFY","msg":"handoffs/active/hybrid-lookup-spec-decode.md","details":"action=rewrite; 205→409 lines. PROPOSAL→ACTIVE. Added: SoftMatcha v2 corpus engine, 480B test plan, corpus selection, quality gates, full test matrix."}
 {"ts":"2026-02-13T16:15:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"FILE_MODIFY","msg":"orchestration/BLOCKED_TASKS.md","details":"action=edit; Updated hybrid-lookup status PARTIAL→ACTIVE, expanded scope description"}
 {"ts":"2026-02-13T16:15:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"TASK_END","msg":"SoftMatcha v2 research + handoff expansion","details":"outcome=success; Phase 0 ready to execute"}
+{"ts":"2026-02-13T17:30:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"BENCHMARK","msg":"Phase 0: Prompt lookup on 480B","details":"WORKS mechanically (18.4% accept refactoring, 7.3% summarize) but NET NEGATIVE speed (-34%). MoE verification overhead too high. Registry forbid was wrong (MoE≠SSM)."}
+{"ts":"2026-02-13T17:30:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"BENCHMARK","msg":"Phase 0.5: jukofyork draft on 480B","details":"MAJOR WIN. BOS matched (comma token 11). Acceptance: 74.2% refactor, 57.4% novel, 46.7% summarize. Speed: 12.74 t/s (2.16x over 5.91 baseline)."}
+{"ts":"2026-02-13T17:30:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"FILE_MODIFY","msg":"model_registry.yaml + orchestrator_stack.py + registry_loader.py","details":"480B: combo MoE3+spec config shipped. build_server_command handles MoE+spec, registry parses speculative_decoding sub-config."}
+{"ts":"2026-02-13T17:30:00+01:00","session":"ses_20260213_softmatcha_research","level":"INFO","cat":"FILE_MODIFY","msg":"QUIRKS.md + RESULTS.md","details":"480B BOS mismatch SOLVED, 12.74 t/s entry added to best results table."}
+[2026-02-14T00:00:00Z] session_start: SkillBank End-to-End Integration
+[2026-02-14T00:00:01Z] task_start: Gap 1 — seed_skills.py CLI bootstrap script | Created scripts/skillbank/seed_skills.py
+[2026-02-14T00:00:02Z] task_end: Gap 1 — seed_skills.py | success
+[2026-02-14T00:00:03Z] task_start: Gap 2a — anomaly.py SkillBank signals | +2 signals, +2 detectors
+[2026-02-14T00:00:04Z] task_end: Gap 2a — anomaly.py | success
+[2026-02-14T00:00:05Z] task_start: Gap 2b — diagnostic.py skill params | +3 params, skill_retrieval block
+[2026-02-14T00:00:06Z] task_end: Gap 2b — diagnostic.py | success
+[2026-02-14T00:00:07Z] task_start: Gap 2c — claude_debugger.py skill integration | SkillAwareReplayEngine, skill display
+[2026-02-14T00:00:08Z] task_end: Gap 2c — claude_debugger.py | success
+[2026-02-14T00:00:09Z] task_start: Gap 2d — API data flow | skill_ids across ChatResponse, RoutingResult, RoleResult
+[2026-02-14T00:00:10Z] task_end: Gap 2d — API data flow | success | 8 ChatResponse sites, 3 data models
+[2026-02-14T00:00:11Z] task_start: Gap 3 — Replay integration | SkillAwareReplayEngine in seeding script
+[2026-02-14T00:00:12Z] task_end: Gap 3 — Replay integration | success
+[2026-02-14T00:00:13Z] task_start: Gap 4 — OutcomeTracker wiring | ORCHESTRATOR_SKILLBANK=1 env var
+[2026-02-14T00:00:14Z] task_end: Gap 4 — OutcomeTracker | success
+[2026-02-14T00:00:15Z] task_start: Gap 5 — --evolve flag | EvolutionMonitor post-seeding
+[2026-02-14T00:00:16Z] task_end: Gap 5 — --evolve flag | success
+[2026-02-14T00:00:17Z] task_start: Tests | 17 new + 122 existing + full regression
+[2026-02-14T00:00:18Z] task_end: Tests | success | 3525 passed, 0 failures
+[2026-02-14T00:00:19Z] task_start: Documentation | progress, changelog, CLAUDE.md, chapter 27
+[2026-02-14T00:00:20Z] task_end: Documentation | success
+[2026-02-14T00:00:21Z] session_end: SkillBank End-to-End Integration | success | 19 files modified, 1 new

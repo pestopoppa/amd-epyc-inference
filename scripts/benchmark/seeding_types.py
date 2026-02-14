@@ -208,6 +208,9 @@ class RoleResult:
     grammar_enforced: bool = False
     parallel_tools_used: bool = False
     cache_affinity_bonus: float = 0.0
+    # SkillBank integration
+    skills_retrieved: int = 0
+    skill_ids: list[str] = field(default_factory=list)
 
 
 @dataclass

@@ -141,4 +141,6 @@ def _execute_delegated(
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,
         http_overhead_ms=primitives.total_http_overhead_ms,
+        skills_retrieved=len(routing.skill_ids),
+        skill_ids=routing.skill_ids,
     )

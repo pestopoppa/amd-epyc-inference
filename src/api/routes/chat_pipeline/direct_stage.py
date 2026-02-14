@@ -57,6 +57,10 @@ def _execute_direct(
     if request.context:
         direct_prompt = f"{request.context}\n\n{request.prompt}"
 
+    # Inject SkillBank skill context if available (SkillRL §3.2)
+    if routing.skill_context:
+        direct_prompt = f"{routing.skill_context}\n\n{direct_prompt}"
+
     try:
         answer = primitives.llm_call(
             direct_prompt,
@@ -169,4 +173,6 @@ def _execute_direct(
         generation_ms=primitives.total_generation_ms,
         predicted_tps=primitives._last_predicted_tps,
         http_overhead_ms=primitives.total_http_overhead_ms,
+        skills_retrieved=len(routing.skill_ids),
+        skill_ids=routing.skill_ids,
     )

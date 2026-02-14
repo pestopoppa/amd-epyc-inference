@@ -118,9 +118,11 @@ Each <response> must include a <text> and a numeric <probability>.  Please sampl
 | Configuration | Speed | Speedup | Use Case |
 |---------------|-------|---------|----------|
 | Prompt Lookup (summarization) | 95.18 t/s | **12.7x** | Document QA, summarization |
-| Qwen2.5-Coder-32B + 0.5B (K=24) | 33.0 t/s | **11x** | Code generation |
+| Qwen3-Coder-30B + MoE6 + spec + lookup | 47.11 t/s | **2.58x** | Interactive chat, code gen |
+| Qwen2.5-Coder-32B + 0.5B (K=24) + lookup | 39.44 t/s | **5.4x** | Code generation (escalation) |
 | Prompt Lookup (code editing) | 25.82 t/s | **8.6x** | Refactoring, code review |
-| MoE Expert Reduction (4 experts) | +21-48% | — | MoE models |
+| Qwen3-Coder-480B + full experts + spec (K=16) | 9.00 t/s | **1.38x** | Architecture, hard coding |
+| Qwen3-235B-A22B + full experts + spec (K=16) | 6.08 t/s | **1.15x** | System architecture |
 
 ### Deprecated (Do Not Use)
 
@@ -139,33 +141,37 @@ Each <response> must include a <text> and a numeric <probability>.  Please sampl
 
 | Tier | Role | Model | Acceleration |
 |------|------|-------|--------------|
-| **A** | Front Door / Orchestrator | Qwen3-Coder-30B-A3B | MoE6 → 18 t/s |
+| **A** | Front Door / Orchestrator | Qwen3-Coder-30B-A3B | MoE6+spec+lookup → 47 t/s |
 | **B1** | Coder | Qwen2.5-Coder-32B | Spec K=24 → 33 t/s |
 | **B2** | Ingestion | Qwen3-Next-80B-A3B | Expert reduction only (SSM!) |
-| **B3** | Architect (General) | Qwen3-235B-A22B | MoE4 → 6.75 t/s |
-| **B4** | Architect (Coding) | Qwen3-Coder-480B-A35B | MoE3 → 10.3 t/s |
+| **B3** | Architect (General) | Qwen3-235B-A22B | full+spec → 6.1 t/s |
+| **B4** | Architect (Coding) | Qwen3-Coder-480B-A35B | full+spec → 9.0 t/s |
 | **C** | Workers (parallel) | Qwen2.5-7B/VL-7B/1.5B | Various |
 | **D** | Draft / Embedder | Qwen2.5-Coder-0.5B / BGE-large | Co-loaded |
 
 ### Critical Constraints
 
 - **SSM Models (Qwen3-Next)**: NEVER use speculative decoding or prompt lookup. SSM requires consecutive positions.
-- **Qwen3-Coder-480B**: BOS token mismatch (`BOS=','`) breaks all speculation. Expert reduction only.
+- **Qwen3-Coder family**: BOS=comma (token 11). Use jukofyork vocab transplant draft only. Standard Qwen3 drafts incompatible.
+- **Architect roles**: Full experts + spec decode (quality over speed). No MoE reduction.
 
 ### Component Flow
 
-> Last updated: 2026-02-11
+> Last updated: 2026-02-14
 
 ```
 Request:    API(:8000) → AppState → ChatPipeline → REPLExecutor → run_task() → [graph nodes]
 Graph:      orchestration_graph (pydantic-graph) → 7 node classes → LLMPrimitives → [model servers]
 Memory:     EpisodicStore(SQLite) → FAISSStore(4042 vectors) → ParallelEmbedder → BGE pool(:8090-8095)
+Skills:     SkillBank(skills.db+FAISS) → SkillRetriever → prompt injection | OutcomeTracker → EvolutionMonitor
 Retrieval:  NextPLAID-code(:8088) → LateOn-Code(130M, 128-dim) → code index | NextPLAID-docs(:8089) → answerai-colbert-small-v1(ONNX INT8) → docs index
 Escalation: Graph nodes use EscalationPolicy(rules) + MemRL(advisory) via TaskDeps injection
 Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
 Tools:      REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
 Prompts:    resolve_prompt(name) → orchestration/prompts/{name}.md (hot-swap) → fallback constant
 REPL:       sanitize_code_unicode() → exec(code) — strips non-ASCII before execution
+Distill:    seed_skills.py → DistillationPipeline(teacher) → SkillBank | --evolve → EvolutionMonitor
+Debugger:   ClaudeDebugger → SkillAwareReplayEngine → skill_mismatch/no_skills_available signals
 ```
 
 **Visual topology**: `logs/canvases/component_topology.canvas` (for Obsidian)
@@ -295,12 +301,12 @@ Run via `make gates`.
 
 | Task Type | Model | Port | Speed |
 |-----------|-------|------|-------|
-| Interactive chat | Qwen3-Coder-30B-A3B | 8080 | 18 t/s (MoE6) |
+| Interactive chat | Qwen3-Coder-30B-A3B | 8080 | 47 t/s (MoE6+spec+lookup) |
 | Code gen / escalation | Qwen2.5-Coder-32B | 8081 | 39 t/s (spec+lookup) |
 | Explore / summarize | Qwen2.5-7B-f16 | 8082 | 44 t/s (spec+lookup) |
 | Long-context ingest | Qwen3-Next-80B-A3B | 8085 | 6.3 t/s (**NO SPEC**) |
-| Architecture (general) | Qwen3-235B-A22B | 8083 | 6.75 t/s (MoE4) |
-| Architecture (coding) | Qwen3-Coder-480B-A35B | 8084 | 10.3 t/s (MoE3) |
+| Architecture (general) | Qwen3-235B-A22B | 8083 | 6.1 t/s (full+spec) |
+| Architecture (coding) | Qwen3-Coder-480B-A35B | 8084 | 9.0 t/s (full+spec) |
 | Vision | Qwen2.5-VL-7B / Qwen3-VL-30B | 8086/8087 | ~15 / ~10 t/s |
 
 ---

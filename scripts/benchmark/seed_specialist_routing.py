@@ -446,6 +446,15 @@ def run_batch_3way(
                 )
                 logger.info(f"  Injected {rewards_injected} rewards")
 
+            # Record skill outcomes for evolution tracking
+            if _outcome_tracker is not None:
+                for config_key, rr in role_results.items():
+                    if rr.skill_ids:
+                        for skill_id in rr.skill_ids:
+                            _outcome_tracker.record_outcome(
+                                skill_id, f"{suite}/{qid}", success=rr.passed,
+                            )
+
             result = ThreeWayResult(
                 suite=suite,
                 question_id=qid,
@@ -506,6 +515,10 @@ def run_batch_3way(
                             grammar_enforced=rr.grammar_enforced,
                             parallel_tools_used=rr.parallel_tools_used,
                             cache_affinity_bonus=rr.cache_affinity_bonus,
+                            # SkillBank retrieval data
+                            skills_retrieved=rr.skills_retrieved,
+                            skill_types=[sid.split("_")[0] for sid in rr.skill_ids] if rr.skill_ids else [],
+                            skill_context_tokens=0,
                         )
                         append_diagnostic(diag)
                         debugger.add_diagnostic(diag)
@@ -850,6 +863,10 @@ Examples (legacy mode - DEPRECATED):
         "--debug-replay", action="store_true",
         help="Include MemRL replay context in debug prompts (routing accuracy, Q-convergence).",
     )
+    parser.add_argument(
+        "--evolve", action="store_true",
+        help="Run skill evolution cycle after seeding (requires ORCHESTRATOR_SKILLBANK=1).",
+    )
 
     args = parser.parse_args()
 
@@ -906,6 +923,17 @@ Examples (legacy mode - DEPRECATED):
             logger.info(f"[DEBUG] Claude-in-the-loop debugger enabled "
                         f"(batch_size={args.debug_batch_size}, "
                         f"threshold={args.debug_threshold})")
+
+    # ── SkillBank OutcomeTracker setup ──
+    import os as _os
+    _outcome_tracker = None
+    if _os.environ.get("ORCHESTRATOR_SKILLBANK") == "1":
+        try:
+            from orchestration.repl_memory.skill_evolution import OutcomeTracker
+            _outcome_tracker = OutcomeTracker()
+            logger.info("[SKILLBANK] OutcomeTracker enabled")
+        except ImportError:
+            pass
 
     # ── Phase 4: 3-Way Routing Mode ──
     if args.three_way:
@@ -1018,10 +1046,32 @@ Examples (legacy mode - DEPRECATED):
                 extractor = TrajectoryExtractor(reader)
                 trajectories = extractor.extract_complete(days=14, max_trajectories=1000)
                 if trajectories:
-                    engine = ReplayEngine()
-                    metrics = engine.run_with_metrics(
-                        RetrievalConfig(), ScoringConfig(), trajectories, "post_seeding",
-                    )
+                    # Try skill-aware replay if SkillBank available
+                    skill_metrics = None
+                    try:
+                        from orchestration.repl_memory.replay.skill_replay import (
+                            SkillAwareReplayEngine, SkillBankConfig,
+                        )
+                        from orchestration.repl_memory.skill_bank import SkillBank
+
+                        skill_db = Path("orchestration/repl_memory/sessions/skills.db")
+                        if skill_db.exists():
+                            sb = SkillBank(db_path=skill_db)
+                            engine = SkillAwareReplayEngine(skill_bank=sb)
+                            skill_metrics = engine.run_with_skill_metrics(
+                                RetrievalConfig(), ScoringConfig(), SkillBankConfig(),
+                                trajectories, "post_seeding",
+                            )
+                            metrics = skill_metrics.base_metrics
+                    except ImportError:
+                        pass
+
+                    if skill_metrics is None:
+                        engine = ReplayEngine()
+                        metrics = engine.run_with_metrics(
+                            RetrievalConfig(), ScoringConfig(), trajectories, "post_seeding",
+                        )
+
                     print(f"\n{'='*70}")
                     print("REPLAY EVALUATION (default config, last 14 days)")
                     print(f"{'='*70}")
@@ -1035,10 +1085,42 @@ Examples (legacy mode - DEPRECATED):
                     print(f"  Replay duration:   {metrics.replay_duration_seconds:.2f}s")
                     print(f"  Escalation:        prec={metrics.escalation_precision:.0%} "
                           f"recall={metrics.escalation_recall:.0%}")
+
+                    # Print skill metrics if available
+                    if skill_metrics:
+                        print(f"  Skills retrieved:  {skill_metrics.total_skills_retrieved}")
+                        print(f"  Skill coverage:    {skill_metrics.skill_coverage:.1%}")
+                        print(f"  Avg skills/step:   {skill_metrics.avg_skills_per_step:.1f}")
                 else:
                     logger.info("[REPLAY] No complete trajectories found in last 14 days.")
             except Exception as e:
                 logger.warning(f"[REPLAY] Replay evaluation failed (non-fatal): {e}")
+
+        # End-of-run skill evolution (if --evolve enabled)
+        if args.evolve and _outcome_tracker is not None:
+            try:
+                from orchestration.repl_memory.skill_evolution import EvolutionMonitor
+                from orchestration.repl_memory.skill_bank import SkillBank
+
+                skill_db = Path("orchestration/repl_memory/sessions/skills.db")
+                if skill_db.exists():
+                    sb = SkillBank(db_path=skill_db)
+                    monitor = EvolutionMonitor(sb)
+                    report = monitor.run_evolution_cycle(outcome_tracker=_outcome_tracker)
+                    print(f"\n{'='*70}")
+                    print("SKILL EVOLUTION REPORT")
+                    print(f"{'='*70}")
+                    print(f"  Evaluated:    {report.skills_evaluated}")
+                    print(f"  Promoted:     {report.skills_promoted}")
+                    print(f"  Decayed:      {report.skills_decayed}")
+                    print(f"  Deprecated:   {report.skills_deprecated}")
+                    if report.redistillation_candidates:
+                        print(f"  Redistill:    {', '.join(report.redistillation_candidates)}")
+                    sb.close()
+                else:
+                    logger.info("[EVOLVE] No skills.db found — skipping evolution cycle.")
+            except Exception as e:
+                logger.warning(f"[EVOLVE] Evolution cycle failed: {e}")
 
         return
 

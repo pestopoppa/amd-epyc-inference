@@ -151,6 +151,9 @@ def _build_role_result(
         grammar_enforced=resp.get("grammar_enforced", False),
         parallel_tools_used=resp.get("parallel_tools_used", False),
         cache_affinity_bonus=resp.get("cache_affinity_bonus", 0.0),
+        # SkillBank integration
+        skills_retrieved=resp.get("skills_retrieved", 0),
+        skill_ids=resp.get("skill_ids", []),
     )
     return rr, error_type
 

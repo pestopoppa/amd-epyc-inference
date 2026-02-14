@@ -54,6 +54,8 @@ class RoutingResult:
     document_result: PreprocessingResult | None = None
     tool_required: bool = False  # True when task needs tools (file search, computation)
     tool_hint: str | None = None  # Specific tool name if deterministic
+    skill_context: str = ""  # Formatted skill text for prompt injection (SkillRL §3.2)
+    skill_ids: list[str] = field(default_factory=list)  # IDs of retrieved skills
 
     @property
     def role(self) -> str:
