@@ -139,11 +139,13 @@ class StubFeatures:
         tools: bool = False,
         scripts: bool = False,
         specialist_routing: bool = False,
+        skillbank: bool = False,
     ):
         self.memrl = memrl
         self.tools = tools
         self.scripts = scripts
         self.specialist_routing = specialist_routing
+        self.skillbank = skillbank
 
 
 class TestLoadOptionalImports:

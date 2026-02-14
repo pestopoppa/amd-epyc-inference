@@ -296,9 +296,31 @@ context = load_canvas_for_llm("logs/canvases/hypothesis.canvas", use_toon=True)
 
 Position-based priority: nodes closer to canvas center are weighted higher, enabling human-in-the-loop attention steering.
 
+## Failure Lesson Formalization (February 2026)
+
+The FailureBridge (`orchestration/repl_memory/distillation/failure_bridge.py`) connects the Kuzu-backed FailureGraph with the SkillBank, enabling high-quality mitigations to be exported as structured `failure_lesson` skills.
+
+### Bridge Operations
+
+| Operation | Direction | Purpose |
+|-----------|-----------|---------|
+| `sync_mitigations_to_skills()` | FailureGraph → SkillBank | Export mitigations with success_rate ≥ 0.7 as skills |
+| `get_failure_context_for_distillation()` | FailureGraph → Distiller | Enrich distillation prompts with failure history |
+| `check_skill_against_graph()` | SkillBank → FailureGraph | Cross-reference proposed skills against known failures |
+
+### Qualification Criteria
+
+Only high-quality mitigations are promoted to skills:
+- `success_rate >= 0.7` — proven effective
+- `attempt_count >= 3` — sufficient evidence
+- Confidence capped at `min(success_rate, 0.85)` for bridge-generated skills
+
+This extends the Failure Graph from a read-only anti-memory into a source of positive structured knowledge. See [Chapter 27](27-skillbank-experience-distillation.md) for full details.
+
 ## References
 
 - **Source**: `orchestration/repl_memory/failure_graph.py`, `hypothesis_graph.py`
+- **Failure Bridge**: `orchestration/repl_memory/distillation/failure_bridge.py`
 - **Seeds**: `orchestration/repl_memory/graph_seeds.yaml`
 - **Model quirks**: Extracted from `docs/reference/models/QUIRKS.md`
 - **Benchmark evidence**: Extracted from `benchmarks/results/reviews/summary.csv`

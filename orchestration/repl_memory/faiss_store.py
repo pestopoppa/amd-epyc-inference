@@ -62,13 +62,17 @@ class FAISSEmbeddingStore:
         self,
         path: Path = DEFAULT_FAISS_PATH,
         dim: int = 1024,  # BGE-large embedding dimension
+        index_filename: str = "embeddings.faiss",
+        id_map_filename: str = "id_map.npy",
     ):
         """
         Initialize FAISS embedding store.
 
         Args:
-            path: Directory for persistence (embeddings.faiss, id_map.npy)
+            path: Directory for persistence
             dim: Embedding dimension (must match embedder output)
+            index_filename: Name of the FAISS index file
+            id_map_filename: Name of the id_map NumPy file
         """
         # Lazy import to avoid loading FAISS at module level
         try:
@@ -81,8 +85,8 @@ class FAISSEmbeddingStore:
         self._faiss = faiss
         self.path = Path(path)
         self.dim = dim
-        self.index_path = self.path / "embeddings.faiss"
-        self.id_map_path = self.path / "id_map.npy"
+        self.index_path = self.path / index_filename
+        self.id_map_path = self.path / id_map_filename
 
         # Ensure directory exists
         self.path.mkdir(parents=True, exist_ok=True)

@@ -152,6 +152,9 @@ class Features:
     # Phase 9: Staged reward shaping (PARL-inspired explore→exploit annealing)
     staged_rewards: bool = False  # Anneal exploration bonus in Q-value updates
 
+    # SkillBank: Experience distillation into structured skills (SkillRL §3.1)
+    skillbank: bool = False  # Enable SkillBank skill retrieval + prompt injection
+
     # Phase 4: Input formalizer (extract formal specs before specialist execution)
     input_formalizer: bool = False  # Preprocess complex prompts via MathSmith-8B
 
@@ -202,6 +205,8 @@ class Features:
             errors.append("personas feature requires memrl feature")
         if self.staged_rewards and not self.memrl:
             errors.append("staged_rewards feature requires memrl feature")
+        if self.skillbank and not self.memrl:
+            errors.append("skillbank feature requires memrl feature")
 
         # Approval gates require resume tokens and side effect tracking
         if self.approval_gates and not self.resume_tokens:
@@ -257,6 +262,7 @@ class Features:
             "resume_tokens": self.resume_tokens,
             "approval_gates": self.approval_gates,
             "binding_routing": self.binding_routing,
+            "skillbank": self.skillbank,
             "mock_mode": self.mock_mode,
         }
 
@@ -343,6 +349,7 @@ def get_features(
             "parallel_execution": False,  # Enable after parallel execution regression testing
             "personas": False,  # Enable after persona quality validation
             "staged_rewards": False,  # Enable after exploration/exploitation validation
+            "skillbank": False,  # Enable after distillation pipeline validation
             "input_formalizer": False,  # Enable after regression testing
             "generation_monitor": True,  # Early failure detection in production
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
@@ -376,6 +383,7 @@ def get_features(
             "parallel_execution": False,  # Disabled in tests by default
             "personas": False,  # Disabled in tests by default
             "staged_rewards": False,  # Disabled in tests by default
+            "skillbank": False,  # Disabled in tests by default
             "input_formalizer": False,  # Disabled in tests by default
             "generation_monitor": False,  # Disabled in tests by default
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
@@ -412,6 +420,7 @@ def get_features(
         "parallel_execution": _env_bool("PARALLEL_EXECUTION", defaults["parallel_execution"]),
         "personas": _env_bool("PERSONAS", defaults["personas"]),
         "staged_rewards": _env_bool("STAGED_REWARDS", defaults["staged_rewards"]),
+        "skillbank": _env_bool("SKILLBANK", defaults["skillbank"]),
         "input_formalizer": _env_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
         "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
         "semantic_classifiers": _env_bool("SEMANTIC_CLASSIFIERS", defaults["semantic_classifiers"]),

@@ -32,6 +32,9 @@ RuleBasedRouter: type | None = None
 RetrievalConfig: type | None = None
 ToolRegistry: type | None = None
 ScriptRegistry: type | None = None
+SkillBank: type | None = None
+SkillRetriever: type | None = None
+SkillAugmentedRouter: type | None = None
 
 
 def load_optional_imports() -> None:
@@ -44,6 +47,7 @@ def load_optional_imports() -> None:
     global ProgressLogger, ProgressReader, EpisodicStore, TaskEmbedder
     global QScorer, ScoringConfig, TwoPhaseRetriever, HybridRouter
     global RuleBasedRouter, RetrievalConfig, ToolRegistry, ScriptRegistry
+    global SkillBank, SkillRetriever, SkillAugmentedRouter
 
     f = features()
 
@@ -73,6 +77,16 @@ def load_optional_imports() -> None:
         HybridRouter = _HR
         RuleBasedRouter = _RBR
         RetrievalConfig = _RC
+
+        # SkillBank components (requires memrl + skillbank flags)
+        if f.skillbank:
+            from orchestration.repl_memory.skill_bank import SkillBank as _SB
+            from orchestration.repl_memory.skill_retriever import SkillRetriever as _SR2
+            from orchestration.repl_memory.retriever import SkillAugmentedRouter as _SAR
+
+            SkillBank = _SB
+            SkillRetriever = _SR2
+            SkillAugmentedRouter = _SAR
     else:
         # Minimal progress logger that doesn't require MemRL
         from orchestration.repl_memory.progress_logger import (
@@ -410,7 +424,49 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
 
             state.registry = RegistryLoader(validate_paths=False)
         rule_router = RuleBasedRouter(routing_hints=state.registry.routing_hints)
-        state.hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
+        hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
+
+        # SkillBank: wrap HybridRouter with skill retrieval if enabled
+        if features().skillbank and SkillBank is not None and SkillRetriever is not None:
+            try:
+                from pathlib import Path
+
+                skill_db_path = Path(
+                    state.episodic_store.db_path
+                ).parent / "skills.db" if hasattr(state.episodic_store, "db_path") else Path(
+                    "/mnt/raid0/llm/claude/orchestration/repl_memory/sessions/skills.db"
+                )
+                faiss_dir = skill_db_path.parent
+
+                state.skill_bank = SkillBank(
+                    db_path=skill_db_path,
+                    faiss_path=faiss_dir,
+                    embedding_dim=1024,  # BGE-large dimension
+                )
+                state.skill_retriever = SkillRetriever(skill_bank=state.skill_bank)
+
+                if SkillAugmentedRouter is not None:
+                    state.hybrid_router = SkillAugmentedRouter(
+                        hybrid_router=hybrid_router,
+                        skill_retriever=state.skill_retriever,
+                        embedder=embedder,
+                    )
+                    logger.info(
+                        "SkillBank initialized: %d skills, wrapped with SkillAugmentedRouter",
+                        state.skill_bank.count(),
+                    )
+                else:
+                    state.hybrid_router = hybrid_router
+            except Exception as e:
+                logger.warning(
+                    "SkillBank init failed, continuing without skills: %s", e,
+                    exc_info=True,
+                )
+                state.skill_bank = None
+                state.skill_retriever = None
+                state.hybrid_router = hybrid_router
+        else:
+            state.hybrid_router = hybrid_router
 
         return True
     except Exception as e:

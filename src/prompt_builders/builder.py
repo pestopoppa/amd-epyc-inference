@@ -188,6 +188,7 @@ class PromptBuilder:
         last_error: str = "",
         turn: int = 0,
         routing_context: str = "",
+        corpus_context: str = "",
         *,
         as_structured: bool = False,
     ) -> str | RootLMPrompt:
@@ -246,6 +247,9 @@ class PromptBuilder:
 
         if routing_context:
             context_parts.append(f"## Routing Intelligence\n{routing_context}")
+
+        if corpus_context:
+            prompt.reference_code = corpus_context
 
         if context_parts:
             prompt.context = "\n".join(context_parts)
@@ -590,6 +594,7 @@ def build_root_lm_prompt(
     last_error: str = "",
     turn: int = 0,
     routing_context: str = "",
+    corpus_context: str = "",
 ) -> str:
     """Build the prompt for the Root LM (frontdoor).
 
@@ -603,6 +608,7 @@ def build_root_lm_prompt(
         last_error=last_error,
         turn=turn,
         routing_context=routing_context,
+        corpus_context=corpus_context,
     )
     return result if isinstance(result, str) else result.to_string()
 
@@ -741,6 +747,45 @@ def build_routing_context(
         return "\n".join(lines)[:max_chars]
 
     except Exception:
+        return ""
+
+
+def build_corpus_context(
+    role: str,
+    task_description: str,
+    config: Any | None = None,
+) -> str:
+    """Build corpus context for prompt-lookup acceleration.
+
+    Retrieves code snippets from the corpus index and formats them for
+    injection into the prompt. Only activates for lookup-enabled roles.
+
+    Args:
+        role: Current model's role name.
+        task_description: The user's task description.
+        config: Optional CorpusConfig override.
+
+    Returns:
+        Formatted reference code string, or "" if not applicable.
+    """
+    try:
+        from src.services.corpus_retrieval import (
+            CorpusRetriever,
+            extract_code_query,
+        )
+    except ImportError:
+        return ""
+
+    try:
+        retriever = CorpusRetriever.get_instance(config)
+        if not retriever.config.enabled:
+            return ""
+
+        query = extract_code_query(task_description)
+        snippets = retriever.retrieve(query)
+        return retriever.format_for_prompt(snippets)
+    except Exception:
+        _log.debug("Corpus retrieval failed", exc_info=True)
         return ""
 
 

@@ -64,6 +64,10 @@ class AppState:
     failure_graph: FailureGraphProtocol | None = None
     hypothesis_graph: Any | None = None  # No protocol accesses found
 
+    # SkillBank experience distillation (SkillRL §3.1)
+    skill_bank: Any | None = None  # SkillBank (avoid circular import)
+    skill_retriever: Any | None = None  # SkillRetriever (avoid circular import)
+
     # Tool and script registries for REPL
     tool_registry: ToolRegistryProtocol | None = None
     script_registry: ScriptRegistryProtocol | None = None

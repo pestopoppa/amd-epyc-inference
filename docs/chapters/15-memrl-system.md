@@ -436,6 +436,32 @@ First baseline run against 31 days of progress logs:
 
 Routing accuracy will become meaningful once live orchestration produces real routing decisions (not mock/seeding).
 
+## SkillBank Layer (February 2026)
+
+The episodic store now has a **derived knowledge layer** — the SkillBank — that distills raw trajectories into structured, reusable skills. This addresses the fundamental limitation of raw trajectory retrieval: SkillRL's ablation data shows -28.2% (ALFWorld) and -22.5% (WebShop) performance when replacing structured skills with raw trajectories.
+
+### Relationship to Episodic Store
+
+```
+EpisodicStore (raw trajectories)   ← replay harness reads these (unchanged)
+       ↓ periodic distillation
+SkillBank (structured skills)      ← inference-time retrieval injects into prompts
+       ↓ recursive evolution
+Refined SkillBank                  ← per-category accuracy monitoring triggers updates
+```
+
+The episodic store remains the ground-truth log. SkillBank is a **materialized view** — a lossy compression optimized for inference-time prompt injection. Raw trajectories stay intact for replay evaluation, Q-learning, and audit.
+
+### Storage
+
+SkillBank uses separate SQLite (`skills.db`) and FAISS indices (`skill_embeddings.faiss`, `skill_id_map.npy`) coexisting alongside the episodic memory files in the same directory.
+
+### Feature Flag
+
+Gated behind `ORCHESTRATOR_SKILLBANK=1` (requires `memrl`). When disabled, the system operates identically to pre-SkillBank behavior.
+
+**Full documentation**: [Chapter 27: SkillBank & Experience Distillation](27-skillbank-experience-distillation.md)
+
 ## References
 
 ### Core Concepts
@@ -465,6 +491,7 @@ Routing accuracy will become meaningful once live orchestration produces real ro
 13. Prioritized Experience Replay (Schaul et al., 2015): https://arxiv.org/abs/1511.05952
 14. Episodic Memory in Lifelong Learning (Kemker et al., 2018): https://arxiv.org/abs/1802.07569
 15. ALMA: Meta-Learned Memory Architectures (Xiong et al., 2026): Motivates offline replay evaluation
+16. SkillRL: Evolving Agents via Recursive Skill-Augmented RL (Xia et al., 2026): Motivates SkillBank experience distillation. See [Ch27](27-skillbank-experience-distillation.md).
 
 ---
 

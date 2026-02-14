@@ -333,6 +333,25 @@ With delta=0.1, a single flat penalty discourages unnecessary WARM tier activati
 
 These dimensions mirror the complexity of Claude's own pricing structure, where cost depends on model (Opus/Sonnet/Haiku) x cache status (uncached/cached/write) x thinking (standard/extended) x batch mode (interactive/batch at 50% discount). Our local model routing faces the same combinatorial space: model tier x memory tier x acceleration method x contention state. The extended reward dimensions begin to capture this -- quality_gap_penalty addresses model tier and memory_tier_penalty addresses memory tier, while cost_ratio (existing) captures contention.
 
+## Skill Effectiveness Scoring (February 2026)
+
+SkillBank's recursive evolution system (see [Ch27](27-skillbank-experience-distillation.md)) tracks skill effectiveness through the `OutcomeTracker`, which records task outcomes correlated with skill retrievals. This creates a feedback loop with cost-aware rewards:
+
+### Relationship to QScorer
+
+| System | Tracks | Updates | Frequency |
+|--------|--------|---------|-----------|
+| QScorer | Routing decision quality | Q-values in episodic store | Per-task |
+| OutcomeTracker | Skill retrieval effectiveness | Confidence in SkillBank | Per-evolution-cycle |
+
+When a skill-augmented routing decision produces a successful outcome at low cost, both systems benefit:
+- QScorer increases Q-value for the routing memory → reinforces the routing decision
+- OutcomeTracker increases skill effectiveness → reinforces the skill → higher confidence → more frequent retrieval
+
+### Cost Reduction Path
+
+Skills that successfully propagate architect knowledge to workers reduce the need for expensive model tiers, directly complementing xRouter-style cost optimization. The cost-aware reward system captures this: workers handling previously-escalated tasks receive full `quality_base` reward with zero `quality_gap_penalty` (since they're the cheapest correct specialist).
+
 ## Future Work
 
 1. **Dynamic lambda by task priority**: interactive queries use higher lambda (latency-sensitive); batch uses lower lambda (quality-sensitive).

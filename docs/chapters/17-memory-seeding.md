@@ -428,6 +428,25 @@ tracks which ports support slot erasure and disables erase attempts on ports tha
 - **Seeding rewards**: `scripts/benchmark/seeding_rewards.py` (binary rewards)
 - **EpisodicStore**: `orchestration/repl_memory/episodic_store.py`
 
+## Skill Seeding (February 2026)
+
+The SkillBank extends the seeding philosophy to structured skills. Initial SkillBank bootstrap distills existing high-Q episodic memories into compressed, reusable skills via the DistillationPipeline.
+
+### Relationship to Canonical Seeds
+
+Canonical seed examples (56 REPL examples at Q=0.9) are the **raw material** for initial skill distillation. The distillation pipeline processes these high-confidence trajectories first, producing the foundational skill set that covers common task patterns.
+
+### Bootstrap Process
+
+1. Extract high-Q trajectories from episodic store (`Q >= 0.7`)
+2. Batch through DistillationPipeline with selected teacher model
+3. Deduplicate against existing skills (cosine similarity > 0.85)
+4. Store in SkillBank with initial confidence from teacher analysis
+
+This is analogous to SkillRL's SFT cold-start — bootstrapping structured knowledge from existing experience without model weight updates.
+
+See [Chapter 27](27-skillbank-experience-distillation.md) for full SkillBank documentation.
+
 ---
 
 *Previous: [Chapter 16: Graph-Based Reasoning](16-graph-reasoning.md)* | *Next: [Chapter 18: Escalation & Routing](18-escalation-and-routing.md)*

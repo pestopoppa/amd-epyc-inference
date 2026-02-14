@@ -187,6 +187,26 @@ Diagnostic records now include additional tunable fields that the ClaudeDebugger
 
 The ClaudeDebugger prompt builder (`_build_batch_prompt()`) conditionally includes these fields only when they carry non-default values. This keeps batch prompts compact for simple cases while giving Claude full visibility into complex routing and cost decisions when debugging failures. For example, a `think_harder_attempted=True, think_harder_succeeded=False` pair signals that the pipeline already tried its escalation strategy and still failed -- Claude should look for prompt or tool issues rather than suggesting "try harder."
 
+## Skill Diagnostics (February 2026)
+
+When SkillBank is enabled (`ORCHESTRATOR_SKILLBANK=1`), the debugger can surface skill health information alongside anomaly signals. Future integration points:
+
+### Diagnostic Enrichment
+
+The `build_diagnostic()` function can include skill retrieval data when available:
+- **Skills retrieved**: Count and types of skills injected into the failing prompt
+- **Skill confidence**: Average confidence of retrieved skills
+- **Skill coverage**: Whether relevant skills existed for this task type
+
+### Debugger Recommendations
+
+Claude can recommend skill-related actions based on diagnostic patterns:
+- **Low confidence skills retrieved**: Suggest evolution cycle or redistillation
+- **High retrieval + low effectiveness**: Skill principle may be misleading — flag for review
+- **No skills for task type**: Gap in SkillBank coverage — recommend distillation run
+
+See [Chapter 27](27-skillbank-experience-distillation.md) for full SkillBank documentation.
+
 ## File Locations
 
 | File | Purpose |

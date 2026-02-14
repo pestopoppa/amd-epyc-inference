@@ -13,6 +13,12 @@ from .metrics import ReplayMetrics
 from .candidates import DesignCandidate, DesignArchive
 from .warm_start import WarmStartProtocol, RoleConfig, WarmStartStats
 from .meta_agent import MetaAgentWorkflow
+from .skill_replay import (
+    SkillBankConfig,
+    SkillAwareReplayEngine,
+    SkillReplayStepResult,
+    SkillReplayMetrics,
+)
 
 __all__ = [
     "Trajectory",
@@ -27,4 +33,8 @@ __all__ = [
     "RoleConfig",
     "WarmStartStats",
     "MetaAgentWorkflow",
+    "SkillBankConfig",
+    "SkillAwareReplayEngine",
+    "SkillReplayStepResult",
+    "SkillReplayMetrics",
 ]

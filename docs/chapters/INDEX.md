@@ -1,6 +1,6 @@
 # Research Chapters Index
 
-26 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
+27 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
 
 ## Reading Paths
 
@@ -19,7 +19,7 @@
 | Server won't start | [Ch12](12-production-server-stack.md) + [Ch04](04-storage-and-safety.md) |
 | Adding a tool | [Ch22](22-tool-registry.md) + [Ch11](11-repl-environment.md) |
 | Benchmarking a model | [Ch21](21-benchmarking-framework.md) + [Ch24](24-benchmark-suite-construction.md) |
-| Memory/learning system | [Ch15](15-memrl-system.md) + [Ch16](16-graph-reasoning.md) + [Ch17](17-memory-seeding.md) + [Ch25](25-cost-aware-rewards.md) |
+| Memory/learning system | [Ch15](15-memrl-system.md) + [Ch16](16-graph-reasoning.md) + [Ch17](17-memory-seeding.md) + [Ch25](25-cost-aware-rewards.md) + [Ch27](27-skillbank-experience-distillation.md) |
 
 ### For Researchers / Public Showcase
 
@@ -31,6 +31,7 @@ Novel contributions (recommended reading order):
 4. [Ch16](16-graph-reasoning.md) Graph-based failure and hypothesis reasoning
 5. [Ch10](10-orchestration-architecture.md) Hierarchical 4-tier agent architecture
 6. [Ch21](21-benchmarking-framework.md) 8-suite framework with Claude-as-Judge
+7. [Ch27](27-skillbank-experience-distillation.md) SkillBank: experience distillation for routing skill transfer
 
 ---
 
@@ -86,6 +87,7 @@ Novel contributions (recommended reading order):
 | 24 | [Benchmark Suite Construction](24-benchmark-suite-construction.md) | 325 questions, 5 scoring methods |
 | 25 | [Cost-Aware Rewards](25-cost-aware-rewards.md) | Binary rewards for P(success), cost stored separately |
 | 26 | [Claude-in-the-Loop Debugger](26-claude-debugger.md) | 12 anomaly signals, hot-swap fixes, 3-phase regression |
+| 27 | [SkillBank & Experience Distillation](27-skillbank-experience-distillation.md) | Structured skill library, teacher distillation, recursive evolution |
 
 ---
 

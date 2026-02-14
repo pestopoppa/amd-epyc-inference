@@ -629,6 +629,35 @@ Combined with explicit instruction: "Output ONE line only. Do NOT output both D|
 
 The architect prompt frames the role as "software architect" whose job is to design solutions (approach, data structures, algorithm, edge cases) for a coding specialist to implement. This produces architecturally useful briefs rather than problem restatements.
 
+## Escalation Reduction via Skill Propagation (February 2026)
+
+SkillBank creates a knowledge pipeline that monotonically reduces escalation rates for recurring task categories:
+
+```
+Architect solves task → trajectory stored in EpisodicStore
+    → DistillationPipeline extracts escalation skill
+    → SkillRetriever injects skill into worker prompts
+    → Worker handles similar task directly (no escalation)
+```
+
+### Mechanism
+
+When an architect solves a task that a worker failed, the distillation pipeline produces an `escalation` or `routing` skill encoding the architect's approach. On subsequent similar tasks:
+
+1. `SkillRetriever` finds the skill via FAISS similarity
+2. Skill principle is injected into the worker's prompt context
+3. Worker applies the skill's guidance, potentially avoiding escalation
+
+### Interaction with THINK_HARDER
+
+Before escalating, the pipeline tries `THINK_HARDER` (same model, doubled token budget + CoT prefix). Skills complement this: the CoT prompt now includes relevant skill principles, improving the chance that THINK_HARDER succeeds and avoids escalation entirely.
+
+### Expected Impact
+
+For recurring task categories (e.g., specific debugging patterns, code generation patterns), escalation rate should decrease monotonically as skills accumulate. Novel tasks still escalate normally — skills only help with patterns seen before.
+
+See [Chapter 27](27-skillbank-experience-distillation.md) for full SkillBank architecture.
+
 ## Vision Pipeline Routing (2026-02-09)
 
 The vision pipeline has a critical routing requirement: VL models (Qwen2.5-VL-7B on port 8086, Qwen3-VL-30B on port 8087) need multimodal payloads with base64-encoded images. The standard text-only paths (`_execute_direct`, `_execute_repl`) discard `image_path` from the request.

@@ -20,6 +20,7 @@ from ..q_scorer import ScoringConfig
 from ..retriever import RetrievalConfig
 from ..staged_scorer import StagedConfig
 from .metrics import ReplayMetrics
+from .skill_replay import SkillBankConfig
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class DesignCandidate:
     retrieval_config: RetrievalConfig
     scoring_config: ScoringConfig
     staged_config: Optional[StagedConfig] = None
+    skill_config: Optional[SkillBankConfig] = None
     role_overrides: Optional[Dict[str, Dict[str, Any]]] = None
     notes: str = ""
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -51,6 +53,7 @@ class DesignCandidate:
             retrieval_config=RetrievalConfig(),
             scoring_config=ScoringConfig(),
             staged_config=StagedConfig(),
+            skill_config=SkillBankConfig(),
             role_overrides=None,
             notes="production baseline",
             created_at=datetime.utcnow(),
@@ -64,6 +67,7 @@ class DesignCandidate:
             "retrieval_config": asdict(self.retrieval_config),
             "scoring_config": _scoring_config_to_dict(self.scoring_config),
             "staged_config": asdict(self.staged_config) if self.staged_config else None,
+            "skill_config": asdict(self.skill_config) if self.skill_config else None,
             "role_overrides": self.role_overrides,
             "notes": self.notes,
             "created_at": self.created_at.isoformat(),
@@ -85,12 +89,19 @@ class DesignCandidate:
                 k: v for k, v in d["staged_config"].items()
                 if k in StagedConfig.__dataclass_fields__
             })
+        skill_cfg = None
+        if d.get("skill_config"):
+            skill_cfg = SkillBankConfig(**{
+                k: v for k, v in d["skill_config"].items()
+                if k in SkillBankConfig.__dataclass_fields__
+            })
         return cls(
             candidate_id=d["candidate_id"],
             parent_id=d.get("parent_id"),
             retrieval_config=ret_cfg,
             scoring_config=scr_cfg,
             staged_config=staged,
+            skill_config=skill_cfg,
             role_overrides=d.get("role_overrides"),
             notes=d.get("notes", ""),
             created_at=datetime.fromisoformat(d["created_at"]) if d.get("created_at") else datetime.utcnow(),

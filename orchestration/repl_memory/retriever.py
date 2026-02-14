@@ -891,3 +891,76 @@ class GraphEnhancedRetriever(TwoPhaseRetriever):
             return (best.memory.action, score, best.warnings)
 
         return None
+
+
+class SkillAugmentedRouter:
+    """
+    Wraps HybridRouter with SkillBank skill retrieval and prompt injection.
+
+    Adds SkillRL §3.2 two-level skill retrieval on top of existing
+    HybridRouter routing. The retrieved skill context is returned alongside
+    routing decisions for prompt injection.
+
+    Usage:
+        router = SkillAugmentedRouter(hybrid_router, skill_retriever, embedder)
+        decision, strategy, skill_context = router.route_with_skills(task_ir)
+    """
+
+    def __init__(
+        self,
+        hybrid_router: HybridRouter,
+        skill_retriever: "SkillRetriever",
+        embedder: "TaskEmbedder",
+    ):
+        self.hybrid_router = hybrid_router
+        self.skill_retriever = skill_retriever
+        self.embedder = embedder
+
+    def route(self, task_ir: Dict[str, Any]) -> Tuple[List[str], str]:
+        """Delegate to HybridRouter (unchanged interface)."""
+        return self.hybrid_router.route(task_ir)
+
+    def route_with_skills(
+        self, task_ir: Dict[str, Any]
+    ) -> Tuple[List[str], str, str]:
+        """
+        Route with skill context for prompt injection.
+
+        Args:
+            task_ir: TaskIR dictionary
+
+        Returns:
+            (routing_decision, strategy, skill_context) tuple.
+            skill_context is a formatted markdown string (may be empty).
+        """
+        routing_decision, strategy = self.hybrid_router.route(task_ir)
+
+        # Retrieve skills for prompt augmentation
+        skill_context = ""
+        try:
+            embedding = self.embedder.embed_task_ir(task_ir)
+            task_type = task_ir.get("task_type", "general")
+            results = self.skill_retriever.retrieve_for_task(embedding, task_type)
+            if results:
+                skill_context = self.skill_retriever.format_for_prompt(results)
+        except Exception as e:
+            logger.debug("Skill retrieval failed (non-fatal): %s", e)
+
+        return routing_decision, strategy, skill_context
+
+    def route_with_mode(
+        self, task_ir: Dict[str, Any]
+    ) -> Tuple[List[str], str, str]:
+        """Delegate to HybridRouter.route_with_mode (unchanged interface)."""
+        return self.hybrid_router.route_with_mode(task_ir)
+
+    def route_3way(
+        self, task_ir: Dict[str, Any], cost_tiers: Optional[Dict[str, int]] = None
+    ) -> Tuple[str, str, float]:
+        """Delegate to HybridRouter.route_3way (unchanged interface)."""
+        return self.hybrid_router.route_3way(task_ir, cost_tiers)
+
+    @property
+    def retriever(self):
+        """Expose underlying retriever for protocol compatibility."""
+        return self.hybrid_router.retriever

@@ -18,6 +18,7 @@ Architecture:
 
 Based on: MemRL (arXiv:2601.03192) - Zhang et al. 2025
 Enhanced with: Graphiti-inspired failure anti-memory and hypothesis tracking
+              SkillRL-inspired experience distillation (arXiv:2602.08234, Xia et al. 2026)
 """
 
 from __future__ import annotations
@@ -44,6 +45,17 @@ try:
     _REPLAY_AVAILABLE = True
 except ImportError:
     _REPLAY_AVAILABLE = False
+
+# SkillBank: experience distillation layer (optional — separate from episodic store)
+try:
+    from .skill_bank import Skill, SkillBank
+    from .skill_retriever import SkillRetriever, SkillRetrievalConfig, SkillRetrievalResult
+    _SKILLBANK_AVAILABLE = True
+except ImportError:
+    _SKILLBANK_AVAILABLE = False
+    Skill = None
+    SkillBank = None
+    SkillRetriever = None
 
 # Graph modules are optional (require kuzu)
 try:
@@ -83,6 +95,12 @@ __all__ = [
     "DesignArchive",
     "WarmStartProtocol",
     "MetaAgentWorkflow",
+    # SkillBank (optional)
+    "Skill",
+    "SkillBank",
+    "SkillRetriever",
+    "SkillRetrievalConfig",
+    "SkillRetrievalResult",
     # Graphs (optional)
     "FailureGraph",
     "FailureMode",
