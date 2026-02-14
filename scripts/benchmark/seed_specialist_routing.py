@@ -846,6 +846,10 @@ Examples (legacy mode - DEPRECATED):
         "--debug-dry-run", action="store_true",
         help="Compute diagnostics and log what would be sent to Claude, but don't invoke.",
     )
+    parser.add_argument(
+        "--debug-replay", action="store_true",
+        help="Include MemRL replay context in debug prompts (routing accuracy, Q-convergence).",
+    )
 
     args = parser.parse_args()
 
@@ -897,6 +901,7 @@ Examples (legacy mode - DEPRECATED):
                 anomaly_threshold=args.debug_threshold,
                 auto_commit=args.debug_auto_commit,
                 dry_run=args.debug_dry_run,
+                replay_context=args.debug_replay,
             )
             logger.info(f"[DEBUG] Claude-in-the-loop debugger enabled "
                         f"(batch_size={args.debug_batch_size}, "
@@ -998,6 +1003,43 @@ Examples (legacy mode - DEPRECATED):
             print_3way_summary(all_results)
         else:
             print_3way_summary(results)
+
+        # End-of-run replay evaluation (if --debug-replay enabled)
+        if args.debug_replay:
+            try:
+                from orchestration.repl_memory.replay.trajectory import TrajectoryExtractor
+                from orchestration.repl_memory.replay.engine import ReplayEngine
+                from orchestration.repl_memory.retriever import RetrievalConfig
+                from orchestration.repl_memory.q_scorer import ScoringConfig
+                from orchestration.repl_memory.progress_logger import ProgressReader
+
+                logger.info("[REPLAY] Running post-seeding replay evaluation...")
+                reader = ProgressReader()
+                extractor = TrajectoryExtractor(reader)
+                trajectories = extractor.extract_complete(days=14, max_trajectories=1000)
+                if trajectories:
+                    engine = ReplayEngine()
+                    metrics = engine.run_with_metrics(
+                        RetrievalConfig(), ScoringConfig(), trajectories, "post_seeding",
+                    )
+                    print(f"\n{'='*70}")
+                    print("REPLAY EVALUATION (default config, last 14 days)")
+                    print(f"{'='*70}")
+                    print(f"  Trajectories:      {metrics.num_trajectories}")
+                    print(f"  Routing accuracy:  {metrics.routing_accuracy:.1%}")
+                    for t, a in metrics.routing_accuracy_by_type.items():
+                        print(f"    {t:20s} {a:.1%}")
+                    print(f"  Cumulative reward: {metrics.cumulative_reward:.1f}")
+                    print(f"  Avg reward:        {metrics.avg_reward:.3f}")
+                    print(f"  Q convergence:     step {metrics.q_convergence_step}")
+                    print(f"  Replay duration:   {metrics.replay_duration_seconds:.2f}s")
+                    print(f"  Escalation:        prec={metrics.escalation_precision:.0%} "
+                          f"recall={metrics.escalation_recall:.0%}")
+                else:
+                    logger.info("[REPLAY] No complete trajectories found in last 14 days.")
+            except Exception as e:
+                logger.warning(f"[REPLAY] Replay evaluation failed (non-fatal): {e}")
+
         return
 
     # Compute alias_map for summary display

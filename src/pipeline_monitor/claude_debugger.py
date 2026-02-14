@@ -200,6 +200,7 @@ class ClaudeDebugger:
         auto_commit: bool = False,
         dry_run: bool = False,
         retry_path: Path | None = None,
+        replay_context: bool = False,
     ):
         self.project_root = project_root
         self.session_id: str | None = None
@@ -220,6 +221,10 @@ class ClaudeDebugger:
         self._retried: set[tuple[str, str]] = set()      # prevent infinite retry loops
         self._retry_path = retry_path or (project_root / "logs" / "retry_queue.jsonl")
         self._load_persisted_retries()
+
+        # Replay evaluation context (loaded lazily on first prompt build)
+        self._replay_context_enabled = replay_context
+        self._replay_summary: str | None = None
 
         # Background invocation state
         self._bg_process: subprocess.Popen | None = None
@@ -585,6 +590,65 @@ class ClaudeDebugger:
         logger.warning(f"[DEBUG] Code changes detected in: {py_files}")
         return self._reload_service("orchestrator", reason=f"code changes: {py_files}")
 
+    def _get_replay_summary(self) -> str:
+        """Build a one-time summary of historical memory performance via replay harness.
+
+        Loads lazily on first call. Returns empty string if replay unavailable.
+        """
+        if self._replay_summary is not None:
+            return self._replay_summary
+        self._replay_summary = ""
+        if not self._replay_context_enabled:
+            return ""
+        try:
+            from orchestration.repl_memory.replay.trajectory import TrajectoryExtractor
+            from orchestration.repl_memory.replay.engine import ReplayEngine
+            from orchestration.repl_memory.retriever import RetrievalConfig
+            from orchestration.repl_memory.q_scorer import ScoringConfig
+            from orchestration.repl_memory.progress_logger import ProgressReader
+
+            reader = ProgressReader()
+            extractor = TrajectoryExtractor(reader)
+            trajectories = extractor.extract_complete(days=14, max_trajectories=500)
+            if not trajectories:
+                self._replay_summary = ""
+                return ""
+
+            engine = ReplayEngine()
+            metrics = engine.run_with_metrics(
+                RetrievalConfig(), ScoringConfig(), trajectories, "debugger_baseline",
+            )
+
+            by_type = ", ".join(
+                f"{t}: {a:.0%}" for t, a in metrics.routing_accuracy_by_type.items()
+            )
+            tier = ", ".join(
+                f"{t}: {n}" for t, n in sorted(
+                    metrics.tier_usage.items(), key=lambda x: -x[1],
+                )[:5]
+            )
+            self._replay_summary = (
+                f"\n## MemRL Replay Context (last 14 days)\n"
+                f"- **Trajectories**: {metrics.num_trajectories} "
+                f"({metrics.num_complete} complete)\n"
+                f"- **Routing accuracy**: {metrics.routing_accuracy:.1%} "
+                f"(by type: {by_type or 'N/A'})\n"
+                f"- **Avg reward**: {metrics.avg_reward:.3f}, "
+                f"cumulative: {metrics.cumulative_reward:.1f}\n"
+                f"- **Q convergence**: step {metrics.q_convergence_step}\n"
+                f"- **Tier usage**: {tier or 'N/A'}\n"
+                f"- **Escalation**: precision={metrics.escalation_precision:.0%}, "
+                f"recall={metrics.escalation_recall:.0%}\n"
+            )
+            logger.info(
+                f"[DEBUG] Replay context loaded: {metrics.num_trajectories} trajectories, "
+                f"routing accuracy {metrics.routing_accuracy:.1%}"
+            )
+        except Exception as e:
+            logger.warning(f"[DEBUG] Replay context unavailable: {e}")
+            self._replay_summary = ""
+        return self._replay_summary
+
     def _build_prompt(self, batch: list[dict]) -> str:
         """Build the prompt for Claude with diagnostic batch."""
         parts: list[str] = []
@@ -592,6 +656,10 @@ class ClaudeDebugger:
         # Include system prompt on first invocation only
         if self.batch_count == 1:
             parts.append(resolve_prompt("debugger_system", _DEBUGGER_SYSTEM_FALLBACK))
+            # Append replay harness summary if available
+            replay_ctx = self._get_replay_summary()
+            if replay_ctx:
+                parts.append(replay_ctx)
             parts.append("---")
 
         parts.append(f"## Diagnostic Batch #{self.batch_count}")
