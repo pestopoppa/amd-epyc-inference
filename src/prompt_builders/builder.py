@@ -778,6 +778,27 @@ def build_corpus_context(
 
     try:
         retriever = CorpusRetriever.get_instance(config)
+
+        # Auto-init from registry if singleton has default (disabled) config
+        if not retriever.config.enabled and config is None:
+            try:
+                from src.registry_loader import ModelRegistry
+                registry = ModelRegistry.get_instance()
+                cfg = registry.get_corpus_config()
+                if cfg.get("enabled", False):
+                    retriever.config.enabled = True
+                    retriever.config.index_path = cfg.get(
+                        "index_path", retriever.config.index_path,
+                    )
+                    retriever.config.max_snippets = cfg.get(
+                        "max_snippets", retriever.config.max_snippets,
+                    )
+                    retriever.config.max_chars = cfg.get(
+                        "max_chars", retriever.config.max_chars,
+                    )
+            except Exception:
+                pass
+
         if not retriever.config.enabled:
             return ""
 

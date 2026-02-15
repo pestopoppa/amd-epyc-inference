@@ -223,5 +223,4 @@ pytest tests/vision/ --cov=src/vision --cov-report=term-missing
 ## Related Documentation
 
 - [Handoff Document](../../handoffs/active/vision-pipeline.md)
-- [Design Plan](/home/node/.claude/plans/humble-splashing-dewdrop.md)
 - [Progress Log](../../progress/2026-01/2026-01-16.md)

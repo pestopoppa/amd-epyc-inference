@@ -48,9 +48,10 @@ runtime_defaults:
     ubatch_size: 8192
   corpus_retrieval:
     enabled: true        # A/B validated: +8.7pp/32B, +15.6pp/480B. Per-role via lookup flag.
-    index_path: /mnt/raid0/llm/cache/corpus/full_index
+    index_path: /mnt/raid0/llm/cache/corpus/mvp_index  # JSON v1 (73K snippets). Switch to full_index once idx_ngrams_gram built.
     max_snippets: 3
     max_chars: 3000
+    # rag_enabled: ABANDONED. Prompt-level RAG hurts quality on 7B (-0.96) AND 32B (-1.38).
   prefix_cache:
     enabled: true
     prefix_length: 4096  # Was 256. Role prompts are 1000-5000 tokens; need longer prefix for cache hits.
@@ -339,6 +340,7 @@ server_mode:
       type: speculative_decoding
       draft_max: 24
       lookup: true  # Prompt n-gram lookup as fallback (--lookup flag, commit 8e35dbc01)
+      corpus_retrieval: true  # A/B: +8.7pp acceptance, +6% speed
     throughput: 39.44  # t/s combined spec+lookup (5.4x), was 33 spec-only (5.2x)
 
   worker:
@@ -356,7 +358,14 @@ server_mode:
       type: speculative_decoding
       draft_max: 24
       lookup: true  # Prompt n-gram lookup as fallback (--lookup flag)
+      corpus_retrieval: false  # 7B saturated (94-100% acceptance baseline). +1% speed = noise.
     throughput: 43.9  # t/s measured with spec decode (2026-01-28)
+    concurrency_benchmark:  # 2026-02-15, 256-token generation, spec+lookup
+      1_concurrent: 103.7  # t/s per-request
+      2_concurrent: 91.0   # t/s per-request, 170.6 aggregate (1.76x, optimal)
+      3_concurrent: 95.7   # t/s per-request, 136.8 aggregate (3rd queues behind 2 slots)
+      4_concurrent: 78.9   # t/s per-request, 139.9 aggregate
+      optimal: 2  # matches -np 2 server config
 
   # WARM tier - mmap preloaded, loaded on demand (~430GB total)
   architect_general:
@@ -388,6 +397,7 @@ server_mode:
       type: speculative_decoding
       draft_k: 16
       lookup: true  # A/B best result: +15.6pp acceptance, +17% speed with corpus
+      corpus_retrieval: true  # A/B BEST: +15.6pp acceptance (74.9→90.5%), +17% speed (8.3→9.7 t/s)
     throughput: 9.00  # t/s (full experts + spec, quality over speed, verified 2026-02-13)
 
   ingest_long_context:

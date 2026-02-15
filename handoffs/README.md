@@ -39,21 +39,28 @@ When a handoff task is complete, follow this checklist:
 
 ## Current Active Handoffs
 
+28 handoffs in `active/`. Key active items:
+
 | Handoff | Purpose | Status |
 |---------|---------|--------|
-| [amd-pace-testing.md](active/amd-pace-testing.md) | AMD PACE native PyTorch vs llama.cpp | ✅ COMPLETE (not adopting) |
-| [cpu-optimization.md](active/cpu-optimization.md) | T-MAC evaluation, Tree speculation | ✅ COMPLETE (K=24 optimal) |
-| [draft-benchmark.md](active/draft-benchmark.md) | Draft model speed tests | ✅ Ready |
-| [early-failure-prediction.md](active/early-failure-prediction.md) | Heuristic failure detection | In Progress |
-| [formalizer-evaluation.md](active/formalizer-evaluation.md) | Formalizer model evaluation | ✅ Ready (batch script) |
-| [kernel-development.md](active/kernel-development.md) | AVX-512 kernel optimization | ✅ COMPLETE (no PR) |
-| [mathsmith-reconversion.md](active/mathsmith-reconversion.md) | MathSmith GGUF re-conversion | ✅ COMPLETE |
-| [orchestration-integration.md](active/orchestration-integration.md) | RadixAttention integration | ✅ VERIFIED (12/12 tests) |
-| [orchestrator.md](active/orchestrator.md) | Main orchestrator implementation | ✅ Ready |
-| [radix-attention.md](active/radix-attention.md) | Prefix caching implementation | ✅ VERIFIED (80% cache hit) |
-| [agent-files-refactor-complete.md](active/agent-files-refactor-complete.md) | Agent prompt architecture, hooks, skills, and CLAUDE accounting | IN PROGRESS |
+| [hybrid-lookup-spec-decode.md](active/hybrid-lookup-spec-decode.md) | Prompt lookup + spec decode + corpus | Phase 2A SHIPPED, 2B ABANDONED |
+| [seed-routing-decomposition.md](active/seed-routing-decomposition.md) | Seed specialist routing decomposition | IN PROGRESS |
+| [orchestration-roadmap.md](active/orchestration-roadmap.md) | Orchestration phases 6-8 | Active |
+| [vision-pipeline.md](active/vision-pipeline.md) | Vision pipeline chat integration | NEEDS LIVE VALIDATION |
+| [skillbank-distillation.md](active/skillbank-distillation.md) | Skill distillation pipeline | SPEC COMPLETE |
+| [nextplaid-code-retrieval.md](active/nextplaid-code-retrieval.md) | NextPLAID code retrieval | Active |
+| [nextplaid-phase5-upgrade.md](active/nextplaid-phase5-upgrade.md) | NextPLAID phase 5 upgrade | Active |
+| [minicpm-o-4_5-integration.md](active/minicpm-o-4_5-integration.md) | MiniCPM-o multimodal integration | Active |
+| [classifier-refactoring.md](active/classifier-refactoring.md) | Classifier refactoring | READY TO IMPLEMENT |
+| [qwen3-tts-voice-synthesis.md](active/qwen3-tts-voice-synthesis.md) | TTS voice synthesis | BLOCKED (audio quality) |
+| [agent-files-refactor-complete.md](active/agent-files-refactor-complete.md) | Agent prompt architecture & governance | COMPLETE |
+| [ui-consolidated.md](active/ui-consolidated.md) | UI index & evaluation reference | Active |
+| [infra-seeding-regression.md](active/infra-seeding-regression.md) | Seeding infrastructure regression | Active |
+| [open_source_orchestrator.md](active/open_source_orchestrator.md) | Open source orchestrator | STUB (future) |
 
-**Last Updated**: 2026-02-14
+> Note: Several COMPLETE handoffs need extraction per lifecycle above. Run `ls handoffs/active/` for full listing.
+
+**Last Updated**: 2026-02-15
 
 ## Blocked Tasks
 

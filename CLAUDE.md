@@ -367,6 +367,7 @@ For updating results docs after benchmarks: use `/research-update`
 - All files on `/mnt/raid0/`
 - Prefix inference: `OMP_NUM_THREADS=1 numactl --interleave=all`
 - Run `make gates` after producing artifacts
+- **Incremental output**: When building loops/pipelines that collect results, ALWAYS write outputs incrementally (after each iteration, not only at the end). Partial results must be reviewable while the rest is still running. Never batch-write only on completion.
 
 ---
 

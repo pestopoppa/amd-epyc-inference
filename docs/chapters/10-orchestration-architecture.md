@@ -452,7 +452,8 @@ The orchestration layer is implemented in:
 - `src/dispatcher.py` - Task routing
 - `src/executor.py` - Step execution, escalation
 - `src/context_manager.py` - Context passing between steps
-- `src/prompt_builders/` - Prompt construction package (7 sub-modules: types, constants, builder, review, code_utils, formatting, resolver). `build_corpus_context()` injects corpus-retrieved code snippets on turn 0 for lookup-enabled roles.
+- `src/prompt_builders/` - Prompt construction package (7 sub-modules: types, constants, builder, review, code_utils, formatting, resolver). `build_corpus_context()` injects corpus-retrieved code snippets on turn 0 for coder roles (32B, 480B). Auto-inits from `model_registry.yaml` corpus config.
+- `src/services/corpus_retrieval.py` - Singleton `CorpusRetriever` with n-gram + keyword fallback retrieval. App-layer concern (not llama-server flag). Enabled: 32B (+8.7pp accept), 480B (+15.6pp accept). Disabled: 7B (saturated), 30B/235B (net-negative).
 - `orchestration/prompts/` - Hot-swappable prompt templates (18 .md files, read on every request via `resolve_prompt()`)
 - `src/gate_runner.py` - Verification gate execution (sequential + parallel via `asyncio.gather()`)
 - `src/features.py` - Feature flag system with dataclass validation (8 concept-integration flags + 3 pipeline intelligence flags)

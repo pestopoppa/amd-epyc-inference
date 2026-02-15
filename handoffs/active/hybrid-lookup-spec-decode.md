@@ -1,8 +1,8 @@
 # Hybrid Prompt Lookup + Corpus-Augmented Speculative Decoding
 
-## Status: ACTIVE — Phases 0+0.5+1 COMPLETE, Phase 2A A/B TESTED, Corpus Scaling In Progress
+## Status: ACTIVE — Phases 0+0.5+1 COMPLETE, Phase 2A SHIPPED, Phase 2B-Quality ABANDONED
 **Created**: 2026-01-10
-**Updated**: 2026-02-15 (Phase 2A: A/B tested on all 5 models. Enable for Coder-family (32B, 480B). Full corpus build in progress.)
+**Updated**: 2026-02-15 (Phase 2A enabled for 32B/480B. Phase 2B-Quality ABANDONED for ALL local models — 7B delta -0.96, 32B delta -1.38.)
 **Priority**: HIGH — **2.58x speedup on 30B, 2.16x on 480B achieved and shipped**
 **Type**: Phased optimization — test existing capabilities first, then extend with corpus augmentation
 
@@ -17,7 +17,8 @@
 | **Phase 0** | COMPLETE | Prompt lookup works on 480B (18.4% acceptance) but is **net-negative** on speed (-34%) due to MoE verification overhead |
 | **Phase 0.5** | COMPLETE | **jukofyork draft VERIFIED on 480B** — 74-82% acceptance, **2.16x speedup** (5.91 → 12.74 t/s) |
 | **Phase 1** | COMPLETE | **30B: MoE6+spec+lookup = 47.11 t/s (2.58x)**; 235B: full+spec = 6.08 t/s (1.15x); 480B: full+spec = 9.00 t/s (1.38x). Architect roles use full experts (quality over speed). |
-| **Phase 2A** | **A/B TESTED** | Corpus-augmented prompt stuffing tested on all 5 models. **Best: 480B +15.6pp acceptance, +17% speed. 32B +8.7pp.** Enable for Coder-family only. Full corpus build in progress (The Stack v1, 67GB+ Python). |
+| **Phase 2A** | **SHIPPED** | Corpus speed injection enabled for 32B (+6% speed, +8.7pp accept) and 480B (+17% speed, +15.6pp accept). Disabled for 30B (-12%), 235B (mixed), 7B (saturated). Auto-init from registry wired. MVP index (73K snippets) active; full_index (The Stack) pending gram index. |
+| **Phase 2B-Quality** | **ABANDONED (7B & 32B)** | Prompt-level RAG hurts quality on both 7B (delta -0.96) and 32B (delta -1.38). Even relevant The Stack snippets confuse the model. Only graph_shortest benefits (+1.0/+1.8). Requires fine-tuning or GPT-4-class models. |
 
 ### Benchmark Results (480B, llama-server, MoE3)
 
@@ -430,7 +431,46 @@ Phase 2A  →  A/B TESTED (2026-02-15)
               ├─ SCALING: build_index_v2.py running The Stack v1 (67GB+ Python, 5 more langs queued)
               └─ NEXT: Re-test with full corpus, then Claude-as-Judge quality gate
 
-Phase 2B  →  Sidecar draft injection in llama.cpp (1-2 weeks)
+Phase 2B-Quality → RAG-augmented generation for worker models
+              |
+              ├─ 7B ABANDONED (3 tests, all FAIL):
+              │   v1: delta -0.42 (0 snippets retrieved, n-gram mismatch)
+              │   v2: delta -0.17 (keyword fallback, MVP index corpus pollution)
+              │   v3: delta -0.96 (The Stack corpus, relevant code ACTIVELY HURTS)
+              │
+              │   Root cause: 7B cannot integrate reference code via prompt.
+              │   Even perfect snippets (real BST/LRU/graph implementations from
+              │   The Stack) confuse the model — it produces worse code with RAG.
+              │   Only graph_shortest consistently benefits (+1.8 across tests).
+              │
+              │   Research papers achieve quality gains via fine-tuning on RAG data
+              │   and token-level injection, not prompt stuffing.
+              │
+              │   Available fine-tuned RAG models (all Qwen2.5-Coder-7B fine-tunes):
+              │   - SWE-Dev-7B (THUDM): 23.4% SWE-bench (→GPT-4o range), MIT, GGUF avail
+              │   - SWE-agent-LM-7B (Princeton): Claude 3.5 distillation, GGUF-convertible
+              │   - SWE-Dev-32B: 36.6% SWE-bench (exceeds GPT-4o)
+              │   These prove RAG works WITH fine-tuning, not prompt-level injection.
+              │
+              ├─ 32B RESULT: delta -1.38 (WORSE than 7B's -0.96)
+              │   async=-2.5 bst=-3.5 lru=-1.5 json=-0.8 rate=-1.0 graph=+1.0
+              │   32B does NOT reason better about reference code.
+              │   Prompt-level RAG is fundamentally wrong for local models.
+              │
+              ├─ Infrastructure improvements (retained regardless of quality outcome):
+              │   - Keyword fallback in CorpusRetriever (word→snippet_ids index)
+              │   - Auto-init from registry in build_corpus_context()
+              │   - Incremental result writing in quality gate benchmark
+              │   - Concurrency benchmarks (7B: 2-concurrent optimal, 1.76x throughput)
+              │
+              ├─ Config: rag_enabled: false PERMANENTLY. Phase 2B closed.
+              │
+              └─ SWE-Dev research (2026-02-15): Fine-tuned models (SWE-Dev-7B/32B,
+                  THUDM) achieve 23.4%/36.6% SWE-bench via RFT on agentic trajectories.
+                  NOT drop-in replacements (require OpenHands tool-use format).
+                  Potential future: worker_swe_agent role if tool-use issues persist.
+
+Phase 2B-Sidecar → Sidecar draft injection in llama.cpp (1-2 weeks)
               |
               └─ Only if Phase 2A shows >10% acceptance improvement
 ```

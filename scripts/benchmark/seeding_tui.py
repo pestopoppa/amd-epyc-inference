@@ -504,8 +504,9 @@ class SeedingTUI:
         # Reset role chain when action changes (new config for same question)
         if action != self._progress.current_action or qid != self._progress.current_qid:
             self._tailer.reset_role_chain()
-        # Reset REPL panel when question changes
+        # Reset both panels when question changes
         if qid != self._progress.current_qid:
+            self._tailer.reset_section()
             self._repl_tailer.reset_section()
         self._progress.current_index = idx
         self._progress.total_questions = total

@@ -7,6 +7,7 @@ formalizer, quality escalation, and MemRL-informed review gate.
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from src.api.models import ChatRequest, ChatResponse
@@ -29,6 +30,14 @@ from src.llm_primitives import LLMPrimitives
 from src.api.routes.chat_pipeline.stages import _quality_escalate
 
 log = logging.getLogger(__name__)
+
+# Detect multiple-choice questions to cap token generation and prevent
+# self-doubt loops where the model flip-flops between answers.
+_MCQ_RE = re.compile(
+    r"(?:^|\n)\s*[A-H]\s*[).\]]",
+    re.MULTILINE,
+)
+_MCQ_MAX_TOKENS = 256
 
 
 def _execute_direct(
@@ -61,11 +70,16 @@ def _execute_direct(
     if routing.skill_context:
         direct_prompt = f"{routing.skill_context}\n\n{direct_prompt}"
 
+    # Cap token budget for MCQs to prevent self-doubt loops where the
+    # model states the correct answer then second-guesses into a wrong one.
+    is_mcq = bool(_MCQ_RE.search(request.prompt))
+    default_tokens = _MCQ_MAX_TOKENS if is_mcq else 2048
+
     try:
         answer = primitives.llm_call(
             direct_prompt,
             role=str(initial_role),
-            n_tokens=2048,
+            n_tokens=default_tokens,
             skip_suffix=True,
             stop_sequences=["\n\n\n", QWEN_STOP],
         )
@@ -83,10 +97,11 @@ def _execute_direct(
             ),
         )
         try:
+            retry_tokens = _MCQ_MAX_TOKENS if is_mcq else 4096
             answer = primitives.llm_call(
                 direct_prompt,
                 role=str(initial_role),
-                n_tokens=4096,
+                n_tokens=retry_tokens,
                 skip_suffix=True,
                 stop_sequences=["\n\n\n", QWEN_STOP],
             )

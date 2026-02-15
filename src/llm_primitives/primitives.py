@@ -245,8 +245,10 @@ class LLMPrimitives(
         if system_prompt_suffix:
             prompt = f"{prompt}\n\n{system_prompt_suffix}"
 
-        # Build full prompt
-        if context_slice:
+        # RAG quality injection for eligible worker roles
+        if not skip_suffix and self._should_rag(role):
+            full_prompt = self._apply_rag_context(prompt, context_slice)
+        elif context_slice:
             full_prompt = f"{prompt}\n\nContext:\n{context_slice}"
         else:
             full_prompt = prompt
@@ -298,6 +300,44 @@ class LLMPrimitives(
             log_entry.elapsed_seconds = time.perf_counter() - start_time
             self.call_log.append(log_entry)
             return f"[ERROR: {e}]"
+
+    def _should_rag(self, role: str) -> bool:
+        """Check if RAG quality injection should be applied for this role."""
+        try:
+            from src.services.corpus_retrieval import CorpusRetriever
+            retriever = CorpusRetriever.get_instance()
+            # Check RAG config on retriever; if not set, try registry
+            rag_enabled = retriever.config.rag_enabled
+            rag_roles = retriever.config.rag_roles
+            if not rag_enabled and self.registry:
+                corpus_cfg = self.registry.get_corpus_config()
+                rag_enabled = corpus_cfg.get("rag_enabled", False)
+                rag_roles = corpus_cfg.get("rag_roles")
+                if rag_enabled:
+                    # Propagate to singleton for future calls
+                    retriever.config.rag_enabled = True
+                    retriever.config.rag_roles = rag_roles
+            if not rag_enabled:
+                return False
+            if rag_roles and role not in rag_roles:
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _apply_rag_context(self, prompt: str, context_slice: str) -> str:
+        """Inject corpus RAG context into worker prompt."""
+        from src.services.corpus_retrieval import CorpusRetriever, extract_code_query
+        retriever = CorpusRetriever.get_instance()
+        query = extract_code_query(prompt)
+        snippets = retriever.retrieve_for_rag(query)
+        if context_slice:
+            task = f"{prompt}\n\nContext:\n{context_slice}"
+        else:
+            task = prompt
+        if not snippets:
+            return task
+        return retriever.format_for_rag(snippets, task)
 
     def llm_call_stream(
         self,

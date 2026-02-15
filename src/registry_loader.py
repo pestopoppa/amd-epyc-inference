@@ -786,6 +786,14 @@ class RegistryLoader:
                 return None
         return value
 
+    def get_corpus_config(self) -> dict[str, Any]:
+        """Get corpus retrieval config from runtime_defaults.
+
+        Returns dict with keys: enabled, index_path, max_snippets, max_chars,
+        rag_enabled, rag_roles.
+        """
+        return dict(self._runtime_defaults.get("corpus_retrieval", {}))
+
     def summary(self) -> str:
         """Return a summary of loaded roles."""
         lines = [

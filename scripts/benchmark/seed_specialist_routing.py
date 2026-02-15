@@ -354,6 +354,7 @@ def run_batch_3way(
     on_progress: "Callable[[int, int, str, str], None] | None" = None,
     use_pool: bool = True,
     debugger: "ClaudeDebugger | None" = None,
+    outcome_tracker: Any = None,
 ) -> list[ThreeWayResult]:
     """Run one 3-way evaluation batch.
 
@@ -447,11 +448,11 @@ def run_batch_3way(
                 logger.info(f"  Injected {rewards_injected} rewards")
 
             # Record skill outcomes for evolution tracking
-            if _outcome_tracker is not None:
+            if outcome_tracker is not None:
                 for config_key, rr in role_results.items():
                     if rr.skill_ids:
                         for skill_id in rr.skill_ids:
-                            _outcome_tracker.record_outcome(
+                            outcome_tracker.record_outcome(
                                 skill_id, f"{suite}/{qid}", success=rr.passed,
                             )
 
@@ -996,6 +997,7 @@ Examples (legacy mode - DEPRECATED):
                             on_progress=_on_progress,
                             use_pool=not args.no_pool,
                             debugger=_debugger,
+                            outcome_tracker=_outcome_tracker,
                         )
                         all_results.extend(results)
 
@@ -1024,6 +1026,7 @@ Examples (legacy mode - DEPRECATED):
                     on_progress=_on_progress,
                     use_pool=not args.no_pool,
                     debugger=_debugger,
+                    outcome_tracker=_outcome_tracker,
                 )
 
         # Summary printed AFTER TUI context exits (normal terminal restored)

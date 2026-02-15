@@ -8,8 +8,15 @@ Usage:
     python scripts/benchmark/corpus_quality_gate.py --models 7b 32b
     python scripts/benchmark/corpus_quality_gate.py --models 32b --dry-run
     python scripts/benchmark/corpus_quality_gate.py --models 7b 32b --results-only
+    python scripts/benchmark/corpus_quality_gate.py --models 7b --mode rag
 
-Quality gate: PASS if average quality delta >= -0.5 (on 1-10 scale).
+Modes:
+  speed (default): Inject snippets silently in ## Reference Code (Phase 2A)
+  rag: Inject snippets with explicit RAG instruction (Phase 2B-Quality)
+
+Quality gate:
+  speed mode: PASS if average quality delta >= -0.5 (must not degrade)
+  rag mode: PASS if average quality delta > 0 (must IMPROVE)
 """
 
 from __future__ import annotations
@@ -151,84 +158,130 @@ def generate(port: int, prompt: str, max_tokens: int = 1024) -> dict:
     }
 
 
-def build_corpus_prompt(prompt: str, corpus_config: dict) -> str:
-    """Build prompt with corpus context injected."""
+def build_corpus_prompt(prompt: str, corpus_config: dict, mode: str = "speed") -> str:
+    """Build prompt with corpus context injected.
+
+    Args:
+        prompt: The task prompt.
+        corpus_config: Dict with index_path, max_snippets, max_chars.
+        mode: "speed" for silent injection (Phase 2A), "rag" for quality RAG (Phase 2B).
+    """
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.services.corpus_retrieval import CorpusConfig, CorpusRetriever, extract_code_query
 
-    config = CorpusConfig(
-        enabled=True,
-        index_path=corpus_config.get("index_path", "/mnt/raid0/llm/cache/corpus/mvp_index"),
-        max_snippets=corpus_config.get("max_snippets", 3),
-        max_chars=corpus_config.get("max_chars", 3000),
-    )
-    retriever = CorpusRetriever.get_instance(config)
-    query = extract_code_query(prompt)
-    snippets = retriever.retrieve(query)
-    corpus_ctx = retriever.format_for_prompt(snippets)
+    # Reset singleton to ensure fresh config is applied
+    CorpusRetriever.reset_instance()
 
-    if corpus_ctx:
-        return f"{corpus_ctx}\n\n{prompt}"
-    return prompt
+    if mode == "rag":
+        config = CorpusConfig(
+            enabled=True,
+            index_path=corpus_config.get("index_path", "/mnt/raid0/llm/cache/corpus/mvp_index"),
+            max_snippets=corpus_config.get("max_snippets", 3),
+            max_chars=corpus_config.get("max_chars", 3000),
+            rag_enabled=True,
+            rag_max_snippets=corpus_config.get("rag_max_snippets", 5),
+            rag_max_chars=corpus_config.get("rag_max_chars", 5000),
+            rag_min_score=corpus_config.get("rag_min_score", 0.3),
+        )
+        retriever = CorpusRetriever.get_instance(config)
+        query = extract_code_query(prompt)
+        snippets = retriever.retrieve_for_rag(query)
+        log.info("    RAG retrieval: query=%r → %d snippets", query[:60], len(snippets))
+        if snippets:
+            return retriever.format_for_rag(snippets, prompt)
+        return prompt
+    else:
+        config = CorpusConfig(
+            enabled=True,
+            index_path=corpus_config.get("index_path", "/mnt/raid0/llm/cache/corpus/mvp_index"),
+            max_snippets=corpus_config.get("max_snippets", 3),
+            max_chars=corpus_config.get("max_chars", 3000),
+        )
+        retriever = CorpusRetriever.get_instance(config)
+        query = extract_code_query(prompt)
+        snippets = retriever.retrieve(query)
+        corpus_ctx = retriever.format_for_prompt(snippets)
+
+        if corpus_ctx:
+            return f"{corpus_ctx}\n\n{prompt}"
+        return prompt
+
+
+def _run_single_pair(
+    model_key: str, port: int, prompt_info: dict, corpus_config: dict, mode: str,
+) -> tuple[GenerationResult, GenerationResult]:
+    """Run baseline + corpus generation for a single prompt."""
+    p = prompt_info
+    log.info("  [%s] %s — baseline...", model_key, p["id"])
+
+    result_b = generate(port, p["prompt"])
+    baseline = GenerationResult(
+        model=model_key,
+        prompt_id=p["id"],
+        corpus_enabled=False,
+        output=result_b["output"],
+        speed_tps=result_b["speed"],
+        tokens_generated=result_b["tokens"],
+        draft_n=result_b["draft_n"],
+        draft_accepted=result_b["draft_accepted"],
+        wall_time=result_b["wall_time"],
+    )
+
+    log.info("  [%s] %s — with corpus (%s)...", model_key, p["id"], mode)
+
+    corpus_prompt = build_corpus_prompt(p["prompt"], corpus_config, mode=mode)
+    result_c = generate(port, corpus_prompt)
+    corpus = GenerationResult(
+        model=model_key,
+        prompt_id=p["id"],
+        corpus_enabled=True,
+        output=result_c["output"],
+        speed_tps=result_c["speed"],
+        tokens_generated=result_c["tokens"],
+        draft_n=result_c["draft_n"],
+        draft_accepted=result_c["draft_accepted"],
+        wall_time=result_c["wall_time"],
+    )
+
+    log.info(
+        "    [%s] %s done: baseline=%.1f t/s, corpus=%.1f t/s",
+        model_key, p["id"], baseline.speed_tps, corpus.speed_tps,
+    )
+    return baseline, corpus
 
 
 def run_generation_pairs(
     model_key: str,
     corpus_config: dict,
     dry_run: bool = False,
+    mode: str = "speed",
 ) -> list[tuple[GenerationResult, GenerationResult]]:
-    """Run all prompts with and without corpus for a model."""
+    """Run all prompts with and without corpus for a model.
+
+    Each prompt pair (baseline + corpus) runs sequentially for fair comparison.
+    Different prompt pairs can run in parallel when the server has multiple slots.
+    """
+    import concurrent.futures
+
     cfg = MODELS[model_key]
     port = cfg["port"]
+
+    if dry_run:
+        return [
+            (
+                GenerationResult(model_key, p["id"], False, "# dry run", 0, 0),
+                GenerationResult(model_key, p["id"], True, "# dry run", 0, 0),
+            )
+            for p in PROMPTS
+        ]
+
+    # Run prompt pairs sequentially — each pair does baseline then corpus
+    # to ensure fair comparison. Pairs themselves are sequential since
+    # each pair uses 2 requests and the server has limited slots.
     pairs = []
-
     for p in PROMPTS:
-        log.info("  [%s] %s — baseline...", model_key, p["id"])
-
-        if dry_run:
-            baseline = GenerationResult(model_key, p["id"], False, "# dry run", 0, 0)
-            corpus = GenerationResult(model_key, p["id"], True, "# dry run", 0, 0)
-            pairs.append((baseline, corpus))
-            continue
-
-        # Baseline (no corpus)
-        result_b = generate(port, p["prompt"])
-        baseline = GenerationResult(
-            model=model_key,
-            prompt_id=p["id"],
-            corpus_enabled=False,
-            output=result_b["output"],
-            speed_tps=result_b["speed"],
-            tokens_generated=result_b["tokens"],
-            draft_n=result_b["draft_n"],
-            draft_accepted=result_b["draft_accepted"],
-            wall_time=result_b["wall_time"],
-        )
-
-        log.info("  [%s] %s — with corpus...", model_key, p["id"])
-
-        # With corpus
-        corpus_prompt = build_corpus_prompt(p["prompt"], corpus_config)
-        result_c = generate(port, corpus_prompt)
-        corpus = GenerationResult(
-            model=model_key,
-            prompt_id=p["id"],
-            corpus_enabled=True,
-            output=result_c["output"],
-            speed_tps=result_c["speed"],
-            tokens_generated=result_c["tokens"],
-            draft_n=result_c["draft_n"],
-            draft_accepted=result_c["draft_accepted"],
-            wall_time=result_c["wall_time"],
-        )
-
-        pairs.append((baseline, corpus))
-        log.info(
-            "    baseline: %.1f t/s, corpus: %.1f t/s, accept: %d/%d → %d/%d",
-            baseline.speed_tps, corpus.speed_tps,
-            baseline.draft_accepted, baseline.draft_n,
-            corpus.draft_accepted, corpus.draft_n,
-        )
+        pair = _run_single_pair(model_key, port, p, corpus_config, mode)
+        pairs.append(pair)
 
     return pairs
 
@@ -307,16 +360,32 @@ def main():
     parser = argparse.ArgumentParser(description="Corpus quality gate")
     parser.add_argument("--models", nargs="+", default=["7b", "32b"], choices=list(MODELS.keys()))
     parser.add_argument("--index-path", default="/mnt/raid0/llm/cache/corpus/mvp_index")
+    parser.add_argument("--mode", choices=["speed", "rag"], default="speed",
+                        help="speed: silent injection (2A), rag: quality RAG instruction (2B)")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--results-only", help="Path to existing results JSON to re-judge")
     parser.add_argument("--output", default="/mnt/raid0/llm/tmp/corpus_quality_gate.json")
     args = parser.parse_args()
 
-    corpus_config = {
-        "index_path": args.index_path,
-        "max_snippets": 3,
-        "max_chars": 3000,
-    }
+    # RAG mode uses more snippets and lower threshold for diverse examples
+    if args.mode == "rag":
+        corpus_config = {
+            "index_path": args.index_path,
+            "max_snippets": 3,
+            "max_chars": 3000,
+            "rag_max_snippets": 5,
+            "rag_max_chars": 5000,
+            "rag_min_score": 0.3,
+        }
+    else:
+        corpus_config = {
+            "index_path": args.index_path,
+            "max_snippets": 3,
+            "max_chars": 3000,
+        }
+
+    # Gate threshold: speed mode tolerates slight degradation, RAG must improve
+    gate_threshold = 0.0 if args.mode == "rag" else -0.5
 
     all_results = {}
 
@@ -325,35 +394,48 @@ def main():
             all_results = json.load(f)
     else:
         for model_key in args.models:
-            log.info("=== Generating for %s (%s) ===", model_key, MODELS[model_key]["name"])
-            pairs = run_generation_pairs(model_key, corpus_config, args.dry_run)
+            log.info("=== Generating for %s (%s) [mode=%s] ===", model_key, MODELS[model_key]["name"], args.mode)
+            cfg = MODELS[model_key]
+            port = cfg["port"]
+            model_results: list[dict] = []
 
-            model_results = []
-            for baseline, corpus in pairs:
-                model_results.append({
-                    "prompt_id": baseline.prompt_id,
-                    "baseline": {
-                        "output": baseline.output,
-                        "speed": baseline.speed_tps,
-                        "tokens": baseline.tokens_generated,
-                        "draft_n": baseline.draft_n,
-                        "draft_accepted": baseline.draft_accepted,
-                        "wall_time": baseline.wall_time,
-                    },
-                    "corpus": {
-                        "output": corpus.output,
-                        "speed": corpus.speed_tps,
-                        "tokens": corpus.tokens_generated,
-                        "draft_n": corpus.draft_n,
-                        "draft_accepted": corpus.draft_accepted,
-                        "wall_time": corpus.wall_time,
-                    },
-                })
+            if args.dry_run:
+                for p in PROMPTS:
+                    model_results.append({
+                        "prompt_id": p["id"],
+                        "baseline": {"output": "# dry run", "speed": 0, "tokens": 0, "draft_n": 0, "draft_accepted": 0, "wall_time": 0},
+                        "corpus": {"output": "# dry run", "speed": 0, "tokens": 0, "draft_n": 0, "draft_accepted": 0, "wall_time": 0},
+                    })
+            else:
+                for p in PROMPTS:
+                    baseline, corpus = _run_single_pair(model_key, port, p, corpus_config, args.mode)
+                    model_results.append({
+                        "prompt_id": baseline.prompt_id,
+                        "baseline": {
+                            "output": baseline.output,
+                            "speed": baseline.speed_tps,
+                            "tokens": baseline.tokens_generated,
+                            "draft_n": baseline.draft_n,
+                            "draft_accepted": baseline.draft_accepted,
+                            "wall_time": baseline.wall_time,
+                        },
+                        "corpus": {
+                            "output": corpus.output,
+                            "speed": corpus.speed_tps,
+                            "tokens": corpus.tokens_generated,
+                            "draft_n": corpus.draft_n,
+                            "draft_accepted": corpus.draft_accepted,
+                            "wall_time": corpus.wall_time,
+                        },
+                    })
+                    # Write after each prompt pair so partial results are reviewable
+                    all_results[model_key] = model_results
+                    with open(args.output, "w") as f:
+                        json.dump(all_results, f, indent=2)
+                    log.info("  Incremental results written (%d/%d prompts)", len(model_results), len(PROMPTS))
+
             all_results[model_key] = model_results
 
-        # Save generation results
-        with open(args.output, "w") as f:
-            json.dump(all_results, f, indent=2)
         log.info("Generation results saved to %s", args.output)
 
     if args.dry_run:
@@ -385,7 +467,7 @@ def main():
                 log.info(
                     "    baseline=%.1f  corpus=%.1f  delta=%+.1f  %s",
                     jr.baseline_score, jr.corpus_score, jr.delta,
-                    "PASS" if jr.delta >= -0.5 else "FAIL",
+                    "PASS" if jr.delta >= gate_threshold else "FAIL",
                 )
 
         if judge_results:
@@ -393,7 +475,7 @@ def main():
             avg_baseline = sum(j.baseline_score for j in judge_results) / len(judge_results)
             avg_corpus = sum(j.corpus_score for j in judge_results) / len(judge_results)
 
-            model_pass = avg_delta >= -0.5
+            model_pass = avg_delta >= gate_threshold
             if not model_pass:
                 gate_pass = False
 
@@ -432,9 +514,15 @@ def main():
     # Final verdict
     log.info("\n" + "=" * 60)
     if gate_pass:
-        log.info("QUALITY GATE: PASS — corpus injection does not degrade quality")
+        if args.mode == "rag":
+            log.info("QUALITY GATE: PASS — RAG injection improves quality (delta > 0)")
+        else:
+            log.info("QUALITY GATE: PASS — corpus injection does not degrade quality")
     else:
-        log.info("QUALITY GATE: FAIL — corpus injection degrades quality beyond -0.5 threshold")
+        if args.mode == "rag":
+            log.info("QUALITY GATE: FAIL — RAG injection does not improve quality (need delta > 0)")
+        else:
+            log.info("QUALITY GATE: FAIL — corpus injection degrades quality beyond -0.5 threshold")
     log.info("=" * 60)
 
     sys.exit(0 if gate_pass else 1)

@@ -18,17 +18,51 @@ ALL_MODEL_PORTS=(8080 8081 8082 8083 8084 8085 8086 8087)
 killed_something=false
 
 # ── 1. Kill seeding script (parent) ─────────────────────────────────
+# The TUI uses curses threads that ignore SIGTERM, so we must:
+#   SIGTERM → wait up to 3s → verify → SIGKILL if still alive → reap zombies
 echo "==> Looking for seeding script..."
 seed_pids=$(pgrep -f 'seed_specialist_routing' 2>/dev/null || true)
 if [[ -n "$seed_pids" ]]; then
   for pid in $seed_pids; do
-    echo "    Killing seeding script PID $pid"
+    echo "    Sending SIGTERM to seeding script PID $pid"
     if $FORCE; then
       kill -9 "$pid" 2>/dev/null || true
-    else kill "$pid" 2>/dev/null || true; fi
+    else
+      kill "$pid" 2>/dev/null || true
+    fi
   done
   killed_something=true
-  sleep 1
+
+  # Wait up to 3s for graceful shutdown, then escalate to SIGKILL
+  if ! $FORCE; then
+    echo "    Waiting for graceful shutdown (max 3s)..."
+    for i in 1 2 3; do
+      sleep 1
+      remaining=$(pgrep -f 'seed_specialist_routing' 2>/dev/null || true)
+      if [[ -z "$remaining" ]]; then
+        echo "    Graceful shutdown succeeded"
+        break
+      fi
+      if [[ "$i" -eq 3 ]]; then
+        echo "    SIGTERM not enough (TUI curses threads) — escalating to SIGKILL"
+        for rpid in $remaining; do
+          kill -9 "$rpid" 2>/dev/null || true
+        done
+        sleep 1
+      fi
+    done
+  else
+    sleep 1
+  fi
+
+  # Reap zombie children left by the TUI
+  zombie_pids=$(ps -eo pid,ppid,stat,comm 2>/dev/null | awk '$3 ~ /^Z/ && $4 == "python" {print $1}' || true)
+  if [[ -n "$zombie_pids" ]]; then
+    for zpid in $zombie_pids; do
+      echo "    Reaping zombie PID $zpid"
+      kill -9 "$zpid" 2>/dev/null || true
+    done
+  fi
 fi
 
 # ── 2. Kill orchestrator API (uvicorn on :8000) ─────────────────────

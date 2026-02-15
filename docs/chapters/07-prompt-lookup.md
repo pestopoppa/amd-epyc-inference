@@ -178,7 +178,7 @@ In `orchestration/model_registry.yaml`:
 runtime_defaults:
   corpus_retrieval:
     enabled: true            # Per-role: only Coder-family
-    index_path: /mnt/raid0/llm/cache/corpus/full_index
+    index_path: /mnt/raid0/llm/cache/corpus/mvp_index  # JSON v1, 73K snippets. Switch to full_index when ready.
     max_snippets: 3
     max_chars: 3000          # ~750 tokens budget
 ```
@@ -186,6 +186,14 @@ runtime_defaults:
 ### Token Normalization
 
 Both index builder and retriever strip non-alphanumeric characters (except underscore) from tokens before n-gram extraction. This ensures `class Foo(Bar):` and `class foo bar` produce the same n-grams for matching.
+
+### Keyword Fallback
+
+When 4-gram matching returns 0 results (common for natural-language queries), `CorpusRetriever` falls back to keyword-level overlap scoring. A word→snippet_ids reverse index (665K words, builds in ~3.8s) enables individual word matching. This ensures retrieval works for queries like "binary search tree iterator" that never produce matching code 4-grams.
+
+### Phase 2B-Quality RAG: ABANDONED (2026-02-15)
+
+Attempted to improve code quality (not just speed) by instructing the model to "study and adapt" retrieved patterns. Tested on 7B (delta -0.96) and 32B (delta -1.38) — prompt-level RAG actively hurts quality. Models either ignore the instruction or get confused by reference code. Only works with models fine-tuned for RAG (e.g., SWE-Dev-7B/32B, which use reinforcement fine-tuning on agentic trajectories). Phase 2A (speed-only, silent injection) remains the production approach.
 
 ## References
 
