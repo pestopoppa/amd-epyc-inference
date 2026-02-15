@@ -12,8 +12,7 @@ if [[ -z "$FILE_PATH" ]]; then
 fi
 
 case "$FILE_PATH" in
-  agents/*|*/agents/*|CLAUDE_GUIDE.md|*/CLAUDE_GUIDE.md|README.md|*/README.md|docs/guides/*|*/docs/guides/*|docs/reference/agent-config/*|*/docs/reference/agent-config/*)
-    ;;
+  agents/* | */agents/* | CLAUDE_GUIDE.md | */CLAUDE_GUIDE.md | README.md | */README.md | docs/guides/* | */docs/guides/* | docs/reference/agent-config/* | */docs/reference/agent-config/*) ;;
   *)
     exit 0
     ;;
@@ -37,7 +36,7 @@ for ref in "${refs[@]}"; do
   [[ -f "$target" ]] || missing+=("$ref")
 done
 
-if (( ${#missing[@]} > 0 )); then
+if ((${#missing[@]} > 0)); then
   echo "BLOCKED: unresolved local markdown references in $FILE_PATH:" >&2
   for m in "${missing[@]}"; do
     echo "  - $m" >&2

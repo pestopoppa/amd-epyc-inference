@@ -46,6 +46,7 @@ orchestration/gate_report_*.json
 .ruff_cache/
 .mypy_cache/
 *.egg-info/
+*.db
 
 # Tool plugin settings (per-user configuration)
 src/tool_settings/

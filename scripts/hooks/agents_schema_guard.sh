@@ -40,7 +40,7 @@ for marker in "${required[@]}"; do
   fi
 done
 
-if (( ${#missing[@]} > 0 )); then
+if ((${#missing[@]} > 0)); then
   echo "BLOCKED: $FILE_PATH is missing required role sections:" >&2
   for m in "${missing[@]}"; do
     echo "  - $m" >&2
