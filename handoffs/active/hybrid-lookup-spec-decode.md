@@ -1,8 +1,8 @@
 # Hybrid Prompt Lookup + Corpus-Augmented Speculative Decoding
 
-## Status: ACTIVE — Phases 0+0.5+1 COMPLETE, Phase 2A IMPLEMENTED (off by default)
+## Status: ACTIVE — Phases 0+0.5+1 COMPLETE, Phase 2A A/B TESTED, Corpus Scaling In Progress
 **Created**: 2026-01-10
-**Updated**: 2026-02-15 (Phase 2A: corpus-augmented prompt stuffing implemented, off until A/B validated)
+**Updated**: 2026-02-15 (Phase 2A: A/B tested on all 5 models. Enable for Coder-family (32B, 480B). Full corpus build in progress.)
 **Priority**: HIGH — **2.58x speedup on 30B, 2.16x on 480B achieved and shipped**
 **Type**: Phased optimization — test existing capabilities first, then extend with corpus augmentation
 
@@ -17,7 +17,7 @@
 | **Phase 0** | COMPLETE | Prompt lookup works on 480B (18.4% acceptance) but is **net-negative** on speed (-34%) due to MoE verification overhead |
 | **Phase 0.5** | COMPLETE | **jukofyork draft VERIFIED on 480B** — 74-82% acceptance, **2.16x speedup** (5.91 → 12.74 t/s) |
 | **Phase 1** | COMPLETE | **30B: MoE6+spec+lookup = 47.11 t/s (2.58x)**; 235B: full+spec = 6.08 t/s (1.15x); 480B: full+spec = 9.00 t/s (1.38x). Architect roles use full experts (quality over speed). |
-| **Phase 2A** | **IMPLEMENTED** | Corpus-augmented prompt stuffing: n-gram index (73K snippets), CorpusRetriever service, wired into all 3 prompt paths. **Off by default** — needs A/B quality validation before enabling. |
+| **Phase 2A** | **A/B TESTED** | Corpus-augmented prompt stuffing tested on all 5 models. **Best: 480B +15.6pp acceptance, +17% speed. 32B +8.7pp.** Enable for Coder-family only. Full corpus build in progress (The Stack v1, 67GB+ Python). |
 
 ### Benchmark Results (480B, llama-server, MoE3)
 
@@ -341,7 +341,9 @@ Injecting code snippets into prompts risks steering model output toward those sn
 | `run_combination_benchmarks.sh` | DONE (480B entry exists) | Phase 0/1 |
 | SoftMatcha v2 | INSTALLED (v0.1.0, icu-tokenizer optional) | Phase 2 |
 | MVP corpus index | BUILT (73K snippets, 5.5M n-grams, 338MB) | Phase 2A |
-| The Stack v2 corpus | CHECK CACHE — only needed for Phase 2A scaling (Step 8) | Phase 2A-v2 |
+| Full corpus (The Stack v1) | BUILDING — Python 67GB+, 5 more languages queued | Phase 2A scaling |
+| build_index_v2.py | BUILT — SQLite backend, HF streaming, --resume | Phase 2A scaling |
+| prune_index.py | BUILT — optional post-build pruning | Phase 2A scaling |
 | Rust toolchain | READY (rustc 1.90.0) | Phase 2 |
 
 ---
@@ -415,13 +417,18 @@ Phase 1   →  Run lookup tests on all non-SSM models (half day)
               |
               └─ Update registry with measured performance for each
 
-Phase 2A  →  IMPLEMENTED (2026-02-15)
+Phase 2A  →  A/B TESTED (2026-02-15)
               |
-              ├─ SoftMatcha v2 installed, MVP n-gram index built (73K snippets from src+stdlib+numpy+torch)
-              ├─ CorpusRetriever service + build_corpus_context() wired into chat/stream/graph paths
-              ├─ Acceptance rate telemetry added to llama_server.py (n_tokens_drafted/accepted)
-              ├─ 27 unit tests passing (20 corpus + 7 prompt builder)
-              └─ NEXT: A/B quality benchmark (HARD GATE) — enable via model_registry.yaml corpus_retrieval.enabled: true
+              ├─ MVP index (73K snippets) tested on all 5 models
+              ├─ 480B: +15.6pp acceptance, +17% speed (BEST)
+              ├─ 32B: +8.7pp acceptance, +6% speed (GOOD)
+              ├─ 30B: -12% speed despite +2.1pp acceptance (NEGATIVE — disabled)
+              ├─ 235B: mixed (+6.6pp HTTP, -12.1pp BST — disabled)
+              ├─ 7B: saturated (94-100% baseline — disabled)
+              ├─ Telemetry fix: draft_n/draft_n_accepted (was wrong key names)
+              ├─ Token normalization fix: index and query n-grams now consistent
+              ├─ SCALING: build_index_v2.py running The Stack v1 (67GB+ Python, 5 more langs queued)
+              └─ NEXT: Re-test with full corpus, then Claude-as-Judge quality gate
 
 Phase 2B  →  Sidecar draft injection in llama.cpp (1-2 weeks)
               |
@@ -465,6 +472,15 @@ python scripts/benchmark/run_benchmark.py --suite coder --tag no-corpus
 python scripts/benchmark/run_benchmark.py --suite coder --tag with-corpus
 python scripts/benchmark/score_outputs.py --compare no-corpus with-corpus
 
-# Phase 2A-v2: Scale corpus with The Stack v2
-ls -la /mnt/raid0/llm/cache/huggingface/datasets/bigcode--the-stack-v2*
+# Phase 2A scaling: Check corpus build progress
+ls -lh /mnt/raid0/llm/cache/corpus/full_index/corpus.db
+pgrep -f build_index_v2
+
+# Phase 2A scaling: Build remaining languages (if not already queued)
+python3 scripts/corpus/build_index_v2.py \
+    --output /mnt/raid0/llm/cache/corpus/full_index \
+    --languages javascript --resume --skip-finalize
+
+# Phase 2A scaling: Optional pruning after build
+python3 scripts/corpus/prune_index.py --target-gb 50 --dry-run
 ```

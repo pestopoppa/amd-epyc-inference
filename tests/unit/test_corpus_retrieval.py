@@ -52,10 +52,13 @@ def mini_index(tmp_path: Path) -> Path:
         },
     ]
 
-    # Build a simple n-gram index
+    # Build a simple n-gram index with normalized tokens
+    import re
     ngram_index: dict[str, list[int]] = {}
     for idx, snip in enumerate(snippets):
-        words = snip["code"].lower().split()
+        raw_words = snip["code"].lower().split()
+        words = [re.sub(r"[^a-z0-9_]", "", w) for w in raw_words]
+        words = [w for w in words if w]
         for i in range(len(words) - 3):
             gram = " ".join(words[i:i + 4])
             if gram not in ngram_index:

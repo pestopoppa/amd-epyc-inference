@@ -2,6 +2,33 @@
 
 ## 2026-02-15
 
+- **Phase 2A: A/B tested corpus-augmented prompt stuffing across all 5 models**:
+  - **480B best result**: +15.6pp acceptance (74.9→90.5%), +17% speed (8.3→9.7 t/s), wall time decreased.
+  - **32B solid result**: +8.7pp acceptance (84.6→93.3%), +6% speed (30.8→32.7 t/s).
+  - **30B negative**: acceptance +2.1pp but speed -12% (overhead > gain). Corpus disabled.
+  - **235B mixed**: +6.6pp on HTTP task, -12.1pp on BST task. Corpus disabled.
+  - **7B saturated**: already 94-100% baseline, +5.3pp marginal. Corpus disabled.
+  - Decision: enable corpus for Coder-family models (32B, 480B) only.
+
+- **Telemetry key fix** (`src/backends/llama_server.py`): Wrong keys for spec decode stats (`drafted_n_tokens` → `draft_n`, `drafted_n_accepted` → `draft_n_accepted`). Both sync and streaming paths fixed.
+
+- **Token normalization fix**: N-grams in index included punctuation but query n-grams didn't — 0 matches. Added `_normalize_token()` (strips non-alnum except underscore) in build_index.py, build_index_v2.py, corpus_retrieval.py, and test fixtures.
+
+- **Corpus scaling v2** (`scripts/corpus/build_index_v2.py`): SQLite-backed index builder for The Stack v1 (v2 is metadata-only). HuggingFace streaming, 6 languages (Python/JS/TS/Rust/Go/C++), `--resume` for interrupted builds. Python build running: 67GB+ DB, ~12M+ snippets.
+
+- **SQLite retriever** (`src/services/corpus_retrieval.py`): Auto-detects v1 (JSON) vs v2 (SQLite) index. SQLite uses mmap (~200KB RAM per query regardless of DB size).
+
+- **Pruning tool** (`scripts/corpus/prune_index.py`): Optional post-build pruning by snippet count or target GB. Proportional per-language quotas, batch deletion for large sets, VACUUM.
+
+- **Qwen3-TTS Phase 4: C++ native pipeline** (`llama.cpp-experimental`, branch `feature/qwen3-tts-support`):
+  - Built `llama-tts-qwen3` binary: Talker GGUF + Code Predictor GGUF + sidecar weights → codec tokens at 1.5x RT.
+  - Sidecar format v2 (QWTTS02): added `cp_vocab` field, fixed header size mismatch (32B vs 36B).
+  - Multi-head Code Predictor: enabled `llama_set_embeddings()` + `llama_get_embeddings_ith()` to extract hidden states, apply correct per-step lm_head from sidecar.
+  - Talker hidden state extraction for CP `past_hidden` input.
+  - End-to-end pipeline: C++ → Tokenizer Decoder → WAV (24kHz). Pipeline works but **audio is unintelligible noise**.
+  - Whisper round-trip test confirms garbled output. **BLOCKED** pending PyTorch reference token comparison.
+  - New files: `scripts/voice/create_tts_sidecar.py`, `scripts/voice/validate_tts_e2e.py`.
+
 - **Phase 2A: Corpus-augmented prompt stuffing implemented** (off by default):
   - New `scripts/corpus/build_index.py`: word-level 4-gram index from src/ + stdlib + numpy + torch (73K snippets, 5.5M n-grams, 14s build).
   - New `src/services/corpus_retrieval.py`: `CorpusRetriever` singleton — lazy index load, sub-ms query, graceful degradation.

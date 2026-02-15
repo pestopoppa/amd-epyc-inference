@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 import time
 from collections import defaultdict
@@ -116,8 +117,10 @@ def build_ngram_index(snippets: list[dict], n: int = NGRAM_SIZE) -> dict:
         deduped_snippets.append(snip)
 
         code = snip["code"].lower()
-        # Extract word-level n-grams (more useful for code than char n-grams)
-        words = code.split()
+        # Extract word-level n-grams with normalized tokens
+        raw_words = code.split()
+        words = [re.sub(r"[^a-z0-9_]", "", w) for w in raw_words]
+        words = [w for w in words if w]
         for i in range(len(words) - n + 1):
             gram = " ".join(words[i:i + n])
             if idx not in index[gram]:

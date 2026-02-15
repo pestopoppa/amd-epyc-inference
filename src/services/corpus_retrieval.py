@@ -15,7 +15,11 @@ Usage:
 The service is a singleton — the index is loaded once and shared across
 requests. Queries are sub-millisecond after the initial load.
 
-Index built by: scripts/corpus/build_index.py
+Supports two index formats:
+  - v1 (JSON): snippets.json + ngram_index.json (for small corpora)
+  - v2 (SQLite): corpus.db (for 100GB+ corpora from The Stack)
+
+Index built by: scripts/corpus/build_index.py (v1) or build_index_v2.py (v2)
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -69,6 +74,8 @@ class CorpusRetriever:
         self.config = config or CorpusConfig()
         self._snippets: list[dict[str, Any]] = []
         self._ngram_index: dict[str, list[int]] = {}
+        self._db: sqlite3.Connection | None = None
+        self._format: str = ""  # "json" or "sqlite"
         self._loaded = False
         self._load_error: str | None = None
         self._ngram_size = 4
@@ -89,28 +96,75 @@ class CorpusRetriever:
             cls._instance = None
 
     def _ensure_loaded(self) -> bool:
-        """Lazy-load the index on first query."""
+        """Lazy-load the index on first query. Auto-detects v1 (JSON) or v2 (SQLite)."""
         if self._loaded:
             return True
         if self._load_error is not None:
             return False
 
         index_path = Path(self.config.index_path)
+        db_file = index_path / "corpus.db"
         snippets_file = index_path / "snippets.json"
         ngram_file = index_path / "ngram_index.json"
         meta_file = index_path / "meta.json"
 
-        if not snippets_file.exists() or not ngram_file.exists():
-            self._load_error = f"Index not found at {index_path}"
-            _log.info("Corpus index not found at %s — retrieval disabled", index_path)
+        # Prefer SQLite (v2) if available
+        if db_file.exists():
+            return self._load_sqlite(db_file, meta_file)
+        if snippets_file.exists() and ngram_file.exists():
+            return self._load_json(snippets_file, ngram_file, meta_file)
+
+        self._load_error = f"Index not found at {index_path}"
+        _log.info("Corpus index not found at %s — retrieval disabled", index_path)
+        return False
+
+    def _load_sqlite(self, db_file: Path, meta_file: Path) -> bool:
+        """Load SQLite-backed v2 index."""
+        try:
+            t0 = time.perf_counter()
+            conn = sqlite3.connect(
+                str(db_file),
+                check_same_thread=False,
+            )
+            conn.execute("PRAGMA mmap_size=1073741824")
+            conn.execute("PRAGMA query_only=ON")
+
+            # Read metadata
+            if meta_file.exists():
+                with open(meta_file) as f:
+                    meta = json.load(f)
+                self._ngram_size = meta.get("ngram_size", 4)
+
+            num_snippets = conn.execute(
+                "SELECT COUNT(*) FROM snippets"
+            ).fetchone()[0]
+
+            self._db = conn
+            self._format = "sqlite"
+            self._loaded = True
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            _log.info(
+                "Corpus index loaded (SQLite): %d snippets in %.0fms",
+                num_snippets, elapsed_ms,
+            )
+            return True
+
+        except Exception as exc:
+            self._load_error = str(exc)
+            _log.warning("Failed to load SQLite corpus index: %s", exc)
             return False
 
+    def _load_json(
+        self, snippets_file: Path, ngram_file: Path, meta_file: Path,
+    ) -> bool:
+        """Load JSON-backed v1 index."""
         try:
             t0 = time.perf_counter()
 
-            with open(meta_file) as f:
-                meta = json.load(f)
-            self._ngram_size = meta.get("ngram_size", 4)
+            if meta_file.exists():
+                with open(meta_file) as f:
+                    meta = json.load(f)
+                self._ngram_size = meta.get("ngram_size", 4)
 
             with open(snippets_file) as f:
                 self._snippets = json.load(f)
@@ -118,10 +172,11 @@ class CorpusRetriever:
             with open(ngram_file) as f:
                 self._ngram_index = json.load(f)
 
+            self._format = "json"
             elapsed_ms = (time.perf_counter() - t0) * 1000
             self._loaded = True
             _log.info(
-                "Corpus index loaded: %d snippets, %d n-grams in %.0fms",
+                "Corpus index loaded (JSON): %d snippets, %d n-grams in %.0fms",
                 len(self._snippets), len(self._ngram_index), elapsed_ms,
             )
             return True
@@ -152,6 +207,76 @@ class CorpusRetriever:
         if not query_grams:
             return []
 
+        if self._format == "sqlite":
+            return self._retrieve_sqlite(query_grams, max_n)
+        return self._retrieve_json(query_grams, max_n)
+
+    def _retrieve_sqlite(
+        self, query_grams: list[str], max_n: int,
+    ) -> list[CodeSnippet]:
+        """Retrieve from SQLite-backed index."""
+        assert self._db is not None
+        n_query_grams = len(query_grams)
+
+        # Build parameterized query for n-gram matching
+        placeholders = ",".join("?" for _ in query_grams)
+        rows = self._db.execute(
+            f"""
+            SELECT snippet_id, COUNT(*) as score
+            FROM ngrams
+            WHERE gram IN ({placeholders})
+            GROUP BY snippet_id
+            HAVING CAST(COUNT(*) AS REAL) / ? >= ?
+            ORDER BY score DESC
+            LIMIT ?
+            """,
+            (*query_grams, n_query_grams, self.config.min_score, max_n * 2),
+        ).fetchall()
+
+        if not rows:
+            return []
+
+        # Fetch snippet details
+        results: list[CodeSnippet] = []
+        seen_hashes: set[str] = set()
+        snippet_ids = [r[0] for r in rows]
+        scores_map = {r[0]: r[1] / n_query_grams for r in rows}
+
+        id_placeholders = ",".join("?" for _ in snippet_ids)
+        snippets = self._db.execute(
+            f"SELECT id, code, source, hash FROM snippets WHERE id IN ({id_placeholders})",
+            snippet_ids,
+        ).fetchall()
+
+        # Index by id for ordered access
+        snip_map = {s[0]: s for s in snippets}
+
+        for sid, _ in rows:
+            if len(results) >= max_n:
+                break
+            snip = snip_map.get(sid)
+            if not snip:
+                continue
+            _, code, source, h = snip
+            if h and h in seen_hashes:
+                continue
+            if h:
+                seen_hashes.add(h)
+
+            results.append(CodeSnippet(
+                code=code,
+                file=source or "",
+                start_line=0,
+                score=scores_map[sid],
+                hash=h,
+            ))
+
+        return results
+
+    def _retrieve_json(
+        self, query_grams: list[str], max_n: int,
+    ) -> list[CodeSnippet]:
+        """Retrieve from JSON-backed v1 index."""
         # Score snippets by n-gram overlap
         scores: dict[int, float] = {}
         for gram in query_grams:
@@ -238,9 +363,16 @@ class CorpusRetriever:
 
         return "\n".join(parts)
 
+    @staticmethod
+    def _normalize_token(token: str) -> str:
+        """Strip non-alphanumeric chars (except underscore) from a token."""
+        return re.sub(r"[^a-z0-9_]", "", token)
+
     def _extract_ngrams(self, text: str) -> list[str]:
-        """Extract word-level n-grams from text."""
-        words = text.split()
+        """Extract word-level n-grams from text with normalized tokens."""
+        raw_words = text.split()
+        words = [self._normalize_token(w) for w in raw_words]
+        words = [w for w in words if w]  # drop empty after normalization
         n = self._ngram_size
         if len(words) < n:
             return []

@@ -294,8 +294,8 @@ class LlamaServerBackend(ModelBackend):
                 )
 
             # Extract speculative decoding acceptance telemetry
-            n_drafted = timings.get("drafted_n_tokens", 0)
-            n_accepted = timings.get("drafted_n_accepted", 0)
+            n_drafted = timings.get("draft_n", 0)
+            n_accepted = timings.get("draft_n_accepted", 0)
             accept_rate = (n_accepted / n_drafted) if n_drafted > 0 else 0.0
             if n_drafted > 0:
                 logger.info(
@@ -520,8 +520,8 @@ class LlamaServerBackend(ModelBackend):
             )
 
             # Extract speculative decoding acceptance telemetry (streaming)
-            n_drafted = timings.get("drafted_n_tokens", 0)
-            n_accepted = timings.get("drafted_n_accepted", 0)
+            n_drafted = timings.get("draft_n", 0)
+            n_accepted = timings.get("draft_n_accepted", 0)
             accept_rate = (n_accepted / n_drafted) if n_drafted > 0 else 0.0
             if n_drafted > 0:
                 logger.info(
