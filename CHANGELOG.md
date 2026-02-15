@@ -2,6 +2,15 @@
 
 ## 2026-02-15
 
+- **Nightshift automated overnight maintenance** — Full integration of [nightshift](https://github.com/marcus/nightshift) for autonomous code maintenance via Claude Code CLI:
+  - Architecture: systemd timer (02:30) → `run_wrapper.sh` → inference guard → nightshift → PATH shadow claude → devcontainer (bypassPermissions) → dedicated worktree.
+  - 11 aggressive tasks: lint-fix, bug-finder, auto-dry, td-review, docs-backfill, skill-groom, dead-code, test-gap, security-footgun, perf-regression, doc-drift.
+  - Inference guard: checks llama-server RSS via `/proc/*/status`, restricts to analysis-only tasks when >200GB RAM detected.
+  - Dedicated worktree at `/mnt/raid0/llm/claude-nightshift` prevents branch switching from disrupting parallel agents on main.
+  - Devcontainer routing solves permission issues: PATH shadow binary (`scripts/nightshift/bin/claude`) routes through `docker exec` into container with `bypassPermissions`.
+  - Budget: 90% daily cap, 5% morning reserve.
+  - New files: `nightshift.yaml`, `scripts/nightshift/{inference_guard,run_wrapper,claude_via_devc,claude-nightshift}.sh`, `scripts/nightshift/bin/claude`.
+
 - **Phase 2A: A/B tested corpus-augmented prompt stuffing across all 5 models**:
   - **480B best result**: +15.6pp acceptance (74.9→90.5%), +17% speed (8.3→9.7 t/s), wall time decreased.
   - **32B solid result**: +8.7pp acceptance (84.6→93.3%), +6% speed (30.8→32.7 t/s).

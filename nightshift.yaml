@@ -1,0 +1,68 @@
+# Nightshift Project Configuration — AMD EPYC 9655 Inference Optimization
+# Location: /mnt/raid0/llm/claude/nightshift.yaml
+#
+# This project runs heavy local inference (llama.cpp) overnight.
+# Nightshift uses remote Claude Code CLI — no local GPU/model conflict.
+# Test execution may conflict with loaded models (RAM contention).
+
+tasks:
+  enabled:
+    # PR-creating tasks (code changes)
+    - lint-fix                     # ruff + shellcheck fixes
+    - bug-finder                   # find & fix bugs in orchestration code
+    - auto-dry                     # DRY refactoring of duplicate code
+    - td-review                    # tech debt review session
+    - docs-backfill                # document undocumented functions
+    - skill-groom                  # keep .claude skills tidy
+
+    # Analysis-only tasks (reports, no code changes)
+    - dead-code                    # find unused code
+    - test-gap                     # identify missing test coverage
+    - security-footgun             # security anti-patterns
+    - perf-regression              # performance regression spotting
+    - doc-drift                    # docs vs code divergence
+
+  priorities:
+    security-footgun: 10           # security first
+    bug-finder: 9
+    perf-regression: 8             # critical for inference optimization project
+    test-gap: 7
+    td-review: 6
+    lint-fix: 5
+    auto-dry: 4
+    dead-code: 4
+    doc-drift: 3
+    docs-backfill: 2
+    skill-groom: 1
+
+  intervals:
+    security-footgun: 168h         # weekly
+    bug-finder: 72h                # every 3 days
+    perf-regression: 168h          # weekly
+    test-gap: 168h                 # weekly
+    td-review: 168h                # weekly
+    lint-fix: 48h                  # every 2 days
+    auto-dry: 336h                 # every 2 weeks
+    dead-code: 168h                # weekly
+    doc-drift: 336h                # every 2 weeks
+    docs-backfill: 336h            # every 2 weeks
+    skill-groom: 336h              # every 2 weeks
+
+  disabled: []
+
+integrations:
+  claude_md: true                  # Read CLAUDE.md for project context
+  agents_md: true                  # Read agents/*.md for role hints
+  task_sources:
+    - td:
+        enabled: true
+        teach_agent: true
+
+# Run slightly later to avoid peak inference hours
+schedule:
+  cron: "30 2 * * *"              # 2:30am (inference usually stabilizes by then)
+
+# No budget cap for this project — we want to see overnight consumption
+budget:
+  max_percent: 90                  # Use up to 90% of daily budget
+  reserve_percent: 5               # Keep 5% for morning interactive use

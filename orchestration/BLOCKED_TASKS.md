@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-14 (SkillBank Experience Distillation: spec complete, implementation starting)
+**Last Updated**: 2026-02-15 (Nightshift integration complete, first autonomous run pending)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -32,6 +32,7 @@
 | **JSON Canvas + Plugin Architecture** | — | **MEDIUM** | `handoffs/active/json-canvas-plugin-architecture.md` | 📋 NEW (visual reasoning + MCP tool plugins) |
 | **Replay Evaluation Harness** | — | **HIGH** | `handoffs/active/replay-evaluation-harness.md` | ✅ IMPLEMENTATION COMPLETE (8/8 phases done, 75 unit tests passing, 3386 full suite. Live smoke tests + baseline replay run pending.) |
 | **Orchestrator Intelligence Improvements** | — | **HIGH** | `handoffs/active/orchestrator-intelligence-improvements.md` | ✅ COMPLETE (7/7 improvements implemented, 3746 tests pass). Live validation pending (seeding with new tunables). |
+| **Nightshift Automated Maintenance** | Devcontainer must be running | **MEDIUM** | `nightshift.yaml` + `scripts/nightshift/` | ✅ INTEGRATION COMPLETE. systemd timer (02:30) → inference guard → worktree → devcontainer. First autonomous run pending. |
 
 ---
 

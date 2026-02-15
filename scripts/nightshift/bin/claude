@@ -1,0 +1,28 @@
+#!/bin/bash
+# claude-nightshift — Claude Code wrapper for nightshift systemd service
+#
+# This sits in PATH ahead of the real claude binary. When nightshift
+# invokes "claude", this wrapper detects if the working directory is
+# the nightshift worktree and routes through the devcontainer.
+# Otherwise, it falls through to the real claude.
+
+set -euo pipefail
+
+WORKTREE="/mnt/raid0/llm/claude-nightshift"
+REAL_CLAUDE="/home/daniele/.local/bin/claude"
+
+# If we're in the nightshift worktree, route through devcontainer
+if [[ "${PWD:-}" == "$WORKTREE"* ]] || [[ "${1:-}" == *"$WORKTREE"* ]]; then
+    CONTAINER_ID="$(docker ps -q -f "ancestor=vsc-claude-e51ac396fef248434826b5406ff85b7fc60ec88212497878e70375898b83bdb6-uid" 2>/dev/null | head -1)"
+
+    if [[ -z "$CONTAINER_ID" ]]; then
+        CONTAINER_ID="$(docker ps --format '{{.ID}} {{.Mounts}}' 2>/dev/null | grep "/mnt/raid0/llm" | awk '{print $1}' | head -1)"
+    fi
+
+    if [[ -n "$CONTAINER_ID" ]]; then
+        exec docker exec -u node -w "$WORKTREE" "$CONTAINER_ID" claude "$@"
+    fi
+    # Fallback to real claude if no container
+fi
+
+exec "$REAL_CLAUDE" "$@"
