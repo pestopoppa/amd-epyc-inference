@@ -47,8 +47,8 @@ runtime_defaults:
     flash_attention: true
     ubatch_size: 8192
   corpus_retrieval:
-    enabled: false       # Off until quality-validated via A/B benchmark
-    index_path: /mnt/raid0/llm/cache/corpus/mvp_index
+    enabled: true        # A/B validated: +8.7pp/32B, +15.6pp/480B. Per-role via lookup flag.
+    index_path: /mnt/raid0/llm/cache/corpus/full_index
     max_snippets: 3
     max_chars: 3000
   prefix_cache:
@@ -322,6 +322,7 @@ server_mode:
       experts: 6
       override_key: qwen3moe.expert_used_count
       lookup: true
+      corpus_retrieval: false  # A/B negative: +2.1pp acceptance but -12% speed (overhead > gain)
     throughput: 47.11  # t/s (MoE6 + spec + lookup, verified 2026-02-13)
 
   coder_escalation:
@@ -386,6 +387,7 @@ server_mode:
     acceleration:
       type: speculative_decoding
       draft_k: 16
+      lookup: true  # A/B best result: +15.6pp acceptance, +17% speed with corpus
     throughput: 9.00  # t/s (full experts + spec, quality over speed, verified 2026-02-13)
 
   ingest_long_context:
