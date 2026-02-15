@@ -25,8 +25,9 @@ Generated: "The quick brown"
 | Code editing | Qwen2.5-Coder-32B | 3.0 t/s | 25.82 t/s | **8.6x** |
 | Document QA | Qwen2.5-72B | ~4 t/s | ~8 t/s | **2x** |
 | Code generation | Any | - | - | 1.0-1.2x |
+| Code generation (w/ corpus) | Coder-family | - | - | 1.06-1.17x |
 
-**Key Finding**: Prompt lookup only helps when output overlaps with input. Pure generation tasks see minimal benefit.
+**Key Finding**: Prompt lookup only helps when output overlaps with input. Pure generation tasks see minimal benefit without corpus augmentation. With corpus-augmented prompt stuffing (see below), Coder-family models gain 6-17% on novel generation.
 
 ## When to Use
 
@@ -66,24 +67,30 @@ numactl --interleave=all \
 
 ## Combining with Other Techniques
 
-Prompt lookup can stack with MoE reduction but **NOT** with speculative decoding:
+Prompt lookup stacks with both MoE reduction and speculative decoding via llama-server's `--lookup` flag:
 
 | Combination | Compatible | Result |
 |-------------|------------|--------|
-| Lookup + MoE Reduction | ✅ Yes | **47.5 t/s** on Qwen3-Coder-30B |
-| Lookup + Speculative | ❌ No | Both provide draft tokens |
-| Lookup + SSM | ❌ No | SSM state corruption |
+| Lookup + MoE Reduction | ✅ Yes | **47.11 t/s** on Qwen3-Coder-30B (MoE6+spec+lookup) |
+| Lookup + Speculative | ✅ Yes | **39.44 t/s** on Qwen2.5-Coder-32B (spec-first, lookup fallback) |
+| Lookup + SSM | ❌ No | SSM state corruption (consecutive position requirement) |
+
+llama-server uses **spec-first priority**: draft model proposes tokens first, prompt lookup fills gaps when the draft model has low confidence. The `--lookup` CLI flag enables this per-slot ngram cache.
 
 **Optimal Stack**:
 ```python
 def get_draft_tokens(context, prompt):
-    # Layer 1: Prompt Lookup (FREE - zero compute)
+    # Layer 1: Draft model (higher acceptance on novel tokens)
+    drafts = draft_model.generate(context, k=8)
+    if drafts.confidence > threshold:
+        return drafts
+
+    # Layer 2: Prompt Lookup fallback (FREE - zero compute)
     candidates = prompt_lookup(context, prompt, ngram_size=3)
     if candidates and len(candidates) >= 3:
         return candidates
 
-    # Layer 2: Fall back to draft model
-    return draft_model.generate(context, k=8)
+    return drafts  # Fall through to draft regardless
 ```
 
 ## SSM Warning
@@ -117,6 +124,68 @@ llama-cli -m MODEL.gguf -f task.txt -n 500
 ```
 
 If speedup is <1.3x, prompt lookup isn't worth enabling for that task type.
+
+## Corpus-Augmented Prompt Lookup (Phase 2A)
+
+Standard prompt lookup only matches against the user's input prompt. For novel code generation, there's nothing to match against — acceptance rate is ~0%. **Corpus-augmented prompt stuffing** solves this by injecting retrieved code snippets into the prompt before inference, expanding the n-gram search space.
+
+### Architecture
+
+```
+User: "implement async retry with exponential backoff"
+  │
+  ▼
+CorpusRetriever (sub-ms query)
+  │  SQLite n-gram index → top-3 matching snippets
+  ▼
+Prompt Assembly
+  │  <reference_code> [retrieved snippets, ~750 tokens] </reference_code>
+  │  <user> [original request] </user>
+  ▼
+llama-server (--lookup)
+  │  n-gram matches now hit retrieved snippets
+  │  + original prompt + spec decode drafts
+  ▼
+Output (higher acceptance rate on novel generation)
+```
+
+### Implementation
+
+- **Index**: SQLite with word-level 4-gram index. `scripts/corpus/build_index_v2.py` builds from The Stack v1 (HuggingFace streaming). Optional pruning via `scripts/corpus/prune_index.py`.
+- **Retriever**: `src/services/corpus_retrieval.py` — singleton `CorpusRetriever`, auto-detects JSON (v1) vs SQLite (v2) index. Uses mmap (~200KB RAM per query regardless of DB size).
+- **Prompt injection**: `build_corpus_context()` in `src/prompt_builders/builder.py`. Runs on turn 0 for lookup-enabled roles. Injects as `## Reference Code` section.
+- **Telemetry**: `src/backends/llama_server.py` extracts `draft_n` / `draft_n_accepted` from llama-server timings.
+
+### A/B Results (MVP Corpus: 73K snippets, 338MB)
+
+| Model | Task | Acceptance Δ | Speed Δ | Verdict |
+|-------|------|-------------|---------|---------|
+| Qwen3-Coder-480B | BST | +15.6pp (74.9→90.5%) | +17% (8.3→9.7 t/s) | **Best** |
+| Qwen2.5-Coder-32B | BST | +8.7pp (84.6→93.3%) | +6% (30.8→32.7 t/s) | **Good** |
+| Qwen3-Coder-480B | HTTP | +3.4pp | +9% | Positive |
+| Qwen3-235B-A22B | HTTP | +6.6pp | +2% | Marginal |
+| Qwen2.5-7B | HTTP | +5.3pp | +1% | Saturated |
+| Qwen3-Coder-30B | BST | +2.1pp | -12% | Negative |
+| Qwen3-235B-A22B | BST | -12.1pp | -17% | Negative |
+
+**Finding**: Coder-family models benefit most. Enabled for 32B and 480B only. The overhead from extra prompt tokens can outweigh gains on models where acceptance is already high or verification is expensive.
+
+### Configuration
+
+In `orchestration/model_registry.yaml`:
+
+```yaml
+runtime_defaults:
+  corpus_retrieval:
+    enabled: true            # Per-role: only Coder-family
+    index_path: /mnt/raid0/llm/cache/corpus/full_index
+    max_snippets: 3
+    max_chars: 3000          # ~750 tokens budget
+```
+
+### Token Normalization
+
+Both index builder and retriever strip non-alphanumeric characters (except underscore) from tokens before n-gram extraction. This ensures `class Foo(Bar):` and `class foo bar` produce the same n-grams for matching.
 
 ## References
 
