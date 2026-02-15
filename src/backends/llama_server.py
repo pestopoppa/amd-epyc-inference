@@ -293,6 +293,16 @@ class LlamaServerBackend(ModelBackend):
                     f"({100 * cached_tokens / prompt_tokens:.1f}%) from cache"
                 )
 
+            # Extract speculative decoding acceptance telemetry
+            n_drafted = timings.get("drafted_n_tokens", 0)
+            n_accepted = timings.get("drafted_n_accepted", 0)
+            accept_rate = (n_accepted / n_drafted) if n_drafted > 0 else 0.0
+            if n_drafted > 0:
+                logger.info(
+                    "Spec accept: %d/%d (%.1f%%) for %s",
+                    n_accepted, n_drafted, accept_rate * 100, role_config.name,
+                )
+
             return InferenceResult(
                 role=role_config.name,
                 output=output,
@@ -304,6 +314,9 @@ class LlamaServerBackend(ModelBackend):
                 generation_ms=generation_ms,
                 predicted_per_second=predicted_per_second,
                 http_overhead_ms=http_overhead_ms,
+                n_tokens_drafted=n_drafted,
+                n_tokens_accepted=n_accepted,
+                acceptance_rate=accept_rate,
             )
 
         except httpx.TimeoutException:
@@ -506,6 +519,16 @@ class LlamaServerBackend(ModelBackend):
                 else (tokens_generated / elapsed if elapsed > 0 else 0.0)
             )
 
+            # Extract speculative decoding acceptance telemetry (streaming)
+            n_drafted = timings.get("drafted_n_tokens", 0)
+            n_accepted = timings.get("drafted_n_accepted", 0)
+            accept_rate = (n_accepted / n_drafted) if n_drafted > 0 else 0.0
+            if n_drafted > 0:
+                logger.info(
+                    "Spec accept (stream): %d/%d (%.1f%%) for %s",
+                    n_accepted, n_drafted, accept_rate * 100, role_config.name,
+                )
+
             return InferenceResult(
                 role=role_config.name,
                 output="".join(chunks),
@@ -517,6 +540,9 @@ class LlamaServerBackend(ModelBackend):
                 generation_ms=generation_ms,
                 predicted_per_second=predicted_per_second,
                 http_overhead_ms=http_overhead_ms,
+                n_tokens_drafted=n_drafted,
+                n_tokens_accepted=n_accepted,
+                acceptance_rate=accept_rate,
             )
 
         except httpx.TimeoutException:

@@ -1375,3 +1375,87 @@ class TestFileLoading:
             state="ready", original_prompt="test", as_structured=True,
         )
         assert prompt.rules == DEFAULT_ROOT_LM_RULES
+
+
+# ── corpus_context parameter ─────────────────────────────────────────────
+
+
+class TestCorpusContext:
+    """Test corpus_context parameter in build_root_lm_prompt."""
+
+    def test_corpus_context_appears_in_prompt(self):
+        result = build_root_lm_prompt(
+            state="ready",
+            original_prompt="test",
+            corpus_context="<reference_code>\ndef foo(): pass\n</reference_code>",
+        )
+        assert "reference_code" in result
+        assert "def foo(): pass" in result
+
+    def test_corpus_context_before_task(self):
+        result = build_root_lm_prompt(
+            state="ready",
+            original_prompt="Do something",
+            corpus_context="<reference_code>\nsnippet\n</reference_code>",
+        )
+        # Reference code should appear before the task section
+        ref_idx = result.index("reference_code")
+        task_idx = result.index("## Task")
+        assert ref_idx < task_idx
+
+    def test_empty_corpus_context_omitted(self):
+        result = build_root_lm_prompt(
+            state="ready",
+            original_prompt="test",
+            corpus_context="",
+        )
+        assert "## Reference Code" not in result
+
+    def test_structured_prompt_has_reference_code_field(self):
+        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.types import PromptConfig
+
+        builder = PromptBuilder(PromptConfig())
+        prompt = builder.build_root_lm_prompt(
+            state="ready",
+            original_prompt="test",
+            corpus_context="snippet content",
+            as_structured=True,
+        )
+        assert prompt.reference_code == "snippet content"
+
+    def test_reference_code_section_in_to_string(self):
+        from src.prompt_builders.types import RootLMPrompt
+
+        prompt = RootLMPrompt(
+            system="sys",
+            reference_code="code snippet here",
+            task="do thing",
+        )
+        result = prompt.to_string()
+        assert "## Reference Code" in result
+        assert "code snippet here" in result
+        # Reference Code should come before Task
+        assert result.index("## Reference Code") < result.index("## Task")
+
+
+class TestBuildCorpusContext:
+    """Test build_corpus_context() function."""
+
+    def test_returns_empty_when_disabled(self):
+        from src.prompt_builders.builder import build_corpus_context
+
+        result = build_corpus_context(
+            role="frontdoor",
+            task_description="test task",
+        )
+        assert result == ""
+
+    def test_returns_string(self):
+        from src.prompt_builders.builder import build_corpus_context
+
+        result = build_corpus_context(
+            role="coder_primary",
+            task_description="implement a sorting algorithm",
+        )
+        assert isinstance(result, str)

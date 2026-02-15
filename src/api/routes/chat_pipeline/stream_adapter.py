@@ -29,6 +29,7 @@ from src.prompt_builders import (
     classify_error,
     extract_code_from_response,
 )
+from src.prompt_builders.builder import build_corpus_context
 from src.repl_environment import REPLEnvironment
 from src.roles import Role
 from src.sse_utils import (
@@ -165,10 +166,16 @@ async def _stream_repl(
             escalation_prompt = ""
         else:
             routing_ctx = ""
-            if turn == 0 and state.hybrid_router:
-                routing_ctx = build_routing_context(
+            corpus_ctx = ""
+            if turn == 0:
+                if state.hybrid_router:
+                    routing_ctx = build_routing_context(
+                        role=current_role,
+                        hybrid_router=state.hybrid_router,
+                        task_description=request.prompt,
+                    )
+                corpus_ctx = build_corpus_context(
                     role=current_role,
-                    hybrid_router=state.hybrid_router,
                     task_description=request.prompt,
                 )
             root_prompt = build_root_lm_prompt(
@@ -178,6 +185,7 @@ async def _stream_repl(
                 last_error=last_error,
                 turn=turn,
                 routing_context=routing_ctx,
+                corpus_context=corpus_ctx,
             )
 
         try:

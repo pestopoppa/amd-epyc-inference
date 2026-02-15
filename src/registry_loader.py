@@ -56,6 +56,7 @@ class AccelerationConfig:
     ngram_min: int | None = None  # For prompt lookup
     lookup: bool = False  # Enable --lookup (prompt n-gram fallback)
     temperature: float | None = None
+    corpus_retrieval: bool = False  # Enable corpus-augmented prompt stuffing
 
 
 @dataclass
@@ -325,6 +326,12 @@ class RegistryLoader:
             draft_k = draft_k or spec_sub.get("k")
         # Resolve lookup flag: check spec_sub first, then top-level
         lookup = spec_sub.get("lookup", accel_data.get("lookup", False))
+        # Resolve corpus_retrieval: check runtime_defaults, then accel_data
+        corpus_rt = self._runtime_defaults.get("corpus_retrieval", {})
+        corpus_enabled = accel_data.get(
+            "corpus_retrieval",
+            corpus_rt.get("enabled", False) if bool(lookup) else False,
+        )
         acceleration = AccelerationConfig(
             type=accel_data.get("type", "none"),
             draft_role=draft_role,
@@ -334,6 +341,7 @@ class RegistryLoader:
             ngram_min=accel_data.get("ngram_min", 3),
             lookup=bool(lookup),
             temperature=accel_data.get("temperature"),
+            corpus_retrieval=bool(corpus_enabled),
         )
 
         # Build performance metrics

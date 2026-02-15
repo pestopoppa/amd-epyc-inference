@@ -127,6 +127,10 @@ class InferenceResult:
     generation_ms: float = 0.0  # Token generation time (excludes prompt eval)
     predicted_per_second: float = 0.0  # Clean generation-only t/s from llama.cpp
     http_overhead_ms: float = 0.0  # HTTP round-trip minus inference time (server-side overhead)
+    # Speculative decoding acceptance telemetry
+    n_tokens_drafted: int = 0
+    n_tokens_accepted: int = 0
+    acceptance_rate: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -142,6 +146,9 @@ class InferenceResult:
             "generation_ms": self.generation_ms,
             "predicted_per_second": self.predicted_per_second,
             "http_overhead_ms": self.http_overhead_ms,
+            "n_tokens_drafted": self.n_tokens_drafted,
+            "n_tokens_accepted": self.n_tokens_accepted,
+            "acceptance_rate": self.acceptance_rate,
         }
 
 

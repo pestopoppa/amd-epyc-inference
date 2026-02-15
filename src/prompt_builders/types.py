@@ -70,6 +70,9 @@ class RootLMPrompt:
     context: str = ""
     """Additional context (error, output, etc.)."""
 
+    reference_code: str = ""
+    """Corpus-retrieved code snippets for prompt-lookup acceleration."""
+
     task: str = ""
     """The user's task."""
 
@@ -89,6 +92,8 @@ class RootLMPrompt:
             parts.extend(["", "## Current State", self.state])
         if self.context:
             parts.extend(["", self.context])
+        if self.reference_code:
+            parts.extend(["", "## Reference Code", self.reference_code])
         if self.task:
             parts.extend(["", "## Task", self.task])
         if self.instruction:

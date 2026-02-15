@@ -371,10 +371,19 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
         prompt = state.escalation_prompt
         state.escalation_prompt = ""
     else:
-        from src.prompt_builders.builder import PromptBuilder
+        from src.prompt_builders.builder import PromptBuilder, build_corpus_context
         from src.prompt_builders.types import PromptConfig, PromptStyle
 
         repl_state = deps.repl.get_state()
+
+        # Inject corpus context on first turn for prompt-lookup acceleration
+        corpus_ctx = ""
+        if state.turns == 1:
+            corpus_ctx = build_corpus_context(
+                role=str(role),
+                task_description=state.prompt,
+            )
+
         builder = PromptBuilder(PromptConfig(style=PromptStyle.MINIMAL))
         prompt = builder.build_root_lm_prompt(
             state=repl_state,
@@ -382,6 +391,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             last_output=state.last_output,
             last_error=state.last_error,
             turn=state.turns - 1,
+            corpus_context=corpus_ctx,
         )
 
     # Graduated FINAL() nudge: midpoint soft reminder, then hard deadline.

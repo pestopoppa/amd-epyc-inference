@@ -37,6 +37,7 @@ from src.prompt_builders import (
     classify_error,
     build_escalation_prompt,
 )
+from src.prompt_builders.builder import build_corpus_context
 from src.api.services.memrl import (
     ensure_memrl_initialized,
     score_completed_task,
@@ -586,10 +587,16 @@ async def chat_stream(
             else:
                 # Inject routing context on turn 0
                 routing_ctx = ""
-                if turn == 0 and state.hybrid_router:
-                    routing_ctx = build_routing_context(
+                corpus_ctx = ""
+                if turn == 0:
+                    if state.hybrid_router:
+                        routing_ctx = build_routing_context(
+                            role=current_role,
+                            hybrid_router=state.hybrid_router,
+                            task_description=request.prompt,
+                        )
+                    corpus_ctx = build_corpus_context(
                         role=current_role,
-                        hybrid_router=state.hybrid_router,
                         task_description=request.prompt,
                     )
                 root_prompt = build_root_lm_prompt(
@@ -599,6 +606,7 @@ async def chat_stream(
                     last_error=last_error,
                     turn=turn,
                     routing_context=routing_ctx,
+                    corpus_context=corpus_ctx,
                 )
 
             # Call Root LM with current role

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-02-15
+
+- **Phase 2A: Corpus-augmented prompt stuffing implemented** (off by default):
+  - New `scripts/corpus/build_index.py`: word-level 4-gram index from src/ + stdlib + numpy + torch (73K snippets, 5.5M n-grams, 14s build).
+  - New `src/services/corpus_retrieval.py`: `CorpusRetriever` singleton — lazy index load, sub-ms query, graceful degradation.
+  - Wired `corpus_context` into all 3 prompt paths: `chat.py`, `stream_adapter.py`, `nodes.py` (turn 0 only).
+  - Added `reference_code` field to `RootLMPrompt` (renders as `## Reference Code` before `## Task`).
+  - Added `corpus_retrieval: bool` to `AccelerationConfig` + `runtime_defaults` in registry YAML.
+  - Added acceptance rate telemetry (`n_tokens_drafted`, `n_tokens_accepted`) to `InferenceResult` + extraction from llama-server timings.
+  - 27 new tests (20 corpus retrieval + 7 prompt builder). All passing.
+  - **Gate**: Feature stays off until A/B quality benchmark passes (max -0.5 score regression).
+
 ## 2026-02-14
 
 - **Agent governance refactor (harness-aligned) completed**:

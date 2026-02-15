@@ -46,6 +46,11 @@ runtime_defaults:
     parallel_slots: 4
     flash_attention: true
     ubatch_size: 8192
+  corpus_retrieval:
+    enabled: false       # Off until quality-validated via A/B benchmark
+    index_path: /mnt/raid0/llm/cache/corpus/mvp_index
+    max_snippets: 3
+    max_chars: 3000
   prefix_cache:
     enabled: true
     prefix_length: 4096  # Was 256. Role prompts are 1000-5000 tokens; need longer prefix for cache hits.
