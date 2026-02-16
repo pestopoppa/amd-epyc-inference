@@ -11,9 +11,10 @@ set -euo pipefail
 #   5. Deletes Kuzu HypothesisGraph database (dangling evidence refs)
 #   6. Clears SkillBank (skills.db + skill FAISS — provenance orphaned)
 #   7. Removes legacy session_embeddings.npy
-#   8. Archives checkpoint JSONL files (which contain seen question IDs)
-#   9. Clears seen_questions.jsonl so seeding can re-sample all questions
-#  10. Restarts the API to pick up empty state
+#   8. Clears replay/meta-agent archive.db (deterministic candidate history reset)
+#   9. Archives checkpoint JSONL files (which contain seen question IDs)
+#  10. Clears seen_questions.jsonl so seeding can re-sample all questions
+#  11. Restarts the API to pick up empty state
 #
 # What it does NOT do:
 #   - Delete episodic.db itself (preserves schema, only truncates rows)
@@ -24,10 +25,12 @@ set -euo pipefail
 #   ./scripts/session/reset_episodic_memory.sh                      # Reset everything
 #   ./scripts/session/reset_episodic_memory.sh --keep-seen          # Keep seen_questions
 #   ./scripts/session/reset_episodic_memory.sh --keep-skills        # Keep SkillBank
-#   ./scripts/session/reset_episodic_memory.sh --keep-seen --keep-skills
+#   ./scripts/session/reset_episodic_memory.sh --keep-archive       # Keep replay archive
+#   ./scripts/session/reset_episodic_memory.sh --keep-seen --keep-skills --keep-archive
 
 MEMORY_DIR="/mnt/raid0/llm/claude/orchestration/repl_memory/sessions"
 KUZU_DIR="/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db"
+META_ARCHIVE_DIR="/mnt/raid0/llm/claude/orchestration/repl_memory/meta_archive"
 EVAL_DIR="/mnt/raid0/llm/claude/benchmarks/results/eval"
 DB_PATH="$MEMORY_DIR/episodic.db"
 FAISS_PATH="$MEMORY_DIR/embeddings.faiss"
@@ -36,6 +39,7 @@ SKILLS_DB_PATH="$MEMORY_DIR/skills.db"
 SKILL_FAISS_PATH="$MEMORY_DIR/skill_embeddings.faiss"
 SKILL_IDMAP_PATH="$MEMORY_DIR/skill_id_map.npy"
 SESSION_EMBEDDINGS_PATH="$MEMORY_DIR/session_embeddings.npy"
+ARCHIVE_DB_PATH="$META_ARCHIVE_DIR/archive.db"
 SEEN_PATH="$EVAL_DIR/seen_questions.jsonl"
 
 # Match orchestrator API environment for consistency with seeding infra
@@ -54,10 +58,12 @@ export ORCHESTRATOR_UVICORN_WORKERS="1"
 
 KEEP_SEEN=false
 KEEP_SKILLS=false
+KEEP_ARCHIVE=false
 for arg in "$@"; do
   case "$arg" in
     --keep-seen) KEEP_SEEN=true ;;
     --keep-skills) KEEP_SKILLS=true ;;
+    --keep-archive) KEEP_ARCHIVE=true ;;
     *)
       echo "Unknown flag: $arg"
       exit 1
@@ -206,7 +212,20 @@ else
   echo "  session_embeddings.npy: not found (clean)"
 fi
 
-# 7. Archive checkpoint JSONL files (contain seen question IDs)
+# 7. Clear replay/meta-agent archive (candidate history)
+if [[ "$KEEP_ARCHIVE" == "false" ]]; then
+  if [[ -f "$ARCHIVE_DB_PATH" ]]; then
+    size=$(du -sh "$ARCHIVE_DB_PATH" 2>/dev/null | cut -f1)
+    rm -f "$ARCHIVE_DB_PATH"
+    echo "  replay archive: deleted archive.db ($size)"
+  else
+    echo "  replay archive: archive.db not found (clean)"
+  fi
+else
+  echo "  replay archive: kept (--keep-archive)"
+fi
+
+# 8. Archive checkpoint JSONL files (contain seen question IDs)
 if [[ "$KEEP_SEEN" == "false" ]]; then
   checkpoint_count=$(find "$EVAL_DIR" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l)
   if [[ "$checkpoint_count" -gt 0 ]]; then
@@ -226,7 +245,7 @@ else
   echo "  seen_questions.jsonl: kept (--keep-seen)"
 fi
 
-# 8. Restart API to pick up empty state
+# 9. Restart API to pick up empty state
 echo "  API: restarting to pick up empty state..."
 restart_api
 
