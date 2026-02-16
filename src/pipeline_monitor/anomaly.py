@@ -38,6 +38,8 @@ SIGNAL_WEIGHTS: dict[str, float] = {
     # SkillBank signals
     "skill_mismatch": 0.5,
     "no_skills_available": 0.3,
+    # Distillation latency signal
+    "distill_batch_latency": 0.5,
 }
 
 # ── Restart phrases for self-doubt detection ──
@@ -367,6 +369,21 @@ def detect_no_skills_available(skills_retrieved: int, skill_coverage: bool) -> b
     return skill_coverage and skills_retrieved == 0
 
 
+def detect_distill_batch_latency(
+    batch_latencies: list[dict],
+    threshold_ms: int = 5_000,
+) -> bool:
+    """Any distillation teacher batch exceeded threshold — model transition bottleneck.
+
+    Fires on per-batch latency spikes (default 5s) in the distillation pipeline,
+    much more granular than slow_delegation's 120s threshold.
+    """
+    for bl in batch_latencies:
+        if bl.get("elapsed_ms", 0) > threshold_ms:
+            return True
+    return False
+
+
 # ── Aggregation ──
 
 
@@ -384,6 +401,8 @@ def compute_anomaly_signals(
     skills_retrieved: int = 0,
     skill_coverage: bool = False,
     passed: bool = True,
+    # Distillation latency (optional, backward-compatible)
+    batch_latencies: list[dict] | None = None,
 ) -> dict[str, bool]:
     """Run all anomaly detectors, return dict of signal_name → bool."""
     deleg = delegation_events or []
@@ -422,6 +441,10 @@ def compute_anomaly_signals(
         "skill_mismatch": detect_skill_mismatch(passed, skills_retrieved),
         "no_skills_available": detect_no_skills_available(
             skills_retrieved, skill_coverage,
+        ),
+        # Distillation latency
+        "distill_batch_latency": detect_distill_batch_latency(
+            batch_latencies or [],
         ),
     }
 

@@ -125,15 +125,42 @@ class LocalLlamaTeacher:
     Uses a local llama.cpp server (OpenAI-compatible API).
 
     Default: Qwen3-235B-A22B at port 8083.
+
+    Reuses a single httpx.AsyncClient across calls to avoid per-request
+    TCP/TLS setup overhead.  Use as async context manager or call
+    ``close()`` explicitly when done::
+
+        async with LocalLlamaTeacher() as teacher:
+            result = await teacher.distill(prompt)
     """
 
     def __init__(
         self,
         base_url: str = "http://localhost:8083",
         model_id: str = "qwen3-235b-a22b",
+        timeout: int = 300,
     ):
         self._base_url = base_url.rstrip("/")
         self._model_id = model_id
+        self._timeout = timeout
+        self._client: Optional[Any] = None  # lazy httpx.AsyncClient
+
+    async def _get_client(self):
+        if self._client is None:
+            import httpx
+            self._client = httpx.AsyncClient(timeout=self._timeout)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.close()
 
     @property
     def model_id(self) -> str:
@@ -141,25 +168,25 @@ class LocalLlamaTeacher:
 
     async def distill(self, prompt: str, max_tokens: int = 4096) -> str:
         try:
-            import httpx
+            import httpx  # noqa: F811 — needed for ImportError path
         except ImportError as e:
             raise ImportError(
                 "httpx not installed. Run: pip install httpx"
             ) from e
 
-        async with httpx.AsyncClient(timeout=300) as client:
-            response = await client.post(
-                f"{self._base_url}/v1/chat/completions",
-                json={
-                    "model": self._model_id,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": max_tokens,
-                    "temperature": 0.3,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["choices"][0]["message"]["content"]
+        client = await self._get_client()
+        response = await client.post(
+            f"{self._base_url}/v1/chat/completions",
+            json={
+                "model": self._model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.3,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
 
 
 class CodexTeacher:

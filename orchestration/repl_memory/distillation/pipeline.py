@@ -57,6 +57,7 @@ class DistillationReport:
     skills_rejected: int = 0
     errors: List[str] = field(default_factory=list)
     duration_seconds: float = 0.0
+    batch_latencies: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -71,6 +72,7 @@ class DistillationReport:
             "skills_rejected": self.skills_rejected,
             "errors": self.errors,
             "duration_seconds": round(self.duration_seconds, 2),
+            "batch_latencies": self.batch_latencies,
         }
 
 
@@ -198,7 +200,10 @@ class DistillationPipeline:
             else:
                 continue
 
-            # Call teacher
+            # Call teacher (timed)
+            import time as _time
+
+            batch_start = _time.monotonic()
             try:
                 response = await self.teacher.distill(prompt)
             except Exception as e:
@@ -206,6 +211,20 @@ class DistillationPipeline:
                 logger.error(error_msg)
                 report.errors.append(error_msg)
                 continue
+            finally:
+                elapsed_ms = (_time.monotonic() - batch_start) * 1000
+                batch_record = {
+                    "skill_type": skill_type,
+                    "batch_index": i,
+                    "batch_size": len(batch),
+                    "elapsed_ms": round(elapsed_ms, 1),
+                    "teacher": getattr(self.teacher, "model_id", "unknown"),
+                }
+                report.batch_latencies.append(batch_record)
+                logger.info(
+                    "Batch %s/%d: %.1fms (%s)",
+                    skill_type, i, elapsed_ms, batch_record["teacher"],
+                )
 
             # Parse response
             raw_skills = parse_skills_from_response(response)

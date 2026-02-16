@@ -2,6 +2,11 @@
 
 ## 2026-02-16
 
+- **Distillation pipeline latency instrumentation** — Fixed inter-model transition latency blindness in seeding pipeline:
+  - **httpx client reuse** (`teachers.py`): `LocalLlamaTeacher` now creates a single `httpx.AsyncClient` lazily and reuses across batches (was creating new client per `distill()` call — TCP setup overhead on every batch). Supports async context manager for clean shutdown.
+  - **Per-batch timing** (`pipeline.py`): Each teacher `distill()` call timed with `time.monotonic()`. New `batch_latencies` field on `DistillationReport` records `{skill_type, batch_index, batch_size, elapsed_ms, teacher}` per batch. Logged at INFO level.
+  - **New anomaly signal `distill_batch_latency`** (`anomaly.py`): Fires when any distillation batch exceeds 5s threshold (vs `slow_delegation`'s 120s). Weight 0.5. Wired into `compute_anomaly_signals()` via backward-compatible `batch_latencies` kwarg.
+
 - **Overnight run regression fixes** — 4 bugs from `seed_specialist_routing.py --evolve --debug-replay --continuous` run:
   - **Escalation loop guard** (`chat_delegation.py`): Replaced shallow brief dedup (first 200 chars) with 4-layer defense: semantic dedup (hash brief+target), thread-local re-entrance depth counter, role repetition guard (max 2 consecutive same target), cumulative token budget (20K cap). New constants in `src/constants.py`.
   - **Corpus injection in delegation** (`chat_delegation.py`): `_run_specialist_loop()` now calls `build_corpus_context()` on turn 0 and passes result to `build_root_lm_prompt()`. Previously delegated 32B/480B specialists never received corpus snippets — the +8.7pp A/B result was from direct REPL only.
