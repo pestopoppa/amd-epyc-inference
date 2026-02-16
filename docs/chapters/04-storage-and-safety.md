@@ -8,15 +8,19 @@ Violating the storage rules causes **system instability and crashes**. Writing l
 
 ## Root Filesystem Crisis & Recovery
 
+In December 2025, Claude Code filled `/tmp/claude` with 20GB of data and crashed the machine. The application creates that directory before any runtime configuration takes effect, so our "write only to `/mnt/raid0/`" rule couldn't prevent it. The fix was a three-layer defense: a bind mount that silently redirects `/tmp/claude` to the RAID array, real-time monitoring that alerts at 70% and 85% usage, and an emergency cleanup script for when things go sideways anyway.
+
+<details>
+<summary>Incident details and three-layer defense</summary>
+
 ### What Happened (2025-12-18)
 
 Claude Code filled `/tmp/claude` with 20GB of data, exhausting the 84GB root filesystem and crashing the system. The application creates `/tmp/claude` before AI prompt instructions are evaluated, bypassing the "write only to `/mnt/raid0/`" constraint.
 
 **Root Cause**: Application-level cache directory creation happens before runtime configuration.
 
-### Three-Layer Defense
-
-**Layer 1: Bind Mount** (redirects `/tmp/claude` → `/mnt/raid0/llm/tmp/claude`)
+<details>
+<summary>Code: Layer 1 — Bind Mount</summary>
 
 ```bash
 # Create bind mount at session start
@@ -28,9 +32,12 @@ mountpoint /tmp/claude
 # Output: /tmp/claude is a mountpoint
 ```
 
+</details>
+
 The bind mount makes `/tmp/claude` a "portal" to the RAID array. Writes to `/tmp/claude` physically go to `/mnt/raid0/llm/tmp/claude`, preventing root FS exhaustion.
 
-**Layer 2: Real-Time Monitoring** (`monitor_storage.sh`)
+<details>
+<summary>Code: Layer 2 — Real-Time Monitoring</summary>
 
 ```bash
 # Run in background during sessions
@@ -41,7 +48,10 @@ bash /mnt/raid0/llm/UTILS/monitor_storage.sh &
 # - 85% full: Critical alert + system notification
 ```
 
-**Layer 3: Emergency Recovery** (`emergency_cleanup.sh`)
+</details>
+
+<details>
+<summary>Code: Layer 3 — Emergency Recovery</summary>
 
 ```bash
 # If system fills up:
@@ -54,7 +64,11 @@ sudo bash /mnt/raid0/llm/UTILS/emergency_cleanup.sh
 # 4. Report before/after usage
 ```
 
-### Allowed vs Forbidden Paths
+</details>
+</details>
+
+<details>
+<summary>Allowed vs forbidden paths</summary>
 
 | ✅ ALLOWED (RAID Array) | ❌ FORBIDDEN (Root FS) |
 |-------------------------|------------------------|
@@ -71,9 +85,14 @@ sudo bash /mnt/raid0/llm/UTILS/emergency_cleanup.sh
 [[ "$TARGET_PATH" == /mnt/raid0/* ]] || { echo "ERROR: Path not on RAID!"; exit 1; }
 ```
 
+</details>
+
 ## Storage Layout
 
-### RAID0 NVMe Array (4TB)
+The RAID0 array holds everything: 2.1TB of GGUF models, 850GB of HuggingFace source models, caches, temp files, and the project itself. The OS drive is kept lean at under 70% capacity. RAID0 gives us 12.5 GB/s sequential reads — fast enough to mmap a 280GB model in about 22 seconds.
+
+<details>
+<summary>RAID0 NVMe array layout</summary>
 
 | Directory | Purpose | Typical Size |
 |-----------|---------|--------------|
@@ -87,33 +106,41 @@ sudo bash /mnt/raid0/llm/UTILS/emergency_cleanup.sh
 
 **RAID Configuration**: 2× Solidigm P44 Pro 2TB NVMe in RAID0 (stripe size 64KB)
 
-**Performance**:
+<details>
+<summary>Data: RAID performance numbers</summary>
+
 - Sequential read: 12.5 GB/s
 - Sequential write: 11.8 GB/s
 - Random 4K read: 680K IOPS
 - Random 4K write: 550K IOPS
 
-### OS SSD (120GB)
+</details>
+</details>
+
+<details>
+<summary>OS SSD constraints</summary>
 
 **Used for**: OS, system packages, logs
 **Free space required**: 30GB minimum (25% of capacity)
 **No large files allowed**: Models, caches, and temporary files are forbidden
 
+</details>
+
 ## 192-Thread Pytest Danger
+
+Running `pytest -n auto` on a 192-thread machine is catastrophic. Each worker loads its own copy of the embedding models (~3GB per worker), and 192 of those exhausts the full 1.13TB of RAM. This actually happened in January 2026 and crashed the machine. The fix was three-fold: lazy model loading that skips init in test mode, a memory guard that fails tests early if free RAM drops below 100GB, and a hook that blocks `-n auto` entirely.
+
+<details>
+<summary>Incident and safeguards</summary>
 
 ### Memory Exhaustion Incident (2026-01-13)
 
-An agent ran orchestration liveness tests with `pytest -n auto`, spawning ~192 worker processes (one per hardware thread). Each worker initialized the API, which loads:
-- TaskEmbedder: BGE-large embedding model (~2–3GB, 1024-dim)
-- QScorer: Q-value scoring model (~1GB)
+An agent ran orchestration liveness tests with `pytest -n auto`, spawning ~192 worker processes. Each worker initialized the API, loading TaskEmbedder (~2-3GB) and QScorer (~1GB).
 
-**Result**: 192 workers × 3GB = **576GB allocation**, exceeding the 1.13TB RAM budget when combined with existing HOT tier (~535GB). The machine exhausted memory and crashed.
+**Result**: 192 workers × 3GB = **576GB allocation**, exceeding the 1.13TB RAM budget when combined with existing HOT tier (~535GB).
 
-### Safeguards Implemented
-
-**1. Lazy MemRL Loading** (`src/api.py`)
-
-TaskEmbedder and QScorer only load when `real_mode=True`:
+<details>
+<summary>Code: Lazy MemRL Loading safeguard</summary>
 
 ```python
 from src.features import features
@@ -128,9 +155,10 @@ else:
     qscorer = None
 ```
 
-**2. Memory Guard** (`tests/conftest.py`)
+</details>
 
-Tests fail early if < 100GB free RAM:
+<details>
+<summary>Code: Memory Guard in conftest.py</summary>
 
 ```python
 import psutil
@@ -145,9 +173,10 @@ def pytest_configure(config):
         )
 ```
 
-**3. Makefile Check** (`make check-memory`)
+</details>
 
-Run before `test-all` to verify memory:
+<details>
+<summary>Code: Makefile memory check</summary>
 
 ```makefile
 check-memory:
@@ -155,6 +184,8 @@ check-memory:
         assert m.available > 100*(1024**3), \
         f'Need 100GB free, have {m.available/(1024**3):.1f}GB'"
 ```
+
+</details>
 
 ### Safe Test Commands
 
@@ -171,13 +202,14 @@ pytest tests/ -n auto  # DO NOT USE
 
 **Rule**: NEVER use `pytest -n auto` on this 192-thread machine. Limit to `-n 4` maximum.
 
+</details>
+
 ## HOT/WARM/COLD Memory Architecture
 
-The orchestrator uses a three-tier memory pool design optimized for the 1.13TB RAM capacity:
+The orchestrator uses a three-tier memory pool that takes advantage of the 1.13TB RAM. HOT models (~535GB) are always resident and ready to serve. WARM models (~460GB) get mmap'd on demand — the NVMe RAID can page them in at 12GB/s, so loading a 140GB model takes about 12 seconds. COLD models sit on disk until explicitly needed.
 
-### HOT Tier (~535GB = 47% of RAM)
-
-Always resident in memory, loaded at startup:
+<details>
+<summary>HOT tier — always resident</summary>
 
 | Port | Role | Model | Size | Speed |
 |------|------|-------|------|-------|
@@ -193,9 +225,10 @@ Always resident in memory, loaded at startup:
 
 **Total HOT**: ~535GB (includes OS, buffers, KV caches)
 
-### WARM Tier (~460GB, load on demand)
+</details>
 
-Models loaded via mmap when needed for specific tasks:
+<details>
+<summary>WARM tier — on-demand mmap</summary>
 
 | Role | Model | Size | When Loaded |
 |------|-------|------|-------------|
@@ -207,10 +240,14 @@ Models loaded via mmap when needed for specific tasks:
 
 **Eviction**: Automatic via OS page cache when memory pressure increases.
 
+</details>
+
+<details>
+<summary>COLD tier and memory budget</summary>
+
 ### COLD Tier (Disk Only)
 
 Models on disk, not loaded into memory:
-
 - Benchmark test models
 - Deprecated models
 - Alternative quantizations (Q2_K, Q3_K_M, etc.)
@@ -228,9 +265,17 @@ Total capacity:              1130GB (100%)
 
 **Safe margin**: Keep 100GB+ free for KV caches, tensor operations, and tests.
 
+</details>
+
 ## Storage Monitoring
 
-### Daily Cleanup
+Day-to-day maintenance is simple: clean temp files older than 24 hours, clear pytest caches, and check that both the root drive and RAID array have healthy free space. The key numbers: root FS under 70%, RAID with 500GB+ free, and 100GB+ available RAM.
+
+<details>
+<summary>Cleanup and health check commands</summary>
+
+<details>
+<summary>Code: daily cleanup</summary>
 
 ```bash
 # Clean old temporary files (>24h)
@@ -244,7 +289,10 @@ python3 -c "from src.services.archive_extractor import ArchiveExtractor; \
 find /mnt/raid0/llm/claude -name ".pytest_cache" -type d -exec rm -rf {} +
 ```
 
-### Health Check
+</details>
+
+<details>
+<summary>Code: health checks</summary>
 
 ```bash
 # Check root FS usage
@@ -260,12 +308,18 @@ free -h
 # Should have > 100GB available
 ```
 
-## References
+</details>
+</details>
+
+<details>
+<summary>References</summary>
 
 - `docs/deprecated/RECOVERY_ACTION_PLAN.md` - Full incident analysis
 - `research/ESCALATION_FLOW.md` - HOT/WARM/COLD memory architecture
 - `tests/conftest.py` - Memory guard implementation
 - `src/api.py` - Lazy MemRL loading
+
+</details>
 
 ---
 
