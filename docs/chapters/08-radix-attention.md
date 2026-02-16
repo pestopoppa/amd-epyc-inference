@@ -10,7 +10,10 @@ RadixAttention is a prefix caching optimization adapted from SGLang for CPU infe
 
 ## The Problem
 
-Consider an orchestrator flow:
+The orchestrator dispatches multiple steps that all share the same system prompt and task context. Without prefix caching, a 4K token shared prefix processed 10 times wastes 36K tokens of redundant computation. That's pure overhead we can eliminate.
+
+<details>
+<summary>Problem illustration and solution</summary>
 
 ```
 TaskIR → Dispatcher → [System prompt + Task context + Step 1]
@@ -18,9 +21,9 @@ TaskIR → Dispatcher → [System prompt + Task context + Step 1]
                    → [System prompt + Task context + Step 3]
 ```
 
-Each step shares "System prompt + Task context" but processes it fresh. For a 4K token shared prefix processed 10 times, we waste 36K tokens of redundant computation.
+Each step shares "System prompt + Task context" but processes it fresh.
 
-## The Solution
+### The Solution
 
 Cache KV states for common prefixes:
 
@@ -30,9 +33,14 @@ Second call: [Cache lookup: hit!] → [Step 2]
 Third call:  [Cache lookup: hit!] → [Step 3]
 ```
 
+</details>
+
 ## Implementation Architecture
 
-### Components
+Three components work together: `LlamaServerBackend` manages server connections and slot allocation, `PrefixRouter` decides which cached slot to route each prompt to, and `RadixCache` provides efficient longest-prefix matching via a radix tree data structure.
+
+<details>
+<summary>Components and key classes</summary>
 
 | File | Purpose | Lines |
 |------|---------|-------|
@@ -40,17 +48,23 @@ Third call:  [Cache lookup: hit!] → [Step 3]
 | `src/prefix_cache.py` | PrefixRouter, canonicalize_prompt | 584 |
 | `src/radix_cache.py` | Radix tree for prefix matching | 482 |
 
-### Key Classes
-
 **LlamaServerBackend**: Manages connection to llama-server, handles slot allocation and cache operations.
 
 **PrefixRouter**: Routes prompts to appropriate cached slots, decides when to cache vs fresh compute.
 
 **RadixCache**: Radix tree data structure for efficient longest-prefix matching.
 
+</details>
+
 ## llama-server Caching API
 
-llama-server already supports slot-based KV caching:
+llama-server already supports slot-based KV caching natively. Our middleware sits on top, routing prompts to slots that already have matching cached prefixes. Prompts are canonicalized first (whitespace normalized, ephemeral content stripped) so semantically equivalent prompts match even with superficial differences.
+
+<details>
+<summary>API usage and canonicalization</summary>
+
+<details>
+<summary>Code: slot-based caching API</summary>
 
 ```bash
 # Completion with caching enabled
@@ -70,9 +84,9 @@ curl -X POST "http://localhost:8080/slots/0?action=restore" \
   -d '{"filename": "/tmp/slot0.bin"}'
 ```
 
-Our middleware routes prompts to slots with matching cached prefixes.
+</details>
 
-## Canonicalization
+### Canonicalization
 
 Before prefix matching, prompts are canonicalized:
 - Normalize whitespace
@@ -81,7 +95,17 @@ Before prefix matching, prompts are canonicalized:
 
 This ensures semantically equivalent prompts match even with superficial differences.
 
+</details>
+
 ## Configuration
+
+The prefix cache is configured in `model_registry.yaml`. The minimum prefix length was increased from 256 to 4096 tokens in February 2026 — most orchestrator role prompts span 1000-5000 tokens, so the higher threshold ensures multi-turn system context also qualifies for caching.
+
+<details>
+<summary>Configuration and prefix stability</summary>
+
+<details>
+<summary>Config: model registry YAML</summary>
 
 ```yaml
 # In model_registry.yaml
@@ -92,15 +116,22 @@ prefix_cache:
   cache_dir: /mnt/raid0/llm/cache/prefix
 ```
 
+</details>
+
 ### Prefix Length Expansion (February 2026)
 
-`prefix_length` increased from 256 to 4096 in `model_registry.yaml`. The original 256-token threshold was conservative -- most orchestrator role prompts span 1000-5000 tokens, meaning the cache was already capturing them, but the longer threshold ensures multi-turn system context also qualifies.
+All role prompts were audited for prefix stability: each places static system instructions first and variable content (task description, user query) last. This layout maximizes cache hit rates because the shared prefix is a contiguous block at the start of the prompt. Two of 11 prompts that mixed static and variable content were restructured.
 
-All role prompts were audited for prefix stability: each places static system instructions first and variable content (task description, user query) last. This layout maximizes RadixAttention cache hit rates because the shared prefix is a contiguous block at the start of the prompt. Prompts that mixed static and variable content (2 of 11) were restructured.
+This parallels Claude's prompt caching prefix stability requirements, where Anthropic recommends placing static content at the beginning of the prompt so that the cacheable prefix is as long as possible.
 
-This parallels Claude's prompt caching prefix stability requirements, where Anthropic recommends placing static content at the beginning of the prompt so that the cacheable prefix is as long as possible. The same principle applies here: a stable 4K prefix cached across 10 sub-calls saves ~36K tokens of redundant prefill computation.
+</details>
 
 ## Performance Targets
+
+The system is designed for >50% cache hit rate on RLM workloads, translating to a 40-60% reduction in prefill time with <5% memory overhead from the radix tree.
+
+<details>
+<summary>Target metrics and integration</summary>
 
 | Metric | Target | Rationale |
 |--------|--------|-----------|
@@ -108,9 +139,8 @@ This parallels Claude's prompt caching prefix stability requirements, where Anth
 | Prefill speedup | 40-60% | Skipping cached prefix computation |
 | Memory overhead | <5% | Radix tree is memory-efficient |
 
-## Integration with Orchestrator
-
-The prefix cache integrates with `llm_batch()`:
+<details>
+<summary>Code: integration with llm_batch()</summary>
 
 ```python
 async def llm_batch(prompts: List[str], model: str) -> List[str]:
@@ -131,27 +161,37 @@ async def llm_batch(prompts: List[str], model: str) -> List[str]:
     return results
 ```
 
+</details>
+</details>
+
 ## Test Coverage
 
-All 46 unit tests passing:
-- Radix tree operations (insert, lookup, delete)
-- Canonicalization edge cases
-- Slot routing logic
-- Cache persistence (save/restore)
+All 46 unit tests passing, covering radix tree operations, canonicalization edge cases, slot routing logic, and cache persistence.
+
+<details>
+<summary>Test details and next steps</summary>
+
+<details>
+<summary>Code: running prefix cache tests</summary>
 
 ```bash
 python -m pytest tests/unit/test_prefix_cache.py -v
 # 46/46 passed
 ```
 
-## Next Steps
+</details>
+
+### Next Steps
 
 1. Integration testing with live llama-server
 2. Benchmark cache hit rates on real orchestrator workloads
 3. Tune prefix_length threshold based on measurements
 4. Add cache eviction policy for memory management
 
-## References
+</details>
+
+<details>
+<summary>References</summary>
 
 ### RadixAttention and Prefix Caching
 
@@ -184,6 +224,8 @@ python -m pytest tests/unit/test_prefix_cache.py -v
 10. llama.cpp Contributors. (2024). *llama-server: Slot Management and KV Cache Persistence*. GitHub Documentation. https://github.com/ggml-org/llama.cpp/tree/master/examples/server
 
 11. SGLang Team. (2024). *SGLang: A Structured Generation Language*. GitHub Repository. https://github.com/sgl-project/sglang
+
+</details>
 
 ---
 
