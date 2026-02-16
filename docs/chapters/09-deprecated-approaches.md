@@ -6,9 +6,10 @@ Not all optimization attempts succeed. This chapter documents approaches we test
 
 ## Track 3: EAGLE-1 (Self-Speculative)
 
-### What It Is
+EAGLE-1 uses a trained autoregression head to predict future tokens from hidden states, enabling self-speculative decoding without a separate draft model. We tried it because it eliminates the need for a compatible draft model and published results showed 2-3x speedups. It produced a **0% acceptance rate** — EAGLE checkpoints are trained on specific model versions, and GGUF quantization breaks that compatibility completely.
 
-EAGLE-1 uses a trained autoregression head to predict future tokens from hidden states, enabling self-speculative decoding without a separate draft model.
+<details>
+<summary>Details and attempted fixes</summary>
 
 ### Why We Tried It
 
@@ -33,13 +34,16 @@ None worked. EAGLE requires exact checkpoint compatibility that GGUF conversion 
 
 Self-speculative methods requiring trained components are fragile to quantization and format changes. Prefer methods that work with any model.
 
+</details>
+
 ---
 
 ## Track 7: CAS-Spec (Layer Skipping)
 
-### What It Is
+Cascade Speculative Drafting generates draft tokens by skipping early layers, using the remaining layers as a cheaper "draft model" within the same network. The idea is elegant — same weights, different depth. In practice: **0.446% acceptance rate**. Without trained exit classifiers, layer-skipped outputs diverge too far from the full model's predictions.
 
-Cascade Speculative Drafting (CAS-Spec) generates draft tokens by skipping early layers, then verifies with full model. The idea: early layers "draft," late layers "verify."
+<details>
+<summary>Details and analysis</summary>
 
 ### Why We Tried It
 
@@ -64,27 +68,17 @@ Our GGUF models lack the necessary trained components.
 
 Layer-skipping methods need trained classifiers. Raw layer output without proper exit prediction is useless for speculation.
 
+</details>
+
 ---
 
 ## Track 5: SSM Speculation
 
-### What It Is
+We tried applying speculative decoding and prompt lookup to SSM-hybrid models (Qwen3-Next series). The result was corrupted output and invalid model state. SSM architectures maintain recurrent state that can't be rolled back like KV cache — when draft tokens are rejected, the state is permanently broken.
 
-Applying speculative decoding or prompt lookup to SSM-hybrid models (Qwen3-Next series).
+<details>
+<summary>Technical details and state rollback illustration</summary>
 
-### Why We Tried It
-
-- SSM models are fast and efficient
-- Speculation provides 5-11x speedup on dense models
-- Natural extension to test
-
-### What Happened
-
-**Result**: Corrupted output, model state invalid
-
-**Root Cause**: SSM architectures maintain recurrent state across tokens. When draft tokens are rejected, the KV cache can be rolled back, but recurrent state cannot. The state becomes permanently corrupted.
-
-**Technical Detail**:
 ```
 Dense model rollback:
   Token 1 → KV[1] → Token 2 → KV[2] → Reject Token 2 → Restore KV[1] ✅
@@ -94,57 +88,36 @@ SSM model rollback:
   → Reject Token 2 → Restore KV[1] but State still = State[2] ❌
 ```
 
-### Lesson Learned
+**Lesson Learned**: **NEVER use speculation with SSM models.** This is a fundamental architectural incompatibility. Use expert reduction (Track 2) only.
 
-**NEVER use speculation with SSM models.** This is a fundamental architectural incompatibility. Use expert reduction (Track 2) only.
+</details>
 
 ---
 
 ## Track 4: Medusa
 
-### What It Is
-
-Medusa adds multiple parallel prediction heads to the model, each predicting a different future token position.
-
-### Why We Skipped It
-
-- Requires training heads per model
-- Training data and compute significant
-- Heads don't transfer between model versions
-
-### Alternative
-
-External draft models (Track 1) achieve similar speedups without per-model training.
+Medusa adds multiple parallel prediction heads to the model, each predicting a different future token position. We skipped it — requires training heads per model, training data and compute are significant, and heads don't transfer between model versions. External draft models (Track 1) achieve similar speedups without per-model training.
 
 ---
 
 ## Track 9: CLaSp/SWIFT
 
-### What It Is
-
-Similar to CAS-Spec - uses layer outputs for self-drafting with trained classifiers.
-
-### Why We Skipped It
-
-Same fundamental issue as CAS-Spec: requires trained exit classifiers we don't have.
+Similar to CAS-Spec — uses layer outputs for self-drafting with trained classifiers. Same fundamental issue: requires trained exit classifiers we don't have.
 
 ---
 
 ## Track 10: Kangaroo
 
-### What It Is
-
-Trains a small adapter network that predicts when the draft model will be accepted.
-
-### Why We Skipped It
-
-- Requires adapter training per model pair
-- Training overhead doesn't justify marginal gains over baseline Track 1
-- Another component to maintain and update
+Trains a small adapter network that predicts when the draft model will be accepted. Skipped — requires adapter training per model pair, overhead doesn't justify marginal gains over baseline Track 1, and adds another component to maintain.
 
 ---
 
 ## Summary: What Works vs What Doesn't
+
+The pattern is clear: methods that work use separate, complete models or exploit structural properties (MoE sparsity, n-gram overlap) with no per-model training. Methods that fail require trained components we don't have, assume checkpoint compatibility that GGUF breaks, or can't handle state rollback.
+
+<details>
+<summary>Full comparison tables</summary>
 
 ### Works (Production)
 
@@ -165,19 +138,10 @@ Trains a small adapter network that predicts when the draft model will be accept
 | 9 | CLaSp/SWIFT | Same as CAS-Spec | Use Track 1 |
 | 10 | Kangaroo | Requires adapter training | Use Track 1 |
 
-## Pattern Recognition
+</details>
 
-**Methods that work**:
-- Use separate, complete models (Track 1)
-- Exploit structural properties (MoE, n-gram overlap)
-- Require no per-model training
-
-**Methods that fail**:
-- Require trained components we don't have
-- Assume checkpoint/architecture compatibility that GGUF breaks
-- Can't handle rollback (SSM)
-
-## References
+<details>
+<summary>References</summary>
 
 ### EAGLE Series
 
@@ -222,6 +186,8 @@ Trains a small adapter network that predicts when the draft model will be accept
 ### Curated Literature
 
 15. Zhang, H., et al. (2024). *SpeculativeDecodingPapers: A Curated List of Speculative Decoding Research*. GitHub Repository. https://github.com/hemingkx/SpeculativeDecodingPapers
+
+</details>
 
 ---
 
