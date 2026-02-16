@@ -18,3 +18,9 @@ TOOL_OUTPUT_MATCH_LEN = 200
 # -- Delegation Brief Cache Key ------------------------------------------------
 # Characters of the delegation brief used as a cache/dedup key.
 DELEGATION_BRIEF_KEY_LEN = 200
+
+# -- Delegation Loop Guards ----------------------------------------------------
+# Max cumulative tokens across all delegation loops before forcing synthesis.
+DELEGATION_MAX_TOTAL_TOKENS = 20_000
+# Max times the same delegate target can be used before forcing synthesis.
+DELEGATION_MAX_SAME_TARGET = 2

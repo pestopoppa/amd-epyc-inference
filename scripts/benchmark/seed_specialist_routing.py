@@ -926,15 +926,70 @@ Examples (legacy mode - DEPRECATED):
                         f"threshold={args.debug_threshold})")
 
     # ── SkillBank OutcomeTracker setup ──
-    import os as _os
     _outcome_tracker = None
-    if _os.environ.get("ORCHESTRATOR_SKILLBANK") == "1":
+    if args.evolve:
         try:
             from orchestration.repl_memory.skill_evolution import OutcomeTracker
             _outcome_tracker = OutcomeTracker()
-            logger.info("[SKILLBANK] OutcomeTracker enabled")
-        except ImportError:
-            pass
+            logger.info("[SKILLBANK] OutcomeTracker enabled for --evolve")
+        except Exception as _ot_err:
+            logger.error("[SKILLBANK] OutcomeTracker init failed: %s", _ot_err)
+            logger.error("[SKILLBANK] --evolve requires OutcomeTracker. Fix the error above.")
+
+    # Interval (batches) between periodic evolve/replay runs in continuous mode
+    _POST_BATCH_HOOK_INTERVAL = 10
+
+    def _run_post_batch_hooks(batch_num: int) -> None:
+        """Run --evolve and --debug-replay hooks periodically during continuous mode."""
+        if batch_num % _POST_BATCH_HOOK_INTERVAL != 0:
+            return
+
+        if args.debug_replay:
+            try:
+                from orchestration.repl_memory.replay.trajectory import TrajectoryExtractor
+                from orchestration.repl_memory.replay.engine import ReplayEngine
+                from orchestration.repl_memory.retriever import RetrievalConfig
+                from orchestration.repl_memory.q_scorer import ScoringConfig
+                from orchestration.repl_memory.progress_logger import ProgressReader
+
+                logger.info("[REPLAY] Periodic replay evaluation (batch %d)...", batch_num)
+                reader = ProgressReader()
+                extractor = TrajectoryExtractor(reader)
+                trajectories = extractor.extract_complete(days=14, max_trajectories=1000)
+                if trajectories:
+                    engine = ReplayEngine()
+                    metrics = engine.run_with_metrics(
+                        RetrievalConfig(), ScoringConfig(), trajectories,
+                        f"periodic_batch_{batch_num}",
+                    )
+                    logger.info(
+                        "[REPLAY] batch=%d trajectories=%d accuracy=%.1f%% avg_reward=%.3f",
+                        batch_num, metrics.num_trajectories,
+                        metrics.routing_accuracy * 100, metrics.avg_reward,
+                    )
+                else:
+                    logger.info("[REPLAY] No complete trajectories found.")
+            except Exception as e:
+                logger.warning("[REPLAY] Periodic replay failed (non-fatal): %s", e)
+
+        if args.evolve and _outcome_tracker is not None:
+            try:
+                from orchestration.repl_memory.skill_evolution import EvolutionMonitor
+                from orchestration.repl_memory.skill_bank import SkillBank
+
+                skill_db = Path("orchestration/repl_memory/sessions/skills.db")
+                if skill_db.exists():
+                    sb = SkillBank(db_path=skill_db)
+                    monitor = EvolutionMonitor(sb)
+                    report = monitor.run_evolution_cycle(outcome_tracker=_outcome_tracker)
+                    logger.info(
+                        "[EVOLVE] batch=%d evaluated=%d promoted=%d decayed=%d deprecated=%d",
+                        batch_num, report.skills_evaluated, report.skills_promoted,
+                        report.skills_decayed, report.skills_deprecated,
+                    )
+                    sb.close()
+            except Exception as e:
+                logger.warning("[EVOLVE] Periodic evolution failed (non-fatal): %s", e)
 
     # ── Phase 4: 3-Way Routing Mode ──
     if args.three_way:
@@ -1000,6 +1055,9 @@ Examples (legacy mode - DEPRECATED):
                             outcome_tracker=_outcome_tracker,
                         )
                         all_results.extend(results)
+
+                        # Run evolve/replay hooks periodically
+                        _run_post_batch_hooks(batch)
 
                         if not results:
                             logger.info("No unseen questions. Waiting 60s...")
@@ -1100,6 +1158,10 @@ Examples (legacy mode - DEPRECATED):
                 logger.warning(f"[REPLAY] Replay evaluation failed (non-fatal): {e}")
 
         # End-of-run skill evolution (if --evolve enabled)
+        if args.evolve:
+            if _outcome_tracker is None:
+                logger.error("[EVOLVE] --evolve passed but OutcomeTracker is None! "
+                             "Evolution skipped. Check init errors above.")
         if args.evolve and _outcome_tracker is not None:
             try:
                 from orchestration.repl_memory.skill_evolution import EvolutionMonitor

@@ -49,8 +49,8 @@ def build_diagnostic(
     grammar_enforced: bool = False,
     parallel_tools_used: bool = False,
     cache_affinity_bonus: float = 0.0,
-    # SkillBank retrieval data
-    skills_retrieved: int = 0,
+    # SkillBank retrieval data (None = SkillBank not loaded, 0 = loaded but no hits)
+    skills_retrieved: int | None = None,
     skill_types: list[str] | None = None,
     skill_context_tokens: int = 0,
 ) -> dict[str, Any]:
@@ -68,8 +68,8 @@ def build_diagnostic(
         role_history=role_history,
         tools_used=tools_used,
         delegation_events=delegation_events,
-        skills_retrieved=skills_retrieved,
-        skill_coverage=(skills_retrieved is not None and skills_retrieved >= 0),
+        skills_retrieved=skills_retrieved if skills_retrieved is not None else 0,
+        skill_coverage=(skills_retrieved is not None),
         passed=passed,
     )
     score = anomaly_score(signals)
@@ -113,7 +113,7 @@ def build_diagnostic(
             "skills_retrieved": skills_retrieved,
             "skill_types": skill_types or [],
             "skill_context_tokens": skill_context_tokens,
-        } if skills_retrieved > 0 else {},
+        } if skills_retrieved else {},
     }
 
 

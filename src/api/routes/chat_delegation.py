@@ -14,7 +14,14 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
-from src.constants import DELEGATION_BRIEF_KEY_LEN
+import hashlib as _hashlib
+import threading
+
+from src.constants import (
+    DELEGATION_BRIEF_KEY_LEN,
+    DELEGATION_MAX_SAME_TARGET,
+    DELEGATION_MAX_TOTAL_TOKENS,
+)
 from src.exceptions import InferenceError
 from src.repl_environment import REPLEnvironment
 
@@ -34,6 +41,14 @@ _VALID_DELEGATE_ROLES = frozenset(
         "worker_math",
     }
 )
+
+# Thread-local delegation depth counter to detect re-entrance
+# (specialist escalating back to architect_coding starts a fresh loop counter)
+_delegation_local = threading.local()
+
+
+def _get_delegation_depth() -> int:
+    return getattr(_delegation_local, "depth", 0)
 
 
 def _strip_think(text: str) -> str:
@@ -575,6 +590,7 @@ def _run_specialist_loop(
         extract_code_from_response,
         auto_wrap_final,
     )
+    from src.prompt_builders.builder import build_corpus_context
     import hashlib
 
     tools_called: list[str] = []
@@ -603,6 +619,9 @@ def _run_specialist_loop(
             f"{question}\n\n"
             f"## Architect guidance\n{brief}"
         )
+        # Retrieve corpus context once for the delegation (turn 0 only)
+        corpus_ctx = build_corpus_context(role=delegate_to, task_description=question)
+
         for _turn in range(max_delegate_turns):
             repl_state = deleg_repl.get_state()
             deleg_prompt = build_root_lm_prompt(
@@ -611,6 +630,7 @@ def _run_specialist_loop(
                 last_output=deleg_last_output,
                 last_error=deleg_last_error,
                 turn=_turn,
+                corpus_context=corpus_ctx if _turn == 0 else "",
             )
             _final_re = re.compile(
                 r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
@@ -727,11 +747,6 @@ def _architect_delegated_answer(
     Returns:
         Tuple of (answer_text, stats_dict).
     """
-    from src.prompt_builders import (
-        build_architect_investigate_prompt,
-        build_architect_synthesis_prompt,
-    )
-
     total_tools = 0
     all_tools_called: list[str] = []
     stats: dict = {
@@ -757,7 +772,55 @@ def _architect_delegated_answer(
 
     tool_registry = getattr(state, "tool_registry", None)
     reports: list[str] = []
-    previous_briefs: list[str] = []  # Track briefs to detect zero-progress loops
+    previous_brief_keys: set[str] = set()  # Semantic dedup: hash(brief + delegate_to)
+    delegate_history: list[str] = []  # Track delegation targets for repetition guard
+
+    # Re-entrance guard: if specialist escalates back to architect, reduce max_loops
+    depth = _get_delegation_depth()
+    if depth > 0:
+        effective_max_loops = min(max_loops, 1)
+        log.warning(
+            "Re-entrant delegation detected (depth=%d), reducing max_loops %d -> %d",
+            depth, max_loops, effective_max_loops,
+        )
+    else:
+        effective_max_loops = max_loops
+
+    _delegation_local.depth = depth + 1
+    try:
+        return _architect_delegated_answer_inner(
+            question, context, primitives, state, architect_role,
+            effective_max_loops, force_response_on_cap, toon_context,
+            tool_registry, reports, previous_brief_keys, delegate_history,
+            total_tools, all_tools_called, stats,
+        )
+    finally:
+        _delegation_local.depth = depth
+
+
+def _architect_delegated_answer_inner(
+    question: str,
+    context: str,
+    primitives: "LLMPrimitives",
+    state: "Any",
+    architect_role: str,
+    max_loops: int,
+    force_response_on_cap: bool,
+    toon_context: str,
+    tool_registry: "Any | None",
+    reports: list[str],
+    previous_brief_keys: set[str],
+    delegate_history: list[str],
+    total_tools: int,
+    all_tools_called: list[str],
+    stats: dict,
+) -> tuple[str, dict]:
+    """Inner loop extracted to keep try/finally clean in the outer function."""
+    from src.prompt_builders import (
+        build_architect_investigate_prompt,
+        build_architect_synthesis_prompt,
+    )
+    cumulative_delegate_tokens = 0
 
     for loop in range(max_loops + 1):  # +1 for initial decision
         phase_start = time.perf_counter()
@@ -829,13 +892,40 @@ def _architect_delegated_answer(
         delegate_to = decision["delegate_to"]
         delegate_mode = decision["delegate_mode"]
 
-        # Zero-progress guard: if the architect re-delegates with the same
-        # brief, it's looping without making progress.  Break immediately.
-        brief_key = brief.strip().lower()[:DELEGATION_BRIEF_KEY_LEN]
-        if brief_key in previous_briefs:
-            log.warning("Architect re-delegated with duplicate brief (loop %d), breaking zero-progress loop", loop)
+        # ── Loop guard 1: Semantic dedup ──
+        # Hash brief + delegate_to as combined key. Architect rephrasing
+        # the same brief to a different target still gets caught because
+        # we also check target repetition separately (guard 3).
+        brief_key = _hashlib.md5(
+            f"{brief.strip().lower()[:DELEGATION_BRIEF_KEY_LEN]}|{delegate_to}".encode()
+        ).hexdigest()
+        if brief_key in previous_brief_keys:
+            log.warning(
+                "Semantic dedup: duplicate brief+target (loop %d, target=%s), forcing synthesis",
+                loop, delegate_to,
+            )
             break
-        previous_briefs.append(brief_key)
+        previous_brief_keys.add(brief_key)
+
+        # ── Loop guard 2: Max cumulative tokens ──
+        if cumulative_delegate_tokens > DELEGATION_MAX_TOTAL_TOKENS:
+            log.warning(
+                "Token budget exceeded: %d > %d tokens across delegation loops, forcing synthesis",
+                cumulative_delegate_tokens, DELEGATION_MAX_TOTAL_TOKENS,
+            )
+            break
+
+        # ── Loop guard 3: Role repetition ──
+        # If architect delegates to the same role N consecutive times, force synthesis.
+        delegate_history.append(delegate_to)
+        if len(delegate_history) >= DELEGATION_MAX_SAME_TARGET:
+            recent = delegate_history[-DELEGATION_MAX_SAME_TARGET:]
+            if all(r == delegate_to for r in recent):
+                log.warning(
+                    "Role repetition guard: %s delegated %d consecutive times, forcing synthesis",
+                    delegate_to, DELEGATION_MAX_SAME_TARGET,
+                )
+                break
 
         log.info(f"Delegating to {delegate_to} (mode={delegate_mode}): {brief[:100]}...")
 
@@ -850,6 +940,7 @@ def _architect_delegated_answer(
 
         phase_b_ms = (time.perf_counter() - phase_b_start) * 1000
         delegate_tokens = primitives.total_tokens_generated - tokens_before
+        cumulative_delegate_tokens += delegate_tokens
         reports.append(report)
         stats["specialist_output"] = report
         stats["phases"].append(

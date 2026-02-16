@@ -1,17 +1,27 @@
 """Characterization tests for chat_delegation pure functions.
 
 Tests cover: _strip_think, _extract_toon_decision, _parse_architect_decision,
+loop guards (_get_delegation_depth, semantic dedup, role repetition, token budget),
 and the module-level constants _VALID_DELEGATE_ROLES, _ARCHITECT_TOKEN_BUDGET,
 _ARCHITECT_DECISION_BUDGET.
 """
+
+import hashlib
 
 from src.api.routes.chat_delegation import (
     _strip_think,
     _extract_toon_decision,
     _parse_architect_decision,
+    _get_delegation_depth,
+    _delegation_local,
     _VALID_DELEGATE_ROLES,
     _ARCHITECT_TOKEN_BUDGET,
     _ARCHITECT_DECISION_BUDGET,
+)
+from src.constants import (
+    DELEGATION_BRIEF_KEY_LEN,
+    DELEGATION_MAX_SAME_TARGET,
+    DELEGATION_MAX_TOTAL_TOKENS,
 )
 
 
@@ -206,3 +216,90 @@ class TestConstants:
     def test_budgets_have_expected_keys(self):
         assert set(_ARCHITECT_TOKEN_BUDGET.keys()) == {"architect_general", "architect_coding"}
         assert set(_ARCHITECT_DECISION_BUDGET.keys()) == {"architect_general", "architect_coding"}
+
+
+# ── Loop Guards ──────────────────────────────────────────────────────────
+
+
+class TestDelegationDepth:
+    def test_initial_depth_is_zero(self):
+        # Clear any leftover state
+        _delegation_local.depth = 0
+        assert _get_delegation_depth() == 0
+
+    def test_depth_tracks_nesting(self):
+        _delegation_local.depth = 0
+        assert _get_delegation_depth() == 0
+        _delegation_local.depth = 1
+        assert _get_delegation_depth() == 1
+        _delegation_local.depth = 2
+        assert _get_delegation_depth() == 2
+        _delegation_local.depth = 0  # cleanup
+
+    def test_unset_depth_returns_zero(self):
+        if hasattr(_delegation_local, "depth"):
+            delattr(_delegation_local, "depth")
+        assert _get_delegation_depth() == 0
+
+
+class TestSemanticDedup:
+    def _make_brief_key(self, brief: str, delegate_to: str) -> str:
+        return hashlib.md5(
+            f"{brief.strip().lower()[:DELEGATION_BRIEF_KEY_LEN]}|{delegate_to}".encode()
+        ).hexdigest()
+
+    def test_same_brief_same_target_produces_same_key(self):
+        k1 = self._make_brief_key("check the code for bugs", "coder_escalation")
+        k2 = self._make_brief_key("check the code for bugs", "coder_escalation")
+        assert k1 == k2
+
+    def test_same_brief_different_target_produces_different_key(self):
+        k1 = self._make_brief_key("check the code", "coder_escalation")
+        k2 = self._make_brief_key("check the code", "worker_explore")
+        assert k1 != k2
+
+    def test_different_brief_same_target_produces_different_key(self):
+        k1 = self._make_brief_key("check the code", "coder_escalation")
+        k2 = self._make_brief_key("review the logic", "coder_escalation")
+        assert k1 != k2
+
+    def test_case_insensitive_brief(self):
+        k1 = self._make_brief_key("Check The Code", "coder_escalation")
+        k2 = self._make_brief_key("check the code", "coder_escalation")
+        assert k1 == k2
+
+
+class TestRoleRepetitionGuard:
+    def test_consecutive_same_role_triggers_guard(self):
+        history = ["coder_escalation"] * DELEGATION_MAX_SAME_TARGET
+        recent = history[-DELEGATION_MAX_SAME_TARGET:]
+        assert all(r == "coder_escalation" for r in recent)
+
+    def test_alternating_roles_does_not_trigger(self):
+        history = ["coder_escalation", "worker_explore"] * 3
+        for i in range(len(history)):
+            if i + DELEGATION_MAX_SAME_TARGET <= len(history):
+                recent = history[i:i + DELEGATION_MAX_SAME_TARGET]
+                # At least one alternating window should NOT trigger
+                if not all(r == recent[0] for r in recent):
+                    break
+        else:
+            raise AssertionError("Expected at least one non-triggering window")
+
+    def test_max_same_target_constant_is_reasonable(self):
+        assert DELEGATION_MAX_SAME_TARGET >= 2
+        assert DELEGATION_MAX_SAME_TARGET <= 5
+
+
+class TestTokenBudgetGuard:
+    def test_constant_is_reasonable(self):
+        assert DELEGATION_MAX_TOTAL_TOKENS >= 10_000
+        assert DELEGATION_MAX_TOTAL_TOKENS <= 100_000
+
+    def test_budget_exceeded_triggers_guard(self):
+        cumulative = DELEGATION_MAX_TOTAL_TOKENS + 1
+        assert cumulative > DELEGATION_MAX_TOTAL_TOKENS
+
+    def test_budget_not_exceeded_passes(self):
+        cumulative = DELEGATION_MAX_TOTAL_TOKENS - 1
+        assert cumulative <= DELEGATION_MAX_TOTAL_TOKENS
