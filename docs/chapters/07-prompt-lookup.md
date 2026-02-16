@@ -6,7 +6,10 @@ Prompt Lookup is our highest-performing technique for grounded tasks, achieving 
 
 ## How It Works
 
-When the model generates a token, the system searches for matching n-grams in the input prompt:
+When the model generates a token, the system checks whether the next few tokens already appear in the input prompt. For tasks like summarization, code editing, and document QA, the output frequently quotes the input verbatim — prompt lookup exploits this for essentially free speedup since no draft model is needed.
+
+<details>
+<summary>Mechanism and example</summary>
 
 ```
 Input: "The quick brown fox jumps over the lazy dog. Summarize:"
@@ -17,7 +20,14 @@ Generated: "The quick brown"
 
 **Key Insight**: Summarization, code editing, and QA tasks frequently generate text that appears verbatim in the input. Prompt lookup exploits this for free speedup (no draft model needed).
 
+</details>
+
 ## Best Results
+
+The speedups range from transformative (12.7x for summarization) to negligible (1x for novel generation). The pattern is clear: the more the output overlaps with the input, the bigger the win. Pure generation tasks with no source material see almost no benefit — unless you use corpus augmentation (see below).
+
+<details>
+<summary>Speed measurements by task type</summary>
 
 | Task Type | Model | Baseline | With Lookup | Speedup |
 |-----------|-------|----------|-------------|---------|
@@ -27,9 +37,10 @@ Generated: "The quick brown"
 | Code generation | Any | - | - | 1.0-1.2x |
 | Code generation (w/ corpus) | Coder-family | - | - | 1.06-1.17x |
 
-**Key Finding**: Prompt lookup only helps when output overlaps with input. Pure generation tasks see minimal benefit without corpus augmentation. With corpus-augmented prompt stuffing (see below), Coder-family models gain 6-17% on novel generation.
+</details>
 
-## When to Use
+<details>
+<summary>When to use prompt lookup</summary>
 
 | Task Type | Expected Speedup | Reasoning |
 |-----------|------------------|-----------|
@@ -40,11 +51,14 @@ Generated: "The quick brown"
 | Code generation | ~1x | Novel output, no overlap |
 | Creative writing | ~1x | Novel output, no overlap |
 
+</details>
+
 ## Configuration
 
-### Minimum N-gram Size
+The minimum n-gram size controls how aggressively the system matches. Lower values (3) catch more matches but risk false positives; higher values (5+) are more conservative. Start with 3 for grounded tasks.
 
-The `--lookup-ngram-min` flag controls how many consecutive tokens must match:
+<details>
+<summary>N-gram size tuning</summary>
 
 | Setting | Behavior | Best For |
 |---------|----------|----------|
@@ -52,9 +66,8 @@ The `--lookup-ngram-min` flag controls how many consecutive tokens must match:
 | `4` | Balanced | General use |
 | `5+` | Conservative | Reduce false matches |
 
-**Recommendation**: Start with `--lookup-ngram-min 3` for grounded tasks.
-
-## Quick Start Command
+<details>
+<summary>Code: quick start command</summary>
 
 ```bash
 # For summarization/QA tasks with source material
@@ -65,9 +78,15 @@ numactl --interleave=all \
   -t 96 -f prompt_with_source_material.txt
 ```
 
+</details>
+</details>
+
 ## Combining with Other Techniques
 
-Prompt lookup stacks with both MoE reduction and speculative decoding via llama-server's `--lookup` flag:
+Prompt lookup stacks beautifully with both MoE reduction and speculative decoding. In llama-server, spec decode takes priority — the draft model proposes tokens first, and prompt lookup fills gaps when the draft model has low confidence. The best combined result is 47.11 t/s on Qwen3-Coder-30B.
+
+<details>
+<summary>Compatibility and combination stack</summary>
 
 | Combination | Compatible | Result |
 |-------------|------------|--------|
@@ -75,9 +94,9 @@ Prompt lookup stacks with both MoE reduction and speculative decoding via llama-
 | Lookup + Speculative | ✅ Yes | **39.44 t/s** on Qwen2.5-Coder-32B (spec-first, lookup fallback) |
 | Lookup + SSM | ❌ No | SSM state corruption (consecutive position requirement) |
 
-llama-server uses **spec-first priority**: draft model proposes tokens first, prompt lookup fills gaps when the draft model has low confidence. The `--lookup` CLI flag enables this per-slot ngram cache.
+<details>
+<summary>Code: optimal draft token selection stack</summary>
 
-**Optimal Stack**:
 ```python
 def get_draft_tokens(context, prompt):
     # Layer 1: Draft model (higher acceptance on novel tokens)
@@ -93,16 +112,21 @@ def get_draft_tokens(context, prompt):
     return drafts  # Fall through to draft regardless
 ```
 
+</details>
+</details>
+
 ## SSM Warning
 
-**CRITICAL**: Do not use prompt lookup with Qwen3-Next (SSM) models.
-
-The SSM architecture requires consecutive token positions. Draft token rejection corrupts the recurrent state. See [Chapter 06: MoE Optimization](06-moe-optimization.md) for SSM-safe alternatives.
+**CRITICAL**: Do not use prompt lookup with Qwen3-Next (SSM) models. The SSM architecture requires consecutive token positions — draft token rejection corrupts the recurrent state. See [Chapter 06: MoE Optimization](06-moe-optimization.md) for SSM-safe alternatives.
 
 ## Implementation Notes
 
-Prompt lookup is implemented in llama.cpp and requires no additional models or training. It works by:
+Prompt lookup requires no additional models or training. It's pure algorithmic optimization built into llama.cpp — an n-gram index of the input prompt, sub-millisecond matching, and standard verification against the main model.
 
+<details>
+<summary>Implementation details and measurement</summary>
+
+How it works internally:
 1. Building an n-gram index of the input prompt at inference start
 2. After each generated token, searching for matching n-grams
 3. If match found, proposing those tokens as drafts
@@ -110,9 +134,8 @@ Prompt lookup is implemented in llama.cpp and requires no additional models or t
 
 The overhead is minimal - index building is O(n) in prompt length.
 
-## Measuring Effectiveness
-
-To determine if prompt lookup helps your task:
+<details>
+<summary>Code: measuring effectiveness</summary>
 
 ```bash
 # Run with and without lookup, compare speeds
@@ -123,13 +146,18 @@ llama-cli -m MODEL.gguf --lookup-ngram-min 3 -f task.txt -n 500
 llama-cli -m MODEL.gguf -f task.txt -n 500
 ```
 
+</details>
+
 If speedup is <1.3x, prompt lookup isn't worth enabling for that task type.
+
+</details>
 
 ## Corpus-Augmented Prompt Lookup (Phase 2A)
 
-Standard prompt lookup only matches against the user's input prompt. For novel code generation, there's nothing to match against — acceptance rate is ~0%. **Corpus-augmented prompt stuffing** solves this by injecting retrieved code snippets into the prompt before inference, expanding the n-gram search space.
+Standard prompt lookup only matches against the user's input. For novel code generation, there's nothing to match — acceptance is ~0%. Corpus-augmented prompt stuffing solves this by injecting retrieved code snippets into the prompt before inference, expanding the n-gram search space. The result: Coder-family models gain 6-17% on novel generation, with the 480B model seeing the biggest benefit (+17% speed from +15.6pp acceptance).
 
-### Architecture
+<details>
+<summary>Architecture and retrieval pipeline</summary>
 
 ```
 User: "implement async retry with exponential backoff"
@@ -149,14 +177,35 @@ llama-server (--lookup)
 Output (higher acceptance rate on novel generation)
 ```
 
-### Implementation
+</details>
+
+<details>
+<summary>Implementation and configuration</summary>
 
 - **Index**: SQLite with word-level 4-gram index. `scripts/corpus/build_index_v2.py` builds from The Stack v1 (HuggingFace streaming). Optional pruning via `scripts/corpus/prune_index.py`.
 - **Retriever**: `src/services/corpus_retrieval.py` — singleton `CorpusRetriever`, auto-detects JSON (v1) vs SQLite (v2) index. Uses mmap (~200KB RAM per query regardless of DB size).
 - **Prompt injection**: `build_corpus_context()` in `src/prompt_builders/builder.py`. Runs on turn 0 for lookup-enabled roles. Injects as `## Reference Code` section.
 - **Telemetry**: `src/backends/llama_server.py` extracts `draft_n` / `draft_n_accepted` from llama-server timings.
+- **Token Normalization**: Both index builder and retriever strip non-alphanumeric characters (except underscore) before n-gram extraction. `class Foo(Bar):` and `class foo bar` produce the same n-grams.
+- **Keyword Fallback**: When 4-gram matching returns 0 results, falls back to word-level overlap scoring (665K words, builds in ~3.8s).
 
-### A/B Results (MVP Corpus: 73K snippets, 338MB)
+<details>
+<summary>Config: model registry YAML</summary>
+
+```yaml
+runtime_defaults:
+  corpus_retrieval:
+    enabled: true            # Per-role: only Coder-family
+    index_path: /mnt/raid0/llm/cache/corpus/mvp_index  # JSON v1, 73K snippets. Switch to full_index when ready.
+    max_snippets: 3
+    max_chars: 3000          # ~750 tokens budget
+```
+
+</details>
+</details>
+
+<details>
+<summary>A/B results (MVP Corpus: 73K snippets, 338MB)</summary>
 
 | Model | Task | Acceptance Δ | Speed Δ | Verdict |
 |-------|------|-------------|---------|---------|
@@ -168,34 +217,19 @@ Output (higher acceptance rate on novel generation)
 | Qwen3-Coder-30B | BST | +2.1pp | -12% | Negative |
 | Qwen3-235B-A22B | BST | -12.1pp | -17% | Negative |
 
-**Finding**: Coder-family models benefit most. Enabled for 32B and 480B only. The overhead from extra prompt tokens can outweigh gains on models where acceptance is already high or verification is expensive.
+**Finding**: Coder-family models benefit most. Enabled for 32B and 480B only.
 
-### Configuration
+</details>
 
-In `orchestration/model_registry.yaml`:
+<details>
+<summary>Phase 2B-Quality RAG: ABANDONED (2026-02-15)</summary>
 
-```yaml
-runtime_defaults:
-  corpus_retrieval:
-    enabled: true            # Per-role: only Coder-family
-    index_path: /mnt/raid0/llm/cache/corpus/mvp_index  # JSON v1, 73K snippets. Switch to full_index when ready.
-    max_snippets: 3
-    max_chars: 3000          # ~750 tokens budget
-```
+Attempted to improve code quality (not just speed) by instructing the model to "study and adapt" retrieved patterns. Tested on 7B (delta -0.96) and 32B (delta -1.38) — prompt-level RAG actively hurts quality. Models either ignore the instruction or get confused by reference code. Only works with models fine-tuned for RAG (e.g., SWE-Dev-7B/32B). Phase 2A (speed-only, silent injection) remains the production approach.
 
-### Token Normalization
+</details>
 
-Both index builder and retriever strip non-alphanumeric characters (except underscore) from tokens before n-gram extraction. This ensures `class Foo(Bar):` and `class foo bar` produce the same n-grams for matching.
-
-### Keyword Fallback
-
-When 4-gram matching returns 0 results (common for natural-language queries), `CorpusRetriever` falls back to keyword-level overlap scoring. A word→snippet_ids reverse index (665K words, builds in ~3.8s) enables individual word matching. This ensures retrieval works for queries like "binary search tree iterator" that never produce matching code 4-grams.
-
-### Phase 2B-Quality RAG: ABANDONED (2026-02-15)
-
-Attempted to improve code quality (not just speed) by instructing the model to "study and adapt" retrieved patterns. Tested on 7B (delta -0.96) and 32B (delta -1.38) — prompt-level RAG actively hurts quality. Models either ignore the instruction or get confused by reference code. Only works with models fine-tuned for RAG (e.g., SWE-Dev-7B/32B, which use reinforcement fine-tuning on agentic trajectories). Phase 2A (speed-only, silent injection) remains the production approach.
-
-## References
+<details>
+<summary>References</summary>
 
 ### Prompt Lookup and N-gram Methods
 
@@ -222,6 +256,8 @@ Attempted to improve code quality (not just speed) by instructing the model to "
 8. vLLM Team. (2024). *N-gram Prompt Lookup in vLLM*. vLLM Documentation. https://docs.vllm.ai/en/latest/features/spec_decode.html
 
 9. Gerganov, G., et al. (2024). *llama-lookup: Prompt Lookup Decoding in llama.cpp*. GitHub. https://github.com/ggml-org/llama.cpp/tree/master/examples/lookup
+
+</details>
 
 ---
 
