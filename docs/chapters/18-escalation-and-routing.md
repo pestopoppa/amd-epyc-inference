@@ -8,7 +8,15 @@ As of 2026-02-07, the legacy `FailureRouter` and `RoutingFacade` have been delet
 
 ## Unified Escalation Policy
 
+The escalation policy is a single, rule-driven state machine that decides what happens after every failure. It categorizes errors, counts retries, and picks one of eight possible actions -- from simple retry all the way to terminal failure. The `THINK_HARDER` action is the interesting one: it tries to squeeze more out of the current model before paying the cost of tier escalation.
+
+<details>
+<summary>EscalationPolicy architecture and action types</summary>
+
 ### EscalationPolicy Architecture
+
+<details>
+<summary>Code: EscalationAction and ErrorCategory enums</summary>
 
 ```python
 class EscalationAction(str, Enum):
@@ -32,11 +40,16 @@ class ErrorCategory(str, Enum):
     UNKNOWN = "unknown"
 ```
 
+</details>
+
 **Early Abort**: When a model shows failure signs (incomplete generation, error patterns), immediately escalate instead of wasting retries. Detected via gate checks or output analysis.
 
 ### THINK_HARDER Action (February 2026)
 
 Before escalating to a more expensive tier, the policy tries to squeeze more quality out of the current model. On the penultimate retry (`failure_count == max_retries - 1`), the decision is `THINK_HARDER` instead of `RETRY`. This returns the same role with a `config_override` that doubles the token budget, prepends a chain-of-thought prefix, and raises temperature slightly for diversity:
+
+<details>
+<summary>Code: THINK_HARDER config override</summary>
 
 ```python
 EscalationDecision(
@@ -49,6 +62,8 @@ EscalationDecision(
     },
 )
 ```
+
+</details>
 
 The `config_override` field was added to `EscalationDecision` to carry these overrides. The calling node applies the overrides to the LLM call parameters for the retry turn.
 
@@ -67,7 +82,8 @@ The `config_override` field was added to `EscalationDecision` to carry these ove
 | EARLY_ABORT | ESCALATE | — | — | — |
 | INFRASTRUCTURE | — | — | — | Skip reward injection (seeding only); rules handle escalation |
 
-**Config Defaults**:
+<details>
+<summary>Code: EscalationConfig defaults</summary>
 
 ```python
 @dataclass
@@ -82,9 +98,14 @@ class EscalationConfig:
     })
 ```
 
+</details>
+
 **Rationale**: Format/schema errors indicate model instruction-following issues, not task complexity. Escalation won't help—just retry with clearer prompt.
 
 ### Escalation Chains
+
+<details>
+<summary>Code: Role escalation map</summary>
 
 ```python
 class Role(Enum):
@@ -101,17 +122,27 @@ class Role(Enum):
         return escalation_map.get(self)
 ```
 
+</details>
+
 **Full Chains**:
 - Worker → Coder → Architect (general tasks)
 - Frontdoor → Coder → Architect (chat escalation)
 - Ingest → Architect (long-context ingestion)
 - Architect → FAIL (no further escalation)
 
+</details>
+
 ## Pydantic-Graph Orchestration (February 2026)
 
-The escalation loop is an explicit `pydantic_graph.Graph` with 7 node classes. Each node's `run()` method returns a Union of valid next nodes or `End[TaskResult]`, making transitions type-safe and visible.
+The escalation loop is implemented as an explicit `pydantic_graph.Graph` with 7 node classes. Each node's `run()` method returns a Union of valid next nodes or `End[TaskResult]`, so transitions are type-safe and visible at a glance. MemRL components are injected as immutable `TaskDeps`, which means the learned escalation signals are actually wired up now -- they were dead code in the old `RoutingFacade` architecture.
+
+<details>
+<summary>Node classes and execution flow</summary>
 
 ### Node Classes
+
+<details>
+<summary>Code: All 7 graph node definitions</summary>
 
 ```python
 from pydantic_graph import BaseNode, Graph, End, GraphRunContext
@@ -147,6 +178,8 @@ class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 orchestration_graph = Graph(nodes=[all 7 classes])
 ```
 
+</details>
+
 ### Node Execution Flow
 
 Each node's `run()`:
@@ -161,6 +194,9 @@ Each node's `run()`:
 ### MemRL Integration via Dependencies
 
 MemRL components are injected as immutable `TaskDeps`:
+
+<details>
+<summary>Code: TaskDeps dataclass and error handler</summary>
 
 ```python
 @dataclass
@@ -180,9 +216,18 @@ def _handle_error(ctx, error_cat, error):
         ctx.deps.hypothesis_graph.add_evidence(...)  # Confidence
 ```
 
+</details>
+
 **Key change from RoutingFacade**: MemRL functions (`record_failure`, `record_mitigation`, `add_evidence`) are now actually called — they were dead code in the old architecture.
 
+</details>
+
 ## 3-Way Confidence Routing (February 2026)
+
+Instead of rigid mode-based routing, the frontdoor estimates P(success|action) for three approaches: handle it directly, handle it with tools, or escalate to an architect. Cost tiers are applied at routing time so Q-values stay faithful. Any role can now delegate downward, not just architects -- the old Tier C restriction is gone.
+
+<details>
+<summary>Routing approaches and confidence estimation</summary>
 
 ### Overview
 
@@ -195,7 +240,8 @@ The Unified Execution Model introduces 3-way confidence routing for faithful pro
 | **ARCHITECT** | Escalate for complex reasoning | `architect_coding` or `architect_general` |
 | **WORKER** | Delegate to faster workers | Scored via canonical `DelegationEvent` telemetry |
 
-### Confidence Routing Prompt
+<details>
+<summary>Code: Confidence estimation prompt</summary>
 
 ```python
 def build_confidence_estimation_prompt(question: str, context: str = "") -> str:
@@ -212,9 +258,14 @@ Output ONLY this format:
 CONF|SELF:X.XX|ARCHITECT:X.XX|WORKER:X.XX"""
 ```
 
+</details>
+
 ### Cost-Adjusted Routing
 
 At production routing time, Q-values are adjusted by cost tier:
+
+<details>
+<summary>Code: Cost-adjusted route selection</summary>
 
 ```python
 THREE_WAY_COST_TIER = {
@@ -229,11 +280,16 @@ def route_with_cost(q_values: dict[str, float]) -> str:
     return max(scores, key=scores.get)
 ```
 
+</details>
+
 **Key insight**: Cost is applied at routing time, not during Q-value updates. Q-values remain faithful P(success) estimates.
 
 ### General Delegation
 
 Any role can now delegate (not just architects). Tier C restriction removed:
+
+<details>
+<summary>Code: Delegatable roles and allow_delegation parameter</summary>
 
 ```python
 _DELEGATABLE_ROLES = frozenset({
@@ -261,6 +317,8 @@ class ChatRequest(BaseModel):
 
 Used by the 3-way evaluation script to test delegation value.
 
+</details>
+
 ### Forced-role Semantics in 3-way Eval
 
 For benchmark/seeding calls that set `force_role`, role identity is treated as an invariant for that call path:
@@ -269,11 +327,21 @@ For benchmark/seeding calls that set `force_role`, role identity is treated as a
 - Delegation is still allowed when `allow_delegation=True`.
 - Result: eval keeps action identity stable (`SELF:*`, `ARCHITECT`) while still measuring delegation/tool value inside that action.
 
+</details>
+
 ---
 
 ## Proactive Delegation
 
+Proactive delegation is the alternative to reactive escalation. Instead of waiting for failures and escalating upward, the frontdoor classifies task complexity upfront and routes directly to the right tier. A heuristic classifier buckets tasks into four complexity levels, and architect review loops keep quality high for complex multi-specialist work.
+
+<details>
+<summary>Complexity classification and delegation paths</summary>
+
 ### Complexity Classification
+
+<details>
+<summary>Code: TaskComplexity classifier</summary>
 
 ```python
 class TaskComplexity(Enum):
@@ -312,7 +380,12 @@ def classify_task_complexity(objective: str) -> tuple[TaskComplexity, Complexity
         return TaskComplexity.SIMPLE, signals
 ```
 
+</details>
+
 **Escalation Triggers**: Override heuristics:
+
+<details>
+<summary>Code: Manual escalation triggers</summary>
 
 ```python
 ARCHITECT_TRIGGERS = ["/architect", "/plan", "break this down"]
@@ -323,6 +396,8 @@ if has_architect_trigger(objective):
 if has_thinking_trigger(objective):
     signals.thinking_requested = True  # Route to thinking_reasoning model
 ```
+
+</details>
 
 ### Delegation Paths
 
@@ -338,6 +413,9 @@ if has_thinking_trigger(objective):
 ### Architect Review Loop
 
 For COMPLEX tasks, the architect reviews specialist outputs:
+
+<details>
+<summary>Code: ArchitectReviewService and iteration limits</summary>
 
 ```python
 class ArchitectReviewService:
@@ -376,7 +454,16 @@ class IterationContext:
 
 Prevents infinite review-fix cycles. After max iterations, accept output or escalate.
 
+</details>
+
+</details>
+
 ## Performance Comparison
+
+Reactive escalation and proactive delegation solve the same problem from opposite ends. Reactive is cheaper and faster for well-defined tasks; proactive is better when you do not know what you are dealing with upfront.
+
+<details>
+<summary>Reactive vs proactive tradeoffs</summary>
 
 ### Reactive vs Proactive (Estimated)
 
@@ -392,9 +479,14 @@ Prevents infinite review-fix cycles. After max iterations, accept output or esca
 - **Reactive**: Well-defined tasks, known failure patterns, speed-critical
 - **Proactive**: Novel tasks, complex multi-file changes, quality-critical
 
+</details>
+
 ## Model Fallback (February 2026)
 
-Model fallback handles **infrastructure failure** — distinct from task escalation which handles **task complexity**. When a backend is circuit-open, timed out, or OOM, same-tier alternatives are tried before failing the request.
+Model fallback handles **infrastructure failure** -- when a backend is circuit-open, timed out, or OOM. This is distinct from task escalation which handles task complexity. Same-tier alternatives are tried laterally before failing the request, so a dead coder backend does not immediately escalate to architect.
+
+<details>
+<summary>Fallback map and failure classification</summary>
 
 ### Fallback vs Escalation
 
@@ -406,6 +498,9 @@ Model fallback handles **infrastructure failure** — distinct from task escalat
 ### Fallback Map
 
 Defined in `src/roles.py` as `_FALLBACK_MAP`:
+
+<details>
+<summary>Code: Fallback role mapping</summary>
 
 ```python
 _FALLBACK_MAP: dict[Role, list[Role]] = {
@@ -419,6 +514,8 @@ _FALLBACK_MAP: dict[Role, list[Role]] = {
     Role.WORKER_VISION: [],        # Hardware-specific, no fallback
 }
 ```
+
+</details>
 
 ### Failure Classification
 
@@ -437,11 +534,19 @@ In `_real_call_impl()`: primary call via `_real_call_single()` catches `RuntimeE
 
 Feature flag: `model_fallback`.
 
+</details>
+
 ## Cache Affinity Phase 2.5 (February 2026)
 
-The `TwoPhaseRetriever` has a Phase 2.5 step between Q-value ranking (Phase 2) and final sorting (Phase 3). It gives a 15% score bonus to memories whose role matches the last-used role, biasing routing toward warm KV caches.
+The `TwoPhaseRetriever` gives a 15% score bonus to memories whose role matches the last-used role, biasing routing toward warm KV caches. On this hardware (DDR5-5600, 460 GB/s), a warm-cache hit saves 50-200ms of prompt eval depending on context length. The bonus is conservative but meaningful for consecutive same-role requests.
+
+<details>
+<summary>Cache affinity mechanism and lifecycle</summary>
 
 ### Mechanism
+
+<details>
+<summary>Code: Phase 2.5 cache affinity in TwoPhaseRetriever</summary>
 
 ```python
 class TwoPhaseRetriever:
@@ -464,6 +569,8 @@ class TwoPhaseRetriever:
         # Phase 3: Sort by combined_score → top-n
 ```
 
+</details>
+
 ### Lifecycle
 
 `HybridRouter.route()` calls `retriever.update_last_role(role)` after every routing decision (both learned and rule-based paths). The next retrieval then applies the bonus. The `RetrievalResult` dataclass carries `cache_affinity: float` and appends a warning string when the bonus fires.
@@ -474,9 +581,14 @@ When the same role serves consecutive requests, the KV cache from the previous r
 
 **Files**: `orchestration/repl_memory/retriever.py` (`TwoPhaseRetriever._retrieve`, `HybridRouter.route`)
 
+</details>
+
 ## Approval Gates (February 2026)
 
-Human approval gates at escalation boundaries and destructive tool invocations. The graph halts, serializes state via resume token, waits for approval, then continues or rejects.
+Human approval gates halt the graph at escalation boundaries and destructive tool invocations. The graph serializes state via a resume token, waits for approval, then continues or rejects. By default, `AutoApproveCallback` auto-approves everything so existing behavior is preserved when the feature flag is off.
+
+<details>
+<summary>Halt triggers, protocol, and tier classification</summary>
 
 ### Halt Triggers
 
@@ -500,7 +612,8 @@ Graph node -> should_halt(from_role, to_role)
             +-- REJECT -> End(success=False, answer="Rejected by user")
 ```
 
-### Tier Classification
+<details>
+<summary>Code: Tier classification map</summary>
 
 ```python
 _TIER_MAP = {
@@ -514,6 +627,8 @@ _TIER_MAP = {
 }
 ```
 
+</details>
+
 Tier crossing (C->B, C->A) triggers `ESCALATION`. Same-tier to architect triggers `HIGH_COST`.
 
 ### Default Behavior
@@ -522,11 +637,19 @@ Tier crossing (C->B, C->A) triggers `ESCALATION`. Same-tier to architect trigger
 
 Feature flag: `approval_gates` (requires `resume_tokens` + `side_effect_tracking`).
 
+</details>
+
 ## Binding-Based Routing (February 2026)
 
-Priority-ordered routing overrides from multiple sources. Same task type can route to different roles based on session state, user preference, or Q-values.
+Priority-ordered routing overrides let the same task type route to different roles depending on session state, user preference, or Q-values. Session bindings are cleared at conversation end, so they do not leak across interactions.
+
+<details>
+<summary>Priority levels and integration</summary>
 
 ### Priority Levels
+
+<details>
+<summary>Code: BindingPriority enum</summary>
 
 ```python
 class BindingPriority(IntEnum):
@@ -537,6 +660,8 @@ class BindingPriority(IntEnum):
     SESSION = 40       # Session-specific override (during conversation)
 ```
 
+</details>
+
 ### Integration
 
 After `_classify_and_route()` returns a role, `binding_router.resolve(task_type)` is checked. If a binding with higher priority exists and its backend is available, that role is used instead. Session bindings are cleared at conversation end.
@@ -545,11 +670,19 @@ Implementation: `src/routing_bindings.py` (`BindingRouter`), integrated in `src/
 
 Feature flag: `binding_routing`.
 
+</details>
+
 ## Tool Requirement Detection (February 2026)
 
-`detect_tool_requirement()` in `chat_routing.py` is a keyword-based heuristic that identifies prompts requiring tool invocation. It populates `tool_required` and `tool_hint` fields on `RoutingResult`, which downstream execution stages can use to force first-turn tool use or select REPL mode.
+`detect_tool_requirement()` is a keyword-based heuristic that identifies prompts requiring tool invocation. When it fires, downstream execution stages can force REPL mode and inject a tool hint into the system prompt so the model knows which tool to reach for first.
+
+<details>
+<summary>Keyword map and RoutingResult integration</summary>
 
 ### Keyword Map
+
+<details>
+<summary>Code: Tool keyword mapping and RoutingResult fields</summary>
 
 ```python
 _TOOL_REQUIRED_KEYWORDS = {
@@ -575,13 +708,20 @@ class RoutingResult:
     tool_hint: str | None = None  # Specific tool name if deterministic (e.g., "grep")
 ```
 
+</details>
+
 When `tool_required=True`, execution stages can: (a) force REPL mode even if the heuristic would have selected direct, and (b) inject the `tool_hint` into the system prompt so the model knows which tool to invoke first.
 
 **Files**: `src/api/routes/chat_routing.py` (`detect_tool_requirement`, `_TOOL_REQUIRED_KEYWORDS`), `src/api/routes/chat_utils.py` (`RoutingResult`)
 
+</details>
+
 ## REPL Defensive Mechanisms (February 2026)
 
-The REPL execution loops have three defensive mechanisms that prevent infinite loops, wasted tokens, and unnecessary escalation.
+The REPL execution loops have three defensive mechanisms that prevent infinite loops, wasted tokens, and unnecessary escalation. These handle the surprisingly common cases where a model generates all-comment code, buries a valid answer inside a syntax error, or rambles for hundreds of tokens after producing its answer.
+
+<details>
+<summary>Comment-only guard, FINAL rescue, and early-stop streaming</summary>
 
 ### Comment-Only Guard
 
@@ -613,6 +753,9 @@ The model often writes `FINAL("D")` or `D|B` but continues generating hundreds o
 
 The architect investigate prompt must present `D|` and `I|` as **mutually exclusive alternatives**, not as a fill-in-the-blank template. MoE models (Qwen3-235B with expert reduction) are especially prone to echoing both formats when shown side by side.
 
+<details>
+<summary>Code: Correct vs incorrect prompt patterns</summary>
+
 **Anti-pattern** (causes template echoing):
 ```
 D|<your answer>
@@ -625,13 +768,22 @@ I|brief:<spec>|to:coder_escalation
 - Delegate to specialist: I|brief:<spec>|to:<role>
 ```
 
+</details>
+
 Combined with explicit instruction: "Output ONE line only. Do NOT output both D| and I|."
 
 The architect prompt frames the role as "software architect" whose job is to design solutions (approach, data structures, algorithm, edge cases) for a coding specialist to implement. This produces architecturally useful briefs rather than problem restatements.
 
+</details>
+
 ## Escalation Reduction via Skill Propagation (February 2026)
 
-SkillBank creates a knowledge pipeline that monotonically reduces escalation rates for recurring task categories:
+SkillBank creates a knowledge pipeline that monotonically reduces escalation rates for recurring task categories. When an architect solves something a worker failed at, the approach gets distilled into a skill that workers can use next time. Novel tasks still escalate normally -- skills only help with patterns the system has seen before.
+
+<details>
+<summary>Skill propagation mechanism and THINK_HARDER interaction</summary>
+
+### Pipeline
 
 ```
 Architect solves task → trajectory stored in EpisodicStore
@@ -658,11 +810,14 @@ For recurring task categories (e.g., specific debugging patterns, code generatio
 
 See [Chapter 27](27-skillbank-experience-distillation.md) for full SkillBank architecture.
 
+</details>
+
 ## Vision Pipeline Routing (2026-02-09)
 
-The vision pipeline has a critical routing requirement: VL models (Qwen2.5-VL-7B on port 8086, Qwen3-VL-30B on port 8087) need multimodal payloads with base64-encoded images. The standard text-only paths (`_execute_direct`, `_execute_repl`) discard `image_path` from the request.
+The vision pipeline has a critical routing requirement: VL models need multimodal payloads with base64-encoded images, but the standard text-only paths discard `image_path` from the request. Stage 7.5 intercepts vision-role requests with image data and routes them to the appropriate multimodal handler, falling through to text-only mode on exception.
 
-**Stage 7.5 (`_execute_vision_multimodal`)** intercepts vision-role requests with image data and routes them to the appropriate multimodal handler:
+<details>
+<summary>Vision routing modes</summary>
 
 | Mode | Handler | What It Does |
 |------|---------|-------------|
@@ -673,9 +828,14 @@ Falls through to text-only mode on exception (graceful degradation).
 
 **File**: `src/api/routes/chat_pipeline/vision_stage.py`
 
+</details>
+
 ## Try-Cheap-First Speculative Pre-Filter (February 2026)
 
-Before the normal routing pipeline runs, a speculative pre-filter attempts the task with the cheapest HOT model (7B worker at 44 t/s). If the answer passes a quality gate, it is returned 2-3x faster. On failure, the request falls through to the normal pipeline completely unchanged.
+Before the normal routing pipeline runs, a speculative pre-filter attempts the task with the cheapest HOT model (7B worker at 44 t/s). If the answer passes a quality gate, it comes back 2-3x faster. On failure, the request falls through to the normal pipeline completely unchanged -- the downstream escalation chain is untouched.
+
+<details>
+<summary>Pipeline position, configuration, and skip conditions</summary>
 
 ### Pipeline Position
 
@@ -688,7 +848,8 @@ Request → _route_request() → [Try-Cheap-First] → _execute_direct / _execut
 
 The pre-filter inserts as Stage 7.9, BEFORE the existing execution stages. The downstream escalation chain (worker -> coder -> architect, `max_retries=3`, `max_escalations=2`) is completely untouched.
 
-### Configuration
+<details>
+<summary>Config: Try-cheap-first settings</summary>
 
 ```python
 # src/config.py — ChatConfig
@@ -699,6 +860,8 @@ try_cheap_first_max_tokens: int = 1024  # Keep short to minimize waste
 try_cheap_first_quality_threshold: float = 0.6
 try_cheap_first_q_threshold: float = 0.65  # Min Q-value for Phase B/C
 ```
+
+</details>
 
 ### Skip Conditions
 
@@ -714,15 +877,78 @@ The cheap answer must pass `try_cheap_first_quality_threshold` (default 0.6) via
 
 **Files**: `src/api/routes/chat.py` (`_try_cheap_first`), `src/config.py` (`ChatConfig`)
 
+</details>
+
 ## Early-Stop Timing Telemetry (2026-02-09)
 
-When early-stop streaming aborts generation (REPL's `FINAL()` detection raises `StopIteration`), the SSE `stop: true` event (which carries `timings`) is never reached. This caused `generation_ms=0` for 79/99 REPL results while `tokens_generated` was correct.
-
-**Fix**: On early-stop break, compute timing from wall clock elapsed time in `infer_stream_text()`. This is wall-clock time (includes prompt eval + HTTP overhead), not pure generation time, but far better than 0 for TPS estimation.
+When early-stop streaming aborts generation, the SSE `stop: true` event (which carries `timings`) is never reached, causing `generation_ms=0` for 79/99 REPL results. The fix computes timing from wall clock elapsed time in `infer_stream_text()` on early-stop break -- not pure generation time, but far better than 0 for TPS estimation.
 
 **File**: `src/backends/llama_server.py` (early-stop branch in `infer_stream_text`)
 
+## Conditional Schema Escalation (2026-02)
+
+Schema failures now follow a conditional policy: retry while budget remains, allow escalation if the failure signature indicates a capability gap (schema/validation mismatch), and keep parser/transient formatting signatures as retry-only without escalation. This replaced the previous hard block on all schema escalation.
+
+**Files**: `src/escalation.py`, `src/graph/helpers.py`
+
+## Runtime Risk Gate and Prior/Posterior Blend (2026-02)
+
+Routing now supports a strict runtime risk-gate contract in the hybrid router. When confidence falls below a calibrated threshold (base confidence plus conformal margin), the router abstains and escalates to a configured target role. Heuristics are integrated as probabilistic priors in posterior scoring rather than rules-only nudges, and THINK_HARDER uses an adaptive envelope that scales token budget and temperature by per-role expected ROI.
+
+<details>
+<summary>Risk gate mechanics and telemetry fields</summary>
+
+### Risk Gate Contract
+
+1. Compute effective threshold from calibrated/base confidence + conformal margin.
+2. If enabled and confidence is below threshold, route uses `risk_abstain_escalate` to a configured abstain target role.
+3. Emit risk provenance fields in telemetry:
+   - `risk_gate_action`
+   - `risk_gate_reason`
+   - `risk_budget_id`
+
+### Prior/Posterior Scoring
+
+Heuristics are integrated as probabilistic priors in posterior scoring (instead of rules-only nudges):
+
+- Posterior = learned selection score + prior term (`prior_strength`).
+- Telemetry decomposition:
+  - `prior_term_topk`
+  - `posterior_score_topk`
+  - `learned_evidence_topk`
+  - `cost_term_topk`
+
+### THINK_HARDER Adaptive Envelope
+
+THINK_HARDER regulation now uses an adaptive envelope in graph helpers:
+
+- token budget and temperature scale by per-role expected ROI
+- cooldown and EMA marginal-utility gating reduce repeated low-yield expansions
+- decision artifacts emit ROI/token/temperature diagnostics for analysis
+
+</details>
+
+## Literature Mapping (Architecture Review Alignment)
+
+This chapter's routing and escalation mechanics are grounded in several research-backed ideas, from hierarchical delegation to risk-aware abstention. The table below maps review themes to their practical implementation in this codebase.
+
+<details>
+<summary>Research theme to code anchor mapping</summary>
+
+| Review Theme | Practical Interpretation | Code Anchors |
+|--------------|--------------------------|--------------|
+| Hierarchical/delegated routing | Architect envelope can decompose tasks and route to specialists | `src/proactive_delegation/delegator.py`, `src/api/routes/chat_pipeline/proactive_stage.py` |
+| Conditional escalation by failure signature | Schema/format failures are treated differently from reasoning failures | `src/escalation.py`, `src/graph/helpers.py` |
+| Risk-aware abstain/escalate behavior | Low-confidence paths can abstain and escalate under strict controls | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
+| THINK_HARDER regulation | Controlled test-time compute expansion with ROI/cooldown governance | `src/graph/helpers.py`, `src/graph/state.py` |
+| Workspace-centered coordination | Shared state reduces multi-agent drift during long chains | `src/graph/state.py`, `src/graph/helpers.py` |
+
+</details>
+
 ## References
+
+<details>
+<summary>Implementation files, theoretical foundations, and related systems</summary>
 
 ### Implementation
 
@@ -751,64 +977,7 @@ When early-stop streaming aborts generation (REPL's `FINAL()` detection raises `
 
 8. AWS Step Functions (state machine orchestration): https://aws.amazon.com/step-functions/
 
----
-
-*Previous: [Chapter 17: Memory Seeding](17-memory-seeding.md)* | *Next: [Chapter 19: Procedure Registry](19-procedure-registry.md)*
-
-## Conditional Schema Escalation (2026-02)
-
-Schema failures now follow a conditional policy:
-
-1. Retry while retry budget remains.
-2. If retries are exhausted and failure signature indicates capability gap (schema/validation mismatch), allow escalation.
-3. Parser/transient formatting signatures remain retry-only and do not escalate.
-
-This replaced the previous hard block on all schema escalation and is implemented in:
-
-- `src/escalation.py`
-- `src/graph/helpers.py`
-
-## Runtime Risk Gate and Prior/Posterior Blend (2026-02)
-
-Routing now supports a strict runtime risk-gate contract in the hybrid router:
-
-1. Compute effective threshold from calibrated/base confidence + conformal margin.
-2. If enabled and confidence is below threshold, route uses `risk_abstain_escalate` to a configured abstain target role.
-3. Emit risk provenance fields in telemetry:
-   - `risk_gate_action`
-   - `risk_gate_reason`
-   - `risk_budget_id`
-
-Heuristics are integrated as probabilistic priors in posterior scoring (instead of rules-only nudges):
-
-- Posterior = learned selection score + prior term (`prior_strength`).
-- Telemetry decomposition:
-  - `prior_term_topk`
-  - `posterior_score_topk`
-  - `learned_evidence_topk`
-  - `cost_term_topk`
-
-THINK_HARDER regulation now uses an adaptive envelope in graph helpers:
-
-- token budget and temperature scale by per-role expected ROI
-- cooldown and EMA marginal-utility gating reduce repeated low-yield expansions
-- decision artifacts emit ROI/token/temperature diagnostics for analysis
-
-## Literature Mapping (Architecture Review Alignment)
-
-This chapter's routing and escalation mechanics are grounded in the following research-backed ideas:
-
-| Review Theme | Practical Interpretation | Code Anchors |
-|--------------|--------------------------|--------------|
-| Hierarchical/delegated routing | Architect envelope can decompose tasks and route to specialists | `src/proactive_delegation/delegator.py`, `src/api/routes/chat_pipeline/proactive_stage.py` |
-| Conditional escalation by failure signature | Schema/format failures are treated differently from reasoning failures | `src/escalation.py`, `src/graph/helpers.py` |
-| Risk-aware abstain/escalate behavior | Low-confidence paths can abstain and escalate under strict controls | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
-| THINK_HARDER regulation | Controlled test-time compute expansion with ROI/cooldown governance | `src/graph/helpers.py`, `src/graph/state.py` |
-| Workspace-centered coordination | Shared state reduces multi-agent drift during long chains | `src/graph/state.py`, `src/graph/helpers.py` |
-
-## Additional Literature (From Architecture Review)
-
-These references motivate the escalation/delegation strategy and failure taxonomy:
+### Additional Literature (From Architecture Review)
 
 1. DeepSeek-AI (2025). Router-R1: Multi-round routing/aggregation behavior. https://openreview.net/forum?id=DWf4vroKWJ
 2. Xue et al. (2025). Conformal Risk-Controlled Routing for Large Language Model. https://openreview.net/forum?id=lLR61sHcS5
@@ -816,3 +985,9 @@ These references motivate the escalation/delegation strategy and failure taxonom
 4. Baars (1988). A Cognitive Theory of Consciousness (Global Workspace Theory foundation). https://pmc.ncbi.nlm.nih.gov/articles/PMC12310485/
 5. Dai, Yang, Si (2025). S-GRPO for reasoning-length regulation. https://arxiv.org/abs/2505.07686
 6. Ong et al. (2024). RouteLLM (quality/cost routing tradeoffs). https://arxiv.org/abs/2406.18665
+
+</details>
+
+---
+
+*Previous: [Chapter 17: Memory Seeding](17-memory-seeding.md)* | *Next: [Chapter 19: Procedure Registry](19-procedure-registry.md)*
