@@ -8,6 +8,11 @@ Document processing achieved a **19x OCR speedup** by routing born-digital PDFs 
 
 ## Document Processing Pipeline
 
+The document pipeline handles everything from PDF ingestion to chunked, figure-annotated output. It starts with a smart router that checks whether a PDF is born-digital or scanned, then fans out to OCR, chunking, figure analysis, and archive extraction as needed.
+
+<details>
+<summary>Pipeline architecture and components</summary>
+
 ### Architecture Overview
 
 ```
@@ -47,6 +52,9 @@ PDF Input
 
 **Fast Path Decision**:
 
+<details>
+<summary>Code: PDF routing and fast-path extraction</summary>
+
 ```python
 from src.services.pdf_router import PDFRouter
 
@@ -65,6 +73,8 @@ elif result.method == "lightonocr":
     figures = result.figures  # From OCR bboxes
 ```
 
+</details>
+
 **Performance** (50-page technical document):
 
 | Method | Latency | Quality Score |
@@ -79,7 +89,14 @@ elif result.method == "lightonocr":
 **Endpoint**: `http://localhost:9001/ocr/pdf`
 **Output Format**: Text + bounding boxes (bbox coordinates normalized 0-1000)
 
-**Client Usage**:
+**Status Codes**:
+- `200`: Success
+- `202`: Async processing (job_id returned)
+- `400`: Invalid request
+- `503`: Server unavailable
+
+<details>
+<summary>Code: LightOnOCR client usage</summary>
 
 ```python
 from src.services.document_client import get_document_client, process_document
@@ -101,16 +118,15 @@ for page in result.pages:
         print(f"  Figure at ({bbox.x1}, {bbox.y1})")
 ```
 
-**Status Codes**:
-- `200`: Success
-- `202`: Async processing (job_id returned)
-- `400`: Invalid request
-- `503`: Server unavailable
+</details>
 
 ### Document Chunker (Markdown Structure)
 
 **Purpose**: Split documents by headers for context-aware retrieval
 **Implementation**: `src/services/document_chunker.py`
+
+<details>
+<summary>Code: Chunking configuration and output structure</summary>
 
 **Chunking Strategy**:
 
@@ -145,6 +161,8 @@ Section(
 )
 ```
 
+</details>
+
 ### Figure Analyzer (Vision Model)
 
 **Purpose**: Generate descriptions for extracted figures
@@ -161,7 +179,14 @@ Section(
 4. Send to VL model with document context
 5. Store descriptions in FigureRef objects
 
-**Document Context Injection**:
+**Performance** (10 figures, 4 concurrent):
+
+- Total time: 12.4s
+- Per-figure latency: 3.1s avg
+- Throughput: 0.81 figures/s
+
+<details>
+<summary>Code: Document context injection for figure analysis</summary>
 
 ```python
 # Extract summary from Abstract/Introduction for context
@@ -186,11 +211,7 @@ Now analyze this figure:
 figures = await analyze_figures(pdf_path, figures, vl_prompt=prompt)
 ```
 
-**Performance** (10 figures, 4 concurrent):
-
-- Total time: 12.4s
-- Per-figure latency: 3.1s avg
-- Throughput: 0.81 figures/s
+</details>
 
 ### Archive Extractor (Multi-Document)
 
@@ -203,7 +224,16 @@ figures = await analyze_figures(pdf_path, figures, vl_prompt=prompt)
 - Size limits (500MB archive, 1GB extracted, 100MB per file)
 - File count limits (1000 files max)
 
-**Usage**:
+**Extraction Strategies**:
+
+| Strategy | Condition | Behavior |
+|----------|-----------|----------|
+| `auto_all` | < 20 files, < 5MB | Extract everything automatically |
+| `manifest_then_ask` | 20-100 files | Show manifest, let user select |
+| `summary_with_recommendations` | > 100 files | Show summary + file type stats |
+
+<details>
+<summary>Code: Archive extraction and validation</summary>
 
 ```python
 from src.services.archive_extractor import ArchiveExtractor
@@ -231,15 +261,16 @@ for filename, path in result.extracted_files.items():
     print(f"Extracted {filename} to {path}")
 ```
 
-**Extraction Strategies**:
+</details>
 
-| Strategy | Condition | Behavior |
-|----------|-----------|----------|
-| `auto_all` | < 20 files, < 5MB | Extract everything automatically |
-| `manifest_then_ask` | 20-100 files | Show manifest, let user select |
-| `summary_with_recommendations` | > 100 files | Show summary + file type stats |
+</details>
 
 ## Vision Processing Pipeline
+
+The vision pipeline chains seven analyzers in sequence -- from EXIF metadata through face detection, VL descriptions, and CLIP embeddings. It stores everything in SQLite for structured queries and ChromaDB for semantic image search.
+
+<details>
+<summary>Pipeline architecture, analyzers, and storage</summary>
 
 ### Architecture Overview
 
@@ -271,6 +302,9 @@ Image Input
 
 **Implementation**: `src/vision/pipeline.py`
 
+<details>
+<summary>Code: Pipeline initialization</summary>
+
 ```python
 from src.vision.pipeline import get_pipeline
 from src.vision.models import AnalyzerType
@@ -284,9 +318,14 @@ pipeline.initialize([
 ])
 ```
 
+</details>
+
 ### Analyzer Types
 
 **Defined in** `src/vision/models.py`:
+
+<details>
+<summary>Code: AnalyzerType enum definition</summary>
 
 ```python
 class AnalyzerType(str, Enum):
@@ -299,7 +338,12 @@ class AnalyzerType(str, Enum):
     CLIP_EMBED = "clip_embed"          # CLIP visual embeddings
 ```
 
+</details>
+
 ### Single Image Analysis
+
+<details>
+<summary>Code: Analyzing a single image with all analyzers</summary>
 
 ```python
 from PIL import Image
@@ -327,7 +371,12 @@ if result.exif:
         print(f"Location: {result.exif.gps_lat}, {result.exif.gps_lon}")
 ```
 
+</details>
+
 ### Batch Processing
+
+<details>
+<summary>Code: Batch processing a directory of photos</summary>
 
 ```python
 from pathlib import Path
@@ -347,6 +396,8 @@ for photo_path in photos_dir.glob("*.jpg"):
     print(f"Processed {photo_path.name}: {len(result.faces)} faces")
 ```
 
+</details>
+
 ### Vision Model Servers
 
 | Port | Model | Analyzer | Use Case |
@@ -354,7 +405,8 @@ for photo_path in photos_dir.glob("*.jpg"):
 | 8086 | Qwen2.5-VL-7B-Q4_K_M | `vl_describe`, `vl_ocr` | Worker-level vision tasks |
 | 8087 | Qwen3-VL-30B-A3B-Q4_K_M | `vl_describe` (escalation) | Complex image analysis |
 
-**API Usage**:
+<details>
+<summary>Code: Direct vision API usage</summary>
 
 ```python
 import httpx
@@ -373,9 +425,14 @@ async with httpx.AsyncClient() as client:
     print(data["description"])
 ```
 
+</details>
+
 ### Storage & Retrieval
 
 **SQLite Schema** (`src/db/models/vision.py`):
+
+<details>
+<summary>Data: SQLite schema and semantic search queries</summary>
 
 ```sql
 CREATE TABLE photos (
@@ -418,7 +475,16 @@ for result in results:
     print(f"{result.path}: {result.score:.3f} similarity")
 ```
 
+</details>
+
+</details>
+
 ## Performance Benchmarks
+
+Both pipelines have been profiled on the EPYC 9655. The document pipeline's headline number is the 19x speedup on born-digital PDFs via the fast-path router. Vision processing tops out at about 1.2 images/s end-to-end with 4 workers.
+
+<details>
+<summary>Detailed benchmark tables</summary>
 
 ### Document Processing
 
@@ -440,6 +506,8 @@ for result in results:
 
 **Batch throughput** (4 workers): 1.2 images/s end-to-end
 
+</details>
+
 ## Operational Notes (2026-02-08)
 
 - Vision preprocessing uses `DocumentPreprocessor` for both documents and images.
@@ -448,12 +516,17 @@ for result in results:
 
 ## References
 
+<details>
+<summary>Source file references</summary>
+
 - `src/services/document_preprocessor.py` - Main document pipeline
 - `src/services/pdf_router.py` - Fast-path PDF routing
 - `src/services/figure_analyzer.py` - VL figure descriptions
 - `src/services/archive_extractor.py` - Multi-document archives
 - `src/vision/pipeline.py` - Vision analyzer orchestration
 - `src/vision/models.py` - Pydantic models for vision API
+
+</details>
 
 ---
 
