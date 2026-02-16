@@ -10,12 +10,10 @@ As of 2026-02-02, the seeding pipeline was enriched with 90 mode-advantage tasks
 
 ## Episodic Memory Architecture
 
-> **Scope**: The MemRL episodic store handles *routing memories* (task→action→outcome with Q-values).
-> For *codebase retrieval* (finding source code and documentation passages), see
-> the NextPLAID integration in [Ch11: REPL Environment](11-repl-environment.md).
-> These are complementary systems: BGE 1024-dim single-vector vs ColBERT 128-dim multi-vector.
+The episodic store is the heart of MemRL — it persists every routing decision the orchestrator makes so it can learn from them later. It uses SQLite for rich metadata queries and FAISS for fast similarity search, living side by side on disk. Note that this store handles *routing memories* only; for codebase retrieval (finding source code and docs), see the NextPLAID integration in [Ch11: REPL Environment](11-repl-environment.md). These are complementary systems: BGE 1024-dim single-vector vs ColBERT 128-dim multi-vector.
 
-### Storage Layout
+<details>
+<summary>Storage layout and design rationale</summary>
 
 ```
 /mnt/raid0/llm/claude/orchestration/repl_memory/sessions/
@@ -26,7 +24,13 @@ As of 2026-02-02, the seeding pipeline was enriched with 90 mode-advantage tasks
 
 **Design Rationale**: SQLite for rich queries (filter by action_type, q_value), FAISS for O(log n) similarity search.
 
-### Memory Schema
+</details>
+
+<details>
+<summary>Memory schema and index strategy</summary>
+
+<details>
+<summary>SQL: memories table DDL</summary>
 
 ```sql
 CREATE TABLE memories (
@@ -48,12 +52,20 @@ CREATE INDEX idx_q_value ON memories(q_value DESC);
 CREATE INDEX idx_type_q ON memories(action_type, q_value DESC);
 ```
 
+</details>
+
 **Indexes Optimized For**:
 - Two-phase retrieval (filter by action_type + Q-value)
 - Top-k Q-value queries for graph seeding
 - Temporal queries (created_at DESC)
 
-### FAISS Backend
+</details>
+
+<details>
+<summary>FAISS backend implementation and benchmarks</summary>
+
+<details>
+<summary>Code: FAISSEmbeddingStore class</summary>
 
 ```python
 class FAISSEmbeddingStore:
@@ -75,6 +87,8 @@ class FAISSEmbeddingStore:
         return [(self.id_map[idx], score) for idx, score in zip(indices[0], scores[0])]
 ```
 
+</details>
+
 **Performance Expectations**:
 
 | Memory Count | FAISS Search Time | NumPy Baseline | Speedup |
@@ -86,9 +100,17 @@ class FAISSEmbeddingStore:
 
 At 2714 memories (current), FAISS overhead is negligible vs NumPy.
 
+</details>
+
 ## Task Embedding
 
-### TaskEmbedder Architecture
+Tasks get embedded into 1024-dim vectors so we can find semantically similar past experiences. The `TaskEmbedder` talks to a BGE-large HTTP server for fast embeddings (2-5ms), falling back to subprocess or deterministic hash pseudo-embeddings when the server is unavailable. The serialization focuses on task semantics (type, objective, priority) rather than content, so similar tasks cluster together regardless of their actual input data.
+
+<details>
+<summary>TaskEmbedder implementation</summary>
+
+<details>
+<summary>Code: TaskEmbedder class and serialization</summary>
 
 ```python
 class TaskEmbedder:
@@ -105,8 +127,6 @@ class TaskEmbedder:
         return self._generate_embedding(text)
 ```
 
-### Serialization Strategy
-
 ```python
 def _serialize_task_ir(self, task_ir: Dict[str, Any]) -> str:
     parts = [
@@ -119,9 +139,14 @@ def _serialize_task_ir(self, task_ir: Dict[str, Any]) -> str:
     return " | ".join(parts)
 ```
 
+</details>
+
 **Why This Format**: Focuses on task semantics, not content. Similar tasks have similar embeddings even with different input data.
 
-### Backend Fallback Chain
+</details>
+
+<details>
+<summary>Backend fallback chain</summary>
 
 1. **HTTP Server** (8090): 2-5ms via `/embedding` endpoint (40x faster than subprocess)
 2. **Subprocess** (`llama-embedding`): 50-200ms with `--embd-output-format json`
@@ -129,9 +154,17 @@ def _serialize_task_ir(self, task_ir: Dict[str, Any]) -> str:
 
 Hash fallback preserves identity (same input = same embedding) but NOT similarity. Used only in dev environments without model access.
 
+</details>
+
 ## Two-Phase Retrieval
 
-### Phase 1: Semantic Filtering
+Retrieval works in two passes: first, FAISS finds the nearest neighbors by embedding similarity (casting a wide net with 2x over-fetching), then SQLite filters and ranks them by action_type, Q-value, and a combined score that weights learned utility at 70% and semantic similarity at 30%. This means a high-Q dissimilar memory beats a low-Q similar one — the system trusts what it has learned over surface-level resemblance.
+
+<details>
+<summary>Phase 1: semantic filtering implementation</summary>
+
+<details>
+<summary>Code: retrieve_by_similarity with SQL enrichment</summary>
 
 ```python
 def retrieve_by_similarity(
@@ -160,9 +193,17 @@ def retrieve_by_similarity(
     # Return top k sorted by similarity
 ```
 
+</details>
+
 **Over-Fetching Strategy**: Retrieve 2k candidates from FAISS, then filter in SQL. Accounts for action_type/q_value filters without separate FAISS indexes.
 
-### Phase 2: Q-Value Ranking
+</details>
+
+<details>
+<summary>Phase 2: Q-value ranking and combined scoring</summary>
+
+<details>
+<summary>Code: RetrievalConfig dataclass</summary>
 
 ```python
 @dataclass
@@ -174,25 +215,33 @@ class RetrievalConfig:
     confidence_threshold: float = 0.6  # Min combined score to trust
 ```
 
+</details>
+
 **Combined Score**: `0.7 * q_value + 0.3 * similarity`
 
 Emphasizes learned utility (Q-value) over pure semantic match. A high-Q dissimilar memory is preferred over a low-Q similar one.
 
+</details>
+
 ## Q-Value Learning
 
-### TD-Learning Update
+The system learns which actions work well through TD-learning updates. When a task completes, the QScorer computes a reward based on success/failure, gate failures, and escalation count, then nudges the Q-value toward that reward. Q-values converge over time: 0.9+ means a reliably successful pattern, 0.5 is neutral (the default), and below 0.3 signals likely failure. The QScorer runs asynchronously every 5 minutes so it never blocks inference.
+
+<details>
+<summary>TD-learning update and reward computation</summary>
+
+<details>
+<summary>Code: Q-value update and reward signal</summary>
 
 ```python
 def update_q_value(self, memory_id: str, reward: float, learning_rate: float = 0.1) -> float:
-    """Q(m) ← Q(m) + α(r - Q(m))"""
+    """Q(m) <- Q(m) + alpha(r - Q(m))"""
     old_q = self.get_q_value(memory_id)
     new_q = old_q + learning_rate * (reward - old_q)
     new_q = max(0.0, min(1.0, new_q))  # Clamp to [0, 1]
     self.store.update(memory_id, q_value=new_q, update_count=old_q_count + 1)
     return new_q
 ```
-
-**Reward Signal**:
 
 ```python
 def _compute_reward(outcome, gate_failures, escalations) -> float:
@@ -207,12 +256,20 @@ def _compute_reward(outcome, gate_failures, escalations) -> float:
     return max(-1.0, min(1.0, base_reward - penalty))
 ```
 
+</details>
+
 **Interpretation**:
 - Q=0.9+: Highly successful pattern
 - Q=0.5: Neutral (default)
 - Q=0.3-: Likely to fail or escalate
 
-### Async Scoring via QScorer
+</details>
+
+<details>
+<summary>Async QScorer batch processing</summary>
+
+<details>
+<summary>Code: QScorer class</summary>
 
 ```python
 class QScorer:
@@ -234,11 +291,19 @@ class QScorer:
                 self.store.update_q_value(escalation.memory_id, reward)
 ```
 
+</details>
+
 Keeps Q-updates off the critical inference path. Runs periodically via cron or on-demand trigger.
 
-### Multi-Dimensional Cost Model
+</details>
+
+<details>
+<summary>Multi-dimensional cost model</summary>
 
 QScorer penalizes cost across 3 independent dimensions, each with its own lambda:
+
+<details>
+<summary>Code: three-dimensional cost penalty</summary>
 
 ```python
 # Dimension 1: Latency cost (original)
@@ -259,6 +324,8 @@ total_cost_penalty = latency_penalty + quality_gap_penalty + memory_tier_penalty
 reward = base_reward - total_cost_penalty
 ```
 
+</details>
+
 **Quality gap baseline scores** (from benchmark suite, `baseline_quality_by_role`):
 
 | Model | Role | Baseline Quality |
@@ -270,7 +337,10 @@ reward = base_reward - total_cost_penalty
 
 **Interpretation**: If a task is answered correctly by the 235B architect (quality=0.94), dimension 2 penalizes with `lambda * (0.94 - 0.75) = lambda * 0.19`. The same correct answer from 7B (quality=0.745) receives zero quality gap penalty. This teaches the system to prefer cheap models when they can solve the task.
 
-### Try-Cheap-First Q-Value Convergence
+</details>
+
+<details>
+<summary>Try-cheap-first Q-value convergence strategy</summary>
 
 The cost model drives a "try cheap first" routing strategy through Q-value convergence:
 
@@ -282,7 +352,14 @@ Q(task_class, "worker_explore") learns from:
 
 During orchestration, Phase B/C nodes check `Q(task_class, "worker_explore") > threshold` to decide whether to attempt the cheap model first. As Q-values converge, the system learns which task classes the 7B worker can handle — routing those directly — and which require immediate escalation, avoiding wasted cheap attempts.
 
+</details>
+
 ## MemRL Phases
+
+The system has evolved through 8 phases, from manual YAML-based routing all the way to models making their own routing decisions via REPL tools. All phases are now in production.
+
+<details>
+<summary>Phase progression table</summary>
 
 | Phase | Capability | Status (2026-01) |
 |-------|------------|------------------|
@@ -297,9 +374,14 @@ During orchestration, Phase B/C nodes check `Q(task_class, "worker_explore") > t
 
 **Current Focus**: Phase 8 (model self-routing) is production-ready. Models can query MemRL Q-values directly via REPL tools and make informed escalation/delegation decisions.
 
+</details>
+
 ## MemRL Quality Review Gate
 
-A two-phase quality review triggered when the MemRL Q-value for a role+task combination falls below 0.6:
+When the MemRL Q-value for a role+task combination drops below 0.6, a two-phase quality review kicks in. First, the architect model gives a quick verdict (OK or WRONG with corrections, ~6s). Only if the verdict is WRONG does a second phase run: the fast worker revises the answer using the architect's corrections (~11s). This triggers on about 20% of requests and adds only ~1.9s average latency — 3x more efficient than routing everything through the architect.
+
+<details>
+<summary>Review gate details and performance impact</summary>
 
 **Phase 1 — Architect Verdict** (6.75 t/s, ~40 tokens, ~6s):
 - Receives question + answer (TOON-encoded if worker digests available)
@@ -312,14 +394,19 @@ A two-phase quality review triggered when the MemRL Q-value for a role+task comb
 **Performance Impact**:
 - Trigger rate: ~20% of requests (Q < 0.6)
 - WRONG rate: ~30% of reviews
-- Net: ~1.9s average added latency (20% × (6s + 30% × 11s))
+- Net: ~1.9s average added latency (20% x (6s + 30% x 11s))
 - This is 3x more efficient than full architect review (~6s avg vs ~18s)
 
 **Implementation**: `src/api/routes/chat.py` (`_should_review`, `_architect_verdict`, `_fast_revise`)
 
+</details>
+
 ## Model Self-Routing (Phase 8)
 
-Models now have agency in routing decisions via 5 REPL functions:
+Models now have agency in routing decisions through 5 REPL functions. On the first turn, compact MemRL Q-values for similar tasks get injected into the routing context (TOON-encoded when there are 2+ results), so models can make informed decisions without even calling the REPL explicitly.
+
+<details>
+<summary>REPL routing functions</summary>
 
 | Function | Purpose |
 |----------|---------|
@@ -329,11 +416,19 @@ Models now have agency in routing decisions via 5 REPL functions:
 | `escalate(reason, target_role)` | Request escalation to specific target |
 | `recall(query)` | Episodic memory search with Q-values |
 
-**Routing context** injected on turn 0: compact MemRL Q-values for similar tasks (TOON-encoded when ≥2 results). Models use this to make informed routing decisions without explicit REPL calls.
+**Routing context** injected on turn 0: compact MemRL Q-values for similar tasks (TOON-encoded when >=2 results). Models use this to make informed routing decisions without explicit REPL calls.
+
+</details>
 
 ## Performance Metrics
 
-### Memory Statistics (2026-01-28)
+The system currently holds 2,714 memories split across routing, escalation, and exploration types. End-to-end retrieval (embed + FAISS + SQL) takes 5-13ms, well within interactive latency budgets. The failure and hypothesis graphs track error patterns and action-task confidence, and since the pydantic-graph migration they are fully wired into the orchestration graph nodes rather than sitting as dead code.
+
+<details>
+<summary>Memory statistics and graph wiring</summary>
+
+<details>
+<summary>Data: memory breakdown (2026-01-28)</summary>
 
 ```
 Total memories: 2714
@@ -345,6 +440,8 @@ Overall avg Q: 0.607
 Backend: faiss
 Embeddings count: 2714
 ```
+
+</details>
 
 **Graph Stats** (when enabled):
 - Failure graph: Links memories to symptom patterns
@@ -359,7 +456,10 @@ The following MemRL functions are now called from `src/graph/nodes.py`:
 
 These were previously dead code (declared but never invoked) in the old `repl_executor.py` manual loop.
 
-### Retrieval Latency
+</details>
+
+<details>
+<summary>Retrieval latency breakdown</summary>
 
 | Operation | Time | Notes |
 |-----------|------|-------|
@@ -370,29 +470,35 @@ These were previously dead code (declared but never invoked) in the old `repl_ex
 
 With 500K memories (projected), FAISS search would be ~2ms, total ~10-20ms.
 
+</details>
+
 ## Replay Evaluation Harness
 
-As of 2026-02-13, the MemRL system includes an offline replay evaluation harness for meta-learning memory configurations. Motivated by ALMA (Xiong et al., Feb 2026), which shows meta-learned memory designs consistently outperform hand-crafted ones.
+As of 2026-02-13, we have an offline replay harness that evaluates candidate memory configurations without running live inference. Motivated by ALMA (Xiong et al., Feb 2026), which shows meta-learned memory designs consistently outperform hand-crafted ones. The harness extracts trajectories from progress logs, replays them through isolated episodic stores with different config knobs, and compares routing accuracy, cumulative reward, and Q-convergence speed.
 
-### Architecture
+<details>
+<summary>Architecture and data flow</summary>
 
 ```
 ProgressReader → TrajectoryExtractor → [Trajectory]
-                                            ↓
-DesignCandidate ──→ ReplayEngine ──→ ReplayMetrics
+                                            |
+DesignCandidate --> ReplayEngine --> ReplayMetrics
   (RetrievalConfig,    (isolated       (routing_accuracy,
    ScoringConfig)       EpisodicStore)  cumulative_reward,
                                         q_convergence)
-                                            ↓
+                                            |
                                       DesignArchive (SQLite)
-                                            ↓
+                                            |
                                       MetaAgentWorkflow
-                                        (Claude proposes →
-                                         replay evaluates →
+                                        (Claude proposes ->
+                                         replay evaluates ->
                                          human approves)
 ```
 
-### Modules
+</details>
+
+<details>
+<summary>Module inventory and line counts</summary>
 
 | Module | File | LOC | Purpose |
 |--------|------|-----|---------|
@@ -405,7 +511,10 @@ DesignCandidate ──→ ReplayEngine ──→ ReplayMetrics
 
 **Tests**: 75 tests across 5 files (1,250 LOC). Total production: 1,885 LOC.
 
-### Key Design Decisions
+</details>
+
+<details>
+<summary>Key design decisions</summary>
 
 - **No live embedder calls**: Replay uses pre-computed embeddings from `TrajectoryExtractor`. A `NullEmbedder` safety guard raises if the engine ever tries to call the live embedder.
 - **Isolated stores**: Each candidate gets a fresh `EpisodicStore(tmp_dir)` — no cross-contamination between evaluations. Cleaned up after run.
@@ -413,14 +522,20 @@ DesignCandidate ──→ ReplayEngine ──→ ReplayMetrics
 - **Human-in-the-loop promotion**: Meta-agent recommends but never auto-promotes. Human reviews markdown report, manually updates `model_registry.yaml`.
 - **Stratified sampling**: Default 1000 trajectories, proportional by task_type, reproducible via fixed seed.
 
-### model_id Field (Warm-Start Support)
+</details>
+
+<details>
+<summary>model_id field and warm-start support</summary>
 
 Added `model_id TEXT` column to `memories` table (backward-compatible ALTER TABLE, default NULL). Enables:
 - **Retrieval affinity**: Same-model memories get +15% score bonus in TwoPhaseRetriever Phase 2
 - **Model swap detection**: `WarmStartProtocol.detect_model_swap()` checks if majority of role's memories come from a different model
 - **Q-value reset**: On swap, reset Q-values to 0.5 and double learning rate for 50-task warmup period
 
-### Baseline Replay Results (2026-02-13)
+</details>
+
+<details>
+<summary>Baseline replay results (2026-02-13)</summary>
 
 First baseline run against 31 days of progress logs:
 
@@ -436,39 +551,99 @@ First baseline run against 31 days of progress logs:
 
 Routing accuracy will become meaningful once live orchestration produces real routing decisions (not mock/seeding).
 
+</details>
+
 ## SkillBank Layer (February 2026)
 
-The episodic store now has a **derived knowledge layer** — the SkillBank — that distills raw trajectories into structured, reusable skills. This addresses the fundamental limitation of raw trajectory retrieval: SkillRL's ablation data shows -28.2% (ALFWorld) and -22.5% (WebShop) performance when replacing structured skills with raw trajectories.
+The episodic store now has a derived knowledge layer called the SkillBank that distills raw trajectories into structured, reusable skills. This matters because SkillRL's ablation data shows -28.2% (ALFWorld) and -22.5% (WebShop) performance when replacing structured skills with raw trajectories. The episodic store remains the ground-truth log; SkillBank is a materialized view optimized for inference-time prompt injection.
 
-### Relationship to Episodic Store
+<details>
+<summary>Relationship to episodic store and storage details</summary>
 
 ```
-EpisodicStore (raw trajectories)   ← replay harness reads these (unchanged)
-       ↓ periodic distillation
-SkillBank (structured skills)      ← inference-time retrieval injects into prompts
-       ↓ recursive evolution
-Refined SkillBank                  ← per-category accuracy monitoring triggers updates
+EpisodicStore (raw trajectories)   <- replay harness reads these (unchanged)
+       | periodic distillation
+SkillBank (structured skills)      <- inference-time retrieval injects into prompts
+       | recursive evolution
+Refined SkillBank                  <- per-category accuracy monitoring triggers updates
 ```
 
 The episodic store remains the ground-truth log. SkillBank is a **materialized view** — a lossy compression optimized for inference-time prompt injection. Raw trajectories stay intact for replay evaluation, Q-learning, and audit.
 
-### Storage
-
 SkillBank uses separate SQLite (`skills.db`) and FAISS indices (`skill_embeddings.faiss`, `skill_id_map.npy`) coexisting alongside the episodic memory files in the same directory.
 
-### Feature Flag
-
-Gated behind `ORCHESTRATOR_SKILLBANK=1` (requires `memrl`). When disabled, the system operates identically to pre-SkillBank behavior.
+**Feature Flag**: Gated behind `ORCHESTRATOR_SKILLBANK=1` (requires `memrl`). When disabled, the system operates identically to pre-SkillBank behavior.
 
 **Full documentation**: [Chapter 27: SkillBank & Experience Distillation](27-skillbank-experience-distillation.md)
 
+</details>
+
+## Signal Purity and Robust Confidence (2026-02)
+
+The retrieval layer cleanly separates three concerns: relevance, confidence, and cost. Similarity is used only for neighborhood retrieval. Confidence comes from robust Q statistics (median or trimmed_mean) over top neighbors. Cost is applied at selection time in the `selection_score`, never contaminating the core `P(success|action)` estimate.
+
+<details>
+<summary>Calibration and risk metrics</summary>
+
+Additional replay metrics now track calibration/risk:
+
+- `ece_global`
+- `brier_global`
+- `conformal_coverage`
+- `conformal_risk`
+
+Files:
+
+- `orchestration/repl_memory/retriever.py`
+- `orchestration/repl_memory/replay/engine.py`
+- `orchestration/repl_memory/replay/metrics.py`
+
+</details>
+
+## Regret-Optimized Replay Objective (2026-02)
+
+Replay metrics now include a teacher-match utility objective that combines chosen-pass signal, cost term, and regret penalty. The meta-agent uses `rm_softmax_score` for candidate ranking and promotion instead of raw cumulative reward. Replay action simulation uses action-level posterior scoring (not just top-memory action), which improves sensitivity to retrieval and risk knob changes.
+
+<details>
+<summary>Replay metric fields</summary>
+
+- `utility_score`
+- `rm_softmax_score`
+- `regret_mean`
+- `regret_p95`
+- `speedup_vs_teacher_mean`
+- `route_flip_rate`
+- `posterior_margin_mean`
+
+</details>
+
+## Literature Mapping (Architecture Review Alignment)
+
+This chapter's design choices map directly to the architecture review's research threads. Each theme has a practical interpretation and concrete code anchor.
+
+<details>
+<summary>Review theme to code anchor mapping</summary>
+
+| Review Theme | Practical Interpretation | Code Anchors |
+|--------------|--------------------------|--------------|
+| Regret minimization for routing | Optimize teacher-match utility, not only raw pass rate | `orchestration/repl_memory/replay/engine.py`, `orchestration/repl_memory/replay/meta_agent.py` |
+| Cost-aware but signal-pure learning | Keep confidence estimation separate from cost terms; apply cost at decision time | `orchestration/repl_memory/retriever.py` |
+| Cache-aware latency modeling | Separate warm/cold behavior and avoid hidden heuristics in confidence estimates | `orchestration/repl_memory/retriever.py` |
+| Prior + posterior composition | Treat heuristics as priors that inform, not override, learned evidence | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
+| Replay as design-selection loop | Evaluate candidate routing configs offline before runtime promotion | `orchestration/repl_memory/replay/candidates.py`, `orchestration/repl_memory/replay/meta_agent.py` |
+
+</details>
+
 ## References
+
+<details>
+<summary>All references (core concepts, implementation, replay harness, related systems)</summary>
 
 ### Core Concepts
 
 1. Sutton, R. S., & Barto, A. G. (2018). *Reinforcement Learning: An Introduction* (2nd ed.). MIT Press. (TD-learning, Q-values)
 
-2. Johnson, J., Douze, M., & Jégou, H. (2019). *Billion-scale similarity search with GPUs*. IEEE Transactions on Big Data. (FAISS architecture)
+2. Johnson, J., Douze, M., & Jegou, H. (2019). *Billion-scale similarity search with GPUs*. IEEE Transactions on Big Data. (FAISS architecture)
 
 ### Implementation
 
@@ -493,63 +668,7 @@ Gated behind `ORCHESTRATOR_SKILLBANK=1` (requires `memrl`). When disabled, the s
 15. ALMA: Meta-Learned Memory Architectures (Xiong et al., 2026): Motivates offline replay evaluation
 16. SkillRL: Evolving Agents via Recursive Skill-Augmented RL (Xia et al., 2026): Motivates SkillBank experience distillation. See [Ch27](27-skillbank-experience-distillation.md).
 
----
-
-*Previous: [Chapter 14: TOON Encoding](14-toon-encoding.md)* | *Next: [Chapter 16: Graph-Based Reasoning](16-graph-reasoning.md)*
-
-## Signal Purity and Robust Confidence (2026-02)
-
-The retrieval layer separates relevance, confidence, and cost:
-
-1. Similarity is used for neighborhood retrieval/support only.
-2. Confidence is derived from robust Q statistics (`median` or `trimmed_mean`) over top neighbors.
-3. Cost is applied at selection time (`selection_score`), not in the core `P(success|action)` target.
-
-Additional replay metrics now track calibration/risk:
-
-- `ece_global`
-- `brier_global`
-- `conformal_coverage`
-- `conformal_risk`
-
-Files:
-
-- `orchestration/repl_memory/retriever.py`
-- `orchestration/repl_memory/replay/engine.py`
-- `orchestration/repl_memory/replay/metrics.py`
-
-## Regret-Optimized Replay Objective (2026-02)
-
-Replay metrics now include a teacher-match utility objective:
-
-- `utility_score`
-- `rm_softmax_score`
-- `regret_mean`
-- `regret_p95`
-- `speedup_vs_teacher_mean`
-- `route_flip_rate`
-- `posterior_margin_mean`
-
-The objective combines chosen-pass signal, cost term, and regret penalty at replay time.
-Meta-agent candidate ranking/promotion now uses `rm_softmax_score` rather than raw cumulative reward.
-Replay action simulation also uses action-level posterior scoring (not just top-memory action),
-which improves sensitivity to retrieval/risk knob changes.
-
-## Literature Mapping (Architecture Review Alignment)
-
-This chapter's design choices map directly to the architecture review's research threads:
-
-| Review Theme | Practical Interpretation | Code Anchors |
-|--------------|--------------------------|--------------|
-| Regret minimization for routing | Optimize teacher-match utility, not only raw pass rate | `orchestration/repl_memory/replay/engine.py`, `orchestration/repl_memory/replay/meta_agent.py` |
-| Cost-aware but signal-pure learning | Keep confidence estimation separate from cost terms; apply cost at decision time | `orchestration/repl_memory/retriever.py` |
-| Cache-aware latency modeling | Separate warm/cold behavior and avoid hidden heuristics in confidence estimates | `orchestration/repl_memory/retriever.py` |
-| Prior + posterior composition | Treat heuristics as priors that inform, not override, learned evidence | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
-| Replay as design-selection loop | Evaluate candidate routing configs offline before runtime promotion | `orchestration/repl_memory/replay/candidates.py`, `orchestration/repl_memory/replay/meta_agent.py` |
-
-## Additional Literature (From Architecture Review)
-
-These references motivate the MemRL/replay refinements documented above:
+### Additional Literature (From Architecture Review)
 
 1. Tsiourvas, Sun, Perakis (2025). Causal LLM Routing: End-to-End Regret Minimization from Observational Data. https://openreview.net/forum?id=iZC5xoQQkX
 2. Ong et al. (2024). RouteLLM: Learning to Route LLMs with Preference Data. https://arxiv.org/abs/2406.18665
@@ -557,3 +676,9 @@ These references motivate the MemRL/replay refinements documented above:
 4. Xue et al. (2025). Conformal Risk-Controlled Routing for Large Language Model. https://openreview.net/forum?id=lLR61sHcS5
 5. Zheng et al. (2024). SGLang / RadixAttention (cache-aware serving). https://arxiv.org/abs/2312.07104
 6. Dai, Yang, Si (2025). S-GRPO: Early Exit via Reinforcement Learning in Reasoning Models. https://arxiv.org/abs/2505.07686
+
+</details>
+
+---
+
+*Previous: [Chapter 14: TOON Encoding](14-toon-encoding.md)* | *Next: [Chapter 16: Graph-Based Reasoning](16-graph-reasoning.md)*
