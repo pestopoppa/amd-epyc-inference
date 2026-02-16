@@ -2,6 +2,8 @@
 
 ## 2026-02-16
 
+- **Fix: orchestrator_stack.py --hot-only preserves healthy servers** — `start --hot-only` was unconditionally killing all server processes before restarting. Now checks `/health` endpoint (3s timeout) before killing; healthy servers are preserved and skipped during launch.
+
 - **REPL output spill-to-file with rolling summary** — Large REPL output (>8192 chars) no longer hard-truncated. Output spills to `{spill_dir}/{session_id}/turn_N.txt`; worker model generates a rolling summary that accumulates across turns (previous summary + new tail → updated summary). Model can `peek()`/`grep()` spill files on demand. `max_output_preview` bumped 500→1500. Static head/tail fallback when worker unavailable. 12 new tests.
 
 - **Distillation pipeline latency instrumentation** — Fixed inter-model transition latency blindness in seeding pipeline:

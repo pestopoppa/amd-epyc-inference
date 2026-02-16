@@ -1038,12 +1038,17 @@ def cmd_start(args: argparse.Namespace) -> int:
         print("  [OK] All model paths validated")
         print()
 
-    # Kill existing processes on target ports
+    # Kill existing processes on target ports (skip healthy servers)
     print("[1] Cleaning up existing processes...")
+    already_healthy_ports: set[int] = set()
     for server in HOT_SERVERS + WARM_SERVERS:
         port = server["port"]
         if is_port_in_use(port):
-            print(f"  Port {port} in use, attempting cleanup...")
+            if wait_for_health(port, timeout=3):
+                print(f"  Port {port} already healthy, skipping")
+                already_healthy_ports.add(port)
+                continue
+            print(f"  Port {port} in use but unhealthy, cleaning up...")
             # Find PID from lsof
             try:
                 result = subprocess.run(
@@ -1057,6 +1062,8 @@ def cmd_start(args: argparse.Namespace) -> int:
                         kill_process(pid)
             except Exception as e:
                 print(f"  [!] Error cleaning port {port}: {e}")
+    if already_healthy_ports:
+        print(f"  Preserved {len(already_healthy_ports)} healthy server(s)")
     print()
 
     # Determine which servers to start
@@ -1080,11 +1087,22 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     print()
 
-    # Start servers sequentially
+    # Start servers sequentially (skip already-healthy ports)
     print("[3] Starting llama-servers...")
     for i, server in enumerate(servers_to_start):
         port = server["port"]
         roles = server["roles"]
+
+        if port in already_healthy_ports:
+            role_label = roles[0] if roles else str(port)
+            print(f"  Skipping port {port}: {role_label} (already healthy)")
+            # Record existing server in state so status reporting works
+            state[f"server_{port}"] = {"port": port, "roles": roles, "status": "preserved"}
+            for role in roles:
+                if role not in state:
+                    state[role] = {"port": port, "roles": roles, "status": "preserved"}
+            continue
+
         embedding_mode = server.get("embedding", False)
         worker_pool_mode = server.get("worker_pool", False)
         worker_type = server.get("worker_type")
@@ -1121,14 +1139,18 @@ def cmd_start(args: argparse.Namespace) -> int:
 
     print()
 
-    # Start orchestrator
+    # Start orchestrator (skip if already healthy)
     print("[4] Starting orchestrator API...")
-    info = start_orchestrator()
-    if info:
-        state["orchestrator"] = info
+    if 8000 in already_healthy_ports:
+        print("  Orchestrator already healthy, skipping")
+        state["orchestrator"] = {"port": 8000, "status": "preserved"}
     else:
-        print("  [!] Failed to start orchestrator")
-        return 1
+        info = start_orchestrator()
+        if info:
+            state["orchestrator"] = info
+        else:
+            print("  [!] Failed to start orchestrator")
+            return 1
 
     print()
 
