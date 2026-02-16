@@ -15,16 +15,21 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from src.config import get_config
+
 logger = logging.getLogger(__name__)
+_lifecycle_cfg = get_config().session_lifecycle
+_ACTIVE_TO_IDLE_HOURS = _lifecycle_cfg.active_to_idle_hours
+_IDLE_TO_STALE_HOURS = _lifecycle_cfg.idle_to_stale_days * 24.0
 
 
 class SessionStatus(str, Enum):
     """Session lifecycle status."""
 
-    ACTIVE = "active"  # Recently used (< 1 hour)
-    IDLE = "idle"  # 1 hour - 7 days since last activity
-    STALE = "stale"  # 7 - 30 days (shows "welcome back" summary)
-    ARCHIVED = "archived"  # > 30 days (cold storage)
+    ACTIVE = "active"  # Recently used
+    IDLE = "idle"  # Between active and stale thresholds
+    STALE = "stale"  # Exceeds stale threshold (shows "welcome back" summary)
+    ARCHIVED = "archived"  # Explicitly archived (cold storage)
 
 
 class FindingSource(str, Enum):
@@ -219,9 +224,9 @@ class Session:
         now = datetime.utcnow()
         idle_hours = (now - self.last_active).total_seconds() / 3600
 
-        if idle_hours < 1:
+        if idle_hours < _ACTIVE_TO_IDLE_HOURS:
             self.status = SessionStatus.ACTIVE
-        elif idle_hours < 24 * 7:  # 7 days
+        elif idle_hours < _IDLE_TO_STALE_HOURS:
             self.status = SessionStatus.IDLE
         else:
             self.status = SessionStatus.STALE

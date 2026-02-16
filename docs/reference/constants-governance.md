@@ -10,6 +10,7 @@ This repository applies a two-class policy for numeric values:
 - `tunable` values:
   - live in typed config/dataclass control planes
   - should expose env overrides when operationally relevant
+  - in agent/runtime modules (`src/api/routes/*`, `src/graph/*`, `src/session/*`), do not add inline tuning literals; route through `src/config` first
 - `invariant` values:
   - live in constants modules (global or subsystem-local)
   - should not remain as inline magic literals
@@ -30,3 +31,4 @@ Allowlist: `scripts/validate/numeric_literal_allowlist.yaml`
 When introducing a new numeric value, include one short note:
 - classification: `tunable` or `invariant`
 - placement rationale
+- runtime use site and (if tunable) its config key/env override

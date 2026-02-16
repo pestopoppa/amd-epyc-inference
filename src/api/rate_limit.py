@@ -18,6 +18,7 @@ import json
 import time
 from collections import defaultdict
 
+from src.config import get_config
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 
@@ -65,7 +66,10 @@ class RateLimitMiddleware:
         rpm: int = 60,
         burst: int = 10,
         trust_proxy: bool = True,
+        cleanup_interval_seconds: float | None = None,
+        stale_bucket_ttl_seconds: float | None = None,
     ):
+        _api_cfg = get_config().api
         self.app = app
         self.rpm = rpm
         self.burst = burst
@@ -76,7 +80,16 @@ class RateLimitMiddleware:
             lambda: TokenBucket(self.capacity, self.refill_rate)
         )
         self._last_cleanup = time.monotonic()
-        self._cleanup_interval = 300.0  # prune stale buckets every 5 min
+        self._cleanup_interval = (
+            cleanup_interval_seconds
+            if cleanup_interval_seconds is not None
+            else _api_cfg.rate_limit_cleanup_interval_seconds
+        )
+        self._stale_bucket_ttl_seconds = (
+            stale_bucket_ttl_seconds
+            if stale_bucket_ttl_seconds is not None
+            else _api_cfg.rate_limit_stale_bucket_ttl_seconds
+        )
         self._retry_after = str(int(60 / max(rpm, 1))).encode()
 
     def _get_client_ip(self, scope: Scope) -> str:
@@ -101,7 +114,7 @@ class RateLimitMiddleware:
         if now - self._last_cleanup < self._cleanup_interval:
             return
         self._last_cleanup = now
-        stale_threshold = now - 600.0  # 10 min idle
+        stale_threshold = now - self._stale_bucket_ttl_seconds
         stale_keys = [k for k, v in self._buckets.items() if v.last_refill < stale_threshold]
         for k in stale_keys:
             del self._buckets[k]

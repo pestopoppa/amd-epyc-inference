@@ -984,11 +984,29 @@ class ApiConfig:
     cors_allow_credentials: bool = True
     """Whether to allow credentials in CORS requests."""
 
-    rate_limit_rpm: int = 60
+    rate_limit_rpm: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_API_RATE_LIMIT_RPM", "60"))
+    )
     """Requests per minute per client IP."""
 
-    rate_limit_burst: int = 10
+    rate_limit_burst: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_API_RATE_LIMIT_BURST", "10"))
+    )
     """Maximum burst size above the sustained rate."""
+
+    rate_limit_cleanup_interval_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("ORCHESTRATOR_API_RATE_LIMIT_CLEANUP_INTERVAL_SECONDS", "300.0")
+        )
+    )
+    """Cleanup cadence for stale rate-limit buckets."""
+
+    rate_limit_stale_bucket_ttl_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("ORCHESTRATOR_API_RATE_LIMIT_STALE_BUCKET_TTL_SECONDS", "600.0")
+        )
+    )
+    """Idle TTL before a client bucket is pruned."""
 
 
 @dataclass
@@ -998,6 +1016,14 @@ class SessionPersistenceConfigData:
     checkpoint_turn_interval: int = 5
     checkpoint_idle_minutes: int = 30
     summary_idle_hours: int = 2
+
+
+@dataclass
+class SessionLifecycleConfigData:
+    """Configuration for session status transitions."""
+
+    active_to_idle_hours: float = 1.0
+    idle_to_stale_days: float = 7.0
 
 
 @dataclass
@@ -1152,6 +1178,7 @@ class OrchestratorConfigData:
     session_persistence: SessionPersistenceConfigData = field(
         default_factory=SessionPersistenceConfigData
     )
+    session_lifecycle: SessionLifecycleConfigData = field(default_factory=SessionLifecycleConfigData)
     health_tracker: HealthTrackerConfigData = field(default_factory=HealthTrackerConfigData)
     external_backends: ExternalBackendsConfig = field(default_factory=ExternalBackendsConfig)
 
@@ -1358,6 +1385,15 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             extra="ignore",
         )
 
+    class SessionLifecycleSettings(BaseSettings):
+        active_to_idle_hours: float = 1.0
+        idle_to_stale_days: float = 7.0
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_SESSION_LIFECYCLE_",
+            extra="ignore",
+        )
+
     class HealthTrackerSettings(BaseSettings):
         default_failure_threshold: int = 3
         default_cooldown_s: float = 30.0
@@ -1417,6 +1453,9 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         think_harder: ThinkHarderSettings = PydanticField(default_factory=ThinkHarderSettings)
         session_persistence: SessionPersistenceSettings = PydanticField(
             default_factory=SessionPersistenceSettings
+        )
+        session_lifecycle: SessionLifecycleSettings = PydanticField(
+            default_factory=SessionLifecycleSettings
         )
         health_tracker: HealthTrackerSettings = PydanticField(
             default_factory=HealthTrackerSettings
@@ -1658,6 +1697,10 @@ def _load_from_env() -> OrchestratorConfigData:
             ),
             summary_idle_hours=_env_int(f"{P}SESSION_PERSISTENCE_SUMMARY_IDLE_HOURS", 2),
         ),
+        session_lifecycle=SessionLifecycleConfigData(
+            active_to_idle_hours=_env_float(f"{P}SESSION_LIFECYCLE_ACTIVE_TO_IDLE_HOURS", 1.0),
+            idle_to_stale_days=_env_float(f"{P}SESSION_LIFECYCLE_IDLE_TO_STALE_DAYS", 7.0),
+        ),
         health_tracker=HealthTrackerConfigData(
             default_failure_threshold=_env_int(
                 f"{P}HEALTH_TRACKER_DEFAULT_FAILURE_THRESHOLD", 3
@@ -1850,6 +1893,10 @@ def get_config() -> OrchestratorConfigData:
                 checkpoint_turn_interval=settings.session_persistence.checkpoint_turn_interval,
                 checkpoint_idle_minutes=settings.session_persistence.checkpoint_idle_minutes,
                 summary_idle_hours=settings.session_persistence.summary_idle_hours,
+            ),
+            session_lifecycle=SessionLifecycleConfigData(
+                active_to_idle_hours=settings.session_lifecycle.active_to_idle_hours,
+                idle_to_stale_days=settings.session_lifecycle.idle_to_stale_days,
             ),
             health_tracker=HealthTrackerConfigData(
                 default_failure_threshold=settings.health_tracker.default_failure_threshold,

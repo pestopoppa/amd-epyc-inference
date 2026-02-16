@@ -3,6 +3,7 @@
 
 from datetime import datetime
 
+import src.session.models as session_models
 
 from src.session.models import (
     Checkpoint,
@@ -214,3 +215,21 @@ class TestSessionStatus:
 
         # Archived status should not auto-change
         assert session.status == SessionStatus.ARCHIVED
+
+    def test_session_status_uses_configurable_thresholds(self, monkeypatch):
+        """Status transitions should respect centralized lifecycle thresholds."""
+        monkeypatch.setattr(session_models, "_ACTIVE_TO_IDLE_HOURS", 0.5)
+        monkeypatch.setattr(session_models, "_IDLE_TO_STALE_HOURS", 2.0)
+        session = Session.create()
+
+        session.last_active = datetime.utcnow()
+        session._update_status()
+        assert session.status == SessionStatus.ACTIVE
+
+        session.last_active = datetime.fromtimestamp(datetime.utcnow().timestamp() - 3600)
+        session._update_status()
+        assert session.status == SessionStatus.IDLE
+
+        session.last_active = datetime.fromtimestamp(datetime.utcnow().timestamp() - 3 * 3600)
+        session._update_status()
+        assert session.status == SessionStatus.STALE
