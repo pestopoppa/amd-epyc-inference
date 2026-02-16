@@ -8,9 +8,17 @@ This architecture implements RLM-style (Retrieval-augmented Language Model) orch
 
 ## Security Architecture
 
+The REPL uses AST-based validation to catch sandbox escape attempts that regex would miss -- things like string concatenation tricks or dunder attribute access. There are two execution backends: a fast built-in AST validator and an optional RestrictedPython layer from the Zope/Plone ecosystem.
+
+<details>
+<summary>AST validation and dual-layer sandboxing details</summary>
+
 ### AST-Based Validation
 
 The `ASTSecurityVisitor` class analyzes parsed syntax trees before execution, making it immune to string concatenation tricks:
+
+<details>
+<summary>Code: ASTSecurityVisitor forbidden lists</summary>
 
 ```python
 class ASTSecurityVisitor(ast.NodeVisitor):
@@ -33,6 +41,8 @@ class ASTSecurityVisitor(ast.NodeVisitor):
     })
 ```
 
+</details>
+
 **Why AST over Regex**: String patterns like `getattr(__builtins__, '__im' + 'port__')('os')` bypass regex checks but are caught during AST analysis.
 
 ### Dual-Layer Sandboxing
@@ -46,7 +56,14 @@ The system offers two execution backends:
 
 RestrictedPython (optional) provides battle-tested sandbox used by Zope/Plone, with `PrintCollector` for stdout capture and guarded attribute access.
 
+</details>
+
 ## Built-In Functions
+
+Agents interact with documents through a small set of free primitives: `peek` for previewing, `grep` for searching, and `FINAL` for returning answers. On top of those, NextPLAID-backed code and doc search provide multi-vector retrieval, and archive/web functions handle external content.
+
+<details>
+<summary>Full function reference tables and tool call examples</summary>
 
 ### Context Exploration
 
@@ -76,17 +93,32 @@ Uses ColBERT token-level matching via NextPLAID (:8088, LateOn-Code 130M, 128-di
 
 ### Tool Calls from REPL
 
+<details>
+<summary>Code: Calling external tools via tool_call()</summary>
+
 ```python
 # Call external tools via tool_call()
 result = tool_call("math_simplify", {"expression": "x^2 + 2x + 1"})
 # Returns: {"simplified": "(x+1)^2", "steps": [...]}
 ```
 
+</details>
+
 Agents can invoke the tool registry (41 deterministic tools) from within REPL code.
+
+</details>
 
 ## Execution Model
 
+The REPL enforces resource limits (10-minute timeout via SIGALRM, output capping at 8KB), spills large outputs to disk with rolling LLM-generated summaries, and separates trusted built-in functions from sandboxed user code.
+
+<details>
+<summary>Resource limits, output spilling, and trust layers</summary>
+
 ### Resource Limits
+
+<details>
+<summary>Code: REPLConfig dataclass</summary>
 
 ```python
 @dataclass
@@ -98,6 +130,8 @@ class REPLConfig:
     require_exploration_before_final: bool = False  # Force peek/grep
     min_exploration_calls: int = 1  # Minimum calls before FINAL
 ```
+
+</details>
 
 **Timeout Enforcement**: UNIX `SIGALRM` signal terminates runaway executions (600s default for document ingestion, 120s for general use).
 
@@ -122,11 +156,21 @@ When execution output exceeds `output_cap` (8192 chars), the full output is writ
 
 Built-in functions execute in the trusted layer with access to file system (for archives) and network (for `web_fetch`), but user code is sandboxed.
 
+</details>
+
 ## Exploration Logging
+
+The `ExplorationLog` classifies agent strategies (scan, search, delegated, mixed) and computes token efficiency. These logs feed into MemRL's episodic memory so the system can learn which exploration approaches work best for different task types.
+
+<details>
+<summary>Strategy classification and MemRL integration</summary>
 
 ### Strategy Classification
 
 The `ExplorationLog` tracks which primitives the agent used:
+
+<details>
+<summary>Code: Strategy type definitions</summary>
 
 ```python
 strategy_types = {
@@ -136,6 +180,8 @@ strategy_types = {
     "mixed": Multiple strategies
 }
 ```
+
+</details>
 
 **Token Efficiency**: Calculated as `result_tokens / exploration_tokens`. Higher is better—indicates effective exploration with minimal LLM calls.
 
@@ -147,11 +193,14 @@ Exploration logs feed into episodic memory for Q-learning:
 - **Phase 3**: Update Q-values based on final outcome
 - **Phase 4**: Retrieve similar explorations for future tasks
 
+</details>
+
 ## Research Context Tracker
 
-### Overview
+The Research Context Tracker builds a DAG of tool invocations within a REPL session. Each call gets a prefixed ID (like G1 for grep, P1 for peek), and the system detects cross-references between results both by string matching and semantic similarity. Once three or more nodes exist, a rendered tree is injected into the agent's context.
 
-The Research Context Tracker (`src/research_context.py`) provides DAG-based tracking of tool invocations within a REPL session. It assigns unique IDs to each tool result, tracks parent-child relationships, and detects cross-references between results.
+<details>
+<summary>Node IDs, cross-references, context injection, and configuration</summary>
 
 ### Node ID Assignment
 
@@ -180,6 +229,9 @@ Two mechanisms detect when results reference each other:
 
 When >= 3 nodes exist, `get_state()` includes a rendered tree:
 
+<details>
+<summary>Code: Example rendered research context tree</summary>
+
 ```
 ## Research Context
 Progress: 1 analyzed, 2 pending, 0 stale
@@ -190,6 +242,8 @@ Progress: 1 analyzed, 2 pending, 0 stale
       -> Error at line 42: connection timeout...
       refs: G1
 ```
+
+</details>
 
 Status markers: `[+]` analyzed, `[?]` pending, `[~]` stale
 
@@ -202,6 +256,9 @@ Status markers: `[+]` analyzed, `[?]` pending, `[~]` stale
 
 ### Configuration
 
+<details>
+<summary>Code: ResearchContext constructor</summary>
+
 ```python
 ResearchContext(
     use_semantic=True,        # Enable semantic cross-refs (default ON)
@@ -210,9 +267,18 @@ ResearchContext(
 )
 ```
 
+</details>
+
+</details>
+
 ---
 
 ## Performance Characteristics
+
+The REPL approach delivers massive token savings compared to feeding full documents into the LLM. With peek/grep alone you get around 100x reduction; add TOON encoding for structured data and you get another 55% on top of that.
+
+<details>
+<summary>Token reduction benchmarks</summary>
 
 ### Token Reduction
 
@@ -225,7 +291,14 @@ ResearchContext(
 
 **TOON Encoding**: Enabled by default (`use_toon_encoding=True`). Reduces tokens by ~55% on structured tool outputs with 41.8% latency improvement (TTFT benchmark).
 
+</details>
+
 ## Security Considerations
+
+The sandbox blocks import bypasses, dunder escapes, string subscript tricks, and direct eval/exec calls via AST analysis. Known limitations include CPU-bound DoS (loops run until timeout), unbounded memory allocation, and regex DoS in grep patterns -- production deployments should layer cgroups on top.
+
+<details>
+<summary>Attack surface and known limitations</summary>
 
 ### Attack Surface
 
@@ -242,7 +315,12 @@ ResearchContext(
 
 **Mitigation**: Production deployments should use cgroups for hard resource limits.
 
+</details>
+
 ## References
+
+<details>
+<summary>Implementation, security frameworks, and related approaches</summary>
 
 ### Implementation
 
@@ -261,15 +339,22 @@ ResearchContext(
 6. Jupyter Notebook sandboxing: https://jupyter-notebook.readthedocs.io/en/stable/security.html
 7. PyPy sandboxing (deprecated): https://doc.pypy.org/en/latest/sandbox.html
 
+</details>
+
 ## Unicode Sanitizer (2026-02-09)
 
-Models frequently copy Unicode characters from question text into generated code. For example, a chemistry question containing "contact angle of 47°" leads the model to write `theta = 47°` which causes `SyntaxError: invalid character '°'`.
+Models frequently copy Unicode characters from question text into generated code -- for example, a chemistry question with "contact angle of 47deg" leads to `theta = 47°` which causes a SyntaxError. The `sanitize_code_unicode()` function strips or replaces about 25 common Unicode characters before execution using a single-pass compiled regex.
+
+<details>
+<summary>Sanitizer behavior and replacements</summary>
 
 The `sanitize_code_unicode()` function in `src/repl_environment/unicode_sanitizer.py` runs before all three execution paths (`execute()`, `_execute_structured()`, `_run_python_code()`). It replaces ~25 common Unicode characters with ASCII equivalents via a single-pass compiled regex.
 
 Key replacements: `°`→stripped, `×`→`*`, `−`→`-`, `²`→`**2`, curly quotes→straight quotes, non-breaking/zero-width spaces→stripped.
 
 Fast path: `code.isascii()` returns immediately (zero overhead for clean code).
+
+</details>
 
 ---
 
