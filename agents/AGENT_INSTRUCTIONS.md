@@ -23,6 +23,10 @@ This file is the top-level contract for agents working in this repository.
 - Never run `pytest -n auto` on this host.
 - Use feature flags for optional modules and expensive runtime components.
 - Use enums and typed boundaries instead of magic strings.
+- Classify every new numeric value as either:
+  - `tunable` (belongs in typed config/dataclass + env override path), or
+  - `invariant` (belongs in constants modules, not inline literals).
+- Do not create monolithic "all numerics" files; keep tunables in owning subsystem configs.
 - Never silently swallow exceptions.
 - Keep changes small, testable, and documented.
 

@@ -8,6 +8,16 @@
 - Log exceptions with context; do not use silent `except: pass`.
 - Use thread-safe state update paths for shared mutable state.
 
+## Numerical Parameter Policy
+
+- Treat numeric values as one of two classes:
+  - `tunable`: runtime behavior controls likely to change during evaluation/tuning.
+  - `invariant`: stable semantic limits or shared hard boundaries.
+- `tunable` values must live in typed config/dataclass surfaces, with env override path when operationally relevant.
+- `invariant` values must be named constants (global or subsystem-local), not magic literals.
+- Do not consolidate all numbers into one global file; preserve subsystem ownership of tunables.
+- PRs adding numerics should include a one-line classification note (`tunable` vs `invariant`).
+
 ## Change Style
 
 - Keep each change scoped to one concern.
