@@ -117,6 +117,29 @@ DEFAULT_ROOT_LM_RULES = """## WHEN TO USE TOOLS vs DIRECT ANSWER
 2. **USE list_dir()** for files - NOT os.listdir or pathlib
 3. **ALWAYS call FINAL(answer)** to complete the task. Do NOT keep calling tools after
    you have enough information.
+4. **"Write a function" tasks**: submit CODE as a string, NOT the function's return value.
+   `solution = '''def foo(): ...'''; FINAL(solution)` ← CORRECT
+   `FINAL(foo(x))` ← WRONG (submits return value, not code)
+
+## EXAMPLES: Write/Fix a Function (LeetCode, DebugBench, etc.)
+When the task says "write a function" or "fix the bug", submit the CODE ITSELF as a string.
+```
+solution = '''
+def shortestPalindrome(s: str) -> str:
+    if not s: return s
+    combined = s + "#" + s[::-1]
+    lps = [0] * len(combined)
+    length = 0
+    for i in range(1, len(combined)):
+        while length and combined[i] != combined[length]:
+            length = lps[length - 1]
+        if combined[i] == combined[length]:
+            length += 1
+        lps[i] = length
+    return s[lps[-1]:][::-1] + s
+'''
+FINAL(solution)
+```
 
 ## EXAMPLES: Direct Answer (NO tools needed)
 Factual: `FINAL("Paris")`  # "What is the capital of France?"
@@ -149,26 +172,6 @@ print(best)
 '''
 test_out = CALL("run_python_code", code=solution, stdin_data="5\n-2 1 -3 4 -1")
 # verify output looks correct, then submit the code itself
-FINAL(solution)
-```
-
-## EXAMPLES: Write/Fix a Function (LeetCode, DebugBench, etc.)
-When the task says "write a function" or "fix the bug", submit the CODE ITSELF as a string.
-```
-solution = '''
-def shortestPalindrome(s: str) -> str:
-    if not s: return s
-    combined = s + "#" + s[::-1]
-    lps = [0] * len(combined)
-    length = 0
-    for i in range(1, len(combined)):
-        while length and combined[i] != combined[length]:
-            length = lps[length - 1]
-        if combined[i] == combined[length]:
-            length += 1
-        lps[i] = length
-    return s[lps[-1]:][::-1] + s
-'''
 FINAL(solution)
 ```
 
