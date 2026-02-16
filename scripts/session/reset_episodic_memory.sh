@@ -1,29 +1,41 @@
 #!/bin/bash
 set -euo pipefail
 
-# Reset episodic memory to empty state WITHOUT breaking the running API.
+# Reset ALL episodic memory stores to empty state.
 #
 # What it does:
-#   1. Truncates the SQLite memories table (preserves schema)
-#   2. Resets FAISS index to empty (rewrites embeddings.faiss + id_map.npy)
-#   3. Archives checkpoint JSONL files (which contain seen question IDs)
-#   4. Clears seen_questions.jsonl so seeding can re-sample all questions
-#   5. Sends SIGHUP to the API process so it reinitializes its in-memory state
+#   1. Stops the API (avoids concurrent reads on on-disk state)
+#   2. Truncates the SQLite memories table (preserves schema)
+#   3. Resets FAISS index to empty (rewrites embeddings.faiss + id_map.npy)
+#   4. Deletes Kuzu FailureGraph database (dangling MemoryLink refs)
+#   5. Deletes Kuzu HypothesisGraph database (dangling evidence refs)
+#   6. Clears SkillBank (skills.db + skill FAISS — provenance orphaned)
+#   7. Removes legacy session_embeddings.npy
+#   8. Archives checkpoint JSONL files (which contain seen question IDs)
+#   9. Clears seen_questions.jsonl so seeding can re-sample all questions
+#  10. Restarts the API to pick up empty state
 #
 # What it does NOT do:
-#   - Delete database files (which breaks the running API)
+#   - Delete episodic.db itself (preserves schema, only truncates rows)
 #   - Touch sessions.db (session history is independent of episodic memory)
-#   - Require the API to be stopped
+#   - Touch model servers (only the orchestrator API)
 #
 # Usage:
-#   ./scripts/session/reset_episodic_memory.sh          # Reset everything
-#   ./scripts/session/reset_episodic_memory.sh --keep-seen  # Keep seen_questions
+#   ./scripts/session/reset_episodic_memory.sh                      # Reset everything
+#   ./scripts/session/reset_episodic_memory.sh --keep-seen          # Keep seen_questions
+#   ./scripts/session/reset_episodic_memory.sh --keep-skills        # Keep SkillBank
+#   ./scripts/session/reset_episodic_memory.sh --keep-seen --keep-skills
 
 MEMORY_DIR="/mnt/raid0/llm/claude/orchestration/repl_memory/sessions"
+KUZU_DIR="/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db"
 EVAL_DIR="/mnt/raid0/llm/claude/benchmarks/results/eval"
 DB_PATH="$MEMORY_DIR/episodic.db"
 FAISS_PATH="$MEMORY_DIR/embeddings.faiss"
 IDMAP_PATH="$MEMORY_DIR/id_map.npy"
+SKILLS_DB_PATH="$MEMORY_DIR/skills.db"
+SKILL_FAISS_PATH="$MEMORY_DIR/skill_embeddings.faiss"
+SKILL_IDMAP_PATH="$MEMORY_DIR/skill_id_map.npy"
+SESSION_EMBEDDINGS_PATH="$MEMORY_DIR/session_embeddings.npy"
 SEEN_PATH="$EVAL_DIR/seen_questions.jsonl"
 
 # Match orchestrator API environment for consistency with seeding infra
@@ -41,9 +53,14 @@ export ORCHESTRATOR_GENERATION_MONITOR="1"
 export ORCHESTRATOR_UVICORN_WORKERS="1"
 
 KEEP_SEEN=false
-if [[ "${1:-}" == "--keep-seen" ]]; then
-  KEEP_SEEN=true
-fi
+KEEP_SKILLS=false
+for arg in "$@"; do
+  case "$arg" in
+    --keep-seen)   KEEP_SEEN=true ;;
+    --keep-skills) KEEP_SKILLS=true ;;
+    *)             echo "Unknown flag: $arg"; exit 1 ;;
+  esac
+done
 
 echo "=== Episodic Memory Reset ==="
 
@@ -115,7 +132,78 @@ except ImportError:
     print('  (index will be recreated on next API start)')
 "
 
-# 3. Archive checkpoint JSONL files (contain seen question IDs)
+# 3. Delete Kuzu FailureGraph (contains MemoryLink refs → now dangling)
+if [[ -e "$KUZU_DIR/failure_graph" ]]; then
+  size=$(du -sh "$KUZU_DIR/failure_graph" 2>/dev/null | cut -f1)
+  rm -rf "$KUZU_DIR/failure_graph"
+  echo "  FailureGraph: deleted ($size, will be recreated on API start)"
+else
+  echo "  FailureGraph: not found (clean)"
+fi
+
+# 4. Delete Kuzu HypothesisGraph (contains evidence refs → now dangling)
+if [[ -e "$KUZU_DIR/hypothesis_graph" ]]; then
+  size=$(du -sh "$KUZU_DIR/hypothesis_graph" 2>/dev/null | cut -f1)
+  rm -rf "$KUZU_DIR/hypothesis_graph"
+  echo "  HypothesisGraph: deleted ($size, will be recreated on API start)"
+else
+  echo "  HypothesisGraph: not found (clean)"
+fi
+
+# 5. Clear SkillBank (skills.db + skill FAISS index)
+if [[ "$KEEP_SKILLS" == "false" ]]; then
+  python3 -c "
+import sqlite3
+from pathlib import Path
+
+db_path = Path('$SKILLS_DB_PATH')
+if db_path.exists():
+    conn = sqlite3.connect(db_path)
+    try:
+        count = conn.execute('SELECT COUNT(*) FROM skills;').fetchone()[0]
+        conn.execute('DELETE FROM skills;')
+        conn.commit()
+        print(f'  skills.db: cleared {count} skills (schema preserved)')
+    except Exception as e:
+        print(f'  skills.db: no skills table ({e})')
+    conn.close()
+else:
+    print('  skills.db: not found (clean)')
+"
+  # Reset skill FAISS if present
+  if [[ -f "$SKILL_FAISS_PATH" ]]; then
+    python3 -c "
+import sys, numpy as np
+sys.path.insert(0, '/mnt/raid0/llm/claude')
+try:
+    import faiss
+    from orchestration.repl_memory.embedder import EmbeddingConfig
+    dim = EmbeddingConfig().embedding_dim
+    index = faiss.IndexFlatIP(dim)
+    faiss.write_index(index, '$SKILL_FAISS_PATH')
+    np.save('$SKILL_IDMAP_PATH', np.array([], dtype=object))
+    print(f'  skill FAISS: reset to empty ({dim}-dim)')
+except ImportError:
+    print('  skill FAISS: skipped (faiss not installed)')
+"
+  else
+    echo "  skill FAISS: not found (clean)"
+  fi
+else
+  echo "  skills.db: kept (--keep-skills)"
+  echo "  skill FAISS: kept (--keep-skills)"
+fi
+
+# 6. Remove legacy session_embeddings.npy
+if [[ -f "$SESSION_EMBEDDINGS_PATH" ]]; then
+  size=$(du -sh "$SESSION_EMBEDDINGS_PATH" 2>/dev/null | cut -f1)
+  rm -f "$SESSION_EMBEDDINGS_PATH"
+  echo "  session_embeddings.npy: removed ($size)"
+else
+  echo "  session_embeddings.npy: not found (clean)"
+fi
+
+# 7. Archive checkpoint JSONL files (contain seen question IDs)
 if [[ "$KEEP_SEEN" == "false" ]]; then
   checkpoint_count=$(find "$EVAL_DIR" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l)
   if [[ "$checkpoint_count" -gt 0 ]]; then
@@ -135,7 +223,7 @@ else
   echo "  seen_questions.jsonl: kept (--keep-seen)"
 fi
 
-# 4. Restart API to pick up empty state
+# 8. Restart API to pick up empty state
 echo "  API: restarting to pick up empty state..."
 restart_api
 
