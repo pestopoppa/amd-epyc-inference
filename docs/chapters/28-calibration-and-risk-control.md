@@ -1,6 +1,8 @@
 # Chapter 28: Calibration and Risk Control
 
-This chapter documents calibration-aware routing controls added to the MemRL decision loop.
+## Introduction
+
+This chapter documents calibration-aware routing controls added to the MemRL decision loop. The routing stack now supports robust confidence estimation from neighbor Q-values, calibrated confidence thresholds, conformal-style safety margins for abstain/escalate behavior, and replay-time calibration metrics for ongoing validation.
 
 ## Scope
 
@@ -12,6 +14,11 @@ The routing stack now supports:
 4. Replay-time calibration metrics for ongoing validation.
 
 ## Runtime Controls
+
+These are the knobs you turn to tune how aggressively the risk gate intervenes. The `RetrievalConfig` object holds all of them, and the effective routing threshold is computed as the calibrated (or base) threshold plus the conformal margin. When confidence falls below that threshold under strict gate enforcement, hybrid routing emits `risk_abstain_escalate` and hands off to the configured target role.
+
+<details>
+<summary>RetrievalConfig parameters</summary>
 
 `RetrievalConfig` controls:
 
@@ -42,13 +49,23 @@ Gate provenance is logged with:
 - `risk_gate_reason`
 - `risk_budget_id`
 
-Rollout/guardrail controls:
+</details>
+
+<details>
+<summary>Rollout and guardrail controls</summary>
 
 - deterministic rollout sampling by route key (`risk_gate_rollout_ratio`)
 - emergency kill switch (`risk_gate_kill_switch`)
 - budget guardrail to auto-disable strict gating if abstain rate exceeds configured budget
 
+</details>
+
 ## Metrics
+
+Replay emits four calibration metrics that tell you how well-calibrated your confidence estimates actually are. These are computed across the replay engine and its metrics module.
+
+<details>
+<summary>Calibration metric definitions</summary>
 
 Replay now emits:
 
@@ -62,7 +79,11 @@ These are computed in:
 - `orchestration/repl_memory/replay/engine.py`
 - `orchestration/repl_memory/replay/metrics.py`
 
+</details>
+
 ## Operational Workflow
+
+When you want to validate a new calibration config, run replay twice — once with your baseline, once with the candidate settings — then compare metrics. Only promote if both the risk/coverage targets and your utility KPIs pass.
 
 1. Run replay on recent trajectories with baseline config.
 2. Run replay with candidate calibration/risk settings.
@@ -78,6 +99,11 @@ These are computed in:
 
 ## Concept-to-Code Mapping
 
+This table ties each calibration idea back to the actual code that implements it, so you know where to look when debugging or extending the risk control pipeline.
+
+<details>
+<summary>Calibration concept mapping table</summary>
+
 | Calibration/Risk Concept | Runtime/Replay Realization | Code Anchors |
 |--------------------------|----------------------------|--------------|
 | Calibrated confidence thresholding | Base/calibrated threshold with conformal margin | `orchestration/repl_memory/retriever.py` |
@@ -87,7 +113,12 @@ These are computed in:
 | Offline calibration validation | ECE/Brier/conformal metrics during replay candidate comparison | `orchestration/repl_memory/replay/engine.py`, `orchestration/repl_memory/replay/metrics.py` |
 | Parameterized seeding/eval | Reproducible calibration/risk sweeps via CLI knobs | `scripts/benchmark/seed_specialist_routing.py`, `orchestration/repl_memory/replay/meta_agent.py` |
 
+</details>
+
 ## Literature References (From Architecture Review)
+
+<details>
+<summary>References and further reading</summary>
 
 Primary references for this chapter:
 
@@ -102,6 +133,8 @@ Secondary context:
 
 7. Zheng et al. (2024). SGLang / RadixAttention for serving efficiency under long contexts. https://arxiv.org/abs/2312.07104
 8. Dai, Yang, Si (2025). S-GRPO for regulated reasoning length. https://arxiv.org/abs/2505.07686
+
+</details>
 
 ---
 
