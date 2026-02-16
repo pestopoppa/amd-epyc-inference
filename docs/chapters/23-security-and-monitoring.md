@@ -8,6 +8,11 @@ This chapter covers each mechanism, their thresholds, and how they interact with
 
 ## AST-Based Code Validation
 
+The REPL sandbox uses Python's `ast` module to inspect syntax trees before any LLM-generated code runs. This makes it immune to string concatenation tricks that defeat regex-based filters. A two-layer permission model lets trusted built-in tools call `open()` and `subprocess` internally while blocking those same operations in user-facing code, and an optional RestrictedPython layer adds guarded attribute access on top.
+
+<details>
+<summary>Architecture and forbidden operations</summary>
+
 ### Architecture
 
 The primary REPL sandbox (`src/repl_environment.py`) uses Python's `ast` module to analyze syntax trees before execution, making it immune to string concatenation obfuscation that defeats regex-based approaches:
@@ -84,11 +89,41 @@ An optional second sandbox layer (`src/restricted_executor.py`) uses the battle-
 - **Print collection** via `PrintCollector`: captures all stdout
 - **Timeout** via `signal.SIGALRM`: default 120 seconds
 
+<details>
+<summary>Code: forbidden sets and AST visitor</summary>
+
+```python
+FORBIDDEN_MODULES = frozenset({
+    "os", "sys", "subprocess", "socket", "shutil", "pathlib",
+    "tempfile", "multiprocessing", "threading", "ctypes", "pickle",
+    "importlib", "builtins", "code", "codeop", "runpy", "pkgutil",
+})
+
+FORBIDDEN_CALLS = frozenset({
+    "__import__", "eval", "exec", "compile", "open",
+    "getattr", "setattr", "delattr", "hasattr",
+    "globals", "locals", "vars", "dir",
+    "input", "breakpoint", "memoryview",
+})
+
+FORBIDDEN_ATTRS = frozenset({
+    "__class__", "__bases__", "__subclasses__", "__mro__",
+    "__dict__", "__globals__", "__locals__", "__code__",
+    "__builtins__", "__closure__", "__func__", "__self__",
+    "__module__", "__qualname__", "__annotations__",
+    "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__",
+})
+```
+
+</details>
+</details>
+
 ## Generation Monitoring
 
-### Overview
+The `GenerationMonitor` tracks token-by-token health during model output, detecting repetition loops, entropy collapse, and perplexity spikes. When output goes degenerate, it triggers early abort to prevent wasted compute. Each agent tier gets its own thresholds -- architects are allowed more variation while coders face strict repetition limits -- and a weighted combined score prevents false positives from any single noisy signal.
 
-The `GenerationMonitor` class (`src/generation_monitor.py`) tracks token-by-token health during model output generation. It detects degenerate output — repetition loops, entropy collapse, and perplexity spikes — and triggers early abort to prevent wasted compute.
+<details>
+<summary>Metrics, thresholds, and abort logic</summary>
 
 ### Monitored Metrics
 
@@ -155,7 +190,8 @@ failure_prob = sum(w * normalize(signal) for w, signal in zip(weights, signals))
 
 Each signal is normalized to 0-1 relative to its threshold. The combined approach prevents false positives from any single noisy signal.
 
-### Default Configuration
+<details>
+<summary>Code: MonitorConfig defaults</summary>
 
 ```python
 @dataclass
@@ -171,6 +207,8 @@ class MonitorConfig:
     combined_threshold: float = 0.7
 ```
 
+</details>
+
 ### Integration with Escalation
 
 When the generation monitor aborts, it produces an `EARLY_ABORT` error category:
@@ -185,9 +223,16 @@ class ErrorCategory(str, Enum):
     EARLY_ABORT = "early_abort" # Immediate escalation
 ```
 
-`EARLY_ABORT` triggers **immediate escalation** — no retry — because the abort indicates the current model cannot produce valid output for this input. Retrying would produce the same degenerate output.
+`EARLY_ABORT` triggers **immediate escalation** -- no retry -- because the abort indicates the current model cannot produce valid output for this input. Retrying would produce the same degenerate output.
+
+</details>
 
 ## Path Validation
+
+All file operations go through a whitelist check that resolves symlinks with `realpath()` before comparison, defeating path traversal attacks. This is the primary defense against exhausting the 120GB root SSD, complemented by environment variable redirects and a bind mount for `/tmp/claude`.
+
+<details>
+<summary>Whitelist enforcement and root filesystem protection</summary>
 
 ### Whitelist Enforcement
 
@@ -218,7 +263,29 @@ The 120GB root SSD can be exhausted by unconstrained writes. Path validation is 
 - Bind mount for `/tmp/claude` -> `/mnt/raid0/llm/tmp/claude`
 - Storage monitoring scripts (see [Chapter 4](04-storage-and-safety.md))
 
+<details>
+<summary>Code: path validation function</summary>
+
+```python
+ALLOWED_FILE_PATHS = ["/mnt/raid0/llm/", "/tmp/"]
+
+def _validate_file_path(path: str) -> tuple[bool, str | None]:
+    resolved = os.path.realpath(path)  # Resolve symlinks
+    for allowed in ALLOWED_FILE_PATHS:
+        if resolved.startswith(allowed):
+            return True, None
+    return False, f"Path not in allowed locations"
+```
+
+</details>
+</details>
+
 ## Execution Flow
+
+When LLM-generated code enters the REPL, it passes through six stages: AST validation, timeout setup, restricted execution, generation monitoring (if the code calls an LLM tool), output capping, and finally result or error handling. An `EARLY_ABORT` from the generation monitor triggers immediate escalation, while a `REPLSecurityError` is logged and blocked outright.
+
+<details>
+<summary>End-to-end security flow</summary>
 
 Complete security flow for REPL code execution:
 
@@ -260,7 +327,14 @@ LLM generates code
   - REPLSecurityError -> logged + blocked
 ```
 
+</details>
+
 ## REPL Configuration
+
+The REPL has five tunable limits that cap execution time, output size, and tool usage per session.
+
+<details>
+<summary>Config: REPL limits</summary>
 
 ```python
 @dataclass
@@ -272,7 +346,12 @@ class REPLConfig:
     max_file_read: int = 50_000          # Max file read size (chars)
 ```
 
+</details>
+
 ## References
+
+<details>
+<summary>Project files and related chapters</summary>
 
 ### Project Files
 
@@ -284,10 +363,12 @@ class REPLConfig:
 
 ### Related Chapters
 
-1. [Chapter 11: REPL Environment](11-repl-environment.md) — full REPL architecture and built-in tools
-2. [Chapter 18: Escalation & Routing](18-escalation-and-routing.md) — how EARLY_ABORT triggers escalation
-3. [Chapter 22: Tool Registry & Agent Roles](22-tool-registry.md) — permission model and role definitions
-4. [Chapter 4: Storage & Safety](04-storage-and-safety.md) — root filesystem protection
+1. [Chapter 11: REPL Environment](11-repl-environment.md) -- full REPL architecture and built-in tools
+2. [Chapter 18: Escalation & Routing](18-escalation-and-routing.md) -- how EARLY_ABORT triggers escalation
+3. [Chapter 22: Tool Registry & Agent Roles](22-tool-registry.md) -- permission model and role definitions
+4. [Chapter 4: Storage & Safety](04-storage-and-safety.md) -- root filesystem protection
+
+</details>
 
 ---
 
