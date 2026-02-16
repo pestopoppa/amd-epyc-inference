@@ -14,7 +14,10 @@ The system was implemented in 7 phases (2026-01-21 to 2026-01-26) and uses SQLit
 
 ## Architecture Overview
 
-### Components
+The persistence layer is split into five components, each owning a single responsibility. `SessionPersister` decides *when* to checkpoint, `SQLiteSessionStore` handles *where* the data lands, and `DocumentCache` avoids expensive OCR re-runs. Data classes live in `models.py`, and a CLI wraps everything for interactive use.
+
+<details>
+<summary>Component breakdown and storage locations</summary>
 
 | Component | Purpose | Storage |
 |-----------|---------|---------|
@@ -24,7 +27,10 @@ The system was implemented in 7 phases (2026-01-21 to 2026-01-26) and uses SQLit
 | Session models | Data classes | `src/session/models.py` |
 | CLI | Session management | `src/cli_sessions.py` |
 
-### Storage Layout
+</details>
+
+<details>
+<summary>Storage layout on disk</summary>
 
 ```
 /workspace/orchestration/repl_memory/sessions/
@@ -36,9 +42,14 @@ The system was implemented in 7 phases (2026-01-21 to 2026-01-26) and uses SQLit
 │   └── scheduler.json                # Procedure scheduler state
 ```
 
+</details>
+
 ## 7-Phase Implementation
 
-The system was built incrementally over 7 phases:
+The system was built incrementally over one week. Each phase added a discrete layer, from core data models through to integration tests, so every intermediate state was deployable.
+
+<details>
+<summary>Phase-by-phase timeline and files created</summary>
 
 | Phase | Date | Focus | Files Created |
 |-------|------|-------|---------------|
@@ -50,11 +61,14 @@ The system was built incrementally over 7 phases:
 | **Phase 6** | 2026-01-25 | API integration | `src/api.py` endpoints |
 | **Phase 7** | 2026-01-26 | Testing & validation | `tests/integration/test_sessions.py` |
 
+</details>
+
 ## Session Lifecycle
 
-### Session Status
+Sessions move through four states based on how long they have been idle. An `ACTIVE` session resumes instantly, while a `STALE` or `ARCHIVED` session triggers document change detection and injects a full context summary so the model can pick up where it left off.
 
-Sessions transition through 4 lifecycle states:
+<details>
+<summary>Lifecycle states and resume behavior</summary>
 
 | Status | Trigger | Idle Time | Behavior on Resume |
 |--------|---------|-----------|-------------------|
@@ -63,7 +77,8 @@ Sessions transition through 4 lifecycle states:
 | `STALE` | Long idle | 7 - 30 days | Full context injection with document change detection |
 | `ARCHIVED` | Manual or 30+ days | > 30 days | "Welcome back" summary, LLM-generated context |
 
-### Creating a Session
+<details>
+<summary>Code: Creating a session</summary>
 
 ```python
 from src.session import SQLiteSessionStore, Session
@@ -84,7 +99,10 @@ print(f"Session ID: {session.id}")
 print(f"Task ID (for MemRL): {session.task_id}")
 ```
 
-### Session Activity Tracking
+</details>
+
+<details>
+<summary>Code: Tracking session activity</summary>
 
 ```python
 # Update activity timestamp
@@ -100,11 +118,26 @@ session.last_topic = "Analyzing Qwen3-235B benchmark results"
 store.update_session(session)
 ```
 
+</details>
+
+</details>
+
 ## Checkpoint System
 
-### SessionPersister
+The `SessionPersister` watches conversation turns and idle time, then writes a checkpoint when thresholds are hit. Each checkpoint captures a SHA-256 hash of the context, serialized artifacts (variables, plots), and the trigger reason. You can also force a checkpoint with the `/save` command.
 
-The `SessionPersister` class handles automatic checkpoint triggers:
+<details>
+<summary>Checkpoint triggers and frequency</summary>
+
+| Trigger | Condition | Frequency |
+|---------|-----------|-----------|
+| Turn count | Every 5 conversation turns | Common |
+| Idle time | 30 minutes without activity | Moderate |
+| Explicit save | User `/save` command | Rare |
+| Auto-summary | 2 hours idle + no summary exists | Rare |
+
+<details>
+<summary>Code: Using the SessionPersister</summary>
 
 ```python
 from src.session import SessionPersister
@@ -125,16 +158,10 @@ if persister.should_checkpoint():
     print(f"Checkpoint saved: {checkpoint.id}")
 ```
 
-### Checkpoint Triggers
+</details>
 
-| Trigger | Condition | Frequency |
-|---------|-----------|-----------|
-| Turn count | Every 5 conversation turns | Common |
-| Idle time | 30 minutes without activity | Moderate |
-| Explicit save | User `/save` command | Rare |
-| Auto-summary | 2 hours idle + no summary exists | Rare |
-
-### Checkpoint Data Model
+<details>
+<summary>Code: Building a checkpoint manually</summary>
 
 ```python
 from src.session.models import Checkpoint
@@ -160,9 +187,19 @@ checkpoint = Checkpoint(
 store.save_checkpoint(checkpoint)
 ```
 
+</details>
+
+</details>
+
 ## Document Tracking & Change Detection
 
-### Adding Documents
+Every document processed during a session gets a SHA-256 fingerprint stored alongside the session record. On resume, the system re-hashes each file and flags anything that has changed or gone missing. OCR results are cached per-session in a dedicated SQLite database so re-processing a 40-page PDF is effectively free.
+
+<details>
+<summary>Document registration and OCR caching workflow</summary>
+
+<details>
+<summary>Code: Adding a document to a session</summary>
 
 ```python
 from src.session.models import SessionDocument
@@ -188,9 +225,10 @@ doc = SessionDocument(
 store.add_document(doc)
 ```
 
-### OCR Caching
+</details>
 
-The `DocumentCache` stores OCR results to avoid reprocessing:
+<details>
+<summary>Code: OCR cache lookup and storage</summary>
 
 ```python
 from src.session.document_cache import DocumentCache
@@ -210,9 +248,10 @@ else:
     cache.cache_result("/path/to/document.pdf", result, track_in_session=True)
 ```
 
-### Change Detection on Resume
+</details>
 
-When resuming a session, the system detects document changes:
+<details>
+<summary>Code: Detecting document changes on resume</summary>
 
 ```python
 # Build resume context (includes change detection)
@@ -227,11 +266,16 @@ if resume_ctx.document_changes:
             print(f"⚠ Document changed: {change.file_path}")
 ```
 
+</details>
+
+</details>
+
 ## Findings System
 
-### Finding Sources
+Findings are the key insights extracted during a session. They come from three sources: the user explicitly marking something important, the LLM extracting a claim from conversation context, or a heuristic rule firing. Each finding carries a confidence score and a confirmation flag so you can distinguish verified facts from tentative extractions.
 
-Findings are key insights extracted during a session:
+<details>
+<summary>Finding sources and confidence levels</summary>
 
 | Source | Confidence | Requires Confirmation |
 |--------|------------|-----------------------|
@@ -239,7 +283,8 @@ Findings are key insights extracted during a session:
 | `LLM_EXTRACTED` | 0.0-1.0 | Yes (LLM can hallucinate) |
 | `HEURISTIC` | 0.7-0.9 | Yes (rule-based) |
 
-### Creating Findings
+<details>
+<summary>Code: Creating a user-marked finding</summary>
 
 ```python
 from src.session.models import Finding, FindingSource
@@ -260,7 +305,10 @@ finding = Finding(
 store.add_finding(finding)
 ```
 
-### LLM-Extracted Findings
+</details>
+
+<details>
+<summary>Code: LLM-extracted findings with confirmation workflow</summary>
 
 ```python
 # LLM extracts finding during conversation
@@ -282,9 +330,19 @@ llm_finding.confirmed = True
 store.update_finding(llm_finding)
 ```
 
+</details>
+
+</details>
+
 ## Resume Context
 
-### Building Resume Context
+When a session resumes, the system assembles a structured context block containing the session name, all tracked documents (with change flags), confirmed findings, and the last conversation topic. This block is formatted as markdown and injected as the system message so the model immediately knows what happened before.
+
+<details>
+<summary>Resume context assembly and injection</summary>
+
+<details>
+<summary>Code: Building and injecting resume context</summary>
 
 ```python
 # Build context for session resume
@@ -306,9 +364,10 @@ messages = [
 ]
 ```
 
-### Resume Context Format
+</details>
 
-The `format_for_injection()` method produces markdown:
+<details>
+<summary>Data: Example injected markdown format</summary>
 
 ```markdown
 # Session Resumed: Benchmark Analysis
@@ -331,9 +390,19 @@ Analyzing optimal expert count for MoE models
 - Source file changed: /mnt/raid0/llm/benchmarks/results/runs/.../results.json
 ```
 
+</details>
+
+</details>
+
 ## CLI Interface
 
-The `cli_sessions.py` module provides command-line tools:
+The `cli_sessions.py` module exposes all session operations through the `orch sessions` command group. You can list, search, inspect, resume, archive, and delete sessions from your terminal without touching Python directly.
+
+<details>
+<summary>CLI commands and example output</summary>
+
+<details>
+<summary>Code: Available CLI commands</summary>
 
 ```bash
 # List all active sessions
@@ -355,7 +424,10 @@ orch sessions archive abc123
 orch sessions delete abc123 --force
 ```
 
-### Example CLI Output
+</details>
+
+<details>
+<summary>Code: Example list output</summary>
 
 ```bash
 $ orch sessions list --status active
@@ -367,7 +439,16 @@ $ orch sessions list --status active
 3 sessions found
 ```
 
+</details>
+
+</details>
+
 ## Storage Performance
+
+The storage footprint is intentionally small. A typical session with a handful of documents and checkpoints stays well under 5MB. SQLite WAL mode gives us crash safety and good concurrency without the overhead of a full database server.
+
+<details>
+<summary>Per-component storage costs and WAL mode benefits</summary>
 
 | Metric | Value | Notes |
 |--------|-------|-------|
@@ -375,14 +456,19 @@ $ orch sessions list --status active
 | Checkpoint | ~5-50KB | Depends on artifact count |
 | Document record | ~1KB | Reference only, OCR cached separately |
 | OCR cache | ~100KB-2MB/doc | Compressed JSON, no images |
-| Embeddings | 1024 × 4 bytes = 4.0KB | Per session (TaskEmbedder) |
+| Embeddings | 1024 x 4 bytes = 4.0KB | Per session (TaskEmbedder) |
 
 **WAL mode benefits:**
 - Crash-safe (writes to WAL first)
 - Better concurrency (readers don't block writers)
 - Automatic checkpoint merging on close
 
+</details>
+
 ## References
+
+<details>
+<summary>Source files and API endpoints</summary>
 
 - **Session models**: `src/session/models.py`
 - **Protocol (abstract interface)**: `src/session/protocol.py`
@@ -391,6 +477,8 @@ $ orch sessions list --status active
 - **Checkpoint manager**: `src/session/persister.py`
 - **CLI**: `src/cli_sessions.py`
 - **API integration**: `src/api.py` (POST /sessions, GET /sessions/{id}/resume)
+
+</details>
 
 ---
 
