@@ -15,6 +15,11 @@ SkillRL demonstrates that a 7B model with skill augmentation (89.9% ALFWorld) ou
 
 ## Architecture Overview
 
+The SkillBank system sits between the episodic store and the inference pipeline. Teacher models distill raw trajectories into structured skills, which live in their own SQLite + FAISS store. At inference time, a two-level retriever pulls relevant skills and injects them into prompts. The replay engine evaluates skill effectiveness offline, while the episodic store remains the source of truth for raw data.
+
+<details>
+<summary>Architecture and data flow</summary>
+
 ```
                         ┌─────────────────────────┐
                         │   Teacher Models         │
@@ -59,11 +64,21 @@ SkillRL demonstrates that a 7B model with skill augmentation (89.9% ALFWorld) ou
 | ReplayEngine | EpisodicStore (raw) | DesignArchive | On-demand (meta-agent) |
 | EvolutionMonitor | SkillBank, OutcomeTracker | SkillBank (updates) | Triggered by accuracy drop |
 
+</details>
+
 ## SkillBank Core
+
+Each skill is a structured record stored in SQLite with a companion FAISS vector index for similarity search. Skills carry provenance links back to source trajectories, effectiveness tracking fields, and optional failure-specific metadata. The FAISS index for skills coexists alongside the episodic memory's FAISS index using custom filename parameters, and a hard cap of 500 skills prevents unbounded growth.
+
+<details>
+<summary>Schema and storage design</summary>
 
 ### Schema
 
 Skills are stored in SQLite with FAISS vector search on a separate index (`skill_embeddings.faiss` + `skill_id_map.npy`) coexisting alongside the episodic memory's FAISS index.
+
+<details>
+<summary>Code: Skill dataclass</summary>
 
 ```python
 @dataclass
@@ -89,7 +104,10 @@ class Skill:
     prevention_principle: Optional[str] = None
 ```
 
-### SQL Schema
+</details>
+
+<details>
+<summary>SQL: skills table DDL</summary>
 
 ```sql
 CREATE TABLE skills (
@@ -116,6 +134,8 @@ CREATE INDEX idx_deprecated ON skills(deprecated);
 CREATE INDEX idx_confidence ON skills(confidence DESC);
 ```
 
+</details>
+
 ### Storage Layout
 
 ```
@@ -130,6 +150,9 @@ CREATE INDEX idx_confidence ON skills(confidence DESC);
 
 The FAISS coexistence is enabled by custom filename parameters on `FAISSEmbeddingStore`:
 
+<details>
+<summary>Code: FAISS filename configuration</summary>
+
 ```python
 # Default (episodic)
 FAISSEmbeddingStore(path=faiss_dir, dim=1024)
@@ -142,6 +165,8 @@ FAISSEmbeddingStore(
     id_map_filename="skill_id_map.npy",
 )
 ```
+
+</details>
 
 ### Capacity Limits
 
@@ -158,9 +183,14 @@ FAISSEmbeddingStore(
 | `escalation` | Escalation events | "When seeing symptoms X, escalate to Y" |
 | `failure_lesson` | Failure trajectories | "Approach X fails for Y because Z; try W instead" |
 
+</details>
+
 ## Two-Level Retrieval
 
-Adapted from SkillRL §3.2 (Adaptive Skill Retrieval).
+Skill retrieval uses a two-level strategy adapted from SkillRL's Adaptive Skill Retrieval. Level 1 always injects high-confidence general skills regardless of task type. Level 2 uses FAISS cosine similarity to find task-specific skills matching the current request. The `SkillAugmentedRouter` wraps the existing `HybridRouter` transparently, so routing works identically with or without skills enabled.
+
+<details>
+<summary>Retrieval levels and prompt injection</summary>
 
 ### Level 1: General Skills
 
@@ -182,6 +212,9 @@ Skills appearing in both levels are deduplicated — general skills take priorit
 
 Skills are formatted as a markdown section injected before the task prompt:
 
+<details>
+<summary>Code: prompt injection format</summary>
+
 ```markdown
 ## Relevant Skills
 
@@ -196,11 +229,16 @@ Skills are formatted as a markdown section injected before the task prompt:
    - When to apply: When implementing functions with complex data structures.
 ```
 
+</details>
+
 Token budget: `SkillBankConfig.max_prompt_tokens = 1500` (configurable). Skills are added in priority order until the budget is exhausted.
 
 ### SkillAugmentedRouter
 
 The `SkillAugmentedRouter` wraps `HybridRouter` transparently:
+
+<details>
+<summary>Code: SkillAugmentedRouter</summary>
 
 ```python
 class SkillAugmentedRouter:
@@ -217,9 +255,18 @@ class SkillAugmentedRouter:
         return routing_decision, strategy, skill_context
 ```
 
+</details>
+
 Skill context is injected into `direct_stage.py` and `repl_executor.py` by prepending to the prompt.
 
+</details>
+
 ## Distillation Pipeline
+
+Three teacher models -- Claude Opus 4.6, gpt-5.3-codex, and Qwen3-235B locally -- distill raw trajectories into structured skills. Each teacher implements a simple `distill(prompt) -> str` protocol, and the pipeline batches trajectories, builds type-specific prompts (success, failure, or escalation), and deduplicates new skills against the existing bank using cosine similarity with a 0.85 threshold.
+
+<details>
+<summary>Teacher models and pipeline operation</summary>
 
 ### Teacher Models
 
@@ -233,6 +280,9 @@ Three teachers provide redundancy and diversity:
 
 All teachers implement the `TeacherModel` protocol:
 
+<details>
+<summary>Code: TeacherModel protocol</summary>
+
 ```python
 class TeacherModel(Protocol):
     async def distill(self, prompt: str) -> str: ...
@@ -241,6 +291,8 @@ class TeacherModel(Protocol):
 ```
 
 `MockTeacher` is provided for testing (no inference, configurable responses).
+
+</details>
 
 ### Distillation Prompts
 
@@ -260,6 +312,9 @@ Three prompt templates for different trajectory types:
 
 ### Pipeline Operation
 
+<details>
+<summary>Code: DistillationPipeline.run</summary>
+
 ```python
 class DistillationPipeline:
     async def run(self, trajectories, batch_size=10) -> DistillationReport:
@@ -274,13 +329,25 @@ class DistillationPipeline:
                         self.skill_bank.store(skill)
 ```
 
+</details>
+
 Deduplication: new skills with cosine similarity > 0.85 to existing skills are skipped.
 
+</details>
+
 ## Failure Lesson Formalization
+
+The `FailureBridge` connects the Kuzu-backed FailureGraph (anti-memory) with the SQLite-backed SkillBank. It exports high-quality mitigations as `failure_lesson` skills, enriches distillation prompts with failure history, and cross-references proposed skills against known failure modes. Only mitigations with a success rate of 0.7 or higher and at least 3 attempts qualify for export.
+
+<details>
+<summary>FailureBridge design and enrichment flow</summary>
 
 ### FailureBridge
 
 Connects the Kuzu-backed FailureGraph (anti-memory) with the SQLite-backed SkillBank:
+
+<details>
+<summary>Code: FailureBridge class</summary>
 
 ```python
 class FailureBridge:
@@ -297,6 +364,8 @@ class FailureBridge:
         # Returns match info with confidence adjustment
 ```
 
+</details>
+
 ### Enrichment Flow
 
 ```
@@ -311,13 +380,21 @@ Distillation prompts ◀──context──  SkillRetriever
 
 Mitigations with `success_rate >= 0.7` and `attempt_count >= 3` are exported. Confidence is capped at `min(success_rate, 0.85)` for bridge-generated skills.
 
+</details>
+
 ## Recursive Skill Evolution
 
-Adapted from SkillRL §3.3 (Recursive Skill Evolution).
+Adapted from SkillRL's Recursive Skill Evolution, the `EvolutionMonitor` periodically evaluates all active skills and adjusts their confidence based on observed effectiveness. Skills that consistently help get promoted; skills that stop helping decay and eventually get deprecated. The `OutcomeTracker` records task outcomes correlated with skill retrievals, providing the effectiveness signal that drives evolution.
+
+<details>
+<summary>Evolution cycle and outcome tracking</summary>
 
 ### EvolutionMonitor
 
 Evaluates all active skills periodically and adjusts confidence based on observed effectiveness:
+
+<details>
+<summary>Config: EvolutionConfig</summary>
 
 ```python
 class EvolutionConfig:
@@ -330,18 +407,23 @@ class EvolutionConfig:
     stale_days: int = 30                # Mark stale after N days unused
 ```
 
+</details>
+
 ### Evolution Cycle
 
 For each active skill with `retrieval_count >= min_retrievals`:
 
-1. **Compute effectiveness**: From `OutcomeTracker` (task outcomes correlated with skill retrievals) or heuristic fallback (confidence × retrieval frequency)
-2. **Promote** (effectiveness ≥ 0.8): Boost confidence by `promotion_boost`, capped at `max_confidence`
+1. **Compute effectiveness**: From `OutcomeTracker` (task outcomes correlated with skill retrievals) or heuristic fallback (confidence x retrieval frequency)
+2. **Promote** (effectiveness >= 0.8): Boost confidence by `promotion_boost`, capped at `max_confidence`
 3. **Decay** (effectiveness < 0.5): Reduce confidence by `decay_rate`
 4. **Deprecate** (confidence < `deprecation_threshold`): Mark `deprecated=True`, collect task_types for redistillation candidates
 
 ### OutcomeTracker
 
 Records task outcomes correlated with skill retrievals:
+
+<details>
+<summary>Code: OutcomeTracker</summary>
 
 ```python
 class OutcomeTracker:
@@ -350,9 +432,14 @@ class OutcomeTracker:
         # Returns success rate [0.0, 1.0], or 0.5 if no data
 ```
 
+</details>
+
 ### EvolutionReport
 
 Each cycle produces an `EvolutionReport`:
+
+<details>
+<summary>Code: EvolutionReport dataclass</summary>
 
 ```python
 @dataclass
@@ -364,9 +451,14 @@ class EvolutionReport:
     redistillation_candidates: List[str]  # Task types needing new skills
 ```
 
+</details>
+
 ### Population Health
 
 `get_evolution_summary()` provides aggregate health metrics:
+
+<details>
+<summary>Data: evolution summary example</summary>
 
 ```python
 {
@@ -380,11 +472,23 @@ class EvolutionReport:
 }
 ```
 
+</details>
+
+</details>
+
 ## Replay Harness Integration
+
+The replay evaluation harness now tests skill configurations alongside retrieval and scoring parameters. `SkillAwareReplayEngine` extends the standard `ReplayEngine` to track skill retrieval effectiveness during offline replay -- how many skills were retrieved per step, what types, and how much of the token budget they consumed. Old `DesignCandidate` entries without a `skill_config` field deserialize cleanly with `skill_config=None`.
+
+<details>
+<summary>Replay engine and skill metrics</summary>
 
 ### SkillBankConfig on DesignCandidate
 
 The replay evaluation harness (see [Ch15](15-memrl-system.md)) now tests skill configurations alongside retrieval and scoring parameters:
+
+<details>
+<summary>Code: DesignCandidate with SkillBankConfig</summary>
 
 ```python
 @dataclass
@@ -395,7 +499,12 @@ class DesignCandidate:
     skill_config: Optional[SkillBankConfig]  # NEW
 ```
 
+</details>
+
 ### SkillBankConfig Parameters
+
+<details>
+<summary>Code: SkillBankConfig</summary>
 
 ```python
 @dataclass
@@ -408,6 +517,8 @@ class SkillBankConfig:
     max_prompt_tokens: int = 1500
 ```
 
+</details>
+
 ### SkillAwareReplayEngine
 
 Extends `ReplayEngine` to evaluate skill retrieval effectiveness during offline replay:
@@ -417,7 +528,8 @@ Extends `ReplayEngine` to evaluate skill retrieval effectiveness during offline 
 3. Tracks skill coverage, types retrieved, and estimated context tokens
 4. Produces `SkillReplayMetrics` alongside standard `ReplayMetrics`
 
-### SkillReplayMetrics
+<details>
+<summary>Code: SkillReplayMetrics</summary>
 
 ```python
 @dataclass
@@ -430,13 +542,20 @@ class SkillReplayMetrics:
     skills_by_type: Dict[str, int]    # Breakdown by skill type
 ```
 
+</details>
+
 ### Backward Compatibility
 
 Old `DesignCandidate` JSON without `skill_config` deserializes to `skill_config=None`, preserving forward compatibility with existing archive entries.
 
+</details>
+
 ## Feature Flag
 
-SkillBank is gated behind the `skillbank` feature flag:
+SkillBank is gated behind the `ORCHESTRATOR_SKILLBANK=1` environment variable and depends on the `memrl` feature flag for episodic store and embedder infrastructure. All skill retrieval paths are wrapped in try/except with debug logging, so if anything goes wrong, the system falls back gracefully to pre-SkillBank behavior with no skill context injected.
+
+<details>
+<summary>Feature flag and graceful degradation</summary>
 
 ```bash
 ORCHESTRATOR_SKILLBANK=1  # Enable SkillBank retrieval + prompt injection
@@ -451,7 +570,14 @@ All skill retrieval paths are wrapped in try/except with debug logging. If Skill
 - No skill context is injected into prompts
 - The system operates identically to pre-SkillBank behavior
 
+</details>
+
 ## Implementation
+
+The SkillBank implementation spans roughly 2,020 lines of new code across 8 files, plus modifications to 10 existing files for integration. The end-to-end wiring covers CLI seeding, API data flow, anomaly detection, diagnostic records, debugger replay, and outcome tracking. Test coverage totals 139 tests, all running in-memory with no live inference required.
+
+<details>
+<summary>File inventory and integration points</summary>
 
 ### Files Created
 
@@ -497,7 +623,8 @@ The SkillBank infrastructure is wired into the seeding pipeline and ClaudeDebugg
 | Outcome tracking | `OutcomeTracker` in seeding | `ORCHESTRATOR_SKILLBANK=1` records skill×task outcomes |
 | Evolution | `--evolve` flag | Runs `EvolutionMonitor.run_evolution_cycle()` after seeding |
 
-### Test Coverage
+<details>
+<summary>Data: test coverage breakdown</summary>
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
@@ -510,7 +637,16 @@ The SkillBank infrastructure is wired into the seeding pipeline and ClaudeDebugg
 | `tests/unit/test_skill_diagnostics.py` | 17 | Anomaly signals, diagnostic builder integration |
 | **Total** | **139** | All in-memory, no live inference |
 
+</details>
+
+</details>
+
 ## Performance Characteristics
+
+Skill retrieval adds under 2ms of latency per request -- negligible compared to the existing 5-13ms episodic retrieval. The real win is token compression: structured skills use 30-80 tokens each versus 200-500 for raw trajectories, yielding a 5-15x compression ratio while allowing you to inject more memories per query.
+
+<details>
+<summary>Latency and token compression data</summary>
 
 ### Retrieval Latency (Estimated)
 
@@ -529,7 +665,12 @@ The SkillBank infrastructure is wired into the seeding pipeline and ClaudeDebugg
 | Structured skill (SkillBank) | 30-80 | 6-12 |
 | **Compression ratio** | **5-15x** | More skills, fewer tokens |
 
+</details>
+
 ## References
+
+<details>
+<summary>Literature and implementation references</summary>
 
 ### Primary
 
@@ -554,6 +695,8 @@ The SkillBank infrastructure is wired into the seeding pipeline and ClaudeDebugg
 9. `orchestration/repl_memory/skill_evolution.py`: Recursive evolution
 10. `orchestration/repl_memory/distillation/`: Distillation pipeline (teachers, prompts, pipeline, failure bridge)
 11. `orchestration/repl_memory/replay/skill_replay.py`: Replay harness integration
+
+</details>
 
 ---
 
