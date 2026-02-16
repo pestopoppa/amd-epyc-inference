@@ -6,6 +6,11 @@ Speculative decoding is our primary optimization technique, achieving **11x spee
 
 ## How It Works
 
+The trick is simple: instead of reading the entire model once per token, a small draft model sprints ahead and proposes K tokens at once. The big model then verifies all K in a single forward pass — if the draft guessed right, you get K tokens for the cost of one.
+
+<details>
+<summary>Verification mechanics and key insight</summary>
+
 ```
 Standard Generation:
   Token 1 → Read full model → Token 2 → Read full model → Token 3 → ...
@@ -16,7 +21,14 @@ Speculative Decoding:
 
 **Key Insight**: If the draft model proposes K tokens and N are accepted, we generate N tokens for approximately the cost of 1, achieving up to Kx speedup (limited by acceptance rate).
 
+</details>
+
 ## Best Results
+
+The headline numbers speak for themselves — an 11x speedup on code generation with a 0.5B draft model driving a 32B target. The sweet spot depends on the model pair and content type, but every model we've tested benefits significantly from speculation.
+
+<details>
+<summary>Performance measurements by model pair</summary>
 
 | Target Model | Draft Model | K | Acceptance | Speedup |
 |--------------|-------------|---|------------|---------|
@@ -27,11 +39,16 @@ Speculative Decoding:
 | Qwen2.5-Math-72B | Qwen2.5-Coder-0.5B | 16 (temp=0.5) | 60.3% | **7.3x** |
 | Meta-Llama-70B | PARD-Llama-3.2-1B | 8 | 79% | **5.0x** |
 
+</details>
+
 ## K-Value Optimization
 
-### Discovery: Larger K for Larger Models
+The number of draft tokens (K) is the single most impactful tuning parameter. Bigger models can absorb higher K because their per-token verification cost is so large that even moderate acceptance rates pay off. Content type matters just as much — code is highly predictable with 80-90% acceptance, while creative prose drops to 30-50%.
 
-A key finding was that optimal K depends on model size:
+<details>
+<summary>K-value tuning by model size and content type</summary>
+
+### Discovery: Larger K for Larger Models
 
 | Model Size | Optimal K | Reasoning |
 |------------|-----------|-----------|
@@ -47,16 +64,12 @@ A key finding was that optimal K depends on model size:
 
 ### Context-Dependent Performance
 
-Critical finding: Content type dramatically affects optimal K.
-
 | Context Type | K | Speed (t/s) | Acceptance | Speedup |
 |--------------|---|-------------|------------|---------|
 | **Code** | 24 | **28.79** | 83.33% | **10.0x** |
 | Code | 8 | 17.32 | 86.84% | 6.0x |
 | Prose | 8 | **7.85** | 32.44% | 2.7x |
 | Prose | 24 | 6.22 | 14.76% | 2.2x |
-
-**Insight**: Code is highly predictable (syntax, patterns), enabling aggressive K. Prose is more creative, limiting acceptance.
 
 ### Recommended K by Content Type
 
@@ -67,9 +80,14 @@ Critical finding: Content type dramatically affects optimal K.
 | General/mixed | 8-12 | 50-70% | 4-6x |
 | Creative/prose | 4-8 | 30-50% | 2-4x |
 
+</details>
+
 ## Temperature Tuning Discovery
 
-Unexpected finding: Non-zero temperature can IMPROVE speculative decoding.
+Here's a counterintuitive finding: non-zero temperature can actually *improve* speculative decoding for some model pairs. The hypothesis is that temp=0 produces overly deterministic drafts that diverge from the target's probability distribution. A little randomness makes the draft more "target-like."
+
+<details>
+<summary>Temperature effect measurements</summary>
 
 | Model | temp=0 | temp=0.5 | temp=0.7 | Best |
 |-------|--------|----------|----------|------|
@@ -77,16 +95,16 @@ Unexpected finding: Non-zero temperature can IMPROVE speculative decoding.
 | Qwen2.5-Math-72B | 6.0 t/s | **7.5 t/s** | N/A | temp=0.5 |
 | Qwen2.5-Coder-32B | **26.6 t/s** | 19.0 t/s | 19.4 t/s | temp=0 |
 
-**Hypothesis**: temp=0 produces overly deterministic drafts that diverge from the target model's probability distribution. Slight temperature increases draft diversity, improving acceptance for some model pairs.
-
 **Recommendation**: If acceptance is <50% at temp=0, try temp=0.3-0.7.
+
+</details>
 
 ## Compatibility Matrix
 
-Speculative decoding requires **exact tokenizer compatibility**:
-- Same vocabulary size
-- Identical BOS/EOS/PAD tokens
-- Same tokenizer type
+Speculative decoding requires **exact tokenizer compatibility** between draft and target models. Same vocabulary size, identical special tokens, same tokenizer type. Same model family is NOT enough — DeepSeek-R1-Distill-Qwen-32B can't use DeepSeek-R1-Distill-Qwen-1.5B despite similar names because they have different vocab sizes.
+
+<details>
+<summary>Compatibility table and failure modes</summary>
 
 | Target Family | Compatible Drafts | Incompatible |
 |---------------|-------------------|--------------|
@@ -95,9 +113,16 @@ Speculative decoding requires **exact tokenizer compatibility**:
 | Meta-Llama-3.* | PARD-Llama-3.2-1B | Other families |
 | DeepSeek-R1-Distill-* | **None found** | All tested |
 
-**Critical Failure Mode**: Same model family is NOT enough. DeepSeek-R1-Distill-Qwen-32B cannot use DeepSeek-R1-Distill-Qwen-1.5B despite similar names - they have different vocab sizes (152,064 vs 151,936).
+**Critical Failure Mode**: DeepSeek-R1-Distill-Qwen-32B cannot use DeepSeek-R1-Distill-Qwen-1.5B — they have different vocab sizes (152,064 vs 151,936).
+
+</details>
 
 ## Quick Start Command
+
+The standard launch pattern for speculative decoding on this hardware.
+
+<details>
+<summary>Code: launch command and flags</summary>
 
 ```bash
 OMP_NUM_THREADS=1 numactl --interleave=all \
@@ -113,15 +138,14 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 - `--draft-max`: K value (max tokens to draft)
 - `-t 96`: Use all physical cores
 
+</details>
+
 ## SSM Architecture Incompatibility
 
-**CRITICAL**: Hybrid SSM models (Qwen3-Next series) are incompatible with speculative decoding.
+Hybrid SSM models (Qwen3-Next series) are fundamentally incompatible with speculative decoding. SSM architectures maintain recurrent state that can't be rolled back like KV cache — when draft tokens are rejected, the state is permanently corrupted. Use expert reduction only for these models.
 
-**Root Cause**: SSM architectures maintain recurrent state that cannot be rolled back like KV cache. When draft tokens are rejected, the state is corrupted.
-
-**Solution**: Use expert reduction only for SSM models. See [Chapter 06: MoE Optimization](06-moe-optimization.md).
-
-## References
+<details>
+<summary>References</summary>
 
 ### Foundational Papers
 
@@ -150,6 +174,8 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 ### Curated Literature
 
 9. Zhang, H., et al. (2024). *SpeculativeDecodingPapers: A Curated List*. GitHub. https://github.com/hemingkx/SpeculativeDecodingPapers
+
+</details>
 
 ---
 
