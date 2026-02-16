@@ -14,6 +14,8 @@ import re
 import time
 from typing import Any, TYPE_CHECKING
 
+from src.constants import DELEGATION_BRIEF_KEY_LEN
+from src.exceptions import InferenceError
 from src.repl_environment import REPLEnvironment
 
 log = logging.getLogger(__name__)
@@ -269,6 +271,432 @@ _ARCHITECT_DECISION_BUDGET: dict[str, int] = {
 }
 
 
+def _run_architect_decision(
+    prompt_text: str,
+    question: str,
+    primitives: "LLMPrimitives",
+    architect_role: str,
+    tool_registry: "Any | None",
+) -> tuple[str | None, int, int]:
+    """Run architect's mini-REPL decision loop (Phase A).
+
+    Returns:
+        (arch_response, computation_turns, tool_invocations)
+    """
+    from src.graph.helpers import _extract_prose_answer
+    from src.prompt_builders import extract_code_from_response
+
+    # Mini-REPL loop: architect can compute before deciding
+    arch_repl = REPLEnvironment(
+        context=question,
+        llm_primitives=primitives,
+        tool_registry=tool_registry,
+        role=architect_role,
+    )
+    arch_response = None
+    arch_last_output = ""
+    raw = ""
+
+    for _aturn in range(4):  # Max 4 computation turns
+        if _aturn == 0:
+            full_prompt = prompt_text
+        else:
+            full_prompt = (
+                f"{prompt_text}\n\n"
+                f"Computation result:\n{arch_last_output}\n\n"
+                f"Now make your decision (D|answer or I|brief:...|to:role):"
+            )
+        # Turn 0 = routing decision (tight budget).
+        # Turns 1+ = computation follow-up (full budget).
+        n_tok = (
+            _ARCHITECT_DECISION_BUDGET.get(architect_role, 500)
+            if _aturn == 0
+            else _ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375)
+        )
+        # Early-stop streaming: abort generation once a complete TOON
+        # decision line is detected.  Saves 3000+ tokens of post-decision
+        # rambling on the architect model.
+        # Uses _strip_think to also handle incomplete <think> blocks so
+        # that deliberation *about* delegating isn't mistaken for a real
+        # TOON decision.
+        # IMPORTANT: Free-form D| answers must wait for a trailing newline
+        # before firing.  The old pattern `D\|.+` fired after a single
+        # token (e.g. "D|The" → answer="The"), truncating multi-word
+        # answers.  MCQ answers (D|A through D|D) still fire immediately
+        # via the lookahead shortcut.
+        _toon_re = re.compile(r"D\|[A-D](?=[^a-zA-Z]|$)|D\|[^\n]+\n|I\|.+\|to:\w+")
+        primitives._early_stop_check = lambda text: bool(
+            _toon_re.search(_strip_think(text))
+        )
+        try:
+            raw = primitives.llm_call(
+                full_prompt,
+                role=architect_role,
+                skip_suffix=True,
+                n_tokens=n_tok,
+            )
+        except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
+            log.warning(f"Architect call failed (turn {_aturn}): {e}")
+            return None, _aturn + 1, arch_repl._tool_invocations
+        except Exception as e:
+            log.warning(f"Architect call failed unexpectedly (turn {_aturn}): {e}")
+            return None, _aturn + 1, arch_repl._tool_invocations
+        finally:
+            primitives._early_stop_check = None
+
+        # Strip <think>...</think> tags (reasoning models), including
+        # incomplete trailing blocks so mid-thought I|/D| aren't parsed.
+        stripped = _strip_think(raw).strip()
+        # Extract TOON decision from anywhere in the response.
+        arch_response = _extract_toon_decision(stripped)
+        if arch_response:
+            break
+        # Check start-of-response for JSON (fallback TOON format).
+        # Require minimum length to avoid accepting truncated fragments
+        # like '{"' that the model emits when confused by the prompt.
+        if (stripped.startswith("{") or stripped.startswith("```")) and len(stripped) > 5:
+            arch_response = stripped
+            break
+
+        # Turn 0 must be a routing decision (D| or I|).  If the
+        # architect wrote prose or code instead, treat it as a direct
+        # answer.  DO NOT enter the computation loop — the architect
+        # models are slow (6-10 t/s) and 3 computation turns of 3375-
+        # 5150 tokens each can burn 10-26 minutes on a single question.
+        if _aturn == 0:
+            # Prose answer rescue: extract from "The answer is X"
+            prose = _extract_prose_answer(stripped)
+            if prose:
+                arch_response = f"D|{prose}"
+                log.info("Architect turn 0: no TOON, prose rescue -> D|%s", prose[:50])
+            else:
+                # Avoid double-wrapping: if stripped already starts with
+                # D| or I| (but _extract_toon_decision couldn't parse it,
+                # e.g. bare "D|\n<reasoning>"), pass it through directly
+                # so _parse_architect_decision's long-answer rescue can
+                # extract the MCQ letter from the reasoning body.
+                if stripped and re.match(r"^[DI]\|", stripped):
+                    arch_response = stripped
+                else:
+                    arch_response = f"D|{stripped}" if stripped else raw
+                log.info("Architect turn 0: no TOON, treating raw output as D|answer (%d chars)", len(stripped or raw))
+            break
+
+        # Turns 1+: treat as Python code — execute in mini-REPL
+        code = extract_code_from_response(raw)
+        if not code.strip():
+            # No code extracted, treat raw output as direct answer
+            arch_response = raw
+            break
+        # Comment-only guard: architect is reasoning in comments, not computing
+        if all(
+            not ln.strip() or ln.strip().startswith("#")
+            for ln in code.split("\n")
+        ):
+            log.info("Architect computation turn %d: comment-only, treating as direct answer", _aturn)
+            arch_response = raw
+            break
+        result = arch_repl.execute(code)
+        if result.is_final:
+            arch_response = result.final_answer or ""
+            break
+        arch_last_output = result.output or result.error or ""
+        log.info(f"Architect computation turn {_aturn}: {len(arch_last_output)} chars output")
+    else:
+        # Exhausted computation turns, use last raw response
+        arch_response = raw if raw else f"D|{arch_last_output}"
+
+    return arch_response, _aturn + 1, arch_repl._tool_invocations
+
+
+def _apply_decision_guards(
+    decision: dict,
+    question: str,
+    loop: int,
+    primitives: "LLMPrimitives",
+    architect_role: str,
+) -> dict:
+    """Apply guard clauses to architect decision (MCQ misroute, short-answer, coding task).
+
+    Returns:
+        Potentially modified decision dict.
+    """
+    # ── MCQ misroute guard ──
+    # If the question is multiple-choice (has A/B/C/D options) and the
+    # architect tries to delegate, force a direct answer.  Specialists
+    # cannot reason about factual/science MCQ — delegation just wastes
+    # 50-300s and usually returns a wrong answer.
+    if decision["mode"] == "investigate" and loop == 0:
+        _mcq_re = re.compile(
+            r"(?:^|\n)\s*[A-D]\s*[).\]]",  # A) or A. or A]
+            re.MULTILINE,
+        )
+        if _mcq_re.search(question):
+            log.warning(
+                "MCQ misroute blocked: architect tried to delegate factual MCQ "
+                "(brief=%s), forcing direct answer",
+                decision["brief"][:80],
+            )
+            # Re-prompt the architect with a forced direct-answer instruction
+            force_prompt = (
+                f"This is a multiple-choice question. You MUST answer directly.\n"
+                f"Respond with D| followed by the letter (A, B, C, or D). No delegation.\n"
+                f"Do NOT explain your reasoning. Output ONLY the decision line.\n\n"
+                f"Question: {question[:2000]}\n\n"
+                f"Answer with the letter only (A, B, C, or D).\n\nDecision:"
+            )
+            try:
+                forced_raw = primitives.llm_call(
+                    force_prompt,
+                    role=architect_role,
+                    skip_suffix=True,
+                    n_tokens=128,
+                )
+                forced_stripped = _strip_think(forced_raw).strip()
+                forced_decision = _extract_toon_decision(forced_stripped)
+                if forced_decision and forced_decision.startswith("D|"):
+                    decision = _parse_architect_decision(forced_decision)
+                    log.info("MCQ misroute recovered: architect answered D|%s", decision["answer"])
+                else:
+                    # Last resort: extract any single letter A-D.
+                    # Strip D|/I| prefix first to avoid matching the
+                    # protocol marker as an MCQ letter.
+                    _cleaned = re.sub(r"^[DI]\|", "", forced_stripped).strip()
+                    letter_match = re.search(r"\b([A-D])\b", _cleaned)
+                    if letter_match:
+                        decision = {"mode": "direct", "answer": letter_match.group(1),
+                                    "brief": "", "delegate_to": "", "delegate_mode": "react"}
+                        log.info("MCQ misroute recovered (letter extract): D|%s", decision["answer"])
+            except Exception as exc:
+                log.warning("MCQ misroute re-prompt failed: %s", exc)
+
+    # ── Short-answer delegation guard ──
+    # If the architect wants to delegate but the brief is essentially a
+    # computed answer (short, numeric, or a factual statement), force
+    # direct answer.  This catches: architect solves "soda bottle costs
+    # $1.50" in <think>, then delegates "compute the cost" to coder who
+    # has nothing to add.  The coder burns 50-300s round-tripping the
+    # answer the architect already has.
+    if decision["mode"] == "investigate" and loop == 0:
+        brief = decision["brief"]
+        _code_delegate = decision["delegate_to"] in ("coder_escalation", "coder_primary")
+        _code_signals_in_q = any(
+            sig in question for sig in (
+                "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT",
+                "USACO", "Codeforces", "Write a Python", "def ",
+                "```python",
+            )
+        )
+        # If delegating to coder but the question is NOT a coding task,
+        # the architect is misrouting a factual/math question.
+        if _code_delegate and not _code_signals_in_q:
+            # Check if the brief looks like a computed answer rather
+            # than a genuine implementation task.
+            brief_words = brief.split()
+            brief_is_short = len(brief_words) < 15
+            brief_has_number = bool(re.search(r"\d+\.?\d*", brief))
+            if brief_is_short and brief_has_number:
+                log.warning(
+                    "Short-answer delegation blocked: architect delegated "
+                    "D|%s to %s for non-code question, forcing direct. "
+                    "Brief: %s",
+                    brief[:30],
+                    decision["delegate_to"],
+                    brief[:80],
+                )
+                # Extract the numeric answer from the brief
+                number_match = re.search(r"[\d]+\.?\d*", brief)
+                forced_answer = number_match.group(0) if number_match else brief
+                decision = {
+                    "mode": "direct",
+                    "answer": forced_answer,
+                    "brief": "",
+                    "delegate_to": "",
+                    "delegate_mode": "react",
+                }
+
+    # ── Coding task direct-answer guard ──
+    # If the question asks for code (CP, LeetCode, implementation tasks)
+    # and the architect gives a short direct answer instead of delegating,
+    # force delegation to coder.  The scorer expects runnable code, not a
+    # numeric value like "4" or "-1".
+    if decision["mode"] == "direct" and loop == 0:
+        _code_signals = (
+            "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT", "SAMPLE OUTPUT",
+            "reads from stdin", "writes to stdout", "USACO", "Codeforces",
+            "Write a Python solution",
+            "Write a Python function",
+            "def ", "```python",
+            "Include proper type hints",
+            "handle edge cases",
+        )
+        if any(sig in question for sig in _code_signals):
+            short_answer = decision["answer"].strip()
+            # Only intercept short answers (not full programs)
+            if len(short_answer) < 50 and not short_answer.startswith(
+                ("import", "def ", "class ")
+            ):
+                log.warning(
+                    "Code direct-answer blocked: architect answered D|%s for coding "
+                    "question, forcing delegation to coder_escalation",
+                    short_answer[:30],
+                )
+                # Don't leak the architect's numeric guess to the
+                # coder — it causes hardcoded FINAL(N) instead of
+                # a general solution.
+                hint = "" if re.fullmatch(r"-?\d+\.?\d*", short_answer.strip()) else f" {short_answer}"
+                decision = {
+                    "mode": "investigate",
+                    "answer": "",
+                    "brief": f"Implement a complete Python solution that reads from stdin and writes to stdout.{hint}",
+                    "delegate_to": "coder_escalation",
+                    "delegate_mode": "repl",
+                }
+
+    return decision
+
+
+def _run_specialist_loop(
+    question: str,
+    context: str,
+    brief: str,
+    delegate_to: str,
+    delegate_mode: str,
+    primitives: "LLMPrimitives",
+    tool_registry: "Any | None",
+) -> tuple[str, int, list[str], list[dict]]:
+    """Run specialist delegation execution loop (Phase B).
+
+    Returns:
+        (report, tool_invocations, tools_called, tool_timings)
+    """
+    from src.prompt_builders import (
+        build_root_lm_prompt,
+        extract_code_from_response,
+        auto_wrap_final,
+    )
+    import hashlib
+
+    tools_called: list[str] = []
+    phase_tool_timings: list[dict] = []
+
+    # Both react and repl modes use the same REPL loop
+    # (react = structured_mode=True, repl = structured_mode=False)
+    structured = delegate_mode == "react"
+    max_delegate_turns = 8 if structured else 10
+    try:
+        deleg_repl = REPLEnvironment(
+            context=f"{brief}\n\nContext:\n{context}" if context else brief,
+            llm_primitives=primitives,
+            tool_registry=tool_registry,
+            role=delegate_to,
+            structured_mode=structured,
+        )
+        deleg_last_output = ""
+        deleg_last_error = ""
+        _prev_code_hash = ""  # dedup guard
+        # Build specialist task: full question + architect's brief as
+        # design guidance.  Previously only the brief was passed, so the
+        # specialist never saw the actual problem (constraints, examples,
+        # method signatures).
+        specialist_task = (
+            f"{question}\n\n"
+            f"## Architect guidance\n{brief}"
+        )
+        for _turn in range(max_delegate_turns):
+            repl_state = deleg_repl.get_state()
+            deleg_prompt = build_root_lm_prompt(
+                state=repl_state,
+                original_prompt=specialist_task,
+                last_output=deleg_last_output,
+                last_error=deleg_last_error,
+                turn=_turn,
+            )
+            _final_re = re.compile(
+                r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
+                re.DOTALL,
+            )
+            primitives._early_stop_check = lambda text: bool(_final_re.search(text))
+            try:
+                code = primitives.llm_call(
+                    deleg_prompt,
+                    role=delegate_to,
+                    stop_sequences=["\n```\n"],
+                )
+            finally:
+                primitives._early_stop_check = None
+            raw_deleg_output = code
+            code = extract_code_from_response(code)
+            code = auto_wrap_final(code)
+            # Dedup guard: if coder generates identical code twice in a
+            # row, inject an error to break the loop instead of wasting
+            # another turn on the same silent execution.
+            _code_hash = hashlib.md5(code.encode()).hexdigest()
+            if _code_hash == _prev_code_hash:
+                deleg_last_error = (
+                    "You generated the exact same code as last turn. "
+                    "It didn't work because FINAL() was never reached at top level. "
+                    "Do NOT wrap code in main(). Write flat top-level code ending with FINAL(answer)."
+                )
+                deleg_last_output = ""
+                _prev_code_hash = _code_hash
+                continue
+            _prev_code_hash = _code_hash
+            # Prose report rescue: specialist answered in prose without
+            # code or FINAL().  In delegation, the specialist's prose IS
+            # the investigation report — return it to the architect for
+            # synthesis instead of discarding it or looping.
+            if "FINAL(" not in code and not any(
+                ln.strip() and not ln.strip().startswith("#")
+                and any(ln.strip().startswith(kw) for kw in (
+                    "def ", "class ", "for ", "while ", "if ", "try:",
+                    "print(", "result =", "answer =",
+                ))
+                for ln in code.split("\n")
+            ):
+                # No executable code found — treat raw prose as report
+                report = raw_deleg_output.strip()
+                if report:
+                    log.info(
+                        "Delegation prose report (turn %d): %d chars returned to architect",
+                        _turn, len(report),
+                    )
+                    break
+            # Comment-only guard
+            if all(
+                not ln.strip() or ln.strip().startswith("#")
+                for ln in code.split("\n")
+            ):
+                deleg_last_error = (
+                    "Your output was all comments — no executable code ran. "
+                    "Write Python code that computes the answer and call FINAL(answer)."
+                )
+                deleg_last_output = ""
+                continue
+            result = deleg_repl.execute(code)
+            if result.is_final:
+                report = result.final_answer or ""
+                break
+            deleg_last_output = result.output or ""
+            deleg_last_error = result.error or ""
+        else:
+            report = deleg_repl.get_state()
+        if deleg_repl.tool_registry:
+            for inv in deleg_repl.tool_registry.get_invocation_log():
+                tools_called.append(inv.tool_name)
+                phase_tool_timings.append(
+                    {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
+                )
+    except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
+        report = f"[Delegation failed: {e}]"
+        return report, 0, tools_called, phase_tool_timings
+    except Exception as e:
+        report = f"[Delegation failed (unexpected): {e}]"
+        return report, 0, tools_called, phase_tool_timings
+
+    return report, deleg_repl._tool_invocations, tools_called, phase_tool_timings
+
+
 def _architect_delegated_answer(
     question: str,
     context: str,
@@ -302,7 +730,6 @@ def _architect_delegated_answer(
     from src.prompt_builders import (
         build_architect_investigate_prompt,
         build_architect_synthesis_prompt,
-        build_root_lm_prompt,
     )
 
     total_tools = 0
@@ -347,126 +774,16 @@ def _architect_delegated_answer(
                 max_loops,
             )
 
-        # Mini-REPL loop: architect can compute before deciding
-        arch_repl = REPLEnvironment(
-            context=question,
-            llm_primitives=primitives,
-            tool_registry=tool_registry,
-            role=architect_role,
+        arch_response, computation_turns, arch_tools = _run_architect_decision(
+            prompt_text, question, primitives, architect_role, tool_registry,
         )
-        arch_response = None
-        arch_last_output = ""
-        for _aturn in range(4):  # Max 4 computation turns
-            if _aturn == 0:
-                full_prompt = prompt_text
-            else:
-                full_prompt = (
-                    f"{prompt_text}\n\n"
-                    f"Computation result:\n{arch_last_output}\n\n"
-                    f"Now make your decision (D|answer or I|brief:...|to:role):"
-                )
-            # Turn 0 = routing decision (tight budget).
-            # Turns 1+ = computation follow-up (full budget).
-            n_tok = (
-                _ARCHITECT_DECISION_BUDGET.get(architect_role, 500)
-                if _aturn == 0
-                else _ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375)
-            )
-            # Early-stop streaming: abort generation once a complete TOON
-            # decision line is detected.  Saves 3000+ tokens of post-decision
-            # rambling on the architect model.
-            # Uses _strip_think to also handle incomplete <think> blocks so
-            # that deliberation *about* delegating isn't mistaken for a real
-            # TOON decision.
-            # IMPORTANT: Free-form D| answers must wait for a trailing newline
-            # before firing.  The old pattern `D\|.+` fired after a single
-            # token (e.g. "D|The" → answer="The"), truncating multi-word
-            # answers.  MCQ answers (D|A through D|D) still fire immediately
-            # via the lookahead shortcut.
-            _toon_re = re.compile(r"D\|[A-D](?=[^a-zA-Z]|$)|D\|[^\n]+\n|I\|.+\|to:\w+")
-            primitives._early_stop_check = lambda text: bool(
-                _toon_re.search(_strip_think(text))
-            )
-            try:
-                raw = primitives.llm_call(
-                    full_prompt,
-                    role=architect_role,
-                    skip_suffix=True,
-                    n_tokens=n_tok,
-                )
-            except Exception as e:
-                log.warning(f"Architect call failed (loop {loop}, turn {_aturn}): {e}")
-                if reports:
-                    return reports[-1], stats
-                return f"[ERROR: Architect delegation failed: {e}]", stats
-            finally:
-                primitives._early_stop_check = None
+        total_tools += arch_tools
 
-            # Strip <think>...</think> tags (reasoning models), including
-            # incomplete trailing blocks so mid-thought I|/D| aren't parsed.
-            stripped = _strip_think(raw).strip()
-            # Extract TOON decision from anywhere in the response.
-            arch_response = _extract_toon_decision(stripped)
-            if arch_response:
-                break
-            # Check start-of-response for JSON (fallback TOON format).
-            # Require minimum length to avoid accepting truncated fragments
-            # like '{"' that the model emits when confused by the prompt.
-            if (stripped.startswith("{") or stripped.startswith("```")) and len(stripped) > 5:
-                arch_response = stripped
-                break
-
-            # Turn 0 must be a routing decision (D| or I|).  If the
-            # architect wrote prose or code instead, treat it as a direct
-            # answer.  DO NOT enter the computation loop — the architect
-            # models are slow (6-10 t/s) and 3 computation turns of 3375-
-            # 5150 tokens each can burn 10-26 minutes on a single question.
-            if _aturn == 0:
-                # Prose answer rescue: extract from "The answer is X"
-                from src.graph.nodes import _extract_prose_answer
-                prose = _extract_prose_answer(stripped)
-                if prose:
-                    arch_response = f"D|{prose}"
-                    log.info("Architect turn 0: no TOON, prose rescue -> D|%s", prose[:50])
-                else:
-                    # Avoid double-wrapping: if stripped already starts with
-                    # D| or I| (but _extract_toon_decision couldn't parse it,
-                    # e.g. bare "D|\n<reasoning>"), pass it through directly
-                    # so _parse_architect_decision's long-answer rescue can
-                    # extract the MCQ letter from the reasoning body.
-                    if stripped and re.match(r"^[DI]\|", stripped):
-                        arch_response = stripped
-                    else:
-                        arch_response = f"D|{stripped}" if stripped else raw
-                    log.info("Architect turn 0: no TOON, treating raw output as D|answer (%d chars)", len(stripped or raw))
-                break
-
-            # Turns 1+: treat as Python code — execute in mini-REPL
-            from src.prompt_builders import extract_code_from_response
-            code = extract_code_from_response(raw)
-            if not code.strip():
-                # No code extracted, treat raw output as direct answer
-                arch_response = raw
-                break
-            # Comment-only guard: architect is reasoning in comments, not computing
-            if all(
-                not ln.strip() or ln.strip().startswith("#")
-                for ln in code.split("\n")
-            ):
-                log.info("Architect computation turn %d: comment-only, treating as direct answer", _aturn)
-                arch_response = raw
-                break
-            result = arch_repl.execute(code)
-            if result.is_final:
-                arch_response = result.final_answer or ""
-                break
-            arch_last_output = result.output or result.error or ""
-            log.info(f"Architect computation turn {_aturn}: {len(arch_last_output)} chars output")
-        else:
-            # Exhausted computation turns, use last raw response
-            arch_response = raw if raw else f"D|{arch_last_output}"
-
-        total_tools += arch_repl._tool_invocations
+        if arch_response is None:
+            # Early error return
+            if reports:
+                return reports[-1], stats
+            return "[ERROR: Architect delegation failed]", stats
 
         phase_a_ms = (time.perf_counter() - phase_start) * 1000
         decision = _parse_architect_decision(arch_response)
@@ -476,143 +793,13 @@ def _architect_delegated_answer(
                 "phase": "A",
                 "ms": round(phase_a_ms),
                 "decision": decision["mode"],
-                "computation_turns": _aturn + 1,
+                "computation_turns": computation_turns,
             }
         )
 
-        log.info(f"Architect loop {loop}: {decision['mode']} ({phase_a_ms:.0f}ms, {_aturn+1} turns)")
+        log.info(f"Architect loop {loop}: {decision['mode']} ({phase_a_ms:.0f}ms, {computation_turns} turns)")
 
-        # ── MCQ misroute guard ──
-        # If the question is multiple-choice (has A/B/C/D options) and the
-        # architect tries to delegate, force a direct answer.  Specialists
-        # cannot reason about factual/science MCQ — delegation just wastes
-        # 50-300s and usually returns a wrong answer.
-        if decision["mode"] == "investigate" and loop == 0:
-            _mcq_re = re.compile(
-                r"(?:^|\n)\s*[A-D]\s*[).\]]",  # A) or A. or A]
-                re.MULTILINE,
-            )
-            if _mcq_re.search(question):
-                log.warning(
-                    "MCQ misroute blocked: architect tried to delegate factual MCQ "
-                    "(brief=%s), forcing direct answer",
-                    decision["brief"][:80],
-                )
-                # Re-prompt the architect with a forced direct-answer instruction
-                force_prompt = (
-                    f"This is a multiple-choice question. You MUST answer directly.\n"
-                    f"Respond with D| followed by the letter (A, B, C, or D). No delegation.\n"
-                    f"Do NOT explain your reasoning. Output ONLY the decision line.\n\n"
-                    f"Question: {question[:2000]}\n\n"
-                    f"Answer with the letter only (A, B, C, or D).\n\nDecision:"
-                )
-                try:
-                    forced_raw = primitives.llm_call(
-                        force_prompt,
-                        role=architect_role,
-                        skip_suffix=True,
-                        n_tokens=128,
-                    )
-                    forced_stripped = _strip_think(forced_raw).strip()
-                    forced_decision = _extract_toon_decision(forced_stripped)
-                    if forced_decision and forced_decision.startswith("D|"):
-                        decision = _parse_architect_decision(forced_decision)
-                        log.info("MCQ misroute recovered: architect answered D|%s", decision["answer"])
-                    else:
-                        # Last resort: extract any single letter A-D.
-                        # Strip D|/I| prefix first to avoid matching the
-                        # protocol marker as an MCQ letter.
-                        _cleaned = re.sub(r"^[DI]\|", "", forced_stripped).strip()
-                        letter_match = re.search(r"\b([A-D])\b", _cleaned)
-                        if letter_match:
-                            decision = {"mode": "direct", "answer": letter_match.group(1),
-                                        "brief": "", "delegate_to": "", "delegate_mode": "react"}
-                            log.info("MCQ misroute recovered (letter extract): D|%s", decision["answer"])
-                except Exception as exc:
-                    log.warning("MCQ misroute re-prompt failed: %s", exc)
-
-        # ── Short-answer delegation guard ──
-        # If the architect wants to delegate but the brief is essentially a
-        # computed answer (short, numeric, or a factual statement), force
-        # direct answer.  This catches: architect solves "soda bottle costs
-        # $1.50" in <think>, then delegates "compute the cost" to coder who
-        # has nothing to add.  The coder burns 50-300s round-tripping the
-        # answer the architect already has.
-        if decision["mode"] == "investigate" and loop == 0:
-            brief = decision["brief"]
-            _code_delegate = decision["delegate_to"] in ("coder_escalation", "coder_primary")
-            _code_signals_in_q = any(
-                sig in question for sig in (
-                    "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT",
-                    "USACO", "Codeforces", "Write a Python", "def ",
-                    "```python",
-                )
-            )
-            # If delegating to coder but the question is NOT a coding task,
-            # the architect is misrouting a factual/math question.
-            if _code_delegate and not _code_signals_in_q:
-                # Check if the brief looks like a computed answer rather
-                # than a genuine implementation task.
-                brief_words = brief.split()
-                brief_is_short = len(brief_words) < 15
-                brief_has_number = bool(re.search(r"\d+\.?\d*", brief))
-                if brief_is_short and brief_has_number:
-                    log.warning(
-                        "Short-answer delegation blocked: architect delegated "
-                        "D|%s to %s for non-code question, forcing direct. "
-                        "Brief: %s",
-                        brief[:30],
-                        decision["delegate_to"],
-                        brief[:80],
-                    )
-                    # Extract the numeric answer from the brief
-                    number_match = re.search(r"[\d]+\.?\d*", brief)
-                    forced_answer = number_match.group(0) if number_match else brief
-                    decision = {
-                        "mode": "direct",
-                        "answer": forced_answer,
-                        "brief": "",
-                        "delegate_to": "",
-                        "delegate_mode": "react",
-                    }
-
-        # ── Coding task direct-answer guard ──
-        # If the question asks for code (CP, LeetCode, implementation tasks)
-        # and the architect gives a short direct answer instead of delegating,
-        # force delegation to coder.  The scorer expects runnable code, not a
-        # numeric value like "4" or "-1".
-        if decision["mode"] == "direct" and loop == 0:
-            _code_signals = (
-                "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT", "SAMPLE OUTPUT",
-                "reads from stdin", "writes to stdout", "USACO", "Codeforces",
-                "Write a Python solution",
-                "Write a Python function",
-                "def ", "```python",
-                "Include proper type hints",
-                "handle edge cases",
-            )
-            if any(sig in question for sig in _code_signals):
-                short_answer = decision["answer"].strip()
-                # Only intercept short answers (not full programs)
-                if len(short_answer) < 50 and not short_answer.startswith(
-                    ("import", "def ", "class ")
-                ):
-                    log.warning(
-                        "Code direct-answer blocked: architect answered D|%s for coding "
-                        "question, forcing delegation to coder_escalation",
-                        short_answer[:30],
-                    )
-                    # Don't leak the architect's numeric guess to the
-                    # coder — it causes hardcoded FINAL(N) instead of
-                    # a general solution.
-                    hint = "" if re.fullmatch(r"-?\d+\.?\d*", short_answer.strip()) else f" {short_answer}"
-                    decision = {
-                        "mode": "investigate",
-                        "answer": "",
-                        "brief": f"Implement a complete Python solution that reads from stdin and writes to stdout.{hint}",
-                        "delegate_to": "coder_escalation",
-                        "delegate_mode": "repl",
-                    }
+        decision = _apply_decision_guards(decision, question, loop, primitives, architect_role)
 
         # ── Direct/final answer ──
         if decision["mode"] == "direct":
@@ -644,7 +831,7 @@ def _architect_delegated_answer(
 
         # Zero-progress guard: if the architect re-delegates with the same
         # brief, it's looping without making progress.  Break immediately.
-        brief_key = brief.strip().lower()[:200]
+        brief_key = brief.strip().lower()[:DELEGATION_BRIEF_KEY_LEN]
         if brief_key in previous_briefs:
             log.warning("Architect re-delegated with duplicate brief (loop %d), breaking zero-progress loop", loop)
             break
@@ -654,120 +841,12 @@ def _architect_delegated_answer(
 
         phase_b_start = time.perf_counter()
         tokens_before = primitives.total_tokens_generated
-        phase_tool_timings: list[dict] = []
 
-        # Both react and repl modes use the same REPL loop
-        # (react = structured_mode=True, repl = structured_mode=False)
-        structured = delegate_mode == "react"
-        max_delegate_turns = 8 if structured else 10
-        try:
-            deleg_repl = REPLEnvironment(
-                context=f"{brief}\n\nContext:\n{context}" if context else brief,
-                llm_primitives=primitives,
-                tool_registry=tool_registry,
-                role=delegate_to,
-                structured_mode=structured,
-            )
-            deleg_last_output = ""
-            deleg_last_error = ""
-            _prev_code_hash = ""  # dedup guard
-            # Build specialist task: full question + architect's brief as
-            # design guidance.  Previously only the brief was passed, so the
-            # specialist never saw the actual problem (constraints, examples,
-            # method signatures).
-            specialist_task = (
-                f"{question}\n\n"
-                f"## Architect guidance\n{brief}"
-            )
-            for _turn in range(max_delegate_turns):
-                repl_state = deleg_repl.get_state()
-                deleg_prompt = build_root_lm_prompt(
-                    state=repl_state,
-                    original_prompt=specialist_task,
-                    last_output=deleg_last_output,
-                    last_error=deleg_last_error,
-                    turn=_turn,
-                )
-                _final_re = re.compile(
-                    r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
-                    re.DOTALL,
-                )
-                primitives._early_stop_check = lambda text: bool(_final_re.search(text))
-                try:
-                    code = primitives.llm_call(
-                        deleg_prompt,
-                        role=delegate_to,
-                        stop_sequences=["\n```\n"],
-                    )
-                finally:
-                    primitives._early_stop_check = None
-                raw_deleg_output = code
-                from src.prompt_builders import extract_code_from_response, auto_wrap_final
-                code = extract_code_from_response(code)
-                code = auto_wrap_final(code)
-                # Dedup guard: if coder generates identical code twice in a
-                # row, inject an error to break the loop instead of wasting
-                # another turn on the same silent execution.
-                import hashlib
-                _code_hash = hashlib.md5(code.encode()).hexdigest()
-                if _code_hash == _prev_code_hash:
-                    deleg_last_error = (
-                        "You generated the exact same code as last turn. "
-                        "It didn't work because FINAL() was never reached at top level. "
-                        "Do NOT wrap code in main(). Write flat top-level code ending with FINAL(answer)."
-                    )
-                    deleg_last_output = ""
-                    _prev_code_hash = _code_hash
-                    continue
-                _prev_code_hash = _code_hash
-                # Prose report rescue: specialist answered in prose without
-                # code or FINAL().  In delegation, the specialist's prose IS
-                # the investigation report — return it to the architect for
-                # synthesis instead of discarding it or looping.
-                if "FINAL(" not in code and not any(
-                    ln.strip() and not ln.strip().startswith("#")
-                    and any(ln.strip().startswith(kw) for kw in (
-                        "def ", "class ", "for ", "while ", "if ", "try:",
-                        "print(", "result =", "answer =",
-                    ))
-                    for ln in code.split("\n")
-                ):
-                    # No executable code found — treat raw prose as report
-                    report = raw_deleg_output.strip()
-                    if report:
-                        log.info(
-                            "Delegation prose report (turn %d): %d chars returned to architect",
-                            _turn, len(report),
-                        )
-                        break
-                # Comment-only guard
-                if all(
-                    not ln.strip() or ln.strip().startswith("#")
-                    for ln in code.split("\n")
-                ):
-                    deleg_last_error = (
-                        "Your output was all comments — no executable code ran. "
-                        "Write Python code that computes the answer and call FINAL(answer)."
-                    )
-                    deleg_last_output = ""
-                    continue
-                result = deleg_repl.execute(code)
-                if result.is_final:
-                    report = result.final_answer or ""
-                    break
-                deleg_last_output = result.output or ""
-                deleg_last_error = result.error or ""
-            else:
-                report = deleg_repl.get_state()
-            total_tools += deleg_repl._tool_invocations
-            if deleg_repl.tool_registry:
-                for inv in deleg_repl.tool_registry.get_invocation_log():
-                    all_tools_called.append(inv.tool_name)
-                    phase_tool_timings.append(
-                        {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
-                    )
-        except Exception as e:
-            report = f"[Delegation failed: {e}]"
+        report, deleg_tools, deleg_tools_called, phase_tool_timings = _run_specialist_loop(
+            question, context, brief, delegate_to, delegate_mode, primitives, tool_registry,
+        )
+        total_tools += deleg_tools
+        all_tools_called.extend(deleg_tools_called)
 
         phase_b_ms = (time.perf_counter() - phase_b_start) * 1000
         delegate_tokens = primitives.total_tokens_generated - tokens_before
@@ -791,7 +870,7 @@ def _architect_delegated_answer(
             {
                 "from_role": architect_role,
                 "to_role": delegate_to,
-                "task_summary": brief[:200],
+                "task_summary": brief[:DELEGATION_BRIEF_KEY_LEN],
                 "success": success,
                 "elapsed_ms": round(phase_b_ms),
                 "tokens_generated": delegate_tokens,

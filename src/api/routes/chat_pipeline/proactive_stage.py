@@ -13,6 +13,7 @@ import re as _re
 import time
 
 from src.api.models import ChatRequest, ChatResponse
+from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.api.routes.chat_utils import RoutingResult
 from src.api.services.memrl import score_completed_task
 from src.api.structured_logging import task_extra
@@ -142,7 +143,7 @@ async def _execute_proactive(
     task_ir = {
         "task_id": routing.task_id,
         "task_type": routing.task_ir.get("task_type", "chat"),
-        "objective": request.prompt[:200],
+        "objective": request.prompt[:TASK_IR_OBJECTIVE_LEN],
         "plan": {"steps": steps},
     }
 

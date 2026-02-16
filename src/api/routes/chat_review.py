@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from src.config import get_config as _get_config
+from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.prompt_builders import (
     build_review_verdict_prompt,
     build_revision_prompt,
@@ -104,7 +105,7 @@ def _should_review(state: "AppState", task_id: str, role: str, answer: str) -> b
     try:
         # Get Q-values for this role from MemRL
         retriever = state.hybrid_router.retriever
-        task_ir = {"task_type": "chat", "objective": answer[:100]}
+        task_ir = {"task_type": "chat", "objective": answer[:TASK_IR_OBJECTIVE_LEN]}
         results = retriever.retrieve_for_routing(task_ir)
         if not results:
             return False
@@ -422,7 +423,7 @@ def _store_plan_review_episode(
         try:
             reward = review.score * 2 - 1  # Map 0-1 to -1..+1
             state.q_scorer.score_external_result(
-                task_description=task_ir.get("objective", "")[:200],
+                task_description=task_ir.get("objective", "")[:TASK_IR_OBJECTIVE_LEN],
                 action=f"plan_review:{review.decision}",
                 reward=reward,
                 context={

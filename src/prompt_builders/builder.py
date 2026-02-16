@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.prompt_builders.types import (
     EscalationPrompt,
     PromptConfig,
@@ -700,7 +701,7 @@ def build_routing_context(
     try:
         task_ir = {
             "task_type": "chat",
-            "objective": task_description[:200],
+            "objective": task_description[:TASK_IR_OBJECTIVE_LEN],
         }
         results = hybrid_router.retriever.retrieve_for_routing(task_ir)
 

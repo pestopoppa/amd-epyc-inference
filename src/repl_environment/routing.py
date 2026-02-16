@@ -6,6 +6,7 @@ Provides mixin with: escalate, my_role, route_advice, delegate, recall.
 from __future__ import annotations
 
 
+from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.repl_environment.types import wrap_tool_output
 
 
@@ -276,7 +277,7 @@ class _RoutingMixin:
         try:
             task_ir = {
                 "task_type": "chat",
-                "objective": task_description[:200],
+                "objective": task_description[:TASK_IR_OBJECTIVE_LEN],
                 "priority": "interactive",
             }
             routing_decision, strategy = self._hybrid_router.route(task_ir)

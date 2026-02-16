@@ -10,6 +10,15 @@ from dataclasses import dataclass
 import pytest
 
 
+from src.graph.helpers import (
+    _classify_error,
+    _detect_role_cycle,
+    _extract_final_from_raw,
+    _extract_prose_answer,
+    _is_comment_only,
+    _rescue_from_last_output,
+    _resolve_answer,
+)
 from src.graph.nodes import (
     ArchitectCodingNode,
     ArchitectNode,
@@ -18,8 +27,6 @@ from src.graph.nodes import (
     FrontdoorNode,
     IngestNode,
     WorkerNode,
-    _classify_error,
-    _rescue_from_last_output,
     select_start_node,
 )
 from src.graph.state import GraphConfig, TaskDeps, TaskResult, TaskState
@@ -358,3 +365,319 @@ class TestMaxTurnsRescue:
         result = await orchestration_graph.run(FrontdoorNode(), state=state, deps=deps)
         assert result.output.success is False
         assert "Max turns" in result.output.answer
+
+
+# ====================================================================
+# Characterization tests for pure helper functions
+# ====================================================================
+
+
+class TestClassifyErrorCharacterization:
+    """Exhaustive characterization of _classify_error keyword matching."""
+
+    # -- TIMEOUT --
+    def test_timeout_keyword(self):
+        assert _classify_error("timeout occurred") == ErrorCategory.TIMEOUT
+
+    def test_timed_out_keyword(self):
+        assert _classify_error("request timed out after 30s") == ErrorCategory.TIMEOUT
+
+    def test_deadline_keyword(self):
+        assert _classify_error("deadline exceeded") == ErrorCategory.TIMEOUT
+
+    # -- SCHEMA --
+    def test_json_validation(self):
+        assert _classify_error("json validation failed") == ErrorCategory.SCHEMA
+
+    def test_schema_keyword(self):
+        assert _classify_error("schema mismatch in IR") == ErrorCategory.SCHEMA
+
+    def test_jsonschema_keyword(self):
+        assert _classify_error("jsonschema error on field X") == ErrorCategory.SCHEMA
+
+    # -- FORMAT --
+    def test_ruff_format_error(self):
+        assert _classify_error("ruff format error") == ErrorCategory.FORMAT
+
+    def test_lint_keyword(self):
+        assert _classify_error("lint check failed") == ErrorCategory.FORMAT
+
+    def test_markdown_keyword(self):
+        assert _classify_error("markdown style violation") == ErrorCategory.FORMAT
+
+    def test_style_keyword(self):
+        assert _classify_error("style check failed") == ErrorCategory.FORMAT
+
+    # -- EARLY_ABORT --
+    def test_generation_aborted(self):
+        assert _classify_error("generation aborted") == ErrorCategory.EARLY_ABORT
+
+    def test_early_abort_keyword(self):
+        assert _classify_error("early abort detected") == ErrorCategory.EARLY_ABORT
+
+    def test_abort_keyword_alone(self):
+        assert _classify_error("abort signal received") == ErrorCategory.EARLY_ABORT
+
+    # -- INFRASTRUCTURE --
+    def test_backend_unreachable(self):
+        assert _classify_error("backend unreachable") == ErrorCategory.INFRASTRUCTURE
+
+    def test_connection_error(self):
+        assert _classify_error("connection refused on port 8080") == ErrorCategory.INFRASTRUCTURE
+
+    def test_502_error(self):
+        assert _classify_error("server returned 502") == ErrorCategory.INFRASTRUCTURE
+
+    def test_503_error(self):
+        assert _classify_error("HTTP 503 service unavailable") == ErrorCategory.INFRASTRUCTURE
+
+    # -- CODE --
+    def test_syntax_error(self):
+        assert _classify_error("syntax error in code") == ErrorCategory.CODE
+
+    def test_typeerror(self):
+        assert _classify_error("TypeError: 'NoneType'") == ErrorCategory.CODE
+
+    def test_nameerror(self):
+        assert _classify_error("NameError: name 'x' is not defined") == ErrorCategory.CODE
+
+    def test_test_fail(self):
+        assert _classify_error("test fail in test_foo.py") == ErrorCategory.CODE
+
+    def test_import_error(self):
+        assert _classify_error("import error: no module named foo") == ErrorCategory.CODE
+
+    # -- LOGIC --
+    def test_incorrect_logic(self):
+        assert _classify_error("incorrect logic in solution") == ErrorCategory.LOGIC
+
+    def test_wrong_output(self):
+        assert _classify_error("wrong output for test case 3") == ErrorCategory.LOGIC
+
+    def test_assertion_error(self):
+        assert _classify_error("assertion failed: expected 42") == ErrorCategory.LOGIC
+
+    # -- UNKNOWN --
+    def test_unknown_fallback(self):
+        assert _classify_error("something random") == ErrorCategory.UNKNOWN
+
+    def test_empty_string(self):
+        assert _classify_error("") == ErrorCategory.UNKNOWN
+
+    # -- case insensitivity --
+    def test_case_insensitive_timeout(self):
+        assert _classify_error("TIMEOUT OCCURRED") == ErrorCategory.TIMEOUT
+
+    def test_case_insensitive_json(self):
+        assert _classify_error("JSON Validation Failed") == ErrorCategory.SCHEMA
+
+
+class TestExtractFinalFromRawCharacterization:
+    """Characterize FINAL() pattern extraction from raw LLM output."""
+
+    def test_double_quoted(self):
+        assert _extract_final_from_raw('some text FINAL("answer") more') == "answer"
+
+    def test_single_quoted(self):
+        assert _extract_final_from_raw("FINAL('hello')") == "hello"
+
+    def test_triple_single_quoted_multiline(self):
+        text = "FINAL('''line one\nline two\nline three''')"
+        result = _extract_final_from_raw(text)
+        assert result is not None
+        assert "line one" in result
+        assert "line three" in result
+
+    def test_triple_double_quoted_multiline(self):
+        text = 'FINAL("""first\nsecond""")'
+        result = _extract_final_from_raw(text)
+        assert result is not None
+        assert "first" in result
+        assert "second" in result
+
+    def test_unquoted_token(self):
+        assert _extract_final_from_raw("FINAL(42)") == "42"
+
+    def test_no_final_returns_none(self):
+        assert _extract_final_from_raw("no final call here") is None
+
+    def test_empty_string(self):
+        assert _extract_final_from_raw("") is None
+
+    def test_final_with_whitespace(self):
+        result = _extract_final_from_raw('FINAL( "spaced" )')
+        assert result == "spaced"
+
+    def test_final_in_longer_text(self):
+        text = 'Let me compute...\nresult = 42\nFINAL("42")\nDone.'
+        assert _extract_final_from_raw(text) == "42"
+
+
+class TestExtractProseAnswerCharacterization:
+    """Characterize prose answer extraction patterns."""
+
+    def test_the_answer_is(self):
+        assert _extract_prose_answer("The answer is D") == "D"
+
+    def test_i_choose(self):
+        assert _extract_prose_answer("I choose B") == "B"
+
+    def test_answer_colon(self):
+        assert _extract_prose_answer("Answer: C") == "C"
+
+    def test_therefore(self):
+        assert _extract_prose_answer("Therefore, the answer is A") == "A"
+
+    def test_i_will_go_with(self):
+        assert _extract_prose_answer("I'll go with B") == "B"
+
+    def test_my_answer_is(self):
+        assert _extract_prose_answer("My answer is 42") == "42"
+
+    def test_the_correct_option_is(self):
+        assert _extract_prose_answer("The correct option is A") == "A"
+
+    def test_bare_mcq_letter_fallback(self):
+        assert _extract_prose_answer("some reasoning\nD\nmore text") == "D"
+
+    def test_no_pattern_returns_none(self):
+        assert _extract_prose_answer("This is just some text without an answer pattern.") is None
+
+    def test_empty_string(self):
+        assert _extract_prose_answer("") is None
+
+    def test_so_the_answer_is(self):
+        assert _extract_prose_answer("So the answer is B") == "B"
+
+    def test_i_select(self):
+        assert _extract_prose_answer("I select A") == "A"
+
+    def test_the_correct_answer_is(self):
+        assert _extract_prose_answer("The correct answer is C") == "C"
+
+    def test_the_correct_choice_is(self):
+        assert _extract_prose_answer("The correct choice is B") == "B"
+
+
+class TestRescueFromLastOutputCharacterization:
+    """Characterize the last-resort answer rescue pipeline (priority order)."""
+
+    def test_rescue_final(self):
+        text = 'Some reasoning\nFINAL("the answer")\nDone'
+        assert _rescue_from_last_output(text) == "the answer"
+
+    def test_rescue_prose(self):
+        text = "After analysis.\nThe answer is D"
+        assert _rescue_from_last_output(text) == "D"
+
+    def test_rescue_code_block(self):
+        code = "def solution():\n    return [1, 2, 3]\n\nprint(solution())"
+        text = f"Here is my solution:\n```python\n{code}\n```"
+        result = _rescue_from_last_output(text)
+        assert result is not None
+        assert "def solution" in result
+
+    def test_empty_returns_none(self):
+        assert _rescue_from_last_output("") is None
+
+    def test_whitespace_only_returns_none(self):
+        assert _rescue_from_last_output("   \n\t  ") is None
+
+    def test_short_code_block_ignored(self):
+        text = "```\nx = 1\n```"
+        assert _rescue_from_last_output(text) is None
+
+    def test_final_takes_priority_over_prose(self):
+        text = 'The answer is B\nFINAL("A")'
+        assert _rescue_from_last_output(text) == "A"
+
+    def test_prose_takes_priority_over_code(self):
+        text = "The answer is D\n```python\nprint('hello world and some more text')\n```"
+        assert _rescue_from_last_output(text) == "D"
+
+    def test_no_rescue_possible(self):
+        text = "I am still thinking about this problem..."
+        assert _rescue_from_last_output(text) is None
+
+
+class TestIsCommentOnlyCharacterization:
+    """Characterize comment-only code detection."""
+
+    def test_single_comment(self):
+        assert _is_comment_only("# just a comment") is True
+
+    def test_multiple_comments(self):
+        assert _is_comment_only("# line one\n# line two\n# line three") is True
+
+    def test_comments_with_blanks(self):
+        assert _is_comment_only("# comment\n\n# another\n") is True
+
+    def test_executable_code(self):
+        assert _is_comment_only("x = 1") is False
+
+    def test_mixed_comment_and_code(self):
+        assert _is_comment_only("# comment\nx = 1") is False
+
+    def test_empty_string(self):
+        assert _is_comment_only("") is True
+
+    def test_blank_lines_only(self):
+        assert _is_comment_only("\n\n\n") is True
+
+    def test_comment_then_print(self):
+        assert _is_comment_only("# setup\nprint('hello')") is False
+
+    def test_indented_comment(self):
+        assert _is_comment_only("    # indented comment") is True
+
+    def test_function_def(self):
+        assert _is_comment_only("def foo(): pass") is False
+
+
+class TestDetectRoleCycleCharacterization:
+    """Characterize role-cycle detection for escalation loops."""
+
+    def test_period_2_cycle(self):
+        assert _detect_role_cycle(["A", "B", "A", "B"]) is True
+
+    def test_period_3_cycle(self):
+        assert _detect_role_cycle(["A", "B", "C", "A", "B", "C"]) is True
+
+    def test_no_cycle_short(self):
+        assert _detect_role_cycle(["A", "B"]) is False
+
+    def test_no_cycle_unique(self):
+        assert _detect_role_cycle(["A", "B", "C", "D"]) is False
+
+    def test_no_cycle_three_items(self):
+        assert _detect_role_cycle(["A", "B", "C"]) is False
+
+    def test_period_2_with_prefix(self):
+        assert _detect_role_cycle(["X", "A", "B", "A", "B"]) is True
+
+    def test_empty_list(self):
+        assert _detect_role_cycle([]) is False
+
+
+class TestResolveAnswerCharacterization:
+    """Characterize answer resolution from output and tool outputs."""
+
+    def test_output_preferred(self):
+        assert _resolve_answer("hello", ["tool1"]) == "hello"
+
+    def test_tool_output_fallback(self):
+        assert _resolve_answer("", ["tool result"]) == "tool result"
+
+    def test_empty_both(self):
+        assert _resolve_answer("", []) == ""
+
+    def test_strips_whitespace(self):
+        assert _resolve_answer("  answer  ", []) == "answer"
+
+    def test_multiple_tool_outputs(self):
+        result = _resolve_answer("", ["result1", "result2"])
+        assert "result1" in result
+        assert "result2" in result
+
+    def test_whitespace_only_output_uses_tools(self):
+        assert _resolve_answer("   ", []) == ""

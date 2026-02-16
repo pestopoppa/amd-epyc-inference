@@ -15,6 +15,8 @@ import re
 from typing import Any
 
 
+from src.constants import TASK_IR_OBJECTIVE_LEN
+
 log = logging.getLogger(__name__)
 
 
@@ -152,7 +154,7 @@ def _select_mode(
         try:
             task_ir = {
                 "task_type": "chat",
-                "objective": prompt[:200],
+                "objective": prompt[:TASK_IR_OBJECTIVE_LEN],
                 "priority": "interactive",
                 "context_length": len(context) if context else 0,
             }

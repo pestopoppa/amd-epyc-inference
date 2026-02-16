@@ -28,7 +28,7 @@ Thumbs.db
 *.sublime-*
 
 # Claude Code config (contains credentials and session data)
-config/
+/config/
 
 # Embedded git repos (cloned research repos)
 research/eagle-official/

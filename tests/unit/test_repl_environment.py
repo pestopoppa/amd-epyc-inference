@@ -845,3 +845,381 @@ class TestExplorationLog:
 
         summary = log.get_strategy_summary()
         assert summary["strategy_type"] == "scan"
+
+
+# ============================================================
+# CHARACTERIZATION TESTS — REPLEnvironment public API contract
+# ============================================================
+
+
+class TestConstructorDefaults:
+    """Characterize constructor defaults and attribute initialization."""
+
+    def test_constructor_sets_context(self):
+        """Constructor stores context string verbatim."""
+        repl = REPLEnvironment(context="test context")
+        assert repl.context == "test context"
+
+    def test_constructor_default_config(self):
+        """Constructor creates default REPLConfig when none provided."""
+        repl = REPLEnvironment(context="test context")
+        assert isinstance(repl.config, REPLConfig)
+        # Should have the default output_cap
+        assert repl.config.output_cap == 8192
+
+    def test_constructor_default_role_is_worker_general(self):
+        """Constructor defaults role to 'worker_general'."""
+        repl = REPLEnvironment(context="test context")
+        assert repl.role == "worker_general"
+
+    def test_constructor_custom_role(self):
+        """Constructor accepts custom role string."""
+        repl = REPLEnvironment(context="test context", role="coder_primary")
+        assert repl.role == "coder_primary"
+
+    def test_constructor_default_artifacts_empty_dict(self):
+        """Constructor defaults artifacts to empty dict when None."""
+        repl = REPLEnvironment(context="test context")
+        assert repl.artifacts == {}
+        assert isinstance(repl.artifacts, dict)
+
+    def test_constructor_initial_execution_count_zero(self):
+        """Constructor initializes execution count to zero."""
+        repl = REPLEnvironment(context="test context")
+        assert repl._execution_count == 0
+
+    def test_constructor_initial_final_answer_none(self):
+        """Constructor initializes final answer to None."""
+        repl = REPLEnvironment(context="test context")
+        assert repl._final_answer is None
+
+
+class TestSafeImportModules:
+    """Characterize the SAFE_IMPORT_MODULES whitelist."""
+
+    def test_contains_math(self):
+        """SAFE_IMPORT_MODULES includes 'math'."""
+        assert "math" in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_contains_json(self):
+        """SAFE_IMPORT_MODULES includes 'json'."""
+        assert "json" in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_contains_re(self):
+        """SAFE_IMPORT_MODULES includes 're'."""
+        assert "re" in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_contains_collections(self):
+        """SAFE_IMPORT_MODULES includes 'collections'."""
+        assert "collections" in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_contains_itertools(self):
+        """SAFE_IMPORT_MODULES includes 'itertools'."""
+        assert "itertools" in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_contains_datetime(self):
+        """SAFE_IMPORT_MODULES includes 'datetime'."""
+        assert "datetime" in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_does_not_contain_os(self):
+        """SAFE_IMPORT_MODULES must NOT include 'os'."""
+        assert "os" not in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_does_not_contain_subprocess(self):
+        """SAFE_IMPORT_MODULES must NOT include 'subprocess'."""
+        assert "subprocess" not in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_does_not_contain_shutil(self):
+        """SAFE_IMPORT_MODULES must NOT include 'shutil'."""
+        assert "shutil" not in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_does_not_contain_socket(self):
+        """SAFE_IMPORT_MODULES must NOT include 'socket'."""
+        assert "socket" not in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_does_not_contain_sys(self):
+        """SAFE_IMPORT_MODULES must NOT include 'sys'."""
+        assert "sys" not in REPLEnvironment.SAFE_IMPORT_MODULES
+
+    def test_is_frozenset(self):
+        """SAFE_IMPORT_MODULES is a frozenset (immutable)."""
+        assert isinstance(REPLEnvironment.SAFE_IMPORT_MODULES, frozenset)
+
+
+class TestBuildGlobals:
+    """Characterize _build_globals() namespace construction."""
+
+    def test_globals_includes_context(self):
+        """_build_globals puts context into the namespace."""
+        repl = REPLEnvironment(context="my context string")
+        g = repl._build_globals()
+        assert g["context"] == "my context string"
+
+    def test_globals_includes_artifacts(self):
+        """_build_globals puts artifacts dict into the namespace."""
+        artifacts = {"key": "value"}
+        repl = REPLEnvironment(context="test", artifacts=artifacts)
+        g = repl._build_globals()
+        assert g["artifacts"] is artifacts
+
+    def test_globals_includes_safe_builtins_len(self):
+        """_build_globals includes len in builtins."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        builtins = g["__builtins__"]
+        assert "len" in builtins
+        assert builtins["len"] is __builtins__["len"] if isinstance(__builtins__, dict) else builtins["len"] is len
+
+    def test_globals_includes_safe_builtins_range(self):
+        """_build_globals includes range in builtins."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "range" in g["__builtins__"]
+
+    def test_globals_includes_safe_builtins_sorted(self):
+        """_build_globals includes sorted in builtins."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "sorted" in g["__builtins__"]
+
+    def test_globals_includes_safe_builtins_print(self):
+        """_build_globals includes print in builtins."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "print" in g["__builtins__"]
+
+    def test_globals_includes_FINAL_function(self):
+        """_build_globals includes FINAL callable."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "FINAL" in g
+        assert callable(g["FINAL"])
+
+    def test_globals_includes_peek_function(self):
+        """_build_globals includes peek callable."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "peek" in g
+        assert callable(g["peek"])
+
+    def test_globals_includes_grep_function(self):
+        """_build_globals includes grep callable."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "grep" in g
+        assert callable(g["grep"])
+
+    def test_globals_includes_FINAL_VAR_function(self):
+        """_build_globals includes FINAL_VAR callable."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        assert "FINAL_VAR" in g
+        assert callable(g["FINAL_VAR"])
+
+    def test_globals_includes_preloaded_math(self):
+        """_build_globals pre-loads the math module."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        import math
+        assert g["math"] is math
+
+    def test_globals_includes_preloaded_json(self):
+        """_build_globals pre-loads the json module."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        import json
+        assert g["json"] is json
+
+    def test_globals_excludes_dangerous_builtins(self):
+        """_build_globals does NOT include exec/eval/open in builtins."""
+        repl = REPLEnvironment(context="test")
+        g = repl._build_globals()
+        builtins = g["__builtins__"]
+        assert "exec" not in builtins
+        assert "eval" not in builtins
+        assert "open" not in builtins
+
+
+class TestExecuteCharacterization:
+    """Characterize execute() behavior for the public API contract."""
+
+    def test_execute_simple_math(self):
+        """execute() runs simple arithmetic: x = 1 + 1."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("x = 1 + 1\nprint(x)")
+        assert "2" in result.output
+        assert result.error is None
+        assert not result.is_final
+
+    def test_execute_final_sets_answer(self):
+        """execute() with FINAL('answer') sets is_final and final_answer."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("FINAL('answer')")
+        assert result.is_final is True
+        assert result.final_answer == "answer"
+
+    def test_execute_blocks_import_os(self):
+        """execute() blocks 'import os' with a security error."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("import os")
+        assert result.error is not None
+        # The error comes from AST validation (Dangerous operation) or ImportError
+        assert "not allowed" in result.error.lower() or "Dangerous" in result.error
+
+    def test_execute_blocks_import_subprocess(self):
+        """execute() blocks 'import subprocess' with a security error."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("import subprocess")
+        assert result.error is not None
+
+    def test_execute_allows_import_math(self):
+        """execute() allows 'import math' and math functions work."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("import math\nprint(math.sqrt(16))")
+        assert result.error is None
+        assert "4.0" in result.output
+
+    def test_execute_allows_import_json(self):
+        """execute() allows 'import json' and json functions work."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute('import json\nprint(json.dumps({"a": 1}))')
+        assert result.error is None
+        assert '"a"' in result.output
+
+    def test_execute_allows_import_re(self):
+        """execute() allows 'import re' and regex functions work."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("import re\nprint(re.findall(r'\\d+', 'abc123def456'))")
+        assert result.error is None
+        assert "123" in result.output
+
+    def test_execute_allows_import_collections(self):
+        """execute() allows 'import collections'."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("import collections\nc = collections.Counter('aabbc')\nprint(c['a'])")
+        assert result.error is None
+        assert "2" in result.output
+
+    def test_execute_increments_execution_count(self):
+        """execute() increments the internal execution counter."""
+        repl = REPLEnvironment(context="test context")
+        assert repl._execution_count == 0
+        repl.execute("x = 1")
+        assert repl._execution_count == 1
+        repl.execute("y = 2")
+        assert repl._execution_count == 2
+
+    def test_execute_returns_execution_result(self):
+        """execute() returns an ExecutionResult dataclass."""
+        from src.repl_environment.types import ExecutionResult
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("x = 1")
+        assert isinstance(result, ExecutionResult)
+
+    def test_execute_elapsed_seconds_positive(self):
+        """execute() records a positive elapsed_seconds."""
+        repl = REPLEnvironment(context="test context")
+        result = repl.execute("x = sum(range(1000))")
+        assert result.elapsed_seconds >= 0
+
+
+class TestExecuteTimeout:
+    """Characterize timeout behavior of execute()."""
+
+    def test_timeout_is_configurable(self):
+        """REPLConfig.timeout_seconds controls execution timeout."""
+        config = REPLConfig(timeout_seconds=30)
+        repl = REPLEnvironment(context="test", config=config)
+        assert repl.config.timeout_seconds == 30
+
+    def test_short_code_completes_within_timeout(self):
+        """Fast code completes without timeout error."""
+        config = REPLConfig(timeout_seconds=5)
+        repl = REPLEnvironment(context="test", config=config)
+        result = repl.execute("x = 1 + 1")
+        assert result.error is None
+
+
+class TestMixinContractAssertions:
+    """Characterize that mixin contract assertions pass on construction."""
+
+    def test_mixin_contracts_pass_minimal_args(self):
+        """REPLEnvironment(context='test') satisfies all mixin contracts."""
+        # If this raises AssertionError, mixin contracts are broken
+        repl = REPLEnvironment(context="test context")
+        # Verify key attributes exist (same list as __init__ required_attrs)
+        assert hasattr(repl, "config")
+        assert hasattr(repl, "context")
+        assert hasattr(repl, "artifacts")
+        assert hasattr(repl, "role")
+        assert hasattr(repl, "task_id")
+        assert hasattr(repl, "_exploration_calls")
+        assert hasattr(repl, "_execution_count")
+        assert hasattr(repl, "_tool_invocations")
+        assert hasattr(repl, "_exploration_log")
+        assert hasattr(repl, "_grep_hits_buffer")
+        assert hasattr(repl, "_findings_buffer")
+        assert hasattr(repl, "_research_context")
+        assert hasattr(repl, "_last_research_node")
+        assert hasattr(repl, "_final_answer")
+        assert hasattr(repl, "_globals")
+        assert hasattr(repl, "llm_primitives")
+        assert hasattr(repl, "tool_registry")
+        assert hasattr(repl, "script_registry")
+        assert hasattr(repl, "progress_logger")
+        assert hasattr(repl, "_retriever")
+        assert hasattr(repl, "_hybrid_router")
+        assert hasattr(repl, "_validate_file_path")
+        assert hasattr(repl, "_build_globals")
+
+    def test_mixin_contracts_pass_with_all_optional_none(self):
+        """Construction with explicit None for all optional args satisfies contracts."""
+        repl = REPLEnvironment(
+            context="test",
+            artifacts=None,
+            config=None,
+            llm_primitives=None,
+            tool_registry=None,
+            script_registry=None,
+            role=None,
+            progress_logger=None,
+            task_id=None,
+            retriever=None,
+            hybrid_router=None,
+            structured_mode=False,
+        )
+        assert repl.context == "test"
+        assert repl.artifacts == {}
+        assert repl.role == "worker_general"
+
+
+class TestAllowedFilePaths:
+    """Characterize ALLOWED_FILE_PATHS security boundary."""
+
+    def test_allowed_file_paths_is_list(self):
+        """ALLOWED_FILE_PATHS is a list of strings."""
+        assert isinstance(REPLEnvironment.ALLOWED_FILE_PATHS, list)
+        for path in REPLEnvironment.ALLOWED_FILE_PATHS:
+            assert isinstance(path, str)
+
+    def test_allowed_file_paths_includes_raid(self):
+        """ALLOWED_FILE_PATHS includes /mnt/raid0/llm/ prefix."""
+        assert any("/mnt/raid0/llm/" in p for p in REPLEnvironment.ALLOWED_FILE_PATHS)
+
+    def test_allowed_file_paths_includes_tmp(self):
+        """ALLOWED_FILE_PATHS includes /tmp/ prefix."""
+        assert any("/tmp/" in p for p in REPLEnvironment.ALLOWED_FILE_PATHS)
+
+    def test_validate_file_path_allowed(self):
+        """_validate_file_path accepts paths under allowed prefixes."""
+        repl = REPLEnvironment(context="test")
+        is_valid, error = repl._validate_file_path("/mnt/raid0/llm/test.txt")
+        assert is_valid is True
+        assert error is None
+
+    def test_validate_file_path_forbidden(self):
+        """_validate_file_path rejects paths outside allowed prefixes."""
+        repl = REPLEnvironment(context="test")
+        is_valid, error = repl._validate_file_path("/etc/passwd")
+        assert is_valid is False
+        assert error is not None

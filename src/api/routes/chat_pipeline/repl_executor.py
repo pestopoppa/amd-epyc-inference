@@ -22,6 +22,7 @@ from src.api.models import ChatRequest, ChatResponse
 from src.api.services.memrl import score_completed_task
 from src.graph import run_task, GraphConfig, TaskDeps, TaskState
 from src.llm_primitives import LLMPrimitives
+from src.constants import TOOL_OUTPUT_MATCH_LEN
 from src.repl_environment import REPLEnvironment
 
 from src.api.routes.chat_review import (
@@ -58,7 +59,7 @@ def _tools_success(answer: str, tool_outputs: list, tool_invocations: int) -> bo
         text = str(output).strip()
         if not text:
             continue
-        if text[:200].lower() in answer_text:
+        if text[:TOOL_OUTPUT_MATCH_LEN].lower() in answer_text:
             return True
     return False
 
@@ -290,7 +291,7 @@ async def _execute_repl(
         # Try rescue: extract answer from last LLM output before generating error
         last_output = task_state.last_output
         if last_output:
-            from src.graph.nodes import _rescue_from_last_output
+            from src.graph.helpers import _rescue_from_last_output
 
             rescued = _rescue_from_last_output(last_output)
             if rescued:

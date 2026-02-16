@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from src.api.models import ChatRequest
 from src.api.services.memrl import ensure_memrl_initialized
 from src.config import get_config
+from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.features import features
 from src.llm_primitives import LLMPrimitives
 from src.roles import Role
@@ -43,7 +44,7 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
     task_id = f"chat-{uuid.uuid4().hex[:8]}"
     task_ir = {
         "task_type": "chat",
-        "objective": request.prompt[:200],
+        "objective": request.prompt[:TASK_IR_OBJECTIVE_LEN],
         "priority": "interactive",
     }
 

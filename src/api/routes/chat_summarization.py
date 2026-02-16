@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from src.constants import TASK_IR_OBJECTIVE_LEN
+
 from src.api.routes.chat_utils import (
     _estimate_tokens,
     TWO_STAGE_CONFIG,
@@ -135,7 +137,7 @@ async def _run_two_stage_summarization(
     for chunk in chunks:
         worker_prompt = (
             f"Analyze this section ({chunk['index'] + 1}/{n_chunks}) of a larger document.\n"
-            f"Task context: {prompt[:200]}\n\n"
+            f"Task context: {prompt[:TASK_IR_OBJECTIVE_LEN]}\n\n"
             f"## Section Content\n{chunk['text'][:6000]}\n\n"
             f"## Instructions\n"
             f"Extract: key facts, relevant quotes, any findings related to the task.\n"

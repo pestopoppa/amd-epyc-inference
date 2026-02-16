@@ -13,6 +13,7 @@ import operator as _operator
 from typing import TYPE_CHECKING
 
 from src.config import get_config as _get_config
+from src.exceptions import ArchiveExtractionError
 from src.prompt_builders import (
     VISION_REACT_EXECUTABLE_TOOLS,
     VISION_TOOL_DESCRIPTIONS,
@@ -636,7 +637,7 @@ async def _handle_multi_file_vision(
                 # Extract all (respects security limits: 500MB max, 1000 files max)
                 result = extractor.extract_all(fpath)
                 extracted_files.extend(str(ef) for ef in result.extracted_paths)
-            except Exception as e:
+            except (ArchiveExtractionError, OSError, ValueError) as e:
                 logger.warning(f"Archive extraction failed for {fpath}: {e}")
                 extracted_files.append(fpath)  # Try to process as-is
         else:
