@@ -9,6 +9,11 @@ This project uses a **hierarchical local-agent workflow** for production inferen
 
 ## Problem Statement
 
+Not every LLM task is equally hard. Conversational reasoning, long-form synthesis, code generation, and knowledge management all have wildly different compute profiles -- yet running them through one monolithic model wastes latency on simple tasks and starves complex ones of capacity.
+
+<details>
+<summary>Detailed problem breakdown</summary>
+
 Modern LLM workflows mix fundamentally different tasks:
 - Conversational reasoning and tool use
 - Long-form document synthesis
@@ -20,7 +25,14 @@ Running all tasks through a single monolithic model is inefficient:
 - Throughput is wasted on tasks that don't need deep reasoning
 - Quality drifts when small changes affect global context
 
+</details>
+
 ## Core Insight
+
+The key realization is that reasoning, planning, and expansion are separable concerns. Each phase can be handled by the cheapest model capable of doing it correctly -- which mirrors speculative decoding at the system level, where a strong model sets the trajectory and cheap models propose artifacts in parallel.
+
+<details>
+<summary>Decomposition and system-level speculation</summary>
 
 **Reasoning, planning, and expansion are separable.**
 
@@ -36,7 +48,14 @@ This mirrors speculative decoding at the *system level*:
 - Many cheap models propose artifacts in parallel
 - Correctness is enforced by gates, not by "agreement"
 
+</details>
+
 ## Agent Tiers
+
+The system organizes models into tiers: a fast always-resident front door (Tier A), specialist models for code/ingestion/architecture (Tier B), cheap parallel workers (Tier C), and tiny draft/embedding models (Tier D). Requests flow through the front door and get routed or escalated based on complexity and gate failures.
+
+<details>
+<summary>Tier definitions and escalation flows</summary>
 
 ### Tier A - Front Door / Orchestrator
 
@@ -58,6 +77,9 @@ This mirrors speculative decoding at the *system level*:
 **Note**: Qwen3-Coder-480B (271GB) has a BOS token mismatch that breaks all speculation methods. Use expert reduction (MoE3) only. Despite being only ~35B active parameters per token, it achieves 95% quality on coding benchmarks with MoE3.
 
 ### Detailed Escalation Flow
+
+<details>
+<summary>Code: full escalation ASCII diagrams</summary>
 
 ```
 User Request
@@ -145,6 +167,8 @@ User Request
 └─────────────────────────────────────────────────────────────┘
 ```
 
+</details>
+
 **Note**: Dedicated thinking models (Qwen3-4B-Thinking, DeepSeek-R1-Distill-Qwen-32B) were evaluated during benchmarking but are not deployed in the production stack. The Qwen3 family has native `<think>` tag support, so reasoning is handled by the existing frontdoor and specialist models.
 
 **Escalation Triggers**:
@@ -159,13 +183,7 @@ User Request
 
 ### Tier C - Workers (Parallel)
 
-- File-level implementation, exploration, summarization
-- Test writing
-- Documentation
-- Math / edge-case reasoning
-- Vision / UI extraction
-
-Workers are **stateless** and cheap; many run concurrently.
+Workers are stateless, cheap, and many run concurrently. They handle file-level implementation, exploration, summarization, test writing, documentation, math, and vision tasks.
 
 | Worker | Model | Port | Tier | Acceleration |
 |--------|-------|------|------|--------------|
@@ -189,7 +207,10 @@ Workers are **stateless** and cheap; many run concurrently.
 
 ### Formalizers (Preprocessing)
 
-Formalizers are specialized models that convert vague natural language into structured IR **before** routing to execution tiers. They're a preprocessing step, not part of the main execution flow.
+Formalizers are specialized models that convert vague natural language into structured IR before routing to execution tiers. They are a preprocessing step, not part of the main execution flow -- think of them as a "compile" pass that turns fuzzy user intent into a concrete tool-call sequence.
+
+<details>
+<summary>Formalizer architecture and candidate models</summary>
 
 ```
 User: "Download the file, parse it, and upload results to S3"
@@ -235,9 +256,19 @@ User: "Download the file, parse it, and upload results to S3"
 
 **Status**: Evaluation complete. Top performers: xLAM-2-1B (100%), MathSmith-8B (100%). See [Benchmark Results](../reference/benchmarks/RESULTS.md).
 
+</details>
+
+</details>
+
 ## TaskIR Schema
 
-The Front Door emits a TaskIR JSON for every non-trivial request:
+The front door emits a TaskIR JSON for every non-trivial request. This is the contract between the orchestrator and all downstream agents -- it specifies what to do, who should do it, and how to verify the result.
+
+<details>
+<summary>TaskIR JSON structure</summary>
+
+<details>
+<summary>Code: TaskIR example payload</summary>
 
 ```json
 {
@@ -260,7 +291,16 @@ The Front Door emits a TaskIR JSON for every non-trivial request:
 }
 ```
 
+</details>
+
+</details>
+
 ## Verification Gates
+
+Every artifact passes through a strict ordered gate sequence: schema validation, formatting/lint, typecheck/build, unit tests, integration tests, and security checks. On first failure the producing agent gets another shot; on second failure it escalates one tier up. No free-form retries allowed.
+
+<details>
+<summary>Gate sequence and failure handling</summary>
 
 Every artifact must pass, in order:
 
@@ -276,9 +316,14 @@ Every artifact must pass, in order:
 - Second failure → escalate one tier
 - No free-form retries
 
+</details>
+
 ## Routing Rules
 
-Deterministic, minimal routing:
+Routing is deterministic and minimal. Short prompts that need no tools bypass the REPL entirely (direct-answer mode), while longer or more complex requests get routed to the appropriate tier based on task type, context size, and failure count.
+
+<details>
+<summary>Routing table and direct-answer mode</summary>
 
 | Condition | Route |
 |-----------|-------|
@@ -298,7 +343,14 @@ Direct mode activates when the prompt has no file/tool operation keywords and co
 
 Implementation: `_should_use_direct_mode()` in `src/api/routes/chat.py`.
 
+</details>
+
 ## Two-Stage Long Context Pipeline
+
+When context exceeds 20K characters, the system splits it into chunks and fans out to parallel 7B workers for digesting, then the 30B front door synthesizes a final answer from all worker digests. This replaced the REPL exploration approach which scored 0/9 on long-context benchmarks.
+
+<details>
+<summary>Pipeline stages and rationale</summary>
 
 All requests with context >20K characters use a two-stage pipeline instead of REPL exploration:
 
@@ -307,9 +359,14 @@ All requests with context >20K characters use a two-stage pipeline instead of RE
 
 This replaced the REPL exploration approach (which scored 0/9 on long-context benchmarks because the model generated standalone Python instead of calling built-in `peek()`/`grep()` functions).
 
+</details>
+
 ## Role Aliases
 
-Models sometimes generate natural-language role names in `delegate()` and `escalate()` calls. These are resolved automatically:
+Models sometimes generate natural-language role names in `delegate()` and `escalate()` calls, so the system maps them automatically to canonical role identifiers.
+
+<details>
+<summary>Alias mapping table</summary>
 
 | Model Generates | Maps To |
 |----------------|---------|
@@ -320,6 +377,8 @@ Models sometimes generate natural-language role names in `delegate()` and `escal
 | `vision_agent` | `worker_vision` |
 | `summarizer_agent` | `worker_summarize` |
 
+</details>
+
 ## Key Design Principles
 
 1. **Artifacts over prose**: Agents emit IR, code, tests, or diffs - not discussion
@@ -329,11 +388,17 @@ Models sometimes generate natural-language role names in `delegate()` and `escal
 
 ## Pipeline Intelligence (February 2026)
 
-Three optimizations that improve speed and quality without changing the core graph structure. Each acts as a wrapper around the existing escalation flow.
+Three optimizations that improve speed and quality without changing the core graph structure. Each wraps around the existing escalation flow: a speculative pre-filter that tries cheap models first, a think-harder mechanism that squeezes more out of a model before escalating, and streaming tool use for real-time visibility.
+
+<details>
+<summary>Pre-filter, think-harder, and streaming details</summary>
 
 ### Try-Cheap-First Speculative Pre-Filter
 
 Before the normal pipeline, a speculative attempt with the 7B worker model (44 t/s) is tried. If it passes the quality gate, the response is returned at 2-3x normal speed. On failure, the result is discarded and the request falls through to the normal pipeline with no penalty.
+
+<details>
+<summary>Code: pre-filter flow diagram</summary>
 
 ```
 Request
@@ -351,6 +416,8 @@ Request
    ▼
 Normal Pipeline (frontdoor → coder → architect)
 ```
+
+</details>
 
 **Rollout phases**:
 
@@ -374,12 +441,17 @@ New `THINK_HARDER` action fires on the penultimate retry (one attempt before mod
 
 This often matches the quality of the next-tier model at 6x the speed. The action is inserted into the retry logic in each graph node: when `consecutive_failures == max_retries - 1` and the error category is `CODE` or `LOGIC`, `THINK_HARDER` fires instead of a normal retry.
 
+<details>
+<summary>Code: retry sequence with THINK_HARDER</summary>
+
 ```
 Retry sequence (max_retries=3):
   Attempt 1 → fail → retry (same config)
   Attempt 2 → fail → THINK_HARDER (2x budget, CoT, higher temp)
   Attempt 3 → fail → escalate to next tier
 ```
+
+</details>
 
 **Parallel in Claude's stack**: Analogous to Claude's extended thinking (`budget_tokens`), where the same model is given more compute before falling back to a different approach.
 
@@ -403,9 +475,14 @@ Token-level SSE (Server-Sent Events) streaming during REPL execution, providing 
 
 Feature flag: `streaming_tool_use`.
 
+</details>
+
 ## Cross-Cutting Concerns (February 2026)
 
-Eight concepts from OpenClaw and Lobster were integrated behind feature flags. All default off.
+Eight concepts from OpenClaw and Lobster were integrated behind feature flags (all default off). These cover caching, fallback routing, session compaction, crash recovery, human approval gates, and priority-based routing overrides.
+
+<details>
+<summary>Concept-integration feature flags</summary>
 
 ### Content-Addressable LLM Cache
 
@@ -446,7 +523,14 @@ Human approval at escalation boundaries and destructive tool invocations (`src/g
 
 Priority-ordered routing overrides (`src/routing_bindings.py`). Five priority levels: DEFAULT (0) < CLASSIFIER (10) < Q_VALUE (20) < USER_PREF (30) < SESSION (40). `BindingRouter.resolve()` returns highest-priority active binding for a task type. Session bindings cleared at conversation end. Integrated in `_classify_and_route()`. Feature flag: `binding_routing`.
 
+</details>
+
 ## Implementation Status
+
+The orchestration layer is spread across about 20 modules. The core dispatch, execution, and context-passing logic lives in `src/`, with prompt templates hot-swappable from `orchestration/prompts/`, and the full test suite covers 2841 tests with zero failures.
+
+<details>
+<summary>Module inventory and test coverage</summary>
 
 The orchestration layer is implemented in:
 - `src/dispatcher.py` - Task routing
@@ -468,7 +552,12 @@ The orchestration layer is implemented in:
 
 **Test Coverage**: 2841 tests passing (0 failures), including 83 concept-integration tests
 
+</details>
+
 ## References
+
+<details>
+<summary>Literature and further reading</summary>
 
 ### Multi-Agent Systems and Orchestration
 
@@ -504,11 +593,18 @@ The orchestration layer is implemented in:
 
 12. Qiao, S., Ou, Y., Zhang, N., Chen, X., Yao, Y., Deng, S., ... & Chen, H. (2024). *Reasoning with Language Model Prompting: A Survey*. ACL 2023. https://arxiv.org/abs/2212.09597
 
+</details>
+
 ---
 
 *Previous: [Chapter 09: Deprecated Approaches](09-deprecated-approaches.md)* | *Next: [Chapter 11: REPL Environment](11-repl-environment.md)*
 
 ## Posterior Routing with Risk Controls (2026-02)
+
+Routing now combines heuristic priors from the classifier with learned posterior evidence from MemRL retrieval, cost-aware ranking, and risk-controlled confidence thresholding. This gives the system a principled way to balance speed, cost, and quality when picking which model handles a request.
+
+<details>
+<summary>Routing signal sources and implementation</summary>
 
 Routing now combines:
 
@@ -522,3 +618,5 @@ Primary implementation paths:
 - `src/api/routes/chat_pipeline/routing.py`
 - `src/api/routes/chat_routing.py`
 - `orchestration/repl_memory/retriever.py`
+
+</details>
