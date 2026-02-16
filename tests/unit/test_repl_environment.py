@@ -318,13 +318,14 @@ class TestOutputCapping:
     """Test output capping functionality."""
 
     def test_output_capped(self):
-        """Test that output is capped at limit."""
+        """Test that large output is spilled to file with summary."""
         config = REPLConfig(output_cap=100)
         repl = REPLEnvironment(context="test", config=config)
         result = repl.execute("print('x' * 200)")
 
-        assert len(result.output) <= 150  # Allow for truncation message
-        assert "truncated" in result.output
+        # Output should be a spill summary, not raw output
+        assert "chars" in result.output
+        assert "peek(" in result.output
 
     def test_normal_output_not_capped(self):
         """Test that normal output is not capped."""

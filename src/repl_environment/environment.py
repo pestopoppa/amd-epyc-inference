@@ -11,6 +11,7 @@ import io
 import signal
 import uuid
 from contextlib import redirect_stdout, redirect_stderr
+from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from src.repl_environment.types import (
@@ -137,6 +138,9 @@ class REPLEnvironment(
         # Execution state
         self._final_answer: str | None = None
         self._execution_count = 0
+        self._turn_counter = 0
+        self._session_id = task_id or uuid.uuid4().hex[:8]
+        self._last_spill_summary: str | None = None  # Rolling summary across spills
         self._tool_invocations = 0  # Count of TOOL()/CALL() invocations
 
         # Exploration tracking (for forced exploration validation)
@@ -429,6 +433,87 @@ class REPLEnvironment(
                 f"Dangerous operation not allowed: {violation}.{hints}"
             )
 
+    def _spill_output(self, output: str) -> str:
+        """Write full output to file when it exceeds output_cap, return summary.
+
+        Uses a rolling summary pattern: each spill passes the previous summary
+        + new tail to the worker, so the summary accumulates knowledge across
+        turns (like a compressed scratchpad). The model sees an always-up-to-date
+        summary without re-reading earlier spill files.
+
+        Fallback: static head/tail for unit tests or worker failure.
+
+        Args:
+            output: Raw execution output string.
+
+        Returns:
+            Original output if within cap, or summary string with spill path.
+        """
+        if len(output) <= self.config.output_cap:
+            return output
+
+        self._turn_counter += 1
+
+        # 1. Spill full output to file
+        spill_dir = Path(self.config.spill_dir) / self._session_id
+        spill_dir.mkdir(parents=True, exist_ok=True)
+        spill_path = spill_dir / f"turn_{self._turn_counter}.txt"
+        spill_path.write_text(output)
+
+        lines = output.splitlines()
+        n_lines = len(lines)
+        header = f"[Output: {len(output)} chars, {n_lines} lines → {spill_path}]"
+        footer = f'Use peek("{spill_path}") or grep("{spill_path}", pattern) to inspect.'
+
+        # 2. Try worker summary (Qwen2.5-7B, ~44 t/s, <1s for short summaries)
+        if self.llm_primitives is not None:
+            try:
+                # Rolling summary: previous summary + new tail
+                # The worker updates the running summary with new information,
+                # so the model always has accumulated context.
+                ctx_budget = 4000
+                tail_budget = ctx_budget
+                if self._last_spill_summary:
+                    # Reserve space for previous summary context
+                    prev_ctx = f"Previous summary:\n{self._last_spill_summary}\n\nNew output (tail):\n"
+                    tail_budget = ctx_budget - len(prev_ctx)
+                    ctx = prev_ctx + output[-tail_budget:]
+                    prompt = (
+                        "Update the previous summary with information from this new output. "
+                        "Preserve key findings from before, add new results/errors/values. "
+                        "Drop details that are superseded by newer output. Max 10 lines."
+                    )
+                else:
+                    # First spill: just summarize the tail
+                    ctx = output[-tail_budget:]
+                    prompt = (
+                        "Summarize this program output concisely. "
+                        "Include: key results, error indicators, final values, "
+                        "pass/fail counts if present. Max 10 lines."
+                    )
+
+                summary = self.llm_primitives.llm_call(
+                    prompt=prompt,
+                    context_slice=ctx,
+                    role="worker",
+                    n_tokens=512,
+                    skip_suffix=True,
+                )
+                self._last_spill_summary = summary
+                return f"{header}\n{summary}\n{footer}"
+            except Exception:
+                pass  # Fall through to static summary
+
+        # 3. Fallback: static head/tail
+        head = "\n".join(lines[:15])
+        tail = "\n".join(lines[-5:]) if n_lines > 20 else ""
+        parts = [header, head]
+        if tail:
+            parts.append(f"...\n[lines {n_lines - 4}–{n_lines}]")
+            parts.append(tail)
+        parts.append(footer)
+        return "\n".join(parts)
+
     def _execute_structured(self, code: str, start_time: float) -> ExecutionResult:
         """Execute in structured (React-style) mode: one tool call per turn.
 
@@ -608,12 +693,8 @@ class REPLEnvironment(
                 else:
                     observation = "Observation: [No output]"
 
-                # Cap output
-                if len(observation) > self.config.output_cap:
-                    observation = (
-                        observation[: self.config.output_cap]
-                        + f"\n[... truncated at {self.config.output_cap} chars]"
-                    )
+                # Spill large output to file with summary
+                observation = self._spill_output(observation)
 
                 return ExecutionResult(
                     output=observation,
@@ -710,12 +791,8 @@ class REPLEnvironment(
                 if stderr_capture.getvalue():
                     output += "\n[STDERR]\n" + stderr_capture.getvalue()
 
-                # Cap output
-                if len(output) > self.config.output_cap:
-                    output = (
-                        output[: self.config.output_cap]
-                        + f"\n[... truncated at {self.config.output_cap} chars]"
-                    )
+                # Spill large output to file with summary
+                output = self._spill_output(output)
 
                 return ExecutionResult(
                     output=output,

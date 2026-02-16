@@ -29,8 +29,8 @@ class PromptConfig:
     max_context_chars: int = 4000
     """Maximum characters for context sections."""
 
-    max_output_preview: int = 500
-    """Maximum characters for output previews."""
+    max_output_preview: int = 1500
+    """Maximum characters for output previews (bumped for spill-to-file summaries)."""
 
     max_error_preview: int = 500
     """Maximum characters for error previews."""

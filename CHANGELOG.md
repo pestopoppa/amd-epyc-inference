@@ -2,6 +2,8 @@
 
 ## 2026-02-16
 
+- **REPL output spill-to-file with rolling summary** — Large REPL output (>8192 chars) no longer hard-truncated. Output spills to `{spill_dir}/{session_id}/turn_N.txt`; worker model generates a rolling summary that accumulates across turns (previous summary + new tail → updated summary). Model can `peek()`/`grep()` spill files on demand. `max_output_preview` bumped 500→1500. Static head/tail fallback when worker unavailable. 12 new tests.
+
 - **Distillation pipeline latency instrumentation** — Fixed inter-model transition latency blindness in seeding pipeline:
   - **httpx client reuse** (`teachers.py`): `LocalLlamaTeacher` now creates a single `httpx.AsyncClient` lazily and reuses across batches (was creating new client per `distill()` call — TCP setup overhead on every batch). Supports async context manager for clean shutdown.
   - **Per-batch timing** (`pipeline.py`): Each teacher `distill()` call timed with `time.monotonic()`. New `batch_latencies` field on `DistillationReport` records `{skill_type, batch_index, batch_size, elapsed_ms, teacher}` per batch. Logged at INFO level.

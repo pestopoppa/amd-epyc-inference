@@ -165,6 +165,7 @@ class REPLConfig:
         default_factory=lambda: int(_registry_timeout("repl", "session", 600))
     )
     output_cap: int = 8192
+    spill_dir: str = "/mnt/raid0/llm/tmp/repl_output"
     max_grep_results: int = 100
     # Forced exploration validation (prevent premature FINAL)
     # Default False for backwards compatibility - enable for production use
