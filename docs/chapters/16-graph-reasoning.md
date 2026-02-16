@@ -8,11 +8,16 @@ The orchestration system uses two Kuzu graph databases to track failure patterns
 
 The graph-based reasoning layer consists of:
 - **Failure Graph** (~14MB): Tracks failure modes, symptoms, and mitigations
-- **Hypothesis Graph** (~4.6MB): Tracks action→task confidence with asymptotic learning
+- **Hypothesis Graph** (~4.6MB): Tracks action->task confidence with asymptotic learning
 
 Both graphs use Kuzu 0.11+ for native graph queries and integrate with the episodic memory store via memory link nodes.
 
 ## Failure Graph Architecture
+
+The Failure Graph is the system's anti-memory -- it remembers what went wrong so you don't repeat it. It tracks three node types (failure modes, symptoms, mitigations) connected by five relationship types, forming a queryable web of past mistakes and their fixes. When a new error appears, you match its symptoms against known failures and retrieve proven mitigations ranked by success rate.
+
+<details>
+<summary>Failure Graph schema and operations</summary>
 
 ### Schema
 
@@ -25,15 +30,18 @@ The Failure Graph tracks three node types and five relationship types:
 | `Mitigation` | id (STRING) | action, success_rate (0.0-1.0), attempt_count, success_count |
 | `MemoryLink` | id (STRING) | memory_id (episodic store reference) |
 
-| Relationship | From → To | Meaning |
+| Relationship | From -> To | Meaning |
 |--------------|-----------|---------|
-| `HAS_SYMPTOM` | FailureMode → Symptom | Observable pattern indicating failure |
-| `MITIGATED_BY` | FailureMode → Mitigation | Action that resolved failure |
-| `PRECEDED_BY` | FailureMode → FailureMode | Causal failure chain |
-| `RECURRED_AFTER` | FailureMode → Mitigation | Mitigation didn't work |
-| `TRIGGERED_FROM` | MemoryLink → FailureMode | Links to episodic memory |
+| `HAS_SYMPTOM` | FailureMode -> Symptom | Observable pattern indicating failure |
+| `MITIGATED_BY` | FailureMode -> Mitigation | Action that resolved failure |
+| `PRECEDED_BY` | FailureMode -> FailureMode | Causal failure chain |
+| `RECURRED_AFTER` | FailureMode -> Mitigation | Mitigation didn't work |
+| `TRIGGERED_FROM` | MemoryLink -> FailureMode | Links to episodic memory |
 
 ### Core Operations
+
+<details>
+<summary>Code: recording failures and mitigations</summary>
 
 **Recording a Failure:**
 
@@ -74,6 +82,11 @@ mitigation_id = graph.record_mitigation(
 # Updates success_rate automatically based on attempt history
 ```
 
+</details>
+
+<details>
+<summary>Code: querying failures and assessing risk</summary>
+
 **Finding Matching Failures:**
 
 ```python
@@ -103,6 +116,8 @@ if risk > 0.5:
     print(f"WARNING: High failure risk ({risk:.2f}) for this action")
 ```
 
+</details>
+
 ### Seeded Failure Modes
 
 The system is pre-seeded with 14 known failure modes from `orchestration/repl_memory/graph_seeds.yaml`:
@@ -118,7 +133,14 @@ The system is pre-seeded with 14 known failure modes from `orchestration/repl_me
 | `moe_under_4_experts` | MoE models crash with <4 experts | 5 | SIGSEGV, garbage output |
 | `repl_tool_noncompliance` | Models use Python imports instead of tools | 3 | security error, import blocked |
 
+</details>
+
 ## Hypothesis Graph Architecture
+
+The Hypothesis Graph tracks how confident the system is about specific action-task combinations. Every time an action succeeds or fails on a task type, confidence updates asymptotically -- approaching 1.0 on repeated success and 0.0 on repeated failure. Before the orchestrator suggests an action, it checks this graph and emits warnings when confidence is low.
+
+<details>
+<summary>Hypothesis Graph schema and confidence model</summary>
 
 ### Confidence Tracking
 
@@ -147,11 +169,14 @@ This formula ensures confidence asymptotically approaches 1.0 on repeated succes
 
 | Relationship | Meaning |
 |--------------|---------|
-| `SUPPORTS` | Evidence → Hypothesis (successful outcome) |
-| `CONTRADICTS` | Evidence → Hypothesis (failed outcome) |
-| `GENERATED_FROM` | Hypothesis → MemoryLink (created from episode) |
+| `SUPPORTS` | Evidence -> Hypothesis (successful outcome) |
+| `CONTRADICTS` | Evidence -> Hypothesis (failed outcome) |
+| `GENERATED_FROM` | Hypothesis -> MemoryLink (created from episode) |
 
 ### Usage Patterns
+
+<details>
+<summary>Code: creating hypotheses and adding evidence</summary>
 
 **Creating Hypotheses:**
 
@@ -180,6 +205,11 @@ new_confidence = graph.add_evidence(
 # Returns updated confidence score
 ```
 
+</details>
+
+<details>
+<summary>Code: pre-execution confidence warnings</summary>
+
 **Pre-execution Warnings:**
 
 ```python
@@ -200,6 +230,8 @@ if confidence < 0.3:
     #  Evidence: benchmark_xyz, episode_abc"
 ```
 
+</details>
+
 ### Seeded Hypotheses
 
 The system is pre-seeded with 15 high-confidence hypotheses from successful benchmarks:
@@ -210,11 +242,21 @@ The system is pre-seeded with 15 high-confidence hypotheses from successful benc
 | `prompt_lookup\|summarization` | 0.82 | 95.18 t/s, 12.7x speedup |
 | `expert_reduction_4\|moe_reasoning` | 0.75 | Qwen3-235B at 6.75 t/s with quality |
 | `no_speculation\|ssm_models` | 0.95 | Qwen3-Next MUST use expert reduction only |
-| `temperature_0.7\|vision_tasks` | 0.70 | Qwen2.5-VL-7B: 28.3 → 57.1 t/s |
+| `temperature_0.7\|vision_tasks` | 0.70 | Qwen2.5-VL-7B: 28.3 -> 57.1 t/s |
+
+</details>
 
 ## Query Patterns
 
+Both graphs support Cypher queries for advanced traversal. You use these when the Python API doesn't cover your specific lookup -- for example, walking causal failure chains or finding untested hypotheses above a confidence threshold.
+
+<details>
+<summary>Cypher query examples</summary>
+
 **Get Causal Failure Chain:**
+
+<details>
+<summary>Code: failure chain traversal</summary>
 
 ```cypher
 MATCH path = (f1:FailureMode {id: $id})-[:PRECEDED_BY*1..5]->(f2:FailureMode)
@@ -222,7 +264,12 @@ RETURN f2.id, f2.description, f2.severity
 ORDER BY f2.first_seen ASC
 ```
 
+</details>
+
 **Find Untested High-Confidence Hypotheses:**
+
+<details>
+<summary>Code: untested hypothesis query</summary>
 
 ```cypher
 MATCH (h:Hypothesis)
@@ -231,7 +278,12 @@ RETURN h.id, h.claim, h.confidence
 ORDER BY h.confidence DESC
 ```
 
+</details>
+
 **Get Supporting Evidence for Hypothesis:**
+
+<details>
+<summary>Code: evidence retrieval query</summary>
 
 ```cypher
 MATCH (e:HypothesisEvidence)-[:SUPPORTS]->(h:Hypothesis {id: $id})
@@ -239,7 +291,16 @@ RETURN e.id, e.source, e.timestamp
 ORDER BY e.timestamp DESC
 ```
 
+</details>
+
+</details>
+
 ## Storage and Performance
+
+Both graph databases are compact and fast. The Failure Graph holds around 74 nodes across 14MB, the Hypothesis Graph around 15 hypotheses plus evidence in 4.6MB. Both run on Kuzu 0.11+ and live on the RAID array.
+
+<details>
+<summary>Storage metrics</summary>
 
 | Metric | Failure Graph | Hypothesis Graph |
 |--------|---------------|------------------|
@@ -248,11 +309,19 @@ ORDER BY e.timestamp DESC
 | Storage location | `/mnt/raid0/llm/claude/orchestration/repl_memory/kuzu_db/failure_graph/` | `.../hypothesis_graph/` |
 | Backend | Kuzu 0.11+ | Kuzu 0.11+ |
 
+</details>
+
 ## JSON Canvas Export
 
-Both graphs can be exported to JSON Canvas format for visualization in Obsidian and other compatible tools.
+Both graphs can be exported to JSON Canvas format for visualization in Obsidian. This lets you see failure patterns and hypothesis confidence as a spatial graph, edit node positions to steer attention, and re-import changes as planning constraints.
+
+<details>
+<summary>Canvas export and import workflow</summary>
 
 ### Export Functions
+
+<details>
+<summary>Code: export functions</summary>
 
 ```python
 from src.canvas_export import export_hypothesis_graph, export_failure_graph, export_session_context
@@ -267,6 +336,8 @@ canvas = export_failure_graph(graph, output_path="logs/canvases/failure.canvas")
 canvas = export_session_context(hyp_graph, fail_graph, output_path="logs/canvases/session.canvas")
 ```
 
+</details>
+
 ### Visual Encoding
 
 | Feature | Hypothesis Graph | Failure Graph |
@@ -279,12 +350,15 @@ canvas = export_session_context(hyp_graph, fail_graph, output_path="logs/canvase
 
 Available via MCP server:
 - `export_reasoning_canvas(graph_type="hypothesis|failure|session")`
-- `import_canvas_edits(canvas_path, baseline_path)` — extract constraints from edited canvas
-- `list_canvases()` — list available canvas files
+- `import_canvas_edits(canvas_path, baseline_path)` -- extract constraints from edited canvas
+- `list_canvases()` -- list available canvas files
 
 ### Canvas Import
 
 When a user edits a canvas in Obsidian, the changes can be re-imported as planning constraints:
+
+<details>
+<summary>Code: canvas import and LLM context</summary>
 
 ```python
 from src.canvas_import import load_canvas_for_llm
@@ -296,34 +370,46 @@ context = load_canvas_for_llm("logs/canvases/hypothesis.canvas", use_toon=True)
 
 Position-based priority: nodes closer to canvas center are weighted higher, enabling human-in-the-loop attention steering.
 
+</details>
+
+</details>
+
 ## Failure Lesson Formalization (February 2026)
 
-The FailureBridge (`orchestration/repl_memory/distillation/failure_bridge.py`) connects the Kuzu-backed FailureGraph with the SkillBank, enabling high-quality mitigations to be exported as structured `failure_lesson` skills.
+The FailureBridge connects the Kuzu-backed FailureGraph with the SkillBank, turning proven mitigations into reusable skills. When a mitigation achieves a high enough success rate with sufficient evidence, it gets promoted from anti-memory into positive structured knowledge that the distillation pipeline can use directly.
+
+<details>
+<summary>Bridge operations and qualification criteria</summary>
 
 ### Bridge Operations
 
 | Operation | Direction | Purpose |
 |-----------|-----------|---------|
-| `sync_mitigations_to_skills()` | FailureGraph → SkillBank | Export mitigations with success_rate ≥ 0.7 as skills |
-| `get_failure_context_for_distillation()` | FailureGraph → Distiller | Enrich distillation prompts with failure history |
-| `check_skill_against_graph()` | SkillBank → FailureGraph | Cross-reference proposed skills against known failures |
+| `sync_mitigations_to_skills()` | FailureGraph -> SkillBank | Export mitigations with success_rate >= 0.7 as skills |
+| `get_failure_context_for_distillation()` | FailureGraph -> Distiller | Enrich distillation prompts with failure history |
+| `check_skill_against_graph()` | SkillBank -> FailureGraph | Cross-reference proposed skills against known failures |
 
 ### Qualification Criteria
 
 Only high-quality mitigations are promoted to skills:
-- `success_rate >= 0.7` — proven effective
-- `attempt_count >= 3` — sufficient evidence
+- `success_rate >= 0.7` -- proven effective
+- `attempt_count >= 3` -- sufficient evidence
 - Confidence capped at `min(success_rate, 0.85)` for bridge-generated skills
 
 This extends the Failure Graph from a read-only anti-memory into a source of positive structured knowledge. See [Chapter 27](27-skillbank-experience-distillation.md) for full details.
 
-## References
+</details>
+
+<details>
+<summary>References</summary>
 
 - **Source**: `orchestration/repl_memory/failure_graph.py`, `hypothesis_graph.py`
 - **Failure Bridge**: `orchestration/repl_memory/distillation/failure_bridge.py`
 - **Seeds**: `orchestration/repl_memory/graph_seeds.yaml`
 - **Model quirks**: Extracted from `docs/reference/models/QUIRKS.md`
 - **Benchmark evidence**: Extracted from `benchmarks/results/reviews/summary.csv`
+
+</details>
 
 ---
 
