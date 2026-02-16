@@ -1,6 +1,6 @@
 # Research Chapters Index
 
-27 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
+28 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
 
 ## Reading Paths
 
@@ -19,7 +19,7 @@
 | Server won't start | [Ch12](12-production-server-stack.md) + [Ch04](04-storage-and-safety.md) |
 | Adding a tool | [Ch22](22-tool-registry.md) + [Ch11](11-repl-environment.md) |
 | Benchmarking a model | [Ch21](21-benchmarking-framework.md) + [Ch24](24-benchmark-suite-construction.md) |
-| Memory/learning system | [Ch15](15-memrl-system.md) + [Ch16](16-graph-reasoning.md) + [Ch17](17-memory-seeding.md) + [Ch25](25-cost-aware-rewards.md) + [Ch27](27-skillbank-experience-distillation.md) |
+| Memory/learning system | [Ch15](15-memrl-system.md) + [Ch16](16-graph-reasoning.md) + [Ch17](17-memory-seeding.md) + [Ch25](25-cost-aware-rewards.md) + [Ch27](27-skillbank-experience-distillation.md) + [Ch28](28-calibration-and-risk-control.md) |
 
 ### For Researchers / Public Showcase
 
@@ -88,6 +88,7 @@ Novel contributions (recommended reading order):
 | 25 | [Cost-Aware Rewards](25-cost-aware-rewards.md) | Binary rewards for P(success), cost stored separately |
 | 26 | [Claude-in-the-Loop Debugger](26-claude-debugger.md) | 12 anomaly signals, hot-swap fixes, 3-phase regression |
 | 27 | [SkillBank & Experience Distillation](27-skillbank-experience-distillation.md) | Structured skill library, teacher distillation, recursive evolution |
+| 28 | [Calibration and Risk Control](28-calibration-and-risk-control.md) | ECE/Brier/coverage/risk metrics + conformal thresholding |
 
 ---
 

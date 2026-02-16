@@ -179,7 +179,7 @@ class TestEscalationPolicy:
         assert decision.target_role == Role.CODER_PRIMARY
 
     def test_format_errors_never_escalate(self, policy):
-        """Test format/schema errors retry only, never escalate."""
+        """Test format errors retry only, never escalate."""
         context = EscalationContext(
             current_role=Role.WORKER_GENERAL,
             failure_count=3,  # Exhausted retries
@@ -190,6 +190,33 @@ class TestEscalationPolicy:
         # Should fail, not escalate
         assert decision.action == EscalationAction.FAIL
         assert "format error" in decision.reason.lower()
+
+    def test_schema_errors_escalate_on_capability_gap_signature(self, policy):
+        """Schema errors escalate only when retries exhausted and signature indicates capability gap."""
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
+            failure_count=3,  # Exhausted retries
+            error_category=ErrorCategory.SCHEMA,
+            error_message="Schema mismatch: required property 'steps' missing",
+            escalation_count=0,
+        )
+        decision = policy.decide(context)
+
+        assert decision.action == EscalationAction.ESCALATE
+        assert decision.target_role == Role.CODER_PRIMARY
+
+    def test_schema_parser_errors_fail_after_retries(self, policy):
+        """Schema parser/transient signatures fail after retries instead of escalating."""
+        context = EscalationContext(
+            current_role=Role.WORKER_GENERAL,
+            failure_count=3,  # Exhausted retries
+            error_category=ErrorCategory.SCHEMA,
+            error_message="JSON decode error: expecting value at line 1",
+            escalation_count=0,
+        )
+        decision = policy.decide(context)
+
+        assert decision.action == EscalationAction.FAIL
 
     def test_terminal_role_explore_fallback(self, policy):
         """Test terminal role (architect) falls back to EXPLORE."""
@@ -291,7 +318,7 @@ class TestThinkHarder:
         assert decision.action == EscalationAction.ESCALATE
 
     def test_think_harder_not_for_format_errors(self, policy):
-        """Format/schema errors don't trigger THINK_HARDER (just retry)."""
+        """Format errors don't trigger THINK_HARDER (just retry)."""
         context = EscalationContext(
             current_role=Role.WORKER_GENERAL,
             failure_count=2,

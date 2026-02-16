@@ -218,6 +218,7 @@ class ProgressLogger:
         task_ir: Dict[str, Any],
         routing_decision: List[str],
         routing_strategy: str,  # "learned" or "rules"
+        routing_meta: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Log task start with routing decision."""
         self.log(
@@ -239,6 +240,7 @@ class ProgressLogger:
                 data={
                     "routing": routing_decision,
                     "strategy": routing_strategy,
+                    **(routing_meta or {}),
                 },
             )
         )
@@ -248,12 +250,14 @@ class ProgressLogger:
         task_id: str,
         success: bool,
         details: Optional[str] = None,
+        completion_meta: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Log task completion."""
         self.log(
             ProgressEntry(
                 event_type=EventType.TASK_COMPLETED if success else EventType.TASK_FAILED,
                 task_id=task_id,
+                data=(completion_meta or {}),
                 outcome="success" if success else "failure",
                 outcome_details=details,
             )

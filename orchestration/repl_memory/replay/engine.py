@@ -43,6 +43,9 @@ class ReplayStepResult:
     q_value_after: float  # Q-value after this step
     reward: float  # Computed reward
     escalation_predicted: bool  # Candidate predicted escalation
+    predicted_confidence: float = 0.0  # Routing confidence for chosen action
+    confidence_threshold: float = 0.0  # Effective threshold used for abstain/route
+    conformal_abstained: bool = False  # True when confidence below threshold
 
 
 class NullEmbedder:
@@ -183,6 +186,8 @@ class ReplayEngine:
         embedding = trajectory.embedding
         candidate_action: Optional[str] = None
         escalation_predicted = False
+        predicted_confidence = 0.0
+        confidence_threshold = retriever.get_effective_confidence_threshold()
 
         if embedding is not None:
             # Query retriever with raw embedding (bypass embedder)
@@ -193,9 +198,14 @@ class ReplayEngine:
                 min_q_value=retriever.config.min_q_value,
             )
             if candidates:
-                candidate_action = candidates[0].action
-                # Check if candidate predicts low confidence (escalation signal)
-                if candidates[0].q_value < retriever.config.confidence_threshold:
+                q_top = [
+                    float(c.q_value)
+                    for c in candidates[: max(retriever.config.confidence_min_neighbors, 1)]
+                ]
+                predicted_confidence = retriever._compute_robust_confidence(q_top)
+                if predicted_confidence >= confidence_threshold:
+                    candidate_action = candidates[0].action
+                else:
                     escalation_predicted = True
 
         routing_match = (candidate_action == trajectory.routing_decision)
@@ -236,6 +246,9 @@ class ReplayEngine:
             q_value_after=q_value,
             reward=reward,
             escalation_predicted=escalation_predicted,
+            predicted_confidence=predicted_confidence,
+            confidence_threshold=confidence_threshold,
+            conformal_abstained=escalation_predicted and candidate_action is None,
         )
 
     def _compute_metrics(
@@ -294,6 +307,33 @@ class ReplayEngine:
         # Simple proxy: reward / num_trajectories (normalized)
         cost_efficiency = avg  # Can be refined with actual tier costs later
 
+        # Calibration metrics (confidence vs observed success)
+        calib_pairs = []
+        for traj, res in zip(trajectories, results):
+            if res.predicted_confidence <= 0.0:
+                continue
+            success = 0.0 if traj.outcome == "failure" else 1.0
+            calib_pairs.append((res.predicted_confidence, success))
+        ece_global = _expected_calibration_error(calib_pairs, bins=10)
+        brier_global = _brier_score(calib_pairs)
+
+        accepted = [r for r in results if not r.conformal_abstained]
+        conformal_coverage = len(accepted) / n if n > 0 else 0.0
+        if accepted:
+            accepted_lookup = {r.trajectory_id: r for r in accepted}
+            accepted_success = 0
+            accepted_total = 0
+            for traj in trajectories:
+                if traj.task_id in accepted_lookup:
+                    accepted_total += 1
+                    if traj.outcome != "failure":
+                        accepted_success += 1
+            conformal_risk = 1.0 - (
+                accepted_success / accepted_total if accepted_total > 0 else 0.0
+            )
+        else:
+            conformal_risk = 0.0
+
         return ReplayMetrics(
             candidate_id=candidate_id,
             num_trajectories=n,
@@ -306,6 +346,10 @@ class ReplayEngine:
             cumulative_reward=cumulative,
             avg_reward=avg,
             cost_efficiency=cost_efficiency,
+            ece_global=ece_global,
+            brier_global=brier_global,
+            conformal_coverage=conformal_coverage,
+            conformal_risk=conformal_risk,
             tier_usage=tier_usage,
             replay_duration_seconds=elapsed,
         )
@@ -337,3 +381,31 @@ def _make_fake_outcome(outcome: str):
         task_id="replay",
         outcome=outcome,
     )
+
+
+def _expected_calibration_error(
+    pairs: List[tuple[float, float]],
+    bins: int = 10,
+) -> float:
+    """Compute expected calibration error over (confidence, success) pairs."""
+    if not pairs:
+        return 0.0
+    ece = 0.0
+    n = len(pairs)
+    for i in range(bins):
+        lo = i / bins
+        hi = (i + 1) / bins
+        bucket = [(c, y) for (c, y) in pairs if (lo <= c < hi) or (i == bins - 1 and c == 1.0)]
+        if not bucket:
+            continue
+        avg_conf = sum(c for c, _ in bucket) / len(bucket)
+        avg_acc = sum(y for _, y in bucket) / len(bucket)
+        ece += (len(bucket) / n) * abs(avg_conf - avg_acc)
+    return float(ece)
+
+
+def _brier_score(pairs: List[tuple[float, float]]) -> float:
+    """Compute Brier score over (confidence, success) pairs."""
+    if not pairs:
+        return 0.0
+    return float(sum((c - y) ** 2 for c, y in pairs) / len(pairs))

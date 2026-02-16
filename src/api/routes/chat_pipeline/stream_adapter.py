@@ -88,7 +88,14 @@ async def _stream_mock(
         yield turn_end_event(tokens=len(analysis), elapsed_ms=elapsed_ms)
         if state.progress_logger:
             state.progress_logger.log_task_completed(
-                routing.task_id, success=True, details="Plan mode"
+                routing.task_id,
+                success=True,
+                details="Plan mode",
+                completion_meta={
+                    "producer_role": "plan",
+                    "delegation_lineage": ["plan"],
+                    "final_answer_role": "plan",
+                },
             )
             score_completed_task(
                 state,
@@ -108,7 +115,14 @@ async def _stream_mock(
 
     if state.progress_logger:
         state.progress_logger.log_task_completed(
-            routing.task_id, success=True, details="Mock stream"
+            routing.task_id,
+            success=True,
+            details="Mock stream",
+            completion_meta={
+                "producer_role": "mock",
+                "delegation_lineage": ["mock"],
+                "final_answer_role": "mock",
+            },
         )
         score_completed_task(
             state,
@@ -193,7 +207,14 @@ async def _stream_repl(
         except Exception as e:
             if state.progress_logger:
                 state.progress_logger.log_task_completed(
-                    task_id, success=False, details=f"Root LM failed: {e}"
+                    task_id,
+                    success=False,
+                    details=f"Root LM failed: {e}",
+                    completion_meta={
+                        "producer_role": str(current_role),
+                        "delegation_lineage": [str(r) for r in role_history],
+                        "final_answer_role": str(current_role),
+                    },
                 )
                 score_completed_task(
                     state,
@@ -378,6 +399,11 @@ async def _stream_repl(
             task_id,
             success=success,
             details=f"Stream complete{role_info}",
+            completion_meta={
+                "producer_role": str(current_role),
+                "delegation_lineage": [str(r) for r in role_history],
+                "final_answer_role": str(current_role),
+            },
         )
         score_completed_task(
             state,
@@ -421,7 +447,14 @@ async def generate_stream(
     except Exception as e:
         if state.progress_logger:
             state.progress_logger.log_task_completed(
-                routing.task_id, success=False, details=str(e)
+                routing.task_id,
+                success=False,
+                details=str(e),
+                completion_meta={
+                    "producer_role": "stream_init",
+                    "delegation_lineage": ["stream_init"],
+                    "final_answer_role": "stream_init",
+                },
             )
             score_completed_task(
                 state,

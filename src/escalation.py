@@ -44,7 +44,8 @@ class ErrorCategory(str, Enum):
 
     Different error categories trigger different escalation behaviors:
     - CODE/LOGIC: Standard retry → escalate flow
-    - FORMAT/SCHEMA: Retry only, never escalate (formatting issues)
+    - FORMAT: Retry only, never escalate (formatting issues)
+    - SCHEMA: Retry, then conditionally escalate on capability-signature failures
     - TIMEOUT: Skip if optional gate, fail otherwise
     - EARLY_ABORT: Immediate escalation (model showed failure signs)
     """
@@ -183,7 +184,6 @@ class EscalationConfig:
         default_factory=lambda: frozenset(
             {
                 ErrorCategory.FORMAT,
-                ErrorCategory.SCHEMA,
             }
         )
     )
@@ -196,11 +196,12 @@ class EscalationPolicy:
     escalation implementations in graph nodes, executor.py, and api.py.
 
     Policy Rules:
-    1. Format/Schema errors: Retry only, never escalate
-    2. Timeout on optional gate: Skip the gate
-    3. Early abort: Immediate escalation (don't waste retries)
-    4. Standard errors: Retry up to max_retries, then escalate
-    5. At architect (top): No escalation possible, fail
+    1. Format errors: Retry only, never escalate
+    2. Schema errors: Retry, then conditionally escalate on capability-gap signature
+    3. Timeout on optional gate: Skip the gate
+    4. Early abort: Immediate escalation (don't waste retries)
+    5. Standard errors: Retry up to max_retries, then escalate
+    6. At architect (top): No escalation possible, fail
 
     Usage:
         policy = EscalationPolicy()
@@ -224,6 +225,31 @@ class EscalationPolicy:
         Returns:
             EscalationDecision with action and target role.
         """
+        def _schema_capability_gap(msg: str) -> bool:
+            lower = (msg or "").lower()
+            parser_patterns = (
+                "json decode",
+                "expecting value",
+                "unterminated string",
+                "trailing comma",
+                "invalid json",
+                "parse error",
+            )
+            if any(p in lower for p in parser_patterns):
+                return False
+            capability_patterns = (
+                "schema mismatch",
+                "validation failed",
+                "does not conform",
+                "required property",
+                "invalid type",
+                "enum",
+                "oneof",
+                "anyof",
+                "allof",
+            )
+            return any(p in lower for p in capability_patterns)
+
         # Use context-specific max_retries if provided, otherwise config default
         max_retries = context.max_retries if context.max_retries is not None else self.config.max_retries
 
@@ -265,7 +291,39 @@ class EscalationPolicy:
                 reason=f"Early abort detected: {context.error_message[:100]}",
             )
 
-        # Handle format/schema errors - retry only
+        # Handle schema errors - retry, then conditionally escalate on capability gaps
+        if context.error_category == ErrorCategory.SCHEMA:
+            if context.failure_count < max_retries:
+                return EscalationDecision(
+                    action=EscalationAction.RETRY,
+                    target_role=context.current_role,
+                    reason=(
+                        f"Retry schema error (attempt {context.failure_count + 1}/{max_retries})"
+                    ),
+                    retries_remaining=max_retries - context.failure_count - 1,
+                )
+            # Retries exhausted: only escalate when signature indicates model capability gap
+            if (
+                target is not None
+                and context.escalation_count < self.config.max_escalations
+                and _schema_capability_gap(context.error_message)
+            ):
+                return EscalationDecision(
+                    action=EscalationAction.ESCALATE,
+                    target_role=target,
+                    reason=(
+                        f"Schema capability gap detected after {max_retries} retries; "
+                        f"escalating from {context.current_role} to {target}"
+                    ),
+                )
+            return EscalationDecision(
+                action=EscalationAction.FAIL,
+                reason=(
+                    f"Max retries ({max_retries}) exceeded for schema error"
+                ),
+            )
+
+        # Handle format errors - retry only
         if context.error_category in self.config.no_escalate_categories:
             if context.failure_count < max_retries:
                 return EscalationDecision(

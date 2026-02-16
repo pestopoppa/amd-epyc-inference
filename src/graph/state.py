@@ -40,7 +40,7 @@ class GraphConfig:
         default_factory=lambda: frozenset({"typecheck", "integration", "shellcheck"})
     )
     no_escalate_categories: frozenset[ErrorCategory] = field(
-        default_factory=lambda: frozenset({ErrorCategory.FORMAT, ErrorCategory.SCHEMA})
+        default_factory=lambda: frozenset({ErrorCategory.FORMAT})
     )
     confidence_threshold: float = 0.7
 
@@ -101,6 +101,10 @@ class TaskState:
     think_harder_config: dict | None = None
     think_harder_attempted: bool = False
     think_harder_succeeded: bool | None = None
+    # Per-role think-harder ROI stats for regulation.
+    think_harder_roi_by_role: dict[str, dict[str, float]] = field(default_factory=dict)
+    think_harder_min_expected_roi: float = 0.02
+    think_harder_min_samples: int = 5
 
     # Tool requirement (from routing classification)
     tool_required: bool = False
@@ -111,6 +115,20 @@ class TaskState:
 
     # Cache affinity bonus applied during routing
     cache_affinity_bonus: float = 0.0
+
+    # Global workspace state (shared blackboard across delegation/escalation turns).
+    workspace_state: dict[str, Any] = field(
+        default_factory=lambda: {
+            "version": 1,
+            "objective": "",
+            "constraints": [],
+            "invariants": [],
+            "commitments": [],
+            "open_questions": [],
+            "decisions": [],
+            "updated_at": "",
+        }
+    )
 
     def record_role(self, role: Role | str) -> None:
         """Append a role to history and update current_role."""

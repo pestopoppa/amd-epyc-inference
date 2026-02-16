@@ -201,6 +201,7 @@ class ClaudeDebugger:
         dry_run: bool = False,
         retry_path: Path | None = None,
         replay_context: bool = False,
+        retrieval_overrides: dict[str, Any] | None = None,
     ):
         self.project_root = project_root
         self.session_id: str | None = None
@@ -225,6 +226,7 @@ class ClaudeDebugger:
         # Replay evaluation context (loaded lazily on first prompt build)
         self._replay_context_enabled = replay_context
         self._replay_summary: str | None = None
+        self._retrieval_overrides = retrieval_overrides or {}
 
         # Background invocation state
         self._bg_process: subprocess.Popen | None = None
@@ -607,6 +609,11 @@ class ClaudeDebugger:
             from orchestration.repl_memory.q_scorer import ScoringConfig
             from orchestration.repl_memory.progress_logger import ProgressReader
 
+            retrieval_config = RetrievalConfig(**{
+                k: v for k, v in self._retrieval_overrides.items()
+                if k in RetrievalConfig.__dataclass_fields__ and v is not None
+            })
+
             reader = ProgressReader()
             extractor = TrajectoryExtractor(reader)
             trajectories = extractor.extract_complete(days=14, max_trajectories=500)
@@ -627,7 +634,7 @@ class ClaudeDebugger:
                     sb = SkillBank(db_path=skill_db)
                     engine = SkillAwareReplayEngine(skill_bank=sb)
                     skill_metrics = engine.run_with_skill_metrics(
-                        RetrievalConfig(), ScoringConfig(), SkillBankConfig(),
+                        retrieval_config, ScoringConfig(), SkillBankConfig(),
                         trajectories, "debugger_skill_baseline",
                     )
                     metrics = skill_metrics.base_metrics
@@ -637,7 +644,7 @@ class ClaudeDebugger:
             if skill_metrics is None:
                 engine = ReplayEngine()
                 metrics = engine.run_with_metrics(
-                    RetrievalConfig(), ScoringConfig(), trajectories, "debugger_baseline",
+                    retrieval_config, ScoringConfig(), trajectories, "debugger_baseline",
                 )
 
             by_type = ", ".join(
@@ -680,6 +687,11 @@ class ClaudeDebugger:
                 f"- **Tier usage**: {tier or 'N/A'}\n"
                 f"- **Escalation**: precision={metrics.escalation_precision:.0%}, "
                 f"recall={metrics.escalation_recall:.0%}\n"
+                f"- **Calibration**: ECE={metrics.ece_global:.3f}, "
+                f"Brier={metrics.brier_global:.3f}, "
+                f"coverage={metrics.conformal_coverage:.1%}, "
+                f"risk={metrics.conformal_risk:.1%}\n"
+                f"- **Retrieval overrides**: {self._retrieval_overrides or 'default'}\n"
                 f"{skill_lines}"
             )
             logger.info(

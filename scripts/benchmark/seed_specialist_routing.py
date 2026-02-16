@@ -722,6 +722,31 @@ def print_3way_summary(results: list[ThreeWayResult]) -> None:
 # ── CLI ───────────────────────────────────────────────────────────────
 
 
+def _build_retrieval_config_from_args(args) -> "RetrievalConfig":
+    """Build RetrievalConfig with optional CLI overrides for replay/debug tuning."""
+    from orchestration.repl_memory.retriever import RetrievalConfig
+
+    overrides: dict[str, Any] = {}
+    for key in (
+        "cost_lambda",
+        "confidence_threshold",
+        "confidence_estimator",
+        "confidence_trim_ratio",
+        "confidence_min_neighbors",
+        "warm_probability_hit",
+        "warm_probability_miss",
+        "warm_cost_fallback_s",
+        "cold_cost_fallback_s",
+        "calibrated_confidence_threshold",
+        "conformal_margin",
+        "risk_control_enabled",
+    ):
+        val = getattr(args, key, None)
+        if val is not None:
+            overrides[key] = val
+    return RetrievalConfig(**overrides)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="MemRL Episodic Seeding for 3-Way Routing",
@@ -864,6 +889,33 @@ Examples (legacy mode - DEPRECATED):
         "--debug-replay", action="store_true",
         help="Include MemRL replay context in debug prompts (routing accuracy, Q-convergence).",
     )
+    parser.add_argument("--cost-lambda", type=float, default=None, dest="cost_lambda")
+    parser.add_argument("--confidence-threshold", type=float, default=None, dest="confidence_threshold")
+    parser.add_argument(
+        "--confidence-estimator",
+        choices=("median", "trimmed_mean"),
+        default=None,
+        dest="confidence_estimator",
+    )
+    parser.add_argument("--confidence-trim-ratio", type=float, default=None, dest="confidence_trim_ratio")
+    parser.add_argument("--confidence-min-neighbors", type=int, default=None, dest="confidence_min_neighbors")
+    parser.add_argument("--warm-probability-hit", type=float, default=None, dest="warm_probability_hit")
+    parser.add_argument("--warm-probability-miss", type=float, default=None, dest="warm_probability_miss")
+    parser.add_argument("--warm-cost-fallback-s", type=float, default=None, dest="warm_cost_fallback_s")
+    parser.add_argument("--cold-cost-fallback-s", type=float, default=None, dest="cold_cost_fallback_s")
+    parser.add_argument(
+        "--calibrated-confidence-threshold",
+        type=float,
+        default=None,
+        dest="calibrated_confidence_threshold",
+    )
+    parser.add_argument("--conformal-margin", type=float, default=None, dest="conformal_margin")
+    parser.add_argument(
+        "--risk-control-enabled",
+        action="store_true",
+        dest="risk_control_enabled",
+        help="Enable calibrated confidence threshold for conformal abstain/escalate behavior.",
+    )
     parser.add_argument(
         "--evolve", action="store_true",
         help="Run skill evolution cycle after seeding (requires ORCHESTRATOR_SKILLBANK=1).",
@@ -903,6 +955,24 @@ Examples (legacy mode - DEPRECATED):
 
     # Default seed
     base_seed = args.seed if args.seed is not None else int(time.time())
+    replay_retrieval_config = _build_retrieval_config_from_args(args)
+    replay_retrieval_overrides = {
+        k: getattr(replay_retrieval_config, k)
+        for k in (
+            "cost_lambda",
+            "confidence_threshold",
+            "confidence_estimator",
+            "confidence_trim_ratio",
+            "confidence_min_neighbors",
+            "warm_probability_hit",
+            "warm_probability_miss",
+            "warm_cost_fallback_s",
+            "cold_cost_fallback_s",
+            "calibrated_confidence_threshold",
+            "conformal_margin",
+            "risk_control_enabled",
+        )
+    }
 
     # ── Claude-in-the-loop debugger setup ──
     if args.debug_dry_run or args.debug_auto_commit:
@@ -920,6 +990,7 @@ Examples (legacy mode - DEPRECATED):
                 auto_commit=args.debug_auto_commit,
                 dry_run=args.debug_dry_run,
                 replay_context=args.debug_replay,
+                retrieval_overrides=replay_retrieval_overrides,
             )
             logger.info(f"[DEBUG] Claude-in-the-loop debugger enabled "
                         f"(batch_size={args.debug_batch_size}, "
@@ -948,7 +1019,6 @@ Examples (legacy mode - DEPRECATED):
             try:
                 from orchestration.repl_memory.replay.trajectory import TrajectoryExtractor
                 from orchestration.repl_memory.replay.engine import ReplayEngine
-                from orchestration.repl_memory.retriever import RetrievalConfig
                 from orchestration.repl_memory.q_scorer import ScoringConfig
                 from orchestration.repl_memory.progress_logger import ProgressReader
 
@@ -959,7 +1029,7 @@ Examples (legacy mode - DEPRECATED):
                 if trajectories:
                     engine = ReplayEngine()
                     metrics = engine.run_with_metrics(
-                        RetrievalConfig(), ScoringConfig(), trajectories,
+                        replay_retrieval_config, ScoringConfig(), trajectories,
                         f"periodic_batch_{batch_num}",
                     )
                     logger.info(
@@ -1098,7 +1168,6 @@ Examples (legacy mode - DEPRECATED):
             try:
                 from orchestration.repl_memory.replay.trajectory import TrajectoryExtractor
                 from orchestration.repl_memory.replay.engine import ReplayEngine
-                from orchestration.repl_memory.retriever import RetrievalConfig
                 from orchestration.repl_memory.q_scorer import ScoringConfig
                 from orchestration.repl_memory.progress_logger import ProgressReader
 
@@ -1120,7 +1189,7 @@ Examples (legacy mode - DEPRECATED):
                             sb = SkillBank(db_path=skill_db)
                             engine = SkillAwareReplayEngine(skill_bank=sb)
                             skill_metrics = engine.run_with_skill_metrics(
-                                RetrievalConfig(), ScoringConfig(), SkillBankConfig(),
+                                replay_retrieval_config, ScoringConfig(), SkillBankConfig(),
                                 trajectories, "post_seeding",
                             )
                             metrics = skill_metrics.base_metrics
@@ -1130,7 +1199,7 @@ Examples (legacy mode - DEPRECATED):
                     if skill_metrics is None:
                         engine = ReplayEngine()
                         metrics = engine.run_with_metrics(
-                            RetrievalConfig(), ScoringConfig(), trajectories, "post_seeding",
+                            replay_retrieval_config, ScoringConfig(), trajectories, "post_seeding",
                         )
 
                     print(f"\n{'='*70}")
@@ -1146,6 +1215,13 @@ Examples (legacy mode - DEPRECATED):
                     print(f"  Replay duration:   {metrics.replay_duration_seconds:.2f}s")
                     print(f"  Escalation:        prec={metrics.escalation_precision:.0%} "
                           f"recall={metrics.escalation_recall:.0%}")
+                    print(
+                        "  Calibration:       "
+                        f"ECE={metrics.ece_global:.3f} "
+                        f"Brier={metrics.brier_global:.3f} "
+                        f"coverage={metrics.conformal_coverage:.1%} "
+                        f"risk={metrics.conformal_risk:.1%}"
+                    )
 
                     # Print skill metrics if available
                     if skill_metrics:

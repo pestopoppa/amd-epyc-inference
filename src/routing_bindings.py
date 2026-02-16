@@ -164,3 +164,22 @@ class BindingRouter:
     def clear(self) -> None:
         """Remove all bindings."""
         self._bindings.clear()
+
+    def prior_distribution(self, task_type: str) -> dict[str, float]:
+        """Return a soft prior distribution over roles for a task type.
+
+        Converts binding priorities into normalized weights instead of a hard winner.
+        """
+        bindings = self._bindings.get(task_type, [])
+        active = [b for b in bindings if b.active]
+        if not active:
+            return {}
+
+        # Shift priority by +1 so DEFAULT contributes non-zero mass.
+        masses: dict[str, float] = {}
+        for b in active:
+            masses[b.role] = masses.get(b.role, 0.0) + float(int(b.priority) + 1)
+        total = sum(masses.values())
+        if total <= 0:
+            return {}
+        return {role: mass / total for role, mass in masses.items()}

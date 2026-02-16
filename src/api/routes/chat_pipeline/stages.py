@@ -95,6 +95,11 @@ def _execute_mock(
             task_id=routing.task_id,
             success=True,
             details=f"Mock response in {elapsed:.3f}s",
+            completion_meta={
+                "producer_role": "mock",
+                "delegation_lineage": ["mock"],
+                "final_answer_role": "mock",
+            },
         )
         score_completed_task(
             state,
@@ -250,6 +255,11 @@ def _execute_react(
             task_id=routing.task_id,
             success=True,
             details=f"ReAct mode ({initial_role}), {elapsed:.3f}s",
+            completion_meta={
+                "producer_role": str(initial_role),
+                "delegation_lineage": [str(initial_role)],
+                "final_answer_role": str(initial_role),
+            },
         )
         score_completed_task(
             state,

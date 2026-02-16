@@ -241,6 +241,38 @@ def _role_to_task_type(role: str) -> str:
     return "general"
 
 
+def _heuristic_role_priors(
+    prompt: str,
+    context: str = "",
+    has_image: bool = False,
+) -> dict[str, float]:
+    """Build lightweight heuristic priors over routing roles.
+
+    Priors are advisory only and should be combined with learned evidence.
+    """
+    role, _ = _classify_and_route(prompt, context, has_image=has_image)
+    priors: dict[str, float] = {
+        "frontdoor": 0.15,
+        "worker_general": 0.15,
+        "architect_general": 0.15,
+        "architect_coding": 0.15,
+    }
+    priors[str(role)] = max(priors.get(str(role), 0.0), 0.55)
+    if _should_use_direct(prompt, context):
+        priors["frontdoor"] = max(priors.get("frontdoor", 0.0), 0.7)
+    total = sum(priors.values())
+    if total > 0:
+        priors = {k: v / total for k, v in priors.items()}
+    return priors
+
+
+def _select_role_from_prior(priors: dict[str, float]) -> str:
+    """Select the highest-probability role from priors."""
+    if not priors:
+        return "frontdoor"
+    return max(priors.items(), key=lambda kv: kv[1])[0]
+
+
 # ============================================================================
 # Confidence-Based Routing (Phase 3)
 # ============================================================================

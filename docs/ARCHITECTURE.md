@@ -798,3 +798,30 @@ from src.research_context import ResearchContext, ResearchNode
 | `ORCHESTRATOR_MOCK_MODE` | Force mock mode | 1 (test), 0 (prod) |
 | `HF_HOME` | HuggingFace cache | /mnt/raid0/llm/cache/huggingface |
 | `TMPDIR` | Temporary files | /mnt/raid0/llm/tmp |
+
+---
+
+## Routing Decision Stack (2026-02 update)
+
+The runtime routing path now follows this order:
+
+1. Heuristic priors (`src/api/routes/chat_routing.py`) produce soft role probabilities.
+2. MemRL posterior evidence (`orchestration/repl_memory/retriever.py`) ranks candidates using robust Q-confidence and expected cost.
+3. Risk-controlled confidence gate applies the effective threshold (raw or calibrated + conformal margin).
+4. Escalation policy handles abstain/retry/escalate with conditional schema escalation (`src/escalation.py`, `src/graph/helpers.py`).
+
+## Telemetry Contract (2026-02 update)
+
+Routing/completion telemetry now includes:
+
+- Decision provenance: `decision_source`, `was_forced`
+- Confidence/cost: `similarity_topk`, `q_topk`, `q_robust_confidence`, `expected_cost_s`
+- Delegation lineage: `producer_role`, `delegation_lineage`, `final_answer_role`
+- Optional teacher metrics: `pass_teacher`, `pass_chosen`, `regret`, `speedup_vs_teacher`
+
+These fields are emitted via `orchestration/repl_memory/progress_logger.py` and consumed by replay/diagnostics paths.
+
+## Workspace State
+
+Graph execution carries a bounded shared workspace object on `TaskState.workspace_state` (`src/graph/state.py`) with per-turn delta updates in `src/graph/helpers.py`.
+This provides a lightweight blackboard for objective/commitment/open-question continuity across escalation/delegation turns.

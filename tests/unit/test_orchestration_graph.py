@@ -126,3 +126,24 @@ class TestRunTask:
         assert result.success is False
         # escalation_count should be 0 for format errors
         assert state.escalation_count == 0
+
+    @pytest.mark.asyncio
+    async def test_schema_capability_gap_can_escalate(self):
+        """SCHEMA errors escalate after retries when signature indicates capability gap."""
+        state = make_state(current_role=Role.CODER_PRIMARY)
+        deps = make_deps(
+            repl_results=[
+                MockREPLResult(error="Schema mismatch: required property 'steps' missing"),
+                MockREPLResult(error="Schema mismatch: required property 'steps' missing"),
+                MockREPLResult(output="architect fixed schema", is_final=True),
+            ],
+            llm_responses=[
+                "x = attempt()",
+                "x = attempt()",
+                "FINAL('architect fixed schema')",
+            ],
+            config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
+        )
+        result = await run_task(state, deps, start_role=Role.CODER_PRIMARY)
+        assert isinstance(result, TaskResult)
+        assert state.escalation_count >= 1

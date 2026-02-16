@@ -754,3 +754,16 @@ When early-stop streaming aborts generation (REPL's `FINAL()` detection raises `
 ---
 
 *Previous: [Chapter 17: Memory Seeding](17-memory-seeding.md)* | *Next: [Chapter 19: Procedure Registry](19-procedure-registry.md)*
+
+## Conditional Schema Escalation (2026-02)
+
+Schema failures now follow a conditional policy:
+
+1. Retry while retry budget remains.
+2. If retries are exhausted and failure signature indicates capability gap (schema/validation mismatch), allow escalation.
+3. Parser/transient formatting signatures remain retry-only and do not escalate.
+
+This replaced the previous hard block on all schema escalation and is implemented in:
+
+- `src/escalation.py`
+- `src/graph/helpers.py`

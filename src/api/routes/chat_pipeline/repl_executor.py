@@ -151,6 +151,11 @@ async def _execute_repl(
                     task_id=task_id,
                     success=True,
                     details=f"Two-stage summarization ({cache_info}), {elapsed:.3f}s",
+                    completion_meta={
+                        "producer_role": str(TWO_STAGE_CONFIG["stage2_role"]),
+                        "delegation_lineage": [str(initial_role), str(TWO_STAGE_CONFIG["stage2_role"])],
+                        "final_answer_role": str(TWO_STAGE_CONFIG["stage2_role"]),
+                    },
                 )
                 score_completed_task(
                     state,
@@ -328,6 +333,13 @@ async def _execute_repl(
             task_id=task_id,
             success=success,
             details=f"Real inference: {turns} turns, {elapsed:.3f}s{role_info}",
+            completion_meta={
+                "producer_role": current_role,
+                "delegation_lineage": role_history,
+                "final_answer_role": current_role,
+                "workspace_version": (task_state.workspace_state or {}).get("version", 0),
+                "workspace_decisions": len((task_state.workspace_state or {}).get("decisions", [])),
+            },
         )
         score_completed_task(
             state,
@@ -389,6 +401,7 @@ async def _execute_repl(
         # Orchestrator intelligence diagnostics
         think_harder_attempted=task_state.think_harder_attempted,
         think_harder_succeeded=task_state.think_harder_succeeded,
+        think_harder_expected_roi=float(task_state.artifacts.get("think_harder_expected_roi", 0.0)),
         grammar_enforced=task_state.grammar_enforced,
         parallel_tools_used=parallel_tools,
         cache_affinity_bonus=task_state.cache_affinity_bonus,

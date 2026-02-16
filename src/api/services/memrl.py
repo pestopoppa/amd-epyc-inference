@@ -181,7 +181,9 @@ def score_completed_task(
     """
     if should_skip_background_scoring(force_role=force_role, real_mode=real_mode):
         return
-    if not state.q_scorer or not state.q_scorer_enabled:
+    scorer = getattr(state, "q_scorer", None)
+    enabled = getattr(state, "q_scorer_enabled", False)
+    if scorer is None or enabled is not True:
         return
     _get_score_pool().submit(_do_score, state, task_id)
 
@@ -228,7 +230,9 @@ def score_completed_task_with_mode(
         task_id: The task ID to score.
         mode: Execution mode used ("direct", "react", or "repl").
     """
-    if not state.q_scorer or not state.q_scorer_enabled:
+    scorer = getattr(state, "q_scorer", None)
+    enabled = getattr(state, "q_scorer_enabled", False)
+    if scorer is None or enabled is not True:
         return
     _get_score_pool().submit(_do_score, state, task_id, mode)
 

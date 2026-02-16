@@ -104,6 +104,12 @@ class ScoringConfig:
     cost_lambda_quality_gap: float = 0.10  # Penalize using higher-quality model than needed
     cost_lambda_memory: float = 0.05       # Penalize WARM tier when HOT sufficient
 
+    # Delegation/teacher attribution shaping.
+    delegation_misattribution_penalty: float = 0.10
+    specialist_credit_bonus: float = 0.05
+    teacher_regret_penalty: float = 0.20
+    teacher_speedup_bonus: float = 0.05
+
     # Scoring frequency
     min_score_interval_seconds: int = 300  # 5 minutes
 
@@ -227,8 +233,16 @@ class QScorer:
         if not task_outcome:
             return {"error": "Task not completed yet"}
 
-        # Compute reward
-        reward = self._compute_reward(task_outcome, gate_results, escalations, plan_reviews)
+        # Compute reward (pass completion data as optional cost/telemetry metrics)
+        reward = self._compute_reward(
+            task_outcome,
+            gate_results,
+            escalations,
+            plan_reviews,
+            cost_metrics=(task_outcome.data if task_outcome and task_outcome.data else None),
+        )
+        # Delegation credit assignment to avoid over-crediting envelope roles.
+        reward = self._apply_delegation_credit(reward, routing_decision, task_outcome)
 
         # Apply staged reward shaping if enabled (explore early, exploit later)
         if self.staged_scorer is not None:
@@ -267,6 +281,40 @@ class QScorer:
             result["memories_created"] += esc_result.get("memories_created", 0)
 
         return result
+
+    def _apply_delegation_credit(
+        self,
+        reward: float,
+        routing_decision: Optional[ProgressEntry],
+        task_outcome: ProgressEntry,
+    ) -> float:
+        """Adjust reward for delegation lineage attribution.
+
+        Penalize envelope over-credit (architect routed but specialist produced final answer).
+        Slightly bonus direct specialist attribution when selected specialist finished task.
+        """
+        if routing_decision is None:
+            return reward
+        routing = routing_decision.data.get("routing", [])
+        if isinstance(routing, str):
+            routed_roles = [r.strip() for r in routing.split(",") if r.strip()]
+        elif isinstance(routing, list):
+            routed_roles = [str(r) for r in routing]
+        else:
+            routed_roles = []
+        final_role = str(task_outcome.data.get("final_answer_role", "") or "")
+        if not routed_roles or not final_role:
+            return reward
+
+        routed_architect = any(r.startswith("architect_") for r in routed_roles)
+        final_is_architect = final_role.startswith("architect_")
+
+        if routed_architect and not final_is_architect:
+            reward -= self.config.delegation_misattribution_penalty
+        elif final_role in routed_roles and not final_is_architect:
+            reward += self.config.specialist_credit_bonus
+
+        return max(-1.0, min(1.0, reward))
 
     def _compute_reward(
         self,
@@ -359,6 +407,18 @@ class QScorer:
                 mem_cost = self.config.memory_cost_by_role[role]
                 if mem_cost > 1.0:
                     reward -= self.config.cost_lambda_memory * (mem_cost - 1.0)
+
+            # Teacher telemetry shaping (optional, when available in completion data).
+            # regret = int(pass_teacher)-int(pass_chosen) in {0,1}
+            regret = float(cost_metrics.get("regret", 0.0) or 0.0)
+            reward -= self.config.teacher_regret_penalty * max(0.0, regret)
+
+            speedup = float(
+                cost_metrics.get("speedup_vs_teacher", cost_metrics.get("speedup", 1.0)) or 1.0
+            )
+            if speedup > 1.0:
+                # Cap bonus contribution to avoid runaway high-speedup artifacts.
+                reward += self.config.teacher_speedup_bonus * min(speedup - 1.0, 1.0)
 
         # Final reward (clamped to [-1, 1])
         return max(-1.0, min(1.0, reward))

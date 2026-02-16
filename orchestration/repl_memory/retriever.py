@@ -35,6 +35,12 @@ class RetrievalResult:
     similarity: float  # Cosine similarity (0-1)
     q_value: float  # Learned utility (0-1)
     combined_score: float  # Weighted combination
+    q_confidence: float = 0.0  # Robust confidence estimate from top-k Q values
+    selection_score: float = 0.0  # Cost-aware routing score used for ranking
+    p_warm: float = 0.0  # Probability that route is warm-cache
+    warm_cost_s: float = 0.0  # Estimated warm latency in seconds
+    cold_cost_s: float = 0.0  # Estimated cold latency in seconds
+    expected_cost_s: float = 0.0  # p_warm*warm + (1-p_warm)*cold
 
     # Graph-enhanced fields (optional)
     failure_penalty: float = 0.0  # Risk score from failure graph (0-1)
@@ -55,12 +61,35 @@ class RetrievalConfig:
     # Phase 2: Q-value ranking
     min_q_value: float = 0.3  # Minimum Q-value to consider
     q_weight: float = 0.7  # Weight of Q-value vs similarity (0-1)
+    cost_lambda: float = 0.15  # Cost sensitivity in selection_score
 
     # Final selection
     top_n: int = 5  # Number of results to return
 
     # Confidence threshold for using learned routing
-    confidence_threshold: float = 0.6  # Min combined score to trust
+    confidence_threshold: float = 0.6  # Min robust Q confidence to trust
+    confidence_estimator: str = "median"  # "median" | "trimmed_mean"
+    confidence_trim_ratio: float = 0.2  # Trim ratio for trimmed_mean
+    confidence_min_neighbors: int = 3  # Minimum neighbors for confidence estimate
+    calibrated_confidence_threshold: Optional[float] = None  # Optional offline-calibrated threshold
+    conformal_margin: float = 0.0  # Safety margin applied to calibrated/raw threshold
+    risk_control_enabled: bool = False  # Use calibrated threshold when available
+
+    # Cache-aware expected cost model
+    warm_probability_hit: float = 0.8  # P(warm) when routing to last-used role
+    warm_probability_miss: float = 0.2  # P(warm) for non-affine roles
+    warm_cost_fallback_s: float = 1.0  # Fallback warm latency estimate
+    cold_cost_fallback_s: float = 3.0  # Fallback cold latency estimate
+
+
+@dataclass
+class ScoreComponents:
+    """Decomposed routing score components."""
+
+    q_confidence: float
+    similarity_support: float
+    expected_cost_s: float
+    selection_score: float
 
 
 class TwoPhaseRetriever:
@@ -78,10 +107,6 @@ class TwoPhaseRetriever:
     - Return top-n by combined score
     """
 
-    # Cache affinity bonus: reward routing to the same role as last request
-    # (warm KV cache → near-zero prompt eval). 15% bonus is conservative.
-    CACHE_AFFINITY_BONUS: float = 0.15
-
     def __init__(
         self,
         store: EpisodicStore,
@@ -92,6 +117,80 @@ class TwoPhaseRetriever:
         self.embedder = embedder
         self.config = config or RetrievalConfig()
         self._last_role_used: Optional[str] = None
+
+    def _extract_role_from_memory(self, memory: MemoryEntry) -> str:
+        """Best-effort role extraction from memory payload."""
+        context = memory.context or {}
+        role = context.get("role")
+        if isinstance(role, str) and role:
+            return role
+        action = memory.action or ""
+        first = action.split(",")[0].strip()
+        if ":" in first:
+            first = first.split(":", 1)[0]
+        return first
+
+    def _estimate_cost_components(self, memory: MemoryEntry) -> Tuple[float, float, float]:
+        """Estimate (p_warm, warm_cost_s, cold_cost_s) for an action."""
+        context = memory.context or {}
+        role = self._extract_role_from_memory(memory)
+        if role and self._last_role_used and role == self._last_role_used:
+            p_warm = self.config.warm_probability_hit
+        else:
+            p_warm = self.config.warm_probability_miss
+
+        warm_cost = float(
+            context.get(
+                "warm_elapsed_seconds",
+                context.get(
+                    "generation_seconds",
+                    context.get("elapsed_seconds", self.config.warm_cost_fallback_s),
+                ),
+            )
+        )
+        cold_cost = float(
+            context.get(
+                "cold_elapsed_seconds",
+                max(
+                    context.get("elapsed_seconds", self.config.cold_cost_fallback_s),
+                    self.config.cold_cost_fallback_s,
+                ),
+            )
+        )
+        warm_cost = max(1e-6, warm_cost)
+        cold_cost = max(warm_cost, cold_cost)
+        return p_warm, warm_cost, cold_cost
+
+    def _compute_robust_confidence(self, q_values: List[float]) -> float:
+        """Compute robust confidence from neighbor Q-values."""
+        if not q_values:
+            return 0.0
+        estimator = self.config.confidence_estimator
+        if estimator == "trimmed_mean" and len(q_values) >= 3:
+            values = sorted(float(v) for v in q_values)
+            trim_n = int(len(values) * self.config.confidence_trim_ratio)
+            if trim_n > 0 and len(values) > 2 * trim_n:
+                values = values[trim_n:-trim_n]
+            return float(sum(values) / len(values)) if values else 0.0
+        # Default: median
+        return float(np.median(np.array(q_values, dtype=np.float32)))
+
+    def _apply_confidence(self, results: List[RetrievalResult]) -> float:
+        """Assign a shared robust confidence estimate across top neighbors."""
+        if not results:
+            return 0.0
+        top = results[: max(self.config.confidence_min_neighbors, 1)]
+        conf = self._compute_robust_confidence([r.q_value for r in top])
+        for r in results:
+            r.q_confidence = conf
+        return conf
+
+    def get_effective_confidence_threshold(self) -> float:
+        """Return the active routing threshold after calibration/risk controls."""
+        base = self.config.confidence_threshold
+        if self.config.risk_control_enabled and self.config.calibrated_confidence_threshold is not None:
+            base = float(self.config.calibrated_confidence_threshold)
+        return max(0.0, min(1.0, base + self.config.conformal_margin))
 
     def retrieve_for_routing(
         self,
@@ -205,11 +304,16 @@ class TwoPhaseRetriever:
             if similarity < self.config.min_similarity:
                 continue
 
-            # Phase 2: Combine similarity and Q-value
+            # Phase 2: Legacy combined score retained for compatibility.
             combined = (
                 self.config.q_weight * memory.q_value
                 + (1 - self.config.q_weight) * similarity
             )
+            p_warm, warm_cost, cold_cost = self._estimate_cost_components(memory)
+            expected_cost = p_warm * warm_cost + (1.0 - p_warm) * cold_cost
+            # Selection score is quality-cost objective.
+            cost_ratio = expected_cost / max(cold_cost, 1e-6)
+            selection = memory.q_value - (self.config.cost_lambda * cost_ratio)
 
             results.append(
                 RetrievalResult(
@@ -217,24 +321,17 @@ class TwoPhaseRetriever:
                     similarity=similarity,
                     q_value=memory.q_value,
                     combined_score=combined,
+                    selection_score=selection,
+                    p_warm=p_warm,
+                    warm_cost_s=warm_cost,
+                    cold_cost_s=cold_cost,
+                    expected_cost_s=expected_cost,
                 )
             )
 
-        # Phase 2.5: Cache affinity bonus — reward routing to same role as
-        # last request. Warm KV cache means near-zero prompt eval time.
-        if self._last_role_used:
-            for result in results:
-                role_in_memory = result.memory.metadata.get("role", "")
-                if role_in_memory == self._last_role_used:
-                    bonus = self.CACHE_AFFINITY_BONUS
-                    result.combined_score *= (1.0 + bonus)
-                    result.cache_affinity = bonus
-                    result.warnings.append(
-                        f"cache_affinity_bonus: +{bonus:.0%} (warm KV for {self._last_role_used})"
-                    )
-
-        # Sort by combined score (descending)
-        results.sort(key=lambda r: r.combined_score, reverse=True)
+        # Sort by cost-aware selection score (descending)
+        results.sort(key=lambda r: r.selection_score, reverse=True)
+        self._apply_confidence(results)
 
         # Return top-n
         return results[: self.config.top_n]
@@ -256,8 +353,8 @@ class TwoPhaseRetriever:
             return None
 
         best = results[0]
-        if best.combined_score >= self.config.confidence_threshold:
-            return (best.memory.action, best.combined_score)
+        if best.q_confidence >= self.get_effective_confidence_threshold():
+            return (best.memory.action, best.q_confidence)
 
         return None
 
@@ -293,7 +390,7 @@ class TwoPhaseRetriever:
             return False
 
         best = results[0]
-        if best.combined_score < self.config.confidence_threshold:
+        if best.q_confidence < self.get_effective_confidence_threshold():
             return False
 
         # Check that Q-values are based on observations (not default 0.5)
@@ -325,6 +422,39 @@ class HybridRouter:
     ):
         self.retriever = retriever
         self.rule_based = rule_based_router
+        self.last_decision_meta: Dict[str, Any] = {}
+
+    def _record_decision_meta(
+        self,
+        *,
+        strategy: str,
+        chosen_action: Optional[str],
+        results: List[RetrievalResult],
+    ) -> None:
+        """Store metadata for telemetry logging."""
+        top = results[:5]
+        self.last_decision_meta = {
+            "decision_source": strategy,
+            "chosen_action": chosen_action or "",
+            "similarity_topk": [round(r.similarity, 4) for r in top],
+            "q_topk": [round(r.q_value, 4) for r in top],
+            "q_robust_confidence": round(top[0].q_confidence, 4) if top else 0.0,
+            "selection_score_topk": [round(r.selection_score, 4) for r in top],
+            "cache_state": (
+                "warm"
+                if top and top[0].p_warm >= 0.7
+                else "cold"
+                if top and top[0].p_warm <= 0.3
+                else "mixed"
+            ),
+            "expected_cost_s": round(top[0].expected_cost_s, 4) if top else 0.0,
+            "p_warm": round(top[0].p_warm, 4) if top else 0.0,
+            "warm_cost_s": round(top[0].warm_cost_s, 4) if top else 0.0,
+            "cold_cost_s": round(top[0].cold_cost_s, 4) if top else 0.0,
+            "effective_confidence_threshold": round(
+                self.retriever.get_effective_confidence_threshold(), 4
+            ),
+        }
 
     def route(self, task_ir: Dict[str, Any]) -> Tuple[List[str], str]:
         """
@@ -343,12 +473,16 @@ class HybridRouter:
         if self.retriever.should_use_learned(results):
             best_action = self.retriever.get_best_action(results)
             if best_action:
-                action, confidence = best_action
+                action = best_action[0]
+                confidence = best_action[1]
                 # Parse action as routing decision
                 routing = self._parse_routing_action(action)
                 # Track last role for cache affinity (Phase 2.5)
                 if routing:
                     self.retriever.update_last_role(routing[0])
+                self._record_decision_meta(
+                    strategy="learned", chosen_action=action, results=results
+                )
                 return (routing, "learned")
 
         # Fall back to rule-based routing
@@ -356,6 +490,9 @@ class HybridRouter:
         # Track last role for cache affinity (Phase 2.5)
         if routing:
             self.retriever.update_last_role(routing[0])
+        self._record_decision_meta(
+            strategy="rules", chosen_action=",".join(routing), results=results
+        )
         return (routing, "rules")
 
     def route_with_mode(
@@ -380,12 +517,19 @@ class HybridRouter:
         if self.retriever.should_use_learned(results):
             best_action = self.retriever.get_best_action(results)
             if best_action:
-                action, confidence = best_action
+                action = best_action[0]
+                confidence = best_action[1]
                 routing, mode = self._parse_routing_action_with_mode(action)
+                self._record_decision_meta(
+                    strategy="learned", chosen_action=action, results=results
+                )
                 return (routing, "learned", mode)
 
         # Fall back to rule-based routing (with mode)
         routing, mode = self.rule_based.route_with_mode(task_ir)
+        self._record_decision_meta(
+            strategy="rules", chosen_action=",".join(routing), results=results
+        )
         return (routing, "rules", mode)
 
     def route_3way(
@@ -817,8 +961,12 @@ class GraphEnhancedRetriever(TwoPhaseRetriever):
                 except Exception:
                     pass  # Graceful degradation
 
+            p_warm, warm_cost, cold_cost = self._estimate_cost_components(memory)
+            expected_cost = p_warm * warm_cost + (1.0 - p_warm) * cold_cost
+            cost_ratio = expected_cost / max(cold_cost, 1e-6)
+            selection = memory.q_value - (self.config.cost_lambda * cost_ratio)
             # Calculate adjusted score
-            adjusted_score = combined * (1 - failure_penalty) * hypothesis_confidence
+            adjusted_score = selection * (1 - failure_penalty) * hypothesis_confidence
 
             results.append(
                 RetrievalResult(
@@ -826,6 +974,11 @@ class GraphEnhancedRetriever(TwoPhaseRetriever):
                     similarity=similarity,
                     q_value=memory.q_value,
                     combined_score=combined,
+                    selection_score=selection,
+                    p_warm=p_warm,
+                    warm_cost_s=warm_cost,
+                    cold_cost_s=cold_cost,
+                    expected_cost_s=expected_cost,
                     failure_penalty=failure_penalty,
                     hypothesis_confidence=hypothesis_confidence,
                     adjusted_score=adjusted_score,
@@ -836,8 +989,9 @@ class GraphEnhancedRetriever(TwoPhaseRetriever):
         # Sort by adjusted score (descending)
         results.sort(key=lambda r: r.adjusted_score, reverse=True)
 
-        # Return top-n
-        return results[: self.config.top_n]
+        top = results[: self.config.top_n]
+        self._apply_confidence(top)
+        return top
 
     def retrieve_for_routing(
         self,
@@ -884,11 +1038,8 @@ class GraphEnhancedRetriever(TwoPhaseRetriever):
             return None
 
         best = results[0]
-        # Use adjusted_score for graph-enhanced, fall back to combined_score
-        score = best.adjusted_score if best.adjusted_score > 0 else best.combined_score
-
-        if score >= self.config.confidence_threshold:
-            return (best.memory.action, score, best.warnings)
+        if best.q_confidence >= self.get_effective_confidence_threshold():
+            return (best.memory.action, best.q_confidence, best.warnings)
 
         return None
 
@@ -964,3 +1115,8 @@ class SkillAugmentedRouter:
     def retriever(self):
         """Expose underlying retriever for protocol compatibility."""
         return self.hybrid_router.retriever
+
+    @property
+    def last_decision_meta(self) -> Dict[str, Any]:
+        """Expose underlying decision metadata for telemetry."""
+        return getattr(self.hybrid_router, "last_decision_meta", {})

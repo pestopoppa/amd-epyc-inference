@@ -37,6 +37,12 @@ class ReplayMetrics:
     # Cost
     cost_efficiency: float = 0.0  # reward / weighted tier cost
 
+    # Calibration / risk control
+    ece_global: float = 0.0  # expected calibration error over replay set
+    brier_global: float = 0.0  # brier score for confidence predictions
+    conformal_coverage: float = 0.0  # fraction of trajectories accepted (not abstained)
+    conformal_risk: float = 0.0  # error rate on accepted trajectories
+
     # Tier breakdown
     tier_usage: Dict[str, int] = field(default_factory=dict)
 
@@ -57,6 +63,10 @@ class ReplayMetrics:
             "cumulative_reward": self.cumulative_reward,
             "avg_reward": self.avg_reward,
             "cost_efficiency": self.cost_efficiency,
+            "ece_global": self.ece_global,
+            "brier_global": self.brier_global,
+            "conformal_coverage": self.conformal_coverage,
+            "conformal_risk": self.conformal_risk,
             "tier_usage": self.tier_usage,
             "replay_duration_seconds": self.replay_duration_seconds,
         }
@@ -76,6 +86,10 @@ class ReplayMetrics:
             cumulative_reward=data.get("cumulative_reward", 0.0),
             avg_reward=data.get("avg_reward", 0.0),
             cost_efficiency=data.get("cost_efficiency", 0.0),
+            ece_global=data.get("ece_global", 0.0),
+            brier_global=data.get("brier_global", 0.0),
+            conformal_coverage=data.get("conformal_coverage", 0.0),
+            conformal_risk=data.get("conformal_risk", 0.0),
             tier_usage=data.get("tier_usage", {}),
             replay_duration_seconds=data.get("replay_duration_seconds", 0.0),
         )
@@ -93,6 +107,9 @@ class ReplayMetrics:
             "cumulative_reward",
             "avg_reward",
             "cost_efficiency",
+            "ece_global",
+            "brier_global",
+            "conformal_coverage",
         ):
             self_val = getattr(self, metric)
             base_val = getattr(baseline, metric)

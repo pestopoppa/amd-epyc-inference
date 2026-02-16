@@ -364,6 +364,20 @@ Skills that successfully propagate architect knowledge to workers reduce the nee
 
 5. **Cache-aware cost**: with RadixAttention, cache hits reduce real cost. A specialist that benefits from cached context should get lower effective cost.
 
+## Routing-Time Warm/Cold Expected Cost (2026-02)
+
+Routing now models expected latency explicitly:
+
+`E[cost] = p_warm * warm_cost + (1 - p_warm) * cold_cost`
+
+This replaces hidden cache-affinity score multipliers. Warm/cold estimates are stored and surfaced in routing metadata, while Q-updates remain centered on success utility. Tunables are exposed via `RetrievalConfig` and replay/debugger/seeding integration.
+
+Files:
+
+- `orchestration/repl_memory/retriever.py`
+- `scripts/benchmark/seed_specialist_routing.py`
+- `src/pipeline_monitor/claude_debugger.py`
+
 ## References
 
 1. Cheng Qian et al., "xRouter: Training Cost-Aware LLMs Orchestration System via Reinforcement Learning," arXiv:2510.08439 (2025). https://arxiv.org/abs/2510.08439

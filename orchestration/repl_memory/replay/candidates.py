@@ -299,6 +299,10 @@ def _scoring_config_to_dict(cfg: ScoringConfig) -> Dict[str, Any]:
         "memory_cost_by_role": cfg.memory_cost_by_role,
         "cost_lambda_quality_gap": cfg.cost_lambda_quality_gap,
         "cost_lambda_memory": cfg.cost_lambda_memory,
+        "delegation_misattribution_penalty": cfg.delegation_misattribution_penalty,
+        "specialist_credit_bonus": cfg.specialist_credit_bonus,
+        "teacher_regret_penalty": cfg.teacher_regret_penalty,
+        "teacher_speedup_bonus": cfg.teacher_speedup_bonus,
         "min_score_interval_seconds": cfg.min_score_interval_seconds,
         "batch_size": cfg.batch_size,
     }

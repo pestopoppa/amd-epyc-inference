@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+from datetime import datetime, timezone
 from pydantic_graph import End, GraphRunContext
 
 from src.escalation import ErrorCategory
@@ -38,6 +40,93 @@ Ctx = GraphRunContext[TaskState, TaskDeps]
 
 _REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
 _repl_tap_lock = __import__("threading").Lock()
+
+
+def _use_inline_calls_in_tests() -> bool:
+    """Return True when running under pytest to avoid threadpool teardown hangs."""
+    return bool(os.getenv("PYTEST_CURRENT_TEST"))
+
+
+def _workspace_prompt_block(state: TaskState) -> str:
+    """Build a compact workspace block to keep specialists aligned."""
+    ws = state.workspace_state or {}
+    objective = ws.get("objective") or state.prompt[:240]
+    constraints = ws.get("constraints", [])[:4]
+    invariants = ws.get("invariants", [])[:4]
+    commitments = ws.get("commitments", [])[-3:]
+    decisions = ws.get("decisions", [])[-3:]
+    open_questions = ws.get("open_questions", [])[-3:]
+
+    lines = [
+        "[Workspace State]",
+        f"- objective: {objective}",
+    ]
+    if constraints:
+        lines.append(f"- constraints: {constraints}")
+    if invariants:
+        lines.append(f"- invariants: {invariants}")
+    if commitments:
+        lines.append(f"- commitments: {commitments}")
+    if decisions:
+        lines.append(f"- decisions: {decisions}")
+    if open_questions:
+        lines.append(f"- open_questions: {open_questions}")
+    return "\n".join(lines)
+
+
+def _update_workspace_from_turn(state: TaskState, role: Role | str, output: str, error: str | None) -> None:
+    """Update the global workspace with bounded deltas from each turn."""
+    ws = state.workspace_state
+    if not ws:
+        return
+    if not ws.get("objective"):
+        ws["objective"] = state.prompt[:240]
+
+    role_name = str(role)
+    if error:
+        ws.setdefault("open_questions", []).append(
+            {"id": f"q{state.turns}", "text": error[:180], "owner": role_name}
+        )
+    elif output and output.strip():
+        ws.setdefault("commitments", []).append(
+            {"id": f"c{state.turns}", "owner": role_name, "text": output[:180]}
+        )
+
+    # Bounded capacity to avoid workspace prompt bloat.
+    for key in ("commitments", "open_questions", "decisions"):
+        vals = ws.get(key, [])
+        if isinstance(vals, list) and len(vals) > 12:
+            ws[key] = vals[-12:]
+    ws["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _expected_think_harder_roi(state: TaskState, role: str) -> float:
+    """Return expected ROI for think-harder on this role from historical stats."""
+    stats = state.think_harder_roi_by_role.get(role, {})
+    attempts = float(stats.get("attempts", 0.0))
+    successes = float(stats.get("successes", 0.0))
+    if attempts <= 0:
+        return 1.0
+    success_rate = successes / attempts
+    # ROI proxy: how often think-harder avoided escalation/failure, centered at 0.5.
+    return success_rate - 0.5
+
+
+def _update_think_harder_stats(ctx: Ctx) -> None:
+    """Track per-role think-harder ROI for future gating decisions."""
+    state = ctx.state
+    attempted = bool(state.think_harder_attempted or state.think_harder_succeeded is False)
+    if not attempted:
+        return
+    role = str(state.current_role)
+    stats = state.think_harder_roi_by_role.setdefault(
+        role, {"attempts": 0.0, "successes": 0.0, "expected_roi": 1.0}
+    )
+    stats["attempts"] = float(stats.get("attempts", 0.0)) + 1.0
+    if state.think_harder_succeeded:
+        stats["successes"] = float(stats.get("successes", 0.0)) + 1.0
+    stats["expected_roi"] = _expected_think_harder_roi(state, role)
+    state.artifacts["think_harder_expected_roi"] = stats["expected_roi"]
 
 
 def _tap_write_repl_exec(code: str, turn: int) -> None:
@@ -230,11 +319,17 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
             f"{to_summarize[:8000]}"
         )
 
-        summary = await asyncio.to_thread(
-            ctx.deps.primitives.llm_call,
-            summary_prompt,
-            role="worker_summarize",
-        )
+        if _use_inline_calls_in_tests():
+            summary = ctx.deps.primitives.llm_call(
+                summary_prompt,
+                role="worker_summarize",
+            )
+        else:
+            summary = await asyncio.to_thread(
+                ctx.deps.primitives.llm_call,
+                summary_prompt,
+                role="worker_summarize",
+            )
 
         state.context = f"[Compacted context]\n{summary}\n\n[Recent]\n{keep_verbatim}"
         state.compaction_count += 1
@@ -390,6 +485,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             turn=state.turns - 1,
             corpus_context=corpus_ctx,
         )
+        prompt += "\n\n" + _workspace_prompt_block(state)
 
     # Graduated FINAL() nudge: midpoint soft reminder, then hard deadline.
     remaining = state.max_turns - state.turns
@@ -437,13 +533,24 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     if deps.primitives is not None:
         deps.primitives._early_stop_check = lambda text: bool(_FINAL_RE.search(text))
     try:
-        code = await asyncio.to_thread(
-            deps.primitives.llm_call,
-            prompt,
-            role=str(role),
-            stop_sequences=["\n```\n"],
-            **llm_kwargs,
-        )
+        llm_call_fn = deps.primitives.llm_call
+        # Unit tests often inject MagicMock llm_call; using to_thread on mocked
+        # callables can deadlock event-loop teardown in pytest-asyncio.
+        if _use_inline_calls_in_tests() or type(llm_call_fn).__module__.startswith("unittest.mock"):
+            code = llm_call_fn(
+                prompt,
+                role=str(role),
+                stop_sequences=["\n```\n"],
+                **llm_kwargs,
+            )
+        else:
+            code = await asyncio.to_thread(
+                llm_call_fn,
+                prompt,
+                role=str(role),
+                stop_sequences=["\n```\n"],
+                **llm_kwargs,
+            )
     except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
         return "", f"LLM call failed: {e}", False, {}
     except Exception as e:
@@ -460,6 +567,8 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
 
     code = extract_code_from_response(code)
     code = auto_wrap_final(code)
+
+    _update_workspace_from_turn(state, role, raw_llm_output, None)
 
     # Prose answer rescue: model answered in prose (e.g. "The answer is D")
     # without producing FINAL() or code blocks.  Extract the answer from
@@ -561,10 +670,16 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
 
     # REPL execution
     try:
-        result = await asyncio.wait_for(
-            asyncio.to_thread(deps.repl.execute, code),
-            timeout=deps.repl.config.timeout_seconds,
-        )
+        repl_execute = deps.repl.execute
+        if _use_inline_calls_in_tests() or type(repl_execute).__module__.startswith("unittest.mock"):
+            result = repl_execute(code)
+            if asyncio.iscoroutine(result):
+                result = await result
+        else:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(repl_execute, code),
+                timeout=deps.repl.config.timeout_seconds,
+            )
     except asyncio.TimeoutError:
         from src.repl_environment.types import ExecutionResult
 
@@ -692,9 +807,41 @@ def _should_escalate(
     cfg = ctx.deps.config
     state = ctx.state
 
-    # Format/schema errors never escalate
+    # Format errors never escalate
     if error_category in cfg.no_escalate_categories:
         return False
+
+    # Schema errors: escalate only after retries and on capability-gap signature.
+    if error_category == ErrorCategory.SCHEMA:
+        if next_tier is None:
+            return False
+        if state.escalation_count >= cfg.max_escalations:
+            return False
+        if state.consecutive_failures < cfg.max_retries:
+            return False
+        lower = (state.last_error or "").lower()
+        parser_patterns = (
+            "json decode",
+            "expecting value",
+            "unterminated string",
+            "trailing comma",
+            "invalid json",
+            "parse error",
+        )
+        if any(p in lower for p in parser_patterns):
+            return False
+        capability_patterns = (
+            "schema mismatch",
+            "validation failed",
+            "does not conform",
+            "required property",
+            "invalid type",
+            "enum",
+            "oneof",
+            "anyof",
+            "allof",
+        )
+        return any(p in lower for p in capability_patterns)
 
     # No target to escalate to
     if next_tier is None:
@@ -726,12 +873,24 @@ def _should_think_harder(ctx: Ctx, error_category: ErrorCategory) -> bool:
     state = ctx.state
 
     # Format/schema errors: just retry, don't think harder
-    if error_category in cfg.no_escalate_categories:
+    if error_category in cfg.no_escalate_categories or error_category == ErrorCategory.SCHEMA:
         return False
 
     # Only try once per role
     if state.think_harder_attempted:
         return False
+
+    role = str(state.current_role)
+    role_stats = state.think_harder_roi_by_role.get(role, {})
+    attempts = int(role_stats.get("attempts", 0.0))
+    if attempts >= state.think_harder_min_samples:
+        expected_roi = _expected_think_harder_roi(state, role)
+        if expected_roi < state.think_harder_min_expected_roi:
+            log.info(
+                "Think-harder disabled for %s due to low ROI (expected=%.3f, attempts=%d)",
+                role, expected_roi, attempts,
+            )
+            return False
 
     return state.consecutive_failures == cfg.max_retries - 1
 
@@ -782,6 +941,19 @@ def _make_end_result(ctx: Ctx, answer: str, success: bool) -> End[TaskResult]:
 
     # Record outcome evidence
     _add_evidence(ctx, "success" if success else "failure", 0.5 if success else -0.5)
+    _update_think_harder_stats(ctx)
+    ws = ctx.state.workspace_state
+    if isinstance(ws, dict):
+        ws.setdefault("decisions", []).append(
+            {
+                "id": f"d{ctx.state.turns}",
+                "text": answer[:180],
+                "rationale": "success" if success else "failure",
+            }
+        )
+        if len(ws["decisions"]) > 12:
+            ws["decisions"] = ws["decisions"][-12:]
+        ws["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     return End(
         TaskResult(

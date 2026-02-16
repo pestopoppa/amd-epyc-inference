@@ -244,7 +244,16 @@ class TrajectoryExtractor:
         # Extract fields from data payloads
         task_type = task_started.data.get("task_type", "unknown")
         objective = task_started.data.get("objective", task_started.data.get("prompt", ""))
-        action = routing_decision.data.get("action", routing_decision.data.get("role", "unknown"))
+        routing_data = routing_decision.data or {}
+        action = routing_data.get("action", routing_data.get("chosen_action"))
+        if not action:
+            routing_list = routing_data.get("routing", [])
+            if isinstance(routing_list, list) and routing_list:
+                action = ",".join(str(r) for r in routing_list)
+            elif isinstance(routing_list, str):
+                action = routing_list
+            else:
+                action = routing_data.get("role", "unknown")
 
         # Outcome from the completion entry
         outcome = task_completed.outcome or "unknown"
@@ -252,6 +261,18 @@ class TrajectoryExtractor:
         # Cost metrics from completion data
         if task_completed.data:
             for key in ("tokens_generated", "elapsed_seconds", "generation_ms", "role"):
+                if key in task_completed.data:
+                    cost_metrics[key] = task_completed.data[key]
+            # Optional teacher/delegation telemetry keys.
+            for key in (
+                "regret",
+                "speedup_vs_teacher",
+                "pass_teacher",
+                "pass_chosen",
+                "producer_role",
+                "final_answer_role",
+                "delegation_lineage",
+            ):
                 if key in task_completed.data:
                     cost_metrics[key] = task_completed.data[key]
 

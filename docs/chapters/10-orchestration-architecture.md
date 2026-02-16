@@ -507,3 +507,18 @@ The orchestration layer is implemented in:
 ---
 
 *Previous: [Chapter 09: Deprecated Approaches](09-deprecated-approaches.md)* | *Next: [Chapter 11: REPL Environment](11-repl-environment.md)*
+
+## Posterior Routing with Risk Controls (2026-02)
+
+Routing now combines:
+
+1. Heuristic priors from classifier/intent hints.
+2. Learned posterior evidence from MemRL retrieval (robust Q-confidence via median/trimmed-mean top-k Q).
+3. Cost-aware ranking using expected warm/cold latency (`selection_score`).
+4. Risk-controlled confidence thresholding (`confidence_threshold` or calibrated threshold plus conformal margin).
+
+Primary implementation paths:
+
+- `src/api/routes/chat_pipeline/routing.py`
+- `src/api/routes/chat_routing.py`
+- `orchestration/repl_memory/retriever.py`

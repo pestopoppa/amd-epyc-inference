@@ -496,3 +496,24 @@ Gated behind `ORCHESTRATOR_SKILLBANK=1` (requires `memrl`). When disabled, the s
 ---
 
 *Previous: [Chapter 14: TOON Encoding](14-toon-encoding.md)* | *Next: [Chapter 16: Graph-Based Reasoning](16-graph-reasoning.md)*
+
+## Signal Purity and Robust Confidence (2026-02)
+
+The retrieval layer separates relevance, confidence, and cost:
+
+1. Similarity is used for neighborhood retrieval/support only.
+2. Confidence is derived from robust Q statistics (`median` or `trimmed_mean`) over top neighbors.
+3. Cost is applied at selection time (`selection_score`), not in the core `P(success|action)` target.
+
+Additional replay metrics now track calibration/risk:
+
+- `ece_global`
+- `brier_global`
+- `conformal_coverage`
+- `conformal_risk`
+
+Files:
+
+- `orchestration/repl_memory/retriever.py`
+- `orchestration/repl_memory/replay/engine.py`
+- `orchestration/repl_memory/replay/metrics.py`

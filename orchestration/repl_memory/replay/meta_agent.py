@@ -265,6 +265,24 @@ class MetaAgentWorkflow:
             lines.append("Config changes:")
             lines.append(f"- semantic_k: {promotion.retrieval_config.semantic_k}")
             lines.append(f"- q_weight: {promotion.retrieval_config.q_weight}")
+            lines.append(f"- cost_lambda: {promotion.retrieval_config.cost_lambda}")
+            lines.append(
+                f"- confidence_estimator: {promotion.retrieval_config.confidence_estimator}"
+            )
+            lines.append(
+                f"- confidence_threshold: {promotion.retrieval_config.confidence_threshold}"
+            )
+            lines.append(
+                "- calibrated_confidence_threshold: "
+                f"{promotion.retrieval_config.calibrated_confidence_threshold}"
+            )
+            lines.append(f"- conformal_margin: {promotion.retrieval_config.conformal_margin}")
+            lines.append(
+                f"- warm_probability_hit: {promotion.retrieval_config.warm_probability_hit}"
+            )
+            lines.append(
+                f"- warm_probability_miss: {promotion.retrieval_config.warm_probability_miss}"
+            )
             lines.append(f"- learning_rate: {promotion.scoring_config.learning_rate}")
             lines.append(f"- cost_penalty_lambda: {promotion.scoring_config.cost_penalty_lambda}")
         else:
@@ -331,8 +349,17 @@ _PARAM_RANGES = {
     "min_similarity": (0.1, 0.9),
     "min_q_value": (0.0, 0.9),
     "q_weight": (0.3, 1.0),
+    "cost_lambda": (0.0, 1.0),
     "top_n": (1, 20),
     "confidence_threshold": (0.3, 0.95),
+    "confidence_trim_ratio": (0.0, 0.4),
+    "confidence_min_neighbors": (1, 20),
+    "calibrated_confidence_threshold": (0.3, 0.99),
+    "conformal_margin": (0.0, 0.2),
+    "warm_probability_hit": (0.5, 1.0),
+    "warm_probability_miss": (0.0, 0.5),
+    "warm_cost_fallback_s": (0.1, 30.0),
+    "cold_cost_fallback_s": (0.1, 60.0),
 }
 
 
@@ -368,7 +395,18 @@ def _format_config(candidate: DesignCandidate) -> str:
         f"- semantic_k: {rc.semantic_k}\n"
         f"- min_similarity: {rc.min_similarity}\n"
         f"- q_weight: {rc.q_weight}\n"
+        f"- cost_lambda: {rc.cost_lambda}\n"
         f"- confidence_threshold: {rc.confidence_threshold}\n"
+        f"- confidence_estimator: {rc.confidence_estimator}\n"
+        f"- confidence_trim_ratio: {rc.confidence_trim_ratio}\n"
+        f"- confidence_min_neighbors: {rc.confidence_min_neighbors}\n"
+        f"- calibrated_confidence_threshold: {rc.calibrated_confidence_threshold}\n"
+        f"- conformal_margin: {rc.conformal_margin}\n"
+        f"- risk_control_enabled: {rc.risk_control_enabled}\n"
+        f"- warm_probability_hit: {rc.warm_probability_hit}\n"
+        f"- warm_probability_miss: {rc.warm_probability_miss}\n"
+        f"- warm_cost_fallback_s: {rc.warm_cost_fallback_s}\n"
+        f"- cold_cost_fallback_s: {rc.cold_cost_fallback_s}\n"
         f"- learning_rate: {sc.learning_rate}\n"
         f"- success_reward: {sc.success_reward}\n"
         f"- failure_reward: {sc.failure_reward}\n"

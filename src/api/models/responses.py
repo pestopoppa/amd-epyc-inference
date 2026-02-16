@@ -98,6 +98,7 @@ class ChatResponse(BaseModel):
     cheap_first_passed: bool | None = Field(default=None, description="Whether cheap-first quality gate passed")
     think_harder_attempted: bool = Field(default=False, description="Whether think-harder was attempted before escalation")
     think_harder_succeeded: bool | None = Field(default=None, description="Whether think-harder avoided escalation")
+    think_harder_expected_roi: float = Field(default=0.0, description="Estimated per-role ROI for future think-harder attempts")
     grammar_enforced: bool = Field(default=False, description="Whether GBNF grammar was used for constrained generation")
     parallel_tools_used: bool = Field(default=False, description="Whether read-only tools executed in parallel")
     cache_affinity_bonus: float = Field(default=0.0, description="Cache affinity bonus applied during routing")

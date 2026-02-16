@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json as _json
 import logging
+import os
 import re as _re
 import time
 
@@ -21,6 +22,14 @@ from src.features import features
 from src.llm_primitives import LLMPrimitives
 
 log = logging.getLogger(__name__)
+
+
+def _should_inline_plan_call_for_test(primitives: LLMPrimitives) -> bool:
+    """Use inline call only in test/mocked contexts to avoid teardown hangs."""
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        return True
+    llm_call = getattr(primitives, "llm_call", None)
+    return type(llm_call).__module__.startswith("unittest.mock")
 
 
 def _parse_plan_steps(raw: str) -> list[dict]:
@@ -111,12 +120,20 @@ async def _execute_proactive(
     )
 
     try:
-        plan_json_str = await asyncio.to_thread(
-            primitives.llm_call,
-            plan_prompt,
-            role="architect_general",
-            n_tokens=256,
-        )
+        if _should_inline_plan_call_for_test(primitives):
+            plan_json_str = primitives.llm_call(
+                plan_prompt,
+                role="architect_general",
+                n_tokens=256,
+            )
+        else:
+            # Keep model I/O off the event loop in production runtime paths.
+            plan_json_str = await asyncio.to_thread(
+                primitives.llm_call,
+                plan_prompt,
+                role="architect_general",
+                n_tokens=256,
+            )
     except Exception as e:
         log.warning(
             "Proactive delegation: architect plan call failed: %s",
@@ -184,6 +201,11 @@ async def _execute_proactive(
             task_id=routing.task_id,
             success=result.all_approved,
             details=f"Proactive delegation: {n_subtasks} subtasks, {elapsed:.3f}s",
+            completion_meta={
+                "producer_role": "proactive_delegation",
+                "delegation_lineage": result.roles_used or ["architect_general"],
+                "final_answer_role": (result.roles_used or ["architect_general"])[-1],
+            },
         )
         score_completed_task(
             state,

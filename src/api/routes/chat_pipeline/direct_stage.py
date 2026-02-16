@@ -159,6 +159,11 @@ def _execute_direct(
             task_id=routing.task_id,
             success=success,
             details=f"Direct answer mode ({initial_role}), {elapsed:.3f}s",
+            completion_meta={
+                "producer_role": str(initial_role),
+                "delegation_lineage": [str(initial_role)],
+                "final_answer_role": str(initial_role),
+            },
         )
         score_completed_task(
             state,

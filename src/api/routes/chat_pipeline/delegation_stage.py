@@ -99,6 +99,16 @@ def _execute_delegated(
             task_id=routing.task_id,
             success=True,
             details=f"Delegated mode ({initial_role}), {elapsed:.3f}s, {phases_log}",
+            completion_meta={
+                "producer_role": str(initial_role),
+                "delegation_lineage": [str(initial_role)]
+                + [
+                    p.get("delegate_to", "")
+                    for p in delegation_stats.get("phases", [])
+                    if p.get("phase") == "B"
+                ],
+                "final_answer_role": str(initial_role),
+            },
         )
         score_completed_task(
             state,

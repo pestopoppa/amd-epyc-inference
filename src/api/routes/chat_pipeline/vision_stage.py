@@ -235,6 +235,11 @@ async def _execute_vision_multimodal(
             task_id=task_id,
             success=True,
             details=f"Vision multimodal ({initial_role}:{execution_mode}), {elapsed:.3f}s",
+            completion_meta={
+                "producer_role": str(initial_role),
+                "delegation_lineage": [str(initial_role)],
+                "final_answer_role": str(initial_role),
+            },
         )
         score_completed_task(
             state,

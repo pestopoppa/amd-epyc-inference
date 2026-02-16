@@ -22,6 +22,7 @@ from src.api.routes.chat_review import (
     _store_plan_review_episode,
 )
 from src.api.routes.chat_routing import _classify_and_route
+from src.api.routes.chat_routing import _heuristic_role_priors, _select_role_from_prior
 from src.api.routes.chat_utils import (
     DEFAULT_TIMEOUT_S,
     ROLE_TIMEOUTS,
@@ -50,6 +51,12 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
 
     use_mock = request.mock_mode and not request.real_mode
     skill_context = ""  # Populated by SkillAugmentedRouter when skillbank is enabled
+    has_image = bool(request.image_path or request.image_base64)
+    heuristic_priors = _heuristic_role_priors(
+        request.prompt,
+        request.context or "",
+        has_image=has_image,
+    )
 
     # Initialize MemRL early for real_mode to enable HybridRouter
     if request.real_mode and not use_mock:
@@ -74,8 +81,17 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
         else:
             routing_decision, routing_strategy = state.hybrid_router.route(task_ir)
             skill_context = ""
+
+        # Prior/posterior blend:
+        # when learned posterior is unavailable and router falls back to rules,
+        # let strong priors nudge the role choice without overriding forced choices.
+        if routing_strategy == "rules":
+            prior_role = _select_role_from_prior(heuristic_priors)
+            prior_conf = float(heuristic_priors.get(prior_role, 0.0))
+            if prior_conf >= 0.60 and routing_decision and prior_role != str(routing_decision[0]):
+                routing_decision = [prior_role]
+                routing_strategy = "prior_rules"
     else:
-        has_image = bool(request.image_path or request.image_base64)
         classified_role, routing_strategy = _classify_and_route(
             request.prompt,
             request.context or "",
@@ -111,11 +127,24 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
 
     # Log task start (MemRL integration)
     if state.progress_logger:
+        routing_meta = {
+            "decision_source": routing_strategy,
+            "was_forced": bool(request.force_role),
+            "heuristic_priors": {
+                k: round(v, 4) for k, v in sorted(heuristic_priors.items(), key=lambda kv: -kv[1])[:4]
+            },
+        }
+        if state.hybrid_router and hasattr(state.hybrid_router, "last_decision_meta"):
+            try:
+                routing_meta.update(state.hybrid_router.last_decision_meta or {})
+            except Exception:
+                pass
         state.progress_logger.log_task_started(
             task_id=task_id,
             task_ir=task_ir,
             routing_decision=routing_decision,
             routing_strategy=routing_strategy,
+            routing_meta=routing_meta,
         )
 
     # Compute role-specific timeout
