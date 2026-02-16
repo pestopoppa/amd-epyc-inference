@@ -120,9 +120,11 @@ class TaskState:
     workspace_state: dict[str, Any] = field(
         default_factory=lambda: {
             "version": 1,
+            "broadcast_version": 0,
             "objective": "",
             "constraints": [],
             "invariants": [],
+            "proposals": [],
             "commitments": [],
             "open_questions": [],
             "decisions": [],

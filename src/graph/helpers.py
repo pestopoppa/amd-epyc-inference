@@ -18,6 +18,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
+from typing import Any
 from pydantic_graph import End, GraphRunContext
 
 from src.escalation import ErrorCategory
@@ -75,7 +76,7 @@ def _workspace_prompt_block(state: TaskState) -> str:
 
 
 def _update_workspace_from_turn(state: TaskState, role: Role | str, output: str, error: str | None) -> None:
-    """Update the global workspace with bounded deltas from each turn."""
+    """Update workspace via proposal -> selection -> broadcast cycle."""
     ws = state.workspace_state
     if not ws:
         return
@@ -83,21 +84,73 @@ def _update_workspace_from_turn(state: TaskState, role: Role | str, output: str,
         ws["objective"] = state.prompt[:240]
 
     role_name = str(role)
+    proposal = None
     if error:
-        ws.setdefault("open_questions", []).append(
-            {"id": f"q{state.turns}", "text": error[:180], "owner": role_name}
-        )
+        proposal = {
+            "id": f"p{state.turns}",
+            "kind": "open_question",
+            "owner": role_name,
+            "text": error[:180],
+            "priority": "high",
+        }
     elif output and output.strip():
-        ws.setdefault("commitments", []).append(
-            {"id": f"c{state.turns}", "owner": role_name, "text": output[:180]}
-        )
+        proposal = {
+            "id": f"p{state.turns}",
+            "kind": "commitment",
+            "owner": role_name,
+            "text": output[:180],
+            "priority": "normal",
+        }
+
+    if proposal:
+        proposals = ws.setdefault("proposals", [])
+        proposals.append(proposal)
+        # Keep latest proposals only to bound controller selection load.
+        if len(proposals) > 12:
+            ws["proposals"] = proposals[-12:]
+        _select_and_broadcast_workspace_delta(ws)
 
     # Bounded capacity to avoid workspace prompt bloat.
-    for key in ("commitments", "open_questions", "decisions"):
+    for key in ("proposals", "commitments", "open_questions", "decisions"):
         vals = ws.get(key, [])
         if isinstance(vals, list) and len(vals) > 12:
             ws[key] = vals[-12:]
     ws["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+
+def _select_and_broadcast_workspace_delta(ws: dict[str, Any]) -> None:
+    """Controller step: select highest-priority proposal and broadcast it."""
+    proposals = ws.get("proposals", [])
+    if not isinstance(proposals, list) or not proposals:
+        return
+
+    # Prioritize unresolved error/open-question deltas, then latest proposal.
+    selected = None
+    for candidate in reversed(proposals):
+        if candidate.get("kind") == "open_question":
+            selected = candidate
+            break
+    if selected is None:
+        selected = proposals[-1]
+
+    kind = str(selected.get("kind", ""))
+    owner = str(selected.get("owner", ""))
+    text = str(selected.get("text", "")).strip()
+    if not text:
+        return
+
+    target_key = "open_questions" if kind == "open_question" else "commitments"
+    target = ws.setdefault(target_key, [])
+    if not any(str(item.get("text", "")).strip() == text for item in target):
+        prefix = "q" if target_key == "open_questions" else "c"
+        target.append(
+            {
+                "id": f"{prefix}{ws.get('broadcast_version', 0) + 1}",
+                "owner": owner,
+                "text": text,
+            }
+        )
+    ws["broadcast_version"] = int(ws.get("broadcast_version", 0)) + 1
 
 
 def _expected_think_harder_roi(state: TaskState, role: str) -> float:
@@ -893,6 +946,34 @@ def _should_think_harder(ctx: Ctx, error_category: ErrorCategory) -> bool:
             return False
 
     return state.consecutive_failures == cfg.max_retries - 1
+
+
+def _build_think_harder_config(state: TaskState) -> dict[str, Any]:
+    """Build adaptive think-harder config using per-role ROI history.
+
+    This uses a decaying envelope:
+    - high expected ROI -> larger token budget + CoT prefix
+    - low expected ROI -> smaller budget and lower temperature
+    """
+    role = str(state.current_role)
+    expected_roi = _expected_think_harder_roi(state, role)
+    # Map ROI range [-0.5, 0.5] to [0, 1] for stable envelope scaling.
+    roi_norm = max(0.0, min(1.0, expected_roi + 0.5))
+
+    n_tokens = int(round(2048 + (2048 * roi_norm)))  # [2048, 4096]
+    temperature = round(0.3 + (0.2 * roi_norm), 2)  # [0.30, 0.50]
+    cot_prefix = "Think step by step before answering.\n\n" if roi_norm >= 0.35 else ""
+
+    state.artifacts["think_harder_expected_roi"] = expected_roi
+    state.artifacts["think_harder_token_budget"] = n_tokens
+    state.artifacts["think_harder_temperature"] = temperature
+    state.artifacts["think_harder_cot_enabled"] = bool(cot_prefix)
+
+    return {
+        "n_tokens": n_tokens,
+        "cot_prefix": cot_prefix,
+        "temperature": temperature,
+    }
 
 
 def _should_retry(ctx: Ctx, error_category: ErrorCategory) -> bool:

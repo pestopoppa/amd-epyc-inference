@@ -28,6 +28,7 @@ from src.prompt_builders.constants import (
 )
 from src.prompt_builders.resolver import resolve_prompt
 from src.roles import Role, get_tier
+from src.task_ir import canonicalize_task_ir
 
 _log = logging.getLogger(__name__)
 
@@ -699,10 +700,10 @@ def build_routing_context(
     from src.roles import get_tier
 
     try:
-        task_ir = {
+        task_ir = canonicalize_task_ir({
             "task_type": "chat",
             "objective": task_description[:TASK_IR_OBJECTIVE_LEN],
-        }
+        })
         results = hybrid_router.retriever.retrieve_for_routing(task_ir)
 
         tier = get_tier(role)

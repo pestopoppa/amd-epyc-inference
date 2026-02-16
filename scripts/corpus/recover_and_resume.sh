@@ -23,8 +23,8 @@ log "WAL: $(du -sh "$DB-wal" 2>/dev/null | cut -f1 || echo 'none')"
 
 # Step 1: WAL checkpoint
 if [ -f "$DB-wal" ] && [ "$(stat -c%s "$DB-wal" 2>/dev/null || echo 0)" -gt 1000 ]; then
-    log "Step 1: Checkpointing WAL ($(du -sh "$DB-wal" | cut -f1))..."
-    python3 -c "
+  log "Step 1: Checkpointing WAL ($(du -sh "$DB-wal" | cut -f1))..."
+  python3 -c "
 import sqlite3, time
 conn = sqlite3.connect('$DB', timeout=0)
 conn.execute('PRAGMA busy_timeout = 0')
@@ -34,9 +34,9 @@ elapsed = time.monotonic() - t0
 print(f'Checkpoint done in {elapsed:.1f}s: blocked={r[0]} written={r[1]} checkpointed={r[2]}')
 conn.close()
 " 2>&1 | tee -a "$LOG"
-    log "Step 1: WAL checkpoint complete"
+  log "Step 1: WAL checkpoint complete"
 else
-    log "Step 1: WAL already clean, skipping"
+  log "Step 1: WAL already clean, skipping"
 fi
 
 # Step 2: Check DB health + create ngram index
@@ -80,11 +80,11 @@ log "Step 2: Index creation complete"
 # Step 3: Resume remaining languages
 log "Step 3: Resuming build for remaining languages..."
 python3 "$BUILD_SCRIPT" \
-    --output "$DB_DIR" \
-    --languages python,javascript,typescript,rust,go,c++ \
-    --resume \
-    --skip-finalize \
-    2>&1 | tee -a "$LOG"
+  --output "$DB_DIR" \
+  --languages python,javascript,typescript,rust,go,c++ \
+  --resume \
+  --skip-finalize \
+  2>&1 | tee -a "$LOG"
 log "Step 3: Language builds complete"
 
 # Step 4: Finalize (create index if new ngrams were added)

@@ -11,6 +11,7 @@ import pytest
 
 
 from src.graph.helpers import (
+    _build_think_harder_config,
     _classify_error,
     _detect_role_cycle,
     _extract_final_from_raw,
@@ -18,6 +19,7 @@ from src.graph.helpers import (
     _is_comment_only,
     _rescue_from_last_output,
     _resolve_answer,
+    _update_workspace_from_turn,
 )
 from src.graph.nodes import (
     ArchitectCodingNode,
@@ -133,6 +135,52 @@ class TestClassifyError:
 
     def test_unknown(self):
         assert _classify_error("Something happened") == ErrorCategory.UNKNOWN
+
+
+class TestThinkHarderConfig:
+    def test_build_think_harder_config_high_roi(self):
+        state = make_state(current_role=Role.FRONTDOOR)
+        state.think_harder_roi_by_role = {
+            str(Role.FRONTDOOR): {"attempts": 20.0, "successes": 18.0}
+        }
+        cfg = _build_think_harder_config(state)
+        assert cfg["n_tokens"] >= 3500
+        assert cfg["temperature"] >= 0.45
+        assert bool(cfg["cot_prefix"])
+
+    def test_build_think_harder_config_low_roi(self):
+        state = make_state(current_role=Role.FRONTDOOR)
+        state.think_harder_roi_by_role = {
+            str(Role.FRONTDOOR): {"attempts": 20.0, "successes": 2.0}
+        }
+        cfg = _build_think_harder_config(state)
+        assert cfg["n_tokens"] <= 2600
+        assert cfg["temperature"] <= 0.35
+        assert cfg["cot_prefix"] == ""
+
+
+class TestWorkspaceBroadcast:
+    def test_workspace_uses_proposal_selection_broadcast(self):
+        state = make_state(current_role=Role.FRONTDOOR)
+
+        _update_workspace_from_turn(
+            state=state,
+            role=Role.FRONTDOOR,
+            output="We will parse config then run tests.",
+            error=None,
+        )
+        _update_workspace_from_turn(
+            state=state,
+            role=Role.CODER_PRIMARY,
+            output="",
+            error="Schema mismatch on field `steps`",
+        )
+
+        ws = state.workspace_state
+        assert ws.get("broadcast_version", 0) >= 2
+        assert isinstance(ws.get("proposals"), list) and ws["proposals"]
+        assert any("parse config" in x.get("text", "") for x in ws.get("commitments", []))
+        assert any("Schema mismatch" in x.get("text", "") for x in ws.get("open_questions", []))
 
 
 # ── Node selection tests ───────────────────────────────────────────────

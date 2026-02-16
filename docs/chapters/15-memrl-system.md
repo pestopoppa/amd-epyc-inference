@@ -517,3 +517,16 @@ Files:
 - `orchestration/repl_memory/retriever.py`
 - `orchestration/repl_memory/replay/engine.py`
 - `orchestration/repl_memory/replay/metrics.py`
+
+## Regret-Optimized Replay Objective (2026-02)
+
+Replay metrics now include a teacher-match utility objective:
+
+- `utility_score`
+- `rm_softmax_score`
+- `regret_mean`
+- `regret_p95`
+- `speedup_vs_teacher_mean`
+
+The objective combines chosen-pass signal, cost term, and regret penalty at replay time.
+Meta-agent candidate ranking/promotion now uses `rm_softmax_score` rather than raw cumulative reward.

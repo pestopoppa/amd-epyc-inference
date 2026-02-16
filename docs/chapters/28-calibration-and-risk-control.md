@@ -19,6 +19,9 @@ The routing stack now supports:
 - `calibrated_confidence_threshold`
 - `conformal_margin`
 - `risk_control_enabled`
+- `risk_budget_id`
+- `risk_gate_min_samples`
+- `risk_abstain_target_role`
 - `confidence_estimator` (`median` or `trimmed_mean`)
 - `confidence_trim_ratio`
 - `confidence_min_neighbors`
@@ -27,7 +30,13 @@ Effective routing threshold:
 
 `effective_threshold = (calibrated or base threshold) + conformal_margin`
 
-When confidence is below this threshold, learned routing abstains and fallback/escalation logic applies.
+When confidence is below this threshold under strict gate enforcement, hybrid routing
+emits `risk_abstain_escalate` and routes to `risk_abstain_target_role`.
+Gate provenance is logged with:
+
+- `risk_gate_action`
+- `risk_gate_reason`
+- `risk_budget_id`
 
 ## Metrics
 

@@ -231,7 +231,7 @@ class DesignArchive:
 
         Returns: top 2 + worst 1 + (n-3) random candidates.
         """
-        all_candidates = self.get_top_candidates(metric="cumulative_reward", limit=1000)
+        all_candidates = self.get_top_candidates(metric="rm_softmax_score", limit=1000)
         if len(all_candidates) <= n:
             return all_candidates
 

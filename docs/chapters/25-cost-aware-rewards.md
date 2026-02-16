@@ -378,6 +378,19 @@ Files:
 - `scripts/benchmark/seed_specialist_routing.py`
 - `src/pipeline_monitor/claude_debugger.py`
 
+## Regret-Optimized Promotion Objective (2026-02)
+
+Replay-based candidate promotion now uses a regret-optimized objective in addition
+to cumulative reward:
+
+- `utility_score`
+- `rm_softmax_score` (softmax-weighted regret surrogate)
+- `regret_mean`, `regret_p95`
+- `speedup_vs_teacher_mean`
+
+This shifts promotion toward "teacher-match under compute constraints" and
+avoids over-favoring candidates that optimize raw reward without regret control.
+
 ## References
 
 1. Cheng Qian et al., "xRouter: Training Cost-Aware LLMs Orchestration System via Reinforcement Learning," arXiv:2510.08439 (2025). https://arxiv.org/abs/2510.08439

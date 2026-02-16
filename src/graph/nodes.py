@@ -35,6 +35,7 @@ from src.graph.helpers import (  # noqa: F401 — re-exported for backward compa
     _add_evidence,
     _check_approval_gate,
     _classify_error,
+    _build_think_harder_config,
     _detect_role_cycle,
     _execute_turn,
     _extract_final_from_raw,
@@ -107,11 +108,7 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             # Think-harder: same model with CoT + 2x tokens before escalating
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s (attempt before escalation)", state.current_role)
                 return FrontdoorNode()
 
@@ -201,11 +198,7 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s", state.current_role)
                 return WorkerNode()
 
@@ -310,11 +303,7 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s", state.current_role)
                 return CoderNode()
 
@@ -405,11 +394,7 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s", state.current_role)
                 return CoderEscalationNode()
 
@@ -500,11 +485,7 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s", state.current_role)
                 return IngestNode()
 
@@ -589,11 +570,7 @@ class ArchitectNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s (terminal role)", state.current_role)
                 return ArchitectNode()
 
@@ -670,11 +647,7 @@ class ArchitectCodingNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
-                state.think_harder_config = {
-                    "n_tokens": 4096,
-                    "cot_prefix": "Think step by step before answering.\n\n",
-                    "temperature": 0.5,
-                }
+                state.think_harder_config = _build_think_harder_config(state)
                 log.info("Think-harder triggered at %s (terminal role)", state.current_role)
                 return ArchitectCodingNode()
 

@@ -14,6 +14,7 @@ from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.features import features
 from src.llm_primitives import LLMPrimitives
 from src.roles import Role
+from src.task_ir import canonicalize_task_ir
 
 from src.api.routes.chat_review import (
     _apply_plan_review,
@@ -43,11 +44,12 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
     before execution begins. Includes failure graph veto and MemRL logging.
     """
     task_id = f"chat-{uuid.uuid4().hex[:8]}"
-    task_ir = {
+    task_ir = canonicalize_task_ir({
         "task_type": "chat",
         "objective": request.prompt[:TASK_IR_OBJECTIVE_LEN],
         "priority": "interactive",
-    }
+        "context_preview": request.context or "",
+    })
 
     use_mock = request.mock_mode and not request.real_mode
     skill_context = ""  # Populated by SkillAugmentedRouter when skillbank is enabled
@@ -79,7 +81,10 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
                 state.hybrid_router.route_with_skills(task_ir)
             )
         else:
-            routing_decision, routing_strategy = state.hybrid_router.route(task_ir)
+            routing_decision, routing_strategy = state.hybrid_router.route(
+                task_ir,
+                priors=heuristic_priors,
+            )
             skill_context = ""
 
         # Prior/posterior blend:

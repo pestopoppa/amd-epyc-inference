@@ -15,21 +15,25 @@ Usage:
 The service is a singleton — the index is loaded once and shared across
 requests. Queries are sub-millisecond after the initial load.
 
-Supports two index formats:
+Supports three index formats:
   - v1 (JSON): snippets.json + ngram_index.json (for small corpora)
   - v2 (SQLite): corpus.db (for 100GB+ corpora from The Stack)
+  - v3 (Sharded SQLite): snippets.db + shard_{00..15}.db (parallel build)
 
-Index built by: scripts/corpus/build_index.py (v1) or build_index_v2.py (v2)
+Index built by: scripts/corpus/build_index.py (v1), build_index_v2.py (v2),
+or build_index_v3.py (v3 sharded)
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import sqlite3
 import threading
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -82,7 +86,10 @@ class CorpusRetriever:
         self._ngram_index: dict[str, list[int]] = {}
         self._word_index: dict[str, set[int]] | None = None  # keyword fallback
         self._db: sqlite3.Connection | None = None
-        self._format: str = ""  # "json" or "sqlite"
+        self._shard_conns: list[sqlite3.Connection] = []
+        self._snippets_db: sqlite3.Connection | None = None
+        self._num_shards: int = 0
+        self._format: str = ""  # "json", "sqlite", or "sharded_sqlite"
         self._loaded = False
         self._load_error: str | None = None
         self._ngram_size = 4
@@ -103,21 +110,26 @@ class CorpusRetriever:
             cls._instance = None
 
     def _ensure_loaded(self) -> bool:
-        """Lazy-load the index on first query. Auto-detects v1 (JSON) or v2 (SQLite)."""
+        """Lazy-load the index on first query. Auto-detects v3 (sharded) → v2 (SQLite) → v1 (JSON)."""
         if self._loaded:
             return True
         if self._load_error is not None:
             return False
 
         index_path = Path(self.config.index_path)
+        shard_file = index_path / "shard_00.db"
         db_file = index_path / "corpus.db"
         snippets_file = index_path / "snippets.json"
         ngram_file = index_path / "ngram_index.json"
         meta_file = index_path / "meta.json"
 
-        # Prefer SQLite (v2) if available
+        # Prefer v3 sharded if shard_00.db exists
+        if shard_file.exists():
+            return self._load_sharded_sqlite(index_path, meta_file)
+        # Fall back to v2 monolithic SQLite
         if db_file.exists():
             return self._load_sqlite(db_file, meta_file)
+        # Fall back to v1 JSON
         if snippets_file.exists() and ngram_file.exists():
             return self._load_json(snippets_file, ngram_file, meta_file)
 
@@ -160,6 +172,71 @@ class CorpusRetriever:
             self._load_error = str(exc)
             _log.warning("Failed to load SQLite corpus index: %s", exc)
             return False
+
+    def _load_sharded_sqlite(self, index_path: Path, meta_file: Path) -> bool:
+        """Load v3 sharded SQLite index (snippets.db + shard_{00..N}.db)."""
+        try:
+            t0 = time.perf_counter()
+
+            # Read metadata to get shard count
+            num_shards = 16  # default
+            if meta_file.exists():
+                with open(meta_file) as f:
+                    meta = json.load(f)
+                num_shards = meta.get("num_shards", 16)
+                self._ngram_size = meta.get("ngram_size", 4)
+
+            # Open snippets DB
+            snippets_db_path = index_path / "snippets.db"
+            if not snippets_db_path.exists():
+                self._load_error = f"snippets.db not found at {index_path}"
+                _log.warning("Sharded index missing snippets.db at %s", index_path)
+                return False
+
+            self._snippets_db = sqlite3.connect(
+                str(snippets_db_path), check_same_thread=False,
+            )
+            self._snippets_db.execute("PRAGMA mmap_size=1073741824")
+            self._snippets_db.execute("PRAGMA query_only=ON")
+
+            # Open shard connections
+            self._shard_conns = []
+            for i in range(num_shards):
+                shard_path = index_path / f"shard_{i:02d}.db"
+                if not shard_path.exists():
+                    self._load_error = f"shard_{i:02d}.db not found"
+                    _log.warning("Missing shard: %s", shard_path)
+                    return False
+                conn = sqlite3.connect(str(shard_path), check_same_thread=False)
+                conn.execute("PRAGMA mmap_size=1073741824")
+                conn.execute("PRAGMA query_only=ON")
+                self._shard_conns.append(conn)
+
+            self._num_shards = num_shards
+
+            num_snippets = self._snippets_db.execute(
+                "SELECT COUNT(*) FROM snippets"
+            ).fetchone()[0]
+
+            self._format = "sharded_sqlite"
+            self._loaded = True
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            _log.info(
+                "Corpus index loaded (sharded SQLite): %d snippets, %d shards in %.0fms",
+                num_snippets, num_shards, elapsed_ms,
+            )
+            return True
+
+        except Exception as exc:
+            self._load_error = str(exc)
+            _log.warning("Failed to load sharded corpus index: %s", exc)
+            return False
+
+    @staticmethod
+    def _gram_to_shard(gram: str, num_shards: int) -> int:
+        """Deterministic shard routing via MD5 hash."""
+        h = hashlib.md5(gram.encode()).digest()
+        return int.from_bytes(h[:4], "little") % num_shards
 
     def _load_json(
         self, snippets_file: Path, ngram_file: Path, meta_file: Path,
@@ -224,7 +301,9 @@ class CorpusRetriever:
 
         results: list[CodeSnippet] = []
         if query_grams:
-            if self._format == "sqlite":
+            if self._format == "sharded_sqlite":
+                results = self._retrieve_sharded_sqlite(query_grams, max_n, min_score)
+            elif self._format == "sqlite":
                 results = self._retrieve_sqlite(query_grams, max_n, min_score)
             else:
                 results = self._retrieve_json(query_grams, max_n, min_score)
@@ -295,6 +374,83 @@ class CorpusRetriever:
                 file=source or "",
                 start_line=0,
                 score=scores_map[sid],
+                hash=h,
+            ))
+
+        return results
+
+    def _retrieve_sharded_sqlite(
+        self, query_grams: list[str], max_n: int, min_score: float | None = None,
+    ) -> list[CodeSnippet]:
+        """Retrieve from v3 sharded SQLite index."""
+        assert self._snippets_db is not None
+        assert self._shard_conns
+        n_query_grams = len(query_grams)
+        threshold = min_score if min_score is not None else self.config.min_score
+
+        # Group grams by shard
+        shard_groups: dict[int, list[str]] = defaultdict(list)
+        for gram in query_grams:
+            shard_id = self._gram_to_shard(gram, self._num_shards)
+            shard_groups[shard_id].append(gram)
+
+        # Query each relevant shard and aggregate scores
+        scores: dict[int, int] = {}  # snippet_id → match count
+        for shard_id, grams in shard_groups.items():
+            placeholders = ",".join("?" for _ in grams)
+            rows = self._shard_conns[shard_id].execute(
+                f"SELECT snippet_id, COUNT(*) FROM ngrams "
+                f"WHERE gram IN ({placeholders}) GROUP BY snippet_id",
+                grams,
+            ).fetchall()
+            for sid, cnt in rows:
+                scores[sid] = scores.get(sid, 0) + cnt
+
+        if not scores:
+            return []
+
+        # Normalize and filter
+        candidates = [
+            (sid, cnt / n_query_grams)
+            for sid, cnt in scores.items()
+            if cnt / n_query_grams >= threshold
+        ]
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        candidates = candidates[:max_n * 2]
+
+        if not candidates:
+            return []
+
+        # Fetch snippet details from snippets.db
+        snippet_ids = [c[0] for c in candidates]
+        id_placeholders = ",".join("?" for _ in snippet_ids)
+        snippets = self._snippets_db.execute(
+            f"SELECT id, code, source, hash FROM snippets WHERE id IN ({id_placeholders})",
+            snippet_ids,
+        ).fetchall()
+
+        snip_map = {s[0]: s for s in snippets}
+
+        results: list[CodeSnippet] = []
+        seen_hashes: set[str] = set()
+
+        for sid, score in candidates:
+            if len(results) >= max_n:
+                break
+            snip = snip_map.get(sid)
+            if not snip:
+                continue
+            _, code, source, h = snip
+            if h and h in seen_hashes:
+                continue
+            if h:
+                seen_hashes.add(h)
+
+            results.append(CodeSnippet(
+                code=code,
+                file=source or "",
+                start_line=0,
+                score=score,
                 hash=h,
             ))
 

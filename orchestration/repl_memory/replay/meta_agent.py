@@ -45,7 +45,7 @@ class MetaAgentWorkflow:
     2. Parse Claude's proposed candidate configs
     3. Evaluate candidates via replay engine
     4. Generate comparison report
-    5. Recommend promotion if candidate beats baseline by >5%
+    5. Recommend promotion if candidate beats baseline by >5% on regret-optimized objective
     """
 
     def __init__(
@@ -175,7 +175,7 @@ class MetaAgentWorkflow:
         self,
         results: List[Tuple[DesignCandidate, ReplayMetrics]],
     ) -> Optional[DesignCandidate]:
-        """Recommend the best candidate for promotion if it beats baseline by >5%.
+        """Recommend best candidate if it beats baseline by >5% on RM-softmax objective.
 
         Args:
             results: Evaluated candidates with metrics.
@@ -187,27 +187,27 @@ class MetaAgentWorkflow:
         if not baseline_result:
             # No baseline — recommend the best candidate
             if results:
-                best = max(results, key=lambda r: r[1].cumulative_reward)
+                best = max(results, key=lambda r: r[1].rm_softmax_score)
                 return best[0]
             return None
 
         _, baseline_metrics = baseline_result
-        best = max(results, key=lambda r: r[1].cumulative_reward)
+        best = max(results, key=lambda r: r[1].rm_softmax_score)
         best_candidate, best_metrics = best
 
-        if baseline_metrics.cumulative_reward > 0:
+        if baseline_metrics.rm_softmax_score != 0:
             improvement = (
-                (best_metrics.cumulative_reward - baseline_metrics.cumulative_reward)
-                / baseline_metrics.cumulative_reward
+                (best_metrics.rm_softmax_score - baseline_metrics.rm_softmax_score)
+                / abs(baseline_metrics.rm_softmax_score)
             )
             if improvement > 0.05:  # >5% improvement
                 logger.info(
-                    "Candidate %s beats baseline by %.1f%% — recommending promotion",
+                    "Candidate %s beats baseline by %.1f%% on rm_softmax_score — recommending promotion",
                     best_candidate.candidate_id, improvement * 100,
                 )
                 return best_candidate
 
-        logger.info("No candidate beats baseline by >5%% — no promotion recommended")
+        logger.info("No candidate beats baseline by >5%% on rm_softmax_score — no promotion recommended")
         return None
 
     def generate_report(
@@ -233,16 +233,22 @@ class MetaAgentWorkflow:
             "",
             "## Results",
             "",
-            "| Candidate | Notes | Routing Acc | Esc Prec | Cum Reward | Avg Reward | Cost Eff | vs Baseline |",
-            "|-----------|-------|-------------|----------|------------|------------|----------|-------------|",
+            (
+                "| Candidate | Notes | Routing Acc | Esc Prec | Utility | RM-Softmax | "
+                "Regret p95 | Cum Reward | Cost Eff | vs Baseline |"
+            ),
+            (
+                "|-----------|-------|-------------|----------|---------|------------|------------|"
+                "------------|----------|-------------|"
+            ),
         ]
 
         for candidate, metrics in results:
             delta_str = "—"
-            if baseline_metrics and baseline_metrics.cumulative_reward > 0:
+            if baseline_metrics and baseline_metrics.rm_softmax_score != 0:
                 delta = (
-                    (metrics.cumulative_reward - baseline_metrics.cumulative_reward)
-                    / baseline_metrics.cumulative_reward * 100
+                    (metrics.rm_softmax_score - baseline_metrics.rm_softmax_score)
+                    / abs(baseline_metrics.rm_softmax_score) * 100
                 )
                 delta_str = f"{delta:+.1f}%"
 
@@ -250,8 +256,10 @@ class MetaAgentWorkflow:
                 f"| `{candidate.candidate_id[:8]}` | {candidate.notes[:30]} "
                 f"| {metrics.routing_accuracy:.1%} "
                 f"| {metrics.escalation_precision:.1%} "
+                f"| {metrics.utility_score:.3f} "
+                f"| {metrics.rm_softmax_score:.3f} "
+                f"| {metrics.regret_p95:.3f} "
                 f"| {metrics.cumulative_reward:.1f} "
-                f"| {metrics.avg_reward:.3f} "
                 f"| {metrics.cost_efficiency:.3f} "
                 f"| {delta_str} |"
             )
@@ -277,6 +285,15 @@ class MetaAgentWorkflow:
                 f"{promotion.retrieval_config.calibrated_confidence_threshold}"
             )
             lines.append(f"- conformal_margin: {promotion.retrieval_config.conformal_margin}")
+            lines.append(f"- risk_budget_id: {promotion.retrieval_config.risk_budget_id}")
+            lines.append(
+                f"- risk_gate_min_samples: {promotion.retrieval_config.risk_gate_min_samples}"
+            )
+            lines.append(
+                f"- risk_abstain_target_role: "
+                f"{promotion.retrieval_config.risk_abstain_target_role}"
+            )
+            lines.append(f"- prior_strength: {promotion.retrieval_config.prior_strength}")
             lines.append(
                 f"- warm_probability_hit: {promotion.retrieval_config.warm_probability_hit}"
             )
@@ -286,7 +303,10 @@ class MetaAgentWorkflow:
             lines.append(f"- learning_rate: {promotion.scoring_config.learning_rate}")
             lines.append(f"- cost_penalty_lambda: {promotion.scoring_config.cost_penalty_lambda}")
         else:
-            lines.append("No candidate beats baseline by >5%. Keep current production config.")
+            lines.append(
+                "No candidate beats baseline by >5% on regret-optimized objective."
+                " Keep current production config."
+            )
 
         return "\n".join(lines)
 
@@ -296,13 +316,13 @@ class MetaAgentWorkflow:
         if not sample:
             return "No prior candidates in archive."
 
-        lines = ["| Candidate | Routing Acc | Cum Reward | Notes |",
+        lines = ["| Candidate | Routing Acc | RM-Softmax | Notes |",
                  "|-----------|-------------|------------|-------|"]
         for candidate, metrics in sample:
             lines.append(
                 f"| `{candidate.candidate_id[:8]}` "
                 f"| {metrics.routing_accuracy:.1%} "
-                f"| {metrics.cumulative_reward:.1f} "
+                f"| {metrics.rm_softmax_score:.3f} "
                 f"| {candidate.notes[:40]} |"
             )
         return "\n".join(lines)
@@ -356,6 +376,8 @@ _PARAM_RANGES = {
     "confidence_min_neighbors": (1, 20),
     "calibrated_confidence_threshold": (0.3, 0.99),
     "conformal_margin": (0.0, 0.2),
+    "risk_gate_min_samples": (1, 50),
+    "prior_strength": (0.0, 1.0),
     "warm_probability_hit": (0.5, 1.0),
     "warm_probability_miss": (0.0, 0.5),
     "warm_cost_fallback_s": (0.1, 30.0),
@@ -403,6 +425,10 @@ def _format_config(candidate: DesignCandidate) -> str:
         f"- calibrated_confidence_threshold: {rc.calibrated_confidence_threshold}\n"
         f"- conformal_margin: {rc.conformal_margin}\n"
         f"- risk_control_enabled: {rc.risk_control_enabled}\n"
+        f"- risk_budget_id: {rc.risk_budget_id}\n"
+        f"- risk_gate_min_samples: {rc.risk_gate_min_samples}\n"
+        f"- risk_abstain_target_role: {rc.risk_abstain_target_role}\n"
+        f"- prior_strength: {rc.prior_strength}\n"
         f"- warm_probability_hit: {rc.warm_probability_hit}\n"
         f"- warm_probability_miss: {rc.warm_probability_miss}\n"
         f"- warm_cost_fallback_s: {rc.warm_cost_fallback_s}\n"

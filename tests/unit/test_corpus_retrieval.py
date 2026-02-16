@@ -1,12 +1,15 @@
 """Tests for corpus retrieval service — corpus-augmented prompt stuffing.
 
 Covers CorpusRetriever singleton lifecycle, query/format logic,
-graceful degradation, and the extract_code_query helper.
+graceful degradation, the extract_code_query helper, and v3 sharded format.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
@@ -297,3 +300,164 @@ class TestExtractCodeQuery:
     def test_preserves_identifiers(self):
         result = extract_code_query("Update the REPLEnvironment class")
         assert "replenvironment" in result
+
+
+# ── V3 Sharded Format ─────────────────────────────────────────────────
+
+
+def _normalize_token(token: str) -> str:
+    return re.sub(r"[^a-z0-9_]", "", token.lower())
+
+
+def _extract_ngrams(text: str, n: int = 4) -> list[str]:
+    raw_words = text.lower().split()
+    words = [_normalize_token(w) for w in raw_words]
+    words = [w for w in words if w]
+    if len(words) < n:
+        return []
+    return [" ".join(words[i:i + n]) for i in range(len(words) - n + 1)]
+
+
+def _gram_to_shard(gram: str, num_shards: int) -> int:
+    h = hashlib.md5(gram.encode()).digest()
+    return int.from_bytes(h[:4], "little") % num_shards
+
+
+@pytest.fixture()
+def sharded_index(tmp_path: Path) -> Path:
+    """Create a mini v3 sharded corpus index for testing."""
+    num_shards = 4  # small for tests
+    snippets_data = [
+        {
+            "code": "def calculate_loss(predictions, targets):\n    return sum((p - t) ** 2 for p, t in zip(predictions, targets))",
+            "source": "src/math.py",
+            "hash": "abc123",
+            "language": "python",
+        },
+        {
+            "code": "def load_dataset(path, split='train'):\n    with open(path) as f:\n        return json.load(f)\n    # Extra lines\n    pass",
+            "source": "src/data.py",
+            "hash": "def456",
+            "language": "python",
+        },
+        {
+            "code": "def train_model(model, data, epochs=10):\n    for epoch in range(epochs):\n        loss = calculate_loss(model(data), data.targets)\n        loss.backward()",
+            "source": "src/train.py",
+            "hash": "ghi789",
+            "language": "python",
+        },
+    ]
+
+    # Create snippets.db
+    snippets_db = tmp_path / "snippets.db"
+    conn = sqlite3.connect(str(snippets_db))
+    conn.execute("""CREATE TABLE snippets (
+        id INTEGER PRIMARY KEY, code TEXT NOT NULL,
+        source TEXT DEFAULT '', hash TEXT NOT NULL, language TEXT DEFAULT ''
+    )""")
+    conn.execute("CREATE INDEX idx_snippets_hash ON snippets(hash)")
+    for i, s in enumerate(snippets_data):
+        conn.execute(
+            "INSERT INTO snippets (id, code, source, hash, language) VALUES (?, ?, ?, ?, ?)",
+            (i, s["code"], s["source"], s["hash"], s["language"]),
+        )
+    conn.commit()
+    conn.close()
+
+    # Create shard DBs
+    shard_conns = []
+    for i in range(num_shards):
+        shard_path = tmp_path / f"shard_{i:02d}.db"
+        sc = sqlite3.connect(str(shard_path))
+        sc.execute("CREATE TABLE ngrams (gram TEXT NOT NULL, snippet_id INTEGER NOT NULL)")
+        shard_conns.append(sc)
+
+    # Populate ngrams across shards
+    for sid, s in enumerate(snippets_data):
+        grams = _extract_ngrams(s["code"])
+        for gram in grams:
+            shard_id = _gram_to_shard(gram, num_shards)
+            shard_conns[shard_id].execute(
+                "INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)", (gram, sid),
+            )
+
+    # Create indexes and close
+    for sc in shard_conns:
+        sc.execute("CREATE INDEX idx_ngrams_gram ON ngrams(gram)")
+        sc.commit()
+        sc.close()
+
+    # Write meta.json
+    (tmp_path / "meta.json").write_text(json.dumps({
+        "version": 3,
+        "format": "sharded_sqlite",
+        "ngram_size": 4,
+        "num_shards": num_shards,
+        "num_snippets": len(snippets_data),
+    }))
+    return tmp_path
+
+
+class TestShardedRetrieval:
+    """End-to-end retrieval from v3 sharded index."""
+
+    def test_auto_detects_sharded_format(self, sharded_index: Path):
+        config = CorpusConfig(enabled=True, index_path=str(sharded_index), min_score=0.0)
+        retriever = CorpusRetriever(config)
+        retriever._ensure_loaded()
+        assert retriever._format == "sharded_sqlite"
+        assert retriever._num_shards == 4
+
+    def test_retrieves_matching_snippets(self, sharded_index: Path):
+        config = CorpusConfig(enabled=True, index_path=str(sharded_index), min_score=0.0)
+        retriever = CorpusRetriever(config)
+        snippets = retriever.retrieve(
+            "return sum((p - t) ** 2 for p, t in zip(predictions, targets)"
+        )
+        assert len(snippets) > 0
+        assert "calculate_loss" in snippets[0].code
+
+    def test_scores_descending(self, sharded_index: Path):
+        config = CorpusConfig(
+            enabled=True, index_path=str(sharded_index), min_score=0.0, max_snippets=10,
+        )
+        retriever = CorpusRetriever(config)
+        snippets = retriever.retrieve("def calculate_loss predictions targets return sum")
+        if len(snippets) > 1:
+            for i in range(len(snippets) - 1):
+                assert snippets[i].score >= snippets[i + 1].score
+
+    def test_dedup_by_hash(self, sharded_index: Path):
+        config = CorpusConfig(
+            enabled=True, index_path=str(sharded_index), min_score=0.0, max_snippets=10,
+        )
+        retriever = CorpusRetriever(config)
+        snippets = retriever.retrieve("def calculate_loss predictions targets")
+        hashes = [s.hash for s in snippets if s.hash]
+        assert len(hashes) == len(set(hashes))
+
+    def test_empty_query_returns_empty(self, sharded_index: Path):
+        config = CorpusConfig(enabled=True, index_path=str(sharded_index))
+        retriever = CorpusRetriever(config)
+        assert retriever.retrieve("a") == []
+
+    def test_missing_shard_fails_gracefully(self, tmp_path: Path):
+        """If a shard file is missing, loading fails gracefully."""
+        (tmp_path / "shard_00.db").write_text("")  # exists but no shard_01, etc.
+        (tmp_path / "meta.json").write_text(json.dumps({
+            "version": 3, "num_shards": 4, "ngram_size": 4,
+        }))
+        config = CorpusConfig(enabled=True, index_path=str(tmp_path))
+        retriever = CorpusRetriever(config)
+        assert retriever.retrieve("anything") == []
+
+    def test_format_for_prompt_works(self, sharded_index: Path):
+        config = CorpusConfig(
+            enabled=True, index_path=str(sharded_index), min_score=0.0,
+        )
+        retriever = CorpusRetriever(config)
+        snippets = retriever.retrieve(
+            "return sum((p - t) ** 2 for p, t in zip(predictions, targets)"
+        )
+        result = retriever.format_for_prompt(snippets)
+        assert "<reference_code" in result

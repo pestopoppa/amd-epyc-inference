@@ -37,6 +37,7 @@ def _make_trajectory(
     embedding: Optional[np.ndarray] = None,
     offset_hours: int = 0,
     escalations: Optional[List[str]] = None,
+    cost_metrics_override: Optional[dict] = None,
 ) -> Trajectory:
     if embedding is None:
         embedding = np.random.default_rng(42).standard_normal(1024).astype(np.float32)
@@ -49,13 +50,17 @@ def _make_trajectory(
         data={"tokens_generated": 100, "elapsed_seconds": 2.0, "role": routing_decision},
     )
 
+    cost_metrics = {"tokens_generated": 100, "elapsed_seconds": 2.0, "role": routing_decision}
+    if cost_metrics_override:
+        cost_metrics.update(cost_metrics_override)
+
     return Trajectory(
         task_id=task_id,
         task_type=task_type,
         objective=objective,
         routing_decision=routing_decision,
         outcome=outcome,
-        cost_metrics={"tokens_generated": 100, "elapsed_seconds": 2.0, "role": routing_decision},
+        cost_metrics=cost_metrics,
         escalations=escalations or [],
         gate_results=[],
         embedding=embedding,
@@ -248,6 +253,76 @@ class TestReplayEngineMetrics:
         )
         assert metrics.q_convergence_step >= 0
         assert metrics.q_convergence_step <= 20
+
+    def test_metrics_include_regret_objective_fields(self, engine_tmp):
+        engine = ReplayEngine(tmp_dir=engine_tmp)
+        trajectories = [
+            _make_trajectory("t1", outcome="success"),
+            _make_trajectory(
+                "t2",
+                outcome="success",
+                cost_metrics_override={
+                    "pass_teacher": 1,
+                    "pass_chosen": 0,
+                    "regret": 1,
+                    "speedup_vs_teacher": 1.8,
+                    "elapsed_seconds": 4.0,
+                },
+                offset_hours=2,
+            ),
+        ]
+        metrics = engine.run_with_metrics(
+            RetrievalConfig(cost_lambda=0.3),
+            ScoringConfig(teacher_regret_penalty=0.25),
+            trajectories,
+            "obj_test",
+        )
+        assert isinstance(metrics.utility_score, float)
+        assert isinstance(metrics.rm_softmax_score, float)
+        assert metrics.regret_mean >= 0.0
+        assert metrics.regret_p95 >= metrics.regret_mean
+        assert metrics.speedup_vs_teacher_mean >= 0.0
+
+    def test_regret_objective_decreases_when_regret_increases(self, engine_tmp):
+        engine = ReplayEngine(tmp_dir=engine_tmp)
+        common = dict(task_type="code", objective="same", routing_decision="coder_primary")
+
+        low_regret = [
+            _make_trajectory(
+                "a1",
+                outcome="success",
+                offset_hours=0,
+                cost_metrics_override={
+                    "elapsed_seconds": 2.0,
+                    "pass_teacher": 1,
+                    "pass_chosen": 1,
+                    "regret": 0,
+                },
+                **common,
+            )
+        ]
+        high_regret = [
+            _make_trajectory(
+                "b1",
+                outcome="success",
+                offset_hours=0,
+                cost_metrics_override={
+                    "elapsed_seconds": 2.0,
+                    "pass_teacher": 1,
+                    "pass_chosen": 0,
+                    "regret": 1,
+                },
+                **common,
+            )
+        ]
+
+        retrieval = RetrievalConfig(cost_lambda=0.2)
+        scoring = ScoringConfig(teacher_regret_penalty=0.4)
+        m_low = engine.run_with_metrics(retrieval, scoring, low_regret, "low_regret")
+        m_high = engine.run_with_metrics(retrieval, scoring, high_regret, "high_regret")
+
+        assert m_low.utility_score > m_high.utility_score
+        assert m_low.rm_softmax_score > m_high.rm_softmax_score
 
 
 # ---------------------------------------------------------------------------

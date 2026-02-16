@@ -56,9 +56,12 @@ KEEP_SEEN=false
 KEEP_SKILLS=false
 for arg in "$@"; do
   case "$arg" in
-    --keep-seen)   KEEP_SEEN=true ;;
+    --keep-seen) KEEP_SEEN=true ;;
     --keep-skills) KEEP_SKILLS=true ;;
-    *)             echo "Unknown flag: $arg"; exit 1 ;;
+    *)
+      echo "Unknown flag: $arg"
+      exit 1
+      ;;
   esac
 done
 

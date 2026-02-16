@@ -34,6 +34,13 @@ class ReplayMetrics:
     cumulative_reward: float = 0.0
     avg_reward: float = 0.0
 
+    # Regret-optimized objective (teacher-match under compute constraints)
+    utility_score: float = 0.0
+    rm_softmax_score: float = 0.0
+    regret_mean: float = 0.0
+    regret_p95: float = 0.0
+    speedup_vs_teacher_mean: float = 1.0
+
     # Cost
     cost_efficiency: float = 0.0  # reward / weighted tier cost
 
@@ -62,6 +69,11 @@ class ReplayMetrics:
             "q_convergence_step": self.q_convergence_step,
             "cumulative_reward": self.cumulative_reward,
             "avg_reward": self.avg_reward,
+            "utility_score": self.utility_score,
+            "rm_softmax_score": self.rm_softmax_score,
+            "regret_mean": self.regret_mean,
+            "regret_p95": self.regret_p95,
+            "speedup_vs_teacher_mean": self.speedup_vs_teacher_mean,
             "cost_efficiency": self.cost_efficiency,
             "ece_global": self.ece_global,
             "brier_global": self.brier_global,
@@ -85,6 +97,11 @@ class ReplayMetrics:
             q_convergence_step=data.get("q_convergence_step", 0),
             cumulative_reward=data.get("cumulative_reward", 0.0),
             avg_reward=data.get("avg_reward", 0.0),
+            utility_score=data.get("utility_score", 0.0),
+            rm_softmax_score=data.get("rm_softmax_score", 0.0),
+            regret_mean=data.get("regret_mean", 0.0),
+            regret_p95=data.get("regret_p95", 0.0),
+            speedup_vs_teacher_mean=data.get("speedup_vs_teacher_mean", 1.0),
             cost_efficiency=data.get("cost_efficiency", 0.0),
             ece_global=data.get("ece_global", 0.0),
             brier_global=data.get("brier_global", 0.0),
@@ -106,6 +123,11 @@ class ReplayMetrics:
             "escalation_recall",
             "cumulative_reward",
             "avg_reward",
+            "utility_score",
+            "rm_softmax_score",
+            "regret_mean",
+            "regret_p95",
+            "speedup_vs_teacher_mean",
             "cost_efficiency",
             "ece_global",
             "brier_global",

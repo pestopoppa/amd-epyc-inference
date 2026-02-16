@@ -41,6 +41,8 @@ class RetrievalResult:
     warm_cost_s: float = 0.0  # Estimated warm latency in seconds
     cold_cost_s: float = 0.0  # Estimated cold latency in seconds
     expected_cost_s: float = 0.0  # p_warm*warm + (1-p_warm)*cold
+    prior_term: float = 0.0  # Heuristic-prior contribution to posterior score
+    posterior_score: float = 0.0  # selection_score + prior_term
 
     # Graph-enhanced fields (optional)
     failure_penalty: float = 0.0  # Risk score from failure graph (0-1)
@@ -74,6 +76,10 @@ class RetrievalConfig:
     calibrated_confidence_threshold: Optional[float] = None  # Optional offline-calibrated threshold
     conformal_margin: float = 0.0  # Safety margin applied to calibrated/raw threshold
     risk_control_enabled: bool = False  # Use calibrated threshold when available
+    risk_budget_id: str = "default"  # Identifier for rollout/risk budget audit
+    risk_gate_min_samples: int = 3  # Min retrieved samples before strict risk gate
+    risk_abstain_target_role: str = "architect_general"  # Escalation target on abstain
+    prior_strength: float = 0.15  # Additive weight for heuristic prior in posterior score
 
     # Cache-aware expected cost model
     warm_probability_hit: float = 0.8  # P(warm) when routing to last-used role
@@ -322,6 +328,7 @@ class TwoPhaseRetriever:
                     q_value=memory.q_value,
                     combined_score=combined,
                     selection_score=selection,
+                    posterior_score=selection,
                     p_warm=p_warm,
                     warm_cost_s=warm_cost,
                     cold_cost_s=cold_cost,
@@ -406,6 +413,57 @@ class TwoPhaseRetriever:
 
         return True
 
+    def evaluate_risk_gate(
+        self,
+        results: List[RetrievalResult],
+    ) -> Dict[str, Any]:
+        """Evaluate strict runtime risk gate for abstain-or-escalate control."""
+        threshold = self.get_effective_confidence_threshold()
+        min_samples = max(int(self.config.risk_gate_min_samples), 1)
+
+        if not self.config.risk_control_enabled:
+            return {
+                "enforced": False,
+                "passed": True,
+                "action": "not_enforced",
+                "reason": "risk_control_disabled",
+                "confidence": 0.0,
+                "threshold": threshold,
+                "budget_id": self.config.risk_budget_id,
+            }
+        if len(results) < min_samples:
+            return {
+                "enforced": False,
+                "passed": True,
+                "action": "not_enforced",
+                "reason": f"insufficient_samples:{len(results)}<{min_samples}",
+                "confidence": 0.0 if not results else float(results[0].q_confidence),
+                "threshold": threshold,
+                "budget_id": self.config.risk_budget_id,
+            }
+
+        confidence = float(results[0].q_confidence)
+        if confidence < threshold:
+            return {
+                "enforced": True,
+                "passed": False,
+                "action": "abstain_escalate",
+                "reason": "confidence_below_threshold",
+                "confidence": confidence,
+                "threshold": threshold,
+                "budget_id": self.config.risk_budget_id,
+            }
+
+        return {
+            "enforced": True,
+            "passed": True,
+            "action": "accept",
+            "reason": "confidence_meets_threshold",
+            "confidence": confidence,
+            "threshold": threshold,
+            "budget_id": self.config.risk_budget_id,
+        }
+
 
 class HybridRouter:
     """
@@ -430,6 +488,7 @@ class HybridRouter:
         strategy: str,
         chosen_action: Optional[str],
         results: List[RetrievalResult],
+        risk_gate: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Store metadata for telemetry logging."""
         top = results[:5]
@@ -440,6 +499,17 @@ class HybridRouter:
             "q_topk": [round(r.q_value, 4) for r in top],
             "q_robust_confidence": round(top[0].q_confidence, 4) if top else 0.0,
             "selection_score_topk": [round(r.selection_score, 4) for r in top],
+            "prior_term_topk": [round(r.prior_term, 4) for r in top],
+            "posterior_score_topk": [round(r.posterior_score, 4) for r in top],
+            "learned_evidence_topk": [round(r.q_value, 4) for r in top],
+            "cost_term_topk": [
+                round(
+                    self.retriever.config.cost_lambda
+                    * (r.expected_cost_s / max(r.cold_cost_s, 1e-6)),
+                    4,
+                )
+                for r in top
+            ],
             "cache_state": (
                 "warm"
                 if top and top[0].p_warm >= 0.7
@@ -454,9 +524,50 @@ class HybridRouter:
             "effective_confidence_threshold": round(
                 self.retriever.get_effective_confidence_threshold(), 4
             ),
+            "risk_gate_action": (
+                str((risk_gate or {}).get("action"))
+                if risk_gate
+                else ("not_enforced" if not self.retriever.config.risk_control_enabled else "")
+            ),
+            "risk_gate_reason": str((risk_gate or {}).get("reason", "")),
+            "risk_budget_id": str(
+                (risk_gate or {}).get("budget_id", self.retriever.config.risk_budget_id)
+            ),
         }
 
-    def route(self, task_ir: Dict[str, Any]) -> Tuple[List[str], str]:
+    def _action_prior_prob(self, action: str, priors: Dict[str, float]) -> float:
+        """Map action string to prior probability mass."""
+        first = action.split(",")[0].strip()
+        if ":" in first:
+            first = first.split(":", 1)[0]
+        return float(priors.get(first, priors.get(action, 0.0)))
+
+    def _apply_priors(
+        self,
+        results: List[RetrievalResult],
+        priors: Optional[Dict[str, float]],
+    ) -> List[RetrievalResult]:
+        """Combine heuristic priors with learned evidence into posterior score."""
+        if not results:
+            return results
+        if not priors:
+            for r in results:
+                r.prior_term = 0.0
+                r.posterior_score = r.selection_score
+            return sorted(results, key=lambda x: x.posterior_score, reverse=True)
+
+        strength = float(self.retriever.config.prior_strength)
+        for r in results:
+            prior_prob = self._action_prior_prob(r.memory.action, priors)
+            r.prior_term = strength * prior_prob
+            r.posterior_score = r.selection_score + r.prior_term
+        return sorted(results, key=lambda x: x.posterior_score, reverse=True)
+
+    def route(
+        self,
+        task_ir: Dict[str, Any],
+        priors: Optional[Dict[str, float]] = None,
+    ) -> Tuple[List[str], str]:
         """
         Route a task using hybrid strategy.
 
@@ -469,6 +580,19 @@ class HybridRouter:
         """
         # Try learned routing first
         results = self.retriever.retrieve_for_routing(task_ir)
+        results = self._apply_priors(results, priors)
+        risk_gate = self.retriever.evaluate_risk_gate(results)
+
+        if risk_gate.get("enforced") and not risk_gate.get("passed"):
+            routing = [self.retriever.config.risk_abstain_target_role]
+            self.retriever.update_last_role(routing[0])
+            self._record_decision_meta(
+                strategy="risk_abstain_escalate",
+                chosen_action=",".join(routing),
+                results=results,
+                risk_gate=risk_gate,
+            )
+            return (routing, "risk_abstain_escalate")
 
         if self.retriever.should_use_learned(results):
             best_action = self.retriever.get_best_action(results)
@@ -481,7 +605,10 @@ class HybridRouter:
                 if routing:
                     self.retriever.update_last_role(routing[0])
                 self._record_decision_meta(
-                    strategy="learned", chosen_action=action, results=results
+                    strategy="learned",
+                    chosen_action=action,
+                    results=results,
+                    risk_gate=risk_gate,
                 )
                 return (routing, "learned")
 
@@ -491,12 +618,17 @@ class HybridRouter:
         if routing:
             self.retriever.update_last_role(routing[0])
         self._record_decision_meta(
-            strategy="rules", chosen_action=",".join(routing), results=results
+            strategy="rules",
+            chosen_action=",".join(routing),
+            results=results,
+            risk_gate=risk_gate,
         )
         return (routing, "rules")
 
     def route_with_mode(
-        self, task_ir: Dict[str, Any]
+        self,
+        task_ir: Dict[str, Any],
+        priors: Optional[Dict[str, float]] = None,
     ) -> Tuple[List[str], str, str]:
         """Route a task with mode selection (direct/react/repl).
 
@@ -513,6 +645,18 @@ class HybridRouter:
         """
         # Try learned routing first
         results = self.retriever.retrieve_for_routing(task_ir)
+        results = self._apply_priors(results, priors)
+        risk_gate = self.retriever.evaluate_risk_gate(results)
+
+        if risk_gate.get("enforced") and not risk_gate.get("passed"):
+            routing = [self.retriever.config.risk_abstain_target_role]
+            self._record_decision_meta(
+                strategy="risk_abstain_escalate",
+                chosen_action=",".join(routing),
+                results=results,
+                risk_gate=risk_gate,
+            )
+            return (routing, "risk_abstain_escalate", "direct")
 
         if self.retriever.should_use_learned(results):
             best_action = self.retriever.get_best_action(results)
@@ -521,14 +665,20 @@ class HybridRouter:
                 confidence = best_action[1]
                 routing, mode = self._parse_routing_action_with_mode(action)
                 self._record_decision_meta(
-                    strategy="learned", chosen_action=action, results=results
+                    strategy="learned",
+                    chosen_action=action,
+                    results=results,
+                    risk_gate=risk_gate,
                 )
                 return (routing, "learned", mode)
 
         # Fall back to rule-based routing (with mode)
         routing, mode = self.rule_based.route_with_mode(task_ir)
         self._record_decision_meta(
-            strategy="rules", chosen_action=",".join(routing), results=results
+            strategy="rules",
+            chosen_action=",".join(routing),
+            results=results,
+            risk_gate=risk_gate,
         )
         return (routing, "rules", mode)
 

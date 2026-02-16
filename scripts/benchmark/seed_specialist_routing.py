@@ -740,6 +740,10 @@ def _build_retrieval_config_from_args(args) -> "RetrievalConfig":
         "calibrated_confidence_threshold",
         "conformal_margin",
         "risk_control_enabled",
+        "risk_budget_id",
+        "risk_gate_min_samples",
+        "risk_abstain_target_role",
+        "prior_strength",
     ):
         val = getattr(args, key, None)
         if val is not None:
@@ -916,6 +920,15 @@ Examples (legacy mode - DEPRECATED):
         dest="risk_control_enabled",
         help="Enable calibrated confidence threshold for conformal abstain/escalate behavior.",
     )
+    parser.add_argument("--risk-budget-id", type=str, default=None, dest="risk_budget_id")
+    parser.add_argument("--risk-gate-min-samples", type=int, default=None, dest="risk_gate_min_samples")
+    parser.add_argument(
+        "--risk-abstain-target-role",
+        type=str,
+        default=None,
+        dest="risk_abstain_target_role",
+    )
+    parser.add_argument("--prior-strength", type=float, default=None, dest="prior_strength")
     parser.add_argument(
         "--evolve", action="store_true",
         help="Run skill evolution cycle after seeding (requires ORCHESTRATOR_SKILLBANK=1).",
@@ -971,6 +984,10 @@ Examples (legacy mode - DEPRECATED):
             "calibrated_confidence_threshold",
             "conformal_margin",
             "risk_control_enabled",
+            "risk_budget_id",
+            "risk_gate_min_samples",
+            "risk_abstain_target_role",
+            "prior_strength",
         )
     }
 

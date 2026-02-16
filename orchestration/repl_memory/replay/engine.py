@@ -46,6 +46,11 @@ class ReplayStepResult:
     predicted_confidence: float = 0.0  # Routing confidence for chosen action
     confidence_threshold: float = 0.0  # Effective threshold used for abstain/route
     conformal_abstained: bool = False  # True when confidence below threshold
+    pass_teacher: float = 0.0
+    pass_chosen: float = 0.0
+    regret: float = 0.0
+    speedup_vs_teacher: float = 1.0
+    elapsed_seconds: float = 0.0
 
 
 class NullEmbedder:
@@ -129,7 +134,14 @@ class ReplayEngine:
         start_time = time.monotonic()
         results = self.run(retrieval_config, scoring_config, trajectories, cid)
         elapsed = time.monotonic() - start_time
-        return self._compute_metrics(cid, trajectories, results, elapsed)
+        return self._compute_metrics(
+            candidate_id=cid,
+            trajectories=trajectories,
+            results=results,
+            elapsed=elapsed,
+            retrieval_config=retrieval_config,
+            scoring_config=scoring_config,
+        )
 
     def _replay(
         self,
@@ -219,6 +231,20 @@ class ReplayEngine:
             cost_metrics=trajectory.cost_metrics or None,
         )
 
+        cost_metrics = trajectory.cost_metrics or {}
+        elapsed_seconds = float(cost_metrics.get("elapsed_seconds", 0.0) or 0.0)
+        pass_chosen = float(
+            cost_metrics.get(
+                "pass_chosen",
+                0.0 if trajectory.outcome == "failure" else 1.0,
+            ) or 0.0
+        )
+        pass_teacher = float(cost_metrics.get("pass_teacher", pass_chosen) or pass_chosen)
+        regret = float(cost_metrics.get("regret", max(0.0, pass_teacher - pass_chosen)) or 0.0)
+        speedup_vs_teacher = float(
+            cost_metrics.get("speedup_vs_teacher", cost_metrics.get("speedup", 1.0)) or 1.0
+        )
+
         # Store this experience in the isolated store
         q_value = 0.5 + reward * 0.5  # Map [-1,1] reward to [0,1] Q-value
         q_value = max(0.0, min(1.0, q_value))
@@ -249,6 +275,11 @@ class ReplayEngine:
             predicted_confidence=predicted_confidence,
             confidence_threshold=confidence_threshold,
             conformal_abstained=escalation_predicted and candidate_action is None,
+            pass_teacher=pass_teacher,
+            pass_chosen=pass_chosen,
+            regret=regret,
+            speedup_vs_teacher=speedup_vs_teacher,
+            elapsed_seconds=elapsed_seconds,
         )
 
     def _compute_metrics(
@@ -257,6 +288,8 @@ class ReplayEngine:
         trajectories: List[Trajectory],
         results: List[ReplayStepResult],
         elapsed: float,
+        retrieval_config: RetrievalConfig,
+        scoring_config: ScoringConfig,
     ) -> ReplayMetrics:
         """Compute aggregate metrics from replay results."""
         if not results:
@@ -303,6 +336,29 @@ class ReplayEngine:
         cumulative = sum(rewards)
         avg = cumulative / n if n > 0 else 0.0
 
+        regrets = [max(0.0, float(r.regret)) for r in results]
+        regret_mean = float(np.mean(regrets)) if regrets else 0.0
+        regret_p95 = float(np.percentile(regrets, 95)) if regrets else 0.0
+
+        speedups = [max(0.0, float(r.speedup_vs_teacher)) for r in results]
+        speedup_mean = float(np.mean(speedups)) if speedups else 1.0
+
+        raw_costs = [max(0.0, float(r.elapsed_seconds)) for r in results]
+        if raw_costs:
+            cost_scale = max(float(np.percentile(raw_costs, 95)), 1e-6)
+            normalized_costs = [min(c / cost_scale, 1.0) for c in raw_costs]
+        else:
+            normalized_costs = [0.0] * n
+
+        lambda_cost = float(retrieval_config.cost_lambda)
+        lambda_regret = float(scoring_config.teacher_regret_penalty)
+        step_utilities = [
+            float(r.pass_chosen) - (lambda_cost * norm_cost) - (lambda_regret * max(0.0, r.regret))
+            for r, norm_cost in zip(results, normalized_costs)
+        ]
+        utility_score = float(np.mean(step_utilities)) if step_utilities else 0.0
+        rm_softmax_score = _softmax_utility_surrogate(step_utilities, beta=3.0)
+
         # Cost efficiency: reward per weighted tier cost
         # Simple proxy: reward / num_trajectories (normalized)
         cost_efficiency = avg  # Can be refined with actual tier costs later
@@ -345,6 +401,11 @@ class ReplayEngine:
             q_convergence_step=q_convergence,
             cumulative_reward=cumulative,
             avg_reward=avg,
+            utility_score=utility_score,
+            rm_softmax_score=rm_softmax_score,
+            regret_mean=regret_mean,
+            regret_p95=regret_p95,
+            speedup_vs_teacher_mean=speedup_mean,
             cost_efficiency=cost_efficiency,
             ece_global=ece_global,
             brier_global=brier_global,
@@ -409,3 +470,16 @@ def _brier_score(pairs: List[tuple[float, float]]) -> float:
     if not pairs:
         return 0.0
     return float(sum((c - y) ** 2 for c, y in pairs) / len(pairs))
+
+
+def _softmax_utility_surrogate(values: List[float], beta: float = 3.0) -> float:
+    """Compute a softmax-weighted utility surrogate over per-step utilities."""
+    if not values:
+        return 0.0
+    arr = np.asarray(values, dtype=np.float64)
+    shifted = arr - np.max(arr)
+    weights = np.exp(beta * shifted)
+    denom = float(np.sum(weights))
+    if denom <= 0.0:
+        return float(np.mean(arr))
+    return float(np.sum(weights * arr) / denom)

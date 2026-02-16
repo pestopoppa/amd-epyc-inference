@@ -823,5 +823,5 @@ These fields are emitted via `orchestration/repl_memory/progress_logger.py` and 
 
 ## Workspace State
 
-Graph execution carries a bounded shared workspace object on `TaskState.workspace_state` (`src/graph/state.py`) with per-turn delta updates in `src/graph/helpers.py`.
-This provides a lightweight blackboard for objective/commitment/open-question continuity across escalation/delegation turns.
+Graph execution carries a bounded shared workspace object on `TaskState.workspace_state` (`src/graph/state.py`) with proposal->selection->broadcast updates in `src/graph/helpers.py`.
+This provides a lightweight blackboard for objective/commitment/open-question continuity across escalation/delegation turns while keeping workspace growth bounded.

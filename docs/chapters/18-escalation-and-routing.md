@@ -767,3 +767,23 @@ This replaced the previous hard block on all schema escalation and is implemente
 
 - `src/escalation.py`
 - `src/graph/helpers.py`
+
+## Runtime Risk Gate and Prior/Posterior Blend (2026-02)
+
+Routing now supports a strict runtime risk-gate contract in the hybrid router:
+
+1. Compute effective threshold from calibrated/base confidence + conformal margin.
+2. If enabled and confidence is below threshold, route uses `risk_abstain_escalate` to a configured abstain target role.
+3. Emit risk provenance fields in telemetry:
+   - `risk_gate_action`
+   - `risk_gate_reason`
+   - `risk_budget_id`
+
+Heuristics are integrated as probabilistic priors in posterior scoring (instead of rules-only nudges):
+
+- Posterior = learned selection score + prior term (`prior_strength`).
+- Telemetry decomposition:
+  - `prior_term_topk`
+  - `posterior_score_topk`
+  - `learned_evidence_topk`
+  - `cost_term_topk`

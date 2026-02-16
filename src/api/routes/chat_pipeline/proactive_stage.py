@@ -20,6 +20,7 @@ from src.api.services.memrl import score_completed_task
 from src.api.structured_logging import task_extra
 from src.features import features
 from src.llm_primitives import LLMPrimitives
+from src.task_ir import canonicalize_task_ir
 
 log = logging.getLogger(__name__)
 
@@ -157,12 +158,13 @@ async def _execute_proactive(
         return None
 
     # Build TaskIR from parsed steps
-    task_ir = {
+    task_ir = canonicalize_task_ir({
         "task_id": routing.task_id,
         "task_type": routing.task_ir.get("task_type", "chat"),
         "objective": request.prompt[:TASK_IR_OBJECTIVE_LEN],
         "plan": {"steps": steps},
-    }
+        "context_preview": request.context or "",
+    })
 
     from src.proactive_delegation import ProactiveDelegator
 
