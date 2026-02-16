@@ -28,6 +28,12 @@ if TYPE_CHECKING:
     from .hypothesis_graph import HypothesisGraph
 
 
+def _retr_cfg():
+    from src.config import get_config
+
+    return get_config().memrl_retrieval
+
+
 @dataclass
 class RetrievalResult:
     """Result of a two-phase (or three-phase) retrieval."""
@@ -58,39 +64,49 @@ class RetrievalConfig:
     """Configuration for two-phase retrieval."""
 
     # Phase 1: Semantic filtering
-    semantic_k: int = 20  # Number of candidates to retrieve
-    min_similarity: float = 0.3  # Minimum similarity threshold
+    semantic_k: int = field(default_factory=lambda: _retr_cfg().semantic_k)
+    min_similarity: float = field(default_factory=lambda: _retr_cfg().min_similarity)
 
     # Phase 2: Q-value ranking
-    min_q_value: float = 0.3  # Minimum Q-value to consider
-    q_weight: float = 0.7  # Weight of Q-value vs similarity (0-1)
-    cost_lambda: float = 0.15  # Cost sensitivity in selection_score
+    min_q_value: float = field(default_factory=lambda: _retr_cfg().min_q_value)
+    q_weight: float = field(default_factory=lambda: _retr_cfg().q_weight)
+    cost_lambda: float = field(default_factory=lambda: _retr_cfg().cost_lambda)
 
     # Final selection
-    top_n: int = 5  # Number of results to return
+    top_n: int = field(default_factory=lambda: _retr_cfg().top_n)
 
     # Confidence threshold for using learned routing
-    confidence_threshold: float = 0.6  # Min robust Q confidence to trust
-    confidence_estimator: str = "median"  # "median" | "trimmed_mean"
-    confidence_trim_ratio: float = 0.2  # Trim ratio for trimmed_mean
-    confidence_min_neighbors: int = 3  # Minimum neighbors for confidence estimate
-    calibrated_confidence_threshold: Optional[float] = None  # Optional offline-calibrated threshold
-    conformal_margin: float = 0.0  # Safety margin applied to calibrated/raw threshold
-    risk_control_enabled: bool = False  # Use calibrated threshold when available
-    risk_budget_id: str = "default"  # Identifier for rollout/risk budget audit
-    risk_gate_min_samples: int = 3  # Min retrieved samples before strict risk gate
-    risk_abstain_target_role: str = "architect_general"  # Escalation target on abstain
-    risk_gate_rollout_ratio: float = 1.0  # Fraction [0,1] of traffic with strict gate enforced
-    risk_gate_kill_switch: bool = False  # Emergency off-switch for strict gate
-    risk_budget_guardrail_min_events: int = 50  # Min observations before guardrail check
-    risk_budget_guardrail_max_abstain_rate: float = 0.60  # Disable strict gate if exceeded
-    prior_strength: float = 0.15  # Additive weight for heuristic prior in posterior score
+    confidence_threshold: float = field(default_factory=lambda: _retr_cfg().confidence_threshold)
+    confidence_estimator: str = field(default_factory=lambda: _retr_cfg().confidence_estimator)
+    confidence_trim_ratio: float = field(default_factory=lambda: _retr_cfg().confidence_trim_ratio)
+    confidence_min_neighbors: int = field(default_factory=lambda: _retr_cfg().confidence_min_neighbors)
+    calibrated_confidence_threshold: Optional[float] = field(
+        default_factory=lambda: _retr_cfg().calibrated_confidence_threshold
+    )
+    conformal_margin: float = field(default_factory=lambda: _retr_cfg().conformal_margin)
+    risk_control_enabled: bool = field(default_factory=lambda: _retr_cfg().risk_control_enabled)
+    risk_budget_id: str = field(default_factory=lambda: _retr_cfg().risk_budget_id)
+    risk_gate_min_samples: int = field(default_factory=lambda: _retr_cfg().risk_gate_min_samples)
+    risk_abstain_target_role: str = field(
+        default_factory=lambda: _retr_cfg().risk_abstain_target_role
+    )
+    risk_gate_rollout_ratio: float = field(
+        default_factory=lambda: _retr_cfg().risk_gate_rollout_ratio
+    )
+    risk_gate_kill_switch: bool = field(default_factory=lambda: _retr_cfg().risk_gate_kill_switch)
+    risk_budget_guardrail_min_events: int = field(
+        default_factory=lambda: _retr_cfg().risk_budget_guardrail_min_events
+    )
+    risk_budget_guardrail_max_abstain_rate: float = field(
+        default_factory=lambda: _retr_cfg().risk_budget_guardrail_max_abstain_rate
+    )
+    prior_strength: float = field(default_factory=lambda: _retr_cfg().prior_strength)
 
     # Cache-aware expected cost model
-    warm_probability_hit: float = 0.8  # P(warm) when routing to last-used role
-    warm_probability_miss: float = 0.2  # P(warm) for non-affine roles
-    warm_cost_fallback_s: float = 1.0  # Fallback warm latency estimate
-    cold_cost_fallback_s: float = 3.0  # Fallback cold latency estimate
+    warm_probability_hit: float = field(default_factory=lambda: _retr_cfg().warm_probability_hit)
+    warm_probability_miss: float = field(default_factory=lambda: _retr_cfg().warm_probability_miss)
+    warm_cost_fallback_s: float = field(default_factory=lambda: _retr_cfg().warm_cost_fallback_s)
+    cold_cost_fallback_s: float = field(default_factory=lambda: _retr_cfg().cold_cost_fallback_s)
 
 
 @dataclass

@@ -74,6 +74,17 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_optional_float(name: str, default: float | None) -> float | None:
+    """Parse optional float from environment variable."""
+    val = os.environ.get(name, "")
+    if not val:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        return default
+
+
 def _env_str(name: str, default: str) -> str:
     """Parse string from environment variable."""
     return os.environ.get(name, default)
@@ -807,6 +818,57 @@ class DelegationConfig:
 
 
 @dataclass
+class MemRLRetrievalConfigData:
+    """Configuration for MemRL retrieval/risk/prior tuning knobs."""
+
+    semantic_k: int = 20
+    min_similarity: float = 0.3
+    min_q_value: float = 0.3
+    q_weight: float = 0.7
+    cost_lambda: float = 0.15
+    top_n: int = 5
+    confidence_threshold: float = 0.6
+    confidence_estimator: str = "median"
+    confidence_trim_ratio: float = 0.2
+    confidence_min_neighbors: int = 3
+    calibrated_confidence_threshold: float | None = None
+    conformal_margin: float = 0.0
+    risk_control_enabled: bool = False
+    risk_budget_id: str = "default"
+    risk_gate_min_samples: int = 3
+    risk_abstain_target_role: str = "architect_general"
+    risk_gate_rollout_ratio: float = 1.0
+    risk_gate_kill_switch: bool = False
+    risk_budget_guardrail_min_events: int = 50
+    risk_budget_guardrail_max_abstain_rate: float = 0.60
+    prior_strength: float = 0.15
+    warm_probability_hit: float = 0.8
+    warm_probability_miss: float = 0.2
+    warm_cost_fallback_s: float = 1.0
+    cold_cost_fallback_s: float = 3.0
+
+
+@dataclass
+class ThinkHarderConfigData:
+    """Configuration for think-harder regulation knobs."""
+
+    min_expected_roi: float = 0.02
+    min_samples: int = 5
+    cooldown_turns: int = 2
+    ema_alpha: float = 0.25
+    min_marginal_utility: float = 0.0
+    token_budget_min: int = 2048
+    token_budget_max: int = 4096
+    token_budget_fallback: int = 4096
+    temperature_min: float = 0.30
+    temperature_max: float = 0.50
+    cot_roi_threshold: float = 0.35
+    token_penalty_per_4k: float = 0.15
+    ema_alpha_min: float = 0.05
+    ema_alpha_max: float = 1.0
+
+
+@dataclass
 class ServicesConfig:
     """Configuration for services (OCR, PDF, archives, drafts)."""
 
@@ -1033,6 +1095,8 @@ class OrchestratorConfigData:
     vision: VisionConfig = field(default_factory=VisionConfig)
     chat: ChatPipelineConfig = field(default_factory=ChatPipelineConfig)
     delegation: DelegationConfig = field(default_factory=DelegationConfig)
+    memrl_retrieval: MemRLRetrievalConfigData = field(default_factory=MemRLRetrievalConfigData)
+    think_harder: ThinkHarderConfigData = field(default_factory=ThinkHarderConfigData)
     services: ServicesConfig = field(default_factory=ServicesConfig)
     worker_pool: WorkerPoolPathsConfig = field(default_factory=WorkerPoolPathsConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
@@ -1178,6 +1242,59 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             extra="ignore",
         )
 
+    class MemRLRetrievalSettings(BaseSettings):
+        semantic_k: int = 20
+        min_similarity: float = 0.3
+        min_q_value: float = 0.3
+        q_weight: float = 0.7
+        cost_lambda: float = 0.15
+        top_n: int = 5
+        confidence_threshold: float = 0.6
+        confidence_estimator: str = "median"
+        confidence_trim_ratio: float = 0.2
+        confidence_min_neighbors: int = 3
+        calibrated_confidence_threshold: float | None = None
+        conformal_margin: float = 0.0
+        risk_control_enabled: bool = False
+        risk_budget_id: str = "default"
+        risk_gate_min_samples: int = 3
+        risk_abstain_target_role: str = "architect_general"
+        risk_gate_rollout_ratio: float = 1.0
+        risk_gate_kill_switch: bool = False
+        risk_budget_guardrail_min_events: int = 50
+        risk_budget_guardrail_max_abstain_rate: float = 0.60
+        prior_strength: float = 0.15
+        warm_probability_hit: float = 0.8
+        warm_probability_miss: float = 0.2
+        warm_cost_fallback_s: float = 1.0
+        cold_cost_fallback_s: float = 3.0
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_MEMRL_RETRIEVAL_",
+            extra="ignore",
+        )
+
+    class ThinkHarderSettings(BaseSettings):
+        min_expected_roi: float = 0.02
+        min_samples: int = 5
+        cooldown_turns: int = 2
+        ema_alpha: float = 0.25
+        min_marginal_utility: float = 0.0
+        token_budget_min: int = 2048
+        token_budget_max: int = 4096
+        token_budget_fallback: int = 4096
+        temperature_min: float = 0.30
+        temperature_max: float = 0.50
+        cot_roi_threshold: float = 0.35
+        token_penalty_per_4k: float = 0.15
+        ema_alpha_min: float = 0.05
+        ema_alpha_max: float = 1.0
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_THINK_HARDER_",
+            extra="ignore",
+        )
+
     class MonitorSettings(BaseSettings):
         entropy_threshold: float = 4.0
         entropy_spike_threshold: float = 2.0
@@ -1221,6 +1338,10 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         server_urls: ServerURLsSettings = PydanticField(default_factory=ServerURLsSettings)
         timeouts: TimeoutsSettings = PydanticField(default_factory=TimeoutsSettings)
         chat: ChatPipelineSettings = PydanticField(default_factory=ChatPipelineSettings)
+        memrl_retrieval: MemRLRetrievalSettings = PydanticField(
+            default_factory=MemRLRetrievalSettings
+        )
+        think_harder: ThinkHarderSettings = PydanticField(default_factory=ThinkHarderSettings)
 
         model_config = SettingsConfigDict(
             env_prefix="ORCHESTRATOR_",
@@ -1392,6 +1513,63 @@ def _load_from_env() -> OrchestratorConfigData:
             long_context_threshold_chars=_env_int(f"{P}CHAT_LONG_CONTEXT_THRESHOLD_CHARS", 20000),
             long_context_max_turns=_env_int(f"{P}CHAT_LONG_CONTEXT_MAX_TURNS", 8),
         ),
+        memrl_retrieval=MemRLRetrievalConfigData(
+            semantic_k=_env_int(f"{P}MEMRL_RETRIEVAL_SEMANTIC_K", 20),
+            min_similarity=_env_float(f"{P}MEMRL_RETRIEVAL_MIN_SIMILARITY", 0.3),
+            min_q_value=_env_float(f"{P}MEMRL_RETRIEVAL_MIN_Q_VALUE", 0.3),
+            q_weight=_env_float(f"{P}MEMRL_RETRIEVAL_Q_WEIGHT", 0.7),
+            cost_lambda=_env_float(f"{P}MEMRL_RETRIEVAL_COST_LAMBDA", 0.15),
+            top_n=_env_int(f"{P}MEMRL_RETRIEVAL_TOP_N", 5),
+            confidence_threshold=_env_float(f"{P}MEMRL_RETRIEVAL_CONFIDENCE_THRESHOLD", 0.6),
+            confidence_estimator=_env_str(f"{P}MEMRL_RETRIEVAL_CONFIDENCE_ESTIMATOR", "median"),
+            confidence_trim_ratio=_env_float(f"{P}MEMRL_RETRIEVAL_CONFIDENCE_TRIM_RATIO", 0.2),
+            confidence_min_neighbors=_env_int(
+                f"{P}MEMRL_RETRIEVAL_CONFIDENCE_MIN_NEIGHBORS", 3
+            ),
+            calibrated_confidence_threshold=_env_optional_float(
+                f"{P}MEMRL_RETRIEVAL_CALIBRATED_CONFIDENCE_THRESHOLD", None
+            ),
+            conformal_margin=_env_float(f"{P}MEMRL_RETRIEVAL_CONFORMAL_MARGIN", 0.0),
+            risk_control_enabled=_env_bool(f"{P}MEMRL_RETRIEVAL_RISK_CONTROL_ENABLED", False),
+            risk_budget_id=_env_str(f"{P}MEMRL_RETRIEVAL_RISK_BUDGET_ID", "default"),
+            risk_gate_min_samples=_env_int(f"{P}MEMRL_RETRIEVAL_RISK_GATE_MIN_SAMPLES", 3),
+            risk_abstain_target_role=_env_str(
+                f"{P}MEMRL_RETRIEVAL_RISK_ABSTAIN_TARGET_ROLE", "architect_general"
+            ),
+            risk_gate_rollout_ratio=_env_float(
+                f"{P}MEMRL_RETRIEVAL_RISK_GATE_ROLLOUT_RATIO", 1.0
+            ),
+            risk_gate_kill_switch=_env_bool(
+                f"{P}MEMRL_RETRIEVAL_RISK_GATE_KILL_SWITCH", False
+            ),
+            risk_budget_guardrail_min_events=_env_int(
+                f"{P}MEMRL_RETRIEVAL_RISK_BUDGET_GUARDRAIL_MIN_EVENTS", 50
+            ),
+            risk_budget_guardrail_max_abstain_rate=_env_float(
+                f"{P}MEMRL_RETRIEVAL_RISK_BUDGET_GUARDRAIL_MAX_ABSTAIN_RATE", 0.60
+            ),
+            prior_strength=_env_float(f"{P}MEMRL_RETRIEVAL_PRIOR_STRENGTH", 0.15),
+            warm_probability_hit=_env_float(f"{P}MEMRL_RETRIEVAL_WARM_PROBABILITY_HIT", 0.8),
+            warm_probability_miss=_env_float(f"{P}MEMRL_RETRIEVAL_WARM_PROBABILITY_MISS", 0.2),
+            warm_cost_fallback_s=_env_float(f"{P}MEMRL_RETRIEVAL_WARM_COST_FALLBACK_S", 1.0),
+            cold_cost_fallback_s=_env_float(f"{P}MEMRL_RETRIEVAL_COLD_COST_FALLBACK_S", 3.0),
+        ),
+        think_harder=ThinkHarderConfigData(
+            min_expected_roi=_env_float(f"{P}THINK_HARDER_MIN_EXPECTED_ROI", 0.02),
+            min_samples=_env_int(f"{P}THINK_HARDER_MIN_SAMPLES", 5),
+            cooldown_turns=_env_int(f"{P}THINK_HARDER_COOLDOWN_TURNS", 2),
+            ema_alpha=_env_float(f"{P}THINK_HARDER_EMA_ALPHA", 0.25),
+            min_marginal_utility=_env_float(f"{P}THINK_HARDER_MIN_MARGINAL_UTILITY", 0.0),
+            token_budget_min=_env_int(f"{P}THINK_HARDER_TOKEN_BUDGET_MIN", 2048),
+            token_budget_max=_env_int(f"{P}THINK_HARDER_TOKEN_BUDGET_MAX", 4096),
+            token_budget_fallback=_env_int(f"{P}THINK_HARDER_TOKEN_BUDGET_FALLBACK", 4096),
+            temperature_min=_env_float(f"{P}THINK_HARDER_TEMPERATURE_MIN", 0.30),
+            temperature_max=_env_float(f"{P}THINK_HARDER_TEMPERATURE_MAX", 0.50),
+            cot_roi_threshold=_env_float(f"{P}THINK_HARDER_COT_ROI_THRESHOLD", 0.35),
+            token_penalty_per_4k=_env_float(f"{P}THINK_HARDER_TOKEN_PENALTY_PER_4K", 0.15),
+            ema_alpha_min=_env_float(f"{P}THINK_HARDER_EMA_ALPHA_MIN", 0.05),
+            ema_alpha_max=_env_float(f"{P}THINK_HARDER_EMA_ALPHA_MAX", 1.0),
+        ),
         # paths, features, vision, delegation, services, worker_pool
         # use plain defaults (env var override via pydantic-settings only)
     )
@@ -1529,6 +1707,49 @@ def get_config() -> OrchestratorConfigData:
                 plan_review_phase_c_min_q=settings.chat.plan_review_phase_c_min_q,
                 plan_review_phase_c_min_total=settings.chat.plan_review_phase_c_min_total,
                 plan_review_phase_c_skip_rate=settings.chat.plan_review_phase_c_skip_rate,
+            ),
+            memrl_retrieval=MemRLRetrievalConfigData(
+                semantic_k=settings.memrl_retrieval.semantic_k,
+                min_similarity=settings.memrl_retrieval.min_similarity,
+                min_q_value=settings.memrl_retrieval.min_q_value,
+                q_weight=settings.memrl_retrieval.q_weight,
+                cost_lambda=settings.memrl_retrieval.cost_lambda,
+                top_n=settings.memrl_retrieval.top_n,
+                confidence_threshold=settings.memrl_retrieval.confidence_threshold,
+                confidence_estimator=settings.memrl_retrieval.confidence_estimator,
+                confidence_trim_ratio=settings.memrl_retrieval.confidence_trim_ratio,
+                confidence_min_neighbors=settings.memrl_retrieval.confidence_min_neighbors,
+                calibrated_confidence_threshold=settings.memrl_retrieval.calibrated_confidence_threshold,
+                conformal_margin=settings.memrl_retrieval.conformal_margin,
+                risk_control_enabled=settings.memrl_retrieval.risk_control_enabled,
+                risk_budget_id=settings.memrl_retrieval.risk_budget_id,
+                risk_gate_min_samples=settings.memrl_retrieval.risk_gate_min_samples,
+                risk_abstain_target_role=settings.memrl_retrieval.risk_abstain_target_role,
+                risk_gate_rollout_ratio=settings.memrl_retrieval.risk_gate_rollout_ratio,
+                risk_gate_kill_switch=settings.memrl_retrieval.risk_gate_kill_switch,
+                risk_budget_guardrail_min_events=settings.memrl_retrieval.risk_budget_guardrail_min_events,
+                risk_budget_guardrail_max_abstain_rate=settings.memrl_retrieval.risk_budget_guardrail_max_abstain_rate,
+                prior_strength=settings.memrl_retrieval.prior_strength,
+                warm_probability_hit=settings.memrl_retrieval.warm_probability_hit,
+                warm_probability_miss=settings.memrl_retrieval.warm_probability_miss,
+                warm_cost_fallback_s=settings.memrl_retrieval.warm_cost_fallback_s,
+                cold_cost_fallback_s=settings.memrl_retrieval.cold_cost_fallback_s,
+            ),
+            think_harder=ThinkHarderConfigData(
+                min_expected_roi=settings.think_harder.min_expected_roi,
+                min_samples=settings.think_harder.min_samples,
+                cooldown_turns=settings.think_harder.cooldown_turns,
+                ema_alpha=settings.think_harder.ema_alpha,
+                min_marginal_utility=settings.think_harder.min_marginal_utility,
+                token_budget_min=settings.think_harder.token_budget_min,
+                token_budget_max=settings.think_harder.token_budget_max,
+                token_budget_fallback=settings.think_harder.token_budget_fallback,
+                temperature_min=settings.think_harder.temperature_min,
+                temperature_max=settings.think_harder.temperature_max,
+                cot_roi_threshold=settings.think_harder.cot_roi_threshold,
+                token_penalty_per_4k=settings.think_harder.token_penalty_per_4k,
+                ema_alpha_min=settings.think_harder.ema_alpha_min,
+                ema_alpha_max=settings.think_harder.ema_alpha_max,
             ),
             # These sections use plain defaults (path serialization is complex)
             paths=PathsConfig(),

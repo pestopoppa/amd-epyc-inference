@@ -377,13 +377,8 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
             config=config,
         )
 
-        # Initialize HybridRouter for learned routing
-        retrieval_config = RetrievalConfig(
-            semantic_k=20,
-            min_similarity=0.3,
-            q_weight=0.7,
-            confidence_threshold=0.6,
-        )
+        # Initialize HybridRouter for learned routing using centralized retrieval defaults.
+        retrieval_config = RetrievalConfig()
 
         # Phase 3: Use GraphEnhancedRetriever when specialist routing is enabled
         if features().specialist_routing:

@@ -20,6 +20,12 @@ if TYPE_CHECKING:
     from src.api.protocols import FailureGraphProtocol
 
 
+def _think_cfg():
+    from src.config import get_config
+
+    return get_config().think_harder
+
+
 # ---------------------------------------------------------------------------
 # GraphConfig — controls retry/escalation limits
 # ---------------------------------------------------------------------------
@@ -103,11 +109,15 @@ class TaskState:
     think_harder_succeeded: bool | None = None
     # Per-role think-harder ROI stats for regulation.
     think_harder_roi_by_role: dict[str, dict[str, float]] = field(default_factory=dict)
-    think_harder_min_expected_roi: float = 0.02
-    think_harder_min_samples: int = 5
-    think_harder_cooldown_turns: int = 2
-    think_harder_ema_alpha: float = 0.25
-    think_harder_min_marginal_utility: float = 0.0
+    think_harder_min_expected_roi: float = field(
+        default_factory=lambda: _think_cfg().min_expected_roi
+    )
+    think_harder_min_samples: int = field(default_factory=lambda: _think_cfg().min_samples)
+    think_harder_cooldown_turns: int = field(default_factory=lambda: _think_cfg().cooldown_turns)
+    think_harder_ema_alpha: float = field(default_factory=lambda: _think_cfg().ema_alpha)
+    think_harder_min_marginal_utility: float = field(
+        default_factory=lambda: _think_cfg().min_marginal_utility
+    )
 
     # Tool requirement (from routing classification)
     tool_required: bool = False

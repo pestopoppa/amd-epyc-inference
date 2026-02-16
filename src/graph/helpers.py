@@ -48,6 +48,12 @@ def _use_inline_calls_in_tests() -> bool:
     return bool(os.getenv("PYTEST_CURRENT_TEST"))
 
 
+def _think_harder_cfg():
+    from src.config import get_config
+
+    return get_config().think_harder
+
+
 def _workspace_prompt_block(state: TaskState) -> str:
     """Build a compact workspace block to keep specialists aligned."""
     ws = state.workspace_state or {}
@@ -227,11 +233,16 @@ def _update_think_harder_stats(ctx: Ctx) -> None:
     if succeeded:
         stats["successes"] = float(stats.get("successes", 0.0)) + 1.0
 
-    n_tokens = float(state.artifacts.get("think_harder_token_budget", 4096.0) or 4096.0)
-    token_penalty = min(n_tokens / 4096.0, 1.5) * 0.15
+    th_cfg = _think_harder_cfg()
+    fallback_budget = float(th_cfg.token_budget_fallback)
+    n_tokens = float(state.artifacts.get("think_harder_token_budget", fallback_budget) or fallback_budget)
+    token_penalty = min(n_tokens / fallback_budget, 1.5) * float(th_cfg.token_penalty_per_4k)
     sample_utility = (1.0 if succeeded else 0.0) - token_penalty
     prev_ema = float(stats.get("ema_marginal_utility", 0.0))
-    alpha = max(0.05, min(1.0, float(state.think_harder_ema_alpha)))
+    alpha = max(
+        float(th_cfg.ema_alpha_min),
+        min(float(th_cfg.ema_alpha_max), float(state.think_harder_ema_alpha)),
+    )
     stats["ema_marginal_utility"] = ((1.0 - alpha) * prev_ema) + (alpha * sample_utility)
     stats["last_attempt_turn"] = float(state.turns)
     stats["expected_roi"] = _expected_think_harder_roi(state, role)
@@ -1041,9 +1052,18 @@ def _build_think_harder_config(state: TaskState) -> dict[str, Any]:
     # Map ROI range [-0.5, 0.5] to [0, 1] for stable envelope scaling.
     roi_norm = max(0.0, min(1.0, expected_roi + 0.5))
 
-    n_tokens = int(round(2048 + (2048 * roi_norm)))  # [2048, 4096]
-    temperature = round(0.3 + (0.2 * roi_norm), 2)  # [0.30, 0.50]
-    cot_prefix = "Think step by step before answering.\n\n" if roi_norm >= 0.35 else ""
+    th_cfg = _think_harder_cfg()
+    min_tokens = int(th_cfg.token_budget_min)
+    max_tokens = int(th_cfg.token_budget_max)
+    n_tokens = int(round(min_tokens + ((max_tokens - min_tokens) * roi_norm)))
+    temp_min = float(th_cfg.temperature_min)
+    temp_max = float(th_cfg.temperature_max)
+    temperature = round(temp_min + ((temp_max - temp_min) * roi_norm), 2)
+    cot_prefix = (
+        "Think step by step before answering.\n\n"
+        if roi_norm >= float(th_cfg.cot_roi_threshold)
+        else ""
+    )
 
     state.artifacts["think_harder_expected_roi"] = expected_roi
     state.artifacts["think_harder_token_budget"] = n_tokens
