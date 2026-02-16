@@ -6,6 +6,11 @@ This project optimizes LLM inference on AMD's EPYC 9655 "Turin" processor. The s
 
 ## Hardware Specifications
 
+Everything about this build revolves around memory — how much of it we have, and how fast we can read it. With 1.13 TB of DDR5 across 12 channels, we can hold models up to ~500B parameters in RAM and stream weights at ~460 GB/s. The CPU itself brings true 512-bit AVX-512 (not Intel's double-pumped variant), giving genuine 2x vector width for the matrix math that dominates inference.
+
+<details>
+<summary>Full specifications table</summary>
+
 | Component | Specification |
 |-----------|---------------|
 | CPU | AMD EPYC 9655 "Turin" (Zen 5 architecture) |
@@ -16,7 +21,10 @@ This project optimizes LLM inference on AMD's EPYC 9655 "Turin" processor. The s
 | OS Drive | 120GB SSD (system only) |
 | Architecture | True 512-bit AVX-512 (not double-pumped like Intel) |
 
-### Why This Hardware Matters
+</details>
+
+<details>
+<summary>Why this hardware matters</summary>
 
 **Memory Capacity**: At 1.13TB, we can load models up to ~500B parameters at Q4_K_M quantization entirely in RAM. This eliminates disk I/O bottlenecks that plague smaller systems.
 
@@ -24,9 +32,17 @@ This project optimizes LLM inference on AMD's EPYC 9655 "Turin" processor. The s
 
 **AVX-512**: Zen 5 implements true 512-bit AVX-512 units, unlike Intel's double-pumped approach. This provides genuine 2x vector width for SIMD operations in matrix multiplications.
 
+</details>
+
 ## Runtime Optimizations
 
-### Critical Environment Settings
+Getting the hardware to actually deliver its theoretical bandwidth requires careful tuning. The wrong thread settings can cut performance in half, and ignoring NUMA topology leaves bandwidth on the table. Three settings matter most: pinning OpenMP to one thread (llama.cpp handles its own parallelism), interleaving memory across all 12 channels, and using only physical cores.
+
+<details>
+<summary>Critical environment settings</summary>
+
+<details>
+<summary>Code: environment variables and launch flags</summary>
 
 ```bash
 # Prevent nested parallelism (severely degrades performance)
@@ -46,7 +62,7 @@ echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-### Why These Settings
+</details>
 
 **OMP_NUM_THREADS=1**: llama.cpp handles threading internally. OpenMP trying to parallelize on top of llama.cpp's threading causes thread contention and can reduce performance by 50% or more.
 
@@ -54,9 +70,14 @@ echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governo
 
 **96 threads (physical cores only)**: Hyperthreading provides no benefit for compute-bound LLM inference and can actually hurt due to cache contention.
 
+</details>
+
 ## Baseline Performance
 
-Before any optimization, baseline token generation speeds on dense models:
+Before any optimization tricks, here's what raw token generation looks like on this hardware. The key takeaway: generation is the bottleneck, not prompt processing. Each generated token requires reading the entire model's weights, making it purely memory-bandwidth bound — which is exactly why speculative decoding (amortizing multiple tokens per read) delivers such dramatic speedups.
+
+<details>
+<summary>Baseline speed measurements</summary>
 
 | Model | Size (GGUF) | Prompt Processing | Token Generation |
 |-------|-------------|-------------------|------------------|
@@ -65,18 +86,24 @@ Before any optimization, baseline token generation speeds on dense models:
 | Qwen3-235B-A22B Q4_K_M | 131GB | ~30 t/s | ~3.6 t/s |
 | Qwen3-Coder-480B Q4_K_M | 271GB | 34.66 t/s | 3.06 t/s |
 
-**Key Observation**: Token generation is the bottleneck, not prompt processing. Generation requires reading the entire model for each token, making it memory-bandwidth bound. This is why speculative decoding (amortizing multiple tokens per read) provides such dramatic speedups.
+</details>
 
 ## Storage Architecture
 
-The system uses a split storage design:
+The system uses a split storage design to keep the tiny 120GB OS drive from being overwhelmed by model files and caches. All LLM-related data lives on the 4TB RAID0 array at `/mnt/raid0/`. Writing large files to the OS drive has caused system crashes in the past — this is the single most important rule of the project.
+
+<details>
+<summary>Storage layout details</summary>
 
 - **OS Drive (120GB SSD)**: System files only. DO NOT write LLM data here.
 - **RAID0 Array (/mnt/raid0/)**: 4TB striped array for all models, caches, and project files.
 
 **Critical Rule**: All LLM-related files must reside on `/mnt/raid0/`. Writing large files to the OS drive causes system instability.
 
-## References
+</details>
+
+<details>
+<summary>References</summary>
 
 ### Hardware Documentation
 
@@ -97,6 +124,8 @@ The system uses a split storage design:
 6. Linux Kernel Documentation. *Transparent Hugepages*. https://www.kernel.org/doc/Documentation/vm/transhuge.txt
 
 7. Linux Kernel Documentation. *NUMA Memory Policy*. https://www.kernel.org/doc/Documentation/admin-guide/mm/numa_memory_policy.rst
+
+</details>
 
 ---
 
