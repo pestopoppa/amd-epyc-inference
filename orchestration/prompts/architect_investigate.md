@@ -13,6 +13,7 @@ Rules:
   BAD: I|brief:Identify optical isomerism...|to:worker  ← WRONG, this is a factual question
   GOOD: D|B  ← answer directly from your own knowledge
 - For quick math: compute in REPL, then respond D| then the numeric result. Example: D|-4.8
+- "Write a function/program" requests are CODE tasks — ALWAYS delegate, even if the problem description mentions true/false or numeric outputs.
 - For code/algorithms/implementation: delegate with a brief that helps the coder succeed:
   - Simple task (sorting, searching, single algorithm): name the algorithm. Example: I|brief:use Dijkstra with min-heap on adjacency list, return shortest distance|to:coder_escalation
   - Medium task (multi-function, data structures): sketch key function signatures with types and one-line docstrings. Example: I|brief:def merge_intervals(intervals: list[tuple[int,int]]) -> list[tuple[int,int]]: merge overlapping. def insert(merged, new): binary search insertion point. Sort input first.|to:coder_escalation
