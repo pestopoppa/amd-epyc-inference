@@ -8,9 +8,10 @@ The configuration system uses **pydantic-settings** for type-safe environment va
 
 ## Feature Flag System
 
-The system implements 10 independent feature flags defined in `src/features.py` that control optional orchestration modules. All flags default to **False** in test mode for isolation, **True** in production mode for full functionality.
+Ten independent feature flags let us turn orchestration modules on and off without touching code. In test mode everything defaults to off for isolation; in production everything flips on. The flags live in `src/features.py` and are validated at startup — if you enable `scripts` without `tools`, for example, initialization will complain.
 
-### Core Feature Flags
+<details>
+<summary>Core feature flags table</summary>
 
 | Flag | Environment Variable | Purpose | Dependencies |
 |------|---------------------|---------|--------------|
@@ -25,7 +26,13 @@ The system implements 10 independent feature flags defined in `src/features.py` 
 | `generation_monitor` | `ORCHESTRATOR_GENERATION_MONITOR` | Early failure detection (Phase 6) | None |
 | `mock_mode` | `ORCHESTRATOR_MOCK_MODE` | Mock responses (test safety) | None |
 
-### Usage Pattern
+</details>
+
+<details>
+<summary>Usage and validation patterns</summary>
+
+<details>
+<summary>Code: checking and validating feature flags</summary>
 
 ```python
 from src.features import features
@@ -40,10 +47,6 @@ enabled = features().enabled_features()
 # Returns: ['repl', 'tools', 'caching', 'mock_mode']
 ```
 
-### Validation
-
-Feature dependencies are checked at initialization:
-
 ```python
 from src.features import get_features
 
@@ -55,9 +58,18 @@ if errors:
     raise RuntimeError(f"Invalid configuration: {errors}")
 ```
 
+</details>
+</details>
+
 ## Hierarchical Configuration
 
-The configuration system in `src/config.py` provides nested settings with environment variable support via **double-underscore nesting**:
+Configuration is nested — LLM settings, escalation settings, REPL settings, and server settings each live in their own sub-config. Environment variables use double-underscore nesting (`ORCHESTRATOR_LLM__OUTPUT_CAP=4096`) to target specific leaves. The whole thing is backed by pydantic-settings so every value is type-checked and has sensible defaults.
+
+<details>
+<summary>Configuration hierarchy and environment variables</summary>
+
+<details>
+<summary>Code: environment variable examples</summary>
 
 ```bash
 # Top-level settings
@@ -77,6 +89,8 @@ ORCHESTRATOR_ESCALATION__MAX_ESCALATIONS=2
 ORCHESTRATOR_REPL__MAX_OUTPUT_LEN=10000
 ORCHESTRATOR_REPL__TIMEOUT_SECONDS=30
 ```
+
+</details>
 
 ### Configuration Hierarchy
 
@@ -123,7 +137,8 @@ OrchestratorConfig
     └── ... (10 feature flags)
 ```
 
-### Loading Configuration
+<details>
+<summary>Code: loading configuration at runtime</summary>
 
 ```python
 from src.config import get_config
@@ -141,9 +156,18 @@ from src.config import reset_config
 reset_config()
 ```
 
+</details>
+</details>
+
 ## Environment Variables
 
-All LLM-related files MUST reside on `/mnt/raid0/` to prevent root filesystem exhaustion. These variables redirect all caches and temporary files:
+Every cache, temp file, and data directory is redirected to the RAID array via environment variables. This is the project's most important safety measure — the 120GB OS drive has crashed before when large files landed on root. The path checks are enforced by hooks, but the variables should be set in every session regardless.
+
+<details>
+<summary>Required environment variables</summary>
+
+<details>
+<summary>Code: cache and path redirections</summary>
 
 ```bash
 # HuggingFace/Transformers caches
@@ -163,6 +187,8 @@ export XDG_DATA_HOME=/mnt/raid0/llm/claude/share
 export XDG_STATE_HOME=/mnt/raid0/llm/claude/state
 ```
 
+</details>
+
 ### Path Verification (Mandatory)
 
 Before any file write operation:
@@ -174,9 +200,17 @@ Before any file write operation:
 
 **Forbidden paths**: `/home/`, `/tmp/` (except via bind mount), `/var/`, `~/.cache/`, any path not starting with `/mnt/raid0/`.
 
+</details>
+
 ## OMP & NUMA Runtime Tuning
 
-llama.cpp inference performance depends on thread binding and memory interleaving. Standard prefix for all inference commands:
+Every inference command needs the same three-setting prefix: single OMP thread (llama.cpp manages its own parallelism), NUMA interleaving across all 12 memory channels, and 96 physical cores. Getting any of these wrong can halve throughput or worse.
+
+<details>
+<summary>Thread and NUMA configuration</summary>
+
+<details>
+<summary>Code: standard inference prefix</summary>
 
 ```bash
 OMP_NUM_THREADS=1 numactl --interleave=all \
@@ -184,7 +218,7 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
   -m model.gguf -t 96 -p "prompt"
 ```
 
-### Thread Configuration
+</details>
 
 | Parameter | Value | Rationale |
 |-----------|-------|-----------|
@@ -198,9 +232,17 @@ The EPYC 9655 has **12 memory channels** (1.13TB DDR5-5600 ECC). Using `--interl
 
 **Do NOT use** `numactl --cpunodebind=0` or similar node-specific bindings for large models - this restricts memory bandwidth to 2-4 channels and cuts throughput by 60-75%.
 
+</details>
+
 ## Python Environment
 
-The system uses **uv** (fast Python package installer) with a dedicated environment:
+The project runs in a dedicated virtual environment called `pace-env`, managed with **uv** for fast installs. Everything from FastAPI to sentence-transformers lives here.
+
+<details>
+<summary>Environment setup and packages</summary>
+
+<details>
+<summary>Code: activation and installation</summary>
 
 ```bash
 # Environment name
@@ -217,8 +259,6 @@ source /mnt/raid0/llm/pace-env/bin/activate
 # - RestrictedPython (REPL sandbox)
 ```
 
-### Installation
-
 ```bash
 # Create environment with uv
 uv venv /mnt/raid0/llm/pace-env
@@ -227,9 +267,18 @@ uv venv /mnt/raid0/llm/pace-env
 uv pip install -r /mnt/raid0/llm/claude/requirements.txt
 ```
 
+</details>
+</details>
+
 ## Session Initialization
 
-Every session MUST run the initialization script to verify environment, discover models, and check branch safety:
+Every session starts with an initialization script that verifies the environment, discovers available models, and checks branch safety. Skipping this step risks running benchmarks on the wrong llama.cpp branch or missing models that have been added since the last session.
+
+<details>
+<summary>Initialization steps and verification</summary>
+
+<details>
+<summary>Code: session startup commands</summary>
 
 ```bash
 # Set environment variables
@@ -240,6 +289,8 @@ agent_session_start "Session purpose"
 bash /mnt/raid0/llm/claude/scripts/session/session_init.sh
 ```
 
+</details>
+
 The initialization script:
 1. Checks llama.cpp is on `production-consolidated` branch
 2. Scans `/mnt/raid0/llm/models/` for GGUF files
@@ -247,12 +298,17 @@ The initialization script:
 4. Checks free memory (100GB minimum for tests)
 5. Verifies environment variables point to `/mnt/raid0/`
 
-## References
+</details>
+
+<details>
+<summary>References</summary>
 
 - `src/features.py` - Feature flag system implementation
 - `src/config.py` - Hierarchical configuration with pydantic-settings
 - `scripts/session/session_init.sh` - Environment initialization
 - `scripts/utils/agent_log.sh` - Session logging utilities
+
+</details>
 
 ---
 
