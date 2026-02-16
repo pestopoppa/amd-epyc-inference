@@ -8,6 +8,11 @@ This chapter documents the transition to a correctness-gated cost penalty, align
 
 ## Problem Statement
 
+Flat rewards make the Q-value update blind to inference cost. When your model pool spans a 13.4x speed range (frontdoor at 18.3 t/s vs architect at 6.75 t/s), the router learns "any correct specialist is equally good" -- which is clearly wrong when one answer costs 10x the latency.
+
+<details>
+<summary>Q-value update mechanics and concrete example</summary>
+
 The MemRL Q-value scoring system learns routing preferences through TD-style updates:
 
 ```
@@ -32,7 +37,7 @@ Same reward despite 10x latency difference. The routing policy learns no prefere
 | frontdoor:direct | Yes | 1.0 (at speed) | 0.0 | +0.50 |
 | architect_general:direct | Yes | 1.0 (at speed) | 0.0 | +0.50 |
 
-Both at expected speed — equal. But if the architect is overloaded:
+Both at expected speed -- equal. But if the architect is overloaded:
 
 | Specialist | Correct | cost_ratio | Penalty | New Reward |
 |---|---|---|---|---|
@@ -41,7 +46,14 @@ Both at expected speed — equal. But if the architect is overloaded:
 
 Now the router learns: for this task type, frontdoor is preferable when both can answer correctly.
 
+</details>
+
 ## Literature Review
+
+The cost-aware routing pattern has converged across multiple independent research groups. Every major system gates cost penalties behind correctness and uses a tunable lambda to trade off quality against efficiency.
+
+<details>
+<summary>Survey of cost-aware routing systems</summary>
 
 ### xRouter (Salesforce AI Research, October 2025)
 
@@ -95,9 +107,14 @@ Confidence-token routing: LoRA-finetuned 8B models learn to express uncertainty,
 
 **Reference**: "Learning to Route LLMs with Confidence Tokens," arXiv:2410.13284 (2024). https://arxiv.org/html/2410.13284v2
 
+</details>
+
 ## Industry Consensus
 
-All major routing systems converge on the same pattern:
+All major routing systems converge on the same four-point pattern: correctness is a hard gate, cost is a penalty on correct answers, lambda is tunable for different operating points, and normalization is essential across heterogeneous model pools. Our system maps directly because we operate exactly that kind of pool with known per-role speed baselines.
+
+<details>
+<summary>Consensus principles</summary>
 
 1. **Correctness is a hard gate.** Wrong answers receive zero or negative reward, never adjusted by cost.
 2. **Cost is a penalty term on correct answers.** The reward formula is `quality - lambda * normalized_cost`.
@@ -106,7 +123,14 @@ All major routing systems converge on the same pattern:
 
 Our system maps directly to this pattern because it operates a heterogeneous model pool with known per-role speed baselines.
 
+</details>
+
 ## Our Implementation
+
+The reward formula is `quality_base - lambda * max(0, cost_ratio - 1.0)`, where cost_ratio measures actual elapsed time against expected elapsed time for that role. Cost penalty only fires on correct answers running slower than their baseline -- incorrect answers already get zero reward, and fast specialists get no bonus for being inherently quick.
+
+<details>
+<summary>Reward formula, normalization, and configuration</summary>
 
 ### Reward Formula
 
@@ -123,11 +147,11 @@ Where:
 
 ### Correctness Gate
 
-Cost penalty is **only applied when reward > 0** (correct answers). Incorrect answers already receive low/zero reward — adding a cost penalty would be double-counting. This matches xRouter's design: "If the final answer is incorrect, the trajectory receives zero reward regardless of cost."
+Cost penalty is **only applied when reward > 0** (correct answers). Incorrect answers already receive low/zero reward -- adding a cost penalty would be double-counting. This matches xRouter's design: "If the final answer is incorrect, the trajectory receives zero reward regardless of cost."
 
 ### Infrastructure Error Handling
 
-Infrastructure failures (timeouts, connection errors, backend down) are **not** treated as task failures. They are classified separately and **produce no reward at all** — the action is excluded from the rewards dict, so Q-values are not updated. This prevents slow or flaky backends from biasing routing probabilities.
+Infrastructure failures (timeouts, connection errors, backend down) are **not** treated as task failures. They are classified separately and **produce no reward at all** -- the action is excluded from the rewards dict, so Q-values are not updated. This prevents slow or flaky backends from biasing routing probabilities.
 
 ### Dual-Architect Evaluation (3-Way Seeding)
 
@@ -144,16 +168,17 @@ cost_ratio = actual_elapsed / expected_elapsed
 
 This means:
 - **cost_ratio = 1.0**: running at expected speed (no penalty)
-- **cost_ratio < 1.0**: faster than expected (no penalty — `max(0, ...)` gates this)
+- **cost_ratio < 1.0**: faster than expected (no penalty -- `max(0, ...)` gates this)
 - **cost_ratio > 1.0**: slower than expected (penalty proportional to slowdown)
 
 Why this normalization:
 - Raw elapsed is meaningless across roles (architect at 6.75 t/s vs frontdoor at 18.3 t/s)
 - Normalizing by role baseline measures "did this specialist perform at its expected speed?" not "is this model inherently slow?"
-- A slow model running at its expected speed is not penalized — the routing decision chose an appropriate model
+- A slow model running at its expected speed is not penalized -- the routing decision chose an appropriate model
 - Penalty only fires when something is wrong (overloaded server, contention, thermal throttling)
 
-### Baseline TPS Values
+<details>
+<summary>Data: baseline TPS values per role</summary>
 
 Per-role optimized speeds from production benchmarks (model_registry.yaml):
 
@@ -170,7 +195,10 @@ Per-role optimized speeds from production benchmarks (model_registry.yaml):
 | worker_vision | Qwen2.5-VL-7B Q4_K_M | 15.28 |
 | vision_escalation | Qwen3-VL-30B-A3B Q4_K_M | 27.6 |
 
-### Configuration
+</details>
+
+<details>
+<summary>Config: model_registry.yaml and code paths</summary>
 
 In `model_registry.yaml`:
 
@@ -189,7 +217,15 @@ In `q_scorer.py`, `ScoringConfig` carries both `cost_penalty_lambda` and `baseli
 2. **Seeding script** (`seed_specialist_routing.py::compute_comparative_rewards`): uses `RoleResult.tokens_generated` and `elapsed_seconds` already captured from API responses.
 3. **Model registry** (`model_registry.yaml`): config source for lambda and failure_reward.
 
+</details>
+</details>
+
 ## Design Decisions
+
+Four key design choices shape the reward function: lambda=0.15 creates meaningful cost differentiation without overpowering quality signal, failure reward is 0.0 (not negative) following xRouter's convention, the `max(0, ...)` gate prevents bonus rewards for fast models, and a floor of 0.1 in seeding preserves the "this specialist can solve this" signal even when it is slow.
+
+<details>
+<summary>Rationale for each design choice</summary>
 
 ### Why lambda = 0.15
 
@@ -207,33 +243,50 @@ The xRouter pattern uses 0 for incorrect, not negative. This simplifies the rewa
 
 ### Why `max(0, cost_ratio - 1.0)` not raw cost_ratio
 
-Running faster than expected should not grant bonus reward — it's just normal operation. The penalty only activates for degraded performance. This prevents rewarding a specialist simply for having high baseline speed.
+Running faster than expected should not grant bonus reward -- it's just normal operation. The penalty only activates for degraded performance. This prevents rewarding a specialist simply for having high baseline speed.
 
 ### Why floor at 0.1 in seeding
 
 In the comparative seeding script, correct answers from any specialist get at least reward=0.1, even if extremely slow. This preserves the signal "this specialist can solve this task type" which is more valuable than "this specialist is fast." A slow-but-capable specialist is still useful for escalation.
 
+</details>
+
 ## Expected Impact
 
-With cost-aware rewards, MemRL will learn:
+With cost-aware rewards, MemRL will learn to prefer frontdoor for simple tasks (18.3 t/s, correct) over architect (6.75 t/s, also correct), but still escalate hard tasks where only architect succeeds. Under contention, overloaded specialists get penalized and traffic routes to available ones.
+
+<details>
+<summary>Impact breakdown by scenario</summary>
 
 1. **For simple tasks**: prefer frontdoor (18.3 t/s, correct) over architect_general (6.75 t/s, also correct)
-2. **For hard tasks**: prefer architect even though slower — only architect gets it right (+1.0 vs 0.0)
+2. **For hard tasks**: prefer architect even though slower -- only architect gets it right (+1.0 vs 0.0)
 3. **Under contention**: penalize overloaded specialists (cost_ratio > 1.0), route to available ones
-4. **Mode preferences**: ReAct with tools might be slower but more reliable — cost penalty balances this
+4. **Mode preferences**: ReAct with tools might be slower but more reliable -- cost penalty balances this
+
+</details>
 
 ## Mode-Advantage Task Enrichment (February 2026)
 
-The cost-aware reward system is most effective when combined with tasks that produce strong comparative signal. The mode-advantage suite (90 tasks, see [Chapter 24](24-benchmark-suite-construction.md)) was specifically designed for this:
+The cost-aware reward system works best when paired with tasks that produce strong comparative signal. The mode-advantage suite (90 tasks, see [Chapter 24](24-benchmark-suite-construction.md)) provides exactly this: computation-gated tasks where react mode wins on correctness, iterative-fix tasks where cost differentiates equal failures, and escalation-gated tasks where specialist correctness dominates cost entirely.
 
-- **Computation-gated tasks** (15): Models hallucinate on modular arithmetic, but react mode with Python gets the correct answer. Cost penalty doesn't apply — react wins on correctness (+1.0).
+<details>
+<summary>Task categories and dataset adapters</summary>
+
+- **Computation-gated tasks** (15): Models hallucinate on modular arithmetic, but react mode with Python gets the correct answer. Cost penalty doesn't apply -- react wins on correctness (+1.0).
 - **Iterative-fix tasks** (15 + 30 SWE): REPL mode runs tests iteratively; direct mode patches blind. When both fail, cost penalty differentiates (-0.3 vs -0.3 - cost).
-- **Multi-step tasks** (15): Chained calculations where cost penalty matters — delegation is slower but more reliable.
+- **Multi-step tasks** (15): Chained calculations where cost penalty matters -- delegation is slower but more reliable.
 - **Escalation-gated tasks** (15): Specialist wins on correctness (+1.0); cost penalty is irrelevant because frontdoor fails entirely (0.0).
 
 Three HuggingFace dataset adapters (GAIA, CRUXEval, BigCodeBench) provide additional volume where tool-use modes structurally outperform direct inference.
 
+</details>
+
 ## Binary Rewards for Faithful Probability Estimation (February 2026)
+
+Cost-weighted Q-values conflate two signals: success probability and cost efficiency. For Optuna threshold tuning you need these separated, so the 3-way evaluation mode uses pure binary rewards (1.0/0.0) for Q-value updates. Cost metrics are stored separately in episodic memory and applied at routing time, keeping Q-values as faithful P(success) estimates.
+
+<details>
+<summary>Binary reward design and cost separation</summary>
 
 ### The Problem with Cost-Weighted Q-Values
 
@@ -247,16 +300,19 @@ For Optuna threshold tuning, we need these signals separated. If Q-values incorp
 
 The 3-way evaluation mode uses pure binary rewards for Q-value updates:
 
+**Why binary?**
+- TD update: `Q_new = Q_old + alpha(reward - Q_old)`
+- With binary rewards (1.0/0.0) and alpha=0.1, Q converges to empirical success rate
+- Q-values become faithful P(success) estimates
+
+<details>
+<summary>Code: binary reward and cost storage</summary>
+
 ```python
 def success_reward(passed: bool) -> float:
     """Binary reward for faithful probability estimation."""
     return 1.0 if passed else 0.0
 ```
-
-**Why binary?**
-- TD update: `Q_new = Q_old + α(reward - Q_old)`
-- With binary rewards (1.0/0.0) and α=0.1, Q converges to empirical success rate
-- Q-values become faithful P(success) estimates
 
 ### Cost Stored Separately
 
@@ -294,6 +350,8 @@ def route_with_cost(q_values: dict[str, float]) -> str:
     return max(scores, key=scores.get)
 ```
 
+</details>
+
 ### Optuna Threshold Optimization (Future)
 
 With separated Q-values and cost metrics, Optuna can optimize:
@@ -303,11 +361,16 @@ With separated Q-values and cost metrics, Optuna can optimize:
 
 The stored cost metrics provide the ground truth for optimization without corrupting the Q-value estimates.
 
+</details>
+
 ---
 
 ## Extended Reward Dimensions (February 2026)
 
-Two additional penalty terms have been added to the reward formula for finer-grained routing signal.
+Two additional penalty terms refine routing signal beyond basic cost ratio. The quality_gap_penalty discourages over-qualified model selection (routing easy questions to architect when frontdoor also passes), and the memory_tier_penalty discourages WARM tier activation when a HOT-resident model suffices. Together with cost_ratio, these begin to cover the combinatorial pricing space of model tier x memory tier x acceleration method x contention state.
+
+<details>
+<summary>Penalty formulas and pricing space analysis</summary>
 
 ### quality_gap_penalty
 
@@ -333,9 +396,14 @@ With delta=0.1, a single flat penalty discourages unnecessary WARM tier activati
 
 These dimensions mirror the complexity of Claude's own pricing structure, where cost depends on model (Opus/Sonnet/Haiku) x cache status (uncached/cached/write) x thinking (standard/extended) x batch mode (interactive/batch at 50% discount). Our local model routing faces the same combinatorial space: model tier x memory tier x acceleration method x contention state. The extended reward dimensions begin to capture this -- quality_gap_penalty addresses model tier and memory_tier_penalty addresses memory tier, while cost_ratio (existing) captures contention.
 
+</details>
+
 ## Skill Effectiveness Scoring (February 2026)
 
-SkillBank's recursive evolution system (see [Ch27](27-skillbank-experience-distillation.md)) tracks skill effectiveness through the `OutcomeTracker`, which records task outcomes correlated with skill retrievals. This creates a feedback loop with cost-aware rewards:
+SkillBank's recursive evolution system (see [Ch27](27-skillbank-experience-distillation.md)) creates a feedback loop with cost-aware rewards. When a skill-augmented routing decision succeeds cheaply, both the QScorer (routing memory) and OutcomeTracker (skill confidence) reinforce the decision, driving a virtuous cycle where architect knowledge propagates to cheaper workers over time.
+
+<details>
+<summary>QScorer and OutcomeTracker interaction</summary>
 
 ### Relationship to QScorer
 
@@ -345,14 +413,21 @@ SkillBank's recursive evolution system (see [Ch27](27-skillbank-experience-disti
 | OutcomeTracker | Skill retrieval effectiveness | Confidence in SkillBank | Per-evolution-cycle |
 
 When a skill-augmented routing decision produces a successful outcome at low cost, both systems benefit:
-- QScorer increases Q-value for the routing memory → reinforces the routing decision
-- OutcomeTracker increases skill effectiveness → reinforces the skill → higher confidence → more frequent retrieval
+- QScorer increases Q-value for the routing memory -> reinforces the routing decision
+- OutcomeTracker increases skill effectiveness -> reinforces the skill -> higher confidence -> more frequent retrieval
 
 ### Cost Reduction Path
 
 Skills that successfully propagate architect knowledge to workers reduce the need for expensive model tiers, directly complementing xRouter-style cost optimization. The cost-aware reward system captures this: workers handling previously-escalated tasks receive full `quality_base` reward with zero `quality_gap_penalty` (since they're the cheapest correct specialist).
 
+</details>
+
 ## Future Work
+
+Five directions remain open: dynamic lambda by task priority, multi-objective Pareto frontier maintenance, Claude-as-Judge integration for graded quality scores, token-level cost accounting (prompt vs completion), and cache-aware cost reduction with RadixAttention.
+
+<details>
+<summary>Planned extensions</summary>
 
 1. **Dynamic lambda by task priority**: interactive queries use higher lambda (latency-sensitive); batch uses lower lambda (quality-sensitive).
 
@@ -364,13 +439,16 @@ Skills that successfully propagate architect knowledge to workers reduce the nee
 
 5. **Cache-aware cost**: with RadixAttention, cache hits reduce real cost. A specialist that benefits from cached context should get lower effective cost.
 
+</details>
+
 ## Routing-Time Warm/Cold Expected Cost (2026-02)
 
-Routing now models expected latency explicitly:
+Routing now models expected latency explicitly as `E[cost] = p_warm * warm_cost + (1 - p_warm) * cold_cost`, replacing hidden cache-affinity score multipliers. Warm/cold estimates are stored and surfaced in routing metadata while Q-updates remain centered on success utility.
 
-`E[cost] = p_warm * warm_cost + (1 - p_warm) * cold_cost`
+<details>
+<summary>Implementation files and tunables</summary>
 
-This replaces hidden cache-affinity score multipliers. Warm/cold estimates are stored and surfaced in routing metadata, while Q-updates remain centered on success utility. Tunables are exposed via `RetrievalConfig` and replay/debugger/seeding integration.
+Tunables are exposed via `RetrievalConfig` and replay/debugger/seeding integration.
 
 Files:
 
@@ -378,20 +456,26 @@ Files:
 - `scripts/benchmark/seed_specialist_routing.py`
 - `src/pipeline_monitor/claude_debugger.py`
 
+</details>
+
 ## Regret-Optimized Promotion Objective (2026-02)
 
-Replay-based candidate promotion now uses a regret-optimized objective in addition
-to cumulative reward:
+Replay-based candidate promotion now uses a regret-optimized objective alongside cumulative reward. This shifts promotion toward "teacher-match under compute constraints," avoiding over-favoring candidates that optimize raw reward without regret control.
+
+<details>
+<summary>Promotion metrics</summary>
 
 - `utility_score`
 - `rm_softmax_score` (softmax-weighted regret surrogate)
 - `regret_mean`, `regret_p95`
 - `speedup_vs_teacher_mean`
 
-This shifts promotion toward "teacher-match under compute constraints" and
-avoids over-favoring candidates that optimize raw reward without regret control.
+</details>
 
 ## References
+
+<details>
+<summary>Literature references</summary>
 
 1. Cheng Qian et al., "xRouter: Training Cost-Aware LLMs Orchestration System via Reinforcement Learning," arXiv:2510.08439 (2025). https://arxiv.org/abs/2510.08439
 2. Isaac Ong et al., "RouteLLM: Learning to Route LLMs with Preference Data," ICLR 2025. https://openreview.net/forum?id=8sSqNntaMr
@@ -400,3 +484,5 @@ avoids over-favoring candidates that optimize raw reward without regret control.
 5. "Cost-Aware Contrastive Routing for LLMs," arXiv:2508.12491 (2025). https://arxiv.org/html/2508.12491
 6. "LLMRank: Understanding LLM Strengths for Model Routing," arXiv:2510.01234 (2025). https://arxiv.org/html/2510.01234
 7. "Learning to Route LLMs with Confidence Tokens," arXiv:2410.13284 (2024). https://arxiv.org/html/2410.13284v2
+
+</details>
