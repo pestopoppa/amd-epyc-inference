@@ -793,3 +793,26 @@ THINK_HARDER regulation now uses an adaptive envelope in graph helpers:
 - token budget and temperature scale by per-role expected ROI
 - cooldown and EMA marginal-utility gating reduce repeated low-yield expansions
 - decision artifacts emit ROI/token/temperature diagnostics for analysis
+
+## Literature Mapping (Architecture Review Alignment)
+
+This chapter's routing and escalation mechanics are grounded in the following research-backed ideas:
+
+| Review Theme | Practical Interpretation | Code Anchors |
+|--------------|--------------------------|--------------|
+| Hierarchical/delegated routing | Architect envelope can decompose tasks and route to specialists | `src/proactive_delegation/delegator.py`, `src/api/routes/chat_pipeline/proactive_stage.py` |
+| Conditional escalation by failure signature | Schema/format failures are treated differently from reasoning failures | `src/escalation.py`, `src/graph/helpers.py` |
+| Risk-aware abstain/escalate behavior | Low-confidence paths can abstain and escalate under strict controls | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
+| THINK_HARDER regulation | Controlled test-time compute expansion with ROI/cooldown governance | `src/graph/helpers.py`, `src/graph/state.py` |
+| Workspace-centered coordination | Shared state reduces multi-agent drift during long chains | `src/graph/state.py`, `src/graph/helpers.py` |
+
+## Additional Literature (From Architecture Review)
+
+These references motivate the escalation/delegation strategy and failure taxonomy:
+
+1. DeepSeek-AI (2025). Router-R1: Multi-round routing/aggregation behavior. https://openreview.net/forum?id=DWf4vroKWJ
+2. Xue et al. (2025). Conformal Risk-Controlled Routing for Large Language Model. https://openreview.net/forum?id=lLR61sHcS5
+3. SHIELDA (2025). Structured exception taxonomy for LLM agent workflows. https://arxiv.org/html/2508.07935v1
+4. Baars (1988). A Cognitive Theory of Consciousness (Global Workspace Theory foundation). https://pmc.ncbi.nlm.nih.gov/articles/PMC12310485/
+5. Dai, Yang, Si (2025). S-GRPO for reasoning-length regulation. https://arxiv.org/abs/2505.07686
+6. Ong et al. (2024). RouteLLM (quality/cost routing tradeoffs). https://arxiv.org/abs/2406.18665

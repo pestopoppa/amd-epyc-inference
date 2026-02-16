@@ -534,3 +534,26 @@ The objective combines chosen-pass signal, cost term, and regret penalty at repl
 Meta-agent candidate ranking/promotion now uses `rm_softmax_score` rather than raw cumulative reward.
 Replay action simulation also uses action-level posterior scoring (not just top-memory action),
 which improves sensitivity to retrieval/risk knob changes.
+
+## Literature Mapping (Architecture Review Alignment)
+
+This chapter's design choices map directly to the architecture review's research threads:
+
+| Review Theme | Practical Interpretation | Code Anchors |
+|--------------|--------------------------|--------------|
+| Regret minimization for routing | Optimize teacher-match utility, not only raw pass rate | `orchestration/repl_memory/replay/engine.py`, `orchestration/repl_memory/replay/meta_agent.py` |
+| Cost-aware but signal-pure learning | Keep confidence estimation separate from cost terms; apply cost at decision time | `orchestration/repl_memory/retriever.py` |
+| Cache-aware latency modeling | Separate warm/cold behavior and avoid hidden heuristics in confidence estimates | `orchestration/repl_memory/retriever.py` |
+| Prior + posterior composition | Treat heuristics as priors that inform, not override, learned evidence | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
+| Replay as design-selection loop | Evaluate candidate routing configs offline before runtime promotion | `orchestration/repl_memory/replay/candidates.py`, `orchestration/repl_memory/replay/meta_agent.py` |
+
+## Additional Literature (From Architecture Review)
+
+These references motivate the MemRL/replay refinements documented above:
+
+1. Tsiourvas, Sun, Perakis (2025). Causal LLM Routing: End-to-End Regret Minimization from Observational Data. https://openreview.net/forum?id=iZC5xoQQkX
+2. Ong et al. (2024). RouteLLM: Learning to Route LLMs with Preference Data. https://arxiv.org/abs/2406.18665
+3. DeepSeek-AI (2025). Router-R1: Reinforced Expert Co-Reasoning and Routing. https://openreview.net/forum?id=DWf4vroKWJ
+4. Xue et al. (2025). Conformal Risk-Controlled Routing for Large Language Model. https://openreview.net/forum?id=lLR61sHcS5
+5. Zheng et al. (2024). SGLang / RadixAttention (cache-aware serving). https://arxiv.org/abs/2312.07104
+6. Dai, Yang, Si (2025). S-GRPO: Early Exit via Reinforcement Learning in Reasoning Models. https://arxiv.org/abs/2505.07686

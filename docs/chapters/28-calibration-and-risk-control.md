@@ -76,6 +76,33 @@ These are computed in:
 - `scripts/benchmark/seed_specialist_routing.py`
 - `src/pipeline_monitor/claude_debugger.py`
 
+## Concept-to-Code Mapping
+
+| Calibration/Risk Concept | Runtime/Replay Realization | Code Anchors |
+|--------------------------|----------------------------|--------------|
+| Calibrated confidence thresholding | Base/calibrated threshold with conformal margin | `orchestration/repl_memory/retriever.py` |
+| Strict abstain/escalate gate | `risk_abstain_escalate` decision path with telemetry provenance | `orchestration/repl_memory/retriever.py`, `src/api/routes/chat_pipeline/routing.py` |
+| Rollout + kill-switch safety | Deterministic rollout ratio and emergency off switch | `orchestration/repl_memory/retriever.py` |
+| Budget guardrail | Auto-disable strict gate when abstain budget is violated | `orchestration/repl_memory/retriever.py` |
+| Offline calibration validation | ECE/Brier/conformal metrics during replay candidate comparison | `orchestration/repl_memory/replay/engine.py`, `orchestration/repl_memory/replay/metrics.py` |
+| Parameterized seeding/eval | Reproducible calibration/risk sweeps via CLI knobs | `scripts/benchmark/seed_specialist_routing.py`, `orchestration/repl_memory/replay/meta_agent.py` |
+
+## Literature References (From Architecture Review)
+
+Primary references for this chapter:
+
+1. Xue et al. (2025). Conformal Risk-Controlled Routing for Large Language Model. https://openreview.net/forum?id=lLR61sHcS5
+2. Tsiourvas, Sun, Perakis (2025). Causal LLM Routing: End-to-End Regret Minimization from Observational Data. https://openreview.net/forum?id=iZC5xoQQkX
+3. Ong et al. (2024). RouteLLM: Learning to Route LLMs with Preference Data. https://arxiv.org/abs/2406.18665
+4. Self-REF (2025). Self-Reflection with Error-based Feedback for confidence and routing improvements. https://icml.cc/virtual/2025/poster/45145
+5. Lu et al. (2025). Token-Entropy Conformal Prediction for LLMs (TECP). https://www.mdpi.com/2227-7390/13/20/3351
+6. CP-Router (2025). Uncertainty-aware routing between LLM/LRM tiers. https://www.themoonlight.io/en/review/cp-router-an-uncertainty-aware-router-between-llm-and-lrm
+
+Secondary context:
+
+7. Zheng et al. (2024). SGLang / RadixAttention for serving efficiency under long contexts. https://arxiv.org/abs/2312.07104
+8. Dai, Yang, Si (2025). S-GRPO for regulated reasoning length. https://arxiv.org/abs/2505.07686
+
 ---
 
 *Previous: [Chapter 27: SkillBank & Experience Distillation](27-skillbank-experience-distillation.md)*
