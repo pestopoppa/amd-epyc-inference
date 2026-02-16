@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-02-16
+
+- **Overnight run regression fixes** — 4 bugs from `seed_specialist_routing.py --evolve --debug-replay --continuous` run:
+  - **Escalation loop guard** (`chat_delegation.py`): Replaced shallow brief dedup (first 200 chars) with 4-layer defense: semantic dedup (hash brief+target), thread-local re-entrance depth counter, role repetition guard (max 2 consecutive same target), cumulative token budget (20K cap). New constants in `src/constants.py`.
+  - **Corpus injection in delegation** (`chat_delegation.py`): `_run_specialist_loop()` now calls `build_corpus_context()` on turn 0 and passes result to `build_root_lm_prompt()`. Previously delegated 32B/480B specialists never received corpus snippets — the +8.7pp A/B result was from direct REPL only.
+  - **`--evolve`/`--debug-replay` silent no-op** (`seed_specialist_routing.py`): Removed `ORCHESTRATOR_SKILLBANK=1` env var gate on OutcomeTracker init. Added `_run_post_batch_hooks()` running evolve+replay every 10 batches in continuous mode (previously only ran at Ctrl+C exit, never on SIGTERM/kill).
+  - **`no_skills_available` false positive** (`diagnostic.py`): Changed `skills_retrieved` default from `0` to `None` so "SkillBank not loaded" is distinguishable from "loaded but returned 0 results". Fixed truthiness check for output dict.
+  - 13 new unit tests for loop guards. 3833 tests pass.
+
 ## 2026-02-15
 
 - **Nightshift automated overnight maintenance** — Full integration of [nightshift](https://github.com/marcus/nightshift) for autonomous code maintenance via Claude Code CLI:
