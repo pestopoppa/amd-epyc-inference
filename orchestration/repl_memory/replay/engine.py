@@ -51,6 +51,7 @@ class ReplayStepResult:
     regret: float = 0.0
     speedup_vs_teacher: float = 1.0
     elapsed_seconds: float = 0.0
+    posterior_margin: float = 0.0
 
 
 class NullEmbedder:
@@ -199,6 +200,7 @@ class ReplayEngine:
         candidate_action: Optional[str] = None
         escalation_predicted = False
         predicted_confidence = 0.0
+        posterior_margin = 0.0
         confidence_threshold = retriever.get_effective_confidence_threshold()
 
         if embedding is not None:
@@ -210,13 +212,43 @@ class ReplayEngine:
                 min_q_value=retriever.config.min_q_value,
             )
             if candidates:
-                q_top = [
-                    float(c.q_value)
-                    for c in candidates[: max(retriever.config.confidence_min_neighbors, 1)]
-                ]
-                predicted_confidence = retriever._compute_robust_confidence(q_top)
-                if predicted_confidence >= confidence_threshold:
-                    candidate_action = candidates[0].action
+                by_action: Dict[str, List[Any]] = {}
+                for c in candidates:
+                    by_action.setdefault(c.action, []).append(c)
+
+                action_scores: List[Tuple[str, float, float]] = []
+                for action, memories in by_action.items():
+                    q_vals = [float(m.q_value) for m in memories]
+                    q_conf = retriever._compute_robust_confidence(
+                        q_vals[: max(retriever.config.confidence_min_neighbors, 1)]
+                    )
+                    expected_costs = []
+                    cold_costs = []
+                    for m in memories:
+                        p_warm, warm_cost, cold_cost = retriever._estimate_cost_components(m)
+                        expected_costs.append(p_warm * warm_cost + (1.0 - p_warm) * cold_cost)
+                        cold_costs.append(cold_cost)
+                    avg_expected = float(np.mean(expected_costs)) if expected_costs else 0.0
+                    avg_cold = float(np.mean(cold_costs)) if cold_costs else 1.0
+                    cost_ratio = avg_expected / max(avg_cold, 1e-6)
+                    posterior = q_conf - (float(retriever.config.cost_lambda) * cost_ratio)
+                    action_scores.append((action, posterior, q_conf))
+
+                action_scores.sort(key=lambda x: x[1], reverse=True)
+                top_action, top_posterior, top_confidence = action_scores[0]
+                predicted_confidence = float(top_confidence)
+                if len(action_scores) > 1:
+                    posterior_margin = float(top_posterior - action_scores[1][1])
+
+                # Apply confidence/risk-control gate similar to runtime contract.
+                if (
+                    retriever.config.risk_control_enabled
+                    and len(candidates) >= max(1, int(retriever.config.risk_gate_min_samples))
+                    and predicted_confidence < confidence_threshold
+                ):
+                    escalation_predicted = True
+                elif predicted_confidence >= confidence_threshold:
+                    candidate_action = top_action
                 else:
                     escalation_predicted = True
 
@@ -280,6 +312,7 @@ class ReplayEngine:
             regret=regret,
             speedup_vs_teacher=speedup_vs_teacher,
             elapsed_seconds=elapsed_seconds,
+            posterior_margin=posterior_margin,
         )
 
     def _compute_metrics(
@@ -303,6 +336,7 @@ class ReplayEngine:
         n = len(results)
         matches = sum(1 for r in results if r.routing_match)
         routing_accuracy = matches / n if n > 0 else 0.0
+        route_flip_rate = 1.0 - routing_accuracy if n > 0 else 0.0
 
         # Per-type accuracy
         by_type: Dict[str, List[bool]] = {}
@@ -314,6 +348,9 @@ class ReplayEngine:
         accuracy_by_type = {}
         for task_type, matches_list in by_type.items():
             accuracy_by_type[task_type] = sum(matches_list) / len(matches_list) if matches_list else 0.0
+        posterior_margin_mean = float(
+            np.mean([max(0.0, float(r.posterior_margin)) for r in results])
+        ) if results else 0.0
 
         # Escalation metrics
         actual_escalations = [t for t in trajectories if len(t.escalations) > 0]
@@ -395,6 +432,8 @@ class ReplayEngine:
             num_trajectories=n,
             num_complete=n,
             routing_accuracy=routing_accuracy,
+            route_flip_rate=route_flip_rate,
+            posterior_margin_mean=posterior_margin_mean,
             routing_accuracy_by_type=accuracy_by_type,
             escalation_precision=esc_precision,
             escalation_recall=esc_recall,

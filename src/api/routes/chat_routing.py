@@ -16,6 +16,7 @@ from typing import Any
 
 
 from src.constants import TASK_IR_OBJECTIVE_LEN
+from src.task_ir import canonicalize_task_ir
 
 log = logging.getLogger(__name__)
 
@@ -158,6 +159,7 @@ def _select_mode(
                 "priority": "interactive",
                 "context_length": len(context) if context else 0,
             }
+            task_ir = canonicalize_task_ir(task_ir)
             _routing, _strategy, mode = state.hybrid_router.route_with_mode(task_ir)
             # Map legacy "react" to "repl" (React is now unified)
             if mode == "react":

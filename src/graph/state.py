@@ -105,6 +105,9 @@ class TaskState:
     think_harder_roi_by_role: dict[str, dict[str, float]] = field(default_factory=dict)
     think_harder_min_expected_roi: float = 0.02
     think_harder_min_samples: int = 5
+    think_harder_cooldown_turns: int = 2
+    think_harder_ema_alpha: float = 0.25
+    think_harder_min_marginal_utility: float = 0.0
 
     # Tool requirement (from routing classification)
     tool_required: bool = False
@@ -121,13 +124,16 @@ class TaskState:
         default_factory=lambda: {
             "version": 1,
             "broadcast_version": 0,
+            "selection_policy": "priority_then_recency",
             "objective": "",
             "constraints": [],
             "invariants": [],
             "proposals": [],
             "commitments": [],
             "open_questions": [],
+            "resolved_questions": [],
             "decisions": [],
+            "broadcast_log": [],
             "updated_at": "",
         }
     )

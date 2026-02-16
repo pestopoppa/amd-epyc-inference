@@ -109,6 +109,37 @@ def test_hybrid_router_allows_learned_when_risk_gate_passes():
     assert routing
 
 
+def test_evaluate_risk_gate_respects_rollout_sampling():
+    retriever = _retriever(
+        RetrievalConfig(
+            risk_control_enabled=True,
+            risk_gate_rollout_ratio=0.0,
+            risk_gate_min_samples=1,
+        )
+    )
+    gate = retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.1)], route_key="abc")
+    assert gate["enforced"] is False
+    assert gate["reason"] == "rollout_sampling_excluded"
+
+
+def test_evaluate_risk_gate_guardrail_disables_strict_gate():
+    retriever = _retriever(
+        RetrievalConfig(
+            risk_control_enabled=True,
+            risk_gate_rollout_ratio=1.0,
+            risk_gate_min_samples=1,
+            risk_budget_guardrail_min_events=1,
+            risk_budget_guardrail_max_abstain_rate=0.0,
+        )
+    )
+    # First evaluation abstains and records budget stats.
+    retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.1)], route_key="k1")
+    # Subsequent evaluations should be blocked by guardrail.
+    gate2 = retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.9)], route_key="k2")
+    assert gate2["enforced"] is False
+    assert gate2["reason"] == "budget_guardrail_abstain_rate"
+
+
 def test_hybrid_router_prior_blend_can_flip_to_prior_favored_action():
     retriever = _retriever(
         RetrievalConfig(

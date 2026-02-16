@@ -743,6 +743,10 @@ def _build_retrieval_config_from_args(args) -> "RetrievalConfig":
         "risk_budget_id",
         "risk_gate_min_samples",
         "risk_abstain_target_role",
+        "risk_gate_rollout_ratio",
+        "risk_gate_kill_switch",
+        "risk_budget_guardrail_min_events",
+        "risk_budget_guardrail_max_abstain_rate",
         "prior_strength",
     ):
         val = getattr(args, key, None)
@@ -928,6 +932,29 @@ Examples (legacy mode - DEPRECATED):
         default=None,
         dest="risk_abstain_target_role",
     )
+    parser.add_argument(
+        "--risk-gate-rollout-ratio",
+        type=float,
+        default=None,
+        dest="risk_gate_rollout_ratio",
+    )
+    parser.add_argument(
+        "--risk-gate-kill-switch",
+        action="store_true",
+        dest="risk_gate_kill_switch",
+    )
+    parser.add_argument(
+        "--risk-budget-guardrail-min-events",
+        type=int,
+        default=None,
+        dest="risk_budget_guardrail_min_events",
+    )
+    parser.add_argument(
+        "--risk-budget-guardrail-max-abstain-rate",
+        type=float,
+        default=None,
+        dest="risk_budget_guardrail_max_abstain_rate",
+    )
     parser.add_argument("--prior-strength", type=float, default=None, dest="prior_strength")
     parser.add_argument(
         "--evolve", action="store_true",
@@ -987,6 +1014,10 @@ Examples (legacy mode - DEPRECATED):
             "risk_budget_id",
             "risk_gate_min_samples",
             "risk_abstain_target_role",
+            "risk_gate_rollout_ratio",
+            "risk_gate_kill_switch",
+            "risk_budget_guardrail_min_events",
+            "risk_budget_guardrail_max_abstain_rate",
             "prior_strength",
         )
     }

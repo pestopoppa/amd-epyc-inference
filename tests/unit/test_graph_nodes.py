@@ -179,6 +179,7 @@ class TestWorkspaceBroadcast:
         ws = state.workspace_state
         assert ws.get("broadcast_version", 0) >= 2
         assert isinstance(ws.get("proposals"), list) and ws["proposals"]
+        assert isinstance(ws.get("broadcast_log"), list) and ws["broadcast_log"]
         assert any("parse config" in x.get("text", "") for x in ws.get("commitments", []))
         assert any("Schema mismatch" in x.get("text", "") for x in ws.get("open_questions", []))
 

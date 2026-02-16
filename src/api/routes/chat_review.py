@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from src.config import get_config as _get_config
 from src.constants import TASK_IR_OBJECTIVE_LEN
+from src.task_ir import canonicalize_task_ir
 from src.prompt_builders import (
     build_review_verdict_prompt,
     build_revision_prompt,
@@ -105,7 +106,9 @@ def _should_review(state: "AppState", task_id: str, role: str, answer: str) -> b
     try:
         # Get Q-values for this role from MemRL
         retriever = state.hybrid_router.retriever
-        task_ir = {"task_type": "chat", "objective": answer[:TASK_IR_OBJECTIVE_LEN]}
+        task_ir = canonicalize_task_ir(
+            {"task_type": "chat", "objective": answer[:TASK_IR_OBJECTIVE_LEN]}
+        )
         results = retriever.retrieve_for_routing(task_ir)
         if not results:
             return False

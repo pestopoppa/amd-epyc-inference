@@ -23,7 +23,7 @@ from src.api.routes.chat_review import (
     _store_plan_review_episode,
 )
 from src.api.routes.chat_routing import _classify_and_route
-from src.api.routes.chat_routing import _heuristic_role_priors, _select_role_from_prior
+from src.api.routes.chat_routing import _heuristic_role_priors
 from src.api.routes.chat_utils import (
     DEFAULT_TIMEOUT_S,
     ROLE_TIMEOUTS,
@@ -87,15 +87,6 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
             )
             skill_context = ""
 
-        # Prior/posterior blend:
-        # when learned posterior is unavailable and router falls back to rules,
-        # let strong priors nudge the role choice without overriding forced choices.
-        if routing_strategy == "rules":
-            prior_role = _select_role_from_prior(heuristic_priors)
-            prior_conf = float(heuristic_priors.get(prior_role, 0.0))
-            if prior_conf >= 0.60 and routing_decision and prior_role != str(routing_decision[0]):
-                routing_decision = [prior_role]
-                routing_strategy = "prior_rules"
     else:
         classified_role, routing_strategy = _classify_and_route(
             request.prompt,

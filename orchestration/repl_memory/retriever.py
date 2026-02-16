@@ -12,6 +12,7 @@ Enhanced with failure anti-memory and hypothesis tracking from Graphiti-inspired
 from __future__ import annotations
 
 import logging
+import hashlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -79,6 +80,10 @@ class RetrievalConfig:
     risk_budget_id: str = "default"  # Identifier for rollout/risk budget audit
     risk_gate_min_samples: int = 3  # Min retrieved samples before strict risk gate
     risk_abstain_target_role: str = "architect_general"  # Escalation target on abstain
+    risk_gate_rollout_ratio: float = 1.0  # Fraction [0,1] of traffic with strict gate enforced
+    risk_gate_kill_switch: bool = False  # Emergency off-switch for strict gate
+    risk_budget_guardrail_min_events: int = 50  # Min observations before guardrail check
+    risk_budget_guardrail_max_abstain_rate: float = 0.60  # Disable strict gate if exceeded
     prior_strength: float = 0.15  # Additive weight for heuristic prior in posterior score
 
     # Cache-aware expected cost model
@@ -123,6 +128,7 @@ class TwoPhaseRetriever:
         self.embedder = embedder
         self.config = config or RetrievalConfig()
         self._last_role_used: Optional[str] = None
+        self._risk_budget_stats: Dict[str, int] = {"events": 0, "abstains": 0}
 
     def _extract_role_from_memory(self, memory: MemoryEntry) -> str:
         """Best-effort role extraction from memory payload."""
@@ -416,11 +422,22 @@ class TwoPhaseRetriever:
     def evaluate_risk_gate(
         self,
         results: List[RetrievalResult],
+        route_key: str = "",
     ) -> Dict[str, Any]:
         """Evaluate strict runtime risk gate for abstain-or-escalate control."""
         threshold = self.get_effective_confidence_threshold()
         min_samples = max(int(self.config.risk_gate_min_samples), 1)
 
+        if self.config.risk_gate_kill_switch:
+            return {
+                "enforced": False,
+                "passed": True,
+                "action": "not_enforced",
+                "reason": "kill_switch_enabled",
+                "confidence": 0.0,
+                "threshold": threshold,
+                "budget_id": self.config.risk_budget_id,
+            }
         if not self.config.risk_control_enabled:
             return {
                 "enforced": False,
@@ -428,6 +445,26 @@ class TwoPhaseRetriever:
                 "action": "not_enforced",
                 "reason": "risk_control_disabled",
                 "confidence": 0.0,
+                "threshold": threshold,
+                "budget_id": self.config.risk_budget_id,
+            }
+        if not self._is_risk_gate_enforced_for_route(route_key):
+            return {
+                "enforced": False,
+                "passed": True,
+                "action": "not_enforced",
+                "reason": "rollout_sampling_excluded",
+                "confidence": 0.0 if not results else float(results[0].q_confidence),
+                "threshold": threshold,
+                "budget_id": self.config.risk_budget_id,
+            }
+        if self._guardrail_blocks_gate():
+            return {
+                "enforced": False,
+                "passed": True,
+                "action": "not_enforced",
+                "reason": "budget_guardrail_abstain_rate",
+                "confidence": 0.0 if not results else float(results[0].q_confidence),
                 "threshold": threshold,
                 "budget_id": self.config.risk_budget_id,
             }
@@ -443,7 +480,9 @@ class TwoPhaseRetriever:
             }
 
         confidence = float(results[0].q_confidence)
+        self._risk_budget_stats["events"] += 1
         if confidence < threshold:
+            self._risk_budget_stats["abstains"] += 1
             return {
                 "enforced": True,
                 "passed": False,
@@ -463,6 +502,27 @@ class TwoPhaseRetriever:
             "threshold": threshold,
             "budget_id": self.config.risk_budget_id,
         }
+
+    def _is_risk_gate_enforced_for_route(self, route_key: str) -> bool:
+        """Deterministic rollout sampler for strict gate enforcement."""
+        ratio = max(0.0, min(1.0, float(self.config.risk_gate_rollout_ratio)))
+        if ratio >= 1.0:
+            return True
+        if ratio <= 0.0:
+            return False
+        seed = f"{self.config.risk_budget_id}:{route_key or 'default'}".encode("utf-8")
+        digest = hashlib.md5(seed).hexdigest()
+        bucket = int(digest[:8], 16) / 0xFFFFFFFF
+        return bucket < ratio
+
+    def _guardrail_blocks_gate(self) -> bool:
+        """Disable strict gate when abstain rate breaches configured budget guardrail."""
+        events = int(self._risk_budget_stats.get("events", 0))
+        if events < max(1, int(self.config.risk_budget_guardrail_min_events)):
+            return False
+        abstains = int(self._risk_budget_stats.get("abstains", 0))
+        abstain_rate = abstains / max(events, 1)
+        return abstain_rate > float(self.config.risk_budget_guardrail_max_abstain_rate)
 
 
 class HybridRouter:
@@ -581,7 +641,8 @@ class HybridRouter:
         # Try learned routing first
         results = self.retriever.retrieve_for_routing(task_ir)
         results = self._apply_priors(results, priors)
-        risk_gate = self.retriever.evaluate_risk_gate(results)
+        route_key = str(task_ir.get("task_id", task_ir.get("objective", "")))
+        risk_gate = self.retriever.evaluate_risk_gate(results, route_key=route_key)
 
         if risk_gate.get("enforced") and not risk_gate.get("passed"):
             routing = [self.retriever.config.risk_abstain_target_role]
@@ -646,7 +707,8 @@ class HybridRouter:
         # Try learned routing first
         results = self.retriever.retrieve_for_routing(task_ir)
         results = self._apply_priors(results, priors)
-        risk_gate = self.retriever.evaluate_risk_gate(results)
+        route_key = str(task_ir.get("task_id", task_ir.get("objective", "")))
+        risk_gate = self.retriever.evaluate_risk_gate(results, route_key=route_key)
 
         if risk_gate.get("enforced") and not risk_gate.get("passed"):
             routing = [self.retriever.config.risk_abstain_target_role]

@@ -787,3 +787,9 @@ Heuristics are integrated as probabilistic priors in posterior scoring (instead 
   - `posterior_score_topk`
   - `learned_evidence_topk`
   - `cost_term_topk`
+
+THINK_HARDER regulation now uses an adaptive envelope in graph helpers:
+
+- token budget and temperature scale by per-role expected ROI
+- cooldown and EMA marginal-utility gating reduce repeated low-yield expansions
+- decision artifacts emit ROI/token/temperature diagnostics for analysis

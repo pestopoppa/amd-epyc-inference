@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
 from src.registry_loader import RegistryLoader, RoleConfig
+from src.task_ir import canonicalize_task_ir
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +211,9 @@ class Dispatcher:
         if not roles:
             if self.hybrid_router:
                 # Use learned routing with rule-based fallback
-                roles, self._routing_strategy = self.hybrid_router.route(task_ir)
+                roles, self._routing_strategy = self.hybrid_router.route(
+                    canonicalize_task_ir(task_ir)
+                )
             else:
                 # Pure rule-based routing from registry
                 roles = self.registry.route_task(task_ir)

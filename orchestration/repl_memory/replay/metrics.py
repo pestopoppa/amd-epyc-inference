@@ -21,6 +21,8 @@ class ReplayMetrics:
 
     # Routing
     routing_accuracy: float = 0.0  # % match with successful actual route
+    route_flip_rate: float = 0.0  # fraction where candidate action != actual action
+    posterior_margin_mean: float = 0.0  # avg top1-top2 decision margin
     routing_accuracy_by_type: Dict[str, float] = field(default_factory=dict)
 
     # Escalation prediction
@@ -63,6 +65,8 @@ class ReplayMetrics:
             "num_trajectories": self.num_trajectories,
             "num_complete": self.num_complete,
             "routing_accuracy": self.routing_accuracy,
+            "route_flip_rate": self.route_flip_rate,
+            "posterior_margin_mean": self.posterior_margin_mean,
             "routing_accuracy_by_type": self.routing_accuracy_by_type,
             "escalation_precision": self.escalation_precision,
             "escalation_recall": self.escalation_recall,
@@ -91,6 +95,8 @@ class ReplayMetrics:
             num_trajectories=data["num_trajectories"],
             num_complete=data["num_complete"],
             routing_accuracy=data.get("routing_accuracy", 0.0),
+            route_flip_rate=data.get("route_flip_rate", 0.0),
+            posterior_margin_mean=data.get("posterior_margin_mean", 0.0),
             routing_accuracy_by_type=data.get("routing_accuracy_by_type", {}),
             escalation_precision=data.get("escalation_precision", 0.0),
             escalation_recall=data.get("escalation_recall", 0.0),
@@ -119,6 +125,8 @@ class ReplayMetrics:
         result: Dict[str, Dict[str, float]] = {}
         for metric in (
             "routing_accuracy",
+            "route_flip_rate",
+            "posterior_margin_mean",
             "escalation_precision",
             "escalation_recall",
             "cumulative_reward",

@@ -119,38 +119,78 @@ def _update_workspace_from_turn(state: TaskState, role: Role | str, output: str,
 
 
 def _select_and_broadcast_workspace_delta(ws: dict[str, Any]) -> None:
-    """Controller step: select highest-priority proposal and broadcast it."""
+    """Controller step: select proposals and broadcast merged deltas."""
     proposals = ws.get("proposals", [])
     if not isinstance(proposals, list) or not proposals:
         return
 
-    # Prioritize unresolved error/open-question deltas, then latest proposal.
-    selected = None
-    for candidate in reversed(proposals):
-        if candidate.get("kind") == "open_question":
-            selected = candidate
-            break
-    if selected is None:
-        selected = proposals[-1]
+    # Priority-first, then recency; select up to 2 deltas per broadcast.
+    def _priority_rank(p: dict[str, Any]) -> int:
+        kind = str(p.get("kind", ""))
+        prio = str(p.get("priority", "normal"))
+        if kind == "open_question":
+            return 0
+        if prio == "high":
+            return 1
+        return 2
 
-    kind = str(selected.get("kind", ""))
-    owner = str(selected.get("owner", ""))
-    text = str(selected.get("text", "")).strip()
-    if not text:
+    indexed = list(enumerate(proposals))
+    indexed.sort(key=lambda item: (_priority_rank(item[1]), -item[0]))
+    selected = [p for _, p in indexed[:2]]
+    if not selected:
         return
 
-    target_key = "open_questions" if kind == "open_question" else "commitments"
-    target = ws.setdefault(target_key, [])
-    if not any(str(item.get("text", "")).strip() == text for item in target):
-        prefix = "q" if target_key == "open_questions" else "c"
-        target.append(
-            {
-                "id": f"{prefix}{ws.get('broadcast_version', 0) + 1}",
+    broadcast_items: list[dict[str, Any]] = []
+    for proposal in selected:
+        kind = str(proposal.get("kind", ""))
+        owner = str(proposal.get("owner", ""))
+        text = str(proposal.get("text", "")).strip()
+        if not text:
+            continue
+
+        if kind == "open_question":
+            target_key = "open_questions"
+            prefix = "q"
+        else:
+            target_key = "commitments"
+            prefix = "c"
+
+        target = ws.setdefault(target_key, [])
+        # Conflict policy: owner-level latest-wins for commitments.
+        if target_key == "commitments":
+            target[:] = [x for x in target if str(x.get("owner", "")) != owner]
+
+        if not any(str(item.get("text", "")).strip() == text for item in target):
+            entry = {
+                "id": f"{prefix}{ws.get('broadcast_version', 0) + len(broadcast_items) + 1}",
                 "owner": owner,
                 "text": text,
             }
+            target.append(entry)
+            broadcast_items.append(entry)
+
+        # Lightweight resolution signal: commitments that explicitly mention an
+        # open question text mark that question as resolved.
+        if target_key == "commitments":
+            open_questions = ws.get("open_questions", [])
+            resolved = ws.setdefault("resolved_questions", [])
+            for q in list(open_questions):
+                q_text = str(q.get("text", "")).strip().lower()
+                if q_text and q_text in text.lower():
+                    open_questions.remove(q)
+                    resolved.append(q)
+
+    if broadcast_items:
+        ws["broadcast_version"] = int(ws.get("broadcast_version", 0)) + 1
+        b_log = ws.setdefault("broadcast_log", [])
+        b_log.append(
+            {
+                "version": ws["broadcast_version"],
+                "items": broadcast_items,
+            }
         )
-    ws["broadcast_version"] = int(ws.get("broadcast_version", 0)) + 1
+        if len(b_log) > 20:
+            ws["broadcast_log"] = b_log[-20:]
 
 
 def _expected_think_harder_roi(state: TaskState, role: str) -> float:
@@ -173,13 +213,30 @@ def _update_think_harder_stats(ctx: Ctx) -> None:
         return
     role = str(state.current_role)
     stats = state.think_harder_roi_by_role.setdefault(
-        role, {"attempts": 0.0, "successes": 0.0, "expected_roi": 1.0}
+        role,
+        {
+            "attempts": 0.0,
+            "successes": 0.0,
+            "expected_roi": 1.0,
+            "ema_marginal_utility": 0.0,
+            "last_attempt_turn": -9999.0,
+        },
     )
     stats["attempts"] = float(stats.get("attempts", 0.0)) + 1.0
-    if state.think_harder_succeeded:
+    succeeded = bool(state.think_harder_succeeded)
+    if succeeded:
         stats["successes"] = float(stats.get("successes", 0.0)) + 1.0
+
+    n_tokens = float(state.artifacts.get("think_harder_token_budget", 4096.0) or 4096.0)
+    token_penalty = min(n_tokens / 4096.0, 1.5) * 0.15
+    sample_utility = (1.0 if succeeded else 0.0) - token_penalty
+    prev_ema = float(stats.get("ema_marginal_utility", 0.0))
+    alpha = max(0.05, min(1.0, float(state.think_harder_ema_alpha)))
+    stats["ema_marginal_utility"] = ((1.0 - alpha) * prev_ema) + (alpha * sample_utility)
+    stats["last_attempt_turn"] = float(state.turns)
     stats["expected_roi"] = _expected_think_harder_roi(state, role)
     state.artifacts["think_harder_expected_roi"] = stats["expected_roi"]
+    state.artifacts["think_harder_marginal_utility"] = stats["ema_marginal_utility"]
 
 
 def _tap_write_repl_exec(code: str, turn: int) -> None:
@@ -935,6 +992,9 @@ def _should_think_harder(ctx: Ctx, error_category: ErrorCategory) -> bool:
 
     role = str(state.current_role)
     role_stats = state.think_harder_roi_by_role.get(role, {})
+    last_attempt_turn = float(role_stats.get("last_attempt_turn", -9999.0))
+    if (state.turns - last_attempt_turn) < max(0, int(state.think_harder_cooldown_turns)):
+        return False
     attempts = int(role_stats.get("attempts", 0.0))
     if attempts >= state.think_harder_min_samples:
         expected_roi = _expected_think_harder_roi(state, role)
@@ -942,6 +1002,17 @@ def _should_think_harder(ctx: Ctx, error_category: ErrorCategory) -> bool:
             log.info(
                 "Think-harder disabled for %s due to low ROI (expected=%.3f, attempts=%d)",
                 role, expected_roi, attempts,
+            )
+            return False
+        ema_marginal = float(role_stats.get("ema_marginal_utility", 0.0))
+        if ema_marginal < float(state.think_harder_min_marginal_utility):
+            log.info(
+                "Think-harder disabled for %s due to low marginal utility "
+                "(ema=%.3f < %.3f, attempts=%d)",
+                role,
+                ema_marginal,
+                float(state.think_harder_min_marginal_utility),
+                attempts,
             )
             return False
 
@@ -957,6 +1028,16 @@ def _build_think_harder_config(state: TaskState) -> dict[str, Any]:
     """
     role = str(state.current_role)
     expected_roi = _expected_think_harder_roi(state, role)
+    role_stats = state.think_harder_roi_by_role.setdefault(
+        role,
+        {
+            "attempts": 0.0,
+            "successes": 0.0,
+            "expected_roi": 1.0,
+            "ema_marginal_utility": 0.0,
+            "last_attempt_turn": -9999.0,
+        },
+    )
     # Map ROI range [-0.5, 0.5] to [0, 1] for stable envelope scaling.
     roi_norm = max(0.0, min(1.0, expected_roi + 0.5))
 
@@ -968,6 +1049,7 @@ def _build_think_harder_config(state: TaskState) -> dict[str, Any]:
     state.artifacts["think_harder_token_budget"] = n_tokens
     state.artifacts["think_harder_temperature"] = temperature
     state.artifacts["think_harder_cot_enabled"] = bool(cot_prefix)
+    role_stats["last_attempt_turn"] = float(state.turns)
 
     return {
         "n_tokens": n_tokens,

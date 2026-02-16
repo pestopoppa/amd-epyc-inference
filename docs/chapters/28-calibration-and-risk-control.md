@@ -22,6 +22,10 @@ The routing stack now supports:
 - `risk_budget_id`
 - `risk_gate_min_samples`
 - `risk_abstain_target_role`
+- `risk_gate_rollout_ratio`
+- `risk_gate_kill_switch`
+- `risk_budget_guardrail_min_events`
+- `risk_budget_guardrail_max_abstain_rate`
 - `confidence_estimator` (`median` or `trimmed_mean`)
 - `confidence_trim_ratio`
 - `confidence_min_neighbors`
@@ -37,6 +41,12 @@ Gate provenance is logged with:
 - `risk_gate_action`
 - `risk_gate_reason`
 - `risk_budget_id`
+
+Rollout/guardrail controls:
+
+- deterministic rollout sampling by route key (`risk_gate_rollout_ratio`)
+- emergency kill switch (`risk_gate_kill_switch`)
+- budget guardrail to auto-disable strict gating if abstain rate exceeds configured budget
 
 ## Metrics
 

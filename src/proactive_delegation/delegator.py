@@ -24,6 +24,7 @@ from src.proactive_delegation.review_service import (
     AggregationService,
     ArchitectReviewService,
 )
+from src.task_ir import canonicalize_task_ir
 
 if TYPE_CHECKING:
     from src.registry_loader import RegistryLoader
@@ -90,6 +91,7 @@ class ProactiveDelegator:
         # Consult MemRL HybridRouter if available
         if self.hybrid_router and task_ir:
             try:
+                task_ir = canonicalize_task_ir(task_ir)
                 # HybridRouter returns (roles, strategy) - "learned" or "rules"
                 roles, strategy = self.hybrid_router.route(task_ir)
 

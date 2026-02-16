@@ -30,6 +30,7 @@ from src.api.models import ChatRequest, ChatResponse, RewardRequest
 from src.api.state import AppState
 from src.config import get_config
 from src.constants import TASK_IR_OBJECTIVE_LEN
+from src.task_ir import canonicalize_task_ir
 from src.prompt_builders import (
     build_root_lm_prompt,
     build_routing_context,
@@ -208,6 +209,7 @@ async def _try_cheap_first(
                     "task_type": "chat",
                     "objective": request.prompt[:TASK_IR_OBJECTIVE_LEN],
                 }
+                task_ir = canonicalize_task_ir(task_ir)
                 results = state.hybrid_router.retriever.retrieve_for_routing(task_ir)
                 # Check if worker_explore Q-value is above threshold
                 worker_q = 0.0
@@ -468,6 +470,7 @@ async def chat_stream(
             "objective": request.prompt[:TASK_IR_OBJECTIVE_LEN],
             "priority": "interactive",
         }
+        task_ir = canonicalize_task_ir(task_ir)
         if state.progress_logger:
             state.progress_logger.log_task_started(
                 task_id=task_id,

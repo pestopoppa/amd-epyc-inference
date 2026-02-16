@@ -527,6 +527,10 @@ Replay metrics now include a teacher-match utility objective:
 - `regret_mean`
 - `regret_p95`
 - `speedup_vs_teacher_mean`
+- `route_flip_rate`
+- `posterior_margin_mean`
 
 The objective combines chosen-pass signal, cost term, and regret penalty at replay time.
 Meta-agent candidate ranking/promotion now uses `rm_softmax_score` rather than raw cumulative reward.
+Replay action simulation also uses action-level posterior scoring (not just top-memory action),
+which improves sensitivity to retrieval/risk knob changes.

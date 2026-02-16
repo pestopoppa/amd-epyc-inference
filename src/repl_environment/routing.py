@@ -7,6 +7,7 @@ from __future__ import annotations
 
 
 from src.constants import TASK_IR_OBJECTIVE_LEN
+from src.task_ir import canonicalize_task_ir
 from src.repl_environment.types import wrap_tool_output
 
 
@@ -280,6 +281,7 @@ class _RoutingMixin:
                 "objective": task_description[:TASK_IR_OBJECTIVE_LEN],
                 "priority": "interactive",
             }
+            task_ir = canonicalize_task_ir(task_ir)
             routing_decision, strategy = self._hybrid_router.route(task_ir)
 
             # Get raw retrieval results for transparency

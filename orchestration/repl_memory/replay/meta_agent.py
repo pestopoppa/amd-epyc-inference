@@ -293,6 +293,20 @@ class MetaAgentWorkflow:
                 f"- risk_abstain_target_role: "
                 f"{promotion.retrieval_config.risk_abstain_target_role}"
             )
+            lines.append(
+                f"- risk_gate_rollout_ratio: {promotion.retrieval_config.risk_gate_rollout_ratio}"
+            )
+            lines.append(
+                f"- risk_gate_kill_switch: {promotion.retrieval_config.risk_gate_kill_switch}"
+            )
+            lines.append(
+                "- risk_budget_guardrail_min_events: "
+                f"{promotion.retrieval_config.risk_budget_guardrail_min_events}"
+            )
+            lines.append(
+                "- risk_budget_guardrail_max_abstain_rate: "
+                f"{promotion.retrieval_config.risk_budget_guardrail_max_abstain_rate}"
+            )
             lines.append(f"- prior_strength: {promotion.retrieval_config.prior_strength}")
             lines.append(
                 f"- warm_probability_hit: {promotion.retrieval_config.warm_probability_hit}"
@@ -377,6 +391,9 @@ _PARAM_RANGES = {
     "calibrated_confidence_threshold": (0.3, 0.99),
     "conformal_margin": (0.0, 0.2),
     "risk_gate_min_samples": (1, 50),
+    "risk_gate_rollout_ratio": (0.0, 1.0),
+    "risk_budget_guardrail_min_events": (1, 10000),
+    "risk_budget_guardrail_max_abstain_rate": (0.0, 1.0),
     "prior_strength": (0.0, 1.0),
     "warm_probability_hit": (0.5, 1.0),
     "warm_probability_miss": (0.0, 0.5),
@@ -428,6 +445,10 @@ def _format_config(candidate: DesignCandidate) -> str:
         f"- risk_budget_id: {rc.risk_budget_id}\n"
         f"- risk_gate_min_samples: {rc.risk_gate_min_samples}\n"
         f"- risk_abstain_target_role: {rc.risk_abstain_target_role}\n"
+        f"- risk_gate_rollout_ratio: {rc.risk_gate_rollout_ratio}\n"
+        f"- risk_gate_kill_switch: {rc.risk_gate_kill_switch}\n"
+        f"- risk_budget_guardrail_min_events: {rc.risk_budget_guardrail_min_events}\n"
+        f"- risk_budget_guardrail_max_abstain_rate: {rc.risk_budget_guardrail_max_abstain_rate}\n"
         f"- prior_strength: {rc.prior_strength}\n"
         f"- warm_probability_hit: {rc.warm_probability_hit}\n"
         f"- warm_probability_miss: {rc.warm_probability_miss}\n"

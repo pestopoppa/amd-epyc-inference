@@ -215,6 +215,8 @@ class TestReplayEngineMetrics:
         assert metrics.num_trajectories == 3
         assert metrics.num_complete == 3
         assert 0.0 <= metrics.routing_accuracy <= 1.0
+        assert 0.0 <= metrics.route_flip_rate <= 1.0
+        assert metrics.posterior_margin_mean >= 0.0
         assert metrics.replay_duration_seconds > 0
         assert "code" in metrics.routing_accuracy_by_type
         assert "ingest" in metrics.routing_accuracy_by_type
