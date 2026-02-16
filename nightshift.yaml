@@ -14,6 +14,7 @@ tasks:
     - td-review                    # tech debt review session
     - docs-backfill                # document undocumented functions
     - skill-groom                  # keep .claude skills tidy
+    - ci-fix                       # review & fix failing CI tests
 
     # Analysis-only tasks (reports, no code changes)
     - dead-code                    # find unused code
@@ -34,6 +35,7 @@ tasks:
     doc-drift: 3
     docs-backfill: 2
     skill-groom: 1
+    ci-fix: 8                      # keep CI green — high priority
 
   intervals:
     security-footgun: 168h         # weekly
@@ -47,6 +49,7 @@ tasks:
     doc-drift: 336h                # every 2 weeks
     docs-backfill: 336h            # every 2 weeks
     skill-groom: 336h              # every 2 weeks
+    ci-fix: 24h                    # daily — check every run
 
   disabled: []
 
