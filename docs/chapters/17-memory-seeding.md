@@ -8,7 +8,9 @@ The MemRL system requires bootstrap data to function effectively. Without seed m
 
 ## Seed Loader Architecture
 
-### Core Components
+The seed loader is the main entry point for populating the episodic store. It reads canonical examples from JSON, generates embeddings via BGE-large, and writes them into memory with high Q-values so the system can retrieve useful patterns from day one.
+
+<details><summary>Core components and file locations</summary>
 
 | Component | Purpose | Location |
 |-----------|---------|----------|
@@ -17,9 +19,9 @@ The MemRL system requires bootstrap data to function effectively. Without seed m
 | `graph_seeds.yaml` | Failure modes & hypotheses | `orchestration/repl_memory/graph_seeds.yaml` |
 | Seeding scripts | Diverse seeding strategies | `scripts/seed_*.py` (9 scripts) |
 
-### Seed Examples JSON Format
-
 Each canonical example has the following structure:
+
+<details><summary>Data: seed example JSON format</summary>
 
 ```json
 {
@@ -30,6 +32,8 @@ Each canonical example has the following structure:
 }
 ```
 
+</details>
+
 Categories include:
 - `filesystem` - Directory listing, file info, peeking
 - `search` - Grep patterns, function definitions, TODO comments
@@ -37,17 +41,9 @@ Categories include:
 - `analysis` - Data parsing, log analysis
 - `computation` - Math, statistics, aggregations
 
-### Loading Canonical Seeds
+</details>
 
-**Basic usage:**
-
-```bash
-# First-time seeding
-python orchestration/repl_memory/seed_loader.py
-
-# Force reload (clears existing memories)
-python orchestration/repl_memory/seed_loader.py --force
-```
+<details><summary>Loading canonical seeds into memory</summary>
 
 **What it does:**
 
@@ -59,6 +55,16 @@ python orchestration/repl_memory/seed_loader.py --force
    - `outcome`: "success"
    - `initial_q`: 0.9 (high Q-value for canonical examples)
    - `context`: `{"is_seed": True, "category": "...", "tools_used": [...]}`
+
+<details><summary>Code: basic usage and expected output</summary>
+
+```bash
+# First-time seeding
+python orchestration/repl_memory/seed_loader.py
+
+# Force reload (clears existing memories)
+python orchestration/repl_memory/seed_loader.py --force
+```
 
 **Output:**
 
@@ -78,41 +84,41 @@ Memory stats:
   Average Q-value: 0.90
 ```
 
+</details>
+
+</details>
+
 ## Seeding Strategies
 
-The system provides 9 specialized seeding scripts, each with a distinct strategy:
+The system provides 9 specialized seeding scripts, each targeting a different aspect of the memory distribution. Together they build a balanced store of successes, failures, complex chains, and probabilistic explorations so the agent does not overfit to simple canonical patterns.
 
-### 1. Diverse Memories (`seed_diverse_memories.py`)
+<details><summary>Strategy 1: Diverse memories</summary>
 
-**Purpose:** Prevent overfitting to simple cases by seeding complex multi-step tasks.
+**Script:** `seed_diverse_memories.py`
 
-**Strategy:**
-- Generate 100-500 memories with increasing complexity
-- Combine multiple tools in sequence
-- Include conditional logic and error handling
-- Q-values: 0.7-0.9 (high but not canonical)
+Prevents overfitting to simple cases by seeding complex multi-step tasks. Generates 100-500 memories with increasing complexity, combining multiple tools in sequence, and including conditional logic and error handling. Q-values range from 0.7-0.9 (high but not canonical).
 
-**Example generated task:**
+<details><summary>Code: multi-step example</summary>
 
 ```python
-# Complex multi-step: OCR → grep → analysis
+# Complex multi-step: OCR -> grep -> analysis
 doc = json.loads(ocr_document('/path/to/paper.pdf'))
 matches = grep('algorithm', file_path='/tmp/extracted.txt')
 result = analyze_pattern(matches)
 FINAL(result)
 ```
 
-### 2. Failure Memories (`seed_failure_memories.py`)
+</details>
 
-**Purpose:** Seed common failure patterns with Q-values < 0.5 to teach the system what NOT to do.
+</details>
 
-**Strategy:**
-- Generate 50-100 failed attempts
-- Include common mistakes (wrong tool, missing imports, path errors)
-- Outcome: "failure"
-- Q-values: 0.1-0.4 (low, to discourage repetition)
+<details><summary>Strategy 2: Failure memories</summary>
 
-**Example failure:**
+**Script:** `seed_failure_memories.py`
+
+Seeds common failure patterns with Q-values below 0.5 to teach the system what NOT to do. Generates 50-100 failed attempts covering common mistakes like wrong tool usage, missing imports, and path errors. Outcome is "failure" and Q-values are 0.1-0.4 to discourage repetition.
+
+<details><summary>Code: example failure pattern</summary>
 
 ```python
 # BAD: Uses Python imports instead of REPL tools
@@ -121,36 +127,33 @@ files = os.listdir('/tmp')  # Will trigger security error
 FINAL(files)
 ```
 
-### 3. Diverse Failures (`seed_diverse_failures.py`)
+</details>
 
-**Purpose:** Seed complex failure chains and recovery patterns.
+</details>
 
-**Strategy:**
-- Generate multi-step failures (A fails → B attempted → B also fails)
-- Include partial successes (step 1 works, step 2 fails)
-- Link failures to graph via `failure_graph.record_failure()`
+<details><summary>Strategy 3: Diverse failures</summary>
 
-### 4. Probabilistic Memories (`seed_probabilistic_memories.py`)
+**Script:** `seed_diverse_failures.py`
 
-**Purpose:** Seed exploration with randomized Q-values to model uncertainty.
+Seeds complex failure chains and recovery patterns. Generates multi-step failures (A fails, B attempted, B also fails), includes partial successes (step 1 works, step 2 fails), and links failures to the graph via `failure_graph.record_failure()`.
 
-**Strategy:**
-- Same tasks as canonical examples
-- Q-values drawn from Beta(2, 5) distribution (mean ~0.3, variance)
-- Outcome randomized: 70% success, 30% failure
+</details>
 
-**Why this matters:** Prevents overconfidence in untested scenarios.
+<details><summary>Strategy 4: Probabilistic memories</summary>
 
-### 5. Decomposition Memories (`seed_decomposition_memories.py`)
+**Script:** `seed_probabilistic_memories.py`
 
-**Purpose:** Seed task decomposition patterns (high-level goal → sub-tasks).
+Seeds exploration with randomized Q-values to model uncertainty. Uses the same tasks as canonical examples, but Q-values are drawn from a Beta(2, 5) distribution (mean ~0.3, with variance) and outcomes are randomized: 70% success, 30% failure. This prevents overconfidence in untested scenarios.
 
-**Strategy:**
-- Generate 50 examples of task hierarchies
-- Include planning, subtask execution, aggregation
-- Q-values: 0.8 (high, decomposition is valuable)
+</details>
 
-**Example:**
+<details><summary>Strategy 5: Decomposition memories</summary>
+
+**Script:** `seed_decomposition_memories.py`
+
+Seeds task decomposition patterns that map high-level goals to sub-tasks. Generates 50 examples of task hierarchies including planning, subtask execution, and aggregation. Q-values are 0.8 because decomposition is especially valuable.
+
+<details><summary>Code: decomposition example</summary>
 
 ```python
 # High-level: Analyze all PDFs in directory
@@ -162,42 +165,41 @@ for f in filter(lambda x: x.endswith('.pdf'), files):
 FINAL(aggregate(results))
 ```
 
-### 6. Memory from Logs (`seed_memory_from_logs.py`)
+</details>
 
-**Purpose:** Bootstrap from real agent activity logs.
+</details>
 
-**Strategy:**
-- Parse `logs/agent_audit.log`
-- Extract task-action pairs from successful executions
-- Assign Q-values based on outcome (1.0 for success, 0.2 for failure)
-- Filter out low-quality entries (truncated, error messages)
+<details><summary>Strategy 6: Memory from logs</summary>
 
-**Usage:**
+**Script:** `seed_memory_from_logs.py`
+
+Bootstraps memory from real agent activity logs. Parses `logs/agent_audit.log`, extracts task-action pairs from successful executions, assigns Q-values based on outcome (1.0 for success, 0.2 for failure), and filters out low-quality entries like truncated or error messages.
+
+<details><summary>Code: log-based seeding usage</summary>
 
 ```bash
 python scripts/seed_memory_from_logs.py --log-file logs/agent_audit.log --min-quality 0.5
 ```
 
-### 7. Success Patterns (`seed_success_patterns.py`)
+</details>
 
-**Purpose:** Seed known-good patterns from benchmark results.
+</details>
 
-**Strategy:**
-- Extract successful action sequences from benchmark JSON
-- Focus on high-scoring runs (Claude-as-Judge score ≥ 3)
-- Assign Q-values based on benchmark score (0.8-1.0)
+<details><summary>Strategy 7: Success patterns</summary>
 
-### 8. Graph Seeds (`seed_graphs.py`)
+**Script:** `seed_success_patterns.py`
 
-**Purpose:** Load failure modes and hypotheses into graph databases.
+Seeds known-good patterns from benchmark results. Extracts successful action sequences from benchmark JSON, focusing on high-scoring runs (Claude-as-Judge score of 3 or above), and assigns Q-values of 0.8-1.0 based on the benchmark score.
 
-**Strategy:**
-- Parse `graph_seeds.yaml`
-- Create FailureMode, Symptom, Mitigation nodes
-- Create Hypothesis nodes with initial confidence
-- Link to episodic memory where applicable
+</details>
 
-**Usage:**
+<details><summary>Strategy 8: Graph seeds</summary>
+
+**Script:** `seed_graphs.py`
+
+Loads failure modes and hypotheses into the graph databases. Parses `graph_seeds.yaml`, creates FailureMode, Symptom, and Mitigation nodes, creates Hypothesis nodes with initial confidence, and links them to episodic memory where applicable.
+
+<details><summary>Code: graph seeding usage and output</summary>
 
 ```bash
 python scripts/seed_graphs.py --force
@@ -220,31 +222,27 @@ Graph stats:
   Hypothesis graph: 4.6MB (15 nodes, 30 edges)
 ```
 
-### 9. Remaining Phase B (`seed_remaining_phase_b.py`)
+</details>
 
-**Purpose:** Seed incomplete Phase B implementation tasks (specialist workflows).
+</details>
 
-**Strategy:**
-- Generate placeholder memories for unimplemented features
-- Q-values: 0.3 (uncertain, needs validation)
-- Mark with `{"phase": "B", "status": "pending"}`
+<details><summary>Strategy 9: Remaining Phase B</summary>
 
-### 10. 3-Way Routing Evaluation (`seed_specialist_routing.py --3way`)
+**Script:** `seed_remaining_phase_b.py`
 
-**Purpose:** Train frontdoor for faithful probability estimation via 3-way comparative testing.
+Seeds incomplete Phase B implementation tasks (specialist workflows). Generates placeholder memories for unimplemented features with Q-values of 0.3 (uncertain, needs validation) and marks them with `{"phase": "B", "status": "pending"}`.
 
-**Strategy:**
-- Runs each question through 4 configurations:
-  - `SELF:direct` - Frontdoor, no tools
-  - `SELF:repl` - Frontdoor/vision worker with tools, delegation disabled
-  - `ARCHITECT` - Dual-architect evaluation (architect_general + architect_coding; best-of-two)
-  - `WORKER` - Scored indirectly via delegation chains
-- Binary rewards (1.0 for pass, 0.0 for fail)
-- Cost metrics stored separately for later Optuna optimization
-- Infrastructure errors (timeouts, connection failures) produce **no reward** — action is skipped and retried next batch
-- For VL questions, `SELF:repl` is `worker_vision:repl` (legacy `worker_vision:react` is backward-compatible in historical reward parsing).
+</details>
 
-**Usage:**
+<details><summary>Strategy 10: 3-Way routing evaluation</summary>
+
+**Script:** `seed_specialist_routing.py --3way`
+
+Trains the frontdoor for faithful probability estimation via 3-way comparative testing. Each question runs through 4 configurations: `SELF:direct` (frontdoor, no tools), `SELF:repl` (frontdoor/vision worker with tools, delegation disabled), `ARCHITECT` (dual-architect best-of-two evaluation), and `WORKER` (scored indirectly via delegation chains). Binary rewards (1.0 pass, 0.0 fail) are used instead of cost-weighted rewards so the system learns true P(success). Cost metrics are stored in metadata for later Optuna optimization.
+
+Infrastructure errors (timeouts, connection failures) produce no reward -- the action is skipped and retried next batch. For VL questions, `SELF:repl` is `worker_vision:repl` (legacy `worker_vision:react` is backward-compatible in historical reward parsing).
+
+<details><summary>Code: 3-way seeding commands</summary>
 
 ```bash
 # Full 3-way seeding run
@@ -254,22 +252,28 @@ python scripts/benchmark/seed_specialist_routing.py --3way --suites thinking cod
 python scripts/benchmark/seed_specialist_routing.py --3way --dry-run --suites thinking --sample-size 5
 ```
 
+</details>
+
 **Key difference from comparative seeding:**
 - Comparative seeding uses cost-weighted rewards
 - 3-way seeding uses binary rewards for faithful P(success) estimation
 - Cost is stored in metadata, not incorporated into Q-values
 
-### Question Pool (Pre-extracted)
+</details>
 
-All ~53K questions from 18 HF dataset adapters + YAML suites are pre-extracted into `benchmarks/prompts/question_pool.jsonl`. Runtime sampling reads this file (~100ms) instead of loading 16 Arrow/Parquet datasets (~30s).
+<details><summary>Question pool and pre-extracted data</summary>
+
+All ~53K questions from 18 HF dataset adapters plus YAML suites are pre-extracted into `benchmarks/prompts/question_pool.jsonl`. Runtime sampling reads this file (~100ms) instead of loading 16 Arrow/Parquet datasets (~30s).
 
 - **Sampling**: Full shuffle per suite, take first N unseen. Guarantees coverage of entire pool.
-- **Seen tracking**: `benchmarks/results/eval/seen_questions.jsonl` — questions marked seen only when rewards are injected.
+- **Seen tracking**: `benchmarks/results/eval/seen_questions.jsonl` -- questions marked seen only when rewards are injected.
 - **Debug mode** (`--debug`): When a suite is exhausted, backfills with seen questions (via `allow_reseen`). Normal mode skips exhausted suites.
 - **Reset**: `scripts/session/reset_episodic_memory.sh` clears episodic DB + FAISS + seen set.
 - **Rebuild**: `--rebuild-pool` re-extracts from all adapters.
 
-### Claude-in-the-Loop Debugger
+</details>
+
+<details><summary>Claude-in-the-Loop debugger</summary>
 
 The `--debug` flag (requires `--3way`) enables automatic pipeline debugging via a persistent Claude Code session. See [Chapter 26](26-claude-debugger.md) for full documentation: 17 anomaly signals, hot-swap/code fixes, 3-phase regression suite (verify/generalize/regress), MemRL interaction (TD-learning on retried questions), auto-discovery of new failure patterns, and audit trail.
 
@@ -278,6 +282,8 @@ The `--debug` flag (requires `--3way`) enables automatic pipeline debugging via 
 **Auto-discovery:** The debugger instructs Claude to propose new anomaly detectors via structured `NEW_SIGNAL:` output. Proposals are persisted to `logs/proposed_signals.jsonl` for human review and optional inclusion in `anomaly.py`.
 
 **Retry persistence:** Retry queue survives script crashes via JSONL persistence (`logs/retry_queue.jsonl`). Previous sessions' pending retries are loaded on startup.
+
+<details><summary>Code: debugger invocation commands</summary>
 
 ```bash
 # Live debugging (Claude analyzes every 5 answers)
@@ -290,9 +296,15 @@ python scripts/benchmark/seed_specialist_routing.py --3way --continuous --debug 
 python scripts/benchmark/seed_specialist_routing.py --3way --debug --debug-dry-run
 ```
 
+</details>
+
+</details>
+
 ## Seeding Order & Dependencies
 
-**Recommended seeding order:**
+Running the seeding scripts in the right order matters. Canonical examples go first to establish the high-confidence baseline, then graphs for failure knowledge, then progressively noisier data. Here is the recommended sequence.
+
+<details><summary>Step-by-step seeding commands</summary>
 
 1. **Canonical examples first** - High-quality baseline
    ```bash
@@ -325,9 +337,13 @@ python scripts/benchmark/seed_specialist_routing.py --3way --debug --debug-dry-r
    python scripts/seed_success_patterns.py --min-score 3
    ```
 
+</details>
+
 ## Memory Distribution After Seeding
 
-Typical distribution after full seeding:
+After running the full seeding pipeline, you should see roughly 500-1000 memories with a balanced mix of high-confidence patterns, exploratory variety, and anti-patterns. The average Q-value should land around 0.65.
+
+<details><summary>Expected distribution by source</summary>
 
 | Source | Count | Avg Q-value | Purpose |
 |--------|-------|-------------|---------|
@@ -338,9 +354,13 @@ Typical distribution after full seeding:
 | Benchmark-driven | 100-200 | 0.85 | Proven solutions |
 | **Total** | **500-1000** | **0.65** | Balanced coverage |
 
+</details>
+
 ## Verification
 
-**Check seeding status:**
+You can check seeding status at any time by querying the episodic store directly. If the total count and average Q-value look reasonable, seeding is healthy.
+
+<details><summary>Code: checking seeding status</summary>
 
 ```python
 from orchestration.repl_memory.episodic_store import EpisodicStore
@@ -361,53 +381,46 @@ Average Q-value: 0.67
 Recent successes: 78%
 ```
 
+</details>
+
 ## 3-Way Action Keys (February 2026)
 
-The 3-way evaluation mode uses a distinct action vocabulary:
+The 3-way evaluation mode uses a distinct action vocabulary that maps to routing decisions. These keys are stored in episodic memory and the HybridRouter's `route_3way()` method retrieves memories by them.
+
+<details><summary>Action key definitions</summary>
 
 | Action Key | What It Represents | Source Role | Mode |
 |------------|-------------------|-------------|------|
 | `SELF:direct` | Frontdoor without tools | frontdoor | direct |
 | `SELF:repl` | Frontdoor with tools | frontdoor | repl |
 | `ARCHITECT` | Architect with delegation | architect_general + architect_coding (best-of-two) | delegated |
-| `WORKER` | Worker models | via delegation | — |
+| `WORKER` | Worker models | via delegation | -- |
 
-These action keys are stored in episodic memory and used for routing decisions. The HybridRouter's `route_3way()` method retrieves memories by these action keys.
+</details>
 
 ## Infra Safeguards (2026-02-07)
 
-Recent seeding regressions showed that a single stalled heavy-model request can
-block the orchestrator event loop and cascade into 600s timeouts. The infra
-plan now includes:
-
-- **CPU-exclusive inference lock**: heavy models acquire an exclusive lock; workers/embedders acquire a shared lock and only run when no heavy model is active.
-- **Async safety**: all blocking LLM calls are offloaded from the event loop.
-- **3-way timeout cleanup**: slot erasure on infra timeouts to prevent stuck backends.
-- **Backend probes in /health**: detect hung backends even when circuit state is stale.
+Recent seeding regressions showed that a single stalled heavy-model request can block the orchestrator event loop and cascade into 600s timeouts. The infrastructure now guards against this with a CPU-exclusive inference lock (heavy models acquire exclusive; workers/embedders acquire shared and only run when no heavy model is active), async safety (all blocking LLM calls offloaded from the event loop), 3-way timeout cleanup (slot erasure on infra timeouts to prevent stuck backends), and backend probes in `/health` to detect hung backends even when circuit state is stale.
 
 ## Architect Delegation in 3-Way Eval (2026-02-09)
 
-The 3-way ARCHITECT evaluation runs `architect_general` and `architect_coding` in
-delegated mode. The architect decides via TOON whether to answer directly (`D|answer`)
-or delegate to a specialist (`I|brief:<spec>|to:coder_escalation`).
+The 3-way ARCHITECT evaluation runs `architect_general` and `architect_coding` in delegated mode, where the architect decides via TOON whether to answer directly (`D|answer`) or delegate to a specialist (`I|brief:<spec>|to:coder_escalation`).
 
-**Known issue (fixed):** The original architect prompt presented `D|` and `I|` as
-side-by-side template examples. Qwen3-235B echoed both, causing `_extract_toon_decision`
-to find `D|Answer` first and parse it as a direct answer. The delegation chain to
-`coder_escalation` (port 8081, Qwen2.5-Coder-32B) was never exercised.
+<details><summary>Known issue, fix, and slot-erase details</summary>
 
-**Fix:** Prompt restructured as bullet-list alternatives with "EXACTLY ONE line" guard.
-Architect now correctly delegates code tasks and provides architectural design briefs
-(approach, data structures, algorithm, complexity) for the coding specialist.
+**Known issue (fixed):** The original architect prompt presented `D|` and `I|` as side-by-side template examples. Qwen3-235B echoed both, causing `_extract_toon_decision` to find `D|Answer` first and parse it as a direct answer. The delegation chain to `coder_escalation` (port 8081, Qwen2.5-Coder-32B) was never exercised.
 
-**Slot-erase for stuck backends:** When the seeding script's HTTP client times out, the
-llama-server may still be generating. `_erase_slots(port)` sends
-`POST /slots/{id}?action=erase` to cancel in-progress inference. If the server is stuck
-in prompt eval, the erase request itself may hang. The `_SLOT_ERASE_CAPABILITY` cache
-tracks which ports support slot erasure and disables erase attempts on ports that return
-404/405/501.
+**Fix:** Prompt restructured as bullet-list alternatives with "EXACTLY ONE line" guard. Architect now correctly delegates code tasks and provides architectural design briefs (approach, data structures, algorithm, complexity) for the coding specialist.
+
+**Slot-erase for stuck backends:** When the seeding script's HTTP client times out, the llama-server may still be generating. `_erase_slots(port)` sends `POST /slots/{id}?action=erase` to cancel in-progress inference. If the server is stuck in prompt eval, the erase request itself may hang. The `_SLOT_ERASE_CAPABILITY` cache tracks which ports support slot erasure and disables erase attempts on ports that return 404/405/501.
+
+</details>
 
 ## Timeout + Telemetry Updates (2026-02-08)
+
+Several improvements landed to handle timeout cascades and improve observability during 3-way evaluation runs.
+
+<details><summary>Timeout and telemetry implementation details</summary>
 
 - **Adaptive per-call timeout budget** in 3-way eval: timeout is selected by role/mode/modality and capped by CLI `--timeout` (hard ceiling). This reduces worst-case stall wait while preserving headroom for slow architect paths.
 - **Observed-runtime timeout bumping**: REPL and architect calls can be raised using earlier per-question observed latency (direct/repl), reducing false `INFRA` on hard long-generation tasks while still respecting the hard ceiling.
@@ -417,20 +430,13 @@ tracks which ports support slot erasure and disables erase attempts on ports tha
 - **Live slot progress polling (2026-02-09)**: forced 3-way calls poll backend `/slots` during execution and emit `[slot-progress]` logs with task id + decoded token counters.
 - **INFRA token estimate (2026-02-09)**: when API returns `0 tok` under timeout/disconnect, seeding records `tokens_generated_estimate` from slot counters and surfaces it in logs (`0 tok, est N tok`).
 
-## References
-
-- **Seed loader**: `orchestration/repl_memory/seed_loader.py`
-- **Canonical examples**: `orchestration/repl_memory/seed_examples.json`
-- **Graph seeds**: `orchestration/repl_memory/graph_seeds.yaml`
-- **Seeding scripts**: `scripts/seed_*.py` (9 scripts)
-- **3-way seeding**: `scripts/benchmark/seed_specialist_routing.py --3way`
-- **Seeding types**: `scripts/benchmark/seeding_types.py` (action keys, cost tiers)
-- **Seeding rewards**: `scripts/benchmark/seeding_rewards.py` (binary rewards)
-- **EpisodicStore**: `orchestration/repl_memory/episodic_store.py`
+</details>
 
 ## Skill Seeding (February 2026)
 
-The SkillBank extends the seeding philosophy to structured skills. Initial SkillBank bootstrap distills existing high-Q episodic memories into compressed, reusable skills via the DistillationPipeline.
+The SkillBank extends the seeding philosophy to structured skills. Initial SkillBank bootstrap distills existing high-Q episodic memories into compressed, reusable skills via the DistillationPipeline. Think of it as graduating raw memories into polished, retrievable skill definitions.
+
+<details><summary>Relationship to canonical seeds and bootstrap process</summary>
 
 ### Relationship to Canonical Seeds
 
@@ -443,9 +449,24 @@ Canonical seed examples (56 REPL examples at Q=0.9) are the **raw material** for
 3. Deduplicate against existing skills (cosine similarity > 0.85)
 4. Store in SkillBank with initial confidence from teacher analysis
 
-This is analogous to SkillRL's SFT cold-start — bootstrapping structured knowledge from existing experience without model weight updates.
+This is analogous to SkillRL's SFT cold-start -- bootstrapping structured knowledge from existing experience without model weight updates.
 
 See [Chapter 27](27-skillbank-experience-distillation.md) for full SkillBank documentation.
+
+</details>
+
+<details><summary>References</summary>
+
+- **Seed loader**: `orchestration/repl_memory/seed_loader.py`
+- **Canonical examples**: `orchestration/repl_memory/seed_examples.json`
+- **Graph seeds**: `orchestration/repl_memory/graph_seeds.yaml`
+- **Seeding scripts**: `scripts/seed_*.py` (9 scripts)
+- **3-way seeding**: `scripts/benchmark/seed_specialist_routing.py --3way`
+- **Seeding types**: `scripts/benchmark/seeding_types.py` (action keys, cost tiers)
+- **Seeding rewards**: `scripts/benchmark/seeding_rewards.py` (binary rewards)
+- **EpisodicStore**: `orchestration/repl_memory/episodic_store.py`
+
+</details>
 
 ---
 
