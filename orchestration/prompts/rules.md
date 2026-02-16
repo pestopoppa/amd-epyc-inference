@@ -68,6 +68,23 @@ def shortestPalindrome(s: str) -> str:
 FINAL(solution)
 ```
 
+## Example 6b: Fix a bug in non-Python code (Java, C++, etc.)
+Question: "Fix the bug in this Java code: `if(arr[i] = 0)` ..."
+```python
+# Keep the ORIGINAL LANGUAGE — do NOT rewrite in Python
+# Fix only the bug, submit the corrected source as a string
+solution = '''class Solution {
+    public void solve(int[][] arr) {
+        for (int i = 0; i < arr.length; i++) {
+            if (arr[i][0] == 0) {  // fixed: = changed to ==
+                arr[i][0] = -1;
+            }
+        }
+    }
+}'''
+FINAL(solution)
+```
+
 ## Example 7: Explanation / analysis
 Question: "Explain why quicksort is O(n log n) on average."
 ```python
