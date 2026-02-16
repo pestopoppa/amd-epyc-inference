@@ -8,6 +8,11 @@ Managed by `orchestrator_stack.py`, the system provides graceful start/stop, hea
 
 ## Server Topology
 
+The stack spans three tiers of servers, each mapped to a port range. The HOT tier holds the models you interact with most — the frontdoor, coders, architects, and embedders — all pinned in RAM so there is zero cold-start penalty. Auxiliary services handle retrieval and OCR on their own ports.
+
+<details>
+<summary>Server port assignments and tier breakdown</summary>
+
 ### HOT Tier (Always Resident)
 
 | Port | Roles | Model | Acceleration | Speed | RAM |
@@ -42,9 +47,19 @@ Managed by `orchestrator_stack.py`, the system provides graceful start/stop, hea
 
 **Idle Timeout**: 300 seconds (5 minutes). Automatically shut down if unused.
 
+</details>
+
 ## Memory Architecture
 
+About half the system RAM is pinned to HOT-tier models so they never get evicted. The remaining half is split between dynamic KV cache (which grows with concurrent requests) and OS buffers. Larger models like the 235B and 480B architects dominate the budget, but keeping them resident avoids 30-90 second reload penalties that would wreck interactive latency.
+
+<details>
+<summary>Tier allocation and model load times</summary>
+
 ### Tier Allocation
+
+<details>
+<summary>Data: RAM budget breakdown</summary>
 
 ```
 Total RAM: 1130GB
@@ -61,6 +76,8 @@ Total RAM: 1130GB
 └── OS + Buffers: ~135GB (12%)
 ```
 
+</details>
+
 **Design Principle**: Keep specialists resident to avoid cold-start latency (15-45s model load). Only WARM tier workers are evicted.
 
 ### Model Load Times
@@ -74,11 +91,21 @@ Total RAM: 1130GB
 
 **Optimization**: Parallel tensor repack (`production-consolidated` branch) reduces load time by 2.2x vs sequential.
 
+</details>
+
 ## Worker Pool Architecture
+
+Workers are not one-size-fits-all. Different models handle different task types, and the pool expands on demand when concurrent load spikes. The original 7B coder worker was removed after benchmarks proved the 32B coder-escalation endpoint was both faster and higher quality.
+
+<details>
+<summary>Worker routing, pool config, and expansion strategy</summary>
 
 ### Heterogeneous Parallelism
 
 The worker pool uses different models for different task types:
+
+<details>
+<summary>Code: Worker pool model mapping</summary>
 
 ```python
 WORKER_POOL_MODELS = {
@@ -90,6 +117,8 @@ class WorkerTier(Enum):
     HOT = "hot"    # Always resident
     WARM = "warm"  # Load on demand
 ```
+
+</details>
 
 ### Task Routing
 
@@ -103,6 +132,9 @@ class WorkerTier(Enum):
 
 ### Expansion Strategy
 
+<details>
+<summary>Code: Worker pool expansion config</summary>
+
 ```python
 @dataclass
 class WorkerPoolConfig:
@@ -110,11 +142,23 @@ class WorkerPoolConfig:
     warm_timeout_seconds: int = 300  # 5 min idle before shutdown
 ```
 
+</details>
+
 When concurrent load exceeds 4 tasks, WARM workers spin up. After 5 minutes idle, they shut down to free RAM.
+
+</details>
 
 ## CLI Operations
 
+You manage the whole stack through `orchestrator_stack.py`. It supports dev mode for quick iteration with a single tiny model, production hot-only for the full resident tier, and granular reload so you can swap one component without bouncing everything.
+
+<details>
+<summary>Start, stop, reload, and state persistence commands</summary>
+
 ### Start Commands
+
+<details>
+<summary>Code: orchestrator_stack.py usage</summary>
 
 ```bash
 # Development mode (single 0.5B model, fast startup)
@@ -136,7 +180,12 @@ python3 scripts/server/orchestrator_stack.py stop --all
 python3 scripts/server/orchestrator_stack.py reload orchestrator
 ```
 
+</details>
+
 ### State Persistence
+
+<details>
+<summary>Config: orchestrator_state.json schema</summary>
 
 ```json
 // /mnt/raid0/llm/claude/logs/orchestrator_state.json
@@ -152,11 +201,23 @@ python3 scripts/server/orchestrator_stack.py reload orchestrator
 }
 ```
 
+</details>
+
 State enables graceful shutdown and status queries without querying each server.
+
+</details>
 
 ## Health Monitoring
 
+Every server exposes a `/health` endpoint that the stack polls during startup and ongoing operation. The startup sequence is deliberately sequential with cooldown gaps between large models so mmap has time to settle. Vision servers get extra-long timeouts because they load both a main model and a multimodal projector.
+
+<details>
+<summary>Liveness check implementation and status output</summary>
+
 ### Liveness Checks
+
+<details>
+<summary>Code: Health polling loop</summary>
 
 ```python
 def wait_for_health(port: int, timeout: int = 120) -> bool:
@@ -173,9 +234,14 @@ def wait_for_health(port: int, timeout: int = 120) -> bool:
     return False
 ```
 
+</details>
+
 **Startup Sequence**: Servers start sequentially with 5s cooldown between large models (allow mmap to settle). Vision servers get 90-120s timeout (mmproj + main model).
 
 ### Status Output
+
+<details>
+<summary>Data: Example status table</summary>
 
 ```
 COMPONENT                 PORT     PID        STATUS     MODEL
@@ -186,9 +252,21 @@ architect_general         8083     12348      healthy    Qwen3-235B-A22B-Q4_K_M
 orchestrator              8000     12350      healthy    uvicorn
 ```
 
+</details>
+
+</details>
+
 ## Initialization Hooks
 
+After all servers are healthy, the stack initializes MemRL databases, seeds the REPL with examples, warms up the embedding pool, and registers the 41 deterministic tools. This runs automatically — you do not need to trigger it manually.
+
+<details>
+<summary>MemRL and tool registry init sequence</summary>
+
 ### MemRL and Tool Registry
+
+<details>
+<summary>Code: init_memrl_and_tools()</summary>
 
 ```python
 def init_memrl_and_tools() -> bool:
@@ -209,11 +287,18 @@ def init_memrl_and_tools() -> bool:
     return True
 ```
 
+</details>
+
 Called automatically after server startup. Ensures episodic memory and tools are ready.
+
+</details>
 
 ## Checkpoint Hooks
 
 Self-management procedures can create/restore checkpoints:
+
+<details>
+<summary>Code: Checkpoint create and restore</summary>
 
 ```python
 checkpoint_create("before_model_update", include_state=True)
@@ -221,9 +306,14 @@ checkpoint_create("before_model_update", include_state=True)
 checkpoint_restore("before_model_update_20260128_103000")
 ```
 
+</details>
+
 Stored in `/mnt/raid0/llm/claude/orchestration/checkpoints/`.
 
 ## References
+
+<details>
+<summary>Implementation, architecture patterns, and related systems</summary>
 
 ### Implementation
 
@@ -240,6 +330,8 @@ Stored in `/mnt/raid0/llm/claude/orchestration/checkpoints/`.
 
 6. Ray Serve (model serving framework): https://docs.ray.io/en/latest/serve/
 7. BentoML (ML serving): https://docs.bentoml.org/
+
+</details>
 
 ---
 
