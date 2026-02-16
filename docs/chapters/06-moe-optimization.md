@@ -8,6 +8,11 @@ This technique provides **21-52% speedup** on MoE models and is the **only safe 
 
 ## How MoE Works
 
+MoE models already only activate a fraction of their parameters per token — a router picks the top-K experts for each token. Our optimization takes this further: instead of letting the router choose from all 8 experts, we restrict it to just 3-4. Fewer experts means fewer weights read per token, which directly speeds up the memory-bandwidth-bound generation step.
+
+<details>
+<summary>Architecture diagrams and mechanism</summary>
+
 ```
 Standard Dense Model:
   Input → All parameters → Output
@@ -24,7 +29,14 @@ MoE Model (forced 4 experts total):
   (Same quality, faster inference)
 ```
 
+</details>
+
 ## Best Results
+
+Across every MoE model we've tested, reducing expert count from 8 to 3-4 gives a consistent 21-52% speedup with no measurable quality degradation. The key finding: 3 experts is typically the sweet spot. Going below 3 often produces garbage.
+
+<details>
+<summary>Speed measurements by model</summary>
 
 | Model | Baseline | Top-4 Experts | Speedup | Quality |
 |-------|----------|---------------|---------|---------|
@@ -34,7 +46,10 @@ MoE Model (forced 4 experts total):
 | Qwen3-Coder-30B-A3B | 26.6 t/s | 33.6 t/s | **+26%** | ✅ Good |
 | Qwen3-Next-80B-A3B | 7.5 t/s | 9.1 t/s (3 experts) | **+21%** | ✅ Good |
 
-## Expert Count Tuning
+</details>
+
+<details>
+<summary>Expert count tuning data</summary>
 
 Testing different expert counts on Qwen3-VL-30B:
 
@@ -46,11 +61,17 @@ Testing different expert counts on Qwen3-VL-30B:
 | 3 experts | **37.7 t/s** | ✅ Good |
 | 2 experts | ~40 t/s | ⚠️ Degraded |
 
-**Finding**: 3-4 experts is typically the sweet spot. Going below 3 often produces garbage output.
+</details>
 
 ## Critical: SSM Models
 
-**Qwen3-Next models (SSM hybrids)** cannot use speculative decoding or prompt lookup due to their recurrent architecture. Expert reduction is the **only safe optimization**:
+Qwen3-Next models (SSM hybrids) can't use speculative decoding or prompt lookup — their recurrent architecture breaks with non-consecutive token positions. Expert reduction is the **only safe optimization** for these models.
+
+<details>
+<summary>SSM usage and override keys</summary>
+
+<details>
+<summary>Code: SSM-safe expert reduction</summary>
 
 ```bash
 # ⛔ DO NOT use --draft or --lookup with Qwen3-Next!
@@ -61,9 +82,11 @@ numactl --interleave=all \
   -t 96 -p "prompt"
 ```
 
+</details>
+
 **Why**: SSM architectures maintain recurrent state that cannot be rolled back. Draft token rejection corrupts this state irreversibly.
 
-## Override Key Names
+### Override Key Names
 
 Different model families use different override keys:
 
@@ -73,13 +96,23 @@ Different model families use different override keys:
 | Qwen3-Next SSM | `qwen3next.expert_used_count` |
 | GLM-4 | `glm4.expert_used_count` |
 
-**Find the correct key**:
+<details>
+<summary>Code: finding the correct override key</summary>
+
 ```bash
 # List model metadata
 llama-cli -m MODEL.gguf --verbose 2>&1 | grep expert
 ```
 
+</details>
+</details>
+
 ## Quick Start Command
+
+The standard launch pattern for MoE reduction.
+
+<details>
+<summary>Code: expert reduction launch</summary>
 
 ```bash
 numactl --interleave=all \
@@ -89,9 +122,14 @@ numactl --interleave=all \
   -t 96 -p "prompt"
 ```
 
+</details>
+
 ## Combining with Other Techniques
 
-Expert reduction is **orthogonal** to other optimizations:
+Expert reduction is orthogonal to other optimizations — it works by reducing the weights read per token, while spec decode and prompt lookup work by amortizing reads across multiple tokens. The best result in the entire project (47.5 t/s on Qwen3-Coder-30B) uses all three together.
+
+<details>
+<summary>Compatibility matrix and combination results</summary>
 
 | Combination | Compatible | Notes |
 |-------------|------------|-------|
@@ -102,9 +140,14 @@ Expert reduction is **orthogonal** to other optimizations:
 For models that support it, combining MoE reduction with prompt lookup achieves the best results:
 - Qwen3-Coder-30B with 4 experts + prompt lookup: **47.5 t/s**
 
+</details>
+
 ## Quality Monitoring
 
-Always verify quality after applying expert reduction:
+Always verify quality after applying expert reduction. The general rule: if Claude-as-Judge scores drop more than 10% from baseline, increase the expert count.
+
+<details>
+<summary>Quality verification process</summary>
 
 1. Run benchmark suite on new configuration
 2. Compare Claude-as-Judge scores to baseline
@@ -116,7 +159,10 @@ Always verify quality after applying expert reduction:
 - Factual errors on simple questions
 - Instruction following failures
 
-## References
+</details>
+
+<details>
+<summary>References</summary>
 
 ### Foundational MoE Papers
 
@@ -143,6 +189,8 @@ Always verify quality after applying expert reduction:
 8. Qwen Team. (2024). *Qwen3 Technical Report*. Alibaba Group. https://arxiv.org/abs/2505.09388
 
 9. Qwen Team. (2024). *Qwen2.5 Technical Report*. Alibaba Group. https://arxiv.org/abs/2412.15115
+
+</details>
 
 ---
 
