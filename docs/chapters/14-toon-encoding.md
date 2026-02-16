@@ -8,9 +8,18 @@ TOON eliminates the redundancy inherent in JSON-serialized arrays of uniform obj
 
 ## Format Specification
 
+TOON works by declaring field names once in a header row, then encoding each object as a simple CSV line. This trades JSON's per-object key repetition for a columnar layout that slashes token counts by 40-70% on typical orchestration payloads. The format also handles nulls implicitly and validates array bounds via a length declaration.
+
+<details>
+<summary>Syntax rules, compression rationale, and worked examples</summary>
+
 ### JSON vs TOON
 
 **JSON (147 tokens)**:
+
+<details>
+<summary>Code: JSON input example</summary>
+
 ```json
 {
   "files": [
@@ -21,13 +30,21 @@ TOON eliminates the redundancy inherent in JSON-serialized arrays of uniform obj
 }
 ```
 
+</details>
+
 **TOON (~88 tokens, 40% reduction)**:
+
+<details>
+<summary>Code: TOON output example</summary>
+
 ```
 files[3]{name,type,size}:
   main.py,file,1234
   utils.py,file,567
   tests,dir,
 ```
+
+</details>
 
 ### Syntax Elements
 
@@ -46,11 +63,21 @@ files[3]{name,type,size}:
 3. **Null values implicit** — empty cells instead of `"field": null`
 4. **Structure preserved** — validators can check array bounds via `[N]`
 
+</details>
+
 ## Implementation
+
+The encoder lives in `src/services/toon_encoder.py` and exposes a small API: `encode()`, `decode()`, and a `should_use_toon()` heuristic that gates usage to arrays of 3+ uniform objects. There are specialized encoders for each orchestration data shape (file listings, escalation context, procedures, memory results), and the whole thing lazy-loads to avoid startup cost. If the underlying `toon_format` module is missing, every encoder silently falls back to JSON.
+
+<details>
+<summary>Core API, specialized encoders, and design details</summary>
 
 ### Core API
 
 **Source**: `src/services/toon_encoder.py`
+
+<details>
+<summary>Code: Public API surface</summary>
 
 ```python
 # Check availability
@@ -65,6 +92,8 @@ decode(toon_str: str) -> Any
 # Heuristic: should this data use TOON?
 should_use_toon(data: Any, min_array_size: int = 3) -> bool
 ```
+
+</details>
 
 ### Specialized Encoders
 
@@ -94,7 +123,14 @@ Each encoder targets a specific orchestration data shape:
 
 When `json_schema` or `grammar` is passed to `InferenceRequest`, the formalization post-processing step (TOON decode + re-encode cycle) can be skipped. Grammar-constrained outputs are already structurally valid -- running them through formalization is redundant work and risks mangling the constrained output. The bypass is automatic: if the request carries a schema/grammar field, the response pipeline short-circuits past the TOON formalization stage.
 
+</details>
+
 ## Performance Results
+
+The numbers tell a clear story: TOON cuts tokens by roughly half on typical orchestration data, and that translates directly into faster time-to-first-token. The gains are strongest on uniform, repetitive structures like file listings and architect error batches (60-70% reduction), and weakest on already-compact payloads like worker batches (26%). Bigger models benefit more because their per-token cost is higher.
+
+<details>
+<summary>Token reduction benchmarks and TTFT measurements by model size</summary>
 
 ### Token Reduction by Scenario
 
@@ -132,7 +168,14 @@ TTFT improvement scales with model size — larger models benefit more from fewe
 | Repeated field patterns | Single records or pure prose |
 | Arrays with 3+ items | Grep results (Markdown is better) |
 
+</details>
+
 ## Success Criteria
+
+Every metric blew past the target. TTFT improvement landed at 50.8% against a 5% goal, token reduction hit 52.5% against a 30% target, and there was zero accuracy regression. The 51-test unit suite holds at 98% pass rate.
+
+<details>
+<summary>Target vs actual metrics</summary>
 
 | Metric | Target | Kill Threshold | Actual | Status |
 |--------|--------|----------------|--------|--------|
@@ -141,7 +184,14 @@ TTFT improvement scales with model size — larger models benefit more from fewe
 | Accuracy regression | <1% | >3% | **0%** | No regression |
 | Unit test pass rate | >95% | <80% | **98%** | 51 tests |
 
+</details>
+
 ## Test Coverage
+
+The encoder has 51 unit tests covering file listings, escalation context, procedures, memory results, edge cases (unicode, nulls, special chars), full orchestration scenarios, and round-trip validation. A separate comprehensive suite of ~120 tests adds live TTFT measurement and non-uniform detection.
+
+<details>
+<summary>Test suite breakdown and file locations</summary>
 
 **Unit tests**: `tests/unit/test_toon_encoder.py` — 51 tests at 98% pass rate:
 
@@ -157,7 +207,12 @@ TTFT improvement scales with model size — larger models benefit more from fewe
 
 **Comprehensive suite**: `scripts/toon/comprehensive_toon_test.py` — ~120 test cases covering edge cases, unicode, non-uniform detection, and live TTFT measurement.
 
+</details>
+
 ## References
+
+<details>
+<summary>Project files and external links</summary>
 
 ### Project Files
 
@@ -172,6 +227,8 @@ TTFT improvement scales with model size — larger models benefit more from fewe
 
 1. TOON Format Specification: https://github.com/toon-format/spec
 2. Python Implementation: https://github.com/toon-format/toon (MIT license)
+
+</details>
 
 ---
 
