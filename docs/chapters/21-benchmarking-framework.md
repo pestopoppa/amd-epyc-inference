@@ -8,6 +8,11 @@ We developed an 8-suite benchmarking framework to evaluate models for specific r
 
 ## The 8 Benchmark Suites
 
+Every model entering the orchestration system is measured against eight purpose-built suites, each targeting a specific capability that maps directly to an agent role. This is not about leaderboard scores -- it is about answering "can this model do the job we need it to do?"
+
+<details>
+<summary>Suite definitions and role mappings</summary>
+
 | Suite | Purpose | Key Test | Role Placement |
 |-------|---------|----------|----------------|
 | **Thinking** | Chain-of-thought reasoning | Multi-step logical deduction | oracle_reasoning, architect |
@@ -19,9 +24,14 @@ We developed an 8-suite benchmarking framework to evaluate models for specific r
 | **Long Context** | Information retrieval | Needle-in-haystack (4K-50K tokens) | ingest_long_context |
 | **Instruction Precision** | Format compliance | Exact output structure | **Critical for orchestration** |
 
+</details>
+
 ## Claude-as-Judge Scoring
 
-We use Claude as an independent judge rather than algorithmic rubrics. Early experiments showed algorithmic scoring severely underscored models (38% vs 89% for the same output) due to pattern matching failures.
+We use Claude as an independent judge rather than algorithmic rubrics. Early experiments showed algorithmic scoring severely underscored models (38% vs 89% for the same output) because pattern matching breaks on unexpected but correct formats. Claude understands semantics, awards partial credit, and stays consistent across hundreds of evaluations.
+
+<details>
+<summary>Scoring rubric and rationale</summary>
 
 ### Scoring Rubric
 
@@ -39,9 +49,14 @@ We use Claude as an independent judge rather than algorithmic rubrics. Early exp
 - **Consistency**: Same model judges all, eliminating evaluator variance
 - **Scalability**: Can score hundreds of responses efficiently
 
+</details>
+
 ## Benchmark Hardening (December 2025)
 
-Initial benchmarks had ceiling effects - top models scored 89-93%, preventing differentiation. We hardened all suites:
+Initial benchmarks had ceiling effects -- top models scored 89-93%, making it impossible to differentiate them. We hardened all suites by bumping every tier up one difficulty level and introducing post-doctoral-level T3 questions. After hardening, no model hits 90%+ and the score distribution spreads meaningfully across model classes.
+
+<details>
+<summary>Hardening details and expected score distributions</summary>
 
 | Change | Before | After |
 |--------|--------|-------|
@@ -66,7 +81,14 @@ Initial benchmarks had ceiling effects - top models scored 89-93%, preventing di
 
 Top models no longer hit 90%+ ceiling.
 
+</details>
+
 ## Running Benchmarks
+
+You can run the full benchmark pipeline or target individual suites. Results land in a structured directory that separates raw outputs from Claude-as-Judge review scores, making it easy to compare across models and configurations.
+
+<details>
+<summary>Commands and results layout</summary>
 
 ### Full Suite
 
@@ -99,9 +121,14 @@ benchmarks/
 
 **Note:** Benchmark prompts are gitignored — they are reconstructible from public sources. See [Chapter 24: Benchmark Suite Construction](24-benchmark-suite-construction.md) for the construction methodology and reconstruction instructions.
 
+</details>
+
 ## Instruction Precision Suite
 
-**Critical for orchestration**: Models that fail instruction precision break TaskIR parsing.
+Models that fail instruction precision break TaskIR parsing, which means the entire orchestration pipeline falls apart. This suite is the gate that decides whether a model can even be considered for orchestration roles like frontdoor or dispatcher -- anything below 70% is disqualified.
+
+<details>
+<summary>Test matrix and role gate</summary>
 
 | Test | What It Checks |
 |------|----------------|
@@ -112,9 +139,14 @@ benchmarks/
 
 **Role Gate**: Models scoring <70% on instruction precision are not considered for orchestration roles (frontdoor, dispatcher).
 
+</details>
+
 ## Quality vs Speed Trade-offs
 
-Benchmarks capture both quality scores AND speed per question. This enables trade-off analysis:
+Benchmarks capture both quality scores and speed per question, which lets you see exactly what you give up (or do not) when adding acceleration. The key finding: speculative decoding gives you a 10x speed boost with zero quality loss because it uses the same model, while MoE reduction trades quality for speed in a predictable curve.
+
+<details>
+<summary>Configuration comparison data</summary>
 
 | Configuration | Quality | Speed | Use Case |
 |---------------|---------|-------|----------|
@@ -125,9 +157,14 @@ Benchmarks capture both quality scores AND speed per question. This enables trad
 
 **Key Insight**: Speculative decoding preserves quality (same model). MoE reduction trades quality for speed.
 
+</details>
+
 ## Orchestrator Benchmarks
 
-The orchestrator benchmark pipeline compares orchestrated responses against direct large-model baselines, measuring quality retention and speed.
+The orchestrator benchmark pipeline compares orchestrated responses against direct large-model baselines, measuring whether the multi-agent routing system retains quality while delivering speed gains. It runs in four phases -- smoke, compare, optimize, verify -- and now sources most of its questions live from HuggingFace datasets rather than static YAML files.
+
+<details>
+<summary>Scripts, datasets, and CLI options</summary>
 
 ### Scripts
 
@@ -136,7 +173,7 @@ The orchestrator benchmark pipeline compares orchestrated responses against dire
 | `scripts/benchmark/run_orchestrator_benchmark.py` | Full 4-phase benchmark runner (smoke, compare, optimize, verify) |
 | `scripts/benchmark/compare_orchestrator_direct.py` | Per-suite orchestrator vs baseline comparison |
 
-### On-the-Fly Dataset Sampling (January–February 2026)
+### On-the-Fly Dataset Sampling (January--February 2026)
 
 Nine suites now sample fresh questions from real HuggingFace datasets on each run, totaling 35,560+ questions:
 
@@ -170,7 +207,8 @@ This shifts MemRL reward distribution from ~5% specialist-wins (+1.0) to ~25-35%
 
 **Stratified sampling**: `--stratify-tiers` draws equal questions per difficulty tier for suites with real tier metadata (MMLU, Math, IFEval). Other suites silently fall through to uniform random.
 
-### CLI Options
+<details>
+<summary>Code: CLI options</summary>
 
 ```bash
 # Run Phase 2 (comparison) with API restart
@@ -187,6 +225,11 @@ This shifts MemRL reward distribution from ~5% specialist-wins (+1.0) to ~25-35%
 ```
 
 The `--restart-api` flag restarts only the uvicorn API (port 8000), not the llama-server backends (8080-8090). Use after Python code changes.
+
+</details>
+
+<details>
+<summary>Code: output format and telemetry</summary>
 
 ### Output Format
 
@@ -212,16 +255,31 @@ Phase 2 aggregate:
 
 Each response includes `routed_to`, `role_history`, `routing_strategy`, and `tokens_generated` fields for debugging routing decisions.
 
+</details>
+
+</details>
+
 ## 3-Way Seeding Infra Hardening (2026-02-08)
 
-To reduce pathological wait on stalled inference ports while preserving reward signal:
+To reduce pathological waits on stalled inference ports while preserving reward signal, per-call timeouts are now adaptive by role, mode, and modality. The timeout gets bumped based on observed latency from earlier legs of the same question, so heavyweight architect calls do not get killed by a timeout calibrated for a fast frontdoor response.
+
+<details>
+<summary>Timeout and recovery details</summary>
 
 - Per-call timeout is now adaptive by role/mode/modality.
 - Timeout is bumped from observed earlier legs for the same question.
+- Heavy ports are prechecked before architect calls.
+- Zero-token infra on heavy paths gets one recovery retry.
+- Tool telemetry fields are normalized together (`tools_used`, `tools_called`, `tool_timings`).
+
+</details>
 
 ## 3-Way Live Progress Telemetry (2026-02-09)
 
-To make long forced-role calls debuggable without waiting for final HTTP return:
+Long forced-role calls used to be black boxes until the HTTP response came back. Now the seeding pipeline polls each llama-server's `/slots` endpoint once per second, emitting progress lines so you can see tokens being generated in real time. If a run ends as `INFRA` with zero tokens but the slot counters advanced, the logs surface that discrepancy.
+
+<details>
+<summary>Telemetry fields and VL dry-run snapshot</summary>
 
 - Seeding now polls llama-server `/slots` once per second during each forced call.
 - Terminal logs emit periodic progress lines:
@@ -234,9 +292,6 @@ To make long forced-role calls debuggable without waiting for final HTTP return:
   - `0 tok, est <N> tok`
 
 This specifically addresses cases where backend generation happened but the orchestrator response closed early and returned no token count.
-- Heavy ports are prechecked before architect calls.
-- Zero-token infra on heavy paths gets one recovery retry.
-- Tool telemetry fields are normalized together (`tools_used`, `tools_called`, `tool_timings`).
 
 ### VL Dry-run Behavior Snapshot
 
@@ -248,7 +303,8 @@ This specifically addresses cases where backend generation happened but the orch
 | Timeout behavior shown | often implicit global timeout | explicit per-call timeout logged (`148s`, `240s`, `212s`) |
 | Vision architect token output | mixed in prior runs | generated (`2241 tok` in `159.6s`) |
 
-### Results Location
+<details>
+<summary>Data: orchestrator results directory</summary>
 
 ```
 benchmarks/results/orchestrator/
@@ -256,7 +312,16 @@ benchmarks/results/orchestrator/
 ├── run_{timestamp}.json                 # Full run metadata
 ```
 
+</details>
+
+</details>
+
 ## Comparing Models
+
+You can list all previous benchmark runs and compare any two side by side, which is essential for tracking whether a new configuration actually improved things or just shifted the trade-off curve.
+
+<details>
+<summary>Code: comparison commands</summary>
 
 ```bash
 # List all benchmark runs
@@ -266,9 +331,14 @@ benchmarks/results/orchestrator/
 ./scripts/benchmark/compare_results.sh --baseline RUN_ID --current RUN_ID
 ```
 
+</details>
+
 ## Permanent Results
 
-Benchmark results persist in `benchmarks/results/`. Models can be deleted after benchmarking - results enable comparison with future models.
+Benchmark results persist in `benchmarks/results/` even after models are deleted from disk. This matters because storage is finite, new models arrive constantly, and you need historical comparisons to spot trends. Each result includes the full configuration (MoE settings, K values, quantization) so any run can be reproduced later.
+
+<details>
+<summary>Design rationale</summary>
 
 This is important because:
 - Storage is limited even on our large system
@@ -276,7 +346,12 @@ This is important because:
 - Historical comparison enables trend analysis
 - Results include configs (MoE settings, K values) for reproduction
 
+</details>
+
 ## References
+
+<details>
+<summary>Literature and resources</summary>
 
 ### LLM Evaluation and Benchmarking
 
@@ -309,6 +384,8 @@ This is important because:
 10. Patil, S. G., Zhang, T., Wang, X., & Gonzalez, J. E. (2023). *Gorilla: Large Language Model Connected with Massive APIs*. arXiv preprint. https://arxiv.org/abs/2305.15334
 
 11. Qin, Y., Liang, S., Ye, Y., Zhu, K., Yan, L., Lu, Y., ... & Sun, M. (2024). *ToolLLM: Facilitating Large Language Models to Master 16000+ Real-world APIs*. ICLR 2024. https://arxiv.org/abs/2307.16789
+
+</details>
 
 ---
 
