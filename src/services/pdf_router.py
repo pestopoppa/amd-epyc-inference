@@ -73,12 +73,6 @@ class PDFExtractionResult:
 class PDFRouter:
     """Routes PDF processing to optimal extraction method."""
 
-    # Quality thresholds for text extraction
-    MIN_ENTROPY = 3.5  # Minimum Shannon entropy for readable text
-    MAX_GARBAGE_RATIO = 0.15  # Max ratio of non-printable chars
-    MIN_WORD_LENGTH_AVG = 2.5  # Average word length threshold
-    MIN_TEXT_LENGTH = 100  # Minimum chars for quality assessment
-
     def __init__(
         self,
         lightonocr_url: str | None = None,
@@ -99,6 +93,11 @@ class PDFRouter:
         _cfg = get_config()
         self.lightonocr_url = lightonocr_url or _cfg.server_urls.ocr_server
         self.temp_dir = Path(temp_dir or str(_cfg.services.pdf_router_temp_dir))
+        self.min_entropy = _cfg.services.pdf_min_entropy
+        self.max_garbage_ratio = _cfg.services.pdf_max_garbage_ratio
+        self.min_word_length_avg = _cfg.services.pdf_min_word_length_avg
+        self.min_text_length = _cfg.services.pdf_min_text_length
+        self.pdftotext_timeout_seconds = _cfg.services.pdftotext_timeout_seconds
         try:
             self.temp_dir.mkdir(parents=True, exist_ok=True)
         except (PermissionError, FileNotFoundError):
@@ -157,7 +156,7 @@ class PDFRouter:
         Returns:
             (quality_score, needs_ocr): Score 0-1 and whether OCR is needed
         """
-        if len(text) < self.MIN_TEXT_LENGTH:
+        if len(text) < self.min_text_length:
             return 0.0, True
 
         entropy = self._calculate_entropy(text)
@@ -174,9 +173,9 @@ class PDFRouter:
 
         # Determine if OCR needed
         needs_ocr = (
-            entropy < self.MIN_ENTROPY
-            or garbage_ratio > self.MAX_GARBAGE_RATIO
-            or avg_word_len < self.MIN_WORD_LENGTH_AVG
+            entropy < self.min_entropy
+            or garbage_ratio > self.max_garbage_ratio
+            or avg_word_len < self.min_word_length_avg
         )
 
         logger.debug(
@@ -199,7 +198,7 @@ class PDFRouter:
                 [self.pdftotext_path, "-layout", str(pdf_path), "-"],
                 capture_output=True,
                 text=True,
-                timeout=30,
+                timeout=self.pdftotext_timeout_seconds,
             )
 
             latency_ms = (time.perf_counter() - start) * 1000

@@ -211,13 +211,7 @@ class ArchiveExtractor:
         ".xz",
     }
 
-    # Security limits
-    MAX_ARCHIVE_SIZE = 500 * 1024 * 1024  # 500MB
-    MAX_EXTRACTED_SIZE = 1024 * 1024 * 1024  # 1GB
-    MAX_SINGLE_FILE = 100 * 1024 * 1024  # 100MB
-    MAX_FILES = 1000
-    MAX_COMPRESSION_RATIO = 100  # Suspicious if > 100:1
-    MAX_RECURSION_DEPTH = 2
+    # Security limits are initialized from config in __init__ for tunability.
 
     def __init__(
         self,
@@ -238,6 +232,17 @@ class ArchiveExtractor:
         self.max_archive_size = max_archive_size or _svc.max_archive_size
         self.max_extracted_size = max_extracted_size or _svc.max_extracted_size
         self.max_files = max_files or _svc.max_archive_files
+        self.max_single_file = _svc.max_archive_single_file
+        self.max_compression_ratio = _svc.max_archive_compression_ratio
+        self.max_recursion_depth = _svc.max_archive_recursion_depth
+
+        # Backward-compat aliases for tests/callers mutating legacy attribute names.
+        self.MAX_ARCHIVE_SIZE = self.max_archive_size
+        self.MAX_EXTRACTED_SIZE = self.max_extracted_size
+        self.MAX_SINGLE_FILE = self.max_single_file
+        self.MAX_FILES = self.max_files
+        self.MAX_COMPRESSION_RATIO = self.max_compression_ratio
+        self.MAX_RECURSION_DEPTH = self.max_recursion_depth
 
     def get_archive_type(self, path: Path) -> ArchiveType | None:
         """Determine archive type from file extension.

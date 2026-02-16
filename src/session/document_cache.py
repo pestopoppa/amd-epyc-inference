@@ -20,14 +20,15 @@ from typing import TYPE_CHECKING, Any
 
 from src.models.document import DocumentPreprocessResult
 from src.session.models import SessionDocument
+from src.config import get_config
 
 if TYPE_CHECKING:
     from src.session.sqlite_store import SQLiteSessionStore
 
 logger = logging.getLogger(__name__)
 
-# Base directory for session state
-SESSION_STATE_DIR = Path("/workspace/orchestration/repl_memory/sessions/state")
+# Base directory for session state (derived from configured sessions root)
+SESSION_STATE_DIR = get_config().paths.sessions_dir / "state"
 
 
 class DocumentCache:

@@ -907,9 +907,40 @@ class ServicesConfig:
             )
         )
     )
-    max_archive_size: int = 500 * 1024 * 1024  # 500 MB
-    max_extracted_size: int = 1024 * 1024 * 1024  # 1 GB
-    max_archive_files: int = 1000
+    max_archive_size: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_MAX_ARCHIVE_SIZE", str(500 * 1024 * 1024)))
+    )
+    max_extracted_size: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_MAX_EXTRACTED_SIZE", str(1024 * 1024 * 1024)))
+    )
+    max_archive_files: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_MAX_ARCHIVE_FILES", "1000"))
+    )
+    max_archive_single_file: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_MAX_ARCHIVE_SINGLE_FILE", str(100 * 1024 * 1024)))
+    )
+    max_archive_compression_ratio: float = field(
+        default_factory=lambda: float(os.environ.get("ORCHESTRATOR_SERVICES_MAX_ARCHIVE_COMPRESSION_RATIO", "100.0"))
+    )
+    max_archive_recursion_depth: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_MAX_ARCHIVE_RECURSION_DEPTH", "2"))
+    )
+
+    pdf_min_entropy: float = field(
+        default_factory=lambda: float(os.environ.get("ORCHESTRATOR_SERVICES_PDF_MIN_ENTROPY", "3.5"))
+    )
+    pdf_max_garbage_ratio: float = field(
+        default_factory=lambda: float(os.environ.get("ORCHESTRATOR_SERVICES_PDF_MAX_GARBAGE_RATIO", "0.15"))
+    )
+    pdf_min_word_length_avg: float = field(
+        default_factory=lambda: float(os.environ.get("ORCHESTRATOR_SERVICES_PDF_MIN_WORD_LENGTH_AVG", "2.5"))
+    )
+    pdf_min_text_length: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_PDF_MIN_TEXT_LENGTH", "100"))
+    )
+    pdftotext_timeout_seconds: int = field(
+        default_factory=lambda: int(os.environ.get("ORCHESTRATOR_SERVICES_PDFTOTEXT_TIMEOUT_SECONDS", "30"))
+    )
 
     pdf_router_temp_dir: Path = field(
         default_factory=lambda: Path(
