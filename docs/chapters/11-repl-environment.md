@@ -92,13 +92,26 @@ Agents can invoke the tool registry (41 deterministic tools) from within REPL co
 @dataclass
 class REPLConfig:
     timeout_seconds: int = 600  # 10 min for document processing
-    output_cap: int = 8192      # Max output characters
+    output_cap: int = 8192      # Spill-to-file threshold
+    spill_dir: str = "/mnt/raid0/llm/tmp/repl_output"
     max_grep_results: int = 100 # Prevent DoS via grep
     require_exploration_before_final: bool = False  # Force peek/grep
     min_exploration_calls: int = 1  # Minimum calls before FINAL
 ```
 
 **Timeout Enforcement**: UNIX `SIGALRM` signal terminates runaway executions (600s default for document ingestion, 120s for general use).
+
+### Output Spill-to-File
+
+When execution output exceeds `output_cap` (8192 chars), the full output is written to `{spill_dir}/{session_id}/turn_{N}.txt` and a summary replaces the raw output in the REPL feedback loop.
+
+**Rolling summary pattern**: A worker model (Qwen2.5-7B) maintains a compressed scratchpad across turns. On first spill, it summarizes the tail of the output. On subsequent spills, it receives the previous summary + new tail and produces an updated summary — preserving key findings while dropping superseded details. Max 10 lines, 512 tokens.
+
+**Fallback**: When `llm_primitives` is unavailable (unit tests), a static head (15 lines) + tail (5 lines) summary is used.
+
+**On-demand access**: The summary footer includes `peek(spill_path)` and `grep(spill_path, pattern)` instructions so the model can pull specific details from the full output.
+
+`PromptConfig.max_output_preview` is set to 1500 chars to accommodate the summary + header + footer without further truncation by the prompt builder.
 
 ### Trusted vs User Code Layers
 

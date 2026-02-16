@@ -85,7 +85,7 @@ OrchestratorConfig
 ├── mock_mode: bool = True
 ├── debug: bool = False
 ├── llm: LLMConfig
-│   ├── output_cap: int = 8192
+│   ├── output_cap: int = 8192 (spill-to-file threshold)
 │   ├── batch_parallelism: int = 4
 │   ├── call_timeout: int = 120
 │   ├── max_recursion_depth: int = 5
