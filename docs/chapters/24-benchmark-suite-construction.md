@@ -8,6 +8,11 @@ The benchmark prompts themselves are gitignored — they are reconstructible art
 
 ## Design Principles
 
+Every question in the suite must be machine-verifiable with no human judgment needed. We only use public benchmark sources, stratify into three difficulty tiers, and require at least 40 questions per suite for statistical significance in the MemRL learning loop.
+
+<details>
+<summary>Full design principles</summary>
+
 1. **Deterministic scoring only.** Every question has a machine-verifiable answer. No Claude-as-Judge, no rubrics, no subjective evaluation. This enables automated regression testing and MemRL reward injection without API costs or evaluator variance.
 
 2. **Public provenance.** All questions are derived from or inspired by established public benchmarks. No proprietary datasets. Anyone with access to the source benchmarks can reconstruct equivalent pools.
@@ -16,11 +21,21 @@ The benchmark prompts themselves are gitignored — they are reconstructible art
 
 4. **Minimum pool size: 40 questions per suite.** This is the floor needed for statistically meaningful sampling in the MemRL learning loop (10-prompt samples across 3-5 iterations).
 
+</details>
+
 ## Suite Specifications
+
+Each suite lives in a YAML file under `benchmarks/prompts/debug/`. The format is straightforward: a suite header with scoring defaults, followed by a list of questions with IDs, tiers, prompts, and expected answers.
+
+<details>
+<summary>File format and required fields</summary>
 
 ### File Format
 
 Each suite is a YAML file at `benchmarks/prompts/debug/{suite}.yaml`:
+
+<details>
+<summary>Code: YAML file structure example</summary>
 
 ```yaml
 suite: thinking
@@ -42,6 +57,8 @@ questions:
     scoring_config: {}      # optional, method-specific
 ```
 
+</details>
+
 ### Required Fields
 
 | Field | Type | Description |
@@ -53,9 +70,14 @@ questions:
 | `scoring_method` | string | One of: `multiple_choice`, `exact_match`, `code_execution`, `substring`, `programmatic` |
 | `scoring_config` | dict | Method-specific parameters (optional) |
 
+</details>
+
 ## Scoring Methods
 
-All scoring is implemented in `scripts/benchmark/debug_scorer.py`.
+All scoring is implemented in `scripts/benchmark/debug_scorer.py`. There are five methods, each targeting a different class of benchmark question. The scorer tries multiple extraction strategies before failing, so model output format is somewhat flexible.
+
+<details>
+<summary>Scoring method details and configuration</summary>
 
 ### 1. `multiple_choice`
 
@@ -63,16 +85,24 @@ All scoring is implemented in `scripts/benchmark/debug_scorer.py`.
 
 Extracts a letter (A/B/C/D) from model output and compares to `expected`. Uses multiple extraction strategies: "Answer: X", "(X)", standalone letter on last line, letter frequency analysis.
 
+<details>
+<summary>Code: multiple_choice YAML config</summary>
+
 ```yaml
 scoring_method: multiple_choice
 expected: "B"
 ```
+
+</details>
 
 ### 2. `exact_match`
 
 **Source benchmarks:** GSM8K, MATH
 
 Extracts a value via regex, compares to `expected`. Supports numeric comparison (float tolerance 1e-6) and string normalization.
+
+<details>
+<summary>Code: exact_match YAML config</summary>
 
 ```yaml
 scoring_method: exact_match
@@ -82,11 +112,16 @@ scoring_config:
   normalize: true                      # strip, lowercase, remove trailing period
 ```
 
+</details>
+
 ### 3. `code_execution`
 
 **Source benchmarks:** HumanEval, MBPP
 
 Extracts a Python function from model output, appends test code, executes in a subprocess with a 10-second timeout. Passes if all assertions succeed.
+
+<details>
+<summary>Code: code_execution YAML config</summary>
 
 ```yaml
 scoring_method: code_execution
@@ -98,11 +133,16 @@ scoring_config:
     assert fibonacci(1) == 1
 ```
 
+</details>
+
 ### 4. `substring`
 
 **Source benchmarks:** Needle-in-a-Haystack, BFCL (function name presence)
 
 Checks whether a specific substring appears in the model output. Optional case sensitivity.
+
+<details>
+<summary>Code: substring YAML config</summary>
 
 ```yaml
 scoring_method: substring
@@ -111,11 +151,16 @@ scoring_config:
   case_sensitive: false
 ```
 
+</details>
+
 ### 5. `programmatic`
 
 **Source benchmark:** IFEval
 
 Runs format-specific verifiers (word count, JSON validity, keyword presence, case constraints, list format, etc.). Each verifier is a Python function in the scorer.
+
+<details>
+<summary>Code: programmatic YAML config</summary>
 
 ```yaml
 scoring_method: programmatic
@@ -125,11 +170,18 @@ scoring_config:
   max_val: 50
 ```
 
+</details>
+
 Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `contains_keyword`, `no_keyword`, `numbered_list`, `bullet_list`, `json_valid`, `starts_with`, `ends_with`, `all_uppercase`, `all_lowercase`, `comma_separated`, `paragraph_count`, `sentence_count_min`.
+
+</details>
 
 ## Suite-by-Suite Construction
 
-### Thinking (40 questions)
+Each of the nine suites draws from different public benchmarks and uses different scoring methods. Below you will find the source breakdown, tier distribution, and reconstruction notes for every suite.
+
+<details>
+<summary>Thinking suite (40 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -144,7 +196,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Reconstruction:** Take 15-20 ARC-Challenge Easy/Challenge questions from the public Hugging Face dataset. Add 20 constructed logic puzzles with unambiguous numerical or letter answers. Verify each answer manually.
 
-### Math (40 questions)
+</details>
+
+<details>
+<summary>Math suite (40 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -161,7 +216,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Validation note:** Always verify math answers by hand. Agent-generated questions had 2 answer errors in the original batch (corrected: prime sum 23+29+31+37=120, not 129; average distances adjusted for integer result).
 
-### General (42 questions)
+</details>
+
+<details>
+<summary>General suite (42 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -176,7 +234,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Validation note:** Check for near-duplicates across subjects (e.g., "Red Planet" can appear in both miscellaneous and science).
 
-### Coder (40 questions)
+</details>
+
+<details>
+<summary>Coder suite (40 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -194,7 +255,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Key constraint:** All functions must be self-contained Python (no imports required for the function itself, though test code may use stdlib). Function name is specified in the prompt.
 
-### VL — Vision-Language (40 questions)
+</details>
+
+<details>
+<summary>VL -- Vision-Language suite (40 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -214,7 +278,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Reconstruction:** Write 40 text descriptions of common visualization types. Each must have a single unambiguous numerical or categorical answer. Cover: bar, line, pie, scatter, box plot, histogram, heatmap, Venn diagram, network topology, Gantt chart, confusion matrix, correlation matrix.
 
-### Agentic (40 questions)
+</details>
+
+<details>
+<summary>Agentic suite (40 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -230,7 +297,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Reconstruction:** Define 40 function signatures with docstrings. Write natural language requests that map to exactly one function. Ensure tier 2 questions have plausible distractors (similar functions where only one is correct). Use Berkeley Function Calling Leaderboard (BFCL) function formats as reference.
 
-### Instruction Precision (43 questions)
+</details>
+
+<details>
+<summary>Instruction Precision suite (43 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -242,7 +312,8 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Tier 3 (13):** Compound constraints — comma-separated format, paragraph count, sentence count minimum, JSON array, combined keyword + word count + case.
 
-**Verifier coverage:**
+<details>
+<summary>Data: verifier coverage breakdown</summary>
 
 | Verifier | What It Checks | Count |
 |----------|----------------|-------|
@@ -256,11 +327,16 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 | `paragraph_count` / `sentence_count_min` | Structure compliance | ~5 |
 | `comma_separated` | Single-line CSV format | ~2 |
 
+</details>
+
 **Reconstruction:** Write 40+ prompts with explicit format constraints. Each prompt must specify exactly one verifiable constraint (or a compound constraint where one verifier covers the critical aspect). Use IFEval's constraint taxonomy as reference.
 
 **Validation note:** Each question must map to exactly one verifier. Prompts that require multiple verifiers (e.g., "all lowercase AND contains keyword") should be scored on the harder-to-satisfy constraint, since the scorer applies one verifier per question.
 
-### Long Context (40 questions)
+</details>
+
+<details>
+<summary>Long Context suite (40 questions)</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -276,7 +352,10 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Reconstruction:** Write 40 synthetic passages embedding specific "needle" facts (names, dates, model numbers, measurements). Each passage should contain plausible distractor information. The needle should not be in the first or last sentence. Use `substring` scoring for names/phrases, `exact_match` with numeric extraction for numbers.
 
-### Mode Advantage (90 questions) — February 2026
+</details>
+
+<details>
+<summary>Mode Advantage suite (90 questions) -- February 2026</summary>
 
 | Source | ID Prefix | Tier | Count | Scoring |
 |--------|-----------|------|-------|---------|
@@ -300,7 +379,14 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 
 **Exemplars in other suites**: 16 additional `mode_advantage: true` tagged questions across math (+4), coder (+4), agentic (+4), and long_context (+4).
 
+</details>
+
 ## Current Pool Statistics
+
+Across all nine suites we have 431 questions total, skewing toward T2 and T3 difficulty since that is where models actually diverge in capability.
+
+<details>
+<summary>Pool statistics by suite</summary>
 
 | Suite | Count | T1 | T2 | T3 | Primary Scoring |
 |-------|-------|----|----|----|--------------------|
@@ -313,78 +399,111 @@ Available verifiers: `word_count_range`, `word_count_max`, `word_count_min`, `co
 | instruction_precision | 43 | 13 | 17 | 13 | programmatic |
 | long_context | 44 | 8 | 14 | 22 | substring / exact_match |
 | mode_advantage | 90 | 0 | 45 | 45 | code_execution / exact_match |
-| **TOTAL** | **431** | 91 | 168 | 172 | — |
+| **TOTAL** | **431** | 91 | 168 | 172 | -- |
+
+</details>
 
 ## Reconstruction Procedure
 
-To rebuild the full question pool from scratch:
+You can rebuild the full question pool from scratch if the YAML files are lost or if you want to create a fresh independent set. The steps below walk through stub creation, population from public sources, and validation.
+
+<details>
+<summary>Step-by-step reconstruction instructions</summary>
 
 1. **Install dependencies:**
-   ```bash
-   pip install pyyaml
-   ```
+
+<details>
+<summary>Code: install pyyaml</summary>
+
+```bash
+pip install pyyaml
+```
+
+</details>
 
 2. **Create suite stubs:**
-   ```bash
-   mkdir -p benchmarks/prompts/debug
-   for suite in thinking math general coder vl agentic instruction_precision long_context mode_advantage; do
-     cat > benchmarks/prompts/debug/${suite}.yaml << EOF
-   suite: ${suite}
-   version: "1.0"
-   scoring_default:
-     method: multiple_choice
 
-   questions: []
-   EOF
-   done
-   ```
+<details>
+<summary>Code: generate empty YAML stubs for all suites</summary>
+
+```bash
+mkdir -p benchmarks/prompts/debug
+for suite in thinking math general coder vl agentic instruction_precision long_context mode_advantage; do
+  cat > benchmarks/prompts/debug/${suite}.yaml << EOF
+suite: ${suite}
+version: "1.0"
+scoring_default:
+  method: multiple_choice
+
+questions: []
+EOF
+done
+```
+
+</details>
 
 3. **Populate from public sources:**
    - **thinking:** 15-20 ARC-Challenge questions (HF: `allenai/ai2_arc`, Challenge split) + 20 logic puzzles
    - **math:** 20 GSM8K questions (HF: `openai/gsm8k`, test split) + 20 MATH questions (HF: `hendrycks/math`, Levels 3-5)
    - **general:** 7 per subject from MMLU (HF: `cais/mmlu`, validation split) across 6 subjects
    - **coder:** 10 HumanEval (GitHub: `openai/human-eval`) + 10 MBPP (HF: `google-research-datasets/mbpp`) + 20 constructed
-   - **vl:** 40 text-described visuals (constructed — no image dependency)
+   - **vl:** 40 text-described visuals (constructed -- no image dependency)
    - **agentic:** 40 function-calling scenarios (inspired by BFCL: `ShishirPatil/gorilla`)
    - **instruction_precision:** 40 format-constraint prompts (inspired by IFEval: `google/IFEval`)
    - **long_context:** 40 needle-in-haystack passages (constructed)
 
 4. **Validate:**
-   ```python
-   import yaml
-   for suite in ['thinking', 'math', 'general', 'coder', 'vl',
-                  'agentic', 'instruction_precision', 'long_context',
-                  'mode_advantage']:
-       with open(f'benchmarks/prompts/debug/{suite}.yaml') as f:
-           data = yaml.safe_load(f)
-       ids = [q['id'] for q in data['questions']]
-       assert len(ids) == len(set(ids)), f"Duplicate IDs in {suite}"
-       assert len(ids) >= 40, f"{suite} has only {len(ids)} questions"
-       for q in data['questions']:
-           assert all(k in q for k in ['id', 'tier', 'prompt', 'scoring_method'])
-   ```
+
+<details>
+<summary>Code: Python validation script for all suites</summary>
+
+```python
+import yaml
+for suite in ['thinking', 'math', 'general', 'coder', 'vl',
+              'agentic', 'instruction_precision', 'long_context',
+              'mode_advantage']:
+    with open(f'benchmarks/prompts/debug/{suite}.yaml') as f:
+        data = yaml.safe_load(f)
+    ids = [q['id'] for q in data['questions']]
+    assert len(ids) == len(set(ids)), f"Duplicate IDs in {suite}"
+    assert len(ids) >= 40, f"{suite} has only {len(ids)} questions"
+    for q in data['questions']:
+        assert all(k in q for k in ['id', 'tier', 'prompt', 'scoring_method'])
+```
+
+</details>
 
 5. **Verify math answers manually.** Agent-generated math questions are the most error-prone. Compute every expected answer by hand before committing.
 
+</details>
+
 ## Quality Gates for New Questions
 
-When adding questions to any suite:
+When adding questions to any suite, follow these six checks. They are quick but they prevent the most common errors we have hit in practice (duplicate IDs, ambiguous answers, wrong tier assignment).
+
+<details>
+<summary>Quality gate checklist</summary>
 
 1. **No duplicate IDs** within a suite
 2. **No near-duplicate prompts** (same concept with trivially different wording)
-3. **Single unambiguous answer** — if reasonable people could disagree, skip it
-4. **Scoring method matches** — the verifier must be able to check the answer without human judgment
-5. **Manual answer verification** — especially for math (compute by hand) and logic (trace the reasoning)
-6. **Tier assignment** — T1: one-step, T2: multi-step, T3: requires domain expertise or creative insight
+3. **Single unambiguous answer** -- if reasonable people could disagree, skip it
+4. **Scoring method matches** -- the verifier must be able to check the answer without human judgment
+5. **Manual answer verification** -- especially for math (compute by hand) and logic (trace the reasoning)
+6. **Tier assignment** -- T1: one-step, T2: multi-step, T3: requires domain expertise or creative insight
+
+</details>
 
 ## Relationship to Other Benchmark Layers
+
+The project has two parallel benchmark tracks. The `v1/` suite uses Claude-as-Judge with rubric scoring for open-ended quality assessment. The `debug/` suite documented here uses machine verifiers for automated regression testing and MemRL rewards. Both cover the same eight categories but serve different purposes.
+
+<details>
+<summary>Comparison of rubric vs deterministic scoring</summary>
 
 ```
 benchmarks/prompts/v1/          # Rubric-scored (Claude-as-Judge) — open-ended quality
 benchmarks/prompts/debug/       # Deterministically scored — automated regression (THIS CHAPTER)
 ```
-
-The `v1/` suite uses Claude-as-Judge with criterion/weight scoring. The `debug/` suite uses machine verifiers. Both cover the same 8 categories but serve different purposes:
 
 | Aspect | v1/ (Rubric) | debug/ (Deterministic) |
 |--------|-------------|----------------------|
@@ -394,9 +513,14 @@ The `v1/` suite uses Claude-as-Judge with criterion/weight scoring. The `debug/`
 | Question style | Open-ended, subjective | Closed-form, single correct answer |
 | Pool size | 10-15 per suite | 40+ per suite |
 
-The debug suite is the foundation for Phase 3 MemRL validation: seeding specialist Q-values, running learning loops, and gating regressions — all without API costs.
+The debug suite is the foundation for Phase 3 MemRL validation: seeding specialist Q-values, running learning loops, and gating regressions -- all without API costs.
+
+</details>
 
 ## References
+
+<details>
+<summary>Academic references and source datasets</summary>
 
 1. Clark, P., et al. (2018). *Think you have Solved Question Answering? Try ARC, the AI2 Reasoning Challenge.* https://arxiv.org/abs/1803.05457
 2. Cobbe, K., et al. (2021). *Training Verifiers to Solve Math Word Problems (GSM8K).* https://arxiv.org/abs/2110.14168
@@ -407,6 +531,8 @@ The debug suite is the foundation for Phase 3 MemRL validation: seeding speciali
 7. Zhou, J., et al. (2023). *Instruction-Following Evaluation for Large Language Models (IFEval).* https://arxiv.org/abs/2311.07911
 8. Patil, S. G., et al. (2023). *Gorilla: Large Language Model Connected with Massive APIs (BFCL).* https://arxiv.org/abs/2305.15334
 9. Kamradt, G. (2023). *Needle in a Haystack: Pressure Testing LLMs.* https://github.com/gkamradt/LLMTest_NeedleInAHaystack
+
+</details>
 
 ---
 
