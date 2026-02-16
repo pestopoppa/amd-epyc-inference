@@ -961,6 +961,24 @@ class ApiConfig:
 
 
 @dataclass
+class SessionPersistenceConfigData:
+    """Configuration for session checkpoint/summary cadence."""
+
+    checkpoint_turn_interval: int = 5
+    checkpoint_idle_minutes: int = 30
+    summary_idle_hours: int = 2
+
+
+@dataclass
+class HealthTrackerConfigData:
+    """Configuration for backend health tracker circuit breaker."""
+
+    default_failure_threshold: int = 3
+    default_cooldown_s: float = 30.0
+    max_cooldown_s: float = 300.0
+
+
+@dataclass
 class ExternalAPIConfig:
     """Configuration for a single external API backend."""
 
@@ -1100,6 +1118,10 @@ class OrchestratorConfigData:
     services: ServicesConfig = field(default_factory=ServicesConfig)
     worker_pool: WorkerPoolPathsConfig = field(default_factory=WorkerPoolPathsConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    session_persistence: SessionPersistenceConfigData = field(
+        default_factory=SessionPersistenceConfigData
+    )
+    health_tracker: HealthTrackerConfigData = field(default_factory=HealthTrackerConfigData)
     external_backends: ExternalBackendsConfig = field(default_factory=ExternalBackendsConfig)
 
 
@@ -1295,6 +1317,26 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             extra="ignore",
         )
 
+    class SessionPersistenceSettings(BaseSettings):
+        checkpoint_turn_interval: int = 5
+        checkpoint_idle_minutes: int = 30
+        summary_idle_hours: int = 2
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_SESSION_PERSISTENCE_",
+            extra="ignore",
+        )
+
+    class HealthTrackerSettings(BaseSettings):
+        default_failure_threshold: int = 3
+        default_cooldown_s: float = 30.0
+        max_cooldown_s: float = 300.0
+
+        model_config = SettingsConfigDict(
+            env_prefix="ORCHESTRATOR_HEALTH_TRACKER_",
+            extra="ignore",
+        )
+
     class MonitorSettings(BaseSettings):
         entropy_threshold: float = 4.0
         entropy_spike_threshold: float = 2.0
@@ -1342,6 +1384,12 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             default_factory=MemRLRetrievalSettings
         )
         think_harder: ThinkHarderSettings = PydanticField(default_factory=ThinkHarderSettings)
+        session_persistence: SessionPersistenceSettings = PydanticField(
+            default_factory=SessionPersistenceSettings
+        )
+        health_tracker: HealthTrackerSettings = PydanticField(
+            default_factory=HealthTrackerSettings
+        )
 
         model_config = SettingsConfigDict(
             env_prefix="ORCHESTRATOR_",
@@ -1570,6 +1618,22 @@ def _load_from_env() -> OrchestratorConfigData:
             ema_alpha_min=_env_float(f"{P}THINK_HARDER_EMA_ALPHA_MIN", 0.05),
             ema_alpha_max=_env_float(f"{P}THINK_HARDER_EMA_ALPHA_MAX", 1.0),
         ),
+        session_persistence=SessionPersistenceConfigData(
+            checkpoint_turn_interval=_env_int(
+                f"{P}SESSION_PERSISTENCE_CHECKPOINT_TURN_INTERVAL", 5
+            ),
+            checkpoint_idle_minutes=_env_int(
+                f"{P}SESSION_PERSISTENCE_CHECKPOINT_IDLE_MINUTES", 30
+            ),
+            summary_idle_hours=_env_int(f"{P}SESSION_PERSISTENCE_SUMMARY_IDLE_HOURS", 2),
+        ),
+        health_tracker=HealthTrackerConfigData(
+            default_failure_threshold=_env_int(
+                f"{P}HEALTH_TRACKER_DEFAULT_FAILURE_THRESHOLD", 3
+            ),
+            default_cooldown_s=_env_float(f"{P}HEALTH_TRACKER_DEFAULT_COOLDOWN_S", 30.0),
+            max_cooldown_s=_env_float(f"{P}HEALTH_TRACKER_MAX_COOLDOWN_S", 300.0),
+        ),
         # paths, features, vision, delegation, services, worker_pool
         # use plain defaults (env var override via pydantic-settings only)
     )
@@ -1750,6 +1814,16 @@ def get_config() -> OrchestratorConfigData:
                 token_penalty_per_4k=settings.think_harder.token_penalty_per_4k,
                 ema_alpha_min=settings.think_harder.ema_alpha_min,
                 ema_alpha_max=settings.think_harder.ema_alpha_max,
+            ),
+            session_persistence=SessionPersistenceConfigData(
+                checkpoint_turn_interval=settings.session_persistence.checkpoint_turn_interval,
+                checkpoint_idle_minutes=settings.session_persistence.checkpoint_idle_minutes,
+                summary_idle_hours=settings.session_persistence.summary_idle_hours,
+            ),
+            health_tracker=HealthTrackerConfigData(
+                default_failure_threshold=settings.health_tracker.default_failure_threshold,
+                default_cooldown_s=settings.health_tracker.default_cooldown_s,
+                max_cooldown_s=settings.health_tracker.max_cooldown_s,
             ),
             # These sections use plain defaults (path serialization is complex)
             paths=PathsConfig(),

@@ -38,6 +38,10 @@ jobs:
       - name: Run linter
         run: ruff check src/ tests/
 
+      - name: Numeric literal policy report
+        run: |
+          python3 scripts/validate/check_numeric_literals.py --mode report --max-findings 120 || true
+
       - name: Check for hardcoded paths
         run: |
           # Check that no NEW hardcoded /mnt/raid0 paths are added (fallbacks are allowed)

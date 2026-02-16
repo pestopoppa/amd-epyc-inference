@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.session.models import Checkpoint, Finding, FindingSource, Session
+from src.config import get_config
 
 if TYPE_CHECKING:
     from src.session.sqlite_store import SQLiteSessionStore
@@ -25,10 +26,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Checkpoint trigger thresholds
-CHECKPOINT_TURN_INTERVAL = 5  # Checkpoint every N turns
-CHECKPOINT_IDLE_MINUTES = 30  # Checkpoint after N minutes idle
-SUMMARY_IDLE_HOURS = 2  # Generate summary after N hours idle
+# Checkpoint trigger thresholds (centralized tunables from config)
+_persist_cfg = get_config().session_persistence
+CHECKPOINT_TURN_INTERVAL = _persist_cfg.checkpoint_turn_interval
+CHECKPOINT_IDLE_MINUTES = _persist_cfg.checkpoint_idle_minutes
+SUMMARY_IDLE_HOURS = _persist_cfg.summary_idle_hours
 
 
 class SessionPersister:

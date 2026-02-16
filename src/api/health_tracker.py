@@ -33,12 +33,15 @@ import threading
 import time
 from dataclasses import dataclass
 
+from src.config import get_config
+
 logger = logging.getLogger(__name__)
 
-# Circuit breaker constants
-DEFAULT_FAILURE_THRESHOLD = 3
-DEFAULT_COOLDOWN_S = 30.0
-MAX_COOLDOWN_S = 300.0
+# Circuit breaker defaults (centralized tunables from config)
+_ht_cfg = get_config().health_tracker
+DEFAULT_FAILURE_THRESHOLD = _ht_cfg.default_failure_threshold
+DEFAULT_COOLDOWN_S = _ht_cfg.default_cooldown_s
+MAX_COOLDOWN_S = _ht_cfg.max_cooldown_s
 
 
 @dataclass

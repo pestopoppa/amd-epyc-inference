@@ -7,6 +7,7 @@ import logging
 import uuid
 from typing import Any, TYPE_CHECKING
 
+from src.config import get_config
 from src.config import _registry_timeout
 from src.proactive_delegation.types import (
     ArchitectReview,
@@ -158,10 +159,6 @@ Rules:
 - action: imperative, <10 words
 - out: expected output files"""
 
-    # Max tokens for architect responses (expensive model)
-    MAX_REVIEW_TOKENS = 128
-    MAX_TASKIR_TOKENS = 256
-
     def __init__(
         self,
         primitives: "LLMPrimitives",
@@ -170,6 +167,10 @@ Rules:
         """Initialize the review service."""
         self.primitives = primitives
         self.architect_role = architect_role
+        deleg_cfg = get_config().delegation
+        self.max_review_tokens = deleg_cfg.max_review_tokens
+        self.max_taskir_tokens = deleg_cfg.max_taskir_tokens
+        self.max_plan_review_tokens = deleg_cfg.max_plan_review_tokens
 
     def review(
         self,
@@ -205,7 +206,7 @@ Rules:
             response = self.primitives.llm_call(
                 prompt,
                 role=self.architect_role,
-                n_tokens=self.MAX_REVIEW_TOKENS,
+                n_tokens=self.max_review_tokens,
             )
 
             # Parse abbreviated JSON response
@@ -237,9 +238,6 @@ Rules:
                 score=0.3,
             )
 
-    # Max tokens for plan review responses
-    MAX_PLAN_REVIEW_TOKENS = 128
-
     def review_plan(
         self,
         objective: str,
@@ -260,7 +258,7 @@ Rules:
             response = self.primitives.llm_call(
                 prompt,
                 role=self.architect_role,
-                n_tokens=self.MAX_PLAN_REVIEW_TOKENS,
+                n_tokens=self.max_plan_review_tokens,
             )
 
             # Parse abbreviated JSON response
@@ -294,7 +292,7 @@ Rules:
             response = self.primitives.llm_call(
                 prompt,
                 role=self.architect_role,
-                n_tokens=self.MAX_TASKIR_TOKENS,
+                n_tokens=self.max_taskir_tokens,
             )
 
             taskir_data = self._parse_review_response(response)

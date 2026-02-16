@@ -8,7 +8,7 @@
 # Run specific:  make shellcheck
 
 SHELL := /usr/bin/env bash
-.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell nextplaid-reindex check-agent-config
+.PHONY: all gates schema shellcheck shfmt mdlint format lint typecheck coverage unit integration security bench clean help setup bootstrap download-models validate-paths docker-build docker-build-dev docker-run docker-dev docker-test docker-lint docker-clean nix-develop nix-build nix-shell nextplaid-reindex check-agent-config check-numerics report-numerics
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
@@ -61,6 +61,8 @@ help:
 	@echo "  make validate-registry - Validate model registry and paths"
 	@echo "  make check-memory - Check available RAM before tests (prevents crashes)"
 	@echo "  make check-agent-config - Validate agent prompt structure and CLAUDE matrix"
+	@echo "  make check-numerics - Enforce numeric literal policy on changed Python files"
+	@echo "  make report-numerics - Print numeric literal policy report (non-blocking)"
 	@echo ""
 	@echo "Formatting:"
 	@echo "  make shfmt      - Format shell scripts (in-place)"
@@ -198,6 +200,15 @@ check-agent-config:
 	@$(PY) scripts/validate/validate_agents_references.py
 	@$(PY) scripts/validate/validate_claude_md_matrix.py
 	@echo "  ✓ agent config checks passed"
+
+check-numerics:
+	@echo "==> check-numerics (changed files)"
+	@$(PY) scripts/validate/check_numeric_literals.py --mode enforce-changed --diff-range origin/main...HEAD
+	@echo "  ✓ numeric policy checks passed"
+
+report-numerics:
+	@echo "==> report-numerics"
+	@$(PY) scripts/validate/check_numeric_literals.py --mode report
 
 security:
 	@echo "==> security (stub)"
