@@ -28,6 +28,15 @@ class _FileExplorationMixin:
         _last_research_node: str | None — last research node ID
     """
 
+    def _increment_exploration(self) -> None:
+        """Thread-safe increment of exploration call counter."""
+        lock = getattr(self, "_state_lock", None)
+        if lock:
+            with lock:
+                self._increment_exploration()
+        else:
+            self._increment_exploration()
+
     def _track_research(self, tool: str, query: str, content: str) -> None:
         """Track a tool invocation in the research context.
 
@@ -58,7 +67,7 @@ class _FileExplorationMixin:
         Returns:
             First n characters of the context or file.
         """
-        self._exploration_calls += 1
+        self._increment_exploration()
 
         if file_path is not None:
             # Read from file
@@ -101,7 +110,7 @@ class _FileExplorationMixin:
         Returns:
             List of lines containing matches (capped at max_grep_results).
         """
-        self._exploration_calls += 1
+        self._increment_exploration()
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
@@ -180,7 +189,7 @@ class _FileExplorationMixin:
         Returns:
             JSON string with directory contents.
         """
-        self._exploration_calls += 1
+        self._increment_exploration()
         import json
         import os
 
@@ -245,7 +254,7 @@ class _FileExplorationMixin:
         Returns:
             JSON string with file metadata.
         """
-        self._exploration_calls += 1
+        self._increment_exploration()
         import json
         import os
         from datetime import datetime

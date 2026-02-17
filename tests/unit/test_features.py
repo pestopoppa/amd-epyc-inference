@@ -165,7 +165,8 @@ class TestFeaturesSummary:
         expected_keys = {
             "memrl", "tools", "scripts", "streaming", "openai_compat",
             "repl", "caching", "structured_delimiters", "react_mode",
-            "output_formalizer", "restricted_python", "specialist_routing",
+            "output_formalizer", "parallel_tools", "escalation_compression",
+            "restricted_python", "specialist_routing",
             "plan_review", "architect_delegation", "parallel_execution",
             "personas", "staged_rewards", "input_formalizer",
             "generation_monitor", "semantic_classifiers", "unified_streaming",

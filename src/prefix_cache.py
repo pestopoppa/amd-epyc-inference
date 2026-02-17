@@ -367,21 +367,20 @@ class CachingBackend:
         Returns:
             InferenceResult with output and metrics.
         """
-        # Get optimal slot
+        # Get optimal slot from prefix router
         prompt = request.prompt or ""
-        self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
+        slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
 
-        # Add slot_id to request payload
-        # Note: This requires modifying the request or backend to support id_slot
-        # For now, we rely on llama-server's automatic slot management
-        # The routing helps track which prompts should hit which slots
+        # Pass computed slot_id to backend via request (id_slot in llama-server)
+        from dataclasses import replace
+        routed_request = replace(request, slot_id=slot_id)
 
         # Forward to backend
         # NOTE: Canonicalization is intentionally NOT applied to the actual prompt.
         # It is only used for cache key computation in get_slot_for_prompt() above.
         # Applying it here was a bug — it replaced ISO dates with "[DATE]" in the
         # prompt sent to the model, contaminating inference output.
-        return self.backend.infer(role_config, request)
+        return self.backend.infer(role_config, routed_request)
 
     def infer_stream_text(
         self,
@@ -391,8 +390,10 @@ class CachingBackend:
     ) -> "InferenceResult":  # noqa: F821
         """Stream inference with prefix caching (delegates to backend)."""
         prompt = request.prompt or ""
-        self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
-        return self.backend.infer_stream_text(role_config, request, on_chunk=on_chunk)
+        slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
+        from dataclasses import replace
+        routed_request = replace(request, slot_id=slot_id)
+        return self.backend.infer_stream_text(role_config, routed_request, on_chunk=on_chunk)
 
     def get_hit_rate(self) -> float:
         """Get the current cache hit rate.

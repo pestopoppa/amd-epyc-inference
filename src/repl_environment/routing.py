@@ -36,7 +36,12 @@ class _RoutingMixin:
         Returns:
             JSON string with similar past tasks and routing advice.
         """
-        self._exploration_calls += 1
+        lock = getattr(self, "_state_lock", None)
+        if lock:
+            with lock:
+                self._exploration_calls += 1
+        else:
+            self._exploration_calls += 1
 
         # Use retriever if available (reuses shared MemRL components)
         if self._retriever is not None:

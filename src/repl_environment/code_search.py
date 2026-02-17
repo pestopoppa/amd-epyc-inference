@@ -124,7 +124,12 @@ class _CodeSearchMixin:
 
     def _nextplaid_search(self, query: str, index: str, limit: int) -> str:
         """Internal: execute search against a NextPLAID index."""
-        self._exploration_calls += 1
+        lock = getattr(self, "_state_lock", None)
+        if lock:
+            with lock:
+                self._exploration_calls += 1
+        else:
+            self._exploration_calls += 1
 
         if index not in VALID_INDICES:
             output = json.dumps(

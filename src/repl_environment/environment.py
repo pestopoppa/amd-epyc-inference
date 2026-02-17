@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import io
 import signal
+import threading
 import uuid
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
@@ -21,6 +22,10 @@ from src.repl_environment.types import (
     REPLConfig,
     REPLSecurityError,
     REPLTimeout,
+)
+from src.repl_environment.parallel_dispatch import (
+    _extract_parallel_calls,
+    execute_parallel_calls,
 )
 from src.repl_environment.security import ASTSecurityVisitor
 from src.repl_environment.unicode_sanitizer import sanitize_code_unicode
@@ -156,6 +161,14 @@ class REPLEnvironment(
         # Research context tracker for tool result lineage
         self._research_context = ResearchContext()
         self._last_research_node: str | None = None
+
+        # Thread-safe lock for parallel tool dispatch (protects state mutations
+        # in _exploration_calls, _exploration_log, _grep_hits_buffer, artifacts)
+        self._state_lock = threading.Lock()
+
+        # Feature flags (lazy import to avoid circular deps)
+        from src.features import features as _get_features
+        self._features = _get_features()
 
         # Build restricted globals
         self._globals = self._build_globals()
@@ -655,8 +668,35 @@ class REPLEnvironment(
                     f"Execute one tool, observe the result, then call the next.",
                     elapsed_seconds=time.perf_counter() - start_time,
                 )
-            # All read-only: fall through to execute all in sequence
-            # (true parallelism via asyncio.gather would require async refactor)
+            # All read-only: attempt parallel dispatch via AST extraction
+            if all_read_only and self._features.parallel_tools:
+                parallel_calls = _extract_parallel_calls(
+                    code, self._globals, read_only_tools
+                )
+                if parallel_calls is not None and len(parallel_calls) > 1:
+                    results = execute_parallel_calls(
+                        parallel_calls, self._globals, self._state_lock
+                    )
+                    # Inject results into globals for subsequent code
+                    for var_name, value in results.items():
+                        if var_name and not var_name.startswith("_result_"):
+                            self._globals[var_name] = value
+                    # Format combined observation
+                    parts = []
+                    for c in parallel_calls:
+                        key = c.target_var or f"_result_{c.index}"
+                        val = results.get(key, "")
+                        label = c.target_var or c.func_name
+                        parts.append(f"[{label}]: {val}")
+                    observation = self._spill_output(
+                        "Observation:\n" + "\n---\n".join(parts)
+                    )
+                    return ExecutionResult(
+                        output=observation,
+                        is_final=False,
+                        elapsed_seconds=time.perf_counter() - start_time,
+                    )
+            # Fall through to sequential exec()
 
         # Execute the code (single tool or simple expression)
         stdout_capture = io.StringIO()

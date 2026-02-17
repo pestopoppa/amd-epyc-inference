@@ -2,6 +2,18 @@
 
 ## 2026-02-17
 
+- **Perf: Parallel read-only tool dispatch (WS1)** — Multi-tool REPL turns now dispatch independent read-only tools via `ThreadPoolExecutor` instead of sequential `exec()`. AST-based extraction with conservative fallback (any dependency → sequential). Feature flag `parallel_tools=True`. Expected 2-4x speedup on multi-tool turns. New: `src/repl_environment/parallel_dispatch.py`, 22 unit tests.
+
+- **Perf: Concurrent inference sweep script (WS2)** — New `scripts/benchmark/concurrent_inference_sweep.py`: asyncio + httpx benchmark for optimal `-np`/concurrency per model tier. Tests frontdoor/coder/worker/architect/fast_worker at varying concurrency levels. Incremental CSV output, TTFT streaming baseline, dry-run mode.
+
+- **Perf: Wire id_slot for prefix cache routing (WS3A)** — Fixed dead code in `PrefixRouter`: computed optimal slots but never passed `id_slot` to llama-server. Added `slot_id` field to `InferenceRequest`, wired through `_build_payload()` and `CachingBackend.infer()`.
+
+- **Perf: Escalation prompt compression (WS3B)** — Feature-flagged `escalation_compression=False`. When escalating with >16K char prompt, LLMLingua-2 BERT compresses to 50% preserving code tokens. ~1.67s saved per architect escalation at 1.2 t/s prefill.
+
+- **Perf: Speculative architect pre-warming (WS3C)** — New `src/services/escalation_prewarmer.py`: at turn 1, if task classified COMPLEX, fires non-blocking `n_predict=0, cache_prompt=true` to architect server. Checks `/slots` first. ~417ms saved per architect escalation.
+
+- **Fix: claude-mem 637 zombie workers (231 GB RAM leak)** — claude-mem v9.0.12 had no subprocess concurrency limit, allowing 637 Claude SDK agent workers to accumulate (228 GB RSS + 2.6 GB swap). Updated plugin from v9.0.12 → v10.2.3 (`git pull` on `~/.claude/plugins/marketplaces/thedotmack/`). New version enforces `CLAUDE_MEM_MAX_CONCURRENT_AGENTS=2` via `waitForSlot()` in ProcessRegistry. Killed workers, restarted daemon. RAM: 818→577 GB, swap: 7.5→0 GB.
+
 - **Fix SimpleQA 0% pass rate (4-layer fix):**
   - **web_search**: Retry with 1s delay (2 attempts), DDG snippet extraction (`result__snippet`), Wikipedia opensearch fallback, typed error categories (timeout/rate_limit/network/parse_error).
   - **fetch_wikipedia**: Switched from REST summary API with bad `sentences*200` heuristic to query API with `exsentences` param for accurate sentence-level truncation.

@@ -131,6 +131,12 @@ class Features:
     # Phase 2: Output formalizer (format constraint enforcement)
     output_formalizer: bool = False  # Post-process answers to satisfy format constraints
 
+    # Parallel read-only tool dispatch (ThreadPoolExecutor for independent REPL tools)
+    parallel_tools: bool = True  # Dispatch independent read-only tools in parallel
+
+    # Escalation prompt compression (LLMLingua-2 BERT for large prompts)
+    escalation_compression: bool = False  # Compress prompts on architect escalation
+
     # Security Features
     restricted_python: bool = False  # Use RestrictedPython for REPL (requires library)
 
@@ -243,6 +249,8 @@ class Features:
             "structured_delimiters": self.structured_delimiters,
             "react_mode": self.react_mode,
             "output_formalizer": self.output_formalizer,
+            "parallel_tools": self.parallel_tools,
+            "escalation_compression": self.escalation_compression,
             "restricted_python": self.restricted_python,
             "specialist_routing": self.specialist_routing,
             "plan_review": self.plan_review,
@@ -342,6 +350,8 @@ def get_features(
             "structured_delimiters": True,  # Low risk, always on
             "react_mode": False,  # Enable after regression testing
             "output_formalizer": False,  # Enable after regression testing
+            "parallel_tools": True,  # Parallel read-only tool dispatch enabled
+            "escalation_compression": False,  # Enable after quality validation
             "restricted_python": False,  # AST blocklist is sufficient; RestrictedPython blocks all imports including safe ones (scipy, numpy)
             "specialist_routing": False,  # Enable after comparative seeding proves benefit
             "plan_review": False,  # Enable after Phase A validation
@@ -376,6 +386,8 @@ def get_features(
             "structured_delimiters": True,  # Low risk, always on
             "react_mode": False,
             "output_formalizer": False,
+            "parallel_tools": True,  # Parallel read-only tool dispatch enabled
+            "escalation_compression": False,  # Disabled in tests by default
             "restricted_python": False,  # Use custom sandbox in tests
             "specialist_routing": False,  # Disabled in tests by default
             "plan_review": False,  # Disabled in tests by default
@@ -413,6 +425,8 @@ def get_features(
         ),
         "react_mode": _env_bool("REACT_MODE", defaults["react_mode"]),
         "output_formalizer": _env_bool("OUTPUT_FORMALIZER", defaults["output_formalizer"]),
+        "parallel_tools": _env_bool("PARALLEL_TOOLS", defaults["parallel_tools"]),
+        "escalation_compression": _env_bool("ESCALATION_COMPRESSION", defaults["escalation_compression"]),
         "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
         "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
         "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),

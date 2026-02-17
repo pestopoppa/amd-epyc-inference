@@ -407,6 +407,84 @@ def _log_escalation(ctx: Ctx, from_role: str, to_role: str, reason: str) -> None
         log.debug("progress_logger.log_escalation failed: %s", exc)
 
 
+def _maybe_prewarm_architect(state: "TaskState") -> None:
+    """Fire-and-forget pre-warm of architect KV cache for complex tasks (WS3C).
+
+    Called at turn 1. Uses classify_task_complexity to decide whether to
+    speculatively prefill the architect server's KV cache.
+    """
+    try:
+        from src.proactive_delegation.complexity import classify_task_complexity
+        from src.proactive_delegation.types import TaskComplexity
+
+        complexity, _ = classify_task_complexity(state.prompt)
+        if complexity != TaskComplexity.COMPLEX:
+            return
+
+        from src.services.escalation_prewarmer import EscalationPrewarmer
+
+        prewarmer = EscalationPrewarmer()
+
+        # Fire and forget — don't block the main execution
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(
+                prewarmer.prewarm_if_complex(state.prompt, "COMPLEX")
+            )
+        else:
+            # Shouldn't happen in normal flow, but be safe
+            log.debug("No running event loop for pre-warm, skipping")
+    except Exception as e:
+        log.debug("Pre-warm setup failed: %s", e)
+
+
+def _maybe_compress_for_escalation(prompt: str, state: "TaskState") -> str:
+    """Compress prompt when escalating to architect tier (WS3B).
+
+    Only activates when:
+    - escalation_count > 0 (we're in an escalated execution)
+    - prompt > 16K chars (~4K tokens)
+    - escalation_compression feature flag is enabled
+
+    Uses LLMLingua-2 BERT for extractive token selection (~10-50ms on CPU).
+    Preserves code structure tokens (def, class, import, FINAL).
+
+    Saving: ~2K tokens at 1.2 t/s architect prefill = 1.67s per escalation.
+    """
+    from src.features import features as _get_features
+
+    if not _get_features().escalation_compression:
+        return prompt
+
+    if state.escalation_count <= 0:
+        return prompt
+
+    # Only compress large prompts (>16K chars ≈ 4K tokens)
+    if len(prompt) <= 16_000:
+        return prompt
+
+    try:
+        from src.services.prompt_compressor import PromptCompressor
+
+        compressor = PromptCompressor.get_instance()
+        result = compressor.compress(
+            prompt,
+            target_ratio=0.5,
+            force_tokens=["FINAL", "def ", "class ", "import "],
+        )
+        log.info(
+            "Escalation compression: %d→%d chars (%.1f%% reduction, %.1fms)",
+            result.original_chars,
+            result.compressed_chars,
+            (1 - result.actual_ratio) * 100,
+            result.latency_ms,
+        )
+        return result.compressed_text
+    except Exception as e:
+        log.warning("Escalation compression failed, using uncompressed: %s", e)
+        return prompt
+
+
 async def _maybe_compact_context(ctx: Ctx) -> None:
     """Compact old context entries if conversation is long (OpenClaw pattern).
 
@@ -597,6 +675,9 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 task_description=state.prompt,
             )
 
+            # Speculative pre-warm of architect KV cache for complex tasks (WS3C)
+            _maybe_prewarm_architect(state)
+
         builder = PromptBuilder(PromptConfig(style=PromptStyle.MINIMAL))
         prompt = builder.build_root_lm_prompt(
             state=repl_state,
@@ -634,6 +715,9 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             llm_kwargs["n_tokens"] = n_tokens
         state.think_harder_config = None  # Clear after use
 
+    # Compress prompt on escalation to reduce architect prefill time (WS3B)
+    prompt = _maybe_compress_for_escalation(prompt, state)
+
     # Apply GBNF grammar on first turn when tool use is required
     if state.tool_required and state.turns == 1 and deps.repl is not None:
         try:
@@ -662,6 +746,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 prompt,
                 role=str(role),
                 stop_sequences=["\n```\n"],
+                skip_suffix=True,
                 **llm_kwargs,
             )
         else:
@@ -670,6 +755,7 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 prompt,
                 role=str(role),
                 stop_sequences=["\n```\n"],
+                skip_suffix=True,
                 **llm_kwargs,
             )
     except (InferenceError, ConnectionError, TimeoutError, OSError) as e:

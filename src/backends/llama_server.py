@@ -612,6 +612,10 @@ class LlamaServerBackend(ModelBackend):
         if request.grammar:
             payload["grammar"] = request.grammar
 
+        # Prefix cache slot routing (id_slot=-1 means auto-assign)
+        if request.slot_id is not None:
+            payload["id_slot"] = request.slot_id
+
         return payload
 
     def get_slots(self) -> list[SlotInfo]:
