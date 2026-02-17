@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Parallel sharded corpus index builder (v3).
+"""Parallel pipelined sharded corpus index builder (v3).
 
-Downloads languages in parallel, shards ngrams across N SQLite databases
-(hash-based), builds indexes in parallel. Total build time ~1.5-2.5h vs 5+h
-for v2's monolithic approach.
+Downloads languages in parallel, merges+shards each one AS IT COMPLETES
+(pipelining download with merge), then builds indexes in parallel across
+all shards. Aggressively uses available CPU cores and RAM.
 
-Architecture:
-  Phase 1: Parallel download → temp/{lang}.db (no index)
-  Phase 2: Merge snippets → snippets.db, shard ngrams → shard_{00..15}.db
-  Phase 3: Parallel CREATE INDEX on each shard
-  Phase 4: Cleanup temp DBs, write meta.json
+Architecture (pipelined):
+  6 download workers stream HF → temp/{lang}.db
+  Main thread merges+shards each lang AS IT COMPLETES (overlapping with ongoing downloads)
+  16 index workers CREATE INDEX in parallel on each shard
+  Cleanup + meta.json
 
 Usage:
     # Full build (all 6 languages, 16 shards)
@@ -63,7 +63,7 @@ MAX_SNIPPET_CHARS = 2000
 NGRAM_SIZE = 4
 MIN_FILE_BYTES = 100
 MAX_FILE_BYTES = 100_000
-BATCH_SIZE = 5000
+BATCH_SIZE = 10_000  # Larger batches — we have 1.13TB RAM
 PROGRESS_INTERVAL = 10_000
 
 SPLIT_PATTERNS = {
@@ -140,15 +140,17 @@ def gram_to_shard(gram: str, num_shards: int) -> int:
     return int.from_bytes(h[:4], "little") % num_shards
 
 
-# ── Phase 1: Download one language to temp DB ────────────────────────────
+# ── Download one language to temp DB ─────────────────────────────────────
 
 
 def _create_temp_db(db_path: str) -> sqlite3.Connection:
-    """Create temp per-language DB (no ngram index yet)."""
+    """Create temp per-language DB with aggressive performance settings."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA cache_size=-256000")
+    conn.execute("PRAGMA synchronous=OFF")  # Temp data — can rebuild if crash
+    conn.execute("PRAGMA cache_size=-512000")  # 512MB cache per lang
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA mmap_size=2147483648")  # 2GB mmap
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS snippets (
             id INTEGER PRIMARY KEY,
@@ -213,7 +215,6 @@ def download_language(
         return {"language": language, "files": 0, "snippets": 0, "skipped": 0, "error": str(e)}
 
     stats = {"language": language, "files": 0, "snippets": 0, "skipped": 0}
-    batch: list[dict] = []
     ngram_rows: list[tuple[str, int]] = []
 
     for item in ds:
@@ -253,7 +254,7 @@ def download_language(
 
         stats["files"] += 1
 
-        # Batch commit ngrams
+        # Batch commit ngrams — large batches for throughput
         if len(ngram_rows) >= BATCH_SIZE * 20:
             conn.executemany("INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)", ngram_rows)
             conn.commit()
@@ -274,6 +275,8 @@ def download_language(
         conn.executemany("INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)", ngram_rows)
 
     conn.commit()
+    # Checkpoint WAL before closing so merge reads clean data
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     conn.close()
 
     # Mark as complete
@@ -286,158 +289,99 @@ def download_language(
     return stats
 
 
-# ── Phase 2: Merge snippets + shard ngrams ───────────────────────────────
+# ── Merge one language into snippets.db + shard DBs ─────────────────────
 
 
-def merge_and_shard(
-    output_dir: str,
-    languages: list[str],
+def merge_one_language(
+    language: str,
+    temp_dir: str,
+    snippets_conn: sqlite3.Connection,
+    shard_conns: list[sqlite3.Connection],
     num_shards: int,
-) -> dict:
-    """Merge temp DBs into snippets.db + shard_{00..15}.db."""
-    temp_dir = os.path.join(output_dir, "temp")
+    global_id_start: int,
+) -> tuple[int, dict]:
+    """Merge a single language's temp DB into the shared output DBs.
+
+    Returns (next_global_id, stats_dict).
+    Called from main thread as each download completes.
+    """
+    temp_db = os.path.join(temp_dir, f"{language}.db")
+    if not os.path.exists(temp_db):
+        log.warning("[merge] Temp DB for %s not found, skipping", language)
+        return global_id_start, {"snippets": 0, "ngrams": 0}
+
     t0 = time.perf_counter()
+    src_conn = sqlite3.connect(temp_db)
+    src_conn.execute("PRAGMA mmap_size=2147483648")
+    local_count = src_conn.execute("SELECT COUNT(*) FROM snippets").fetchone()[0]
+    log.info("[merge] %s: %d snippets, global offset=%d", language, local_count, global_id_start)
 
-    # Create snippets.db
-    snippets_db_path = os.path.join(output_dir, "snippets.db")
-    if os.path.exists(snippets_db_path):
-        os.remove(snippets_db_path)
+    global_id = global_id_start
+    id_map: dict[int, int] = {}
+    batch_snippets = []
 
-    snippets_conn = sqlite3.connect(snippets_db_path)
-    snippets_conn.execute("PRAGMA journal_mode=WAL")
-    snippets_conn.execute("PRAGMA synchronous=NORMAL")
-    snippets_conn.execute("PRAGMA cache_size=-256000")
-    snippets_conn.executescript("""
-        CREATE TABLE IF NOT EXISTS snippets (
-            id INTEGER PRIMARY KEY,
-            code TEXT NOT NULL,
-            source TEXT DEFAULT '',
-            hash TEXT NOT NULL,
-            language TEXT DEFAULT ''
-        );
-        CREATE INDEX IF NOT EXISTS idx_snippets_hash ON snippets(hash);
-    """)
+    for local_id, code, source, h, lang in src_conn.execute(
+        "SELECT id, code, source, hash, language FROM snippets ORDER BY id"
+    ):
+        new_id = global_id
+        id_map[local_id] = new_id
+        batch_snippets.append((new_id, code, source, h, lang))
+        global_id += 1
 
-    # Create shard DBs
-    shard_conns: list[sqlite3.Connection] = []
-    for i in range(num_shards):
-        shard_path = os.path.join(output_dir, f"shard_{i:02d}.db")
-        if os.path.exists(shard_path):
-            os.remove(shard_path)
-        conn = sqlite3.connect(shard_path)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-128000")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ngrams (
-                gram TEXT NOT NULL,
-                snippet_id INTEGER NOT NULL
-            )
-        """)
-        shard_conns.append(conn)
-
-    # Process each language temp DB
-    global_id = 0
-    total_snippets = 0
-    total_ngrams = 0
-    lang_stats: dict[str, dict] = {}
-
-    for language in languages:
-        temp_db = os.path.join(temp_dir, f"{language}.db")
-        if not os.path.exists(temp_db):
-            log.warning("[merge] Temp DB for %s not found, skipping", language)
-            continue
-
-        src_conn = sqlite3.connect(temp_db)
-        local_count = src_conn.execute("SELECT COUNT(*) FROM snippets").fetchone()[0]
-        id_offset = global_id
-        log.info(
-            "[merge] %s: %d snippets, global offset=%d",
-            language, local_count, id_offset,
-        )
-
-        # Copy snippets with remapped IDs
-        batch_snippets = []
-        id_map: dict[int, int] = {}  # local_id → global_id
-
-        for local_id, code, source, h, lang in src_conn.execute(
-            "SELECT id, code, source, hash, language FROM snippets ORDER BY id"
-        ):
-            new_id = global_id
-            id_map[local_id] = new_id
-            batch_snippets.append((new_id, code, source, h, lang))
-            global_id += 1
-
-            if len(batch_snippets) >= BATCH_SIZE:
-                snippets_conn.executemany(
-                    "INSERT INTO snippets (id, code, source, hash, language) VALUES (?, ?, ?, ?, ?)",
-                    batch_snippets,
-                )
-                batch_snippets = []
-
-        if batch_snippets:
+        if len(batch_snippets) >= BATCH_SIZE:
             snippets_conn.executemany(
                 "INSERT INTO snippets (id, code, source, hash, language) VALUES (?, ?, ?, ?, ?)",
                 batch_snippets,
             )
-        snippets_conn.commit()
+            batch_snippets = []
 
-        # Shard ngrams with remapped snippet IDs
-        shard_buffers: list[list[tuple[str, int]]] = [[] for _ in range(num_shards)]
-        ngram_count = 0
+    if batch_snippets:
+        snippets_conn.executemany(
+            "INSERT INTO snippets (id, code, source, hash, language) VALUES (?, ?, ?, ?, ?)",
+            batch_snippets,
+        )
+    snippets_conn.commit()
 
-        for gram, local_sid in src_conn.execute("SELECT gram, snippet_id FROM ngrams"):
-            new_sid = id_map.get(local_sid)
-            if new_sid is None:
-                continue
-            shard_id = gram_to_shard(gram, num_shards)
-            shard_buffers[shard_id].append((gram, new_sid))
-            ngram_count += 1
+    # Shard ngrams with remapped snippet IDs
+    shard_buffers: list[list[tuple[str, int]]] = [[] for _ in range(num_shards)]
+    ngram_count = 0
+    flush_threshold = BATCH_SIZE * 10
 
-            # Flush shard buffers periodically
-            if len(shard_buffers[shard_id]) >= BATCH_SIZE * 10:
-                shard_conns[shard_id].executemany(
-                    "INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)",
-                    shard_buffers[shard_id],
-                )
-                shard_buffers[shard_id] = []
+    for gram, local_sid in src_conn.execute("SELECT gram, snippet_id FROM ngrams"):
+        new_sid = id_map.get(local_sid)
+        if new_sid is None:
+            continue
+        shard_id = gram_to_shard(gram, num_shards)
+        shard_buffers[shard_id].append((gram, new_sid))
+        ngram_count += 1
 
-        # Flush remaining
-        for sid in range(num_shards):
-            if shard_buffers[sid]:
-                shard_conns[sid].executemany(
-                    "INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)",
-                    shard_buffers[sid],
-                )
+        if len(shard_buffers[shard_id]) >= flush_threshold:
+            shard_conns[shard_id].executemany(
+                "INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)",
+                shard_buffers[shard_id],
+            )
+            shard_buffers[shard_id] = []
 
-        src_conn.close()
-        total_snippets += local_count
-        total_ngrams += ngram_count
-        lang_stats[language] = {"snippets": local_count, "ngrams": ngram_count}
-
-        log.info("[merge] %s: %d ngrams sharded", language, ngram_count)
+    # Flush remaining
+    for sid in range(num_shards):
+        if shard_buffers[sid]:
+            shard_conns[sid].executemany(
+                "INSERT INTO ngrams (gram, snippet_id) VALUES (?, ?)",
+                shard_buffers[sid],
+            )
 
     # Commit all shards
     for conn in shard_conns:
         conn.commit()
-        conn.close()
-    snippets_conn.commit()
-    snippets_conn.close()
 
+    src_conn.close()
     elapsed = time.perf_counter() - t0
-    log.info(
-        "[merge] Done: %d snippets, %d ngrams in %.1fs",
-        total_snippets, total_ngrams, elapsed,
-    )
-    return {
-        "snippets": total_snippets,
-        "ngrams": total_ngrams,
-        "elapsed_s": round(elapsed, 1),
-        "lang_stats": lang_stats,
-    }
+    log.info("[merge] %s: %d snippets + %d ngrams merged in %.1fs", language, local_count, ngram_count, elapsed)
+
+    return global_id, {"snippets": local_count, "ngrams": ngram_count, "merge_time_s": round(elapsed, 1)}
 
 
-# ── Phase 3: Parallel index creation ────────────────────────────────────
+# ── Parallel index creation ──────────────────────────────────────────────
 
 
 def create_shard_index(shard_path: str) -> dict:
@@ -447,14 +391,13 @@ def create_shard_index(shard_path: str) -> dict:
     log.info("[index] Creating index on %s ...", shard_name)
 
     conn = sqlite3.connect(shard_path)
-    conn.execute("PRAGMA cache_size=-256000")
-    conn.execute("PRAGMA mmap_size=1073741824")
+    conn.execute("PRAGMA cache_size=-512000")  # 512MB
+    conn.execute("PRAGMA mmap_size=4294967296")  # 4GB mmap
+    conn.execute("PRAGMA temp_store=MEMORY")
 
     ngram_count = conn.execute("SELECT COUNT(*) FROM ngrams").fetchone()[0]
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ngrams_gram ON ngrams(gram)")
     conn.commit()
-
-    # Checkpoint WAL to merge into main DB
     conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     conn.close()
 
@@ -463,14 +406,16 @@ def create_shard_index(shard_path: str) -> dict:
     return {"shard": shard_name, "ngrams": ngram_count, "elapsed_s": round(elapsed, 1)}
 
 
-# ── Phase 4: Metadata + cleanup ─────────────────────────────────────────
+# ── Metadata + cleanup ──────────────────────────────────────────────────
 
 
 def write_metadata(
     output_dir: str,
     languages: list[str],
     num_shards: int,
-    merge_stats: dict,
+    total_snippets: int,
+    total_ngrams: int,
+    lang_stats: dict,
     index_stats: list[dict],
     total_elapsed: float,
 ) -> None:
@@ -480,12 +425,12 @@ def write_metadata(
         "format": "sharded_sqlite",
         "ngram_size": NGRAM_SIZE,
         "num_shards": num_shards,
-        "num_snippets": merge_stats["snippets"],
-        "num_ngrams": merge_stats["ngrams"],
+        "num_snippets": total_snippets,
+        "num_ngrams": total_ngrams,
         "languages": languages,
         "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "build_time_s": round(total_elapsed, 1),
-        "merge_stats": merge_stats,
+        "lang_stats": lang_stats,
         "index_stats": index_stats,
     }
     meta_path = os.path.join(output_dir, "meta.json")
@@ -506,12 +451,12 @@ def cleanup_temp(output_dir: str) -> None:
     log.info("[cleanup] Temp directory removed")
 
 
-# ── Main ─────────────────────────────────────────────────────────────────
+# ── Main: Pipelined execution ────────────────────────────────────────────
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parallel sharded corpus index builder (v3)"
+        description="Parallel pipelined sharded corpus index builder (v3)"
     )
     parser.add_argument(
         "--output", default=DEFAULT_OUTPUT,
@@ -531,7 +476,7 @@ def main():
     )
     parser.add_argument(
         "--resume", action="store_true",
-        help="Resume: skip languages with .done markers, skip phases with existing outputs",
+        help="Resume: skip languages with .done markers",
     )
     parser.add_argument(
         "--download-workers", type=int, default=6,
@@ -543,11 +488,11 @@ def main():
     )
     parser.add_argument(
         "--skip-download", action="store_true",
-        help="Skip Phase 1 (use existing temp DBs)",
+        help="Skip downloads (use existing temp DBs)",
     )
     parser.add_argument(
         "--skip-merge", action="store_true",
-        help="Skip Phase 2 (use existing shard DBs)",
+        help="Skip merge (use existing shard DBs)",
     )
     parser.add_argument(
         "--cleanup-temp", action="store_true",
@@ -559,75 +504,159 @@ def main():
     languages = [l.strip() for l in args.languages.split(",")]
     languages = [l for l in languages if l in LANGUAGE_MAP]
     output_dir = args.output
+    num_shards = args.shards
+    temp_dir = os.path.join(output_dir, "temp")
 
     os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(temp_dir, exist_ok=True)
+
     log.info("=" * 60)
-    log.info("Parallel Sharded Corpus Build v3")
+    log.info("Parallel Pipelined Sharded Corpus Build v3")
     log.info("  Output:    %s", output_dir)
     log.info("  Languages: %s", ", ".join(languages))
-    log.info("  Shards:    %d", args.shards)
+    log.info("  Shards:    %d", num_shards)
+    log.info("  Pipeline:  download → merge (overlapped) → parallel index")
     log.info("=" * 60)
 
-    # ── Phase 1: Parallel downloads ──────────────────────────────────
+    # ── Prepare output DBs for merge ─────────────────────────────────
+    if not args.skip_merge:
+        snippets_db_path = os.path.join(output_dir, "snippets.db")
+        if os.path.exists(snippets_db_path) and not args.resume:
+            os.remove(snippets_db_path)
+
+        snippets_conn = sqlite3.connect(snippets_db_path)
+        snippets_conn.execute("PRAGMA journal_mode=WAL")
+        snippets_conn.execute("PRAGMA synchronous=OFF")
+        snippets_conn.execute("PRAGMA cache_size=-512000")
+        snippets_conn.execute("PRAGMA temp_store=MEMORY")
+        snippets_conn.executescript("""
+            CREATE TABLE IF NOT EXISTS snippets (
+                id INTEGER PRIMARY KEY,
+                code TEXT NOT NULL,
+                source TEXT DEFAULT '',
+                hash TEXT NOT NULL,
+                language TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_snippets_hash ON snippets(hash);
+        """)
+
+        shard_conns: list[sqlite3.Connection] = []
+        for i in range(num_shards):
+            shard_path = os.path.join(output_dir, f"shard_{i:02d}.db")
+            if os.path.exists(shard_path) and not args.resume:
+                os.remove(shard_path)
+            conn = sqlite3.connect(shard_path)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=OFF")
+            conn.execute("PRAGMA cache_size=-128000")
+            conn.execute("PRAGMA temp_store=MEMORY")
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS ngrams (
+                    gram TEXT NOT NULL,
+                    snippet_id INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_ngrams_gram ON ngrams(gram);
+            """)
+            shard_conns.append(conn)
+        log.info("Shard DBs created with live indexes (queryable during build)")
+
+    # ── Pipelined: download + merge as each completes ────────────────
+    global_id = 0
+    total_snippets = 0
+    total_ngrams = 0
+    lang_stats: dict[str, dict] = {}
+    download_stats: dict[str, dict] = {}
+    langs_merged = 0
+
     if not args.skip_download:
-        log.info("=== Phase 1: Parallel downloads (%d languages) ===", len(languages))
-        t1 = time.perf_counter()
-        download_stats: dict[str, dict] = {}
+        log.info("=== Pipelined: download + merge (%d languages) ===", len(languages))
+        t_pipeline = time.perf_counter()
 
         with ProcessPoolExecutor(max_workers=args.download_workers) as pool:
             futures = {
                 pool.submit(download_language, lang, output_dir, args.max_files_per_lang): lang
                 for lang in languages
             }
+
             for future in as_completed(futures):
                 lang = futures[future]
                 try:
                     stats = future.result()
                     download_stats[lang] = stats
                     log.info(
-                        "[Phase 1] %s complete: %d snippets",
+                        "[pipeline] %s downloaded: %d snippets",
                         lang, stats.get("snippets", 0),
                     )
                 except Exception as e:
-                    log.error("[Phase 1] %s FAILED: %s", lang, e)
+                    log.error("[pipeline] %s download FAILED: %s", lang, e)
                     download_stats[lang] = {"error": str(e)}
+                    continue
 
-        elapsed_p1 = time.perf_counter() - t1
-        log.info("Phase 1 done in %.1fs", elapsed_p1)
+                # Immediately merge this language while others still download
+                if not args.skip_merge and "error" not in stats:
+                    global_id, m_stats = merge_one_language(
+                        lang, temp_dir, snippets_conn, shard_conns, num_shards, global_id,
+                    )
+                    lang_stats[lang] = m_stats
+                    total_snippets += m_stats["snippets"]
+                    total_ngrams += m_stats["ngrams"]
+                    langs_merged += 1
+                    log.info(
+                        "[pipeline] %s merged (%d/%d). Running total: %d snippets, %d ngrams",
+                        lang, langs_merged, len(languages), total_snippets, total_ngrams,
+                    )
 
-        # Write incremental progress
-        progress = {"phase1_downloads": download_stats, "phase1_elapsed_s": round(elapsed_p1, 1)}
-        with open(os.path.join(output_dir, "build_progress.json"), "w") as f:
-            json.dump(progress, f, indent=2)
-    else:
-        log.info("=== Phase 1: SKIPPED (--skip-download) ===")
+                    # Write incremental progress
+                    progress = {
+                        "downloads": download_stats,
+                        "merged": lang_stats,
+                        "total_snippets": total_snippets,
+                        "total_ngrams": total_ngrams,
+                        "elapsed_s": round(time.perf_counter() - t_pipeline, 1),
+                    }
+                    with open(os.path.join(output_dir, "build_progress.json"), "w") as f:
+                        json.dump(progress, f, indent=2)
 
-    # ── Phase 2: Merge + shard ───────────────────────────────────────
+        elapsed_pipeline = time.perf_counter() - t_pipeline
+        log.info("Pipeline (download+merge) done in %.1fs", elapsed_pipeline)
+
+    elif not args.skip_merge:
+        # Skip download but still merge existing temp DBs
+        log.info("=== Merge only (--skip-download) ===")
+        for lang in languages:
+            global_id, m_stats = merge_one_language(
+                lang, temp_dir, snippets_conn, shard_conns, num_shards, global_id,
+            )
+            lang_stats[lang] = m_stats
+            total_snippets += m_stats["snippets"]
+            total_ngrams += m_stats["ngrams"]
+
+    # Close merge DBs
     if not args.skip_merge:
-        log.info("=== Phase 2: Merge snippets + shard ngrams ===")
-        merge_stats = merge_and_shard(output_dir, languages, args.shards)
-    else:
-        log.info("=== Phase 2: SKIPPED (--skip-merge) ===")
-        # Read existing stats
+        for conn in shard_conns:
+            conn.commit()
+            conn.close()
+        snippets_conn.commit()
+        snippets_conn.close()
+
+    # If skip_merge, read existing meta for stats
+    if args.skip_merge:
         meta_path = os.path.join(output_dir, "meta.json")
         if os.path.exists(meta_path):
             with open(meta_path) as f:
-                existing_meta = json.load(f)
-            merge_stats = existing_meta.get("merge_stats", {
-                "snippets": 0, "ngrams": 0, "elapsed_s": 0, "lang_stats": {},
-            })
-        else:
-            merge_stats = {"snippets": 0, "ngrams": 0, "elapsed_s": 0, "lang_stats": {}}
+                existing = json.load(f)
+            total_snippets = existing.get("num_snippets", 0)
+            total_ngrams = existing.get("num_ngrams", 0)
+            lang_stats = existing.get("lang_stats", {})
 
-    # ── Phase 3: Parallel index creation ─────────────────────────────
-    log.info("=== Phase 3: Parallel index creation (%d shards) ===", args.shards)
-    t3 = time.perf_counter()
+    # ── Parallel index creation ──────────────────────────────────────
+    log.info("=== Parallel index creation (%d shards, %d workers) ===", num_shards, args.index_workers)
+    t_index = time.perf_counter()
 
     shard_paths = [
         os.path.join(output_dir, f"shard_{i:02d}.db")
-        for i in range(args.shards)
+        for i in range(num_shards)
     ]
-    # Verify shards exist
     missing = [p for p in shard_paths if not os.path.exists(p)]
     if missing:
         log.error("Missing shard DBs: %s", missing)
@@ -644,40 +673,41 @@ def main():
             try:
                 stats = future.result()
                 index_stats.append(stats)
-                log.info("[Phase 3] %s indexed", stats["shard"])
+                log.info("[index] %s done (%.1fs)", stats["shard"], stats["elapsed_s"])
             except Exception as e:
-                log.error("[Phase 3] %s FAILED: %s", os.path.basename(path), e)
+                log.error("[index] %s FAILED: %s", os.path.basename(path), e)
 
-    elapsed_p3 = time.perf_counter() - t3
-    log.info("Phase 3 done in %.1fs", elapsed_p3)
+    elapsed_index = time.perf_counter() - t_index
+    log.info("Parallel indexing done in %.1fs", elapsed_index)
 
-    # Also checkpoint snippets.db WAL
+    # Checkpoint snippets.db WAL
     snippets_db = os.path.join(output_dir, "snippets.db")
     if os.path.exists(snippets_db):
         conn = sqlite3.connect(snippets_db)
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.close()
 
-    # ── Phase 4: Metadata + cleanup ──────────────────────────────────
+    # ── Metadata + cleanup ───────────────────────────────────────────
     total_elapsed = time.perf_counter() - t_total
-    write_metadata(output_dir, languages, args.shards, merge_stats, index_stats, total_elapsed)
+    write_metadata(
+        output_dir, languages, num_shards,
+        total_snippets, total_ngrams, lang_stats, index_stats, total_elapsed,
+    )
 
     if args.cleanup_temp:
         cleanup_temp(output_dir)
 
     # Summary
-    total_shard_size = sum(
-        os.path.getsize(p) for p in shard_paths if os.path.exists(p)
-    )
+    total_shard_size = sum(os.path.getsize(p) for p in shard_paths if os.path.exists(p))
     snippets_size = os.path.getsize(snippets_db) if os.path.exists(snippets_db) else 0
 
     log.info("=" * 60)
-    log.info("Build complete in %.1fs", total_elapsed)
-    log.info("  Snippets:    %d", merge_stats.get("snippets", 0))
-    log.info("  N-grams:     %d", merge_stats.get("ngrams", 0))
+    log.info("Build complete in %.1fs (%.1f min)", total_elapsed, total_elapsed / 60)
+    log.info("  Snippets:    %d", total_snippets)
+    log.info("  N-grams:     %d", total_ngrams)
     log.info("  Shards:      %d x ~%.1f MB = %.1f MB total",
-             args.shards,
-             total_shard_size / args.shards / 1024 / 1024,
+             num_shards,
+             total_shard_size / max(num_shards, 1) / 1024 / 1024,
              total_shard_size / 1024 / 1024)
     log.info("  Snippets DB: %.1f MB", snippets_size / 1024 / 1024)
     log.info("  Output:      %s", output_dir)

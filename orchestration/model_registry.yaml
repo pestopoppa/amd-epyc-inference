@@ -48,7 +48,7 @@ runtime_defaults:
     ubatch_size: 8192
   corpus_retrieval:
     enabled: true        # A/B validated: +8.7pp/32B, +15.6pp/480B. Per-role via lookup flag.
-    index_path: /mnt/raid0/llm/cache/corpus/mvp_index  # JSON v1 (73K snippets). Switch to full_index once idx_ngrams_gram built.
+    index_path: /mnt/raid0/llm/cache/corpus/v3_sharded  # Sharded SQLite v3 (in-progress build, falls back gracefully). mvp_index kept as backup.
     max_snippets: 3
     max_chars: 3000
     # rag_enabled: ABANDONED. Prompt-level RAG hurts quality on 7B (-0.96) AND 32B (-1.38).
