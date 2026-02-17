@@ -3,7 +3,6 @@
 Governed in this repository:
 
 - `CLAUDE.md`
-- `kernel-dev/llama-cpp-dev/CLAUDE.md`
 
 Non-governed classes:
 

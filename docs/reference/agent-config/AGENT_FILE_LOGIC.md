@@ -61,7 +61,6 @@ CLAUDE policy files are explicitly scoped via:
 Governed files for this repo:
 
 - `CLAUDE.md`
-- `kernel-dev/llama-cpp-dev/CLAUDE.md`
 
 ## Skill Design Principles Folded In
 
