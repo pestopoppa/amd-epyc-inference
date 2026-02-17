@@ -102,8 +102,6 @@ Dockerfile
 Dockerfile.dev
 docker-compose.yml
 flake.nix
-docs/MODEL_MANIFEST.md
-docs/SETUP.md
 docs/guides/model-sizing.md
 Twyne_V1_Whitepaper_*.json
 orchestration/repl_memory/sessions/

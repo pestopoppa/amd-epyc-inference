@@ -1,0 +1,183 @@
+# Setup Guide
+
+Complete setup instructions for the AMD EPYC 9655 Inference Optimization project.
+
+## Prerequisites
+
+### Required
+
+- **Python 3.11+**
+- **git**
+- **cmake** (for building llama.cpp)
+- **C++ compiler** with AVX-512 support (GCC 11+ or Clang 15+)
+
+### Recommended
+
+- **numactl** — required for NUMA memory interleaving (`apt install numactl`)
+- **lsof** — used for port checking (`apt install lsof`)
+
+### Optional (for `make gates`)
+
+- **shellcheck** — shell script linting (`apt install shellcheck`)
+- **shfmt** — shell script formatting (`go install mvdan.cc/sh/v3/cmd/shfmt@latest`)
+- **markdownlint** — markdown linting (`npm install -g markdownlint-cli`)
+
+## Quick Setup
+
+```bash
+# 1. Clone and configure
+git clone <repo-url> && cd claude
+cp .env.example .env   # Edit paths for your system
+
+# 2. Install Python dependencies
+pip install -e ".[dev]"   # or: uv sync
+
+# 3. Verify setup
+make validate-paths && make gates
+```
+
+Or use the bootstrap script for a guided setup:
+
+```bash
+./scripts/setup/bootstrap.sh
+```
+
+The bootstrap script will:
+
+1. Verify prerequisites (Python, system tools)
+2. Create the directory structure on `/mnt/raid0/`
+3. Set up environment configuration from `.env.example`
+4. Install Python dependencies
+5. Verify llama.cpp binaries
+6. Run verification gates
+
+Use `--check-only` to just check prerequisites, or `--create-dirs` to only create directories.
+
+## Environment Configuration
+
+All paths are configured via environment variables. Key variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ORCHESTRATOR_PATHS_LLM_ROOT` | `/mnt/raid0/llm` | Root directory for all LLM files |
+| `ORCHESTRATOR_PATHS_PROJECT_ROOT` | (repo location) | This repository |
+| `ORCHESTRATOR_PATHS_MODEL_BASE` | `${LLM_ROOT}/lmstudio/models` | GGUF model files |
+| `ORCHESTRATOR_PATHS_LLAMA_CPP_BIN` | `${LLM_ROOT}/llama.cpp/build/bin` | llama.cpp binaries |
+| `HF_HOME` | `/mnt/raid0/llm/cache/huggingface` | HuggingFace cache |
+| `TMPDIR` | `/mnt/raid0/llm/tmp` | Temporary files |
+
+> **Critical**: All files must reside on `/mnt/raid0/`. The root filesystem is a 120GB SSD — writing large files there causes disk exhaustion. See [CLAUDE.md](../CLAUDE.md) for the full path policy.
+
+## Building llama.cpp
+
+This project uses a [modified llama.cpp fork](https://github.com/pestopoppa/llama.cpp) with performance optimizations.
+
+```bash
+# Clone the fork
+git clone https://github.com/pestopoppa/llama.cpp.git /mnt/raid0/llm/llama.cpp
+cd /mnt/raid0/llm/llama.cpp
+
+# IMPORTANT: Use the production branch
+git checkout production-consolidated
+
+# Build with AVX-512 support (required for AMD EPYC)
+cmake -B build \
+  -DLLAMA_AVX512=ON \
+  -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+```
+
+Verify the build:
+
+```bash
+# Check required binaries exist
+ls build/bin/llama-server build/bin/llama-cli build/bin/llama-speculative
+
+# Quick test
+./build/bin/llama-cli --version
+```
+
+> **Branch safety**: Production must use `production-consolidated`. Never run benchmarks on a feature branch. Use the `llama.cpp-experimental/` worktree for feature work. See [LLAMA_CPP_WORKTREES.md](reference/LLAMA_CPP_WORKTREES.md).
+
+## Downloading Models
+
+Models are defined in `orchestration/model_registry.yaml`. Download by tier:
+
+```bash
+# HOT tier (~40GB, always resident) — minimum for development
+python scripts/setup/download_models.py --tier hot
+
+# WARM tier (~430GB) — full production stack
+python scripts/setup/download_models.py --tier warm
+
+# All models
+python scripts/setup/download_models.py --tier all
+```
+
+See [MODEL_MANIFEST.md](MODEL_MANIFEST.md) for the role-based model configuration and substitution guide.
+
+## Starting the Server Stack
+
+```bash
+# Development mode (0.5B draft model only, minimal RAM)
+python3 scripts/server/orchestrator_stack.py start --dev
+
+# HOT tier only (~40GB RAM)
+python3 scripts/server/orchestrator_stack.py start --hot-only
+
+# Check status
+python3 scripts/server/orchestrator_stack.py status
+
+# Stop all servers
+python3 scripts/server/orchestrator_stack.py stop --all
+```
+
+## Verification
+
+After setup, run the full gate suite:
+
+```bash
+make gates
+```
+
+This runs schema validation, shellcheck, formatting, and linting in order.
+
+To validate just paths:
+
+```bash
+make validate-paths
+```
+
+## Container Setup
+
+Docker and Nix targets are defined in the Makefile for reproducible environments:
+
+```bash
+# Docker
+make docker-build && make docker-run    # Production API
+make docker-dev                          # Development shell
+
+# Nix
+make nix-develop                         # Development shell
+```
+
+> Note: Container support requires Dockerfile/docker-compose.yml and flake.nix files, which are planned but not yet included in the repository.
+
+## Testing
+
+```bash
+# Run all tests (uses -n 8 by default, safe for this machine)
+pytest tests/
+
+# Conservative parallelism
+pytest tests/ -n 4
+```
+
+> **WARNING**: Never use `pytest -n auto` on this 192-thread machine. It spawns ~192 workers that exhaust 1.13TB RAM. See [CLAUDE.md](../CLAUDE.md) for details.
+
+## Next Steps
+
+- Read the [Getting Started guide](guides/getting-started.md) for project orientation
+- Browse the [Chapter Index](chapters/INDEX.md) for research documentation
+- Check [ARCHITECTURE.md](ARCHITECTURE.md) for system internals
+- See [Command Reference](reference/commands/QUICK_REFERENCE.md) for inference commands
