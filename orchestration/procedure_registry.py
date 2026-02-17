@@ -775,14 +775,20 @@ class ProcedureRegistry:
         return re.sub(pattern, replacer, s)
 
     def _eval_condition(self, condition: str) -> bool:
-        """Evaluate a condition expression."""
-        # Build safe eval context
+        """Evaluate a condition expression.
+
+        Uses a restricted eval context — no builtins, no os module.
+        Only data dicts and Path are exposed.
+        """
         eval_context = {
             "inputs": self._context.get("inputs", {}),
             "outputs": self._context.get("outputs", {}),
             "step_outputs": self._context.get("step_outputs", {}),
             "Path": Path,
-            "os": os,
+            "len": len,
+            "str": str,
+            "int": int,
+            "bool": bool,
         }
         return bool(eval(condition, {"__builtins__": {}}, eval_context))
 
@@ -820,19 +826,40 @@ class ProcedureRegistry:
         return result.stdout
 
     def _execute_python(self, action: dict[str, Any]) -> Any:
-        """Execute a Python expression."""
+        """Execute a Python expression.
+
+        Uses a restricted eval context — builtins are stripped to prevent
+        arbitrary code execution (e.g. __import__, exec, open).
+        """
         command = action.get("command", "")
         eval_context = {
             "inputs": self._context.get("inputs", {}),
             "outputs": self._context.get("outputs", {}),
             "step_outputs": self._context.get("step_outputs", {}),
             "Path": Path,
-            "os": os,
             "json": json,
             "yaml": yaml,
             "datetime": datetime,
+            # Safe builtins only — no __import__, exec, eval, open, etc.
+            "len": len,
+            "str": str,
+            "int": int,
+            "float": float,
+            "bool": bool,
+            "list": list,
+            "dict": dict,
+            "tuple": tuple,
+            "sorted": sorted,
+            "enumerate": enumerate,
+            "zip": zip,
+            "min": min,
+            "max": max,
+            "sum": sum,
+            "any": any,
+            "all": all,
+            "isinstance": isinstance,
         }
-        return eval(command, {"__builtins__": __builtins__}, eval_context)
+        return eval(command, {"__builtins__": {}}, eval_context)
 
     def _execute_repl_tool(self, action: dict[str, Any]) -> Any:
         """Execute a REPL tool."""

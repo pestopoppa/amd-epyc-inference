@@ -651,7 +651,7 @@ def _run_specialist_loop(
             # Dedup guard: if coder generates identical code twice in a
             # row, inject an error to break the loop instead of wasting
             # another turn on the same silent execution.
-            _code_hash = hashlib.md5(code.encode()).hexdigest()
+            _code_hash = hashlib.sha256(code.encode()).hexdigest()
             if _code_hash == _prev_code_hash:
                 deleg_last_error = (
                     "You generated the exact same code as last turn. "
@@ -896,7 +896,7 @@ def _architect_delegated_answer_inner(
         # Hash brief + delegate_to as combined key. Architect rephrasing
         # the same brief to a different target still gets caught because
         # we also check target repetition separately (guard 3).
-        brief_key = _hashlib.md5(
+        brief_key = _hashlib.sha256(
             f"{brief.strip().lower()[:DELEGATION_BRIEF_KEY_LEN]}|{delegate_to}".encode()
         ).hexdigest()
         if brief_key in previous_brief_keys:

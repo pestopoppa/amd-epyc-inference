@@ -144,7 +144,7 @@ def extract_snippets_from_content(
             snippets.append({
                 "code": body,
                 "source": source,
-                "hash": hashlib.md5(body.encode()).hexdigest()[:12],
+                "hash": hashlib.sha256(body.encode()).hexdigest()[:12],
                 "language": language,
             })
 

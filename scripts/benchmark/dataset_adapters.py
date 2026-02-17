@@ -1096,7 +1096,7 @@ class GPQAAdapter(BaseAdapter):
 
         # Randomize choice order deterministically based on question hash
         import hashlib
-        seed = int(hashlib.md5(question.encode()).hexdigest()[:8], 16)
+        seed = int(hashlib.sha256(question.encode()).hexdigest()[:8], 16)
         rng = random.Random(seed)
         rng.shuffle(choices)
 
