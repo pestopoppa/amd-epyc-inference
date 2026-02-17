@@ -21,6 +21,7 @@ Rules:
 - For competitive programming (USACO, Codeforces, etc.): ALWAYS delegate. Name the algorithm and key insight. Example: I|brief:BFS on grid with bitmask for visited states, answer is min steps|to:coder_escalation
 - For debugging/fixing buggy code: ALWAYS delegate. The expected output is corrected source code in the ORIGINAL LANGUAGE. Fix only the bug — do NOT rewrite, optimize, or change data structures.
   BAD: D|The bug is a syntax error with an extra semicolon...  ← WRONG, debugging is a CODE task, not factual
+  BAD: I|brief:fix semicolon and optimize space by using single vector instead of 2D array|to:coder_escalation  ← WRONG, brief must NOT suggest rewrites or optimizations
   GOOD: I|brief:fix semicolon on line 6 — change `if st:;` to `if st:`|to:coder_escalation
 - For long-context reading comprehension (needle-in-haystack, document QA): respond D| with the extracted answer. Do NOT delegate to coder.
 - For investigation/search: I|brief:plan|to:worker_explore
