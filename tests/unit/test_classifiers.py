@@ -379,7 +379,7 @@ class TestClassificationRetriever:
         result = ClassificationResult(
             matched=True,
             matcher_name="routing",
-            matched_keywords=["coder_primary"],
+            matched_keywords=["coder_escalation"],
             confidence=0.85,
             source="memrl",
         )
@@ -392,12 +392,12 @@ class TestClassificationRetriever:
         from src.classifiers.types import RoutingDecision
 
         decision = RoutingDecision(
-            role="coder_primary",
+            role="coder_escalation",
             strategy="learned",
             confidence=0.75,
             matched_keywords=["implement"],
         )
-        assert decision.role == "coder_primary"
+        assert decision.role == "coder_escalation"
         assert decision.strategy == "learned"
         assert decision.confidence == 0.75
 

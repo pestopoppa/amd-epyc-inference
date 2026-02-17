@@ -295,7 +295,7 @@
   },
   {
     "task": "Add a new model to the registry",
-    "code": "result = run_procedure('add_model_to_registry', model_path='/mnt/raid0/llm/models/Model.gguf', model_name='ModelName', role='coder_primary')\nFINAL(result)",
+    "code": "result = run_procedure('add_model_to_registry', model_path='/mnt/raid0/llm/models/Model.gguf', model_name='ModelName', role='coder_escalation')\nFINAL(result)",
     "tools_used": ["run_procedure", "FINAL"],
     "category": "procedure"
   },

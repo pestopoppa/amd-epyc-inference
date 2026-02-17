@@ -40,7 +40,7 @@ Brief 2-3 sentence overview of progress and key decisions.
 | Role | Model | Status | Performance |
 |------|-------|--------|-------------|
 | frontdoor | [Model Name] | [Active/Testing/Planned] | [X t/s] |
-| coder_primary | [Model Name] | [Active/Testing/Planned] | [X t/s] |
+| coder_escalation | [Model Name] | [Active/Testing/Planned] | [X t/s] |
 | ingest_long_context | [Model Name] | [Active/Testing/Planned] | [X t/s] |
 | worker_general | [Model Name] | [Active/Testing/Planned] | [X t/s] |
 

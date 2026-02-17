@@ -34,7 +34,6 @@ if TYPE_CHECKING:
 # Valid delegation targets for architect briefs
 _VALID_DELEGATE_ROLES = frozenset(
     {
-        "coder_primary",
         "coder_escalation",
         "worker_explore",
         "worker_general",
@@ -494,7 +493,7 @@ def _apply_decision_guards(
     # answer the architect already has.
     if decision["mode"] == "investigate" and loop == 0:
         brief = decision["brief"]
-        _code_delegate = decision["delegate_to"] in ("coder_escalation", "coder_primary")
+        _code_delegate = decision["delegate_to"] == "coder_escalation"
         _code_signals_in_q = any(
             sig in question for sig in (
                 "INPUT FORMAT", "OUTPUT FORMAT", "SAMPLE INPUT",

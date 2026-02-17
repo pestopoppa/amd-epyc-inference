@@ -136,7 +136,7 @@ class ProactiveDelegator:
         role_map = {
             "direct": "frontdoor",
             "repl": "frontdoor",
-            "specialist": "coder_primary",
+            "specialist": "coder_escalation",
             "architect": "architect_general",
         }
         return role_map.get(action, "frontdoor")
@@ -435,12 +435,11 @@ class ProactiveDelegator:
     def _escalate_role(self, current_role: str) -> str:
         """Get escalated role for current role."""
         escalation_map = {
-            "worker_general": "coder_primary",
-            "worker_math": "coder_primary",
-            "worker_vision": "coder_primary",
-            "coder_primary": "architect_general",
-            "coder_escalation": "architect_general",
-            "frontdoor": "coder_primary",
+            "worker_general": "coder_escalation",
+            "worker_math": "coder_escalation",
+            "worker_vision": "coder_escalation",
+            "coder_escalation": "architect_coding",
+            "frontdoor": "coder_escalation",
             "architect_general": "architect_coding",
         }
         return escalation_map.get(current_role, "architect_general")

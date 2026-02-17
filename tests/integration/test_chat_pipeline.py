@@ -33,7 +33,7 @@ class TestClassifyAndRoute:
 
         try:
             role, strategy = _classify_and_route("implement a binary search function")
-            assert role == str(Role.CODER_PRIMARY)
+            assert role == str(Role.CODER_ESCALATION)
             assert strategy == "classified"
         finally:
             # Reset features
@@ -224,7 +224,7 @@ class TestChatEndpoint:
             json={
                 "prompt": "test query",
                 "mock_mode": True,
-                "force_role": "coder_primary",
+                "force_role": "coder_escalation",
             },
         )
         data = response.json()
@@ -232,7 +232,7 @@ class TestChatEndpoint:
 
         # In mock mode, force_role may not populate routed_to, but should be accepted
         assert "routed_to" in data
-        # With real mode, would verify: assert data["routed_to"] == "coder_primary"
+        # With real mode, would verify: assert data["routed_to"] == "coder_escalation"
 
     def test_force_mode_parameter(self, client):
         """force_mode parameter should be accepted and reflected in response."""

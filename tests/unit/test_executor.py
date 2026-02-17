@@ -934,11 +934,11 @@ class TestExecutorEscalation:
             step_id="S1",
             status=StepStatus.COMPLETED,
             escalation_count=1,
-            escalated_from="coder_primary",
+            escalated_from="coder_escalation",
             executed_role="coder_escalation",
         )
         assert result.escalation_count == 1
-        assert result.escalated_from == "coder_primary"
+        assert result.escalated_from == "coder_escalation"
         assert result.executed_role == "coder_escalation"
 
     def test_step_result_to_dict_with_escalation(self):
@@ -947,12 +947,12 @@ class TestExecutorEscalation:
             step_id="S1",
             status=StepStatus.COMPLETED,
             escalation_count=2,
-            escalated_from="coder_primary",
+            escalated_from="coder_escalation",
             executed_role="architect_coding",
         )
         d = result.to_dict()
         assert d["escalation_count"] == 2
-        assert d["escalated_from"] == "coder_primary"
+        assert d["escalated_from"] == "coder_escalation"
         assert d["executed_role"] == "architect_coding"
 
     def test_step_result_to_dict_excludes_zero_escalation(self):
@@ -1032,7 +1032,7 @@ class TestExecutorEscalation:
         executor = Executor(model_server=mock_model_server, config=config)
 
         role_config = MagicMock(spec=RoleConfig)
-        role_config.name = "coder_primary"
+        role_config.name = "coder_escalation"
         step = StepExecution(
             step_id="S1",
             actor="coder",
@@ -1077,7 +1077,7 @@ class TestExecutorEscalation:
         executor._escalation_counts["S1"] = 1  # Already escalated once
 
         role_config = MagicMock(spec=RoleConfig)
-        role_config.name = "coder_primary"
+        role_config.name = "coder_escalation"
         step = StepExecution(
             step_id="S1",
             actor="coder",
@@ -1103,7 +1103,7 @@ class TestExecutorEscalation:
         executor._escalation_counts["S1"] = 0
 
         role_config = MagicMock(spec=RoleConfig)
-        role_config.name = "coder_primary"  # This is in the coder chain
+        role_config.name = "coder_escalation"  # This is in the coder chain
         step = StepExecution(
             step_id="S1",
             actor="coder",
@@ -1132,7 +1132,7 @@ class TestExecutorEscalation:
         executor._escalation_counts["S1"] = 0
 
         role_config = MagicMock(spec=RoleConfig)
-        role_config.name = "coder_primary"
+        role_config.name = "coder_escalation"
         step = StepExecution(
             step_id="S1",
             actor="coder",
@@ -1163,7 +1163,7 @@ class TestExecutorEscalation:
         executor._escalation_counts["S1"] = 0
 
         role_config = MagicMock(spec=RoleConfig)
-        role_config.name = "coder_primary"
+        role_config.name = "coder_escalation"
         step = StepExecution(
             step_id="S1",
             actor="coder",
@@ -1190,7 +1190,7 @@ class TestExecutorEscalation:
         executor._escalation_counts["S1"] = 0
 
         role_config = MagicMock(spec=RoleConfig)
-        role_config.name = "coder_primary"
+        role_config.name = "coder_escalation"
         step = StepExecution(
             step_id="S1",
             actor="coder",

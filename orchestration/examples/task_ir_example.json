@@ -30,7 +30,7 @@
     {
       "tier": "B",
       "role": "coder",
-      "model_hint": "coder_primary"
+      "model_hint": "coder_escalation"
     },
     {
       "tier": "C",

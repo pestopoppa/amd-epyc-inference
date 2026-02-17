@@ -128,7 +128,7 @@ After"""
 
     def test_strips_common_prefixes(self):
         """Strips common tool output prefixes."""
-        text = "Current Role: coder_primary\nSome content"
+        text = "Current Role: coder_escalation\nSome content"
         result = _strip_tool_outputs(text, [])
         assert "Current Role:" not in result
 
@@ -377,9 +377,9 @@ class TestRoutingResult:
             task_id="test-123",
             task_ir={},
             use_mock=False,
-            routing_decision=["coder_primary", "coder_escalation"],
+            routing_decision=["coder_escalation", "worker_general"],
         )
-        assert result.role == "coder_primary"
+        assert result.role == "coder_escalation"
 
     def test_role_property_empty_decision(self):
         """Role property returns frontdoor when no decision."""

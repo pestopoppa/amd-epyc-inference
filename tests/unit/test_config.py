@@ -258,7 +258,6 @@ class TestServerURLsConfig:
         d = cfg.as_dict()
         expected_keys = {
             "frontdoor",
-            "coder_primary",
             "coder",
             "coder_escalation",
             "worker",

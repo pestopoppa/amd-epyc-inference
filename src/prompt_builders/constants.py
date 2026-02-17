@@ -99,16 +99,18 @@ peek(n, file_path=None) → first n chars of context/file
 grep(pattern, file_path=None) → regex matches in context/file
 file_write_safe(path, content) → write code to /mnt/raid0/llm/tmp/ for iterative editing
 llm_call(prompt, role='worker') → sub-LM call (keep prompt short)
+CALL("web_search", query="...", max_results=5) → search web, returns JSON string of [{title, url, snippet}]
 escalate(reason, target_role=None) → hand off to higher tier
 FINAL(answer) → signal task completion (REQUIRED for every task)
 CALL(name, **kw) → invoke any registered tool, returns JSON string
-list_tools() → discover ALL available tools (web, files, research, code quality, etc.)"""
+list_tools() → discover ALL available tools (files, research, code quality, etc.)"""
 
 # Default rules for Root LM
 DEFAULT_ROOT_LM_RULES = """## WHEN TO USE TOOLS vs DIRECT ANSWER
-- **Answer directly** for: factual lookups, multiple-choice, short math
+- **Answer directly** for: well-known facts, multiple-choice, short math
+- **Use web_search** for: obscure facts you're uncertain about (specific dates, names, numbers, niche trivia)
 - **Reason thoroughly** for: explanations, analysis, multi-step problems, "why" questions
-- **Use tools** for: file access, web search, current events, running code, document processing
+- **Use tools** for: file access, current events, running code, document processing
 - **Match depth to request**: concise for simple questions, detailed for complex ones
 
 ## CRITICAL RULES
@@ -152,6 +154,7 @@ Analysis: `FINAL("The function has O(n log n) complexity because the outer loop 
 List files: `result = list_dir('/path'); FINAL(result)`
 Read file: `text = peek(1000, file_path='/path'); FINAL(text)`
 Current info: `results = CALL("web_search", query="2024 election results"); FINAL(json.loads(results))`
+Uncertain fact: `results = json.loads(CALL("web_search", query="Jurgen Aschoff university")); FINAL(results[0]["snippet"])`
 Research: `results = CALL("search_arxiv", query="speculative decoding"); FINAL(json.loads(results))`
 Run tests: `results = CALL("run_tests", test_path="tests/"); FINAL(json.loads(results))`
 Summarize PDF: `doc = json.loads(ocr_document('/path.pdf')); FINAL(doc['full_text'][:2000])`

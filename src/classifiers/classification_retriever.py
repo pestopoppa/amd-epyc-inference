@@ -46,7 +46,7 @@ class ClassificationRetriever:
     The exemplars are seeded from classifier_config.yaml during system init.
     Each exemplar has:
     - prompt: Example prompt
-    - action: Classification result (e.g., "coder_primary", "summarization")
+    - action: Classification result (e.g., "coder_escalation", "summarization")
     - q_value: Learned confidence (0-1)
     """
 

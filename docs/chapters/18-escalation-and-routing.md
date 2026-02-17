@@ -110,7 +110,7 @@ class EscalationConfig:
 ```python
 class Role(Enum):
     WORKER_GENERAL = "worker_general"
-    CODER_PRIMARY = "coder_primary"
+    CODER_ESCALATION = "coder_escalation"
     ARCHITECT_GENERAL = "architect_general"
 
     def escalates_to(self) -> Role | None:
@@ -405,7 +405,7 @@ if has_thinking_trigger(objective):
 |------------|--------|--------|------------------|
 | TRIVIAL | direct | frontdoor | Free (no delegation) |
 | SIMPLE | repl | frontdoor + REPL | 100x (context local) |
-| MODERATE | specialist | coder_primary | Good (single model) |
+| MODERATE | specialist | coder_escalation | Good (single model) |
 | COMPLEX | architect | architect_general → TaskIR → multi-specialist | Lower (coordination overhead) |
 
 **Design Goal**: Only invoke expensive architect (235B/480B models) when truly needed.
@@ -618,7 +618,7 @@ Graph node -> should_halt(from_role, to_role)
 ```python
 _TIER_MAP = {
     "frontdoor": "A",
-    "coder_primary": "B", "coder_escalation": "B",
+    "coder_escalation": "B",
     "architect_general": "B", "architect_coding": "B",
     "ingest_long_context": "B",
     "worker_general": "C", "worker_math": "C",

@@ -97,7 +97,7 @@ class Dispatcher:
     # Map TaskIR agent roles to registry role names
     ROLE_MAPPING = {
         "frontdoor": "frontdoor",
-        "coder": "coder_primary",
+        "coder": "coder_escalation",
         "ingest": "ingest_long_context",
         "architect": "architect_general",
         "worker": "worker_general",

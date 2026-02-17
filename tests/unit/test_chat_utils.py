@@ -171,8 +171,8 @@ class TestRoutingResult:
     """Test RoutingResult dataclass."""
 
     def test_role_property_returns_first(self):
-        r = RoutingResult(task_id="t1", task_ir={}, use_mock=False, routing_decision=["coder_primary"])
-        assert r.role == "coder_primary"
+        r = RoutingResult(task_id="t1", task_ir={}, use_mock=False, routing_decision=["coder_escalation"])
+        assert r.role == "coder_escalation"
 
     def test_role_property_defaults_to_frontdoor(self):
         r = RoutingResult(task_id="t1", task_ir={}, use_mock=False)

@@ -86,7 +86,7 @@ See [Chapter 24](../../chapters/24-benchmark-suite-construction.md) for suite co
 **Finding:** All models produce equivalent quality code. Speed is the only differentiator. jukofyork vocab transplant draft verified for all Qwen3-Coder models (2026-02-13). Architect roles use full experts (no MoE) for maximum quality.
 
 **Decision (updated 2026-02-13):**
-- `frontdoor/coder_primary` = Qwen3-Coder-30B-A3B-Instruct (47.11 t/s MoE6+spec+lookup) - fastest
+- `frontdoor` = Qwen3-Coder-30B-A3B-Instruct (47.11 t/s MoE6+spec+lookup) - fastest
 - `coder_escalation` = Qwen2.5-Coder-32B-Instruct (39.44 t/s spec+lookup) - dense fallback
 - `architect_coding` = Qwen3-Coder-480B (9.00 t/s full+spec) - ultimate escalation (full quality)
 
@@ -736,7 +736,6 @@ Complete production model lineup with relative scoring validation.
 | Role | Model | Score | Speed | Configuration | Size |
 |------|-------|-------|-------|---------------|------|
 | **frontdoor** | Qwen3-Coder-30B-A3B-Instruct | 89.5% | 47.11 t/s | MoE6 + spec + lookup | 20GB |
-| **coder_primary** | *(shared with frontdoor)* | 89.5% | 47.11 t/s | MoE6 + spec + lookup | — |
 | **coder_escalation** | Qwen2.5-Coder-32B | 91.5% | 39.44 t/s | spec K=24 + lookup | 18.5GB |
 | **worker** | Qwen2.5-7B-Instruct | 74.5% | 50 t/s | spec K=16 + draft | 4.4GB |
 | **voice_server** | faster-whisper large-v3-turbo | — | 2.8x RT | CPU int8, port 9000 | 4GB |
@@ -1049,7 +1048,7 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 - **MOE Quality Summary (2025-12-24):** MOE2=14% (garbage), MOE4=88% (good), MOE6=95% (partial). MOE3 untested but expected similar to MOE4/6.
 - **MOE8 is redundant (2025-12-29):** Qwen3-Coder-480B uses 8 experts by default. MOE8 test confirmed: 96% at 4.4 t/s = baseline.
 - **SSM Model Finding (2025-12-30):** SSM+MoE hybrids hit a **ceiling effect** where moe2/moe4 produce identical speeds (~10.2 t/s). The ~12% speedup from baseline→moeX is real, but further expert reduction doesn't help. Instruct variant: +1-2% (SSM bottleneck from start). Thinking variant: +12% (baseline slower at 9.2 t/s, moeX hits same 10.2 t/s ceiling).
-- **Benchmark Variance (2026-01-07):** Same model tested under different roles (frontdoor_moe6 vs coder_primary_moe6) showed 90% vs 76% scores. Variance likely due to model non-determinism. Use role-specific scores for role-specific decisions.
+- **Benchmark Variance (2026-01-07):** Same model tested under different roles (frontdoor_moe6 vs coder_escalation) showed 90% vs 76% scores. Variance likely due to model non-determinism. Use role-specific scores for role-specific decisions.
 
 #### Tier A-B: Production & Specialist Models (Dense 70B+)
 

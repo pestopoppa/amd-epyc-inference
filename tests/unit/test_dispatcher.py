@@ -38,7 +38,7 @@ def minimal_registry(tmp_path: Path) -> Path:
                 "performance": {"baseline_tps": 15.0},
                 "memory": {"residency": "hot"},
             },
-            "coder_primary": {
+            "coder_escalation": {
                 "tier": "B",
                 "description": "Primary coder",
                 "model": {
@@ -83,7 +83,7 @@ def minimal_registry(tmp_path: Path) -> Path:
             },
         },
         "routing_hints": [
-            {"if": "task_type == 'code'", "use": ["coder_primary"]},
+            {"if": "task_type == 'code'", "use": ["coder_escalation"]},
             {"if": "task_type == 'general'", "use": ["worker_general"]},
         ],
         "command_templates": {
@@ -163,7 +163,7 @@ class TestDispatcherBasic:
         assert isinstance(result, DispatchResult)
         assert result.task_id == "test-task-001"
         assert len(result.steps) == 2
-        assert "coder_primary" in result.roles_used
+        assert "coder_escalation" in result.roles_used
 
     def test_dispatch_result_to_dict(self, minimal_registry: Path, sample_task_ir: dict):
         """Test converting dispatch result to dictionary."""
@@ -184,7 +184,7 @@ class TestRoleMapping:
     """Tests for role mapping."""
 
     def test_map_coder_role(self, minimal_registry: Path):
-        """Test mapping 'coder' IR role to 'coder_primary'."""
+        """Test mapping 'coder' IR role to 'coder_escalation'."""
         registry = RegistryLoader(minimal_registry)
         dispatcher = Dispatcher(registry=registry)
 
@@ -195,7 +195,7 @@ class TestRoleMapping:
         }
 
         result = dispatcher.dispatch(task_ir)
-        assert "coder_primary" in result.roles_used
+        assert "coder_escalation" in result.roles_used
 
     def test_map_unknown_role_to_worker(self, minimal_registry: Path):
         """Test that unknown roles default to worker_general."""
@@ -243,8 +243,8 @@ class TestSpeculativeDecoding:
 
         result = dispatcher.dispatch(task_ir)
 
-        # Should include both coder_primary and draft_qwen25_coder
-        assert "coder_primary" in result.roles_used
+        # Should include both coder_escalation and draft_qwen25_coder
+        assert "coder_escalation" in result.roles_used
         assert "draft_qwen25_coder" in result.roles_used
 
 
@@ -282,7 +282,7 @@ class TestStepExecution:
 
         for step in result.steps:
             assert step.role_config is not None
-            assert step.role_config.name in ["coder_primary", "worker_general"]
+            assert step.role_config.name in ["coder_escalation", "worker_general"]
 
 
 class TestFileDispatch:
@@ -344,7 +344,7 @@ class TestRouting:
         result = dispatcher.dispatch(task_ir)
 
         # Should route to coder via routing hints
-        assert "coder_primary" in result.roles_used
+        assert "coder_escalation" in result.roles_used
 
     def test_route_general_task(self, minimal_registry: Path):
         """Test routing a general task."""

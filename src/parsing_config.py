@@ -34,7 +34,6 @@ PARSING_CONFIG: dict[str, ParsingMode] = {
     "frontdoor": ParsingMode.INSTRUCTOR,
     # Tier B - Mixed based on model size and schema complexity
     "formalizer": ParsingMode.GBNF,  # 8B model, ensure compliance
-    "coder_primary": ParsingMode.INSTRUCTOR,
     "coder_escalation": ParsingMode.INSTRUCTOR,
     "architect_general": ParsingMode.INSTRUCTOR,
     "architect_coding": ParsingMode.INSTRUCTOR,
@@ -56,7 +55,7 @@ def get_parsing_mode(role: str) -> ParsingMode:
     """Get the parsing mode for a role.
 
     Args:
-        role: Role name (e.g., "frontdoor", "coder_primary").
+        role: Role name (e.g., "frontdoor", "coder_escalation").
 
     Returns:
         ParsingMode for the role, defaults to NONE if unknown.

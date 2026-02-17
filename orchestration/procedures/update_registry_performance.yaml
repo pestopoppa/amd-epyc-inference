@@ -6,7 +6,7 @@ category: registry
 estimated_tokens: 300
 
 permissions:
-  roles: ["frontdoor", "coder_primary", "admin"]
+  roles: ["frontdoor", "coder_escalation", "admin"]
   requires_approval: true
   destructive: false
 

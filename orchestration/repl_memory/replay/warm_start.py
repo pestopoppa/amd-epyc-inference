@@ -77,7 +77,7 @@ class WarmStartProtocol:
         different model_id than the current one.
 
         Args:
-            role: The role to check (e.g. "coder_primary").
+            role: The role to check (e.g. "coder_escalation").
             current_model_id: The model ID currently serving this role.
             store: The episodic store to query.
 

@@ -79,10 +79,6 @@ _ROLE_PROMPT_FALLBACKS = {
         "break them into tasks, and generate Python code that executes in a "
         "sandboxed REPL environment. You can call sub-LMs for complex subtasks."
     ),
-    Role.CODER_PRIMARY: (
-        "You are a senior software engineer. Write clean, efficient code that "
-        "follows best practices. Focus on correctness and maintainability."
-    ),
     Role.CODER_ESCALATION: (
         "You are a software architect. Design robust systems and APIs. "
         "Consider scalability, security, and long-term maintainability."

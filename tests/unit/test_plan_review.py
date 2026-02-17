@@ -145,7 +145,7 @@ class TestNeedsPlanReview:
         from src.api.routes.chat_review import _needs_plan_review
 
         task_ir = {"objective": "Fix the typo in main.py", "task_type": "code"}
-        assert _needs_plan_review(task_ir, ["coder_primary"], mock_state) is False
+        assert _needs_plan_review(task_ir, ["coder_escalation"], mock_state) is False
 
     def test_bypass_complex_complexity(self, mock_state):
         """COMPLEX tasks bypass review (architect already owns plan)."""
@@ -165,7 +165,7 @@ class TestNeedsPlanReview:
             "objective": "Implement error handling and then write unit tests for the module",
             "task_type": "code",
         }
-        assert _needs_plan_review(task_ir, ["coder_primary"], mock_state) is True
+        assert _needs_plan_review(task_ir, ["coder_escalation"], mock_state) is True
 
     def test_bypass_architect_role(self, mock_state):
         """Architect routing should not self-review."""
@@ -189,7 +189,7 @@ class TestNeedsPlanReview:
 
         # Run many times and check that ~90% are skipped
         random.seed(42)
-        results = [_needs_plan_review(task_ir, ["coder_primary"], mock_state) for _ in range(200)]
+        results = [_needs_plan_review(task_ir, ["coder_escalation"], mock_state) for _ in range(200)]
         review_rate = sum(results) / len(results)
         # Should be ~10% (allow 3-20% range for random variance)
         assert 0.03 <= review_rate <= 0.20, f"Review rate {review_rate:.2f} not ~10%"
@@ -209,7 +209,7 @@ class TestNeedsPlanReview:
             "objective": "Implement error handling and then write unit tests for the module",
             "task_type": "code",
         }
-        assert _needs_plan_review(task_ir, ["coder_primary"], mock_state) is False
+        assert _needs_plan_review(task_ir, ["coder_escalation"], mock_state) is False
 
     def test_phase_b_low_q_triggers_review(self, mock_state):
         """Phase B should trigger review when Q-value < 0.6."""
@@ -226,7 +226,7 @@ class TestNeedsPlanReview:
             "objective": "Implement error handling and then write unit tests for the module",
             "task_type": "code",
         }
-        assert _needs_plan_review(task_ir, ["coder_primary"], mock_state) is True
+        assert _needs_plan_review(task_ir, ["coder_escalation"], mock_state) is True
 
 
 # ─── Prompt Building Tests ───────────────────────────────────────────────
@@ -343,7 +343,7 @@ class TestApplyPlanReview:
             decision="reroute",
             patches=[{"step": "S1", "op": "reroute", "v": "architect_general"}],
         )
-        result = _apply_plan_review(["coder_primary"], review)
+        result = _apply_plan_review(["coder_escalation"], review)
         assert result == ["architect_general"]
 
     def test_reroute_second_step(self):
@@ -353,15 +353,15 @@ class TestApplyPlanReview:
             decision="reroute",
             patches=[{"step": "S2", "op": "reroute", "v": "worker_math"}],
         )
-        result = _apply_plan_review(["coder_primary", "worker_general"], review)
-        assert result == ["coder_primary", "worker_math"]
+        result = _apply_plan_review(["coder_escalation", "worker_general"], review)
+        assert result == ["coder_escalation", "worker_math"]
 
     def test_no_patches_returns_unchanged(self):
         from src.api.routes.chat_review import _apply_plan_review
 
         review = PlanReviewResult(decision="ok", patches=[])
-        result = _apply_plan_review(["coder_primary"], review)
-        assert result == ["coder_primary"]
+        result = _apply_plan_review(["coder_escalation"], review)
+        assert result == ["coder_escalation"]
 
 
 # ─── Phase Transition Tests ──────────────────────────────────────────────

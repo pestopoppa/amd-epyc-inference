@@ -875,8 +875,8 @@ class TestConstructorDefaults:
 
     def test_constructor_custom_role(self):
         """Constructor accepts custom role string."""
-        repl = REPLEnvironment(context="test context", role="coder_primary")
-        assert repl.role == "coder_primary"
+        repl = REPLEnvironment(context="test context", role="coder_escalation")
+        assert repl.role == "coder_escalation"
 
     def test_constructor_default_artifacts_empty_dict(self):
         """Constructor defaults artifacts to empty dict when None."""

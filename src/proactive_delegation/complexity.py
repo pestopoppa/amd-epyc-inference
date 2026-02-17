@@ -45,7 +45,7 @@ THINKING_TRIGGERS = [
 # Role mapping for TaskIR agents to registry roles
 ROLE_MAPPING = {
     "frontdoor": "frontdoor",
-    "coder": "coder_primary",
+    "coder": "coder_escalation",
     "ingest": "ingest_long_context",
     "architect": "architect_general",
     "worker": "worker_general",

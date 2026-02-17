@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # Default concurrency limits per backend URL.
 # Architects (serial, huge models) = 1; workers = 4; vision = 2; embedders = 4.
 DEFAULT_LIMITS: dict[str, int] = {
-    "http://localhost:8080": 2,   # frontdoor / coder_primary (30B MoE)
+    "http://localhost:8080": 2,   # frontdoor (30B MoE)
     "http://localhost:8081": 2,   # coder_escalation / worker_summarize (32B)
     "http://localhost:8082": 4,   # worker_explore (7B, 2 slots)
     "http://localhost:8083": 1,   # architect_general (235B) — SERIAL

@@ -301,7 +301,7 @@ if __name__ == "__main__":
 
     # Test role mapping
     print("\nRole -> Suite mapping:")
-    test_roles = ["coder_primary", "worker_math", "ingest_long_context", "frontdoor", "draft_qwen25"]
+    test_roles = ["coder_escalation", "worker_math", "ingest_long_context", "frontdoor", "draft_qwen25"]
     for role in test_roles:
         suites = get_suites_for_role(role)
         print(f"  {role} -> {suites}")

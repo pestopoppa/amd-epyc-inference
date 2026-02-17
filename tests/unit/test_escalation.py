@@ -40,8 +40,8 @@ class TestEscalationContext:
 
     def test_role_string_to_enum(self):
         """Test role string is converted to enum."""
-        context = EscalationContext(current_role="coder_primary")
-        assert context.current_role == Role.CODER_PRIMARY
+        context = EscalationContext(current_role="coder_escalation")
+        assert context.current_role == Role.CODER_ESCALATION
 
     def test_error_category_string_to_enum(self):
         """Test error category string is converted to enum."""
@@ -137,7 +137,7 @@ class TestEscalationPolicy:
         decision = policy.decide(context)
 
         assert decision.action == EscalationAction.ESCALATE
-        assert decision.target_role == Role.CODER_PRIMARY
+        assert decision.target_role == Role.CODER_ESCALATION
 
     def test_skip_optional_gate_on_timeout(self, policy):
         """Test policy skips optional gates on timeout."""
@@ -176,7 +176,7 @@ class TestEscalationPolicy:
         decision = policy.decide(context)
 
         assert decision.action == EscalationAction.ESCALATE
-        assert decision.target_role == Role.CODER_PRIMARY
+        assert decision.target_role == Role.CODER_ESCALATION
 
     def test_format_errors_never_escalate(self, policy):
         """Test format errors retry only, never escalate."""
@@ -203,7 +203,7 @@ class TestEscalationPolicy:
         decision = policy.decide(context)
 
         assert decision.action == EscalationAction.ESCALATE
-        assert decision.target_role == Role.CODER_PRIMARY
+        assert decision.target_role == Role.CODER_ESCALATION
 
     def test_schema_parser_errors_fail_after_retries(self, policy):
         """Schema parser/transient signatures fail after retries instead of escalating."""
@@ -258,8 +258,8 @@ class TestEscalationPolicy:
 
         assert len(path) == 3
         assert path[0] == Role.WORKER_GENERAL
-        assert path[1] == Role.CODER_PRIMARY
-        assert path[2] == Role.ARCHITECT_GENERAL
+        assert path[1] == Role.CODER_ESCALATION
+        assert path[2] == Role.ARCHITECT_CODING
 
 
 class TestThinkHarder:

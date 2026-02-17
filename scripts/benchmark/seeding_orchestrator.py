@@ -403,7 +403,7 @@ def _recover_heavy_ports_if_stuck(url: str, busy_ports: list[int]) -> bool:
     logger.warning(f"  [recover] heavy ports stuck: {busy_ports} — targeted reload")
 
     port_to_component = {
-        8080: "coder_primary",
+        8080: "coder_escalation",
         8081: "coder_escalation",
         8083: "architect_general",
         8084: "architect_coding",

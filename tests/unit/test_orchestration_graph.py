@@ -97,17 +97,17 @@ class TestRunTask:
 
     @pytest.mark.asyncio
     async def test_role_history_tracking(self):
-        state = make_state(current_role=Role.CODER_PRIMARY, role_history=[])
+        state = make_state(current_role=Role.CODER_ESCALATION, role_history=[])
         deps = make_deps(
             repl_results=[MockREPLResult(output="done", is_final=True)],
         )
-        await run_task(state, deps, start_role=Role.CODER_PRIMARY)
-        assert "coder_primary" in state.role_history
+        await run_task(state, deps, start_role=Role.CODER_ESCALATION)
+        assert "coder_escalation" in state.role_history
 
     @pytest.mark.asyncio
     async def test_format_error_never_escalates(self):
         """FORMAT errors should retry only, never escalate."""
-        state = make_state(current_role=Role.CODER_PRIMARY)
+        state = make_state(current_role=Role.CODER_ESCALATION)
         deps = make_deps(
             repl_results=[
                 MockREPLResult(error="ruff format check failed"),
@@ -121,7 +121,7 @@ class TestRunTask:
             ],
             config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
         )
-        result = await run_task(state, deps, start_role=Role.CODER_PRIMARY)
+        result = await run_task(state, deps, start_role=Role.CODER_ESCALATION)
         # Should fail without escalating (FORMAT is no_escalate)
         assert result.success is False
         # escalation_count should be 0 for format errors
@@ -130,7 +130,7 @@ class TestRunTask:
     @pytest.mark.asyncio
     async def test_schema_capability_gap_can_escalate(self):
         """SCHEMA errors escalate after retries when signature indicates capability gap."""
-        state = make_state(current_role=Role.CODER_PRIMARY)
+        state = make_state(current_role=Role.CODER_ESCALATION)
         deps = make_deps(
             repl_results=[
                 MockREPLResult(error="Schema mismatch: required property 'steps' missing"),
@@ -144,6 +144,6 @@ class TestRunTask:
             ],
             config=GraphConfig(max_retries=2, max_escalations=2, max_turns=10),
         )
-        result = await run_task(state, deps, start_role=Role.CODER_PRIMARY)
+        result = await run_task(state, deps, start_role=Role.CODER_ESCALATION)
         assert isinstance(result, TaskResult)
         assert state.escalation_count >= 1

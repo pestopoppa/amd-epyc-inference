@@ -351,7 +351,6 @@ def _keyword_based_routing(
         if matched:
             # Map category name to Role enum
             role_map = {
-                "coder_primary": str(Role.CODER_PRIMARY),
                 "coder_escalation": str(Role.CODER_ESCALATION),
                 "architect_general": str(Role.ARCHITECT_GENERAL),
             }

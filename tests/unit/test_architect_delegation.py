@@ -33,21 +33,21 @@ class TestParseArchitectDecision:
         from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
-            "I|brief:Check src/api.py for error handling|to:coder_primary"
+            "I|brief:Check src/api.py for error handling|to:coder_escalation"
         )
         assert result["mode"] == "investigate"
         assert "Check src/api.py" in result["brief"]
-        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_to"] == "coder_escalation"
         assert result["delegate_mode"] == "react"
 
     def test_toon_investigate_repl_mode(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
 
         result = _parse_architect_decision(
-            "I|brief:Draft implementation doc|to:coder_primary|mode:repl"
+            "I|brief:Draft implementation doc|to:coder_escalation|mode:repl"
         )
         assert result["mode"] == "investigate"
-        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_to"] == "coder_escalation"
         assert result["delegate_mode"] == "repl"
 
     def test_json_direct(self):
@@ -98,7 +98,7 @@ class TestParseArchitectDecision:
     def test_invalid_mode_clamped(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
 
-        result = _parse_architect_decision("I|brief:Check something|to:coder_primary|mode:invalid")
+        result = _parse_architect_decision("I|brief:Check something|to:coder_escalation|mode:invalid")
         assert result["delegate_mode"] == "react"
 
 
@@ -147,7 +147,7 @@ class TestArchitectDelegatedAnswer:
 
         responses = [
             # Loop 0 Phase A: architect decides to investigate
-            "I|brief:Check the file src/api.py|to:coder_primary",
+            "I|brief:Check the file src/api.py|to:coder_escalation",
             # Loop 0 Phase B: specialist ReAct (mocked via _react_mode_answer)
             # Loop 1 Phase A: architect synthesizes
             "D|Based on the investigation, the answer is X",
@@ -189,7 +189,7 @@ class TestArchitectDelegatedAnswer:
 
         responses = [
             # Loop 0 Phase A: first investigation request
-            "I|brief:Check file A|to:coder_primary",
+            "I|brief:Check file A|to:coder_escalation",
             # Loop 1 Phase A: second investigation request
             "I|brief:Check file B|to:worker_explore",
             # Loop 2 Phase A: final answer
@@ -238,11 +238,11 @@ class TestArchitectDelegatedAnswer:
 
         responses = [
             # Loop 0: investigate
-            "I|brief:Check X|to:coder_primary",
+            "I|brief:Check X|to:coder_escalation",
             # Loop 1: investigate again
-            "I|brief:Check Y|to:coder_primary",
+            "I|brief:Check Y|to:coder_escalation",
             # Loop 2: investigate AGAIN (would exceed max_loops=2)
-            "I|brief:Check Z|to:coder_primary",
+            "I|brief:Check Z|to:coder_escalation",
             # Forced synthesis after cap
             "Forced answer from all reports",
         ]
@@ -292,7 +292,7 @@ class TestArchitectDelegatedAnswer:
 
         responses = [
             # Loop 0: architect requests REPL drafting
-            "I|brief:Draft the implementation|to:coder_primary|mode:repl",
+            "I|brief:Draft the implementation|to:coder_escalation|mode:repl",
             # Loop 1: architect approves
             "D|Approved",
         ]

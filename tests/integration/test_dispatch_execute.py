@@ -20,7 +20,7 @@ from src.registry_loader import RegistryLoader
 def test_registry(tmp_path: Path) -> RegistryLoader:
     """Create a test registry with mock models.
 
-    Uses production role names (coder_primary, worker_general, etc.) to match
+    Uses production role names (coder_escalation, worker_general, etc.) to match
     the dispatcher's role mapping.
     """
     registry = {
@@ -43,7 +43,7 @@ def test_registry(tmp_path: Path) -> RegistryLoader:
                 "performance": {"baseline_tps": 40.0},
                 "memory": {"residency": "hot"},
             },
-            "coder_primary": {
+            "coder_escalation": {
                 "tier": "B",
                 "description": "Code generation",
                 "model": {
@@ -417,8 +417,8 @@ class TestDispatchResultMetadata:
 
         dispatch_result = dispatcher.dispatch(task_ir)
 
-        # Dispatcher maps "coder" -> "coder_primary", "worker" -> "worker_general"
-        assert "coder_primary" in dispatch_result.roles_used
+        # Dispatcher maps "coder" -> "coder_escalation", "worker" -> "worker_general"
+        assert "coder_escalation" in dispatch_result.roles_used
         assert "worker_general" in dispatch_result.roles_used
 
     def test_dispatch_result_has_timestamp(self, dispatcher: Dispatcher):

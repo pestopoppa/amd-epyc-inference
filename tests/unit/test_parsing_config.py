@@ -45,7 +45,6 @@ class TestGetParsingMode:
 
     def test_coder_roles(self):
         """Test parsing mode for coder roles."""
-        assert get_parsing_mode("coder_primary") == ParsingMode.INSTRUCTOR
         assert get_parsing_mode("coder_escalation") == ParsingMode.INSTRUCTOR
 
     def test_architect_roles(self):

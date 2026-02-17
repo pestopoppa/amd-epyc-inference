@@ -274,7 +274,7 @@ step2_seeding() {
   log "=========================================="
   log "STEP 2: Comparative Specialist Seeding"
   log "=========================================="
-  # NOTE: Roles sharing the same backend URL (e.g. frontdoor and coder_primary
+  # NOTE: Roles sharing the same backend URL (e.g. frontdoor and coder_escalation
   # on localhost:8080) are automatically deduplicated by seed_specialist_routing.py.
   # Rewards for the deduplicated role are cloned from the canonical role.
   # Use --no-dedup to disable this behavior for debugging.
@@ -284,7 +284,7 @@ step2_seeding() {
   local output="${RESULTS_DIR}/seeding_live_seed${PIPELINE_SEED}.json"
   run_cmd "${PYTHON} ${PROJECT_ROOT}/scripts/benchmark/seed_specialist_routing.py \
     --suites thinking general math agentic coder instruction_precision vl \
-    --roles frontdoor coder_primary coder_escalation architect_general architect_coding worker_vision vision_escalation \
+    --roles frontdoor coder_escalation coder_escalation architect_general architect_coding worker_vision vision_escalation \
     --sample-size 10 --seed ${PIPELINE_SEED} \
     --output ${output}"
 

@@ -28,6 +28,16 @@ data = json.loads(results)
 FINAL(data[0]["snippet"])
 ```
 
+## Example 4b: Uncertain factual question (search first, don't guess)
+Question: "At which university did Jurgen Aschoff study medicine?"
+```python
+# Not confident about the answer → search first
+import json
+results = json.loads(CALL("web_search", query="Jurgen Aschoff study medicine university"))
+snippets = " ".join(r.get("snippet", "") for r in results if "snippet" in r)
+FINAL(snippets if snippets else results[0]["title"] if results else "Unknown")
+```
+
 ## Example 5: Competitive programming (USACO/Codeforces)
 Question: "Given n integers, find the maximum subarray sum."
 ```python

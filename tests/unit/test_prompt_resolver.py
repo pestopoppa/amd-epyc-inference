@@ -203,7 +203,7 @@ class TestPromptFilesExist:
         "role",
         [
             "frontdoor",
-            "coder_primary",
+            "coder_escalation",
             "coder_escalation",
             "architect_general",
             "architect_coding",

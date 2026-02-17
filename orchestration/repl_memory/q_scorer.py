@@ -62,7 +62,6 @@ class ScoringConfig:
     # Used to normalize cost: expected_elapsed = tokens_generated / baseline_tps.
     baseline_tps_by_role: Dict[str, float] = field(default_factory=lambda: {
         "frontdoor": 18.3,
-        "coder_primary": 18.3,
         "coder_escalation": 39.44,
         "architect_general": 6.75,
         "architect_coding": 10.3,
@@ -77,7 +76,6 @@ class ScoringConfig:
     # Used for quality-gap penalty: penalize using expensive model when cheap suffices.
     baseline_quality_by_role: Dict[str, float] = field(default_factory=lambda: {
         "frontdoor": 0.895,
-        "coder_primary": 0.895,
         "coder_escalation": 0.915,
         "architect_general": 0.94,
         "architect_coding": 0.885,
@@ -90,7 +88,6 @@ class ScoringConfig:
     # WARM tier models incur mmap load penalty and higher memory pressure.
     memory_cost_by_role: Dict[str, float] = field(default_factory=lambda: {
         "frontdoor": 1.0,         # 19GB, HOT
-        "coder_primary": 1.0,     # 20GB, HOT
         "coder_escalation": 1.05, # 20GB, HOT
         "worker_explore": 0.5,    # 4.4GB, HOT
         "worker_math": 0.5,       # 4.4GB, HOT

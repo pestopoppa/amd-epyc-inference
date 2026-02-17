@@ -57,7 +57,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["frontdoor", "coder_primary", "coder_escalation", "architect_general", "architect_coding", "worker_general", "admin"]
+            "enum": ["frontdoor", "coder_escalation", "architect_general", "architect_coding", "worker_general", "admin"]
           },
           "description": "Roles allowed to execute this procedure"
         },

@@ -1069,7 +1069,7 @@ if __name__ == "__main__":
     executor = Executor(registry)
 
     # Test config generation for different architectures
-    test_roles = ["coder_primary", "worker_math", "ingest_long_context"]
+    test_roles = ["coder_escalation", "worker_math", "ingest_long_context"]
 
     for role in test_roles:
         arch = registry.get_architecture(role)

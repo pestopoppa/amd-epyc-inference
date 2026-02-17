@@ -302,10 +302,10 @@ The legacy `failure_router.py` is preserved for backwards compatibility but new 
 ### Escalation Chains
 
 ```
-Worker Chain:    worker_general → coder_primary → architect_general → FAIL
-Coder Chain:     coder_primary → architect_general → FAIL
+Worker Chain:    worker_general → coder_escalation → architect_coding → FAIL
+Coder Chain:     coder_escalation → architect_coding → FAIL
 Ingest Chain:    ingest_long_context → architect_general → FAIL
-Frontdoor Chain: frontdoor → coder_primary → architect_general → FAIL
+Frontdoor Chain: frontdoor → coder_escalation → architect_coding → FAIL
 ```
 
 ### Error Categories

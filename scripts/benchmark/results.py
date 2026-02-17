@@ -445,7 +445,7 @@ def result_exists_for_model(
     """Check if ANY role using the same model path has results for this question.
 
     This enables model-path-aware skip logic: if frontdoor has already tested
-    a question, coder_primary (which uses the same model) can skip that test
+    a question, coder_escalation (which uses the same model) can skip that test
     and copy the result.
 
     Args:

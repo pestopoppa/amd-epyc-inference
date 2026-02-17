@@ -334,12 +334,12 @@ class TestCustomExceptions:
         from src.proactive_delegation import StepExecutionError
 
         cause = ValueError("bad input")
-        e = StepExecutionError("S1", "coder_primary", cause=cause)
+        e = StepExecutionError("S1", "coder_escalation", cause=cause)
         assert e.step_id == "S1"
-        assert e.role == "coder_primary"
+        assert e.role == "coder_escalation"
         assert e.cause is cause
         assert "S1" in str(e)
-        assert "coder_primary" in str(e)
+        assert "coder_escalation" in str(e)
         assert "bad input" in str(e)
 
     def test_step_execution_error_no_cause(self):

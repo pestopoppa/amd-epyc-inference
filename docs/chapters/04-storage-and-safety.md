@@ -213,7 +213,7 @@ The orchestrator uses a three-tier memory pool that takes advantage of the 1.13T
 
 | Port | Role | Model | Size | Speed |
 |------|------|-------|------|-------|
-| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B-Q4_K_M | ~17GB | 18 t/s |
+| 8080 | frontdoor | Qwen3-Coder-30B-A3B-Q4_K_M | ~17GB | 18 t/s |
 | 8081 | coder_escalation | Qwen2.5-Coder-32B-Q4_K_M | ~19GB | 39 t/s (spec) |
 | 8082 | worker_explore | Qwen2.5-7B-Instruct-f16 | ~14GB | 44 t/s (spec) |
 | 8084 | architect_coding | Qwen3-Coder-480B-A35B-Q4_K_M | ~280GB | 10.3 t/s |

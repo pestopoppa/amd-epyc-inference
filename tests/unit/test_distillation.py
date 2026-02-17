@@ -207,7 +207,7 @@ class TestDistillationPipeline:
             {
                 "title": "Prefer Coder for Refactoring",
                 "skill_type": "routing",
-                "principle": "Route refactoring to coder_primary.",
+                "principle": "Route refactoring to coder_escalation.",
                 "when_to_apply": "task_type is refactoring",
                 "task_types": ["refactoring"],
                 "source_outcome": "success",
@@ -221,7 +221,7 @@ class TestDistillationPipeline:
                 "task_id": f"t{i}",
                 "task_type": "refactoring",
                 "objective": "Refactor module",
-                "routing_decision": "coder_primary",
+                "routing_decision": "coder_escalation",
                 "outcome": "success",
             }
             for i in range(5)

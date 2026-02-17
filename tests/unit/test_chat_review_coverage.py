@@ -110,12 +110,12 @@ class TestShouldReview:
         state = MagicMock()
         mock_retriever = MagicMock()
         mock_result = MagicMock()
-        mock_result.memory.action = "coder_primary"
+        mock_result.memory.action = "coder_escalation"
         mock_result.q_value = 0.3  # Below 0.6 threshold
         mock_retriever.retrieve_for_routing.return_value = [mock_result]
         state.hybrid_router.retriever = mock_retriever
 
-        result = _should_review(state, "task-1", "coder_primary", "A" * 60)
+        result = _should_review(state, "task-1", "coder_escalation", "A" * 60)
         assert result is True
 
     def test_high_q_value_skips_review(self):
@@ -123,12 +123,12 @@ class TestShouldReview:
         state = MagicMock()
         mock_retriever = MagicMock()
         mock_result = MagicMock()
-        mock_result.memory.action = "coder_primary"
+        mock_result.memory.action = "coder_escalation"
         mock_result.q_value = 0.8  # Above 0.6 threshold
         mock_retriever.retrieve_for_routing.return_value = [mock_result]
         state.hybrid_router.retriever = mock_retriever
 
-        result = _should_review(state, "task-1", "coder_primary", "A" * 60)
+        result = _should_review(state, "task-1", "coder_escalation", "A" * 60)
         assert result is False
 
     def test_no_results_skips_review(self):
@@ -151,7 +151,7 @@ class TestShouldReview:
         mock_retriever.retrieve_for_routing.return_value = [mock_result]
         state.hybrid_router.retriever = mock_retriever
 
-        result = _should_review(state, "task-1", "coder_primary", "A" * 60)
+        result = _should_review(state, "task-1", "coder_escalation", "A" * 60)
         assert result is False
 
     def test_exception_returns_false(self):
@@ -343,7 +343,7 @@ class TestNeedsPlanReview:
 
             mock_classify.return_value = (TaskComplexity.MODERATE, [])
             result = _needs_plan_review(
-                {"objective": "implement feature"}, ["coder_primary"], state
+                {"objective": "implement feature"}, ["coder_escalation"], state
             )
 
         assert result is True
@@ -457,7 +457,7 @@ class TestArchitectPlanReview:
             mock_service.return_value.review_plan.return_value = mock_review_result
             result = _architect_plan_review(
                 {"objective": "implement feature"},
-                ["coder_primary", "coder_escalation"],
+                ["coder_escalation", "worker_general"],
                 primitives,
                 state,
                 "task-1",
@@ -468,8 +468,8 @@ class TestArchitectPlanReview:
         call_kwargs = mock_service.return_value.review_plan.call_args.kwargs
         steps = call_kwargs.get("plan_steps", [])
         assert len(steps) == 2
-        assert steps[0]["actor"] == "coder_primary"
-        assert steps[1]["actor"] == "coder_escalation"
+        assert steps[0]["actor"] == "coder_escalation"
+        assert steps[1]["actor"] == "worker_general"
 
     def test_uses_explicit_plan_steps(self):
         """Uses explicit plan steps when provided."""
@@ -504,14 +504,14 @@ class TestApplyPlanReview:
         """No patches returns unchanged routing."""
         review = MagicMock()
         review.patches = []
-        result = _apply_plan_review(["coder_primary"], review)
-        assert result == ["coder_primary"]
+        result = _apply_plan_review(["coder_escalation"], review)
+        assert result == ["coder_escalation"]
 
     def test_reroute_patch_applies(self):
         """Reroute patch changes role."""
         review = MagicMock()
         review.patches = [{"op": "reroute", "step": "S1", "v": "architect_general"}]
-        result = _apply_plan_review(["coder_primary", "worker"], review)
+        result = _apply_plan_review(["coder_escalation", "worker"], review)
         assert result[0] == "architect_general"
         assert result[1] == "worker"
 

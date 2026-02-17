@@ -309,7 +309,7 @@ def generate_escalation_patterns() -> List[SuccessPattern]:
     escalation_scenarios = [
         {
             "task": "This code change affects {scope} - need architecture review",
-            "from_role": "coder_primary",
+            "from_role": "coder_escalation",
             "to_role": "architect_general",
             "reason": "Cross-cutting architectural concern",
             "vars": {"scope": ["multiple services", "the database schema",

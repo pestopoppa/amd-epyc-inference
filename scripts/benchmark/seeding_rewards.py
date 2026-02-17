@@ -35,7 +35,7 @@ __all__ = [
 # Update these when swapping models in the orchestrator stack.
 DEFAULT_BASELINE_TPS: dict[str, float] = {
     "frontdoor": 18.3,
-    "coder_primary": 18.3,
+    "coder_escalation": 18.3,
     "coder_escalation": 39.44,
     "architect_general": 6.75,
     "architect_coding": 10.3,

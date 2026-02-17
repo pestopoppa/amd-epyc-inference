@@ -131,7 +131,7 @@ ROLE_TOOL_REQUIREMENTS = {
         "required": ["peek", "grep", "list_dir", "file_info", "FINAL"],
         "optional": ["llm_call", "escalate", "recall"],
     },
-    "coder_primary": {
+    "coder_escalation": {
         "required": ["peek", "grep", "llm_call", "FINAL"],
         "optional": ["list_dir", "run_shell", "escalate"],
     },
@@ -471,7 +471,7 @@ class TestREPLToolExecution:
 class TestModelResponsePatterns:
     """Tests for validating expected model response patterns."""
 
-    @pytest.mark.parametrize("role", ["frontdoor", "coder_primary", "worker_general"])
+    @pytest.mark.parametrize("role", ["frontdoor", "coder_escalation", "worker_general"])
     def test_role_has_required_tools(self, role):
         """Test that each role has defined required tools."""
         assert role in ROLE_TOOL_REQUIREMENTS
@@ -521,7 +521,7 @@ class TestLiveModelCompliance:
         primitives = LLMPrimitives(mock_mode=False)
         return primitives
 
-    @pytest.mark.parametrize("role", ["frontdoor", "coder_primary"])
+    @pytest.mark.parametrize("role", ["frontdoor", "coder_escalation"])
     @pytest.mark.parametrize("tool_name", ["list_dir", "peek"])
     def test_model_uses_correct_tool(self, live_llm_primitives, role, tool_name):
         """Test that model uses REPL tool instead of imports."""

@@ -182,10 +182,10 @@ class TestCountByCombo:
         """Filters by action string."""
         self._insert_memory(store, "frontdoor:direct", "code")
         self._insert_memory(store, "frontdoor:direct", "chat")
-        self._insert_memory(store, "coder_primary", "code")
+        self._insert_memory(store, "coder_escalation", "code")
 
         assert store.count_by_combo("frontdoor:direct") == 2
-        assert store.count_by_combo("coder_primary") == 1
+        assert store.count_by_combo("coder_escalation") == 1
         assert store.count_by_combo("nonexistent") == 0
 
     def test_count_by_action_and_type(self, store):

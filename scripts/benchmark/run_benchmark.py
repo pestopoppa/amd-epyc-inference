@@ -15,7 +15,7 @@ Single entry point for all benchmarks with clean nested loops:
 Usage:
     ./run_benchmark.py                    # Run all (skips existing by default)
     ./run_benchmark.py --force            # Force re-run (don't skip)
-    ./run_benchmark.py --model coder_primary  # Run specific model
+    ./run_benchmark.py --model coder_escalation  # Run specific model
     ./run_benchmark.py --suite thinking   # Run specific suite
     ./run_benchmark.py --vision-only      # Only VL models (with mmproj)
     ./run_benchmark.py --dry-run          # Show what would run
@@ -922,7 +922,7 @@ def main():
 Examples:
   ./run_benchmark.py                     # Run all benchmarks
   ./run_benchmark.py --force             # Force re-run
-  ./run_benchmark.py --model coder_primary --suite thinking
+  ./run_benchmark.py --model coder_escalation --suite thinking
   ./run_benchmark.py --vision-only       # Only VL models (with mmproj)
   ./run_benchmark.py --vision-only --suite vl  # VL models, VL suite only
   ./run_benchmark.py --dry-run           # Preview what would run

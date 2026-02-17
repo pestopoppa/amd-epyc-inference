@@ -15,11 +15,11 @@ class TestResumeTokenEncodeDecode:
         token = ResumeToken(
             task_id="task-123",
             node_class="CoderNode",
-            current_role="coder_primary",
+            current_role="coder_escalation",
             turns=3,
             escalation_count=1,
             consecutive_failures=0,
-            role_history=["frontdoor", "coder_primary"],
+            role_history=["frontdoor", "coder_escalation"],
             last_error="",
         )
         # Compute checksum
@@ -38,11 +38,11 @@ class TestResumeTokenEncodeDecode:
 
         assert decoded.task_id == "task-123"
         assert decoded.node_class == "CoderNode"
-        assert decoded.current_role == "coder_primary"
+        assert decoded.current_role == "coder_escalation"
         assert decoded.turns == 3
         assert decoded.escalation_count == 1
         assert decoded.consecutive_failures == 0
-        assert decoded.role_history == ["frontdoor", "coder_primary"]
+        assert decoded.role_history == ["frontdoor", "coder_escalation"]
 
     def test_compact_encoding(self):
         """Encoded token should be reasonably compact (<500 bytes)."""
@@ -53,7 +53,7 @@ class TestResumeTokenEncodeDecode:
             turns=10,
             escalation_count=2,
             consecutive_failures=1,
-            role_history=["frontdoor", "coder_primary", "architect_general", "architect_coding"],
+            role_history=["frontdoor", "coder_escalation", "architect_general", "architect_coding"],
             last_error="Some error message that is truncated",
         )
         import hashlib
@@ -77,7 +77,7 @@ class TestResumeTokenEncodeDecode:
         token = ResumeToken(
             task_id="task-123",
             node_class="CoderNode",
-            current_role="coder_primary",
+            current_role="coder_escalation",
             checksum="badcheck",
         )
         encoded = token.encode()
@@ -91,11 +91,11 @@ class TestFromState:
     def test_from_state(self):
         state = TaskState(
             task_id="task-456",
-            current_role=Role.CODER_PRIMARY,
+            current_role=Role.CODER_ESCALATION,
             turns=5,
             escalation_count=1,
             consecutive_failures=2,
-            role_history=["frontdoor", "coder_primary"],
+            role_history=["frontdoor", "coder_escalation"],
             last_error="LLM call timed out after 300s",
         )
 
@@ -103,11 +103,11 @@ class TestFromState:
 
         assert token.task_id == "task-456"
         assert token.node_class == "CoderNode"
-        assert token.current_role == "coder_primary"
+        assert token.current_role == "coder_escalation"
         assert token.turns == 5
         assert token.escalation_count == 1
         assert token.consecutive_failures == 2
-        assert token.role_history == ["frontdoor", "coder_primary"]
+        assert token.role_history == ["frontdoor", "coder_escalation"]
         assert token.last_error == "LLM call timed out after 300s"
         assert len(token.checksum) == 8
 
@@ -125,7 +125,7 @@ class TestFromState:
             turns=8,
             escalation_count=2,
             consecutive_failures=0,
-            role_history=["frontdoor", "coder_primary", "architect_general"],
+            role_history=["frontdoor", "coder_escalation", "architect_general"],
             last_error="",
         )
 

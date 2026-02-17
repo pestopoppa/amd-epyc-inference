@@ -17,7 +17,7 @@ The stack spans three tiers of servers, each mapped to a port range. The HOT tie
 
 | Port | Roles | Model | Acceleration | Speed | RAM |
 |------|-------|-------|--------------|-------|-----|
-| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B Q4_K_M | MoE6 | 18 t/s | ~18GB |
+| 8080 | frontdoor | Qwen3-Coder-30B-A3B Q4_K_M | MoE6 | 18 t/s | ~18GB |
 | 8081 | coder_escalation, worker_summarize | Qwen2.5-Coder-32B Q4_K_M + 0.5B draft | Spec K=24 + lookup | 39 t/s | ~22GB |
 | 8082 | worker_explore, worker_math | Qwen2.5-7B-Instruct f16 + 0.5B draft | Spec K=24 + lookup | 44 t/s | ~14GB |
 | 8083 | architect_general | Qwen3-235B-A22B Q4_K_M | MoE4 | 6.75 t/s | ~140GB |

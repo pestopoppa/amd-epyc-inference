@@ -153,7 +153,6 @@ class ToolRegistry:
     # Role permissions: which roles can use which tool categories
     ROLE_PERMISSIONS: dict[str, set[str]] = {
         "frontdoor": {"web", "data", "llm"},  # High-level tools only
-        "coder_primary": {"web", "data", "code", "math", "system", "llm"},
         "coder_escalation": {"web", "data", "code", "math", "system", "llm"},
         "worker_general": {"web", "data", "math", "llm"},
         "worker_math": {"math", "data"},

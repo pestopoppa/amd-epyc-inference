@@ -28,12 +28,12 @@ class TestHaltState:
     def test_creation(self):
         halt = HaltState(
             reason=HaltReason.ESCALATION,
-            from_role="coder_primary",
+            from_role="coder_escalation",
             to_role="architect_general",
             description="Retries exhausted",
         )
         assert halt.reason == HaltReason.ESCALATION
-        assert halt.from_role == "coder_primary"
+        assert halt.from_role == "coder_escalation"
         assert halt.to_role == "architect_general"
 
     def test_destructive_tool_halt(self):
@@ -64,11 +64,11 @@ class TestShouldHalt:
 
     def test_disabled_returns_none(self):
         set_features(Features(approval_gates=False))
-        assert should_halt("coder_primary", "architect_general") is None
+        assert should_halt("coder_escalation", "architect_general") is None
 
     def test_tier_crossing_triggers_escalation(self):
         set_features(Features(approval_gates=True))
-        result = should_halt("worker_general", "coder_primary")
+        result = should_halt("worker_general", "coder_escalation")
         assert result == HaltReason.ESCALATION
 
     def test_same_tier_no_halt(self):
@@ -80,7 +80,7 @@ class TestShouldHalt:
     def test_architect_triggers_high_cost(self):
         set_features(Features(approval_gates=True))
         # Coder to architect — both Tier B, so triggers HIGH_COST
-        result = should_halt("coder_primary", "architect_general")
+        result = should_halt("coder_escalation", "architect_general")
         assert result == HaltReason.HIGH_COST
 
 
@@ -92,7 +92,7 @@ class TestRequestApproval:
         ctx = MagicMock()
         ctx.deps.approval_callback = None
         decision = request_approval_for_escalation(
-            ctx, "coder_primary", "architect_general", "test"
+            ctx, "coder_escalation", "architect_general", "test"
         )
         assert decision == ApprovalDecision.APPROVE
 
@@ -106,7 +106,7 @@ class TestRequestApproval:
         ctx.state.pending_approval = None
 
         decision = request_approval_for_escalation(
-            ctx, "worker_general", "coder_primary", "test reason"
+            ctx, "worker_general", "coder_escalation", "test reason"
         )
         assert decision == ApprovalDecision.REJECT
         callback.request_approval.assert_called_once()
@@ -115,4 +115,4 @@ class TestRequestApproval:
         halt = callback.request_approval.call_args[0][0]
         assert halt.reason == HaltReason.ESCALATION
         assert halt.from_role == "worker_general"
-        assert halt.to_role == "coder_primary"
+        assert halt.to_role == "coder_escalation"

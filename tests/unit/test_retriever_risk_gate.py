@@ -49,7 +49,7 @@ def _retriever(config: RetrievalConfig) -> TwoPhaseRetriever:
 
 def test_evaluate_risk_gate_disabled():
     retriever = _retriever(RetrievalConfig(risk_control_enabled=False))
-    gate = retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.1)])
+    gate = retriever.evaluate_risk_gate([_result("coder_escalation", q_conf=0.1)])
     assert gate["enforced"] is False
     assert gate["action"] == "not_enforced"
 
@@ -63,7 +63,7 @@ def test_evaluate_risk_gate_abstains_when_confidence_below_threshold():
             risk_gate_min_samples=1,
         )
     )
-    gate = retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.6)])
+    gate = retriever.evaluate_risk_gate([_result("coder_escalation", q_conf=0.6)])
     assert gate["enforced"] is True
     assert gate["passed"] is False
     assert gate["action"] == "abstain_escalate"
@@ -78,7 +78,7 @@ def test_hybrid_router_risk_abstain_escalates_to_target_role():
             risk_abstain_target_role="architect_general",
         )
     )
-    retriever.retrieve_for_routing = MagicMock(return_value=[_result("coder_primary", q_conf=0.4)])
+    retriever.retrieve_for_routing = MagicMock(return_value=[_result("coder_escalation", q_conf=0.4)])
 
     rule_router = RuleBasedRouter(routing_hints=[])
     hybrid = HybridRouter(retriever=retriever, rule_based_router=rule_router)
@@ -97,7 +97,7 @@ def test_hybrid_router_allows_learned_when_risk_gate_passes():
             risk_gate_min_samples=1,
         )
     )
-    retriever.retrieve_for_routing = MagicMock(return_value=[_result("coder_primary", q_conf=0.9)])
+    retriever.retrieve_for_routing = MagicMock(return_value=[_result("coder_escalation", q_conf=0.9)])
 
     rule_router = RuleBasedRouter(routing_hints=[])
     hybrid = HybridRouter(retriever=retriever, rule_based_router=rule_router)
@@ -117,7 +117,7 @@ def test_evaluate_risk_gate_respects_rollout_sampling():
             risk_gate_min_samples=1,
         )
     )
-    gate = retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.1)], route_key="abc")
+    gate = retriever.evaluate_risk_gate([_result("coder_escalation", q_conf=0.1)], route_key="abc")
     assert gate["enforced"] is False
     assert gate["reason"] == "rollout_sampling_excluded"
 
@@ -133,9 +133,9 @@ def test_evaluate_risk_gate_guardrail_disables_strict_gate():
         )
     )
     # First evaluation abstains and records budget stats.
-    retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.1)], route_key="k1")
+    retriever.evaluate_risk_gate([_result("coder_escalation", q_conf=0.1)], route_key="k1")
     # Subsequent evaluations should be blocked by guardrail.
-    gate2 = retriever.evaluate_risk_gate([_result("coder_primary", q_conf=0.9)], route_key="k2")
+    gate2 = retriever.evaluate_risk_gate([_result("coder_escalation", q_conf=0.9)], route_key="k2")
     assert gate2["enforced"] is False
     assert gate2["reason"] == "budget_guardrail_abstain_rate"
 
@@ -148,7 +148,7 @@ def test_hybrid_router_prior_blend_can_flip_to_prior_favored_action():
             prior_strength=0.25,
         )
     )
-    r_coder = _result("coder_primary", q_conf=0.9, q_value=0.8)
+    r_coder = _result("coder_escalation", q_conf=0.9, q_value=0.8)
     r_frontdoor = _result("frontdoor", q_conf=0.9, q_value=0.75)
     r_coder.selection_score = 0.80
     r_frontdoor.selection_score = 0.75
@@ -159,7 +159,7 @@ def test_hybrid_router_prior_blend_can_flip_to_prior_favored_action():
     hybrid = HybridRouter(retriever=retriever, rule_based_router=rule_router)
     routing, strategy = hybrid.route(
         {"task_type": "chat", "objective": "test"},
-        priors={"frontdoor": 1.0, "coder_primary": 0.0},
+        priors={"frontdoor": 1.0, "coder_escalation": 0.0},
     )
 
     assert strategy == "learned"

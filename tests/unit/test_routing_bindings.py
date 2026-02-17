@@ -23,64 +23,64 @@ class TestBindingRouter:
 
     def test_single_binding(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
-        assert router.resolve("code") == "coder_primary"
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
+        assert router.resolve("code") == "coder_escalation"
 
     def test_higher_priority_wins(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.add(RoutingBinding("code", "architect_coding", BindingPriority.USER_PREF))
         assert router.resolve("code") == "architect_coding"
 
     def test_different_task_types_independent(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.add(RoutingBinding("ingest", "ingest_long_context", BindingPriority.DEFAULT))
-        assert router.resolve("code") == "coder_primary"
+        assert router.resolve("code") == "coder_escalation"
         assert router.resolve("ingest") == "ingest_long_context"
 
     def test_inactive_binding_ignored(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.add(RoutingBinding("code", "architect_coding", BindingPriority.USER_PREF, active=False))
-        assert router.resolve("code") == "coder_primary"
+        assert router.resolve("code") == "coder_escalation"
 
     def test_session_binding_override(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.set_session_binding("code", "architect_coding")
         assert router.resolve("code") == "architect_coding"
 
     def test_clear_session_bindings(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.set_session_binding("code", "architect_coding")
         router.clear_session_bindings()
-        assert router.resolve("code") == "coder_primary"
+        assert router.resolve("code") == "coder_escalation"
 
     def test_resolve_with_info(self):
         router = BindingRouter()
         router.add(RoutingBinding(
-            "code", "coder_primary", BindingPriority.CLASSIFIER, source="keyword_heuristic"
+            "code", "coder_escalation", BindingPriority.CLASSIFIER, source="keyword_heuristic"
         ))
         role, priority, source = router.resolve_with_info("code")
-        assert role == "coder_primary"
+        assert role == "coder_escalation"
         assert priority == BindingPriority.CLASSIFIER
         assert source == "keyword_heuristic"
 
     def test_list_bindings(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.add(RoutingBinding("code", "architect_coding", BindingPriority.USER_PREF))
 
         bindings = router.list_bindings("code")
         assert len(bindings) == 2
-        assert any(b["role"] == "coder_primary" for b in bindings)
+        assert any(b["role"] == "coder_escalation" for b in bindings)
         assert any(b["role"] == "architect_coding" for b in bindings)
 
     def test_list_all_bindings(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.add(RoutingBinding("ingest", "ingest_long_context", BindingPriority.DEFAULT))
 
         bindings = router.list_bindings()
@@ -88,13 +88,13 @@ class TestBindingRouter:
 
     def test_clear(self):
         router = BindingRouter()
-        router.add(RoutingBinding("code", "coder_primary", BindingPriority.DEFAULT))
+        router.add(RoutingBinding("code", "coder_escalation", BindingPriority.DEFAULT))
         router.clear()
         assert router.resolve("code") is None
 
     def test_session_binding_replaces_previous(self):
         router = BindingRouter()
-        router.set_session_binding("code", "coder_primary")
+        router.set_session_binding("code", "coder_escalation")
         router.set_session_binding("code", "architect_coding")
 
         bindings = router.list_bindings("code")

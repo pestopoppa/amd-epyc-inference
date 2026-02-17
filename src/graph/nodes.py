@@ -65,12 +65,12 @@ log = logging.getLogger(__name__)
 class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
     """Entry node for unclassified/frontdoor requests.
 
-    Escalates to CoderNode on failure (via escalation map: FRONTDOOR → CODER_PRIMARY).
+    Escalates to CoderEscalationNode on failure (via escalation map: FRONTDOOR → CODER_ESCALATION).
     """
 
     async def run(
         self, ctx: Ctx
-    ) -> Union["FrontdoorNode", "CoderNode", "WorkerNode", End[TaskResult]]:
+    ) -> Union["FrontdoorNode", "CoderEscalationNode", "WorkerNode", End[TaskResult]]:
         state = ctx.state
 
         if state.turns >= state.max_turns:
@@ -101,9 +101,9 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_PRIMARY)
-                _log_escalation(ctx, from_role, str(Role.CODER_PRIMARY), f"Early abort: {error[:100]}")
-                return CoderNode()
+                state.record_role(Role.CODER_ESCALATION)
+                _log_escalation(ctx, from_role, str(Role.CODER_ESCALATION), f"Early abort: {error[:100]}")
+                return CoderEscalationNode()
 
             # Think-harder: same model with CoT + 2x tokens before escalating
             if _should_think_harder(ctx, error_cat):
@@ -112,7 +112,7 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 log.info("Think-harder triggered at %s (attempt before escalation)", state.current_role)
                 return FrontdoorNode()
 
-            if _should_escalate(ctx, error_cat, Role.CODER_PRIMARY):
+            if _should_escalate(ctx, error_cat, Role.CODER_ESCALATION):
                 # If think-harder was attempted and we still escalate, it failed
                 if state.think_harder_attempted:
                     state.think_harder_succeeded = False
@@ -120,12 +120,12 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.consecutive_failures = 0
                 state.think_harder_attempted = False  # Reset for next role
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_PRIMARY)
+                state.record_role(Role.CODER_ESCALATION)
                 _log_escalation(
-                    ctx, from_role, str(Role.CODER_PRIMARY),
+                    ctx, from_role, str(Role.CODER_ESCALATION),
                     f"Escalating after {state.consecutive_failures} failures",
                 )
-                return CoderNode()
+                return CoderEscalationNode()
 
             if _should_retry(ctx, error_cat):
                 return FrontdoorNode()
@@ -156,12 +156,12 @@ class FrontdoorNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
     """Worker node for all WORKER_* roles.
 
-    Escalates to CoderNode on failure.
+    Escalates to CoderEscalationNode on failure.
     """
 
     async def run(
         self, ctx: Ctx
-    ) -> Union["WorkerNode", "CoderNode", End[TaskResult]]:
+    ) -> Union["WorkerNode", "CoderEscalationNode", End[TaskResult]]:
         state = ctx.state
 
         if state.turns >= state.max_turns:
@@ -192,9 +192,9 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_PRIMARY)
-                _log_escalation(ctx, from_role, str(Role.CODER_PRIMARY), f"Early abort: {error[:100]}")
-                return CoderNode()
+                state.record_role(Role.CODER_ESCALATION)
+                _log_escalation(ctx, from_role, str(Role.CODER_ESCALATION), f"Early abort: {error[:100]}")
+                return CoderEscalationNode()
 
             if _should_think_harder(ctx, error_cat):
                 state.think_harder_attempted = True
@@ -202,19 +202,19 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 log.info("Think-harder triggered at %s", state.current_role)
                 return WorkerNode()
 
-            if _should_escalate(ctx, error_cat, Role.CODER_PRIMARY):
+            if _should_escalate(ctx, error_cat, Role.CODER_ESCALATION):
                 if state.think_harder_attempted:
                     state.think_harder_succeeded = False
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 state.think_harder_attempted = False
                 from_role = str(state.current_role)
-                state.record_role(Role.CODER_PRIMARY)
+                state.record_role(Role.CODER_ESCALATION)
                 _log_escalation(
-                    ctx, from_role, str(Role.CODER_PRIMARY),
+                    ctx, from_role, str(Role.CODER_ESCALATION),
                     f"Escalating after {state.consecutive_failures} failures",
                 )
-                return CoderNode()
+                return CoderEscalationNode()
 
             if _should_retry(ctx, error_cat):
                 return WorkerNode()
@@ -243,7 +243,7 @@ class WorkerNode(BaseNode[TaskState, TaskDeps, TaskResult]):
 
 @dataclass
 class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
-    """Coder node for CODER_PRIMARY and THINKING_REASONING roles.
+    """Coder node for THINKING_REASONING role.
 
     Escalates to ArchitectNode on failure.
     """
@@ -691,7 +691,6 @@ _ROLE_TO_NODE: dict[Role, type] = {
     Role.WORKER_SUMMARIZE: WorkerNode,
     Role.WORKER_VISION: WorkerNode,
     Role.TOOLRUNNER: WorkerNode,
-    Role.CODER_PRIMARY: CoderNode,
     Role.THINKING_REASONING: CoderNode,
     Role.CODER_ESCALATION: CoderEscalationNode,
     Role.INGEST_LONG_CONTEXT: IngestNode,

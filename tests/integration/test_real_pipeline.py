@@ -109,11 +109,11 @@ class TestDirectModePipeline:
                 "mock_mode": False,
                 "real_mode": True,
                 "force_mode": "direct",
-                "force_role": "coder_primary",
+                "force_role": "coder_escalation",
             },
         )
         data = response.json()
-        assert data["routed_to"] == "coder_primary"
+        assert data["routed_to"] == "coder_escalation"
         assert data["routing_strategy"] == "forced"
 
     def test_direct_mode_explicit_role(self, client_and_primitives):
@@ -639,7 +639,7 @@ class TestPipelineStageInteraction:
                     "mock_mode": False,
                     "real_mode": True,
                     "force_mode": "direct",
-                    "force_role": "coder_primary",
+                    "force_role": "coder_escalation",
                 },
             )
 
@@ -658,7 +658,7 @@ class TestPipelineStageInteraction:
             # Verify both calls recorded with correct roles
             assert len(prims.call_log) >= 2
             roles_used = {entry.role for entry in prims.call_log}
-            assert "coder_primary" in roles_used
+            assert "coder_escalation" in roles_used
             assert "worker_explore" in roles_used
 
     def test_mock_mode_bypasses_real_pipeline(self, app):

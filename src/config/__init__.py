@@ -509,7 +509,6 @@ class ServerURLsConfig:
 
     # Tier A - Front Door / Orchestrator
     frontdoor: str = "http://localhost:8080"
-    coder_primary: str = "http://localhost:8080"
 
     # Tier B - Specialists (code)
     coder: str = "http://localhost:8081"
@@ -580,9 +579,6 @@ class TimeoutsConfig:
     )
     frontdoor: int = field(
         default_factory=lambda: int(_registry_timeout("roles", "frontdoor", 90))
-    )
-    coder_primary: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "coder_primary", 90))
     )
     coder_escalation: int = field(
         default_factory=lambda: int(_registry_timeout("roles", "coder_escalation", 120))
@@ -655,7 +651,6 @@ class TimeoutsConfig:
             "worker_code": self.worker_code,
             "worker_fast": self.worker_fast,
             "frontdoor": self.frontdoor,
-            "coder_primary": self.coder_primary,
             "coder_escalation": self.coder_escalation,
             "vision_escalation": self.vision_escalation,
             "ingest_long_context": self.ingest_long_context,
@@ -675,7 +670,6 @@ class TimeoutsConfig:
             "worker_code": self.worker_code,
             "worker_fast": self.worker_fast,
             "frontdoor": self.frontdoor,
-            "coder_primary": self.coder_primary,
             "coder_escalation": self.coder_escalation,
             "vision_escalation": self.vision_escalation,
             "ingest_long_context": self.ingest_long_context,
@@ -1237,7 +1231,6 @@ if PYDANTIC_SETTINGS_AVAILABLE:
 
     class ServerURLsSettings(BaseSettings):
         frontdoor: str = "http://localhost:8080"
-        coder_primary: str = "http://localhost:8080"
         coder: str = "http://localhost:8081"
         coder_escalation: str = "http://localhost:8081"
         worker: str = "http://localhost:8082"
@@ -1270,7 +1263,6 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         worker_code: int = 60
         worker_fast: int = 30
         frontdoor: int = 90
-        coder_primary: int = 90
         coder_escalation: int = 120
         vision_escalation: int = 120
         ingest_long_context: int = 300
@@ -1520,7 +1512,6 @@ def _load_from_env() -> OrchestratorConfigData:
         ),
         server_urls=ServerURLsConfig(
             frontdoor=_env_str(f"{P}SERVER_URLS_FRONTDOOR", "http://localhost:8080"),
-            coder_primary=_env_str(f"{P}SERVER_URLS_CODER_PRIMARY", "http://localhost:8080"),
             coder=_env_str(f"{P}SERVER_URLS_CODER", "http://localhost:8081"),
             coder_escalation=_env_str(f"{P}SERVER_URLS_CODER_ESCALATION", "http://localhost:8081"),
             worker=_env_str(f"{P}SERVER_URLS_WORKER", "http://localhost:8082"),
@@ -1580,10 +1571,6 @@ def _load_from_env() -> OrchestratorConfigData:
             frontdoor=_env_int(
                 f"{P}TIMEOUTS_FRONTDOOR",
                 int(_registry_timeout("roles", "frontdoor", 90)),
-            ),
-            coder_primary=_env_int(
-                f"{P}TIMEOUTS_CODER_PRIMARY",
-                int(_registry_timeout("roles", "coder_primary", 90)),
             ),
             coder_escalation=_env_int(
                 f"{P}TIMEOUTS_CODER_ESCALATION",
@@ -1776,7 +1763,6 @@ def get_config() -> OrchestratorConfigData:
             ),
             server_urls=ServerURLsConfig(
                 frontdoor=settings.server_urls.frontdoor,
-                coder_primary=settings.server_urls.coder_primary,
                 coder=settings.server_urls.coder,
                 coder_escalation=settings.server_urls.coder_escalation,
                 worker=settings.server_urls.worker,
@@ -1804,7 +1790,6 @@ def get_config() -> OrchestratorConfigData:
                 worker_code=settings.timeouts.worker_code,
                 worker_fast=settings.timeouts.worker_fast,
                 frontdoor=settings.timeouts.frontdoor,
-                coder_primary=settings.timeouts.coder_primary,
                 coder_escalation=settings.timeouts.coder_escalation,
                 vision_escalation=settings.timeouts.vision_escalation,
                 ingest_long_context=settings.timeouts.ingest_long_context,

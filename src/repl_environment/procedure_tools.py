@@ -189,7 +189,7 @@ class _ProcedureToolsMixin:
         """Look up a value in the model registry.
 
         Args:
-            key_path: Dot-separated path (e.g., 'roles.coder_primary.model.name').
+            key_path: Dot-separated path (e.g., 'roles.coder_escalation.model.name').
 
         Returns:
             The value at that path, or error if not found.

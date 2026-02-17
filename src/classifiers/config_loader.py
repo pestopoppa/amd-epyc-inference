@@ -185,7 +185,7 @@ def _get_default_config() -> dict[str, Any]:
             "specialist_routing": {
                 "use_memrl": False,
                 "categories": {
-                    "coder_primary": {
+                    "coder_escalation": {
                         "keywords": [
                             "implement",
                             "write code",
@@ -200,10 +200,6 @@ def _get_default_config() -> dict[str, Any]:
                             "data structure",
                             "regex",
                             "parse",
-                        ],
-                    },
-                    "coder_escalation": {
-                        "keywords": [
                             "concurrent",
                             "lock-free",
                             "distributed",

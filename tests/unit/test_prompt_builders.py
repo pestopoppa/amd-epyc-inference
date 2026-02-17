@@ -968,7 +968,7 @@ class TestBuildArchitectInvestigatePrompt:
         from src.prompt_builders import build_architect_investigate_prompt
 
         result = build_architect_investigate_prompt("test")
-        assert "coder_primary" in result or "worker_explore" in result
+        assert "coder_escalation" in result or "worker_explore" in result
         # Structural: Options should be distinct (D| and I| both present)
         assert result.count("D|") >= 1
         assert result.count("I|") >= 1
@@ -1455,7 +1455,7 @@ class TestBuildCorpusContext:
         from src.prompt_builders.builder import build_corpus_context
 
         result = build_corpus_context(
-            role="coder_primary",
+            role="coder_escalation",
             task_description="implement a sorting algorithm",
         )
         assert isinstance(result, str)

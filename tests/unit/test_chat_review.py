@@ -184,9 +184,9 @@ class TestApplyPlanReview:
         assert result == ["frontdoor"]
 
     def test_reroute_patch_changes_role(self):
-        review = MagicMock(patches=[{"op": "reroute", "step": "S1", "v": "coder_primary"}])
+        review = MagicMock(patches=[{"op": "reroute", "step": "S1", "v": "coder_escalation"}])
         result = _apply_plan_review(["frontdoor", "worker"], review)
-        assert result[0] == "coder_primary"
+        assert result[0] == "coder_escalation"
         assert result[1] == "worker"
 
     def test_ignores_non_reroute_ops(self):

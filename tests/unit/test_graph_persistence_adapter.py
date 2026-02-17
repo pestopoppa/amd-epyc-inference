@@ -20,19 +20,19 @@ class TestStateToDict:
         state = TaskState(
             task_id="test-001",
             prompt="hello world",
-            current_role=Role.CODER_PRIMARY,
+            current_role=Role.CODER_ESCALATION,
             consecutive_failures=1,
             escalation_count=2,
-            role_history=["frontdoor", "coder_primary"],
+            role_history=["frontdoor", "coder_escalation"],
             turns=3,
             last_error="some error",
         )
         d = _state_to_dict(state)
         assert d["task_id"] == "test-001"
-        assert d["current_role"] == "coder_primary"
+        assert d["current_role"] == "coder_escalation"
         assert d["consecutive_failures"] == 1
         assert d["escalation_count"] == 2
-        assert d["role_history"] == ["frontdoor", "coder_primary"]
+        assert d["role_history"] == ["frontdoor", "coder_escalation"]
         assert d["turns"] == 3
         assert d["last_error"] == "some error"
 

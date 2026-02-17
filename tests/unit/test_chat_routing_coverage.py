@@ -216,13 +216,13 @@ class TestClassifyAndRoute:
             "parse",
         ],
     )
-    def test_code_keywords_route_to_coder_primary(self, keyword: str):
-        """Code keywords route to coder_primary."""
+    def test_code_keywords_route_to_coder_escalation(self, keyword: str):
+        """Code keywords route to coder_escalation."""
         with patch("src.features.features") as mock_features:
             mock_features.return_value.specialist_routing = True
             role, strategy = _classify_and_route(f"Please {keyword} this", "")
 
-        assert role == str(Role.CODER_PRIMARY)
+        assert role == str(Role.CODER_ESCALATION)
         assert strategy == "classified"
 
     @pytest.mark.parametrize(
@@ -285,7 +285,7 @@ class TestClassifyAndRoute:
             mock_features.return_value.specialist_routing = True
             role, _ = _classify_and_route("IMPLEMENT THIS FUNCTION", "")
 
-        assert role == str(Role.CODER_PRIMARY)
+        assert role == str(Role.CODER_ESCALATION)
 
     def test_complex_code_has_priority_over_simple_code(self):
         """Complex code keywords take priority (checked first) over simple code."""
@@ -297,7 +297,7 @@ class TestClassifyAndRoute:
             role, _ = _classify_and_route("implement concurrent data structure", "")
 
         # "implement" matches first since code_keywords are checked first
-        assert role == str(Role.CODER_PRIMARY)
+        assert role == str(Role.CODER_ESCALATION)
 
     def test_only_complex_keyword_routes_to_escalation(self):
         """Only complex keyword routes to escalation."""

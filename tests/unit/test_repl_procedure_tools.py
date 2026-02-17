@@ -251,18 +251,18 @@ class TestRegistryLookup:
     @patch(
         "builtins.open",
         new_callable=mock_open,
-        read_data="roles:\n  coder_primary:\n    model:\n      name: Qwen2.5-Coder-32B\n",
+        read_data="roles:\n  coder_escalation:\n    model:\n      name: Qwen2.5-Coder-32B\n",
     )
     @patch("yaml.safe_load")
     def test_registry_lookup_success(self, mock_yaml, mock_file):
         """Test registry_lookup() finds value."""
         mock_yaml.return_value = {
-            "roles": {"coder_primary": {"model": {"name": "Qwen2.5-Coder-32B"}}}
+            "roles": {"coder_escalation": {"model": {"name": "Qwen2.5-Coder-32B"}}}
         }
 
         repl = REPLEnvironment(context="test")
         result = repl.execute("""
-output = registry_lookup('roles.coder_primary.model.name')
+output = registry_lookup('roles.coder_escalation.model.name')
 print('Qwen' in output)
 """)
 

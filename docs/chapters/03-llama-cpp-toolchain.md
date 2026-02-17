@@ -259,7 +259,7 @@ OMP_NUM_THREADS=1 numactl --interleave=all \
 <summary>Code: llama-server (Production Orchestrator)</summary>
 
 ```bash
-# HOT tier server (port 8080: frontdoor, coder_primary)
+# HOT tier server (port 8080: frontdoor)
 /mnt/raid0/llm/llama.cpp/build/bin/llama-server \
   -m /mnt/raid0/llm/models/Qwen3-Coder-30B-A3B-Q4_K_M.gguf \
   --host 0.0.0.0 --port 8080 \

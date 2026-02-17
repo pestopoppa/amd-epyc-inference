@@ -16,7 +16,7 @@ Every model entering the orchestration system is measured against eight purpose-
 | Suite | Purpose | Key Test | Role Placement |
 |-------|---------|----------|----------------|
 | **Thinking** | Chain-of-thought reasoning | Multi-step logical deduction | oracle_reasoning, architect |
-| **Coder** | Code generation & debugging | Working code with edge cases | coder_primary, coder_escalation |
+| **Coder** | Code generation & debugging | Working code with edge cases | coder_escalation |
 | **Math** | Mathematical reasoning | Step-by-step proofs | Qwen2.5-Math for invariants |
 | **General** | Instruction following | Summarization, reformatting | worker_general |
 | **Agentic** | Tool calling | Valid JSON function calls | frontdoor, orchestrator |

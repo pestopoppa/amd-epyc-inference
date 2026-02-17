@@ -67,7 +67,7 @@ DEFAULT_SUITES = [
     "vl", "tool_compliance",
 ]
 DEFAULT_ROLES = [
-    "frontdoor", "coder_primary", "coder_escalation",
+    "frontdoor", "coder_escalation", "coder_escalation",
     "architect_general", "architect_coding",
     "worker_vision", "vision_escalation",
 ]
@@ -95,7 +95,7 @@ ROLE_COST_TIER: dict[str, int] = {
     "worker_math": 1,
     "worker_vision": 1,
     "frontdoor": 2,
-    "coder_primary": 2,
+    "coder_escalation": 2,
     "vision_escalation": 3,
     "coder_escalation": 3,
     "architect_general": 4,
@@ -131,7 +131,7 @@ HEAVY_PORTS = {8080, 8081, 8083, 8084, 8085, 8087}
 
 ROLE_PORT: dict[str, int] = {
     "frontdoor": 8080,
-    "coder_primary": 8080,
+    "coder_escalation": 8080,
     "coder_escalation": 8081,
     "worker_explore": 8082,
     "worker_math": 8082,

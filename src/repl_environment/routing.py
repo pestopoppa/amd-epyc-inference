@@ -229,7 +229,6 @@ class _RoutingMixin:
         if tier_val in ("A", "B"):
             delegate_targets = list(WORKER_ROLES)
             # Both Tier A and B can delegate to specialists
-            # (coder_primary = frontdoor, same model, so delegation is pointless)
             delegate_targets.extend(["coder_escalation", "vision_escalation"])
 
         # Get escalation target
@@ -365,7 +364,7 @@ class _RoutingMixin:
     _ROLE_ALIASES: dict[str, str] = {
         "researcher_agent": "worker_explore",
         "researcher": "worker_explore",
-        "coder_agent": "coder_primary",
+        "coder_agent": "coder_escalation",
         "reviewer_agent": "architect_general",
         "reviewer": "architect_general",
         "math_agent": "worker_math",
@@ -387,8 +386,6 @@ class _RoutingMixin:
         return self._ROLE_ALIASES.get(role, role)
 
     # Roles that can be delegation targets (any role can delegate to these)
-    # Note: coder_primary is NOT here because frontdoor = coder_primary (same model)
-    # Delegation to self would be pointless; escalate to coder_escalation instead
     _DELEGATABLE_ROLES: frozenset[str] = frozenset({
         "worker_explore",
         "worker_math",
@@ -425,7 +422,7 @@ class _RoutingMixin:
 
         Args:
             brief: What to do (becomes the worker's prompt).
-            to: Target role (worker_explore, worker_math, coder_primary, etc.).
+            to: Target role (worker_explore, worker_math, coder_escalation, etc.).
             parallel: If True, spawn multiple workers for list items in brief.
             reason: Why this role was chosen (helps MemRL learn).
             persona: Optional persona overlay.

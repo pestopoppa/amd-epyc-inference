@@ -115,7 +115,7 @@ class REPLEnvironment(
             llm_primitives: Optional LLMPrimitives instance for llm_call/llm_batch.
             tool_registry: Optional ToolRegistry for TOOL() invocations.
             script_registry: Optional ScriptRegistry for SCRIPT() invocations.
-            role: Role name for permission checking (e.g., "frontdoor", "coder_primary").
+            role: Role name for permission checking (e.g., "frontdoor", "coder_escalation").
             progress_logger: Optional ProgressLogger for logging exploration events.
             task_id: Optional task ID for associating exploration logs with tasks.
             retriever: Optional TwoPhaseRetriever for recall/route_advice.

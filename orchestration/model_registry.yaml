@@ -82,7 +82,6 @@ runtime_defaults:
       worker_code: 60
       worker_fast: 30          # 1.5B — expected <2s, 30s = 15x headroom
       frontdoor: 90            # 30B MoE @ 18 t/s — expected <15s
-      coder_primary: 90
       coder_escalation: 120    # 32B @ 39 t/s — 500 tok ~45s. 120s = 2.5x headroom
       vision_escalation: 120   # 30B MoE VL, multimodal processing
       ingest_long_context: 300 # 80B SSM, long document ingestion
@@ -312,7 +311,7 @@ server_mode:
     port: 8080
     slots: 4
     model_role: frontdoor
-    shared_with: [coder_primary]  # Same model serves both roles
+    shared_with: []
     description: Root LM - generates Python code each turn
     model: Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
     draft_model: jukofyork-Qwen3-Coder-0.75B-Instruct-Q8_0.gguf
@@ -677,59 +676,6 @@ roles:
       Provide clear, user-friendly explanations.
       Elaborate on specialist outputs when presenting to users.
       Be direct — avoid filler, repetition, and unnecessary preamble.
-  coder_primary:
-    tier: B
-    description: Primary high-throughput code generation - reuses frontdoor model
-    model:
-      name: Qwen3-Coder-30B-A3B-Instruct
-      path: lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-GGUF/Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
-      quant: Q4_K_M
-      size_gb: 17.5
-      architecture: moe
-    candidate_roles:
-    - frontdoor
-    - coder
-    - general
-    - ingest
-    acceleration:
-      type: moe_expert_reduction
-      experts: 6
-      override_key: qwen3moe.expert_used_count
-      speculative_decoding:
-        type: speculative_decoding
-        draft_role: draft_qwen3_coder_0_75b
-        k: 16
-        lookup: true
-        notes: >
-          jukofyork vocab transplant draft VERIFIED (2026-02-13).
-          BOS matched (comma token 11). 70-77% acceptance.
-          MoE6 + spec + lookup = 47.11 t/s (best config).
-        benchmarked: 2026-02-13
-    performance:
-      baseline_tps: 29.28
-      moe6_baseline_tps: 30.84
-      moe6_spec_tps: 37.08
-      moe6_spec_lookup_tps: 47.11
-      full_spec_tps: 41.75
-      optimized_tps: 47.11
-      speedup: 1.61x
-      spec_acceptance_moe6: 70.1%
-      spec_acceptance_full: 78.1%
-      spec_acceptance_moe6_lookup: 77.4%
-    memory:
-      residency: hot
-      pinned: true
-    tool_permissions:
-      web_access: true
-      allowed_categories: [web, file, code, data, system]
-      allowed_tools: [run_tests, lint_python, fetch_docs]
-    benchmark_date: 2026-01-06
-    generation_defaults:
-      n_tokens: -1
-      temperature: 0.2
-    system_prompt_suffix: |
-      Output code only. No explanations unless requested.
-      Include minimal inline comments. No boilerplate or filler.
   coder_escalation:
     tier: B
     description: Coding escalation target - dense coder with spec decode + prompt lookup
@@ -757,9 +703,9 @@ roles:
     memory:
       residency: warm
       pinned: false
-    escalation_from: coder_primary
+    escalation_from: frontdoor
     use_cases:
-    - First failure from coder_primary
+    - First failure from frontdoor on code tasks
     - Multi-file refactoring requiring broader context
     - Architecture-level code decisions
     - Complex debugging spanning multiple components
@@ -3037,7 +2983,6 @@ roles:
 process_layout:
   hot_resident:
   - frontdoor
-  - coder_primary
   - draft_qwen25_coder
   - draft_qwen25
   - worker_general
@@ -3053,7 +2998,7 @@ escalation_chains:
   coder:
     description: Code generation escalation path
     chain:
-    - coder_primary
+    - frontdoor
     - coder_escalation
     - architect_coding
     triggers:
@@ -3082,13 +3027,13 @@ routing_hints:
   - frontdoor
 - if: task_type == 'code'
   use:
-  - coder_primary
-  escalate_to: coder_escalation
+  - coder_escalation
+  escalate_to: architect_coding
 - if: task_type == 'code' and 'refactor' in objective
   use:
-  - coder_primary
+  - coder_escalation
   - worker_general
-  escalate_to: coder_escalation
+  escalate_to: architect_coding
 - if: task_type == 'code' and escalation.triggered
   use:
   - coder_escalation
@@ -3123,13 +3068,13 @@ routing_hints:
 - if: task_type in ['code', 'math'] and complexity == 'high'
   preprocess: formalizer
   use:
-  - coder_primary
+  - coder_escalation
   - worker_math
 - if: '''optimize'' in objective or ''constraint'' in objective'
   preprocess: formalizer
   use:
   - worker_math
-  - coder_primary
+  - coder_escalation
 - if: '''prove'' in objective or ''verify'' in objective'
   preprocess: formalizer
   use:
@@ -3139,7 +3084,7 @@ routing_hints:
   preprocess: formalizer
   use:
   - architect_qwen2_5_72b
-  - coder_primary
+  - coder_escalation
 - if: ambiguity_score > 0.7
   preprocess: formalizer
   notes: Frontdoor detects vague requirements needing formalization

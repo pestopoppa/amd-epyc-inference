@@ -13,9 +13,9 @@ Usage:
 
     # Traditional batch mode
     server = ModelServer()
-    server.load("coder_primary")
-    result = server.infer("coder_primary", prompt="Write a function")
-    server.unload("coder_primary")
+    server.load("coder_escalation")
+    result = server.infer("coder_escalation", prompt="Write a function")
+    server.unload("coder_escalation")
 
     # Server mode with prefix caching
     from src.model_server import ModelServer, create_caching_server
@@ -502,7 +502,7 @@ class ModelServer:
         """Load a model for a given role.
 
         Args:
-            role: Registry role name (e.g., "coder_primary").
+            role: Registry role name (e.g., "coder_escalation").
 
         Returns:
             Status of the loaded model.

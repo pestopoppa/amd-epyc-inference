@@ -112,7 +112,7 @@ routing_classifiers:
   specialist_routing:
     use_memrl: true  # MemRL-backed specialist routing
     categories:
-      coder_primary:
+      coder_escalation:
         keywords:
           - implement
           - write code
@@ -127,8 +127,6 @@ routing_classifiers:
           - data structure
           - regex
           - parse
-      coder_escalation:
-        keywords:
           - concurrent
           - lock-free
           - distributed
@@ -180,11 +178,11 @@ classification_exemplars:
 
   coding:
     - prompt: "Implement a binary search algorithm in Python"
-      expected_role: coder_primary
+      expected_role: coder_escalation
     - prompt: "Debug this function - it returns wrong values"
-      expected_role: coder_primary
+      expected_role: coder_escalation
     - prompt: "Write a unit test for the authentication module"
-      expected_role: coder_primary
+      expected_role: coder_escalation
 
   complex_coding:
     - prompt: "Implement a lock-free queue with ABA problem prevention"

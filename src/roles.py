@@ -13,18 +13,18 @@ Usage:
     from src.roles import Role, Tier, get_tier
 
     # Use enum instead of strings
-    role = Role.CODER_PRIMARY
-    print(role.value)  # "coder_primary"
+    role = Role.CODER_ESCALATION
+    print(role.value)  # "coder_escalation"
 
     # Get tier for a role
-    tier = get_tier(Role.CODER_PRIMARY)  # Tier.B
+    tier = get_tier(Role.CODER_ESCALATION)  # Tier.B
 
     # Check if role is valid
-    if Role.is_valid("coder_primary"):
-        role = Role("coder_primary")
+    if Role.is_valid("coder_escalation"):
+        role = Role("coder_escalation")
 
     # Get escalation target
-    target = Role.CODER_PRIMARY.escalates_to()  # Role.ARCHITECT_GENERAL
+    target = Role.CODER_ESCALATION.escalates_to()  # Role.ARCHITECT_CODING
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ class Role(str, Enum):
     - Type safety in function signatures
 
     Role naming convention:
-    - {tier}_{function}: e.g., worker_math, coder_primary
+    - {tier}_{function}: e.g., worker_math, coder_escalation
     - Specific variants: e.g., architect_general vs architect_coding
     """
 
@@ -93,18 +93,12 @@ class Role(str, Enum):
     # =========================================================================
     # Tier B: Specialists
     # =========================================================================
-    CODER_PRIMARY = "coder_primary"
-    """Primary code generation specialist.
-
-    Handles most coding tasks: implementation, refactoring, debugging.
-    Uses speculative decoding with Qwen2.5-Coder-0.5B draft for 11x speedup.
-    """
-
     CODER_ESCALATION = "coder_escalation"
-    """Escalation target for complex coding tasks.
+    """Primary code generation specialist (Qwen2.5-Coder-32B, port 8081).
 
-    Used when coder_primary fails or task exceeds its capability.
-    May use larger model or different acceleration strategy.
+    Handles coding tasks: implementation, refactoring, debugging.
+    Uses speculative decoding with Qwen2.5-Coder-0.5B draft.
+    Frontdoor and workers escalate here on failure.
     """
 
     INGEST_LONG_CONTEXT = "ingest_long_context"
@@ -195,8 +189,8 @@ class Role(str, Enum):
     def __str__(self) -> str:
         """Return the role value string.
 
-        This ensures str(Role.CODER_PRIMARY) returns "coder_primary"
-        instead of "Role.CODER_PRIMARY".
+        This ensures str(Role.CODER_ESCALATION) returns "coder_escalation"
+        instead of "Role.CODER_ESCALATION".
         """
         return self.value
 
@@ -266,7 +260,6 @@ _TIER_MAP: dict[Role, Tier] = {
     # Tier A
     Role.FRONTDOOR: Tier.A,
     # Tier B
-    Role.CODER_PRIMARY: Tier.B,
     Role.CODER_ESCALATION: Tier.B,
     Role.INGEST_LONG_CONTEXT: Tier.B,
     Role.ARCHITECT_GENERAL: Tier.B,
@@ -287,15 +280,14 @@ _TIER_MAP: dict[Role, Tier] = {
 # Role -> Escalation target mapping
 _ESCALATION_MAP: dict[Role, Role] = {
     # Workers escalate to coder
-    Role.WORKER_GENERAL: Role.CODER_PRIMARY,
-    Role.WORKER_MATH: Role.CODER_PRIMARY,
-    Role.WORKER_SUMMARIZE: Role.CODER_PRIMARY,
-    Role.WORKER_VISION: Role.CODER_PRIMARY,
-    Role.TOOLRUNNER: Role.CODER_PRIMARY,
+    Role.WORKER_GENERAL: Role.CODER_ESCALATION,
+    Role.WORKER_MATH: Role.CODER_ESCALATION,
+    Role.WORKER_SUMMARIZE: Role.CODER_ESCALATION,
+    Role.WORKER_VISION: Role.CODER_ESCALATION,
+    Role.TOOLRUNNER: Role.CODER_ESCALATION,
     # Frontdoor escalates to coder
-    Role.FRONTDOOR: Role.CODER_PRIMARY,
+    Role.FRONTDOOR: Role.CODER_ESCALATION,
     # Coder escalates to architect
-    Role.CODER_PRIMARY: Role.ARCHITECT_GENERAL,
     Role.CODER_ESCALATION: Role.ARCHITECT_CODING,
     Role.THINKING_REASONING: Role.ARCHITECT_GENERAL,
     # Ingest escalates to architect
@@ -308,10 +300,9 @@ _ESCALATION_MAP: dict[Role, Role] = {
 # Role -> Fallback alternatives (infrastructure failure, NOT task escalation)
 # Used when model_fallback feature is enabled and primary backend is circuit-open.
 _FALLBACK_MAP: dict[Role, list[Role]] = {
-    Role.ARCHITECT_GENERAL: [Role.ARCHITECT_CODING, Role.CODER_PRIMARY],
+    Role.ARCHITECT_GENERAL: [Role.ARCHITECT_CODING, Role.CODER_ESCALATION],
     Role.ARCHITECT_CODING: [Role.ARCHITECT_GENERAL, Role.CODER_ESCALATION],
-    Role.CODER_PRIMARY: [Role.CODER_ESCALATION],
-    Role.CODER_ESCALATION: [Role.CODER_PRIMARY],
+    Role.CODER_ESCALATION: [Role.FRONTDOOR],
     Role.WORKER_MATH: [Role.WORKER_GENERAL],
     Role.INGEST_LONG_CONTEXT: [Role.ARCHITECT_GENERAL],
     Role.FRONTDOOR: [],  # Always-on, no fallback
@@ -345,7 +336,7 @@ def get_tier(role: Role | str) -> Tier:
         Tier enum member.
 
     Example:
-        >>> get_tier(Role.CODER_PRIMARY)
+        >>> get_tier(Role.CODER_ESCALATION)
         Tier.B
         >>> get_tier("worker_math")
         Tier.C
@@ -369,7 +360,7 @@ def get_escalation_chain(role: Role | str) -> list[Role]:
 
     Example:
         >>> get_escalation_chain(Role.WORKER_GENERAL)
-        [Role.WORKER_GENERAL, Role.CODER_PRIMARY, Role.ARCHITECT_GENERAL]
+        [Role.WORKER_GENERAL, Role.CODER_ESCALATION, Role.ARCHITECT_CODING]
     """
     if isinstance(role, str):
         role = Role.from_string(role)
@@ -394,7 +385,7 @@ def get_escalation_chain(role: Role | str) -> list[Role]:
 # Generic chain names (used by graph node selection and routing)
 CHAIN_NAMES = {
     "worker": Role.WORKER_GENERAL,
-    "coder": Role.CODER_PRIMARY,
+    "coder": Role.CODER_ESCALATION,
     "architect": Role.ARCHITECT_GENERAL,
     "ingest": Role.INGEST_LONG_CONTEXT,
     "frontdoor": Role.FRONTDOOR,

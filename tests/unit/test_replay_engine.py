@@ -32,7 +32,7 @@ def _make_trajectory(
     task_id: str = "t1",
     task_type: str = "code",
     objective: str = "Write a function",
-    routing_decision: str = "coder_primary",
+    routing_decision: str = "coder_escalation",
     outcome: str = "success",
     embedding: Optional[np.ndarray] = None,
     offset_hours: int = 0,
@@ -115,7 +115,7 @@ class TestReplayEngine:
         assert len(results) == 1
         r = results[0]
         assert r.trajectory_id == "t1"
-        assert r.actual_action == "coder_primary"
+        assert r.actual_action == "coder_escalation"
         assert isinstance(r.reward, float)
         assert isinstance(r.q_value_after, float)
         assert 0.0 <= r.q_value_after <= 1.0
@@ -159,15 +159,15 @@ class TestReplayEngine:
         same_emb = np.random.default_rng(42).standard_normal(1024).astype(np.float32)
         same_emb /= np.linalg.norm(same_emb) + 1e-8
         trajectories = [
-            _make_trajectory("t1", "code", "func", "coder_primary", "success", same_emb.copy(), 0),
-            _make_trajectory("t2", "code", "func", "coder_primary", "success", same_emb.copy(), 1),
+            _make_trajectory("t1", "code", "func", "coder_escalation", "success", same_emb.copy(), 0),
+            _make_trajectory("t2", "code", "func", "coder_escalation", "success", same_emb.copy(), 1),
         ]
         results = engine.run(RetrievalConfig(), ScoringConfig(), trajectories, "test5")
 
         # t1: no prior memory → candidate_action is None
         assert results[0].candidate_action is None
-        # t2: should find t1's memory → candidate_action should be "coder_primary"
-        assert results[1].candidate_action == "coder_primary"
+        # t2: should find t1's memory → candidate_action should be "coder_escalation"
+        assert results[1].candidate_action == "coder_escalation"
         assert results[1].routing_match is True
 
     def test_cleanup_after_run(self, engine_tmp):
@@ -287,7 +287,7 @@ class TestReplayEngineMetrics:
 
     def test_regret_objective_decreases_when_regret_increases(self, engine_tmp):
         engine = ReplayEngine(tmp_dir=engine_tmp)
-        common = dict(task_type="code", objective="same", routing_decision="coder_primary")
+        common = dict(task_type="code", objective="same", routing_decision="coder_escalation")
 
         low_regret = [
             _make_trajectory(

@@ -69,7 +69,7 @@ class TestLookupModel:
     def test_success(self, mock_loader_class):
         """Returns formatted role config."""
         mock_role = MockRoleConfig(
-            name="coder_primary",
+            name="coder_escalation",
             tier="B",
             description="Primary code generation",
             model=MockModel(
@@ -89,8 +89,8 @@ class TestLookupModel:
         mock_registry.get_role.return_value = mock_role
         mock_loader_class.return_value = mock_registry
 
-        result = lookup_model("coder_primary")
-        assert "coder_primary" in result
+        result = lookup_model("coder_escalation")
+        assert "coder_escalation" in result
         assert "Qwen2.5-Coder-32B" in result
         assert "33.0 t/s" in result
         assert "speculative_decoding" in result
@@ -122,7 +122,7 @@ class TestListRoles:
         )
 
         mock_role_b = MockRoleConfig(
-            name="coder_primary",
+            name="coder_escalation",
             tier="B",
             model=MockModel(name="Qwen2.5-Coder-32B"),
             acceleration=MockAcceleration(type="speculative_decoding"),
@@ -145,7 +145,7 @@ class TestListRoles:
         assert "Tier A" in result
         assert "frontdoor" in result
         assert "Tier B" in result
-        assert "coder_primary" in result
+        assert "coder_escalation" in result
 
     @patch("src.registry_loader.RegistryLoader", autospec=False)
     def test_empty_registry(self, mock_loader_class):

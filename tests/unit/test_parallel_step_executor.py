@@ -275,13 +275,13 @@ class TestStepExecutor:
         results = await executor.execute_plan(
             {"objective": "test"},
             waves,
-            {"coder": "coder_primary", "worker": "worker_general"},
+            {"coder": "coder_escalation", "worker": "worker_general"},
         )
 
         assert len(results) == 2
         assert all(r.success for r in results)
         # Sequential: calls happen in order
-        assert call_order == ["coder_primary", "worker_general"]
+        assert call_order == ["coder_escalation", "worker_general"]
 
     @pytest.mark.asyncio
     async def test_no_review_service(self):
@@ -321,10 +321,10 @@ class TestStepExecutor:
         await executor.execute_plan(
             {"objective": "test"},
             waves,
-            {"coder": "coder_primary", "worker": "worker_explore"},
+            {"coder": "coder_escalation", "worker": "worker_explore"},
         )
 
-        assert captured_roles == ["coder_primary", "worker_explore"]
+        assert captured_roles == ["coder_escalation", "worker_explore"]
 
     @pytest.mark.asyncio
     async def test_mixed_burst_and_sequential_wave(self):
@@ -340,7 +340,7 @@ class TestStepExecutor:
         results = await executor.execute_plan(
             {"objective": "test"},
             waves,
-            {"coder": "coder_primary", "fast": "worker_fast"},
+            {"coder": "coder_escalation", "fast": "worker_fast"},
         )
 
         assert len(results) == 2

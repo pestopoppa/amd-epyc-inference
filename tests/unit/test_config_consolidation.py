@@ -152,7 +152,6 @@ class TestServerURLsDefaults:
         # All roles that LLMPrimitives consumers depend on
         expected_roles = {
             "frontdoor",
-            "coder_primary",
             "coder",
             "coder_escalation",
             "worker",
@@ -163,6 +162,7 @@ class TestServerURLsDefaults:
             "vision_escalation",
             "worker_code",
             "worker_fast",
+            "worker_summarize",
             "architect_general",
             "architect_coding",
             "ingest_long_context",
@@ -248,7 +248,6 @@ class TestTimeoutsDefaults:
         assert cfg.worker_fast == 30
         # Frontdoor/coder: medium
         assert cfg.frontdoor == 90
-        assert cfg.coder_primary == 90
         assert cfg.coder_escalation == 120
         # Architects: long (complex reasoning)
         assert cfg.architect_general == 600

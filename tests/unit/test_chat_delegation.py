@@ -62,8 +62,8 @@ class TestExtractToonDecision:
         assert result == "D|The answer is 42"
 
     def test_investigate_with_brief_and_to(self):
-        result = _extract_toon_decision("I|brief:check the code|to:coder_primary")
-        assert result == "I|brief:check the code|to:coder_primary"
+        result = _extract_toon_decision("I|brief:check the code|to:coder_escalation")
+        assert result == "I|brief:check the code|to:coder_escalation"
 
     def test_hybrid_d_i_delegation(self):
         result = _extract_toon_decision("D|I|brief:review logic|to:coder_escalation")
@@ -125,10 +125,10 @@ class TestParseArchitectDecision:
         assert result["answer"] == "C"
 
     def test_investigate_mode(self):
-        result = _parse_architect_decision("I|brief:check code|to:coder_primary")
+        result = _parse_architect_decision("I|brief:check code|to:coder_escalation")
         assert result["mode"] == "investigate"
         assert result["brief"] == "check code"
-        assert result["delegate_to"] == "coder_primary"
+        assert result["delegate_to"] == "coder_escalation"
         assert result["delegate_mode"] == "react"
 
     def test_invalid_delegate_role_clamps_to_coder_escalation(self):
@@ -137,7 +137,7 @@ class TestParseArchitectDecision:
         assert result["delegate_to"] == "coder_escalation"
 
     def test_invalid_delegate_mode_clamps_to_react(self):
-        result = _parse_architect_decision("I|brief:test|to:coder_primary|mode:invalid_mode")
+        result = _parse_architect_decision("I|brief:test|to:coder_escalation|mode:invalid_mode")
         assert result["mode"] == "investigate"
         assert result["delegate_mode"] == "react"
 
@@ -202,7 +202,7 @@ class TestParseArchitectDecision:
 
 class TestConstants:
     def test_valid_delegate_roles(self):
-        expected = {"coder_primary", "coder_escalation", "worker_explore", "worker_general", "worker_math"}
+        expected = {"coder_escalation", "worker_explore", "worker_general", "worker_math"}
         assert _VALID_DELEGATE_ROLES == expected
 
     def test_architect_token_budget_values(self):

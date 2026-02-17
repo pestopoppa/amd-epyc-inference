@@ -241,10 +241,6 @@ role_access:
     allowed_categories: [coding, research, llm_specific, general]
 
   # Tier B - Specialists with web access
-  coder_primary:
-    enabled: true
-    allowed_categories: [coding, llm_specific]
-
   coder_escalation:
     enabled: true
     allowed_categories: [coding, llm_specific]

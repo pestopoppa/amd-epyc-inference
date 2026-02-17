@@ -365,13 +365,13 @@ class TestProductionRegistry:
 
         # Key roles should exist
         assert "frontdoor" in loader.roles
-        assert "coder_primary" in loader.roles
+        assert "coder_escalation" in loader.roles
 
     def test_production_coder_uses_moe(self):
-        """Test coder_primary uses MoE expert reduction."""
+        """Test coder_escalation uses MoE expert reduction."""
         loader = RegistryLoader(validate_paths=True)
 
-        role = loader.get_role("coder_primary")
+        role = loader.get_role("coder_escalation")
         assert role.acceleration.type == "moe_expert_reduction"
         assert role.acceleration.experts == 6
 
@@ -379,8 +379,8 @@ class TestProductionRegistry:
         """Test command generation for production roles."""
         loader = RegistryLoader(validate_paths=True)
 
-        # MoE reduction for coder_primary
-        cmd = loader.generate_command("coder_primary", prompt="test")
+        # MoE reduction for coder_escalation
+        cmd = loader.generate_command("coder_escalation", prompt="test")
         assert "--override-kv" in cmd
         assert "expert_used_count" in cmd
 

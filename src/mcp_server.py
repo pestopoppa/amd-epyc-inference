@@ -60,7 +60,7 @@ def lookup_model(role: str) -> str:
     """Look up model config for an orchestrator role.
 
     Args:
-        role: Role name (e.g., "coder_primary", "architect_general").
+        role: Role name (e.g., "coder_escalation", "architect_general").
 
     Returns:
         Formatted string with role configuration details.

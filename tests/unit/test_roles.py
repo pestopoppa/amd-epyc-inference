@@ -28,26 +28,26 @@ class TestRoleEnum:
     def test_role_values(self):
         """Test Role enum has expected values."""
         assert Role.FRONTDOOR == "frontdoor"
-        assert Role.CODER_PRIMARY == "coder_primary"
+        assert Role.CODER_ESCALATION == "coder_escalation"
         assert Role.WORKER_GENERAL == "worker_general"
         assert Role.DRAFT_CODER == "draft_coder"
 
     def test_role_str_conversion(self):
         """Test Role.__str__ returns value."""
-        assert str(Role.CODER_PRIMARY) == "coder_primary"
+        assert str(Role.CODER_ESCALATION) == "coder_escalation"
         assert str(Role.WORKER_MATH) == "worker_math"
 
     def test_role_is_valid(self):
         """Test Role.is_valid() validates strings."""
         assert Role.is_valid("frontdoor") is True
-        assert Role.is_valid("coder_primary") is True
+        assert Role.is_valid("coder_escalation") is True
         assert Role.is_valid("invalid_role") is False
         assert Role.is_valid("") is False
 
     def test_role_from_string_valid(self):
         """Test Role.from_string() with valid roles."""
-        role = Role.from_string("coder_primary")
-        assert role == Role.CODER_PRIMARY
+        role = Role.from_string("coder_escalation")
+        assert role == Role.CODER_ESCALATION
 
         role2 = Role.from_string("worker_math")
         assert role2 == Role.WORKER_MATH
@@ -63,13 +63,13 @@ class TestRoleEnum:
     def test_role_tier_property(self):
         """Test Role.tier property."""
         assert Role.FRONTDOOR.tier == Tier.A
-        assert Role.CODER_PRIMARY.tier == Tier.B
+        assert Role.CODER_ESCALATION.tier == Tier.B
         assert Role.WORKER_GENERAL.tier == Tier.C
         assert Role.DRAFT_CODER.tier == Tier.D
 
     def test_role_is_specialist(self):
         """Test Role.is_specialist property."""
-        assert Role.CODER_PRIMARY.is_specialist is True
+        assert Role.CODER_ESCALATION.is_specialist is True
         assert Role.ARCHITECT_GENERAL.is_specialist is True
         assert Role.WORKER_GENERAL.is_specialist is False
         assert Role.FRONTDOOR.is_specialist is False
@@ -78,7 +78,7 @@ class TestRoleEnum:
         """Test Role.is_worker property."""
         assert Role.WORKER_GENERAL.is_worker is True
         assert Role.WORKER_MATH.is_worker is True
-        assert Role.CODER_PRIMARY.is_worker is False
+        assert Role.CODER_ESCALATION.is_worker is False
 
     def test_role_is_draft(self):
         """Test Role.is_draft property."""
@@ -92,17 +92,16 @@ class TestEscalationChain:
 
     def test_worker_escalates_to_coder(self):
         """Test worker roles escalate to coder."""
-        assert Role.WORKER_GENERAL.escalates_to() == Role.CODER_PRIMARY
-        assert Role.WORKER_MATH.escalates_to() == Role.CODER_PRIMARY
-        assert Role.WORKER_SUMMARIZE.escalates_to() == Role.CODER_PRIMARY
+        assert Role.WORKER_GENERAL.escalates_to() == Role.CODER_ESCALATION
+        assert Role.WORKER_MATH.escalates_to() == Role.CODER_ESCALATION
+        assert Role.WORKER_SUMMARIZE.escalates_to() == Role.CODER_ESCALATION
 
     def test_frontdoor_escalates_to_coder(self):
         """Test frontdoor escalates to coder."""
-        assert Role.FRONTDOOR.escalates_to() == Role.CODER_PRIMARY
+        assert Role.FRONTDOOR.escalates_to() == Role.CODER_ESCALATION
 
     def test_coder_escalates_to_architect(self):
         """Test coder roles escalate to architect."""
-        assert Role.CODER_PRIMARY.escalates_to() == Role.ARCHITECT_GENERAL
         assert Role.CODER_ESCALATION.escalates_to() == Role.ARCHITECT_CODING
 
     def test_ingest_escalates_to_architect(self):
@@ -126,14 +125,14 @@ class TestGetTier:
     def test_get_tier_from_role_enum(self):
         """Test get_tier with Role enum."""
         assert get_tier(Role.FRONTDOOR) == Tier.A
-        assert get_tier(Role.CODER_PRIMARY) == Tier.B
+        assert get_tier(Role.CODER_ESCALATION) == Tier.B
         assert get_tier(Role.WORKER_GENERAL) == Tier.C
         assert get_tier(Role.DRAFT_CODER) == Tier.D
 
     def test_get_tier_from_string(self):
         """Test get_tier with string role."""
         assert get_tier("frontdoor") == Tier.A
-        assert get_tier("coder_primary") == Tier.B
+        assert get_tier("coder_escalation") == Tier.B
         assert get_tier("worker_math") == Tier.C
         assert get_tier("draft_general") == Tier.D
 
@@ -150,23 +149,23 @@ class TestGetEscalationChain:
         chain = get_escalation_chain(Role.WORKER_GENERAL)
         assert len(chain) == 3
         assert chain[0] == Role.WORKER_GENERAL
-        assert chain[1] == Role.CODER_PRIMARY
-        assert chain[2] == Role.ARCHITECT_GENERAL
+        assert chain[1] == Role.CODER_ESCALATION
+        assert chain[2] == Role.ARCHITECT_CODING
 
     def test_frontdoor_escalation_chain(self):
         """Test escalation chain from frontdoor."""
         chain = get_escalation_chain(Role.FRONTDOOR)
         assert len(chain) == 3
         assert chain[0] == Role.FRONTDOOR
-        assert chain[1] == Role.CODER_PRIMARY
-        assert chain[2] == Role.ARCHITECT_GENERAL
+        assert chain[1] == Role.CODER_ESCALATION
+        assert chain[2] == Role.ARCHITECT_CODING
 
     def test_coder_escalation_chain(self):
         """Test escalation chain from coder."""
-        chain = get_escalation_chain(Role.CODER_PRIMARY)
+        chain = get_escalation_chain(Role.CODER_ESCALATION)
         assert len(chain) == 2
-        assert chain[0] == Role.CODER_PRIMARY
-        assert chain[1] == Role.ARCHITECT_GENERAL
+        assert chain[0] == Role.CODER_ESCALATION
+        assert chain[1] == Role.ARCHITECT_CODING
 
     def test_architect_escalation_chain(self):
         """Test escalation chain from architect (terminal)."""
@@ -192,7 +191,7 @@ class TestChainNameMapping:
     def test_chain_name_to_role(self):
         """Test chain_name_to_role conversion."""
         assert chain_name_to_role("worker") == Role.WORKER_GENERAL
-        assert chain_name_to_role("coder") == Role.CODER_PRIMARY
+        assert chain_name_to_role("coder") == Role.CODER_ESCALATION
         assert chain_name_to_role("architect") == Role.ARCHITECT_GENERAL
         assert chain_name_to_role("ingest") == Role.INGEST_LONG_CONTEXT
         assert chain_name_to_role("frontdoor") == Role.FRONTDOOR
@@ -204,7 +203,7 @@ class TestChainNameMapping:
     def test_role_to_chain_name(self):
         """Test role_to_chain_name conversion."""
         assert role_to_chain_name(Role.WORKER_GENERAL) == "worker"
-        assert role_to_chain_name(Role.CODER_PRIMARY) == "coder"
+        assert role_to_chain_name(Role.CODER_ESCALATION) == "coder"
         assert role_to_chain_name(Role.ARCHITECT_GENERAL) == "architect"
 
     def test_role_to_chain_name_variants(self):

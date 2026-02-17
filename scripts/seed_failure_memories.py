@@ -43,7 +43,7 @@ FAILURE_PATTERNS = {
         ],
         "wrong_action": "frontdoor",
         "failure_reason": "Frontdoor is for routing/chat, not complex implementation - produced superficial stub code",
-        "correct_action": "coder_primary",
+        "correct_action": "coder_escalation",
         "q_value": 0.05,
     },
     "coder_for_math_proof": {
@@ -54,7 +54,7 @@ FAILURE_PATTERNS = {
             "Prove the invariant holds under all conditions",
             "Show the convergence guarantee for the optimizer",
         ],
-        "wrong_action": "coder_primary",
+        "wrong_action": "coder_escalation",
         "failure_reason": "Coder wrote code instead of mathematical proof - missed formal verification",
         "correct_action": "worker_math",
         "q_value": 0.15,
@@ -110,7 +110,7 @@ FAILURE_PATTERNS = {
             "Build the real-time collaboration feature end-to-end",
             "Implement the complete monitoring and alerting stack",
         ],
-        "wrong_action": "coder_primary",  # Single agent, no decomposition
+        "wrong_action": "coder_escalation",  # Single agent, no decomposition
         "failure_reason": "Attempted monolithic implementation - overwhelming scope, incomplete result",
         "correct_action": "decomposition",  # Should decompose first
         "q_value": 0.1,
@@ -138,7 +138,7 @@ FAILURE_PATTERNS = {
             "Look up the API rate limits in the documentation",
             "Search for the error message in Stack Overflow",
         ],
-        "wrong_action": "coder_primary",
+        "wrong_action": "coder_escalation",
         "failure_reason": "Wrote code to fetch data instead of using search/API tool - slower, less accurate",
         "correct_action": "tool_websearch",
         "q_value": 0.15,
@@ -166,7 +166,7 @@ FAILURE_PATTERNS = {
             "Make it more scalable",
             "Clean up the codebase",
         ],
-        "wrong_action": "coder_primary",
+        "wrong_action": "coder_escalation",
         "failure_reason": "Vague requirement sent directly to coder - random changes, no clear improvement",
         "correct_action": "formalizer",  # Should formalize first
         "q_value": 0.1,
@@ -222,7 +222,7 @@ FAILURE_PATTERNS = {
             "Read the error message from the terminal screenshot",
             "Identify the UI elements in this mockup",
         ],
-        "wrong_action": "coder_primary",
+        "wrong_action": "coder_escalation",
         "failure_reason": "Text model cannot process images - hallucinated or refused",
         "correct_action": "worker_vision",
         "q_value": 0.0,
@@ -237,7 +237,7 @@ FAILURE_PATTERNS = {
         ],
         "wrong_action": "frontdoor",  # General chat model
         "failure_reason": "General model produced syntactically broken code - missing imports, wrong patterns",
-        "correct_action": "coder_primary",  # Code-specialized model
+        "correct_action": "coder_escalation",  # Code-specialized model
         "q_value": 0.15,
     },
 
@@ -252,7 +252,7 @@ FAILURE_PATTERNS = {
         ],
         "wrong_action": "worker_general",  # Stateless worker
         "failure_reason": "Stateless worker lost context - started from scratch, ignored prior work",
-        "correct_action": "coder_primary",  # Stateful, maintains context
+        "correct_action": "coder_escalation",  # Stateful, maintains context
         "q_value": 0.1,
     },
     "ignored_conversation_context": {
@@ -265,7 +265,7 @@ FAILURE_PATTERNS = {
         ],
         "wrong_action": "worker_general",
         "failure_reason": "Ignored prior context - produced incompatible or unwanted output",
-        "correct_action": "coder_primary",
+        "correct_action": "coder_escalation",
         "q_value": 0.15,
     },
 

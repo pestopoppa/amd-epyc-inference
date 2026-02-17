@@ -98,7 +98,7 @@ roles:
       type: moe_expert_reduction
       experts: 4
   
-  coder_primary:
+  coder_escalation:
     model: Qwen2.5-Coder-32B-Instruct
     acceleration:
       type: speculative_decoding
@@ -133,7 +133,7 @@ python scripts/server/orchestrator_stack.py stop --all
 
 | Port | Role | Model | Acceleration | Speed |
 |------|------|-------|--------------|-------|
-| 8080 | frontdoor, coder_primary | Qwen3-Coder-30B-A3B-Q4_K_M | MoE6 | 18 t/s |
+| 8080 | frontdoor, coder_escalation | Qwen3-Coder-30B-A3B-Q4_K_M | MoE6 | 18 t/s |
 | 8081 | coder_escalation, worker_summarize | Qwen2.5-Coder-32B-Q4_K_M + 0.5B draft | spec K=24 + lookup | 33-95 t/s |
 | 8082 | worker_explore, worker_math | Qwen2.5-7B-Instruct-f16 + 0.5B draft | spec K=24 | 46 t/s |
 | 8083 | architect_general | Qwen3-235B-A22B-Q4_K_M (4 files, ~140GB) | MoE4 | 6.75 t/s |
@@ -167,7 +167,7 @@ python scripts/server/orchestrator_stack.py stop --all
 ### Escalation Chains
 
 ```
-Code: coder_primary (30B) → coder_escalation (32B) → architect_coding (480B)
+Code: coder_escalation (30B) → coder_escalation (32B) → architect_coding (480B)
 General: frontdoor (30B) → architect_general (235B)
 Vision: worker_vision (7B, port 8086) → vision_escalation (30B, port 8087)
 ```
@@ -238,7 +238,7 @@ Models can now make informed routing decisions using MemRL intelligence. This su
 5. **Learning**: Delegation outcomes logged to MemRL → Q-values updated
 
 **Tier Guard:**
-- Tier A (frontdoor): Can delegate to workers + coder_primary
+- Tier A (frontdoor): Can delegate to workers + coder_escalation
 - Tier B (specialists): Can delegate to workers
 - Tier C (workers): **Cannot delegate** — use deterministic tools only
 
@@ -247,7 +247,7 @@ Models can now make informed routing decisions using MemRL intelligence. This su
 ```python
 # Model calls escalate() → sets artifacts
 repl.artifacts["_escalation_requested"] = True
-repl.artifacts["_escalation_target"] = "coder_primary"  # optional
+repl.artifacts["_escalation_target"] = "coder_escalation"  # optional
 repl.artifacts["_escalation_reason"] = "Task requires code generation"
 
 # Model calls delegate() → records in artifacts
@@ -309,7 +309,7 @@ Models may generate natural-language role names. These are resolved automaticall
 | Model generates | Maps to |
 |----------------|---------|
 | `researcher_agent` | `worker_explore` |
-| `coder_agent` | `coder_primary` |
+| `coder_agent` | `coder_escalation` |
 | `reviewer_agent` | `architect_general` |
 | `math_agent` | `worker_math` |
 | `vision_agent` | `worker_vision` |

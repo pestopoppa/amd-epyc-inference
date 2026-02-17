@@ -164,7 +164,7 @@ class TestTargetRoleSelection:
         signals = ComplexitySignals()
         role = delegator.get_target_role("specialist", signals)
 
-        assert role == "coder_primary"
+        assert role == "coder_escalation"
 
     def test_get_target_role_architect(self):
         """Test role for architect action."""
@@ -318,7 +318,7 @@ class TestRoleEscalation:
         delegator = ProactiveDelegator(registry, primitives)
 
         escalated = delegator._escalate_role("worker_general")
-        assert escalated == "coder_primary"
+        assert escalated == "coder_escalation"
 
     def test_escalate_role_coder_to_architect(self):
         """Test coder escalation."""
@@ -326,7 +326,7 @@ class TestRoleEscalation:
         primitives = Mock()
         delegator = ProactiveDelegator(registry, primitives)
 
-        escalated = delegator._escalate_role("coder_primary")
+        escalated = delegator._escalate_role("coder_escalation")
         assert escalated == "architect_general"
 
     def test_escalate_role_architect_to_coding(self):

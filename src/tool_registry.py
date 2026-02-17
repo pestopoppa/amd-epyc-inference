@@ -291,7 +291,7 @@ class ToolRegistry:
         """Set permissions for a role.
 
         Args:
-            role: Role name (e.g., "frontdoor", "coder_primary", "worker_general").
+            role: Role name (e.g., "frontdoor", "coder_escalation", "worker_general").
             permissions: Permission configuration for this role.
         """
         self._permissions[role] = permissions

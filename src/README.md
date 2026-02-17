@@ -139,7 +139,7 @@ The orchestrator uses a "Root LM" pattern where:
 
 Requests route to different models based on task type:
 - `frontdoor`: Interactive chat, task routing
-- `coder_primary`: Code generation
+- `coder_escalation`: Code generation
 - `architect_general`: System design, escalation target
 - `worker_*`: Parallel file-level tasks
 

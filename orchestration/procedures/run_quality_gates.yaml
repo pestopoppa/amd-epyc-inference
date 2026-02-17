@@ -6,7 +6,7 @@ category: codebase
 estimated_tokens: 300
 
 permissions:
-  roles: ["frontdoor", "coder_primary", "coder_escalation", "admin"]
+  roles: ["frontdoor", "coder_escalation", "coder_escalation", "admin"]
   requires_approval: false
   destructive: false
 

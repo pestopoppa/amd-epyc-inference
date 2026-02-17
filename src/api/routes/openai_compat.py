@@ -42,8 +42,6 @@ router = APIRouter()
 AVAILABLE_ROLES = [
     "orchestrator",  # Auto-routing via frontdoor
     "frontdoor",  # Tier A - Root LM
-    "coder_primary",  # Tier A - Coder primary (same as frontdoor)
-    "coder",  # Tier B - Coder specialist
     "coder_escalation",  # Tier B - Coder escalation
     "architect",  # Tier B - Architecture specialist
     "architect_general",  # Tier B - General architect

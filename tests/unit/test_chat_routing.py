@@ -138,10 +138,10 @@ class TestClassifyAndRoute:
 
     @patch("src.classifiers.classify_and_route")
     def test_returns_role_and_strategy(self, mock_classify):
-        mock_result = MagicMock(role="coder_primary", strategy="keyword")
+        mock_result = MagicMock(role="coder_escalation", strategy="keyword")
         mock_classify.return_value = mock_result
         role, strategy = _classify_and_route("Write a function")
-        assert role == "coder_primary"
+        assert role == "coder_escalation"
         assert strategy == "keyword"
 
     @patch("src.classifiers.classify_and_route")

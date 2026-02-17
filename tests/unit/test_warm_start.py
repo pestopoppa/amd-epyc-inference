@@ -38,7 +38,7 @@ def _make_store(tmp_path: Path, name: str = "default") -> EpisodicStore:
 
 def _store_routing_memory(
     store: EpisodicStore,
-    action: str = "coder_primary",
+    action: str = "coder_escalation",
     model_id: str = "model-A",
     q_value: float = 0.8,
     seed: int = 42,
@@ -60,8 +60,8 @@ def _store_routing_memory(
 
 class TestRoleConfig:
     def test_default_for_role(self):
-        rc = RoleConfig.default_for_role("coder_primary", "qwen2.5-coder-32b")
-        assert rc.role == "coder_primary"
+        rc = RoleConfig.default_for_role("coder_escalation", "qwen2.5-coder-32b")
+        assert rc.role == "coder_escalation"
         assert rc.model_id == "qwen2.5-coder-32b"
         assert rc.retrieval_config.semantic_k == 20
         assert rc.scoring_config.learning_rate == 0.1

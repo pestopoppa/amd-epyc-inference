@@ -171,7 +171,7 @@ class TestWorkspaceBroadcast:
         )
         _update_workspace_from_turn(
             state=state,
-            role=Role.CODER_PRIMARY,
+            role=Role.CODER_ESCALATION,
             output="",
             error="Schema mismatch on field `steps`",
         )
@@ -196,10 +196,6 @@ class TestSelectStartNode:
         node = select_start_node(Role.WORKER_MATH)
         assert isinstance(node, WorkerNode)
 
-    def test_coder_primary(self):
-        node = select_start_node(Role.CODER_PRIMARY)
-        assert isinstance(node, CoderNode)
-
     def test_coder_escalation(self):
         node = select_start_node(Role.CODER_ESCALATION)
         assert isinstance(node, CoderEscalationNode)
@@ -217,8 +213,8 @@ class TestSelectStartNode:
         assert isinstance(node, ArchitectCodingNode)
 
     def test_string_role(self):
-        node = select_start_node("coder_primary")
-        assert isinstance(node, CoderNode)
+        node = select_start_node("coder_escalation")
+        assert isinstance(node, CoderEscalationNode)
 
     def test_unknown_role(self):
         node = select_start_node("nonexistent")
@@ -278,7 +274,7 @@ class TestFrontdoorNode:
 class TestCoderNode:
     @pytest.mark.asyncio
     async def test_success(self):
-        state = make_state(current_role=Role.CODER_PRIMARY)
+        state = make_state(current_role=Role.CODER_ESCALATION)
         deps = make_deps(
             repl_results=[MockREPLResult(output="code output", is_final=True)],
         )
@@ -288,7 +284,7 @@ class TestCoderNode:
     @pytest.mark.asyncio
     async def test_escalates_to_architect(self):
         """Coder should escalate to ArchitectNode on repeated errors."""
-        state = make_state(current_role=Role.CODER_PRIMARY)
+        state = make_state(current_role=Role.CODER_ESCALATION)
         deps = make_deps(
             repl_results=[
                 MockREPLResult(error="SyntaxError"),

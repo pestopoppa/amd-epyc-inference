@@ -11,7 +11,6 @@ Comprehensive reference for all models used in the orchestration system.
 | Role | Model | Quant | Port | Speed | Acceleration |
 |------|-------|-------|------|-------|--------------|
 | frontdoor | Qwen3-Coder-30B-A3B | Q4_K_M | 8080 | 18.3 t/s | MoE 6 experts |
-| coder_primary | *(shared with frontdoor)* | — | 8080 | 18.3 t/s | MoE 6 experts |
 
 ### Tier B - Specialists
 

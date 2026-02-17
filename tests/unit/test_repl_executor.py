@@ -288,7 +288,7 @@ class TestGenerationMonitoring:
                 answer="Graph answer",
                 success=True,
                 turns=3,
-                role_history=["worker_general", "coder_primary"],
+                role_history=["worker_general", "coder_escalation"],
             )
 
             with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
@@ -593,7 +593,7 @@ class TestEscalationHandling:
                 answer="Escalated answer",
                 success=True,
                 turns=3,
-                role_history=["worker_general", "coder_primary"],
+                role_history=["worker_general", "coder_escalation"],
             )
 
             with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=escalated_result):
@@ -607,7 +607,7 @@ class TestEscalationHandling:
                 )
 
                 assert len(response.role_history) >= 2
-                assert "coder_primary" in response.role_history
+                assert "coder_escalation" in response.role_history
 
     @pytest.mark.asyncio
     async def test_error_escalation_to_higher_tier(

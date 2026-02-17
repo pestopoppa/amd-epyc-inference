@@ -97,7 +97,6 @@ LOG_DIR = _PATHS["log_dir"]
 # Port assignments by role
 PORT_MAP = {
     "frontdoor": 8080,
-    "coder_primary": 8080,  # Shares with frontdoor (same model)
     "coder_escalation": 8081,
     # Worker pool ports (heterogeneous)
     "worker_general": 8082,  # Legacy alias -> worker_explore
@@ -153,7 +152,6 @@ def _numa_prefix(role: str) -> list[str]:
 # Roles that must never run concurrently (large models).
 SERIAL_ROLES = {
     "frontdoor",
-    "coder_primary",
     "coder_escalation",
     "worker_summarize",
     "architect_general",
@@ -168,7 +166,7 @@ SERIAL_ROLES = {
 # Servers to start (unique ports only)
 # HOT tier uses ~510GB total (45% of 1130GB RAM), leaving 620GB for KV cache
 HOT_SERVERS = [
-    {"port": 8080, "roles": ["frontdoor", "coder_primary"]},
+    {"port": 8080, "roles": ["frontdoor"]},
     {"port": 8081, "roles": ["coder_escalation", "worker_summarize"]},  # Added worker_summarize
     # Worker pool HOT tier
     {"port": 8082, "roles": ["worker_explore", "worker_general", "worker_math"],

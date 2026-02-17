@@ -81,7 +81,7 @@ class TestScoringConfigDefaults:
         cfg = ScoringConfig()
         expected_roles = {
             "frontdoor",
-            "coder_primary",
+            "coder_escalation",
             "coder_escalation",
             "architect_general",
             "architect_coding",
@@ -279,8 +279,8 @@ class TestComparativeRewardsCostAware:
                 elapsed_seconds=10.0,
                 tokens_generated=183,
             ),
-            "coder_primary:direct": RR(
-                role="coder_primary",
+            "coder_escalation:direct": RR(
+                role="coder_escalation",
                 mode="direct",
                 answer="ok",
                 passed=True,
@@ -290,7 +290,7 @@ class TestComparativeRewardsCostAware:
         }
         rewards = fn(results)
         # Both at expected speed → base 0.5, no penalty
-        assert rewards["coder_primary:direct"] == pytest.approx(0.5)
+        assert rewards["coder_escalation:direct"] == pytest.approx(0.5)
 
     def test_both_correct_specialist_slow(self):
         fn, RR = self._import_fn()
@@ -328,8 +328,8 @@ class TestComparativeRewardsCostAware:
                 elapsed_seconds=10.0,
                 tokens_generated=0,  # No token data
             ),
-            "coder_primary:direct": RR(
-                role="coder_primary",
+            "coder_escalation:direct": RR(
+                role="coder_escalation",
                 mode="direct",
                 answer="ok",
                 passed=True,
@@ -339,7 +339,7 @@ class TestComparativeRewardsCostAware:
         }
         rewards = fn(results)
         # No cost data → fallback to 0.3
-        assert rewards["coder_primary:direct"] == 0.3
+        assert rewards["coder_escalation:direct"] == 0.3
 
     def test_specialist_correct_baseline_wrong(self):
         fn, RR = self._import_fn()
@@ -351,8 +351,8 @@ class TestComparativeRewardsCostAware:
                 passed=False,
                 elapsed_seconds=10.0,
             ),
-            "coder_primary:direct": RR(
-                role="coder_primary",
+            "coder_escalation:direct": RR(
+                role="coder_escalation",
                 mode="direct",
                 answer="ok",
                 passed=True,
@@ -361,7 +361,7 @@ class TestComparativeRewardsCostAware:
             ),
         }
         rewards = fn(results)
-        assert rewards["coder_primary:direct"] == 1.0  # Clear win
+        assert rewards["coder_escalation:direct"] == 1.0  # Clear win
 
     def test_specialist_wrong_baseline_correct(self):
         fn, RR = self._import_fn()
@@ -374,8 +374,8 @@ class TestComparativeRewardsCostAware:
                 elapsed_seconds=10.0,
                 tokens_generated=183,
             ),
-            "coder_primary:direct": RR(
-                role="coder_primary",
+            "coder_escalation:direct": RR(
+                role="coder_escalation",
                 mode="direct",
                 answer="wrong",
                 passed=False,
@@ -383,7 +383,7 @@ class TestComparativeRewardsCostAware:
             ),
         }
         rewards = fn(results)
-        assert rewards["coder_primary:direct"] == -0.5
+        assert rewards["coder_escalation:direct"] == -0.5
 
     def test_both_wrong(self):
         fn, RR = self._import_fn()
@@ -395,8 +395,8 @@ class TestComparativeRewardsCostAware:
                 passed=False,
                 elapsed_seconds=10.0,
             ),
-            "coder_primary:direct": RR(
-                role="coder_primary",
+            "coder_escalation:direct": RR(
+                role="coder_escalation",
                 mode="direct",
                 answer="wrong",
                 passed=False,
@@ -404,7 +404,7 @@ class TestComparativeRewardsCostAware:
             ),
         }
         rewards = fn(results)
-        assert rewards["coder_primary:direct"] == -0.3
+        assert rewards["coder_escalation:direct"] == -0.3
 
     def test_baseline_incorrect_gets_zero(self):
         """Baseline wrong → reward=0.0 (xRouter: incorrect=zero)."""
@@ -432,8 +432,8 @@ class TestComparativeRewardsCostAware:
                 elapsed_seconds=10.0,
                 tokens_generated=183,
             ),
-            "coder_primary:direct": RR(
-                role="coder_primary",
+            "coder_escalation:direct": RR(
+                role="coder_escalation",
                 mode="direct",
                 answer="ok",
                 passed=True,
@@ -442,10 +442,10 @@ class TestComparativeRewardsCostAware:
                 # 2x slower → penalty = 0.5 * 1.0 = 0.5 with custom lambda
             ),
         }
-        config = {"lambda": 0.5, "baseline_tps_by_role": {"frontdoor": 18.3, "coder_primary": 18.3}}
+        config = {"lambda": 0.5, "baseline_tps_by_role": {"frontdoor": 18.3, "coder_escalation": 18.3}}
         rewards = fn(results, cost_config=config)
         # base=0.5, penalty=0.5 → reward=0.0, but floor is 0.1
-        assert rewards["coder_primary:direct"] == pytest.approx(0.1)
+        assert rewards["coder_escalation:direct"] == pytest.approx(0.1)
 
     def test_floor_at_0_1_for_correct(self):
         """Even very slow correct specialists get at least 0.1."""

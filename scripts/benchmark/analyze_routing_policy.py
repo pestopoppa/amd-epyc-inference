@@ -157,7 +157,7 @@ def analyze_routing_policy(
             print(f"    {action:35s}  n={n:4d}  Q={mean_q:.3f}{marker}{below_threshold}")
 
     # Specialist utilization summary
-    specialist_roles = {"coder_primary", "coder_escalation", "architect_general", "architect_coding"}
+    specialist_roles = {"coder_escalation", "coder_escalation", "architect_general", "architect_coding"}
     specialist_wins = 0
     total_suites = len(policy)
 

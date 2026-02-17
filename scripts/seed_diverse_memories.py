@@ -292,7 +292,7 @@ TASK_TEMPLATES = {
     },
     "coding": {
         "task_type": "code",
-        "routing": "coder_primary",
+        "routing": "coder_escalation",
         "templates": [
             "Implement {algorithm} in {language}",
             "Refactor {component} to use {pattern}",

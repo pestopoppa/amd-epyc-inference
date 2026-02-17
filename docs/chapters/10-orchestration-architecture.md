@@ -371,7 +371,7 @@ Models sometimes generate natural-language role names in `delegate()` and `escal
 | Model Generates | Maps To |
 |----------------|---------|
 | `researcher_agent` | `worker_explore` |
-| `coder_agent` | `coder_primary` |
+| `coder_agent` | `coder_escalation` |
 | `reviewer_agent` | `architect_general` |
 | `math_agent` | `worker_math` |
 | `vision_agent` | `worker_vision` |
@@ -496,10 +496,9 @@ When a backend is circuit-open or times out, same-tier alternatives are tried be
 
 | Primary | Fallbacks |
 |---------|-----------|
-| architect_general | architect_coding, coder_primary |
+| architect_general | architect_coding, coder_escalation |
 | architect_coding | architect_general, coder_escalation |
-| coder_primary | coder_escalation |
-| coder_escalation | coder_primary |
+| coder_escalation | architect_coding |
 | worker_math | worker_general |
 | ingest_long_context | architect_general |
 | frontdoor | (none) |

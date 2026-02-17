@@ -51,8 +51,6 @@ def _lock_path() -> Path:
 def _is_heavy_role(role: str) -> bool:
     if role in HEAVY_ROLES:
         return True
-    if role == "coder_primary":
-        return True  # alias of frontdoor
     # Default to heavy for unknown roles (safer for CPU contention)
     return role not in LIGHT_ROLES
 

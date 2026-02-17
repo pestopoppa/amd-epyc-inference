@@ -49,7 +49,7 @@ def _complete_task_entries(
     task_id: str = "task-1",
     task_type: str = "code",
     objective: str = "Write a function",
-    routing_action: str = "coder_primary",
+    routing_action: str = "coder_escalation",
     outcome: str = "success",
     base_offset: int = 0,
 ) -> List[ProgressEntry]:
@@ -94,7 +94,7 @@ class TestTrajectory:
             task_id="t1",
             task_type="code",
             objective="Write tests",
-            routing_decision="coder_primary",
+            routing_decision="coder_escalation",
             outcome="success",
             cost_metrics={"tokens_generated": 100},
             escalations=["architect_general"],
@@ -141,7 +141,7 @@ class TestTrajectoryExtractor:
         assert t.task_id == "task-1"
         assert t.task_type == "code"
         assert t.objective == "Write a function"
-        assert t.routing_decision == "coder_primary"
+        assert t.routing_decision == "coder_escalation"
         assert t.outcome == "success"
         assert t.cost_metrics["tokens_generated"] == 150
 
@@ -273,7 +273,7 @@ class TestTrajectoryExtractor:
         t = result[0]
         assert t.cost_metrics["tokens_generated"] == 150
         assert t.cost_metrics["elapsed_seconds"] == 3.5
-        assert t.cost_metrics["role"] == "coder_primary"
+        assert t.cost_metrics["role"] == "coder_escalation"
 
 
 # ---------------------------------------------------------------------------

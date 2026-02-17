@@ -28,7 +28,7 @@ flowchart TB
     end
 
     subgraph TierB["Tier B: Specialists"]
-        CP[coder_primary]
+        CP[coder_escalation]
         CE[coder_escalation]
         ILC[ingest_long_context]
         THR[thinking_reasoning]
@@ -67,7 +67,7 @@ flowchart TB
     FD -->|"delegate"| CP
     FD -->|"escalate"| CP
 
-    %% Worker escalation (all workers → coder_primary)
+    %% Worker escalation (all workers → coder_escalation)
     WG -->|"escalate"| CP
     WM -->|"escalate"| CP
     WS -->|"escalate"| CP
@@ -131,15 +131,11 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Chain1["Worker Chain"]
-        W1[worker_*] --> C1[coder_primary] --> A1[architect_general]
+        W1[worker_*] --> C1[coder_escalation] --> A1[architect_coding]
     end
 
     subgraph Chain2["Coder Chain"]
-        C2[coder_primary] --> A2[architect_general]
-    end
-
-    subgraph Chain3["Coder Escalation Chain"]
-        CE2[coder_escalation] --> AC2[architect_coding]
+        C2[coder_escalation] --> A2[architect_coding]
     end
 
     subgraph Chain4["Ingest Chain"]
@@ -147,7 +143,7 @@ flowchart LR
     end
 
     subgraph Chain5["Frontdoor Chain"]
-        F1[frontdoor] --> C3[coder_primary] --> A4[architect_general]
+        F1[frontdoor] --> C3[coder_escalation] --> A4[architect_coding]
     end
 ```
 

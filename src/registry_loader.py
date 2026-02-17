@@ -8,8 +8,8 @@ Usage:
     from src.registry_loader import RegistryLoader
 
     registry = RegistryLoader()
-    role = registry.get_role("coder_primary")
-    cmd = registry.generate_command("coder_primary", prompt="Write a function...")
+    role = registry.get_role("coder_escalation")
+    cmd = registry.generate_command("coder_escalation", prompt="Write a function...")
 """
 
 from __future__ import annotations

@@ -263,7 +263,7 @@ class TestRoleTimeouts:
             "worker_math",
             "worker_vision",
             "frontdoor",
-            "coder_primary",
+            "coder_escalation",
             "coder_escalation",
             "architect_general",
             "architect_coding",

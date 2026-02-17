@@ -83,7 +83,7 @@ class ModelRegistry:
         """Get the full configuration for a role.
 
         Args:
-            role: The role name (e.g., 'coder_primary').
+            role: The role name (e.g., 'coder_escalation').
 
         Returns:
             Role configuration dict or None if not found.

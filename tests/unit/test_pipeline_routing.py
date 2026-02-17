@@ -37,7 +37,7 @@ class TestRouteRequest:
 
     def test_mock_mode_with_explicit_role(self):
         """Mock mode uses explicit role when provided."""
-        request = ChatRequest(prompt="test", mock_mode=True, real_mode=False, role="coder_primary")
+        request = ChatRequest(prompt="test", mock_mode=True, real_mode=False, role="coder_escalation")
         state = MagicMock()
         state.hybrid_router = None
         state.failure_graph = None
@@ -46,7 +46,7 @@ class TestRouteRequest:
         result = _route_request(request, state)
 
         assert result.routing_strategy == "mock"
-        assert "coder_primary" in [str(r) for r in result.routing_decision]
+        assert "coder_escalation" in [str(r) for r in result.routing_decision]
 
     def test_force_role_overrides_routing(self):
         """force_role bypasses all routing logic."""
@@ -95,7 +95,7 @@ class TestRouteRequest:
         """HybridRouter is used for real_mode requests."""
         request = ChatRequest(prompt="test", real_mode=True)
         state = MagicMock()
-        state.hybrid_router.route.return_value = (["coder_primary"], "learned")
+        state.hybrid_router.route.return_value = (["coder_escalation"], "learned")
         state.failure_graph = None
         state.progress_logger = None
 
@@ -103,7 +103,7 @@ class TestRouteRequest:
 
         state.hybrid_router.route.assert_called_once()
         assert result.routing_strategy == "learned"
-        assert result.routing_decision == ["coder_primary"]
+        assert result.routing_decision == ["coder_escalation"]
 
     def test_classifier_fallback_when_no_router(self):
         """Classifier used when no hybrid_router."""
@@ -114,7 +114,7 @@ class TestRouteRequest:
         state.progress_logger = None
 
         with patch("src.api.routes.chat_pipeline.routing._classify_and_route") as mock_classify:
-            mock_classify.return_value = (str(Role.CODER_PRIMARY), "classified")
+            mock_classify.return_value = (str(Role.CODER_ESCALATION), "classified")
             result = _route_request(request, state)
 
         mock_classify.assert_called_once()
@@ -137,18 +137,18 @@ class TestRouteRequest:
         """Low-risk specialist not reverted."""
         request = ChatRequest(prompt="test", real_mode=True)
         state = MagicMock()
-        state.hybrid_router.route.return_value = (["coder_primary"], "learned")
+        state.hybrid_router.route.return_value = (["coder_escalation"], "learned")
         state.failure_graph.get_failure_risk.return_value = 0.2  # < 0.5
         state.progress_logger = None
 
         result = _route_request(request, state)
 
         assert result.routing_strategy == "learned"
-        assert result.routing_decision == ["coder_primary"]
+        assert result.routing_decision == ["coder_escalation"]
 
     def test_failure_graph_skips_mock_mode(self):
         """Failure veto skipped for mock mode."""
-        request = ChatRequest(prompt="test", mock_mode=True, real_mode=False, role="coder_primary")
+        request = ChatRequest(prompt="test", mock_mode=True, real_mode=False, role="coder_escalation")
         state = MagicMock()
         state.failure_graph.get_failure_risk.return_value = 0.9
         state.progress_logger = None
@@ -160,7 +160,7 @@ class TestRouteRequest:
 
     def test_failure_graph_skips_forced_role(self):
         """Failure veto skipped for forced role."""
-        request = ChatRequest(prompt="test", real_mode=True, force_role="coder_primary")
+        request = ChatRequest(prompt="test", real_mode=True, force_role="coder_escalation")
         state = MagicMock()
         state.failure_graph.get_failure_risk.return_value = 0.9
         state.progress_logger = None
@@ -174,7 +174,7 @@ class TestRouteRequest:
         """Failure graph exception doesn't break routing."""
         request = ChatRequest(prompt="test", real_mode=True)
         state = MagicMock()
-        state.hybrid_router.route.return_value = (["coder_primary"], "learned")
+        state.hybrid_router.route.return_value = (["coder_escalation"], "learned")
         state.failure_graph.get_failure_risk.side_effect = RuntimeError("DB error")
         state.progress_logger = None
 
@@ -182,7 +182,7 @@ class TestRouteRequest:
 
         # Should continue with original routing despite error
         assert result.routing_strategy == "learned"
-        assert result.routing_decision == ["coder_primary"]
+        assert result.routing_decision == ["coder_escalation"]
 
     def test_progress_logger_called(self):
         """Progress logger logs task start."""
@@ -545,7 +545,7 @@ class TestPlanReviewGate:
         request = ChatRequest(prompt="test", real_mode=True)
         routing = MagicMock()
         routing.task_ir = {"task_type": "code"}
-        routing.routing_decision = ["coder_primary"]
+        routing.routing_decision = ["coder_escalation"]
         routing.task_id = "test-123"
         primitives = MagicMock()
         state = MagicMock()
@@ -572,7 +572,7 @@ class TestPlanReviewGate:
         request = ChatRequest(prompt="test", real_mode=True)
         routing = MagicMock()
         routing.task_ir = {"task_type": "code"}
-        routing.routing_decision = ["coder_primary"]
+        routing.routing_decision = ["coder_escalation"]
         routing.task_id = "test-123"
         primitives = MagicMock()
         state = MagicMock()
@@ -605,7 +605,7 @@ class TestPlanReviewGate:
         request = ChatRequest(prompt="test", real_mode=True)
         routing = MagicMock()
         routing.task_ir = {"task_type": "code"}
-        routing.routing_decision = ["coder_primary"]
+        routing.routing_decision = ["coder_escalation"]
         routing.task_id = "test-123"
         primitives = MagicMock()
         state = MagicMock()
@@ -633,7 +633,7 @@ class TestPlanReviewGate:
         request = ChatRequest(prompt="test", real_mode=True)
         routing = MagicMock()
         routing.task_ir = {"task_type": "code"}
-        routing.routing_decision = ["coder_primary"]
+        routing.routing_decision = ["coder_escalation"]
         primitives = MagicMock()
         state = MagicMock()
 

@@ -210,15 +210,11 @@ class TestFallbackMap:
     def test_architect_general_fallbacks(self):
         roles = get_fallback_roles(Role.ARCHITECT_GENERAL)
         assert Role.ARCHITECT_CODING in roles
-        assert Role.CODER_PRIMARY in roles
-
-    def test_coder_primary_fallbacks(self):
-        roles = get_fallback_roles(Role.CODER_PRIMARY)
         assert Role.CODER_ESCALATION in roles
 
     def test_coder_escalation_fallbacks(self):
         roles = get_fallback_roles(Role.CODER_ESCALATION)
-        assert Role.CODER_PRIMARY in roles
+        assert Role.FRONTDOOR in roles
 
     def test_frontdoor_no_fallbacks(self):
         roles = get_fallback_roles(Role.FRONTDOOR)
@@ -233,8 +229,8 @@ class TestFallbackMap:
         assert Role.ARCHITECT_GENERAL in roles
 
     def test_string_role(self):
-        roles = get_fallback_roles("coder_primary")
-        assert Role.CODER_ESCALATION in roles
+        roles = get_fallback_roles("coder_escalation")
+        assert Role.FRONTDOOR in roles
 
     def test_unknown_role(self):
         roles = get_fallback_roles("unknown_role")

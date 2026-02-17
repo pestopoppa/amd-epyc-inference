@@ -19,7 +19,7 @@ class TestMyRole:
 
     def test_my_role_contains_tier_info(self):
         """Test my_role() includes tier information."""
-        repl = REPLEnvironment(context="test", role="coder_primary")
+        repl = REPLEnvironment(context="test", role="coder_escalation")
         # Execute and capture the output
         result = repl.execute("""
 output = my_role()
@@ -34,7 +34,7 @@ print(data['tier'])
 """)
 
         assert result.error is None
-        assert "coder_primary" in result.output
+        assert "coder_escalation" in result.output
         assert "tier" in result.output.lower() or result.output.strip()
 
     def test_my_role_default_role(self):
@@ -64,7 +64,7 @@ class TestResolveRoleAlias:
 
         # Test directly via the method
         assert repl._resolve_role_alias("researcher_agent") == "worker_explore"
-        assert repl._resolve_role_alias("coder_agent") == "coder_primary"
+        assert repl._resolve_role_alias("coder_agent") == "coder_escalation"
         assert repl._resolve_role_alias("reviewer_agent") == "architect_general"
 
     def test_resolve_unknown_returns_original(self):
@@ -78,7 +78,7 @@ class TestResolveRoleAlias:
         """Test actual role names pass through unchanged."""
         repl = REPLEnvironment(context="test")
 
-        assert repl._resolve_role_alias("coder_primary") == "coder_primary"
+        assert repl._resolve_role_alias("coder_escalation") == "coder_escalation"
         assert repl._resolve_role_alias("worker_explore") == "worker_explore"
 
 
@@ -221,8 +221,8 @@ print('unavailable' in str(data.get('warnings', [])))
 
         # Mock retrieval results
         mock_memory = Mock()
-        mock_memory.context = {"role": "coder_primary"}
-        mock_memory.action = "coder_primary"
+        mock_memory.context = {"role": "coder_escalation"}
+        mock_memory.action = "coder_escalation"
         mock_memory.outcome = "success"
 
         mock_result = Mock()
@@ -233,7 +233,7 @@ print('unavailable' in str(data.get('warnings', [])))
 
         mock_retriever.retrieve_for_routing = Mock(return_value=[mock_result])
         mock_router.retriever = mock_retriever
-        mock_router.route = Mock(return_value=(("coder_primary", 0.85), "memrl"))
+        mock_router.route = Mock(return_value=(("coder_escalation", 0.85), "memrl"))
 
         repl = REPLEnvironment(context="test", hybrid_router=mock_router)
         result = repl.execute("""
@@ -248,7 +248,7 @@ print(data.get('strategy'))
 """)
 
         assert result.error is None
-        assert "coder_primary" in result.output
+        assert "coder_escalation" in result.output
         assert "memrl" in result.output
 
     def test_route_advice_increments_exploration(self):
@@ -278,7 +278,7 @@ class TestDelegate:
         mock_llm = Mock()
         mock_llm.llm_call = Mock(return_value="Task completed successfully")
 
-        repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_primary")
+        repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_escalation")
         result = repl.execute(
             "output = delegate('summarize this', to='worker_summarize', reason='need summary')"
         )
@@ -319,7 +319,7 @@ class TestDelegate:
         mock_llm = Mock()
         mock_llm.llm_call = Mock(return_value="result")
 
-        repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_primary")
+        repl = REPLEnvironment(context="test", llm_primitives=mock_llm, role="coder_escalation")
         # Use keyword args for the new API: delegate(brief, to=..., reason=...)
         result = repl.execute("delegate('task', to='worker_math', reason='need help')")
 
