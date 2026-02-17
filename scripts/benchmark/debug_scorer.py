@@ -99,11 +99,24 @@ def _score_exact_match(
     else:
         expected_norm = expected.strip()
 
-    # Numeric comparison for numbers
-    try:
-        return abs(float(extracted.replace(",", "")) - float(expected_norm.replace(",", ""))) < 1e-6
-    except (ValueError, TypeError):
-        pass
+    # Numeric comparison for numbers (including word forms like "three" vs "3")
+    _NUMBER_WORDS = {
+        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+        "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+        "nineteen": 19, "twenty": 20,
+    }
+    def _to_number(s: str) -> float | None:
+        try:
+            return float(s.replace(",", ""))
+        except (ValueError, TypeError):
+            return _NUMBER_WORDS.get(s.lower()) if isinstance(s, str) else None
+
+    ext_num = _to_number(extracted)
+    exp_num = _to_number(expected_norm)
+    if ext_num is not None and exp_num is not None:
+        return abs(ext_num - exp_num) < 1e-6
 
     if extracted == expected_norm:
         return True
