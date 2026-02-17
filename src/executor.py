@@ -152,12 +152,6 @@ class ExecutionResult:
         return result
 
 
-class ExecutorError(Exception):
-    """Error during execution."""
-
-    pass
-
-
 class ErrorCategory(Enum):
     """Categories of execution errors."""
 
