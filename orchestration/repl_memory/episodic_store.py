@@ -702,8 +702,8 @@ class EpisodicStore:
         }
 
 
-# Symptom patterns for failure detection
-SYMPTOM_PATTERNS: Dict[str, str] = {
+# Symptom patterns for failure detection (raw strings kept for readability)
+_SYMPTOM_PATTERN_STRINGS: Dict[str, str] = {
     "timeout": r"timeout|timed out|deadline exceeded",
     "0% acceptance": r"0%.*accept|acceptance.*0|acceptance rate.*0",
     "SIGSEGV": r"sigsegv|segmentation fault|signal 11",
@@ -716,12 +716,18 @@ SYMPTOM_PATTERNS: Dict[str, str] = {
     "connection refused": r"connection refused|cannot connect|econnrefused",
 }
 
+# Pre-compiled patterns (compiled once at module load, not per call)
+SYMPTOM_PATTERNS: Dict[str, re.Pattern] = {
+    name: re.compile(pattern, re.IGNORECASE)
+    for name, pattern in _SYMPTOM_PATTERN_STRINGS.items()
+}
+
 
 def extract_symptoms(context: Dict[str, Any], outcome: str) -> List[str]:
     """
     Extract failure symptoms from context and outcome.
 
-    Uses regex patterns to identify known failure modes.
+    Uses pre-compiled regex patterns to identify known failure modes.
 
     Args:
         context: Task context dictionary
@@ -735,7 +741,7 @@ def extract_symptoms(context: Dict[str, Any], outcome: str) -> List[str]:
     error_text = error_text.lower()
 
     for symptom, pattern in SYMPTOM_PATTERNS.items():
-        if re.search(pattern, error_text, re.IGNORECASE):
+        if pattern.search(error_text):
             symptoms.append(symptom)
 
     return symptoms or ["unknown"]

@@ -491,20 +491,28 @@ class SQLiteSessionStore(BaseSessionStore):
         if limit:
             query += f" LIMIT {limit} OFFSET {offset}"
 
-        sessions = []
         with self._get_connection() as conn:
             rows = conn.execute(query, params).fetchall()
-            for row in rows:
-                tags = [
-                    r["tag"]
-                    for r in conn.execute(
-                        "SELECT tag FROM session_tags WHERE session_id = ?",
-                        (row["id"],),
-                    )
-                ]
-                sessions.append(self._row_to_session(row, tags))
 
-        return sessions
+            if not rows:
+                return []
+
+            # Batch-fetch all tags in one query instead of N+1
+            session_ids = [row["id"] for row in rows]
+            placeholders = ",".join("?" * len(session_ids))
+            tag_rows = conn.execute(
+                f"SELECT session_id, tag FROM session_tags WHERE session_id IN ({placeholders})",
+                session_ids,
+            ).fetchall()
+
+            tags_by_session: dict[str, list[str]] = {}
+            for tr in tag_rows:
+                tags_by_session.setdefault(tr["session_id"], []).append(tr["tag"])
+
+        return [
+            self._row_to_session(row, tags_by_session.get(row["id"], []))
+            for row in rows
+        ]
 
     # =========================================================================
     # Documents
@@ -779,19 +787,25 @@ class SQLiteSessionStore(BaseSessionStore):
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
 
-        sessions = []
-        with self._get_connection() as conn:
-            for row in rows:
-                tags = [
-                    r["tag"]
-                    for r in conn.execute(
-                        "SELECT tag FROM session_tags WHERE session_id = ?",
-                        (row["id"],),
-                    )
-                ]
-                sessions.append(self._row_to_session(row, tags))
+            if not rows:
+                return []
 
-        return sessions
+            # Batch-fetch all tags in one query instead of N+1
+            session_ids = [row["id"] for row in rows]
+            placeholders = ",".join("?" * len(session_ids))
+            tag_rows = conn.execute(
+                f"SELECT session_id, tag FROM session_tags WHERE session_id IN ({placeholders})",
+                session_ids,
+            ).fetchall()
+
+            tags_by_session: dict[str, list[str]] = {}
+            for tr in tag_rows:
+                tags_by_session.setdefault(tr["session_id"], []).append(tr["tag"])
+
+        return [
+            self._row_to_session(row, tags_by_session.get(row["id"], []))
+            for row in rows
+        ]
 
     def search_findings(
         self,
@@ -933,12 +947,35 @@ class SQLiteSessionStore(BaseSessionStore):
     def get_sessions_by_tag(self, tag: str) -> list[Session]:
         """Get all sessions with a specific tag."""
         with self._get_connection() as conn:
-            session_ids = [
-                r["session_id"]
-                for r in conn.execute("SELECT session_id FROM session_tags WHERE tag = ?", (tag,))
-            ]
+            # Single JOIN query instead of 2N+1 separate queries
+            rows = conn.execute(
+                """
+                SELECT s.* FROM sessions s
+                INNER JOIN session_tags st ON s.id = st.session_id
+                WHERE st.tag = ?
+                """,
+                (tag,),
+            ).fetchall()
 
-        return [self.get_session(sid) for sid in session_ids if self.get_session(sid)]
+            if not rows:
+                return []
+
+            # Batch-fetch all tags for matched sessions
+            session_ids = [row["id"] for row in rows]
+            placeholders = ",".join("?" * len(session_ids))
+            tag_rows = conn.execute(
+                f"SELECT session_id, tag FROM session_tags WHERE session_id IN ({placeholders})",
+                session_ids,
+            ).fetchall()
+
+            tags_by_session: dict[str, list[str]] = {}
+            for tr in tag_rows:
+                tags_by_session.setdefault(tr["session_id"], []).append(tr["tag"])
+
+        return [
+            self._row_to_session(row, tags_by_session.get(row["id"], []))
+            for row in rows
+        ]
 
     # =========================================================================
     # Document Caching Integration
