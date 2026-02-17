@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-02-17
+
+- **Nightshift first production run — 7 PRs reviewed and merged:**
+  - **Dead code**: -4,038 lines (8 orphaned scripts + unused `ExecutorError` class)
+  - **Test gap**: +189 unit tests for unicode sanitizer, LLM types, tokens mixin, API models
+  - **Security**: Patched eval() RCE vector (stripped `__builtins__`), command injection in `git_status()` (`shlex.quote`), hardened `run_shell()` blocklist (control chars, `curl|sh`, `$()`, backticks). Removed `getattr`/`hasattr` from eval allowlist during review (class hierarchy escape).
+  - **Perf**: N+1→batch queries in sqlite_store, pre-compiled symptom regex, O(n²)→O(n) SSE string concat, reusable `ThreadPoolExecutor` in parallel_embedder
+  - **Doc drift detector**: New `validate_doc_drift.py` — cross-references CLAUDE.md ports/paths/make-targets against code. 15 tests. Integrated into `make check-agent-config`.
+  - **Docs backfill**: Created missing `docs/SETUP.md` and `docs/MODEL_MANIFEST.md`, added module docstrings
+  - **Skill groom**: Fixed stale refs to deleted files in governance/skills, corrected `research-update.md` and `benchmark.md` paths
+
+- **Nightshift branch hygiene issue identified**: All PRs after first two had branch stacking (branching off previous task branches instead of `origin/main`), requiring cherry-picks for all affected PRs. 12 branches + worktree cleaned up.
+
 ## 2026-02-16
 
 - **Fix: orchestrator_stack.py --hot-only preserves healthy servers** — `start --hot-only` was unconditionally killing all server processes before restarting. Now checks `/health` endpoint (3s timeout) before killing; healthy servers are preserved and skipped during launch.
