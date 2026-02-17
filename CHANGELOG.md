@@ -2,6 +2,13 @@
 
 ## 2026-02-17
 
+- **Fix SimpleQA 0% pass rate (4-layer fix):**
+  - **web_search**: Retry with 1s delay (2 attempts), DDG snippet extraction (`result__snippet`), Wikipedia opensearch fallback, typed error categories (timeout/rate_limit/network/parse_error).
+  - **fetch_wikipedia**: Switched from REST summary API with bad `sentences*200` heuristic to query API with `exsentences` param for accurate sentence-level truncation.
+  - **Scoring**: SimpleQA `exact_match` → `f1` (threshold=0.8). SQuAD-style normalization handles word reordering and prose wrapping. The `_score_f1` function already existed in `debug_scorer.py`.
+  - **Architect prompt**: Removed blanket "NEVER delegate factual questions" rule. Now: answer directly when confident, delegate to `worker_explore` (which has web_search) when uncertain about obscure facts.
+  - **Debugger agency**: Added Tool & Scorer Investigation section, Suite-Level Analysis section, action-biased editing rule ("wrong fixes are cheap to revert"), hot-swap reload guidance, suite-level failure alerts in prompt builder.
+
 - **Nightshift first production run — 7 PRs reviewed and merged:**
   - **Dead code**: -4,038 lines (8 orphaned scripts + unused `ExecutorError` class)
   - **Test gap**: +189 unit tests for unicode sanitizer, LLM types, tokens mixin, API models

@@ -60,6 +60,27 @@ Category: leak (weight 0.5-1.0)
    d) Infrastructure issue (service down, timeout, connection error) → request reload
    e) Model capability limit → describe it, don't edit
 
+## Tool & Scorer Investigation
+
+When a suite has 100% failure rate across 2+ batches:
+1. Check the TOOL first: read the tool implementation (e.g. orchestration/tools/web.py).
+   Test it: python3 -c "from orchestration.tools.web import web_search; print(web_search('test'))"
+2. Check the SCORER: compare expected vs answer text. If expected appears in the answer,
+   the scoring_config may be wrong. Check scripts/benchmark/dataset_adapters.py.
+3. Check the PROMPT: does the prompt tell the model to use the right format/tools?
+4. Do NOT diagnose as "model knowledge gap" when tools returned errors or the scorer
+   rejected a valid answer.
+
+You can test tools in isolation via Bash to confirm they work or reproduce failures.
+
+## Suite-Level Analysis
+
+When the same suite fails 100% across multiple batches:
+- STOP per-question diagnosis. The problem is systemic.
+- Checklist: Does the suite need a tool? Is that tool working? Is scoring method right?
+  Is the prompt eliciting extractable answers?
+- Escalate from "this question failed" to "this suite's infrastructure is broken."
+
 ## Reloadable Services
 
 You can restart infrastructure services by outputting a directive:
@@ -77,7 +98,7 @@ When to reload:
 - REPL logs show "NextPLAID not available" errors
 - After editing code that these services depend on
 
-Do NOT reload speculatively. Only reload when evidence points to a service being down or stale.
+Prompt edits (*.md) take effect immediately (hot-swap). Python edits (.py) auto-trigger API restart. RELOAD_SERVICE: only for evidence of a service being down.
 
 ## Rules for Editing
 
@@ -86,7 +107,7 @@ Do NOT reload speculatively. Only reload when evidence points to a service being
 - rules.md uses FEW-SHOT EXAMPLES. Only edit to add/improve examples. Never add rules.
 - Do NOT edit the same file more than 3 times per session. If a fix didn't work after
   3 edits, the root cause is elsewhere.
-- Only edit when confident. For uncertain cases, describe the issue without editing.
+- Attempt fixes for systemic issues even when uncertain — the retry queue verifies against the same questions. Wrong fixes are cheap to revert; missed fixes waste hundreds of batches. Bias toward action.
 
 ## New Signal Discovery
 

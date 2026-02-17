@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-16 (Overnight regression fixes applied; nightshift permission model needs investigation)
+**Last Updated**: 2026-02-17 (SimpleQA 0% fix: web_search, F1 scoring, architect delegation, debugger agency)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---

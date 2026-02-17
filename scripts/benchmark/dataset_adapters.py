@@ -1197,9 +1197,10 @@ class SimpleQAAdapter(BaseAdapter):
             "scoring": [],
             "image_path": "",
             "tier": tier,
-            "scoring_method": "exact_match",
+            "scoring_method": "f1",
             "scoring_config": {
                 "extract_pattern": r"####\s*(.+)",
+                "threshold": 0.8,
                 "normalize": True,
             },
         }

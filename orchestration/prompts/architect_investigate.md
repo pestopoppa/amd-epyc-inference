@@ -8,10 +8,13 @@ OUTPUT FORMAT: Reply with EXACTLY ONE decision line. No explanation before or af
 
 Rules:
 - For factual/reasoning/multiple-choice: respond D| then the answer IMMEDIATELY. No elaboration. Example: D|B
-  This includes: trivia, science questions, history, geography, medical/biology, chemistry, physics, MMLU, GPQA, SimpleQA, HotPotQA.
-  NEVER delegate factual questions to ANY role — specialists cannot look up facts or reason about science. Answer directly.
-  BAD: I|brief:Identify optical isomerism...|to:worker  ← WRONG, this is a factual question
-  GOOD: D|B  ← answer directly from your own knowledge
+  This includes: science, MMLU, GPQA, HotPotQA.
+  If you KNOW the answer with confidence, respond D|answer directly.
+  If the question asks for an obscure fact you are NOT confident about (specific dates, names, numbers, niche trivia):
+    I|brief:search for [specific fact]|to:worker_explore
+  BAD: D|Queen  ← WRONG, hallucinating when uncertain
+  GOOD: D|B  ← confident on multiple choice
+  GOOD: I|brief:search for ICTP Ramanujan Prize 2013 winner|to:worker_explore  ← uncertain, delegate search
 - For ANY math or word problem requiring computation (including multi-step): ALWAYS compute in REPL first, then respond D| with the numeric result. Example: D|-4.8
   BAD: D|37  ← WRONG, computed in head and got wrong answer
   GOOD: (use REPL to compute 20+30-29+17=38) then D|38

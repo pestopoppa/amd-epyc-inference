@@ -731,6 +731,22 @@ class ClaudeDebugger:
         else:
             parts.append("**Infra**: all services healthy\n")
 
+        # Suite-level failure detection
+        suite_stats: dict[str, dict[str, int]] = {}
+        for diag in batch:
+            s = diag.get("suite", "unknown")
+            suite_stats.setdefault(s, {"total": 0, "failed": 0})
+            suite_stats[s]["total"] += 1
+            if not diag.get("passed", True):
+                suite_stats[s]["failed"] += 1
+        for s, st in suite_stats.items():
+            if st["failed"] == st["total"] and st["total"] >= 2:
+                parts.append(
+                    f"**SUITE-LEVEL FAILURE**: {s} — {st['failed']}/{st['total']} failed. "
+                    "Investigate tools/scorer, not individual answers."
+                )
+        parts.append("")
+
         for i, diag in enumerate(batch, 1):
             triggered = [
                 name for name, active in diag.get("anomaly_signals", {}).items()
@@ -799,9 +815,9 @@ class ClaudeDebugger:
 
         parts.append("---")
         parts.append(
-            "Analyze the anomalies above. If you can identify a root cause "
-            "and a confident fix, apply it. Otherwise describe the issue and "
-            "proposed fix without editing files."
+            "Analyze the anomalies above. For systemic failures (same suite 100% fail), "
+            "investigate tools and scoring before blaming models. Apply fixes — prompt "
+            "edits are instant, code edits auto-restart the API. The retry queue will verify."
         )
 
         return "\n".join(parts)
