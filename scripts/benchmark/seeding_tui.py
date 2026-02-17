@@ -623,13 +623,12 @@ class SeedingTUI:
         try:
             total_height = self._console.height - 1  # minus header
             left_width = max(20, self._console.width * 3 // 8 - 6)
-            right_width = max(30, self._console.width * 5 // 8 - 6)
             log_height = max(5, total_height * 6 // 10 - 2)
             q_height = max(3, total_height * 4 // 10 - 2)
             stream_height = max(8, total_height * 7 // 10 - 2)
             repl_height = max(3, total_height * 3 // 10 - 2)
         except Exception:
-            left_width, right_width = 50, 80
+            left_width = 50
             log_height, q_height = 15, 8
             stream_height, repl_height = 20, 8
 
@@ -714,7 +713,7 @@ class SeedingTUI:
             for hline in filtered[:hidden_count]:
                 if hline.lstrip().startswith("```"):
                     in_code_init = not in_code_init
-        display_lines = [_sanitize_display(line[:right_width]) for line in filtered[-(stream_vis):]]
+        display_lines = [_sanitize_display(line) for line in filtered[-(stream_vis):]]
         stream_text = _style_stream_lines(display_lines, in_code_init) if display_lines else Text("(waiting for inference tap...)")
         role_chain = self._tailer.get_role_chain()
         _arrow = " \u2192 "
@@ -724,7 +723,7 @@ class SeedingTUI:
         # ── Right bottom: REPL execution log ──
         repl_vis = max(3, repl_height - 2)
         repl_section = self._repl_tailer.get_current_section()
-        repl_display = [_sanitize_display(line[:right_width]) for line in repl_section[-(repl_vis):]]
+        repl_display = [_sanitize_display(line) for line in repl_section[-(repl_vis):]]
         repl_text = _style_repl_lines(repl_display) if repl_display else Text("(no REPL activity)")
         layout["repl"].update(Panel(
             repl_text,

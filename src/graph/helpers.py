@@ -253,9 +253,9 @@ def _update_think_harder_stats(ctx: Ctx) -> None:
 def _tap_write_repl_exec(code: str, turn: int) -> None:
     """Write REPL execution input to the REPL tap file (separate from inference tap)."""
     try:
-        preview = code[:800]
-        if len(code) > 800:
-            preview += f"\n... [{len(code) - 800} chars truncated]"
+        preview = code[:4000]
+        if len(code) > 4000:
+            preview += f"\n... [{len(code) - 4000} chars truncated]"
         text = (
             f"[turn {turn}] $ python3 <<'CODE'\n"
             f"{preview}\n"
@@ -278,16 +278,16 @@ def _tap_write_repl_result(
         if is_final:
             parts.append(f"[turn {turn}] FINAL")
         if output:
-            out_preview = output[:500]
-            if len(output) > 500:
-                out_preview += f"\n... [{len(output) - 500} chars truncated]"
+            out_preview = output[:4000]
+            if len(output) > 4000:
+                out_preview += f"\n... [{len(output) - 4000} chars truncated]"
             parts.append(out_preview)
         elif not error:
             parts.append(f"[turn {turn}] (no output)")
         if error:
-            err_preview = error[:300]
-            if len(error) > 300:
-                err_preview += f"\n... [{len(error) - 300} chars truncated]"
+            err_preview = error[:2000]
+            if len(error) > 2000:
+                err_preview += f"\n... [{len(error) - 2000} chars truncated]"
             parts.append(f"[turn {turn}] ERROR:\n{err_preview}")
         parts.append("")  # trailing newline
         text = "\n".join(parts)
