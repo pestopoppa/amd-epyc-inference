@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import logging
 import re
+import shlex
 import subprocess
 import time
 from typing import Any
@@ -63,14 +64,20 @@ def python_eval(expression: str, variables: dict | None = None) -> Any:
 
 
 _DANGEROUS_PATTERNS = [
-    re.compile(r"rm\s+-r[f ]?\s+/(?:\s|$)"),  # rm -rf / (with whitespace tolerance)
-    re.compile(r"\bmkfs\b"),
-    re.compile(r"\bdd\s+if="),
+    re.compile(r"rm\s+-[^\s]*r[^\s]*\s+/", re.IGNORECASE),  # rm -rf / variants
+    re.compile(r"\bmkfs\b", re.IGNORECASE),
+    re.compile(r"\bdd\s+if=", re.IGNORECASE),
     re.compile(r">\s*/dev/"),
-    re.compile(r"chmod\s+-R\s+777\s+/(?:\s|$)"),
-    re.compile(r"\bshutdown\b"),
-    re.compile(r"\breboot\b"),
-    re.compile(r"\bsystemctl\s+(stop|disable|mask)\b"),
+    re.compile(r"chmod\s+-[^\s]*R[^\s]*\s+777\s+/", re.IGNORECASE),
+    re.compile(r"\bshutdown\b", re.IGNORECASE),
+    re.compile(r"\breboot\b", re.IGNORECASE),
+    re.compile(r"\bsystemctl\s+(stop|disable|mask)\b", re.IGNORECASE),
+    re.compile(r"\bcurl\b.*\|\s*(ba)?sh", re.IGNORECASE),  # curl | sh
+    re.compile(r"\bwget\b.*\|\s*(ba)?sh", re.IGNORECASE),  # wget | sh
+    re.compile(r"\b(python|perl|ruby)\s+-e\b", re.IGNORECASE),  # inline script exec
+    re.compile(r"\beval\s+", re.IGNORECASE),  # shell eval (with trailing space to avoid false positives)
+    re.compile(r"`[^`]*`"),  # backtick command substitution
+    re.compile(r"\$\("),  # $() command substitution
 ]
 
 
@@ -79,8 +86,13 @@ def run_shell(command: str, timeout: int = 30, cwd: str | None = None) -> dict:
 
     NOTE: shell=True is intentional — this is a general-purpose shell executor
     for orchestration agents. Commands may contain pipes, redirects, and other
-    shell features. The safety net is the regex-based blocklist below.
+    shell features. Safety: blocklist + null-byte/newline rejection.
     """
+    # Reject null bytes and newlines — these bypass single-line regex checks
+    if "\x00" in command or "\n" in command or "\r" in command:
+        logger.warning("Blocked command with control characters: %.200s", command)
+        return {"error": "Command blocked: control characters not allowed"}
+
     # Normalize whitespace for blocklist check
     normalized = " ".join(command.split())
     if any(p.search(normalized) for p in _DANGEROUS_PATTERNS):
@@ -125,7 +137,9 @@ def run_shell(command: str, timeout: int = 30, cwd: str | None = None) -> dict:
 
 def git_status(repo_path: str = ".") -> dict:
     """Get git repository status."""
-    result = run_shell(f"cd {repo_path} && git status --porcelain -b", timeout=10)
+    result = run_shell(
+        f"cd {shlex.quote(repo_path)} && git status --porcelain -b", timeout=10
+    )
     if result.get("returncode") != 0:
         return {"error": result.get("stderr", "git status failed")}
 

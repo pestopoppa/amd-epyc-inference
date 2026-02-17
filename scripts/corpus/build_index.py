@@ -77,7 +77,7 @@ def extract_snippets(path: Path) -> list[dict]:
                 "file": str(path),
                 "start_line": current_start + 1,
                 "code": body,
-                "hash": hashlib.md5(body.encode()).hexdigest()[:12],
+                "hash": hashlib.sha256(body.encode()).hexdigest()[:12],
             })
 
     for i, line in enumerate(lines):

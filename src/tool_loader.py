@@ -228,7 +228,7 @@ def parse_manifest(path: Path) -> ToolManifest:
         settings_schema=data.get("settings_schema", {}),
         path=path,
         last_modified=path.stat().st_mtime,
-        content_hash=hashlib.md5(content.encode()).hexdigest(),
+        content_hash=hashlib.sha256(content.encode()).hexdigest(),
     )
 
     return manifest

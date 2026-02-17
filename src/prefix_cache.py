@@ -212,10 +212,10 @@ class PrefixRouter:
             prompt: The prompt to hash.
 
         Returns:
-            MD5 hex digest of the prefix.
+            SHA-256 hex digest of the prefix.
         """
         prefix = prompt[: self.prefix_length]
-        return hashlib.md5(prefix.encode("utf-8")).hexdigest()
+        return hashlib.sha256(prefix.encode("utf-8")).hexdigest()
 
     def _allocate_slot(self, prefix_hash: str) -> int:
         """Allocate a slot for a new prefix (LRU eviction).
