@@ -12,7 +12,6 @@ MATRIX_JSON = ROOT / "docs/reference/agent-config/claude_md_matrix.json"
 
 REQUIRED_GOVERNED = {
     "CLAUDE.md",
-    "kernel-dev/llama-cpp-dev/CLAUDE.md",
 }
 
 

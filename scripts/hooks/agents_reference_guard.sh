@@ -28,6 +28,7 @@ mapfile -t refs < <(rg -o '`[^`]+\.md`' "$FILE_PATH" | tr -d '`' | sed 's/:.*$//
 missing=()
 for ref in "${refs[@]}"; do
   [[ "$ref" =~ ^https?:// ]] && continue
+  [[ "$ref" == *'*'* ]] && continue
   if [[ "$ref" == /* ]]; then
     target="$ref"
   else
