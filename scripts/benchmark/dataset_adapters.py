@@ -1547,7 +1547,9 @@ class DebugBenchAdapter(BaseAdapter):
             "```",
             "",
             "Find and fix the bug(s) in the code above. "
-            "Provide the corrected code.",
+            "Provide the corrected code. "
+            "Fix ONLY the bug — do NOT rewrite, rename variables, "
+            "change data structures, or optimize. Keep the original code structure.",
         ])
 
         tier = self._get_tier_for_index(idx)
