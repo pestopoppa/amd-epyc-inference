@@ -465,7 +465,7 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
 
 
 _FINAL_RE = re.compile(
-    r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
+    r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(-?[\d.]+(?:e[+-]?\d+)?|True|False|None))\s*\)""",
     re.DOTALL,
 )
 

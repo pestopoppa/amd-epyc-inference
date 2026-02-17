@@ -174,7 +174,11 @@ class CorpusRetriever:
             return False
 
     def _load_sharded_sqlite(self, index_path: Path, meta_file: Path) -> bool:
-        """Load v3 sharded SQLite index (snippets.db + shard_{00..N}.db)."""
+        """Load v3 sharded SQLite index (snippets.db + shard_{00..N}.db).
+
+        Tolerates in-progress builds: missing shards are stored as None
+        in _shard_conns and skipped during queries.
+        """
         try:
             t0 = time.perf_counter()
 
@@ -197,33 +201,43 @@ class CorpusRetriever:
                 str(snippets_db_path), check_same_thread=False,
             )
             self._snippets_db.execute("PRAGMA mmap_size=1073741824")
-            self._snippets_db.execute("PRAGMA query_only=ON")
 
-            # Open shard connections
+            # Open shard connections — tolerate missing/in-progress shards
             self._shard_conns = []
+            available_shards = 0
             for i in range(num_shards):
                 shard_path = index_path / f"shard_{i:02d}.db"
                 if not shard_path.exists():
-                    self._load_error = f"shard_{i:02d}.db not found"
-                    _log.warning("Missing shard: %s", shard_path)
-                    return False
-                conn = sqlite3.connect(str(shard_path), check_same_thread=False)
-                conn.execute("PRAGMA mmap_size=1073741824")
-                conn.execute("PRAGMA query_only=ON")
-                self._shard_conns.append(conn)
+                    self._shard_conns.append(None)
+                    continue
+                try:
+                    conn = sqlite3.connect(str(shard_path), check_same_thread=False)
+                    conn.execute("PRAGMA mmap_size=1073741824")
+                    self._shard_conns.append(conn)
+                    available_shards += 1
+                except Exception:
+                    self._shard_conns.append(None)
+
+            if available_shards == 0:
+                self._load_error = "No accessible shards"
+                _log.warning("No shards accessible at %s", index_path)
+                return False
 
             self._num_shards = num_shards
 
-            num_snippets = self._snippets_db.execute(
-                "SELECT COUNT(*) FROM snippets"
-            ).fetchone()[0]
+            try:
+                num_snippets = self._snippets_db.execute(
+                    "SELECT COUNT(*) FROM snippets"
+                ).fetchone()[0]
+            except Exception:
+                num_snippets = 0  # Table may not exist yet during early build
 
             self._format = "sharded_sqlite"
             self._loaded = True
             elapsed_ms = (time.perf_counter() - t0) * 1000
             _log.info(
-                "Corpus index loaded (sharded SQLite): %d snippets, %d shards in %.0fms",
-                num_snippets, num_shards, elapsed_ms,
+                "Corpus index loaded (sharded SQLite): %d snippets, %d/%d shards in %.0fms",
+                num_snippets, available_shards, num_shards, elapsed_ms,
             )
             return True
 
@@ -382,9 +396,12 @@ class CorpusRetriever:
     def _retrieve_sharded_sqlite(
         self, query_grams: list[str], max_n: int, min_score: float | None = None,
     ) -> list[CodeSnippet]:
-        """Retrieve from v3 sharded SQLite index."""
+        """Retrieve from v3 sharded SQLite index.
+
+        Tolerates in-progress builds: skips unavailable shards and handles
+        query errors on shards that may be mid-write.
+        """
         assert self._snippets_db is not None
-        assert self._shard_conns
         n_query_grams = len(query_grams)
         threshold = min_score if min_score is not None else self.config.min_score
 
@@ -397,14 +414,20 @@ class CorpusRetriever:
         # Query each relevant shard and aggregate scores
         scores: dict[int, int] = {}  # snippet_id → match count
         for shard_id, grams in shard_groups.items():
-            placeholders = ",".join("?" for _ in grams)
-            rows = self._shard_conns[shard_id].execute(
-                f"SELECT snippet_id, COUNT(*) FROM ngrams "
-                f"WHERE gram IN ({placeholders}) GROUP BY snippet_id",
-                grams,
-            ).fetchall()
-            for sid, cnt in rows:
-                scores[sid] = scores.get(sid, 0) + cnt
+            conn = self._shard_conns[shard_id] if shard_id < len(self._shard_conns) else None
+            if conn is None:
+                continue  # Shard not available yet (in-progress build)
+            try:
+                placeholders = ",".join("?" for _ in grams)
+                rows = conn.execute(
+                    f"SELECT snippet_id, COUNT(*) FROM ngrams "
+                    f"WHERE gram IN ({placeholders}) GROUP BY snippet_id",
+                    grams,
+                ).fetchall()
+                for sid, cnt in rows:
+                    scores[sid] = scores.get(sid, 0) + cnt
+            except Exception:
+                continue  # Shard may be mid-write or unindexed
 
         if not scores:
             return []
