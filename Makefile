@@ -197,6 +197,7 @@ check-agent-config:
 	@$(PY) scripts/validate/validate_agents_structure.py
 	@$(PY) scripts/validate/validate_agents_references.py
 	@$(PY) scripts/validate/validate_claude_md_matrix.py
+	@$(PY) scripts/validate/validate_doc_drift.py
 	@echo "  ✓ agent config checks passed"
 
 security:
