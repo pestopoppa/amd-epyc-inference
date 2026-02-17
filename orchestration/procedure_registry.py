@@ -858,8 +858,6 @@ class ProcedureRegistry:
             "any": any,
             "all": all,
             "isinstance": isinstance,
-            "hasattr": hasattr,
-            "getattr": getattr,
         }
         return eval(command, {"__builtins__": {}}, eval_context)
 

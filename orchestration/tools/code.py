@@ -75,8 +75,8 @@ _DANGEROUS_PATTERNS = [
     re.compile(r"\bcurl\b.*\|\s*(ba)?sh", re.IGNORECASE),  # curl | sh
     re.compile(r"\bwget\b.*\|\s*(ba)?sh", re.IGNORECASE),  # wget | sh
     re.compile(r"\b(python|perl|ruby)\s+-e\b", re.IGNORECASE),  # inline script exec
-    re.compile(r"\beval\b", re.IGNORECASE),  # shell eval
-    re.compile(r"`.*`"),  # backtick command substitution
+    re.compile(r"\beval\s+", re.IGNORECASE),  # shell eval (with trailing space to avoid false positives)
+    re.compile(r"`[^`]*`"),  # backtick command substitution
     re.compile(r"\$\("),  # $() command substitution
 ]
 
