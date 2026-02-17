@@ -174,6 +174,14 @@ class ServerManager:
         self.model_path: Optional[str] = None
         self.draft_model_path: Optional[str] = None
         self.mmproj_path: Optional[str] = None
+        # Reusable HTTP session for connection pooling (health checks, inference)
+        self._http_session: Optional[requests.Session] = None
+
+    def _get_http_session(self) -> requests.Session:
+        """Get or create a reusable HTTP session for connection pooling."""
+        if self._http_session is None:
+            self._http_session = requests.Session()
+        return self._http_session
 
     def start(
         self,
@@ -278,9 +286,10 @@ class ServerManager:
         url = f"http://127.0.0.1:{self.port}/health"
         start_time = time.time()
 
+        session = self._get_http_session()
         while time.time() - start_time < timeout:
             try:
-                response = requests.get(url, timeout=2)
+                response = session.get(url, timeout=2)
                 if response.status_code == 200:
                     # Verify expert count from server log
                     if hasattr(self, '_stderr_file') and self._stderr_file:
@@ -322,7 +331,10 @@ class ServerManager:
         return self.process is not None and self.process.poll() is None
 
     def stop(self) -> None:
-        """Stop the server process."""
+        """Stop the server process and close HTTP session."""
+        if self._http_session is not None:
+            self._http_session.close()
+            self._http_session = None
         if self.process:
             self.process.terminate()
             try:
@@ -368,7 +380,7 @@ class ServerManager:
             )
 
         url = f"http://127.0.0.1:{self.port}/completion"
-        collected_content = ""
+        collected_chunks: list[str] = []
         timed_out = False
         timings = {}
 
@@ -385,7 +397,8 @@ class ServerManager:
 
         try:
             # Use streaming to collect tokens incrementally
-            response = requests.post(
+            session = self._get_http_session()
+            response = session.post(
                 url,
                 json=payload,
                 timeout=(30, timeout),  # (connect timeout, read timeout)
@@ -407,7 +420,7 @@ class ServerManager:
                     try:
                         data = json.loads(line[6:])  # Skip "data: " prefix
                         if "content" in data:
-                            collected_content += data["content"]
+                            collected_chunks.append(data["content"])
                         # Final message contains timings
                         if data.get("stop", False):
                             timings = data.get("timings", {})
@@ -417,7 +430,7 @@ class ServerManager:
         except requests.exceptions.Timeout:
             timed_out = True
         except requests.exceptions.RequestException as e:
-            if not collected_content:
+            if not collected_chunks:
                 return InferenceResult(
                     raw_output=str(e),
                     exit_code=1,
@@ -425,6 +438,8 @@ class ServerManager:
                 )
             # If we have partial content, return it despite the error
             timed_out = True
+
+        collected_content = "".join(collected_chunks)
 
         # Build output in format compatible with output_parser
         tokens_per_second = timings.get("predicted_per_second", 0)
@@ -492,7 +507,8 @@ class ServerManager:
 
         start_time = time.time()
         try:
-            response = requests.post(
+            session = self._get_http_session()
+            response = session.post(
                 url,
                 json=payload,
                 timeout=(30, timeout),
