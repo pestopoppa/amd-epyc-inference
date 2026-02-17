@@ -51,6 +51,8 @@ FINAL(solution)
 Question: "Write a Python function for shortest palindrome" / "Fix the bug in this code"
 ```python
 # Submit the CODE as a string — not the function output, not a description
+# WRONG: def shortestPalindrome(...): ... then FINAL(shortestPalindrome) ← passes function object!
+# RIGHT: wrap code in triple-quoted string, then FINAL(solution)
 solution = '''
 def shortestPalindrome(s: str) -> str:
     if not s: return s
