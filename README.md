@@ -136,7 +136,7 @@ See [docs/SETUP.md#container-setup](docs/SETUP.md#container-setup) for detailed 
 
 ## Documentation
 
-### Research Chapters (23 chapters in 5 parts)
+### Research Chapters (27 chapters in 5 parts)
 
 See **[Chapter Index](docs/chapters/INDEX.md)** for the full list with audience-specific reading paths.
 
@@ -146,7 +146,7 @@ See **[Chapter Index](docs/chapters/INDEX.md)** for the full list with audience-
 | II: Inference Optimization | 05-09 | Speculative decoding, MoE, prompt lookup |
 | III: System Architecture | 10-14 | Orchestration, REPL, servers, pipelines |
 | IV: Intelligence & Learning | 15-20 | MemRL, graphs, seeding, procedures |
-| V: Operations & Quality | 21-23 | Benchmarking, tools, security |
+| V: Operations & Quality | 21-27 | Benchmarking, tools, security, debugger, skills |
 
 ### Reference & Guides
 
@@ -179,7 +179,7 @@ $PROJECT_ROOT/                 # Set via ORCHESTRATOR_PATHS_PROJECT_ROOT
 ├── .env.example               # Environment configuration template
 │
 ├── docs/
-│   ├── chapters/              # 23 research chapters (5 parts)
+│   ├── chapters/              # 27 research chapters (5 parts)
 │   │   ├── INDEX.md           # Chapter index with reading paths
 │   │   ├── 01-hardware-system.md ... 04-storage-and-safety.md
 │   │   ├── 05-speculative-decoding.md ... 09-deprecated-approaches.md
