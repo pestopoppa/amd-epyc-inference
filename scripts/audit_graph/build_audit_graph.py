@@ -279,7 +279,7 @@ def _hashed_embedding(text: str, dim: int = 128) -> list[float]:
     if not toks:
         return vec
     for t in toks:
-        h = int(hashlib.md5(t.encode("utf-8")).hexdigest(), 16)
+        h = int(hashlib.sha256(t.encode("utf-8")).hexdigest(), 16)
         idx = h % dim
         sign = 1.0 if ((h >> 8) & 1) else -1.0
         vec[idx] += sign
@@ -405,7 +405,7 @@ def build_graphs(events: list[Event], cluster_map: dict[str, int]) -> tuple[dict
         for e in evs:
             payload = e.payload()
             cid = cluster_map.get(payload, -1)
-            fine_id = f"{e.category}|{hashlib.md5(payload.encode('utf-8')).hexdigest()[:12]}"
+            fine_id = f"{e.category}|{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:12]}"
             coarse_id = f"{e.category}|c{cid}"
 
             fine_nodes.setdefault(
@@ -438,8 +438,8 @@ def build_graphs(events: list[Event], cluster_map: dict[str, int]) -> tuple[dict
             pb = b.payload()
             ca = cluster_map.get(pa, -1)
             cb = cluster_map.get(pb, -1)
-            fa = f"{a.category}|{hashlib.md5(pa.encode('utf-8')).hexdigest()[:12]}"
-            fb = f"{b.category}|{hashlib.md5(pb.encode('utf-8')).hexdigest()[:12]}"
+            fa = f"{a.category}|{hashlib.sha256(pa.encode('utf-8')).hexdigest()[:12]}"
+            fb = f"{b.category}|{hashlib.sha256(pb.encode('utf-8')).hexdigest()[:12]}"
             coa = f"{a.category}|c{ca}"
             cob = f"{b.category}|c{cb}"
             fine_edges[(fa, fb)] += 1
@@ -482,7 +482,7 @@ def build_raw_graph(events: list[Event]) -> tuple[dict[str, Any], list[dict[str,
     for sk, evs in by_session.items():
         for e in evs:
             payload = e.payload()
-            node_id = f"{e.category}|{hashlib.md5(payload.encode('utf-8')).hexdigest()[:12]}"
+            node_id = f"{e.category}|{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:12]}"
             nodes.setdefault(
                 node_id,
                 {
@@ -498,8 +498,8 @@ def build_raw_graph(events: list[Event]) -> tuple[dict[str, Any], list[dict[str,
         for a, b in zip(evs, evs[1:]):
             pa = a.payload()
             pb = b.payload()
-            na = f"{a.category}|{hashlib.md5(pa.encode('utf-8')).hexdigest()[:12]}"
-            nb = f"{b.category}|{hashlib.md5(pb.encode('utf-8')).hexdigest()[:12]}"
+            na = f"{a.category}|{hashlib.sha256(pa.encode('utf-8')).hexdigest()[:12]}"
+            nb = f"{b.category}|{hashlib.sha256(pb.encode('utf-8')).hexdigest()[:12]}"
             edges[(na, nb)] += 1
             transition_rows.append(
                 {
@@ -933,7 +933,7 @@ def main() -> None:
         "category_details_template": lambda e: f"{e.category}|d:{_normalize_template(e.details)}",
         "category_both_template": lambda e: f"{e.category}|b:{_normalize_template(e.payload())}",
         "category_top_payload": lambda e: (
-            f"{e.category}|p:{hashlib.md5(e.payload().encode('utf-8')).hexdigest()[:8]}"
+            f"{e.category}|p:{hashlib.sha256(e.payload().encode('utf-8')).hexdigest()[:8]}"
             if e.payload() in top_payloads
             else f"{e.category}|p:OTHER"
         ),

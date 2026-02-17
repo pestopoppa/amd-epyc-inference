@@ -709,7 +709,7 @@ def _architect_delegated_answer(
                 # row, inject an error to break the loop instead of wasting
                 # another turn on the same silent execution.
                 import hashlib
-                _code_hash = hashlib.md5(code.encode()).hexdigest()
+                _code_hash = hashlib.sha256(code.encode()).hexdigest()
                 if _code_hash == _prev_code_hash:
                     deleg_last_error = (
                         "You generated the exact same code as last turn. "

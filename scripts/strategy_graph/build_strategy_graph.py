@@ -348,7 +348,7 @@ def _hashed_embedding(text: str, dim: int = 128) -> list[float]:
     if not toks:
         return vec
     for t in toks:
-        h = int(hashlib.md5(t.encode("utf-8")).hexdigest(), 16)
+        h = int(hashlib.sha256(t.encode("utf-8")).hexdigest(), 16)
         idx = h % dim
         sign = 1.0 if ((h >> 8) & 1) else -1.0
         vec[idx] += sign
@@ -461,7 +461,7 @@ def build_raw_graph(events: list[Event]) -> tuple[dict[str, Any], list[dict[str,
     for sk, evs in by_session.items():
         for e in evs:
             payload = e.payload()
-            node_id = f"{e.category}|{hashlib.md5(payload.encode('utf-8')).hexdigest()[:12]}"
+            node_id = f"{e.category}|{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:12]}"
             nodes.setdefault(
                 node_id,
                 {
@@ -477,8 +477,8 @@ def build_raw_graph(events: list[Event]) -> tuple[dict[str, Any], list[dict[str,
         for a, b in zip(evs, evs[1:]):
             pa = a.payload()
             pb = b.payload()
-            na = f"{a.category}|{hashlib.md5(pa.encode('utf-8')).hexdigest()[:12]}"
-            nb = f"{b.category}|{hashlib.md5(pb.encode('utf-8')).hexdigest()[:12]}"
+            na = f"{a.category}|{hashlib.sha256(pa.encode('utf-8')).hexdigest()[:12]}"
+            nb = f"{b.category}|{hashlib.sha256(pb.encode('utf-8')).hexdigest()[:12]}"
             edges[(na, nb)] += 1
             transition_rows.append(
                 {
