@@ -15,12 +15,14 @@
 3. Assign role based on tier scores. Do NOT run separate speed benchmarks.
 
 ### Step 3: Full Benchmark Suites (Ask User First)
+
+> **Note:** `run_overnight_benchmark_suite.sh` has been moved to `scripts/benchmark/deprecated/`.
+> Use individual suite scripts or `run_thinking_rubric.sh` instead.
+
 ```bash
-./scripts/benchmark/run_overnight_benchmark_suite.sh --suite all        # All 8 suites
-./scripts/benchmark/run_overnight_benchmark_suite.sh --suite thinking   # Or specific suites
-./scripts/benchmark/run_overnight_benchmark_suite.sh --suite coder
-./scripts/benchmark/run_overnight_benchmark_suite.sh --suite instruction_precision
-./scripts/benchmark/run_overnight_benchmark_suite.sh --suite long_context
+# Deprecated (still functional, moved to scripts/benchmark/deprecated/):
+./scripts/benchmark/deprecated/run_overnight_benchmark_suite.sh --suite all
+./scripts/benchmark/deprecated/run_overnight_benchmark_suite.sh --suite thinking
 ```
 
 ---
@@ -104,7 +106,7 @@ conversion_factor = new_score / old_score  (reference: DeepSeek-R1-8B 112/120 ol
 
 ## Eval Log Analysis Protocol
 
-1. Run lookup FIRST — no speculation: `python3 scripts/benchmark/lookup_question.py <question_id>`
+1. Look up question data FIRST — no speculation: check `benchmarks/prompts/v1/` for question content and `benchmarks/results/runs/` for model answers
 2. Show full output to user (question, expected answer, model answers, scores)
 3. If scoring looks wrong, replay scorer against stored answers
 4. Then analyze — only after raw data is presented

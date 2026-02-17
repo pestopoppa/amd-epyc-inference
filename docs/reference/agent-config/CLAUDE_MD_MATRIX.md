@@ -7,13 +7,11 @@ This matrix defines governance boundaries for `CLAUDE.md` files discovered in th
 | Path | Scope | Governance | Action |
 |---|---|---|---|
 | `CLAUDE.md` | Project root agent policy | governed | Maintain and keep aligned with hooks/skills/docs |
-| `kernel-dev/llama-cpp-dev/CLAUDE.md` | llama.cpp dev subproject policy | governed | Account for constraints; do not overwrite subproject intent |
 
 ## Related Governance Files
 
 | Path | Purpose |
 |---|---|
-| `kernel-dev/llama-cpp-dev/AGENTS.md` | Mandatory contributor/AI usage constraints for kernel-dev subproject |
 | `CLAUDE_GUIDE.md` | Human-facing explanation of project-level agent configuration |
 
 ## Non-Governed Discovery Classes

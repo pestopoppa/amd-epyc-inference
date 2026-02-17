@@ -27,4 +27,3 @@ Do not use when:
 ## Governed Baseline
 
 - `CLAUDE.md`
-- `kernel-dev/llama-cpp-dev/CLAUDE.md`
