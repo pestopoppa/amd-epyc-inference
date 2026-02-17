@@ -83,6 +83,7 @@ class ParallelEmbedderClient:
         self._http_client: Optional["httpx.AsyncClient"] = None
         self._server_health: dict[str, float] = {}  # url -> last_failure_time
         self._closed = False
+        self._sync_pool: Optional["concurrent.futures.ThreadPoolExecutor"] = None
 
     async def _get_client(self) -> "httpx.AsyncClient":
         """Get or create the async HTTP client (lazy initialization)."""
@@ -306,6 +307,14 @@ class ParallelEmbedderClient:
         results = await asyncio.gather(*tasks)
         return np.array(results, dtype=np.float32)
 
+    def _get_sync_pool(self) -> "concurrent.futures.ThreadPoolExecutor":
+        """Get or create a reusable thread pool for sync wrappers."""
+        if self._sync_pool is None:
+            import concurrent.futures
+
+            self._sync_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        return self._sync_pool
+
     def embed_sync(self, text: str) -> np.ndarray:
         """Synchronous wrapper for embed_async.
 
@@ -321,12 +330,10 @@ class ParallelEmbedderClient:
             loop = None
 
         if loop is not None:
-            # Already in an event loop - use thread
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, self.embed_async(text))
-                return future.result()
+            # Already in an event loop - use reusable thread pool
+            pool = self._get_sync_pool()
+            future = pool.submit(asyncio.run, self.embed_async(text))
+            return future.result()
         else:
             # No event loop - create one
             return asyncio.run(self.embed_async(text))
@@ -346,11 +353,9 @@ class ParallelEmbedderClient:
             loop = None
 
         if loop is not None:
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, self.embed_batch_async(texts))
-                return future.result()
+            pool = self._get_sync_pool()
+            future = pool.submit(asyncio.run, self.embed_batch_async(texts))
+            return future.result()
         else:
             return asyncio.run(self.embed_batch_async(texts))
 
@@ -408,11 +413,9 @@ class ParallelEmbedderClient:
             loop = None
 
         if loop is not None:
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(asyncio.run, self.health_check_all())
-                return future.result()
+            pool = self._get_sync_pool()
+            future = pool.submit(asyncio.run, self.health_check_all())
+            return future.result()
         else:
             return asyncio.run(self.health_check_all())
 
@@ -432,12 +435,13 @@ class ParallelEmbedderClient:
                 loop = None
 
             if loop is not None:
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    pool.submit(asyncio.run, self.close())
+                pool = self._get_sync_pool()
+                pool.submit(asyncio.run, self.close())
             else:
                 asyncio.run(self.close())
+        if self._sync_pool is not None:
+            self._sync_pool.shutdown(wait=False)
+            self._sync_pool = None
 
     @property
     def embedding_dim(self) -> int:
@@ -446,6 +450,9 @@ class ParallelEmbedderClient:
 
     def __del__(self):
         """Cleanup on garbage collection."""
+        if self._sync_pool is not None:
+            self._sync_pool.shutdown(wait=False)
+            self._sync_pool = None
         if self._http_client is not None and not self._closed:
             # Can't reliably close async client in __del__
             # Just mark as closed to prevent further use
