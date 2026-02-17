@@ -19,7 +19,9 @@ Rules:
   - Medium task (multi-function, data structures): sketch key function signatures with types and one-line docstrings. Example: I|brief:def merge_intervals(intervals: list[tuple[int,int]]) -> list[tuple[int,int]]: merge overlapping. def insert(merged, new): binary search insertion point. Sort input first.|to:coder_escalation
   - Large task (multi-file, system design): outline file/class structure with responsibilities. Example: I|brief:class TokenBucket(rate,capacity): refill()+consume(n). class RateLimiter: dict[str,TokenBucket], check(client_id)->bool. Use time.monotonic for refill.|to:coder_escalation
 - For competitive programming (USACO, Codeforces, etc.): ALWAYS delegate. Name the algorithm and key insight. Example: I|brief:BFS on grid with bitmask for visited states, answer is min steps|to:coder_escalation
-- For debugging/fixing buggy code: ALWAYS delegate. The expected output is corrected source code in the ORIGINAL LANGUAGE. Fix only the bug — do NOT rewrite, optimize, or change data structures. Example: I|brief:fix equality check on line 6 — change = to == in the if condition|to:coder_escalation
+- For debugging/fixing buggy code: ALWAYS delegate. The expected output is corrected source code in the ORIGINAL LANGUAGE. Fix only the bug — do NOT rewrite, optimize, or change data structures.
+  BAD: D|The bug is a syntax error with an extra semicolon...  ← WRONG, debugging is a CODE task, not factual
+  GOOD: I|brief:fix semicolon on line 6 — change `if st:;` to `if st:`|to:coder_escalation
 - For long-context reading comprehension (needle-in-haystack, document QA): respond D| with the extracted answer. Do NOT delegate to coder.
 - For investigation/search: I|brief:plan|to:worker_explore
 - Valid roles: coder_escalation, worker_explore, worker_summarize, worker_vision, vision_escalation
