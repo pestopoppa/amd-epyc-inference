@@ -278,9 +278,18 @@ class ServerManager:
         url = f"http://127.0.0.1:{self.port}/health"
         start_time = time.time()
 
+        # Reuse a single HTTP session for connection pooling across poll iterations
+        session = requests.Session()
+        try:
+            return self._poll_health(session, url, start_time, timeout)
+        finally:
+            session.close()
+
+    def _poll_health(self, session: "requests.Session", url: str, start_time: float, timeout: int) -> bool:
+        """Internal polling loop using a persistent HTTP session."""
         while time.time() - start_time < timeout:
             try:
-                response = requests.get(url, timeout=2)
+                response = session.get(url, timeout=2)
                 if response.status_code == 200:
                     # Verify expert count from server log
                     if hasattr(self, '_stderr_file') and self._stderr_file:
@@ -368,7 +377,7 @@ class ServerManager:
             )
 
         url = f"http://127.0.0.1:{self.port}/completion"
-        collected_content = ""
+        collected_chunks: list[str] = []
         timed_out = False
         timings = {}
 
@@ -407,7 +416,7 @@ class ServerManager:
                     try:
                         data = json.loads(line[6:])  # Skip "data: " prefix
                         if "content" in data:
-                            collected_content += data["content"]
+                            collected_chunks.append(data["content"])
                         # Final message contains timings
                         if data.get("stop", False):
                             timings = data.get("timings", {})
@@ -417,7 +426,7 @@ class ServerManager:
         except requests.exceptions.Timeout:
             timed_out = True
         except requests.exceptions.RequestException as e:
-            if not collected_content:
+            if not collected_chunks:
                 return InferenceResult(
                     raw_output=str(e),
                     exit_code=1,
@@ -427,6 +436,7 @@ class ServerManager:
             timed_out = True
 
         # Build output in format compatible with output_parser
+        collected_content = "".join(collected_chunks)
         tokens_per_second = timings.get("predicted_per_second", 0)
         prompt_tokens = timings.get("prompt_n", 0)
         completion_tokens = timings.get("predicted_n", len(collected_content.split()))
