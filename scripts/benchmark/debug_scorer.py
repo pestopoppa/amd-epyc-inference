@@ -105,7 +105,32 @@ def _score_exact_match(
     except (ValueError, TypeError):
         pass
 
-    return extracted == expected_norm
+    if extracted == expected_norm:
+        return True
+
+    # Fallback: vision models wrap OCR results in prose like
+    #   'The text in the image is "iRaeenlc".' or 'The image contains the text: iRaeenlc'
+    # Try extracting quoted text or text after colon from the full answer.
+    if normalize:
+        answer_lower = answer.strip().lower()
+        # Check quoted: "answer" or 'answer'
+        for q in ('"', "'", "\u201c"):
+            q_end = "\u201d" if q == "\u201c" else q
+            idx = answer_lower.find(q)
+            if idx >= 0:
+                end = answer_lower.find(q_end, idx + 1)
+                if end > idx:
+                    candidate = answer_lower[idx + 1:end].strip().rstrip(".")
+                    if candidate == expected_norm:
+                        return True
+        # Check after colon on last meaningful line
+        for line in reversed(answer.strip().split("\n")):
+            if ":" in line:
+                candidate = line.split(":", 1)[1].strip().lower().rstrip(".")
+                if candidate == expected_norm:
+                    return True
+
+    return False
 
 
 def _score_multiple_choice(
