@@ -327,7 +327,7 @@ class TestRoleEscalation:
         delegator = ProactiveDelegator(registry, primitives)
 
         escalated = delegator._escalate_role("coder_escalation")
-        assert escalated == "architect_general"
+        assert escalated == "architect_coding"
 
     def test_escalate_role_architect_to_coding(self):
         """Test architect escalation."""

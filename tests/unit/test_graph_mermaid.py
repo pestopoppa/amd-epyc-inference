@@ -27,12 +27,10 @@ class TestGenerateMermaid:
     def test_contains_escalation_edges(self):
         """Verify key escalation transitions are present."""
         code = generate_mermaid()
-        # FrontdoorNode -> CoderNode (frontdoor escalates to coder_escalation)
-        assert "FrontdoorNode --> CoderNode" in code
-        # WorkerNode -> CoderNode (workers escalate to coder_escalation)
-        assert "WorkerNode --> CoderNode" in code
-        # CoderNode -> ArchitectNode
-        assert "CoderNode --> ArchitectNode" in code
+        # FrontdoorNode -> CoderEscalationNode (frontdoor escalates to coder_escalation)
+        assert "FrontdoorNode --> CoderEscalationNode" in code
+        # WorkerNode -> CoderEscalationNode (workers escalate to coder_escalation)
+        assert "WorkerNode --> CoderEscalationNode" in code
         # CoderEscalationNode -> ArchitectCodingNode
         assert "CoderEscalationNode --> ArchitectCodingNode" in code
         # IngestNode -> ArchitectNode

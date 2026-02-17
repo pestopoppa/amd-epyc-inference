@@ -289,8 +289,8 @@ class TestComparativeRewardsCostAware:
             ),
         }
         rewards = fn(results)
-        # Both at expected speed → base 0.5, no penalty
-        assert rewards["coder_escalation:direct"] == pytest.approx(0.5)
+        # Both correct → frontdoor gets 1.0 (cheapest), coder_escalation penalized by cost tier
+        assert rewards["coder_escalation:direct"] == pytest.approx(0.327, abs=0.01)
 
     def test_both_correct_specialist_slow(self):
         fn, RR = self._import_fn()

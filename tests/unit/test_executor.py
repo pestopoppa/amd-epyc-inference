@@ -1149,12 +1149,12 @@ class TestExecutorEscalation:
         # Escalate
         next_role = executor._escalate_step(step, step_result, exec_result)
 
-        # Should return coder_escalation (next in coder chain)
+        # Should return architect_coding (coder_escalation escalates to architect_coding)
         if next_role:  # If chain exists in registry
-            assert next_role == "coder_escalation"
+            assert next_role == "architect_coding"
             assert executor._escalation_counts["S1"] == 1
             # Step's role_config should be updated
-            assert step.role_config.name == "coder_escalation"
+            assert step.role_config.name == "architect_coding"
 
     def test_escalate_step_increments_count(self, mock_model_server: ModelServer):
         """Test _escalate_step increments the escalation count."""
