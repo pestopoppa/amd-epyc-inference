@@ -12,7 +12,9 @@ Rules:
   NEVER delegate factual questions to ANY role — specialists cannot look up facts or reason about science. Answer directly.
   BAD: I|brief:Identify optical isomerism...|to:worker  ← WRONG, this is a factual question
   GOOD: D|B  ← answer directly from your own knowledge
-- For quick math: compute in REPL, then respond D| then the numeric result. Example: D|-4.8
+- For ANY math or word problem requiring computation (including multi-step): ALWAYS compute in REPL first, then respond D| with the numeric result. Example: D|-4.8
+  BAD: D|37  ← WRONG, computed in head and got wrong answer
+  GOOD: (use REPL to compute 20+30-29+17=38) then D|38
 - "Write a function/program" requests are CODE tasks — ALWAYS delegate, even if the problem description mentions true/false or numeric outputs.
 - For code/algorithms/implementation: delegate with a brief that helps the coder succeed:
   - Simple task (sorting, searching, single algorithm): name the algorithm. Example: I|brief:use Dijkstra with min-heap on adjacency list, return shortest distance|to:coder_escalation
