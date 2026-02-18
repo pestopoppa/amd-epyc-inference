@@ -157,6 +157,8 @@ class REPLEnvironment(
         self._tool_invocations = 0  # Count of TOOL()/CALL() invocations
         self._active_tool_chain_id: str | None = None
         self._active_tool_chain_index: int = 0
+        self._active_tool_chain_meta: dict[str, Any] | None = None
+        self._chain_execution_log: list[dict[str, Any]] = []
 
         # Exploration tracking (for forced exploration validation)
         self._exploration_calls = 0  # Count of peek/grep/llm_call calls
@@ -472,6 +474,7 @@ class REPLEnvironment(
                     'CALL("run_python_code", code=your_code_string, stdin_data=test_input) '
                     "to test it, then FINAL(your_code_string) to submit."
                 )
+
             elif "exec()" in violation or "eval()" in violation:
                 hints = (
                     " Hint: use run_python_code(code_string, stdin_data) "
@@ -493,6 +496,18 @@ class REPLEnvironment(
             raise REPLSecurityError(
                 f"Dangerous operation not allowed: {violation}.{hints}"
             )
+
+    def get_chain_execution_log(self) -> list[dict[str, Any]]:
+        """Return structured chain execution diagnostics for this REPL session."""
+        return [dict(item) for item in self._chain_execution_log]
+
+    def _finalize_active_chain_meta(self) -> None:
+        """Persist and clear active chain metadata for the current structured turn."""
+        if self._active_tool_chain_meta is not None:
+            self._chain_execution_log.append(dict(self._active_tool_chain_meta))
+        self._active_tool_chain_id = None
+        self._active_tool_chain_index = 0
+        self._active_tool_chain_meta = None
 
     def _spill_output(self, output: str) -> str:
         """Write full output to file when it exceeds output_cap, return summary.
@@ -691,6 +706,16 @@ class REPLEnvironment(
         tool_calls = [site.func_name for site in call_sites]
 
         if len(tool_calls) > 1:
+            self._active_tool_chain_id = uuid.uuid4().hex[:12]
+            self._active_tool_chain_index = 0
+            self._active_tool_chain_meta = {
+                "chain_id": self._active_tool_chain_id,
+                "mode_requested": self._tool_chain_mode,
+                "mode_used": "seq",
+                "fallback_to_seq": False,
+                "waves": 0,
+                "steps": len(tool_calls),
+            }
             # Check if ALL tool calls are read-only — if so, allow parallel execution
             # Read-only tools (grep, peek, list_dir, etc.) are safe to run concurrently
             read_only_tools = self._get_read_only_tools()
@@ -748,6 +773,7 @@ class REPLEnvironment(
             non_chainable_sorted = sorted(non_chainable)
 
             if not all_read_only and non_chainable_sorted:
+                self._finalize_active_chain_meta()
                 return ExecutionResult(
                     output="",
                     is_final=False,
@@ -764,6 +790,14 @@ class REPLEnvironment(
                     code, self._globals, read_only_tools
                 )
                 if parallel_calls is not None and len(parallel_calls) > 1:
+                    self._active_tool_chain_meta = {
+                        "chain_id": self._active_tool_chain_id,
+                        "mode_requested": self._tool_chain_mode,
+                        "mode_used": "parallel_read_only",
+                        "fallback_to_seq": False,
+                        "waves": 1,
+                        "steps": len(parallel_calls),
+                    }
                     results = execute_parallel_calls(
                         parallel_calls, self._globals, self._state_lock
                     )
@@ -781,6 +815,7 @@ class REPLEnvironment(
                     observation = self._spill_output(
                         "Observation:\n" + "\n---\n".join(parts)
                     )
+                    self._finalize_active_chain_meta()
                     return ExecutionResult(
                         output=observation,
                         is_final=False,
@@ -794,7 +829,11 @@ class REPLEnvironment(
                     tool_functions=tool_functions,
                 )
                 if dep_result is not None:
+                    self._finalize_active_chain_meta()
                     return dep_result
+                if self._active_tool_chain_meta is not None:
+                    self._active_tool_chain_meta["fallback_to_seq"] = True
+                    self._active_tool_chain_meta["mode_used"] = "seq"
             # Fall through to sequential exec()
 
         # Execute the code (single tool or simple expression)
@@ -819,9 +858,6 @@ class REPLEnvironment(
                     pass
 
             try:
-                if len(tool_calls) > 1:
-                    self._active_tool_chain_id = uuid.uuid4().hex[:12]
-                    self._active_tool_chain_index = 0
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
                     exec(code, self._globals)
 
@@ -869,8 +905,7 @@ class REPLEnvironment(
                 )
 
         finally:
-            self._active_tool_chain_id = None
-            self._active_tool_chain_index = 0
+            self._finalize_active_chain_meta()
             if _alarm_set:
                 signal.alarm(0)
                 signal.signal(signal.SIGALRM, old_handler)
@@ -926,11 +961,13 @@ class REPLEnvironment(
         wave_assigned: set[str] = set()
         obs_parts: list[str] = []
         wave_index = 0
+        wave_count = 0
 
         def _flush_wave() -> ExecutionResult | None:
-            nonlocal pending_wave, wave_assigned
+            nonlocal pending_wave, wave_assigned, wave_count
             if not pending_wave:
                 return None
+            wave_count += 1
             if len(pending_wave) == 1:
                 call = pending_wave[0]
                 try:
@@ -1020,6 +1057,10 @@ class REPLEnvironment(
         flush_res = _flush_wave()
         if flush_res is not None:
             return flush_res
+        if self._active_tool_chain_meta is not None:
+            self._active_tool_chain_meta["mode_used"] = "dep"
+            self._active_tool_chain_meta["fallback_to_seq"] = False
+            self._active_tool_chain_meta["waves"] = wave_count
         observation = self._spill_output("Observation:\n" + "\n---\n".join(obs_parts))
         return ExecutionResult(
             output=observation,

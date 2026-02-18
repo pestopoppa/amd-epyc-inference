@@ -103,7 +103,7 @@ def _build_delegation_diagnostics(
     }
 
 
-def _build_tool_chain_summary(invocation_log: list) -> list[dict]:
+def _build_tool_chain_summary(invocation_log: list, chain_exec_log: list[dict] | None = None) -> list[dict]:
     """Group chained tool invocations by chain_id for response diagnostics."""
     chains: dict[str, dict] = {}
     for inv in invocation_log:
@@ -123,6 +123,27 @@ def _build_tool_chain_summary(invocation_log: list) -> list[dict]:
         entry["tools"].append(getattr(inv, "tool_name", ""))
         entry["elapsed_ms"] += float(getattr(inv, "elapsed_ms", 0.0) or 0.0)
         entry["success"] = bool(entry["success"] and getattr(inv, "success", False))
+
+    if chain_exec_log:
+        for meta in chain_exec_log:
+            if not isinstance(meta, dict):
+                continue
+            cid = str(meta.get("chain_id", "")).strip()
+            if not cid:
+                continue
+            entry = chains.setdefault(
+                cid,
+                {
+                    "chain_id": cid,
+                    "caller_type": "chain",
+                    "tools": [],
+                    "elapsed_ms": 0.0,
+                    "success": True,
+                },
+            )
+            for k in ("mode_requested", "mode_used", "fallback_to_seq", "waves", "steps"):
+                if k in meta:
+                    entry[k] = meta[k]
 
     summaries = list(chains.values())
     summaries.sort(key=lambda c: c["chain_id"])
@@ -435,7 +456,13 @@ async def _execute_repl(
         {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
         for inv in invocation_log
     ]
-    tool_chains = _build_tool_chain_summary(invocation_log)
+    chain_exec_log = []
+    if hasattr(repl, "get_chain_execution_log"):
+        try:
+            chain_exec_log = repl.get_chain_execution_log()
+        except Exception:
+            chain_exec_log = []
+    tool_chains = _build_tool_chain_summary(invocation_log, chain_exec_log=chain_exec_log)
     tools_used = max(repl._tool_invocations, len(tools_called), len(tool_timings))
 
     # Detect parallel tool usage from invocation log

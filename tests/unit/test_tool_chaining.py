@@ -63,6 +63,13 @@ def test_dependency_mode_executes_mixed_chain(monkeypatch):
     assert "[a]:" in result.output
     assert "[b]:" in result.output
     assert "[c]:" in result.output
+    chain_log = repl.get_chain_execution_log()
+    assert len(chain_log) >= 1
+    last = chain_log[-1]
+    assert last["mode_requested"] == "dep"
+    assert last["mode_used"] == "dep"
+    assert last["fallback_to_seq"] is False
+    assert int(last["waves"]) >= 1
 
 
 def test_dependency_mode_falls_back_to_seq_exec_on_non_call_stmt(monkeypatch):
@@ -72,3 +79,9 @@ def test_dependency_mode_falls_back_to_seq_exec_on_non_call_stmt(monkeypatch):
 
     assert result.error is None
     assert result.output.startswith("Observation:")
+    chain_log = repl.get_chain_execution_log()
+    assert len(chain_log) >= 1
+    last = chain_log[-1]
+    assert last["mode_requested"] == "dep"
+    assert last["mode_used"] == "seq"
+    assert last["fallback_to_seq"] is True

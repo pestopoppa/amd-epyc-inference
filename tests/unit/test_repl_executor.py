@@ -1120,6 +1120,16 @@ class TestToolOutputsInAnswer:
                     caller_type="chain",
                 ),
             ]
+            mock_repl.get_chain_execution_log.return_value = [
+                {
+                    "chain_id": "ch_1",
+                    "mode_requested": "dep",
+                    "mode_used": "dep",
+                    "fallback_to_seq": False,
+                    "waves": 2,
+                    "steps": 2,
+                }
+            ]
             mock_repl_class.return_value = mock_repl
 
             success_result = TaskResult(
@@ -1143,3 +1153,8 @@ class TestToolOutputsInAnswer:
                 assert chain["tools"] == ["read_file", "list_directory"]
                 assert chain["elapsed_ms"] == 25.5
                 assert chain["success"] is True
+                assert chain["mode_requested"] == "dep"
+                assert chain["mode_used"] == "dep"
+                assert chain["fallback_to_seq"] is False
+                assert chain["waves"] == 2
+                assert chain["steps"] == 2
