@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import Counter
 
 from src.api.models import ChatRequest, ChatResponse
 from src.api.services.memrl import score_completed_task
@@ -62,6 +63,30 @@ def _tools_success(answer: str, tool_outputs: list, tool_invocations: int) -> bo
         if text[:TOOL_OUTPUT_MATCH_LEN].lower() in answer_text:
             return True
     return False
+
+
+def _build_delegation_diagnostics(
+    role_history: list[str],
+    delegation_events: list[dict],
+) -> dict:
+    edge_counts = Counter(
+        (e.get("from_role", ""), e.get("to_role", ""))
+        for e in delegation_events
+        if isinstance(e, dict)
+    )
+    repeated_edges = {
+        f"{src}->{dst}": n
+        for (src, dst), n in edge_counts.items()
+        if src and dst and n > 1
+    }
+    role_counts = Counter(role_history)
+    repeated_roles = {r: n for r, n in role_counts.items() if n > 1}
+    return {
+        "role_chain_len": len(role_history),
+        "delegation_events_count": len(delegation_events),
+        "repeated_edges": repeated_edges,
+        "repeated_roles": repeated_roles,
+    }
 
 
 async def _execute_repl(
@@ -353,6 +378,7 @@ async def _execute_repl(
     delegation_success = None
     if delegation_events:
         delegation_success = any(e.get("success") for e in delegation_events)
+    delegation_diag = _build_delegation_diagnostics(role_history, delegation_events)
 
     invocation_log = (
         repl.tool_registry.get_invocation_log()
@@ -392,6 +418,7 @@ async def _execute_repl(
         tools_called=tools_called,
         tool_timings=tool_timings,
         delegation_events=delegation_events,
+        delegation_diagnostics=delegation_diag,
         tools_success=tools_success,
         delegation_success=delegation_success,
         prompt_eval_ms=primitives.total_prompt_eval_ms,

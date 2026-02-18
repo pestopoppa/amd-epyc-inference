@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
 from typing import Any, TYPE_CHECKING
@@ -22,6 +23,7 @@ from src.constants import (
     DELEGATION_MAX_SAME_TARGET,
     DELEGATION_MAX_TOTAL_TOKENS,
 )
+from src.delegation_reports import store_report
 from src.exceptions import InferenceError
 from src.repl_environment import REPLEnvironment
 
@@ -35,9 +37,13 @@ if TYPE_CHECKING:
 _VALID_DELEGATE_ROLES = frozenset(
     {
         "coder_escalation",
+        "worker_coder",
+        "worker_summarize",
         "worker_explore",
         "worker_general",
         "worker_math",
+        "worker_vision",
+        "vision_escalation",
     }
 )
 
@@ -48,6 +54,238 @@ _delegation_local = threading.local()
 
 def _get_delegation_depth() -> int:
     return getattr(_delegation_local, "depth", 0)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        log.warning("Invalid %s=%r, using default %d", name, raw, default)
+        return default
+
+
+def _delegation_specialist_turn_token_cap(
+    delegate_mode: str,
+    question: str,
+    brief: str,
+    delegate_to: str,
+) -> int:
+    """Task-aware specialist turn cap to reduce over-generation latency."""
+    base = _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS", 256)
+    q = f"{question}\n{brief}".lower()
+    summary_signals = ("summarize", "summary", "extract key", "bullet")
+    coding_signals = (
+        "implement", "write code", "class ", "function", "refactor", "patch",
+        "multi-file", "api", "middleware", "algorithm",
+    )
+    if delegate_to == "worker_summarize" or any(s in q for s in summary_signals):
+        base = min(base, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_SUMMARY", 192))
+    elif any(s in q for s in coding_signals):
+        base = max(base, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_CODE", 320))
+    else:
+        base = min(base, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_DEFAULT", 224))
+    return max(96, base)
+
+
+def _delegation_forced_synthesis_token_cap() -> int:
+    """Bound cap-synthesis generation so loop recovery cannot stall."""
+    cap = _env_int("ORCHESTRATOR_DELEGATION_FORCED_SYNTHESIS_N_TOKENS", 128)
+    return max(64, cap)
+
+
+def _delegation_specialist_max_turns(delegate_mode: str) -> int:
+    """Max specialist REPL turns per delegation round."""
+    if delegate_mode == "react":
+        return max(1, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_TURNS_REACT", 3))
+    return max(1, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_TURNS_REPL", 4))
+
+
+def _delegation_specialist_max_seconds() -> float:
+    """Wall-clock budget for one specialist delegation round."""
+    return float(max(10, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_SECONDS", 45)))
+
+
+def _delegation_total_max_seconds() -> float:
+    """End-to-end wall-clock budget for architect delegated flow."""
+    return float(max(20, _env_int("ORCHESTRATOR_DELEGATION_TOTAL_MAX_SECONDS", 110)))
+
+
+def _skip_synthesis_on_timeout() -> bool:
+    """Return latest specialist report directly when timeout guards fire."""
+    raw = os.environ.get("ORCHESTRATOR_DELEGATION_SKIP_SYNTHESIS_ON_TIMEOUT", "1")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delegation_trace_enabled() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_DELEGATION_TRACE", "0")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delegation_summarize_enabled() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_DELEGATION_SUMMARIZE_LONG_REPORTS", "1")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delegation_summarize_threshold_chars() -> int:
+    return max(800, _env_int("ORCHESTRATOR_DELEGATION_SUMMARIZE_REPORT_CHARS", 2800))
+
+
+def _delegation_summarize_n_tokens() -> int:
+    return max(96, _env_int("ORCHESTRATOR_DELEGATION_SUMMARIZE_N_TOKENS", 220))
+
+
+def _delegation_specialist_question_chars() -> int:
+    return max(600, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_QUESTION_CHARS", 2200))
+
+
+def _delegation_specialist_brief_chars() -> int:
+    return max(240, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_BRIEF_CHARS", 700))
+
+
+def _delegation_specialist_context_chars() -> int:
+    return max(0, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_CONTEXT_CHARS", 800))
+
+
+def _delegation_specialist_use_corpus_context() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_DELEGATION_SPECIALIST_CORPUS_CONTEXT", "0")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delegation_compact_specialist_prompt_enabled() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_DELEGATION_COMPACT_SPECIALIST_PROMPT", "1")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _trim_block(text: str, max_chars: int) -> str:
+    body = (text or "").strip()
+    if max_chars <= 0:
+        return ""
+    if len(body) <= max_chars:
+        return body
+    return body[:max_chars].rstrip() + "..."
+
+
+def _delegation_report_handle_enabled() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_DELEGATION_REPORT_HANDLES", "1")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _delegation_report_handle_threshold_chars() -> int:
+    return max(1200, _env_int("ORCHESTRATOR_DELEGATION_REPORT_HANDLE_CHARS", 2600))
+
+
+def _store_report_handle(report: str, delegate_to: str) -> dict[str, str] | None:
+    text = (report or "").strip()
+    if not text:
+        return None
+    try:
+        return store_report(text, delegate_to)
+    except Exception as exc:
+        if _delegation_trace_enabled():
+            log.warning("Failed to persist delegation report handle: %s", exc)
+        return None
+
+
+def _to_report_handle_text(handle: dict[str, str], summary: str) -> str:
+    return (
+        f"[REPORT_HANDLE id={handle.get('id')} chars={handle.get('chars')} "
+        f"sha16={handle.get('sha16')}]\n"
+        f"Use fetch_report('{handle.get('id')}') for full content.\n\n"
+        f"Summary:\n{(summary or '').strip()}"
+    )
+
+
+def _build_compact_specialist_prompt(
+    delegate_to: str,
+    question: str,
+    brief: str,
+    turn: int,
+    last_output: str,
+    last_error: str,
+) -> str:
+    """Compact specialist prompt for delegated mode to reduce prefill cost."""
+    prompt = (
+        f"You are {delegate_to}. Execute the delegated coding task quickly.\n\n"
+        f"User question:\n{question}\n\n"
+        f"Architect guidance:\n{brief}\n\n"
+        "Output Python code only when computation is required. "
+        "If you already have a complete implementation/report, output it directly. "
+        "If executing in REPL, end with FINAL(answer) when possible.\n"
+    )
+    if turn > 0 and (last_output or last_error):
+        prompt += "\nPrevious turn signals:\n"
+        if last_output:
+            prompt += f"- output: {_trim_block(last_output, 600)}\n"
+        if last_error:
+            prompt += f"- error: {_trim_block(last_error, 400)}\n"
+    return prompt
+
+
+def _maybe_summarize_specialist_report(
+    report: str,
+    question: str,
+    primitives: "LLMPrimitives",
+    *,
+    force: bool = False,
+) -> str:
+    """Summarize oversized specialist reports via worker_summarize."""
+    text = (report or "").strip()
+    if not text:
+        return report
+    if not _delegation_summarize_enabled():
+        return report
+    if not force and len(text) < _delegation_summarize_threshold_chars():
+        return report
+    prompt = (
+        "Summarize the specialist report for the architect. Keep only actionable "
+        "implementation details and final recommendation. Max 12 bullets, no fluff.\n\n"
+        f"Question:\n{question[:1200]}\n\n"
+        f"Specialist report:\n{text[:12000]}"
+    )
+    try:
+        summarized = primitives.llm_call(
+            prompt,
+            role="worker_summarize",
+            skip_suffix=True,
+            n_tokens=_delegation_summarize_n_tokens(),
+        )
+        summarized = (summarized or "").strip()
+        if summarized:
+            if _delegation_trace_enabled():
+                log.warning(
+                    "Delegation summarize: report_chars=%d -> summary_chars=%d",
+                    len(text),
+                    len(summarized),
+                )
+            return summarized
+    except Exception as exc:
+        if _delegation_trace_enabled():
+            log.warning("Delegation summarize failed, keeping original report: %s", exc)
+    return report
+
+
+def _compress_report_for_loop(
+    report: str,
+    question: str,
+    primitives: "LLMPrimitives",
+    delegate_to: str,
+) -> tuple[str, dict[str, str] | None]:
+    """Persist long reports and return compact handle+summary text."""
+    text = (report or "").strip()
+    if not text:
+        return report, None
+    if not _delegation_report_handle_enabled():
+        return _maybe_summarize_specialist_report(text, question, primitives), None
+    if len(text) < _delegation_report_handle_threshold_chars():
+        return _maybe_summarize_specialist_report(text, question, primitives), None
+    handle = _store_report_handle(text, delegate_to)
+    if handle is None:
+        return _maybe_summarize_specialist_report(text, question, primitives), None
+    summary = _maybe_summarize_specialist_report(text, question, primitives, force=True)
+    return _to_report_handle_text(handle, summary), handle
 
 
 def _strip_think(text: str) -> str:
@@ -271,8 +509,8 @@ def _parse_architect_decision(response: str) -> dict:
 
 # Full budget for computation turns (code execution in mini-REPL)
 _ARCHITECT_TOKEN_BUDGET: dict[str, int] = {
-    "architect_general": 3375,   # 6.75 t/s × 500s
-    "architect_coding": 5150,    # 10.3 t/s × 500s
+    "architect_general": 768,
+    "architect_coding": 512,
 }
 
 # Tight budget for the routing decision (D|answer or I|brief:...|to:role).
@@ -280,9 +518,21 @@ _ARCHITECT_TOKEN_BUDGET: dict[str, int] = {
 # architect_general (Qwen3-235B) reasons in plain text, exhausting 500 tokens
 # before emitting D|.  Give it 1500 so ~1000 goes to reasoning + 500 to answer.
 _ARCHITECT_DECISION_BUDGET: dict[str, int] = {
-    "architect_general": 1500,
-    "architect_coding": 500,
+    "architect_general": 512,
+    "architect_coding": 192,
 }
+
+
+def _architect_decision_token_budget(role: str) -> int:
+    """Token budget for architect routing decision (turn 0)."""
+    default = _ARCHITECT_DECISION_BUDGET.get(role, 256)
+    return max(64, _env_int("ORCHESTRATOR_DELEGATION_ARCHITECT_DECISION_N_TOKENS", default))
+
+
+def _architect_compute_token_budget(role: str) -> int:
+    """Token budget for architect computation follow-up turns."""
+    default = _ARCHITECT_TOKEN_BUDGET.get(role, 512)
+    return max(128, _env_int("ORCHESTRATOR_DELEGATION_ARCHITECT_COMPUTE_N_TOKENS", default))
 
 
 def _run_architect_decision(
@@ -323,9 +573,9 @@ def _run_architect_decision(
         # Turn 0 = routing decision (tight budget).
         # Turns 1+ = computation follow-up (full budget).
         n_tok = (
-            _ARCHITECT_DECISION_BUDGET.get(architect_role, 500)
+            _architect_decision_token_budget(architect_role)
             if _aturn == 0
-            else _ARCHITECT_TOKEN_BUDGET.get(architect_role, 3375)
+            else _architect_compute_token_budget(architect_role)
         )
         # Early-stop streaming: abort generation once a complete TOON
         # decision line is detected.  Saves 3000+ tokens of post-decision
@@ -578,7 +828,8 @@ def _run_specialist_loop(
     delegate_mode: str,
     primitives: "LLMPrimitives",
     tool_registry: "Any | None",
-) -> tuple[str, int, list[str], list[dict]]:
+    time_budget_s: float | None = None,
+) -> tuple[str, int, list[str], list[dict], bool, bool, dict[str, Any]]:
     """Run specialist delegation execution loop (Phase B).
 
     Returns:
@@ -594,14 +845,36 @@ def _run_specialist_loop(
 
     tools_called: list[str] = []
     phase_tool_timings: list[dict] = []
+    timed_out = False
+    report_rescued = False
+    infer_meta_last: dict[str, Any] = {}
 
     # Both react and repl modes use the same REPL loop
     # (react = structured_mode=True, repl = structured_mode=False)
     structured = delegate_mode == "react"
-    max_delegate_turns = 8 if structured else 10
+    max_delegate_turns = _delegation_specialist_max_turns(delegate_mode)
+    specialist_turn_cap = _delegation_specialist_turn_token_cap(
+        delegate_mode=delegate_mode,
+        question=question,
+        brief=brief,
+        delegate_to=delegate_to,
+    )
+    specialist_time_budget_s = (
+        min(_delegation_specialist_max_seconds(), float(time_budget_s))
+        if time_budget_s is not None
+        else _delegation_specialist_max_seconds()
+    )
+    q_for_specialist = _trim_block(question, _delegation_specialist_question_chars())
+    brief_for_specialist = _trim_block(brief, _delegation_specialist_brief_chars())
+    ctx_for_specialist = _trim_block(context, _delegation_specialist_context_chars())
+    specialist_started = time.perf_counter()
     try:
         deleg_repl = REPLEnvironment(
-            context=f"{brief}\n\nContext:\n{context}" if context else brief,
+            context=(
+                f"{brief_for_specialist}\n\nContext:\n{ctx_for_specialist}"
+                if ctx_for_specialist
+                else brief_for_specialist
+            ),
             llm_primitives=primitives,
             tool_registry=tool_registry,
             role=delegate_to,
@@ -615,38 +888,91 @@ def _run_specialist_loop(
         # specialist never saw the actual problem (constraints, examples,
         # method signatures).
         specialist_task = (
-            f"{question}\n\n"
-            f"## Architect guidance\n{brief}"
+            f"{q_for_specialist}\n\n"
+            f"## Architect guidance\n{brief_for_specialist}"
         )
         # Retrieve corpus context once for the delegation (turn 0 only)
-        corpus_ctx = build_corpus_context(role=delegate_to, task_description=question)
+        corpus_ctx = (
+            build_corpus_context(role=delegate_to, task_description=q_for_specialist)
+            if _delegation_specialist_use_corpus_context()
+            else ""
+        )
 
         for _turn in range(max_delegate_turns):
-            repl_state = deleg_repl.get_state()
-            deleg_prompt = build_root_lm_prompt(
-                state=repl_state,
-                original_prompt=specialist_task,
-                last_output=deleg_last_output,
-                last_error=deleg_last_error,
-                turn=_turn,
-                corpus_context=corpus_ctx if _turn == 0 else "",
-            )
+            elapsed_s = time.perf_counter() - specialist_started
+            if elapsed_s >= specialist_time_budget_s:
+                log.warning(
+                    "Specialist loop timeout: role=%s mode=%s turns=%d elapsed=%.1fs budget=%.1fs",
+                    delegate_to, delegate_mode, _turn, elapsed_s, specialist_time_budget_s,
+                )
+                timed_out = True
+                report = (deleg_last_output or "").strip()
+                if report.lower() in {"", "[no output]", "observation: [no output]"}:
+                    report = (
+                        f"[Delegation timeout after {_turn} turn(s), {elapsed_s:.1f}s. "
+                        f"Specialist role={delegate_to}, mode={delegate_mode}. "
+                        f"Brief={brief[:160]}]"
+                    )
+                break
+            if _delegation_compact_specialist_prompt_enabled():
+                deleg_prompt = _build_compact_specialist_prompt(
+                    delegate_to=delegate_to,
+                    question=q_for_specialist,
+                    brief=brief_for_specialist,
+                    turn=_turn,
+                    last_output=deleg_last_output,
+                    last_error=deleg_last_error,
+                )
+            else:
+                repl_state = deleg_repl.get_state()
+                deleg_prompt = build_root_lm_prompt(
+                    state=repl_state,
+                    original_prompt=specialist_task,
+                    last_output=deleg_last_output,
+                    last_error=deleg_last_error,
+                    turn=_turn,
+                    corpus_context=corpus_ctx if _turn == 0 else "",
+                )
             _final_re = re.compile(
                 r"""FINAL\(\s*(?:'{3}(.+?)'{3}|"{3}(.+?)"{3}|["'](.+?)["']|(\S+?))\s*\)""",
                 re.DOTALL,
             )
             primitives._early_stop_check = lambda text: bool(_final_re.search(text))
+            llm_started = time.perf_counter()
             try:
                 code = primitives.llm_call(
                     deleg_prompt,
                     role=delegate_to,
                     stop_sequences=["\n```\n"],
+                    n_tokens=specialist_turn_cap,
                 )
             finally:
                 primitives._early_stop_check = None
+            llm_elapsed_ms = (time.perf_counter() - llm_started) * 1000
+            infer_meta_last = dict(getattr(primitives, "_last_inference_meta", {}) or {})
+            if infer_meta_last:
+                infer_meta_last["llm_elapsed_ms"] = round(llm_elapsed_ms, 1)
             raw_deleg_output = code
+            if _delegation_trace_enabled():
+                log.warning(
+                    "Delegation trace turn=%d role=%s mode=%s prompt_chars=%d raw_chars=%d llm_ms=%.1f infer=%s",
+                    _turn,
+                    delegate_to,
+                    delegate_mode,
+                    len(deleg_prompt),
+                    len(raw_deleg_output or ""),
+                    llm_elapsed_ms,
+                    infer_meta_last,
+                )
             code = extract_code_from_response(code)
             code = auto_wrap_final(code)
+            if _delegation_trace_enabled():
+                log.warning(
+                    "Delegation trace turn=%d extracted_code_chars=%d has_final=%s",
+                    _turn,
+                    len(code or ""),
+                    "FINAL(" in (code or ""),
+                )
             # Dedup guard: if coder generates identical code twice in a
             # row, inject an error to break the loop instead of wasting
             # another turn on the same silent execution.
@@ -676,11 +1002,30 @@ def _run_specialist_loop(
                 # No executable code found — treat raw prose as report
                 report = raw_deleg_output.strip()
                 if report:
+                    report_rescued = True
                     log.info(
                         "Delegation prose report (turn %d): %d chars returned to architect",
                         _turn, len(report),
                     )
                     break
+            # Code-report rescue: specialist returned substantial code/design
+            # text but omitted FINAL(). For delegation we need a report, not
+            # necessarily an executed terminal value. Accept it directly to
+            # avoid repeated 30s generation loops that only attempt FINAL().
+            if "FINAL(" not in code:
+                non_comment_lines = [
+                    ln for ln in code.split("\n")
+                    if ln.strip() and not ln.strip().startswith("#")
+                ]
+                if len(non_comment_lines) >= 6 or len(code.strip()) >= 400:
+                    report = raw_deleg_output.strip() or code.strip()
+                    if report:
+                        report_rescued = True
+                        log.info(
+                            "Delegation code report rescue (turn %d): %d chars returned to architect",
+                            _turn, len(report),
+                        )
+                        break
             # Comment-only guard
             if all(
                 not ln.strip() or ln.strip().startswith("#")
@@ -692,13 +1037,28 @@ def _run_specialist_loop(
                 )
                 deleg_last_output = ""
                 continue
+            exec_started = time.perf_counter()
             result = deleg_repl.execute(code)
+            exec_elapsed_ms = (time.perf_counter() - exec_started) * 1000
+            if _delegation_trace_enabled():
+                log.warning(
+                    "Delegation trace turn=%d exec_ms=%.1f is_final=%s output_chars=%d error_chars=%d",
+                    _turn,
+                    exec_elapsed_ms,
+                    bool(getattr(result, "is_final", False)),
+                    len((getattr(result, "output", "") or "")),
+                    len((getattr(result, "error", "") or "")),
+                )
             if result.is_final:
                 report = result.final_answer or ""
                 break
             deleg_last_output = result.output or ""
             deleg_last_error = result.error or ""
         else:
+            log.warning(
+                "Specialist loop turn cap reached: role=%s mode=%s turns=%d",
+                delegate_to, delegate_mode, max_delegate_turns,
+            )
             report = deleg_repl.get_state()
         if deleg_repl.tool_registry:
             for inv in deleg_repl.tool_registry.get_invocation_log():
@@ -708,12 +1068,20 @@ def _run_specialist_loop(
                 )
     except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
         report = f"[Delegation failed: {e}]"
-        return report, 0, tools_called, phase_tool_timings
+        return report, 0, tools_called, phase_tool_timings, timed_out, report_rescued, infer_meta_last
     except Exception as e:
         report = f"[Delegation failed (unexpected): {e}]"
-        return report, 0, tools_called, phase_tool_timings
+        return report, 0, tools_called, phase_tool_timings, timed_out, report_rescued, infer_meta_last
 
-    return report, deleg_repl._tool_invocations, tools_called, phase_tool_timings
+    return (
+        report,
+        deleg_repl._tool_invocations,
+        tools_called,
+        phase_tool_timings,
+        timed_out,
+        report_rescued,
+        infer_meta_last,
+    )
 
 
 def _architect_delegated_answer(
@@ -756,6 +1124,11 @@ def _architect_delegated_answer(
         "tools_used": 0,
         "delegation_events": [],
         "tool_timings": [],
+        "cap_reached": False,
+        "break_reason": "",
+        "effective_max_loops": max_loops,
+        "reentrant_depth": 0,
+        "report_handles": [],
     }
 
     # Optional TOON encoding for context
@@ -784,6 +1157,8 @@ def _architect_delegated_answer(
         )
     else:
         effective_max_loops = max_loops
+    stats["effective_max_loops"] = effective_max_loops
+    stats["reentrant_depth"] = depth
 
     _delegation_local.depth = depth + 1
     try:
@@ -820,8 +1195,19 @@ def _architect_delegated_answer_inner(
         build_architect_synthesis_prompt,
     )
     cumulative_delegate_tokens = 0
+    orchestration_started = time.perf_counter()
+    total_budget_s = _delegation_total_max_seconds()
+    stats.setdefault("report_handles", [])
 
     for loop in range(max_loops + 1):  # +1 for initial decision
+        total_elapsed_s = time.perf_counter() - orchestration_started
+        if total_elapsed_s >= total_budget_s:
+            log.warning(
+                "Delegation total timeout: elapsed=%.1fs budget=%.1fs",
+                total_elapsed_s, total_budget_s,
+            )
+            stats["break_reason"] = "wall_clock_budget"
+            break
         phase_start = time.perf_counter()
 
         # ── Phase A: Architect call with computation REPL ──
@@ -884,6 +1270,7 @@ def _architect_delegated_answer_inner(
         # seconds and the result is thrown away by forced synthesis anyway.
         if loop >= max_loops:
             log.info("Architect still wants to investigate on last loop (%d), forcing synthesis", loop)
+            stats["break_reason"] = "max_loops"
             break
 
         # ── Phase B: Specialist execution ──
@@ -903,6 +1290,7 @@ def _architect_delegated_answer_inner(
                 "Semantic dedup: duplicate brief+target (loop %d, target=%s), forcing synthesis",
                 loop, delegate_to,
             )
+            stats["break_reason"] = "semantic_dedup"
             break
         previous_brief_keys.add(brief_key)
 
@@ -912,6 +1300,7 @@ def _architect_delegated_answer_inner(
                 "Token budget exceeded: %d > %d tokens across delegation loops, forcing synthesis",
                 cumulative_delegate_tokens, DELEGATION_MAX_TOTAL_TOKENS,
             )
+            stats["break_reason"] = "token_budget"
             break
 
         # ── Loop guard 3: Role repetition ──
@@ -924,18 +1313,34 @@ def _architect_delegated_answer_inner(
                     "Role repetition guard: %s delegated %d consecutive times, forcing synthesis",
                     delegate_to, DELEGATION_MAX_SAME_TARGET,
                 )
+                stats["break_reason"] = "role_repetition"
                 break
 
         log.info(f"Delegating to {delegate_to} (mode={delegate_mode}): {brief[:100]}...")
 
         phase_b_start = time.perf_counter()
         tokens_before = primitives.total_tokens_generated
+        remaining_budget_s = total_budget_s - (time.perf_counter() - orchestration_started)
+        specialist_budget_s = max(10.0, remaining_budget_s - 5.0)
 
-        report, deleg_tools, deleg_tools_called, phase_tool_timings = _run_specialist_loop(
-            question, context, brief, delegate_to, delegate_mode, primitives, tool_registry,
+        report, deleg_tools, deleg_tools_called, phase_tool_timings, specialist_timed_out, report_rescued, specialist_infer_meta = _run_specialist_loop(
+            question,
+            context,
+            brief,
+            delegate_to,
+            delegate_mode,
+            primitives,
+            tool_registry,
+            time_budget_s=specialist_budget_s,
         )
         total_tools += deleg_tools
         all_tools_called.extend(deleg_tools_called)
+        compressed_report, report_handle = _compress_report_for_loop(
+            report, question, primitives, delegate_to,
+        )
+        report = compressed_report
+        if report_handle:
+            stats["report_handles"].append(report_handle)
 
         phase_b_ms = (time.perf_counter() - phase_b_start) * 1000
         delegate_tokens = primitives.total_tokens_generated - tokens_before
@@ -964,10 +1369,38 @@ def _architect_delegated_answer_inner(
                 "success": success,
                 "elapsed_ms": round(phase_b_ms),
                 "tokens_generated": delegate_tokens,
+                "inference_meta": {
+                    "transport": specialist_infer_meta.get("transport"),
+                    "completion_reason": specialist_infer_meta.get("completion_reason"),
+                    "prompt_ms": specialist_infer_meta.get("prompt_ms"),
+                    "gen_ms": specialist_infer_meta.get("gen_ms"),
+                    "first_token_ms": specialist_infer_meta.get("first_token_ms"),
+                    "chunks": specialist_infer_meta.get("stream_chunks"),
+                    "tokens": specialist_infer_meta.get("tokens"),
+                    "llm_elapsed_ms": specialist_infer_meta.get("llm_elapsed_ms"),
+                },
             }
         )
 
         log.info(f"Specialist {delegate_to} done ({phase_b_ms:.0f}ms, {len(report)} chars)")
+
+        # Specialist timeout is a strong signal of lock pressure or decode stall.
+        # Force synthesis immediately instead of re-delegating into another stall.
+        if specialist_timed_out:
+            stats["break_reason"] = "specialist_timeout"
+            break
+        # If specialist already produced a substantial report (prose/code rescue),
+        # return it directly to avoid an expensive architect synthesis hop.
+        if report_rescued:
+            stats["break_reason"] = "specialist_report"
+            stats["loops"] = loop + 1
+            stats["tools_used"] = max(
+                total_tools,
+                len(all_tools_called),
+                len(stats.get("tool_timings", [])),
+            )
+            stats["tools_called"] = all_tools_called
+            return report, stats
 
     # ── Cap reached ──
     stats["loops"] = max_loops
@@ -979,6 +1412,21 @@ def _architect_delegated_answer_inner(
     stats["tools_called"] = all_tools_called
 
     if force_response_on_cap:
+        stats["cap_reached"] = True
+        if not stats.get("break_reason"):
+            stats["break_reason"] = "forced_synthesis"
+        if (
+            _skip_synthesis_on_timeout()
+            and stats.get("break_reason") in {"specialist_timeout", "wall_clock_budget"}
+            and reports
+        ):
+            # Timeout-triggered synthesis can itself stall on a saturated specialist/
+            # architect path. Returning the latest report prevents request timeouts.
+            log.warning(
+                "Skipping forced synthesis due to timeout break_reason=%s, returning latest report",
+                stats.get("break_reason"),
+            )
+            return reports[-1], stats
         # Force architect to synthesize with whatever we have
         log.warning(f"Architect delegation capped at {max_loops} loops, forcing synthesis")
         forced_prompt = (
@@ -991,6 +1439,7 @@ def _architect_delegated_answer_inner(
                 forced_prompt,
                 role=architect_role,
                 skip_suffix=True,
+                n_tokens=_delegation_forced_synthesis_token_cap(),
             )
             return answer.strip(), stats
         except Exception as exc:

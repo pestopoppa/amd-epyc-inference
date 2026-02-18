@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from src.features import features
@@ -35,6 +36,16 @@ ScriptRegistry: type | None = None
 SkillBank: type | None = None
 SkillRetriever: type | None = None
 SkillAugmentedRouter: type | None = None
+
+
+def _background_scoring_enabled() -> bool:
+    """Return whether idle-time MemRL background scoring is enabled.
+
+    Env override:
+    - ORCHESTRATOR_MEMRL_BACKGROUND=0 disables background cleanup scoring.
+    """
+    raw = os.environ.get("ORCHESTRATOR_MEMRL_BACKGROUND", "1").strip().lower()
+    return raw not in {"0", "false", "off", "no"}
 
 
 def load_optional_imports() -> None:
@@ -309,6 +320,9 @@ async def background_cleanup(state: "AppState") -> None:
         try:
             # Check every 10 seconds
             await asyncio.sleep(10)
+
+            if not _background_scoring_enabled():
+                continue
 
             # Only run when idle and Q-scorer is available
             # Note: Don't call ensure_memrl_initialized() here - only init on real use

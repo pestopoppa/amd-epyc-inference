@@ -35,6 +35,30 @@ class TestBuildDiagnostic:
         assert diag["anomaly_signals"] is not None
         assert isinstance(diag["anomaly_score"], float)
         assert "ts" in diag
+        assert diag["delegation_diagnostics"] == {}
+
+    def test_delegation_diagnostics_included(self):
+        diag = build_diagnostic(
+            question_id="test",
+            suite="coding",
+            config="ARCHITECT:delegated",
+            role="architect_coding",
+            mode="delegated",
+            passed=False,
+            answer="",
+            expected="",
+            scoring_method="code_execution",
+            error="timeout",
+            error_type="timeout",
+            tokens_generated=999,
+            elapsed_s=90.0,
+            role_history=["architect_coding", "coder_escalation"],
+            delegation_events=[{"to_role": "coder_escalation"}],
+            delegation_diagnostics={"break_reason": "role_repetition", "effective_max_loops": 2},
+            tools_used=1,
+            tools_called=["delegate"],
+        )
+        assert diag["delegation_diagnostics"]["break_reason"] == "role_repetition"
 
     def test_anomaly_signals_populated(self):
         diag = build_diagnostic(

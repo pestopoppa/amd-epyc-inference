@@ -146,6 +146,8 @@ def _route_request(request: ChatRequest, state) -> RoutingResult:
     # Compute role-specific timeout
     role_str = str(routing_decision[0]) if routing_decision else str(Role.FRONTDOOR)
     timeout_s = ROLE_TIMEOUTS.get(role_str, DEFAULT_TIMEOUT_S)
+    if request.timeout_s is not None:
+        timeout_s = max(1, min(timeout_s, int(request.timeout_s)))
 
     # Detect tool requirement for forced tool use
     from src.api.routes.chat_routing import detect_tool_requirement

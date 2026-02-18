@@ -48,6 +48,43 @@ def _use_inline_calls_in_tests() -> bool:
     return bool(os.getenv("PYTEST_CURRENT_TEST"))
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        log.warning("Invalid %s=%r, using default %d", name, raw, default)
+        return default
+
+
+def _repl_turn_token_cap() -> int:
+    """Token cap for tool-required turns to avoid timeout-length rambles."""
+    return max(64, _env_int("ORCHESTRATOR_REPL_TURN_N_TOKENS", 768))
+
+
+def _frontdoor_turn_token_cap() -> int:
+    """Optional token cap for frontdoor turns in REPL graph mode.
+
+    Env default is disabled (0) to avoid changing baseline behavior.
+    """
+    cap = _env_int("ORCHESTRATOR_FRONTDOOR_TURN_N_TOKENS", 0)
+    if cap <= 0:
+        return 0
+    return max(128, cap)
+
+
+def _frontdoor_repl_non_tool_token_cap() -> int:
+    """Default cap for frontdoor REPL turns when tool_required=False."""
+    return max(64, _env_int("ORCHESTRATOR_FRONTDOOR_REPL_NON_TOOL_N_TOKENS", 256))
+
+
+def _frontdoor_trace_enabled() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_FRONTDOOR_TRACE", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _think_harder_cfg():
     from src.config import get_config
 
@@ -715,6 +752,23 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             llm_kwargs["n_tokens"] = n_tokens
         state.think_harder_config = None  # Clear after use
 
+    # Tool-required turns can ramble until role timeout when left unlimited.
+    # Apply a bounded per-turn token budget unless think-harder already set one.
+    if state.tool_required and "n_tokens" not in llm_kwargs:
+        llm_kwargs["n_tokens"] = _repl_turn_token_cap()
+
+    if (
+        str(role) == str(Role.FRONTDOOR)
+        and not state.tool_required
+        and "n_tokens" not in llm_kwargs
+    ):
+        llm_kwargs["n_tokens"] = _frontdoor_repl_non_tool_token_cap()
+
+    if str(role) == str(Role.FRONTDOOR) and "n_tokens" not in llm_kwargs:
+        frontdoor_cap = _frontdoor_turn_token_cap()
+        if frontdoor_cap > 0:
+            llm_kwargs["n_tokens"] = frontdoor_cap
+
     # Compress prompt on escalation to reduce architect prefill time (WS3B)
     prompt = _maybe_compress_for_escalation(prompt, state)
 
@@ -737,6 +791,16 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     # detected so the model doesn't keep reasoning after the answer.
     if deps.primitives is not None:
         deps.primitives._early_stop_check = lambda text: bool(_FINAL_RE.search(text))
+    llm_started = asyncio.get_event_loop().time()
+    if str(role) == str(Role.FRONTDOOR) and _frontdoor_trace_enabled():
+        log.warning(
+            "Frontdoor REPL turn start: task_id=%s turn=%d prompt_chars=%d n_tokens=%s tool_required=%s",
+            state.task_id or "unknown",
+            state.turns,
+            len(prompt),
+            llm_kwargs.get("n_tokens", "default"),
+            state.tool_required,
+        )
     try:
         llm_call_fn = deps.primitives.llm_call
         # Unit tests often inject MagicMock llm_call; using to_thread on mocked
@@ -759,12 +823,46 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
                 **llm_kwargs,
             )
     except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
+        if str(role) == str(Role.FRONTDOOR) and _frontdoor_trace_enabled():
+            elapsed_ms = (asyncio.get_event_loop().time() - llm_started) * 1000
+            log.warning(
+                "Frontdoor REPL turn failure: task_id=%s turn=%d elapsed_ms=%.1f error=%s",
+                state.task_id or "unknown",
+                state.turns,
+                elapsed_ms,
+                e,
+            )
         return "", f"LLM call failed: {e}", False, {}
     except Exception as e:
+        if str(role) == str(Role.FRONTDOOR) and _frontdoor_trace_enabled():
+            elapsed_ms = (asyncio.get_event_loop().time() - llm_started) * 1000
+            log.warning(
+                "Frontdoor REPL turn failure(unexpected): task_id=%s turn=%d elapsed_ms=%.1f error=%s",
+                state.task_id or "unknown",
+                state.turns,
+                elapsed_ms,
+                e,
+            )
         return "", f"LLM call failed (unexpected): {e}", False, {}
     finally:
         if deps.primitives is not None:
             deps.primitives._early_stop_check = None
+
+    if str(role) == str(Role.FRONTDOOR) and _frontdoor_trace_enabled():
+        elapsed_ms = (asyncio.get_event_loop().time() - llm_started) * 1000
+        infer_meta = {}
+        try:
+            infer_meta = dict(getattr(deps.primitives, "_last_inference_meta", {}) or {})
+        except Exception:
+            infer_meta = {}
+        log.warning(
+            "Frontdoor REPL turn end: task_id=%s turn=%d elapsed_ms=%.1f raw_chars=%d infer_meta=%s",
+            state.task_id or "unknown",
+            state.turns,
+            elapsed_ms,
+            len(code),
+            infer_meta or "{}",
+        )
 
     # Save raw LLM output for FINAL() rescue before code extraction
     raw_llm_output = code
@@ -1080,7 +1178,11 @@ def _should_think_harder(ctx: Ctx, error_category: ErrorCategory) -> bool:
     state = ctx.state
 
     # Format/schema errors: just retry, don't think harder
-    if error_category in cfg.no_escalate_categories or error_category == ErrorCategory.SCHEMA:
+    if (
+        error_category in cfg.no_escalate_categories
+        or error_category == ErrorCategory.SCHEMA
+        or error_category == ErrorCategory.TIMEOUT
+    ):
         return False
 
     # Only try once per role
@@ -1166,6 +1268,11 @@ def _build_think_harder_config(state: TaskState) -> dict[str, Any]:
 
 def _should_retry(ctx: Ctx, error_category: ErrorCategory) -> bool:
     """Determine if we should retry with the same role."""
+    # Timeout retries are high-cost and commonly non-productive in current
+    # infra path (e.g., repeated 90s frontdoor timeouts). Fail fast so
+    # escalation/benchmark logic can move on.
+    if error_category == ErrorCategory.TIMEOUT:
+        return False
     cfg = ctx.deps.config
     return ctx.state.consecutive_failures < cfg.max_retries
 

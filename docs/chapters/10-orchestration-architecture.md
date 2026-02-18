@@ -193,7 +193,7 @@ Workers are stateless, cheap, and many run concurrently. They handle file-level 
 | vision_escalation | Qwen3-VL-30B-A3B Q4_K_M + mmproj | 8087 | HOT | MoE4 (~10 t/s) |
 | fast_1, fast_2 | Qwen2.5-Coder-1.5B Q4_K_M | 8102, 8112 | WARM | None (burst capacity) |
 
-**Note**: `worker_code` was removed — coder_escalation (32B) handles all code tasks with better quality and speed. Fast workers spin up on demand when concurrent load exceeds 4 tasks, and idle-shutdown after 5 minutes.
+**Note**: `worker_coder` is the active coding worker semantic role (backed by the fast worker pool). Legacy `worker_code` remains alias-only for compatibility. Fast workers spin up on demand when concurrent load exceeds 4 tasks, and idle-shutdown after 5 minutes.
 
 ### Tier D - Draft / Embedder
 

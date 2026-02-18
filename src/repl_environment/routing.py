@@ -5,8 +5,10 @@ Provides mixin with: escalate, my_role, route_advice, delegate, recall.
 
 from __future__ import annotations
 
+import json
 
 from src.constants import TASK_IR_OBJECTIVE_LEN
+from src.delegation_reports import load_report
 from src.task_ir import canonicalize_task_ir
 from src.repl_environment.types import wrap_tool_output
 
@@ -223,6 +225,8 @@ class _RoutingMixin:
             "worker_math",
             "worker_summarize",
             "worker_vision",
+            "worker_coder",
+            "worker_fast",
         ]
 
         delegate_targets: list[str] = []
@@ -372,6 +376,9 @@ class _RoutingMixin:
         "summarizer_agent": "worker_summarize",
         "summarizer": "worker_summarize",
         "worker_general": "worker_explore",
+        # Coding worker aliases for parallel file-level implementation bursts.
+        # worker_coder is the public semantic role; runtime points it to fast worker backend.
+        "worker_code": "worker_coder",
     }
 
     def _resolve_role_alias(self, role: str) -> str:
@@ -392,9 +399,24 @@ class _RoutingMixin:
         "worker_general",
         "worker_summarize",
         "worker_vision",
+        "worker_coder",
+        "worker_fast",
         "vision_escalation",
         "coder_escalation",
     })
+
+    def _fetch_report(
+        self,
+        report_id: str,
+        offset: int = 0,
+        max_chars: int = 2400,
+    ) -> str:
+        """Fetch persisted delegation report chunk by report handle id."""
+        self._exploration_calls += 1
+        payload = load_report(report_id, offset=offset, max_chars=max_chars)
+        output = json.dumps(payload, ensure_ascii=True)
+        self.artifacts.setdefault("_tool_outputs", []).append(output)
+        return wrap_tool_output(output)
 
     def _can_delegate_to(self, role: str) -> bool:
         """Check if a role can be a delegation target.

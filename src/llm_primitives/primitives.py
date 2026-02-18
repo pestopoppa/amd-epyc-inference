@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import threading
 import time
 from typing import Any
@@ -40,13 +41,15 @@ class LLMPrimitives(
         "explore": "worker_explore",
         "summarize": "worker_explore",
         "understand": "worker_explore",
-        "code": "worker_code",
-        "code_impl": "worker_code",
-        "refactor": "worker_code",
-        "test_gen": "worker_code",
-        "fast": "worker_fast",
-        "boilerplate": "worker_fast",
-        "transform": "worker_fast",
+        # coding bursts map to worker_coder semantic role (fast worker backend)
+        "code": "worker_coder",
+        "coder": "worker_coder",
+        "code_impl": "worker_coder",
+        "refactor": "worker_coder",
+        "test_gen": "worker_coder",
+        "fast": "worker_coder",
+        "boilerplate": "worker_coder",
+        "transform": "worker_coder",
     }
 
     def __init__(
@@ -119,6 +122,23 @@ class LLMPrimitives(
 
         # Per-request cache_prompt override (None = backend default)
         self.cache_prompt: bool | None = None
+        # Per-request cancellation/deadline hooks (set by API layer).
+        self._request_cancel_check = None
+        self._request_deadline_s = None
+        self._request_task_id = None
+        # Request-local context to avoid cross-request overwrite on shared primitives.
+        self._request_cancel_check_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
+            "llm_primitives_request_cancel_check",
+            default=None,
+        )
+        self._request_deadline_s_ctx: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+            "llm_primitives_request_deadline_s",
+            default=None,
+        )
+        self._request_task_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "llm_primitives_request_task_id",
+            default=None,
+        )
 
         # Per-query cost tracking
         self._current_query = None
@@ -137,6 +157,46 @@ class LLMPrimitives(
         from src.concurrency import get_role_max_concurrency
 
         return self._role_limits.get(role) or get_role_max_concurrency(role)
+
+    def get_request_cancel_check(self):
+        """Get request-local cancellation callback if present."""
+        value = self._request_cancel_check_ctx.get()
+        if value is not None:
+            return value
+        return self._request_cancel_check
+
+    def get_request_deadline_s(self) -> float | None:
+        """Get request-local deadline (perf_counter seconds) if present."""
+        value = self._request_deadline_s_ctx.get()
+        if value is not None:
+            return value
+        return self._request_deadline_s
+
+    def get_request_task_id(self) -> str | None:
+        """Get request-local task id for telemetry attribution."""
+        value = self._request_task_id_ctx.get()
+        if value is not None:
+            return value
+        return self._request_task_id
+
+    @contextlib.contextmanager
+    def request_context(
+        self,
+        *,
+        cancel_check=None,
+        deadline_s: float | None = None,
+        task_id: str | None = None,
+    ):
+        """Bind cancellation/deadline metadata to the current request context."""
+        token_cancel = self._request_cancel_check_ctx.set(cancel_check)
+        token_deadline = self._request_deadline_s_ctx.set(deadline_s)
+        token_task = self._request_task_id_ctx.set(task_id)
+        try:
+            yield
+        finally:
+            self._request_cancel_check_ctx.reset(token_cancel)
+            self._request_deadline_s_ctx.reset(token_deadline)
+            self._request_task_id_ctx.reset(token_task)
 
     @contextlib.contextmanager
     def _acquire_role(self, role: str):
@@ -369,6 +429,10 @@ class LLMPrimitives(
             role_timeout = get_config().timeouts.role_timeouts_dict().get(
                 role, self.config.call_timeout
             )
+            deadline_s = self.get_request_deadline_s()
+            if deadline_s is not None:
+                remaining_s = max(1.0, deadline_s - time.perf_counter())
+                role_timeout = min(role_timeout, int(remaining_s))
             request = InferenceRequest(
                 role=role,
                 prompt=prompt,
@@ -380,7 +444,16 @@ class LLMPrimitives(
             )
             from src.inference_lock import inference_lock
 
-            with inference_lock(role):
+            with inference_lock(
+                role,
+                cancel_check=self.get_request_cancel_check(),
+                deadline_s=self.get_request_deadline_s(),
+                request_tag=self.get_request_task_id(),
+            ):
+                deadline_s = self.get_request_deadline_s()
+                if deadline_s is not None:
+                    remaining_s = max(1.0, deadline_s - time.perf_counter())
+                    request.timeout = min(int(request.timeout), int(remaining_s))
                 for chunk in backend.infer_stream_text(None, request):
                     yield chunk.text if hasattr(chunk, "text") else str(chunk)
         else:

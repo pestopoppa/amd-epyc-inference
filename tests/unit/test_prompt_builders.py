@@ -169,6 +169,13 @@ class TestAutoWrapFinal:
         assert result.count("FINAL(") == 1
         assert ")" in result
 
+    def test_bracketed_error_wrapped_as_string(self):
+        code = "[ERROR: Inference failed: Request timed out after 90s]"
+        result = auto_wrap_final(code)
+        assert result == 'FINAL("[ERROR: Inference failed: Request timed out after 90s]")'
+        # Structural: should not produce invalid FINAL([ERROR: ...]) form
+        assert "FINAL([ERROR:" not in result
+
     def test_control_flow_not_wrapped(self):
         """Control flow statements should not be wrapped."""
         for stmt in (

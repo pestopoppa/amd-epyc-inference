@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for LLM primitives."""
 
+import asyncio
+
 from src.llm_primitives import (
     LLMPrimitives,
     LLMPrimitivesConfig,
@@ -218,6 +220,52 @@ class TestOutputCapping:
 
         for result in results:
             assert len(result) <= 100  # Allow for truncation message
+
+
+class TestRequestContext:
+    """Request-scoped cancellation/deadline context should not leak across calls."""
+
+    def test_request_context_scoped_and_reset(self):
+        primitives = LLMPrimitives(mock_mode=True)
+        assert primitives.get_request_deadline_s() is None
+        assert primitives.get_request_task_id() is None
+        assert primitives.get_request_cancel_check() is None
+
+        marker = object()
+        with primitives.request_context(
+            cancel_check=lambda: marker,
+            deadline_s=123.45,
+            task_id="chat-ctx-test",
+        ):
+            assert primitives.get_request_deadline_s() == 123.45
+            assert primitives.get_request_task_id() == "chat-ctx-test"
+            assert primitives.get_request_cancel_check()() is marker
+
+        assert primitives.get_request_deadline_s() is None
+        assert primitives.get_request_task_id() is None
+        assert primitives.get_request_cancel_check() is None
+
+    def test_request_context_isolated_between_async_tasks(self):
+        primitives = LLMPrimitives(mock_mode=True)
+
+        async def _run(task_id: str, deadline: float):
+            with primitives.request_context(
+                cancel_check=lambda: False,
+                deadline_s=deadline,
+                task_id=task_id,
+            ):
+                await asyncio.sleep(0)
+                return primitives.get_request_task_id(), primitives.get_request_deadline_s()
+
+        async def _main():
+            return await asyncio.gather(
+                _run("chat-a", 10.0),
+                _run("chat-b", 20.0),
+            )
+
+        a, b = asyncio.run(_main())
+        assert a == ("chat-a", 10.0)
+        assert b == ("chat-b", 20.0)
 
 
 class TestConfig:

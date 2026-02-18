@@ -335,6 +335,7 @@ class REPLEnvironment(
             "my_role": self._my_role,
             "route_advice": self._route_advice,
             "delegate": self._delegate,
+            "fetch_report": self._fetch_report,
             # Shell tools (sandboxed)
             "run_shell": self._run_shell,
             "run_python_code": self._run_python_code,
@@ -617,6 +618,7 @@ class REPLEnvironment(
             "my_role",
             "route_advice",
             "delegate",
+            "fetch_report",
             "run_shell",
             "run_python_code",
             "run_procedure",
@@ -654,7 +656,7 @@ class REPLEnvironment(
                 "peek", "grep", "list_dir", "file_info", "list_tools",
                 "recall", "list_findings", "registry_lookup", "my_role",
                 "route_advice", "list_procedures", "get_procedure_status",
-                "context_len", "find_scripts", "benchmark_compare",
+                "context_len", "find_scripts", "benchmark_compare", "fetch_report",
             }
             tool_names = [t[0] for t in tool_calls]
             all_read_only = all(name in read_only_tools for name in tool_names)

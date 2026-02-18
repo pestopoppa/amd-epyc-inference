@@ -15,14 +15,16 @@ extracted into focused modules during Phase 1 decomposition:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import threading
 import time
 import uuid
 from typing import TYPE_CHECKING, AsyncGenerator
 
 log = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.api.dependencies import dep_app_state
@@ -30,6 +32,7 @@ from src.api.models import ChatRequest, ChatResponse, RewardRequest
 from src.api.state import AppState
 from src.config import get_config
 from src.constants import TASK_IR_OBJECTIVE_LEN
+from src.delegation_reports import load_report
 from src.task_ir import canonicalize_task_ir
 from src.prompt_builders import (
     build_root_lm_prompt,
@@ -104,9 +107,21 @@ from src.api.routes.chat_pipeline import (
 router = APIRouter()
 
 
+@router.get("/chat/delegation-report/{report_id}")
+async def fetch_delegation_report(
+    report_id: str,
+    offset: int = Query(default=0, ge=0),
+    max_chars: int = Query(default=2400, ge=64, le=12000),
+):
+    """Fetch persisted delegation report chunk by handle id."""
+    payload = load_report(report_id, offset=offset, max_chars=max_chars)
+    return payload
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    http_request: Request,
     state: AppState = Depends(dep_app_state),
 ) -> ChatResponse:
     """Process a chat request through the orchestrator.
@@ -123,8 +138,22 @@ async def chat(
     """
     # Track active requests for idle-time Q-scoring (thread-safe)
     state.increment_active()
+    cancel_event = threading.Event()
+
+    async def _watch_disconnect() -> None:
+        while not cancel_event.is_set():
+            try:
+                if await http_request.is_disconnected():
+                    cancel_event.set()
+                    return
+            except Exception:
+                # Best-effort disconnect tracking; ignore transient request state errors.
+                return
+            await asyncio.sleep(0.1)
+
+    watcher = asyncio.create_task(_watch_disconnect())
     try:
-        response = await _handle_chat(request, state)
+        response = await _handle_chat(request, state, cancel_event=cancel_event)
         # Return appropriate HTTP status instead of silent 200 OK on failure
         if response.error_code:
             headers = {}
@@ -137,6 +166,10 @@ async def chat(
             )
         return response
     finally:
+        cancel_event.set()
+        watcher.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watcher
         state.decrement_active()
 
 
@@ -280,7 +313,11 @@ async def _try_cheap_first(
     )
 
 
-async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
+async def _handle_chat(
+    request: ChatRequest,
+    state: AppState,
+    cancel_event: threading.Event | None = None,
+) -> ChatResponse:
     """Thin dispatcher — routes through pipeline stages.
 
     Phase 1b restructure: each stage is a named function in chat_pipeline.py.
@@ -312,104 +349,102 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
 
     # Stage 4: Initialize LLM backends
     primitives = _init_primitives(request, state)
+    request_deadline_s = time.perf_counter() + max(1.0, float(routing.timeout_s))
+    if request.client_deadline_unix_s is not None:
+        # Clamp against client-observed wall-clock deadline to avoid server work
+        # outliving client timeout under admission/concurrency queueing.
+        client_remaining_s = request.client_deadline_unix_s - time.time()
+        request_deadline_s = min(
+            request_deadline_s,
+            time.perf_counter() + max(0.0, client_remaining_s),
+        )
+    with primitives.request_context(
+        cancel_check=cancel_event.is_set if cancel_event is not None else None,
+        deadline_s=request_deadline_s,
+        task_id=routing.task_id,
+    ):
+        # Stage 5: Architect plan review gate
+        _plan_review_gate(request, routing, primitives, state)
 
-    # Stage 5: Architect plan review gate
-    _plan_review_gate(request, routing, primitives, state)
+        # Stage 6: Vision pipeline (early return if image/file present)
+        vision_result = await _execute_vision(request, routing, primitives, state, start_time)
+        if vision_result is not None:
+            return _annotate_error(vision_result)
 
-    # Stage 6: Vision pipeline (early return if image/file present)
-    vision_result = await _execute_vision(request, routing, primitives, state, start_time)
-    if vision_result is not None:
-        return _annotate_error(vision_result)
+        # Stage 6.5: Proactive delegation for COMPLEX tasks
+        proactive_result = await _execute_proactive(
+            request,
+            routing,
+            primitives,
+            state,
+            start_time,
+        )
+        if proactive_result is not None:
+            return _annotate_error(proactive_result)
 
-    # Stage 6.5: Proactive delegation for COMPLEX tasks
-    proactive_result = await _execute_proactive(
-        request,
-        routing,
-        primitives,
-        state,
-        start_time,
-    )
-    if proactive_result is not None:
-        return _annotate_error(proactive_result)
+        # Stage 7: Mode selection
+        initial_role = routing.routing_decision[0] if routing.routing_decision else Role.FRONTDOOR
 
-    # Stage 7: Mode selection
-    initial_role = routing.routing_decision[0] if routing.routing_decision else Role.FRONTDOOR
+        vision_roles = {"worker_vision", "vision_escalation"}
+        forced_mode = request.force_mode if request.force_mode in ("direct", "react", "repl", "delegated") else None
 
-    vision_roles = {"worker_vision", "vision_escalation"}
-    forced_mode = request.force_mode if request.force_mode in ("direct", "react", "repl", "delegated") else None
+        # Vision-preprocessed requests need REPL document context unless an explicit
+        # forced mode is set. For multi-file/document workflows we keep synthesis on
+        # frontdoor; for pure image workflows preserve vision role if selected/forced.
+        if routing.document_result is not None:
+            execution_mode = forced_mode or "repl"
+            if request.files:
+                initial_role = Role.FRONTDOOR
+            elif request.force_role in vision_roles:
+                initial_role = request.force_role
+            elif str(initial_role) not in vision_roles:
+                initial_role = Role.FRONTDOOR
+        elif forced_mode:
+            execution_mode = forced_mode
+        else:
+            execution_mode = _select_mode(request.prompt, request.context or "", state)
 
-    # Vision-preprocessed requests need REPL document context unless an explicit
-    # forced mode is set. For multi-file/document workflows we keep synthesis on
-    # frontdoor; for pure image workflows preserve vision role if selected/forced.
-    if routing.document_result is not None:
-        execution_mode = forced_mode or "repl"
-        if request.files:
-            initial_role = Role.FRONTDOOR
-        elif request.force_role in vision_roles:
-            initial_role = request.force_role
-        elif str(initial_role) not in vision_roles:
-            initial_role = Role.FRONTDOOR
-    elif forced_mode:
-        execution_mode = forced_mode
-    else:
-        execution_mode = _select_mode(request.prompt, request.context or "", state)
+        # Stage 7.5: Vision multimodal handler
+        # Text-only paths (_execute_direct, _execute_repl) discard image data.
+        # When a vision role has image data, route through the VL handler instead.
+        if str(initial_role) in vision_roles and (request.image_path or request.image_base64):
+            vision_mm = await _execute_vision_multimodal(
+                request, routing, primitives, state, start_time, initial_role, execution_mode,
+            )
+            if vision_mm is not None:
+                return _annotate_error(vision_mm)
 
-    # Stage 7.5: Vision multimodal handler
-    # Text-only paths (_execute_direct, _execute_repl) discard image data.
-    # When a vision role has image data, route through the VL handler instead.
-    if str(initial_role) in vision_roles and (request.image_path or request.image_base64):
-        vision_mm = await _execute_vision_multimodal(
+        # Stage 7.9: Try-cheap-first speculative pre-filter.
+        # Attempts the task with the cheapest HOT model (7B, 44 t/s) before
+        # routing to expensive specialists. On quality gate pass, returns the
+        # cheap answer (2-3x faster). On fail, falls through to normal pipeline.
+        cheap_result = await _try_cheap_first(
             request, routing, primitives, state, start_time, initial_role, execution_mode,
         )
-        if vision_mm is not None:
-            return _annotate_error(vision_mm)
+        if cheap_result is not None:
+            return _annotate_error(cheap_result)
 
-    # Stage 7.9: Try-cheap-first speculative pre-filter.
-    # Attempts the task with the cheapest HOT model (7B, 44 t/s) before
-    # routing to expensive specialists. On quality gate pass, returns the
-    # cheap answer (2-3x faster). On fail, falls through to normal pipeline.
-    cheap_result = await _try_cheap_first(
-        request, routing, primitives, state, start_time, initial_role, execution_mode,
-    )
-    if cheap_result is not None:
-        return _annotate_error(cheap_result)
+        # Stage 8: Execute selected mode (with fallthrough on failure)
 
-    # Stage 8: Execute selected mode (with fallthrough on failure)
-
-    # 8a: Delegated mode (architect → specialist)
-    # _execute_delegated checks delegation_allowed internally and returns None if not allowed
-    result = await asyncio.to_thread(
-        _execute_delegated,
-        request,
-        routing,
-        primitives,
-        state,
-        start_time,
-        initial_role,
-        execution_mode,
-    )
-    if result is not None:
-        return _annotate_error(result)
-
-    # 8b: ReAct tool loop mode
-    if execution_mode == "react":
+        # 8a: Delegated mode (architect → specialist)
+        # _execute_delegated checks delegation_allowed internally and returns None if not allowed
         result = await asyncio.to_thread(
-            _execute_react,
+            _execute_delegated,
             request,
             routing,
             primitives,
             state,
             start_time,
             initial_role,
+            execution_mode,
         )
         if result is not None:
             return _annotate_error(result)
 
-    # 8c: Direct LLM call mode
-    if execution_mode == "direct" and request.real_mode:
-        return _annotate_error(
-            await asyncio.to_thread(
-                _execute_direct,
+        # 8b: ReAct tool loop mode
+        if execution_mode == "react":
+            result = await asyncio.to_thread(
+                _execute_react,
                 request,
                 routing,
                 primitives,
@@ -417,12 +452,27 @@ async def _handle_chat(request: ChatRequest, state: AppState) -> ChatResponse:
                 start_time,
                 initial_role,
             )
-        )
+            if result is not None:
+                return _annotate_error(result)
 
-    # 8d: REPL orchestration mode (default fallback)
-    return _annotate_error(
-        await _execute_repl(request, routing, primitives, state, start_time, initial_role)
-    )
+        # 8c: Direct LLM call mode
+        if execution_mode == "direct" and request.real_mode:
+            return _annotate_error(
+                await asyncio.to_thread(
+                    _execute_direct,
+                    request,
+                    routing,
+                    primitives,
+                    state,
+                    start_time,
+                    initial_role,
+                )
+            )
+
+        # 8d: REPL orchestration mode (default fallback)
+        return _annotate_error(
+            await _execute_repl(request, routing, primitives, state, start_time, initial_role)
+        )
 
 
 @router.post("/chat/stream")

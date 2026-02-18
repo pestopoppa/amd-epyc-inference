@@ -252,6 +252,11 @@ class LlamaServerBackend(ModelBackend):
             tokens_generated = result_data.get("tokens_predicted", 0)
             prompt_tokens = result_data.get("tokens_evaluated", 0)
             cached_tokens = result_data.get("tokens_cached", 0)
+            completion_reason = str(
+                result_data.get("stop_type")
+                or result_data.get("finish_reason")
+                or ("stop" if result_data.get("stop") else "")
+            )
 
             # Extract clean timing data from llama.cpp timings object
             timings = result_data.get("timings", {})
@@ -317,6 +322,7 @@ class LlamaServerBackend(ModelBackend):
                 n_tokens_drafted=n_drafted,
                 n_tokens_accepted=n_accepted,
                 acceptance_rate=accept_rate,
+                completion_reason=completion_reason,
             )
 
         except httpx.TimeoutException:
@@ -328,6 +334,7 @@ class LlamaServerBackend(ModelBackend):
                 elapsed_time=request.timeout or self.config.timeout,
                 success=False,
                 error_message=f"Request timed out after {request.timeout}s",
+                completion_reason="timeout",
             )
 
         except httpx.RequestError as e:
@@ -340,6 +347,7 @@ class LlamaServerBackend(ModelBackend):
                 elapsed_time=elapsed,
                 success=False,
                 error_message=f"Server request failed: {e}",
+                completion_reason="request_error",
             )
 
     def infer_stream(
@@ -450,6 +458,9 @@ class LlamaServerBackend(ModelBackend):
                 tokens_generated = 0
                 prompt_tokens = 0
                 cached_tokens = 0
+                first_token_ms = 0.0
+                stream_chunks = 0
+                completion_reason = ""
 
                 for line in response.iter_lines():
                     if not line:
@@ -465,6 +476,9 @@ class LlamaServerBackend(ModelBackend):
 
                     content = data.get("content", "")
                     if content:
+                        if first_token_ms <= 0.0:
+                            first_token_ms = (time.perf_counter() - http_start) * 1000
+                        stream_chunks += 1
                         chunks.append(content)
                     early_stopped = False
                     if content and on_chunk is not None:
@@ -493,6 +507,11 @@ class LlamaServerBackend(ModelBackend):
                         tokens_generated = data.get("tokens_predicted", 0)
                         prompt_tokens = data.get("tokens_evaluated", 0)
                         cached_tokens = data.get("tokens_cached", 0)
+                        completion_reason = str(
+                            data.get("stop_type")
+                            or data.get("finish_reason")
+                            or "stop"
+                        )
                         break
 
             http_elapsed_ms = (time.perf_counter() - http_start) * 1000
@@ -543,6 +562,9 @@ class LlamaServerBackend(ModelBackend):
                 n_tokens_drafted=n_drafted,
                 n_tokens_accepted=n_accepted,
                 acceptance_rate=accept_rate,
+                first_token_ms=first_token_ms,
+                stream_chunks=stream_chunks,
+                completion_reason=completion_reason,
             )
 
         except httpx.TimeoutException:
@@ -554,6 +576,7 @@ class LlamaServerBackend(ModelBackend):
                 elapsed_time=request.timeout or self.config.timeout,
                 success=False,
                 error_message=f"Request timed out after {request.timeout}s",
+                completion_reason="timeout",
             )
 
         except httpx.RequestError as e:
@@ -566,6 +589,7 @@ class LlamaServerBackend(ModelBackend):
                 elapsed_time=elapsed,
                 success=False,
                 error_message=f"Server request failed: {e}",
+                completion_reason="request_error",
             )
 
     def _build_payload(

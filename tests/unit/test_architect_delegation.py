@@ -50,6 +50,16 @@ class TestParseArchitectDecision:
         assert result["delegate_to"] == "coder_escalation"
         assert result["delegate_mode"] == "repl"
 
+    def test_toon_investigate_worker_coder_role(self):
+        from src.api.routes.chat_delegation import _parse_architect_decision
+
+        result = _parse_architect_decision(
+            "I|brief:split into parallel file tasks|to:worker_coder|mode:repl"
+        )
+        assert result["mode"] == "investigate"
+        assert result["delegate_to"] == "worker_coder"
+        assert result["delegate_mode"] == "repl"
+
     def test_json_direct(self):
         from src.api.routes.chat_delegation import _parse_architect_decision
 
@@ -377,6 +387,190 @@ class TestFeatureFlagGating:
             assert f.architect_delegation is True
         finally:
             del os.environ["ORCHESTRATOR_ARCHITECT_DELEGATION"]
+
+
+class TestDelegationTokenCaps:
+    """Tests for delegation token budgeting guards."""
+
+    def test_specialist_turn_has_default_token_cap(self):
+        from src.api.routes.chat_delegation import _run_specialist_loop
+
+        primitives = MagicMock()
+        primitives.llm_call = MagicMock(return_value="FINAL('ok')")
+
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            mock_repl = MagicMock()
+            mock_result = MagicMock()
+            mock_result.is_final = True
+            mock_result.final_answer = "ok"
+            mock_result.output = ""
+            mock_result.error = None
+            mock_repl.execute.return_value = mock_result
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl_cls.return_value = mock_repl
+
+            _run_specialist_loop(
+                question="q",
+                context="",
+                brief="b",
+                delegate_to="coder_escalation",
+                delegate_mode="repl",
+                primitives=primitives,
+                tool_registry=None,
+            )
+
+        kwargs = primitives.llm_call.call_args.kwargs
+        assert kwargs.get("n_tokens") == 224
+
+    def test_forced_synthesis_has_token_cap(self):
+        from src.api.routes.chat_delegation import _architect_delegated_answer
+
+        primitives = MagicMock()
+        primitives._backends = {"test": True}
+        primitives.total_tokens_generated = 0
+        # Loop 0: investigate; cap reached immediately (max_loops=0) -> forced synthesis
+        primitives.llm_call = MagicMock(side_effect=[
+            "I|brief:check|to:coder_escalation",
+            "forced synthesis answer",
+        ])
+
+        state = MagicMock()
+        state.tool_registry = None
+
+        answer, _stats = _architect_delegated_answer(
+            question="q",
+            context="",
+            primitives=primitives,
+            state=state,
+            max_loops=0,
+            force_response_on_cap=True,
+        )
+        assert answer
+        assert primitives.llm_call.call_args_list[-1].kwargs.get("n_tokens") == 128
+
+    def test_timeout_break_skips_forced_synthesis_call(self):
+        from src.api.routes.chat_delegation import _architect_delegated_answer
+
+        primitives = MagicMock()
+        primitives._backends = {"test": True}
+        primitives.total_tokens_generated = 0
+        primitives.llm_call = MagicMock(return_value="should_not_be_called")
+
+        state = MagicMock()
+        state.tool_registry = None
+
+        with patch(
+            "src.api.routes.chat_delegation._run_architect_decision",
+            return_value=("I|brief:investigate|to:coder_escalation", 1, 0),
+        ), patch(
+            "src.api.routes.chat_delegation._run_specialist_loop",
+            return_value=("[Delegation timeout after 2 turn(s), 45.0s]", 0, [], [], True, False, {}),
+        ):
+            answer, stats = _architect_delegated_answer(
+                question="q",
+                context="",
+                primitives=primitives,
+                state=state,
+                max_loops=2,
+                force_response_on_cap=True,
+            )
+
+        assert stats.get("break_reason") == "specialist_timeout"
+        assert isinstance(answer, str) and answer
+        # No additional architect synthesis call should be made after timeout.
+        assert primitives.llm_call.call_count == 0
+
+    def test_specialist_code_report_rescue_avoids_extra_turns(self):
+        from src.api.routes.chat_delegation import _run_specialist_loop
+
+        raw = """
+class TokenBucket:
+    def __init__(self, rate, capacity):
+        self.rate = rate
+        self.capacity = capacity
+        self.tokens = capacity
+        self.last = 0.0
+
+    def refill(self, now):
+        elapsed = now - self.last
+        self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+        self.last = now
+
+    def consume(self, n=1):
+        if self.tokens >= n:
+            self.tokens -= n
+            return True
+        return False
+
+class RateLimiter:
+    def __init__(self):
+        self.buckets = {}
+""".strip()
+        primitives = MagicMock()
+        primitives.llm_call = MagicMock(return_value=raw)
+
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            mock_repl = MagicMock()
+            mock_result = MagicMock()
+            mock_result.is_final = False
+            mock_result.final_answer = ""
+            mock_result.output = ""
+            mock_result.error = ""
+            mock_repl.execute.return_value = mock_result
+            mock_repl.get_state.return_value = ""
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl_cls.return_value = mock_repl
+
+            with patch("src.prompt_builders.extract_code_from_response", return_value=raw), patch(
+                "src.prompt_builders.auto_wrap_final", return_value=raw
+            ):
+                report, _tools, _called, _timings, timed_out, report_rescued, _infer = _run_specialist_loop(
+                    question="q",
+                    context="",
+                    brief="b",
+                    delegate_to="coder_escalation",
+                    delegate_mode="react",
+                    primitives=primitives,
+                    tool_registry=None,
+                )
+
+        assert timed_out is False
+        assert report_rescued is True
+        assert "class TokenBucket" in report
+        # Single specialist generation turn only.
+        assert primitives.llm_call.call_count == 1
+
+    def test_architect_returns_rescued_specialist_report_directly(self):
+        from src.api.routes.chat_delegation import _architect_delegated_answer
+
+        primitives = MagicMock()
+        primitives._backends = {"test": True}
+        primitives.total_tokens_generated = 0
+        primitives.llm_call = MagicMock(return_value="should_not_be_called")
+        state = MagicMock()
+        state.tool_registry = None
+
+        with patch(
+            "src.api.routes.chat_delegation._run_architect_decision",
+            return_value=("I|brief:investigate|to:coder_escalation", 1, 0),
+        ), patch(
+            "src.api.routes.chat_delegation._run_specialist_loop",
+            return_value=("specialist report body", 0, [], [], False, True, {}),
+        ):
+            answer, stats = _architect_delegated_answer(
+                question="q",
+                context="",
+                primitives=primitives,
+                state=state,
+                max_loops=3,
+                force_response_on_cap=True,
+            )
+
+        assert answer == "specialist report body"
+        assert stats.get("break_reason") == "specialist_report"
+        assert primitives.llm_call.call_count == 0
 
 
 # ── Prompt Builder Tests ─────────────────────────────────────────────────

@@ -68,6 +68,18 @@ class ChatRequest(BaseModel):
     permission_mode: str = Field(
         default="normal", description="Permission mode: 'normal', 'auto-accept', or 'plan'"
     )
+    timeout_s: int | None = Field(
+        default=None,
+        ge=1,
+        le=600,
+        description="Optional per-request server-side timeout budget in seconds. "
+        "When set, orchestration deadlines and lock waits are bounded to this value.",
+    )
+    client_deadline_unix_s: float | None = Field(
+        default=None,
+        description="Optional client wall-clock deadline in Unix seconds. "
+        "When set, server execution budget is additionally clamped to this deadline.",
+    )
 
 
 class RewardRequest(BaseModel):

@@ -63,6 +63,8 @@ DEFAULT_ROOT_LM_TOOLS = """### Context & Files
   delegating complex subtasks. Do NOT use for simple tasks.
 - `delegate(prompt, target_role, reason)`: Delegate to specialist with tracking. Use
   for complex subtasks needing different expertise. Do NOT use for simple tasks.
+- `fetch_report(report_id, offset=0, max_chars=2400)`: Load persisted delegation report
+  chunks by handle. Use when a specialist returned `[REPORT_HANDLE ...]`. Do NOT use otherwise.
 - `escalate(reason, target_role=None)`: Request escalation. Use when task exceeds your
   tier. Do NOT use if you can complete the task yourself.
 - `recall(query)`: Search episodic memory for past outcomes. Use for routing decisions.
@@ -101,6 +103,7 @@ file_write_safe(path, content) → write code to /mnt/raid0/llm/tmp/ for iterati
 llm_call(prompt, role='worker') → sub-LM call (keep prompt short)
 CALL("web_search", query="...", max_results=5) → search web, returns JSON string of [{title, url, snippet}]
 escalate(reason, target_role=None) → hand off to higher tier
+fetch_report(report_id, offset=0, max_chars=2400) → load persisted delegation report chunk
 FINAL(answer) → signal task completion (REQUIRED for every task)
 CALL(name, **kw) → invoke any registered tool, returns JSON string
 list_tools() → discover ALL available tools (files, research, code quality, etc.)"""

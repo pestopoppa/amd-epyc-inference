@@ -769,6 +769,42 @@ class TestExecuteDelegated:
 
         assert result is None
 
+    def test_delegation_lock_timeout_returns_structured_error(self, mock_primitives, mock_state):
+        """Lock-timeout style delegation errors return explicit delegated diagnostics."""
+        request = ChatRequest(prompt="Timeout", real_mode=True)
+        routing = RoutingResult(
+            task_id="deleg-004b",
+            task_ir={},
+            use_mock=False,
+            routing_decision=["architect_general"],
+            routing_strategy="deterministic",
+        )
+        start_time = time.perf_counter()
+
+        with patch("src.api.routes.chat_pipeline.delegation_stage.features") as mock_features:
+            mock_features.return_value.architect_delegation = True
+            with patch(
+                "src.api.routes.chat_pipeline.delegation_stage._architect_delegated_answer"
+            ) as mock_deleg:
+                mock_deleg.side_effect = RuntimeError(
+                    "Inference lock timeout (role=architect_coding, mode=exclusive)"
+                )
+                result = _execute_delegated(
+                    request,
+                    routing,
+                    mock_primitives,
+                    mock_state,
+                    start_time,
+                    initial_role="architect_general",
+                    execution_mode="direct",
+                )
+
+        assert result is not None
+        assert result.mode == "delegated"
+        assert result.answer.startswith("[ERROR: Delegated inference timed out/cancelled")
+        assert result.delegation_diagnostics.get("break_reason") == "pre_delegation_lock_timeout"
+        assert result.delegation_success is False
+
     def test_empty_answer_returns_none(self, mock_primitives, mock_state):
         """Empty answer from delegation returns None (fall through)."""
         request = ChatRequest(prompt="Empty", real_mode=True)

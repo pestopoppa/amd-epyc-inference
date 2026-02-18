@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-02-18
+
+- **Inference lock starvation root-cause closure**: eliminated cross-request cancellation/deadline context bleed, added request-scoped lock attribution (`request=<task_id>`), moved timeout clamping to post-lock-acquire paths, and added lock acquire/release trace telemetry (`ORCHESTRATOR_INFERENCE_LOCK_TRACE`). Contention sweeps now clear holders by +30s with no stale-abandoned lock behavior.
+- **Delegation loop hardening + diagnostics**: introduced explicit delegation break reasons (including pre-delegation lock timeout), specialist-timeout/report exits, and richer delegation diagnostics in API + seeding debugger flows to reduce blind reruns.
+- **Artifact-backed delegation report hydration**: added persisted report handles (`src/delegation_reports.py`), REPL/API lazy retrieval (`fetch_report(...)`, `GET /chat/delegation-report/{id}`), and prompt wiring so downstream turns can hydrate full specialist output on demand.
+- **Worker runtime alignment**: restored `worker_coder`-first semantics end-to-end (`worker_code` kept as compatibility alias), aligned config/port defaults to fast worker pool (`8102`), and updated orchestration docs/prompts accordingly.
+- **Stack operability improvements**: added `orchestrator_stack.py --profile contention-debug` and fixed mixed state serialization in `save_state()` to prevent startup/reload crashes during repeated debugging cycles.
+- **Validation additions**: new unit coverage for inference lock + delegation reports and new integration roundtrip test for delegated handle emission/retrieval (`test_delegation_report_handle_roundtrip`; collected successfully; execution intermittently hangs in this environment).
+
 ## 2026-02-17
 
 - **Perf: Parallel read-only tool dispatch (WS1)** — Multi-tool REPL turns now dispatch independent read-only tools via `ThreadPoolExecutor` instead of sequential `exec()`. AST-based extraction with conservative fallback (any dependency → sequential). Feature flag `parallel_tools=True`. Expected 2-4x speedup on multi-tool turns. New: `src/repl_environment/parallel_dispatch.py`, 22 unit tests.

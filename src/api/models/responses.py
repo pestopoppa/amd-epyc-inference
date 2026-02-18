@@ -66,6 +66,10 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Structured delegation events during this request",
     )
+    delegation_diagnostics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Loop diagnostics for delegated execution (depth, repeated edges, break reason)",
+    )
     tools_success: bool | None = Field(
         default=None,
         description="Whether tool invocations contributed to a successful outcome",

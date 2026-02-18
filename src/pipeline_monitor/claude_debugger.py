@@ -764,6 +764,26 @@ class ClaudeDebugger:
             parts.append(f"- **Error**: {diag.get('error', 'none')} ({diag.get('error_type', 'none')})")
             parts.append(f"- **Anomalies**: {anomaly_str} (score={diag.get('anomaly_score', 0):.2f})")
             parts.append(f"- **Role history**: {' → '.join(diag.get('role_history', []))}")
+            deleg_diag = diag.get("delegation_diagnostics", {}) or {}
+            if deleg_diag:
+                br = deleg_diag.get("break_reason", "n/a")
+                loops = deleg_diag.get("effective_max_loops", "n/a")
+                rep = deleg_diag.get("repeated_targets", {})
+                infer_hops = deleg_diag.get("delegation_inference_hops", "n/a")
+                avg_prompt_ms = deleg_diag.get("avg_prompt_ms", "n/a")
+                avg_gen_ms = deleg_diag.get("avg_gen_ms", "n/a")
+                report_handles = deleg_diag.get("report_handles_count", "n/a")
+                handle_ids = []
+                for h in deleg_diag.get("report_handles", []) or []:
+                    if isinstance(h, dict) and h.get("id"):
+                        handle_ids.append(str(h["id"]))
+                parts.append(
+                    f"- **Delegation diagnostics**: break_reason={br}, "
+                    f"max_loops={loops}, repeated_targets={rep}, "
+                    f"infer_hops={infer_hops}, avg_prompt_ms={avg_prompt_ms}, "
+                    f"avg_gen_ms={avg_gen_ms}, report_handles={report_handles}, "
+                    f"report_ids={','.join(handle_ids[:3]) if handle_ids else 'none'}"
+                )
             parts.append(f"- **Tools**: {diag.get('tools_used', 0)} ({', '.join(diag.get('tools_called', []))})")
 
             # Orchestrator intelligence tunables (only show when relevant)

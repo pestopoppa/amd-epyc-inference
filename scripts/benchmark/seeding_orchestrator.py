@@ -526,6 +526,8 @@ def call_orchestrator_forced(
         "real_mode": True,
         "force_role": force_role,
         "force_mode": force_mode,
+        "timeout_s": timeout,
+        "client_deadline_unix_s": time.time() + float(timeout),
     }
     if image_path:
         payload["image_path"] = image_path

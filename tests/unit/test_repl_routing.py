@@ -80,6 +80,12 @@ class TestResolveRoleAlias:
 
         assert repl._resolve_role_alias("coder_escalation") == "coder_escalation"
         assert repl._resolve_role_alias("worker_explore") == "worker_explore"
+        assert repl._resolve_role_alias("worker_coder") == "worker_coder"
+
+    def test_worker_code_alias_maps_to_worker_coder(self):
+        """Legacy worker_code should normalize to worker_coder."""
+        repl = REPLEnvironment(context="test")
+        assert repl._resolve_role_alias("worker_code") == "worker_coder"
 
 
 class TestEscalate:
@@ -353,3 +359,31 @@ class TestDelegate:
         assert result.error is None
         assert "DELEGATION FAILED" in result.output
         assert "LLM error" in result.output
+
+
+class TestFetchReport:
+    """Test fetch_report() lazy delegation report retrieval tool."""
+
+    def test_fetch_report_reads_chunk(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ORCHESTRATOR_DELEGATION_REPORT_DIR", str(tmp_path))
+        report_id = "worker_coder-1234567890-deadbeefcafebabe"
+        (tmp_path / f"{report_id}.txt").write_text("alpha beta gamma delta")
+
+        repl = REPLEnvironment(context="test", role="architect_coding")
+        result = repl.execute(
+            f"""
+output = fetch_report("{report_id}", offset=6, max_chars=8)
+if '<<<TOOL_OUTPUT>>>' in output:
+    start = output.find('<<<TOOL_OUTPUT>>>') + len('<<<TOOL_OUTPUT>>>')
+    end = output.find('<<<END_TOOL_OUTPUT>>>')
+    output = output[start:end]
+data = json.loads(output)
+print(data["ok"])
+print(data["content"])
+print(data["truncated"])
+"""
+        )
+
+        assert result.error is None
+        assert "True" in result.output
+        assert "beta gam" in result.output

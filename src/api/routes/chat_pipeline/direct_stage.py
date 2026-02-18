@@ -85,6 +85,32 @@ def _execute_direct(
         )
         answer = answer.strip()
     except Exception as e:
+        err_text = str(e).lower()
+        if "lock timeout" in err_text or "cancelled" in err_text or "deadline exceeded" in err_text:
+            answer = f"[ERROR: Direct LLM call cancelled/timed out: {e}]"
+            elapsed = time.perf_counter() - start_time
+            return ChatResponse(
+                answer=answer,
+                turns=1,
+                tokens_used=primitives.total_tokens_generated,
+                elapsed_seconds=elapsed,
+                mock_mode=False,
+                real_mode=True,
+                cache_stats=primitives.get_cache_stats() if primitives._backends else None,
+                routed_to=str(initial_role),
+                role_history=[str(initial_role)],
+                routing_strategy=routing.routing_strategy,
+                mode="direct",
+                tokens_generated=primitives.total_tokens_generated,
+                formalization_applied=routing.formalization_applied,
+                tools_used=0,
+                prompt_eval_ms=primitives.total_prompt_eval_ms,
+                generation_ms=primitives.total_generation_ms,
+                predicted_tps=primitives._last_predicted_tps,
+                http_overhead_ms=primitives.total_http_overhead_ms,
+                skills_retrieved=len(routing.skill_ids),
+                skill_ids=routing.skill_ids,
+            )
         log.warning(
             "Direct LLM call failed (%s), retrying once...",
             e,

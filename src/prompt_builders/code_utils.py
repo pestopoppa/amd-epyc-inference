@@ -240,6 +240,12 @@ def auto_wrap_final(code: str) -> str:
     # Exclude control flow and imports
     if len(lines) == 1:
         first_line = lines[0]
+        # Error payloads from upper layers often come as bracketed strings
+        # like "[ERROR: ...]". Wrapping them as FINAL([ERROR: ...]) yields
+        # invalid Python syntax, so coerce to a quoted string.
+        if first_line.startswith("[ERROR:") and first_line.endswith("]"):
+            safe = first_line.replace("\\", "\\\\").replace('"', '\\"')
+            return f'FINAL("{safe}")'
         non_final_patterns = [
             "import ",
             "from ",

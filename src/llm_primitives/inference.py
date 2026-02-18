@@ -2,12 +2,24 @@
 
 import asyncio
 import logging
+import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from .types import LLMResult
 
 log = logging.getLogger(__name__)
+
+
+def _frontdoor_trace_enabled() -> bool:
+    raw = os.environ.get("ORCHESTRATOR_FRONTDOOR_TRACE", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_frontdoor_role(role: str) -> bool:
+    norm = (role or "").strip().lower()
+    return norm == "frontdoor" or norm.endswith(".frontdoor")
 
 
 def _detect_streaming_repetition(text: str, min_block: int = 60, min_repeats: int = 3) -> bool:
@@ -36,6 +48,14 @@ def _detect_streaming_repetition(text: str, min_block: int = 60, min_repeats: in
         if tail.count(block) >= min_repeats:
             return True
     return False
+
+
+def _clamp_request_timeout_to_deadline(request: Any, deadline_s: float | None) -> None:
+    """Clamp request.timeout in-place using remaining request deadline."""
+    if deadline_s is None:
+        return
+    remaining_s = max(1.0, deadline_s - time.perf_counter())
+    request.timeout = min(int(request.timeout), int(remaining_s))
 
 
 class InferenceMixin:
@@ -181,6 +201,10 @@ class InferenceMixin:
         role_timeout = get_config().timeouts.role_timeouts_dict().get(
             role, self.config.call_timeout
         )
+        deadline_s = self.get_request_deadline_s()
+        if deadline_s is not None:
+            remaining_s = max(1.0, deadline_s - time.perf_counter())
+            role_timeout = min(role_timeout, int(remaining_s))
 
         request = InferenceRequest(
             role=role,
@@ -192,10 +216,63 @@ class InferenceMixin:
             json_schema=json_schema,
             grammar=grammar,
         )
+        req_started = time.perf_counter()
         from src.inference_lock import inference_lock
 
-        with inference_lock(role):
-            result = self.model_server.infer(role, request)
+        try:
+            with inference_lock(
+                role,
+                cancel_check=self.get_request_cancel_check(),
+                deadline_s=self.get_request_deadline_s(),
+                request_tag=self.get_request_task_id(),
+            ):
+                _clamp_request_timeout_to_deadline(request, self.get_request_deadline_s())
+                result = self.model_server.infer(role, request)
+        except Exception as exc:
+            req_elapsed_ms = (time.perf_counter() - req_started) * 1000
+            self._last_inference_meta = {
+                "role": role,
+                "transport": "model_server",
+                "elapsed_ms": req_elapsed_ms,
+                "completion_reason": "exception",
+                "error": str(exc),
+            }
+            if "lock timeout" in str(exc).lower() or "cancelled" in str(exc).lower():
+                log.warning(
+                    "Inference aborted before model call (role=%s, transport=model_server, elapsed_ms=%.1f): %s",
+                    role,
+                    req_elapsed_ms,
+                    exc,
+                )
+            raise
+
+        req_elapsed_ms = (time.perf_counter() - req_started) * 1000
+        self._last_inference_meta = {
+            "role": role,
+            "transport": "model_server",
+            "elapsed_ms": req_elapsed_ms,
+            "first_token_ms": getattr(result, "first_token_ms", 0.0),
+            "stream_chunks": getattr(result, "stream_chunks", 0),
+            "completion_reason": getattr(result, "completion_reason", "") or "unknown",
+            "tokens": result.tokens_generated,
+            "prompt_ms": result.prompt_eval_ms,
+            "gen_ms": result.generation_ms,
+            "overhead_ms": result.http_overhead_ms,
+        }
+        if _is_frontdoor_role(role) and _frontdoor_trace_enabled():
+            log.warning(
+                "Frontdoor inference telemetry: transport=model_server elapsed_ms=%.1f "
+                "first_token_ms=%.1f chunks=%d completion_reason=%s "
+                "tokens=%d prompt_ms=%.1f gen_ms=%.1f overhead_ms=%.1f",
+                req_elapsed_ms,
+                getattr(result, "first_token_ms", 0.0),
+                getattr(result, "stream_chunks", 0),
+                getattr(result, "completion_reason", "") or "unknown",
+                result.tokens_generated,
+                result.prompt_eval_ms,
+                result.generation_ms,
+                result.http_overhead_ms,
+            )
 
         self.total_tokens_generated += result.tokens_generated
         self.total_prompt_eval_ms += result.prompt_eval_ms
@@ -258,6 +335,10 @@ class InferenceMixin:
         role_timeout = get_config().timeouts.role_timeouts_dict().get(
             role, self.config.call_timeout
         )
+        deadline_s = self.get_request_deadline_s()
+        if deadline_s is not None:
+            remaining_s = max(1.0, deadline_s - time.perf_counter())
+            role_timeout = min(role_timeout, int(remaining_s))
 
         request = InferenceRequest(
             role=role,
@@ -269,6 +350,7 @@ class InferenceMixin:
             json_schema=json_schema,
             grammar=grammar,
         )
+        req_started = time.perf_counter()
 
         # Admission control: reject early if backend queue is full
         backend_url = self.server_urls.get(role, "") if self.server_urls else ""
@@ -288,65 +370,122 @@ class InferenceMixin:
                     raise RuntimeError(f"Backend unavailable (circuit open): {backend_url}")
 
             from src.inference_lock import inference_lock
+            can_stream = False
 
-            with inference_lock(role):
-                from src.inference_tap import (
-                    is_active as _tap_active,
-                    should_stream_role as _tap_should_stream_role,
-                    tap_section,
-                )
+            try:
+                with inference_lock(
+                    role,
+                    cancel_check=self.get_request_cancel_check(),
+                    deadline_s=self.get_request_deadline_s(),
+                    request_tag=self.get_request_task_id(),
+                ):
+                    _clamp_request_timeout_to_deadline(request, self.get_request_deadline_s())
+                    from src.inference_tap import (
+                        is_active as _tap_active,
+                        should_stream_role as _tap_should_stream_role,
+                        tap_section,
+                    )
 
-                tap_enabled = _tap_active()
-                can_stream = (
-                    tap_enabled
-                    and hasattr(backend, "infer_stream_text")
-                    and _tap_should_stream_role(role)
-                )
-                if tap_enabled:
-                    with tap_section(role, prompt) as tap:
-                        if can_stream:
-                            # Early-stop: if _early_stop_check is set, wrap the
-                            # tap callback to also check accumulated output and
-                            # raise StopIteration to abort streaming.
-                            _stop_check = getattr(self, "_early_stop_check", None)
-                            # Always accumulate for repetition detection,
-                            # even when no _early_stop_check is set.
-                            _acc: list[str] = []
-                            _chunk_count = 0
-                            _REP_CHECK_INTERVAL = 50  # check every ~50 chunks
+                    tap_enabled = _tap_active()
+                    can_stream = (
+                        tap_enabled
+                        and hasattr(backend, "infer_stream_text")
+                        and _tap_should_stream_role(role)
+                    )
+                    if tap_enabled:
+                        with tap_section(role, prompt) as tap:
+                            if can_stream:
+                                # Early-stop: if _early_stop_check is set, wrap the
+                                # tap callback to also check accumulated output and
+                                # raise StopIteration to abort streaming.
+                                _stop_check = getattr(self, "_early_stop_check", None)
+                                # Always accumulate for repetition detection,
+                                # even when no _early_stop_check is set.
+                                _acc: list[str] = []
+                                _chunk_count = 0
+                                _REP_CHECK_INTERVAL = 50  # check every ~50 chunks
 
-                            def _on_chunk_guarded(content: str) -> None:
-                                nonlocal _chunk_count
-                                tap.write_chunk(content)
-                                _acc.append(content)
-                                _chunk_count += 1
-                                # Caller-provided early-stop (FINAL, TOON, etc.)
-                                if _stop_check is not None and _stop_check("".join(_acc)):
-                                    raise StopIteration
-                                # Repetition guard: check periodically
-                                if _chunk_count % _REP_CHECK_INTERVAL == 0:
-                                    if _detect_streaming_repetition("".join(_acc)):
-                                        log.warning(
-                                            "Repetition loop detected after %d chunks, "
-                                            "aborting generation",
-                                            _chunk_count,
-                                        )
+                                def _on_chunk_guarded(content: str) -> None:
+                                    nonlocal _chunk_count
+                                    tap.write_chunk(content)
+                                    _acc.append(content)
+                                    _chunk_count += 1
+                                    # Caller-provided early-stop (FINAL, TOON, etc.)
+                                    if _stop_check is not None and _stop_check("".join(_acc)):
                                         raise StopIteration
+                                    # Repetition guard: check periodically
+                                    if _chunk_count % _REP_CHECK_INTERVAL == 0:
+                                        if _detect_streaming_repetition("".join(_acc)):
+                                            log.warning(
+                                                "Repetition loop detected after %d chunks, "
+                                                "aborting generation",
+                                                _chunk_count,
+                                            )
+                                            raise StopIteration
 
-                            result = backend.infer_stream_text(
-                                role_config, request, on_chunk=_on_chunk_guarded
+                                result = backend.infer_stream_text(
+                                    role_config, request, on_chunk=_on_chunk_guarded
+                                )
+                            else:
+                                result = backend.infer(role_config, request)
+                                tap.write_response(result.output)
+                            tap.write_timings(
+                                result.tokens_generated,
+                                result.prompt_eval_ms,
+                                result.generation_ms,
+                                result.predicted_per_second,
                             )
-                        else:
-                            result = backend.infer(role_config, request)
-                            tap.write_response(result.output)
-                        tap.write_timings(
-                            result.tokens_generated,
-                            result.prompt_eval_ms,
-                            result.generation_ms,
-                            result.predicted_per_second,
-                        )
-                else:
-                    result = backend.infer(role_config, request)
+                    else:
+                        result = backend.infer(role_config, request)
+            except Exception as exc:
+                req_elapsed_ms = (time.perf_counter() - req_started) * 1000
+                transport = "stream" if can_stream else "batch"
+                self._last_inference_meta = {
+                    "role": role,
+                    "transport": transport,
+                    "elapsed_ms": req_elapsed_ms,
+                    "completion_reason": "exception",
+                    "error": str(exc),
+                }
+                if "lock timeout" in str(exc).lower() or "cancelled" in str(exc).lower():
+                    log.warning(
+                        "Inference aborted before backend response (role=%s, transport=%s, elapsed_ms=%.1f): %s",
+                        role,
+                        transport,
+                        req_elapsed_ms,
+                        exc,
+                    )
+                raise
+
+            req_elapsed_ms = (time.perf_counter() - req_started) * 1000
+            transport = "stream" if can_stream else "batch"
+            self._last_inference_meta = {
+                "role": role,
+                "transport": transport,
+                "elapsed_ms": req_elapsed_ms,
+                "first_token_ms": getattr(result, "first_token_ms", 0.0),
+                "stream_chunks": getattr(result, "stream_chunks", 0),
+                "completion_reason": getattr(result, "completion_reason", "") or "unknown",
+                "tokens": result.tokens_generated,
+                "prompt_ms": result.prompt_eval_ms,
+                "gen_ms": result.generation_ms,
+                "overhead_ms": result.http_overhead_ms,
+            }
+            if _is_frontdoor_role(role) and _frontdoor_trace_enabled():
+                log.warning(
+                    "Frontdoor inference telemetry: transport=%s elapsed_ms=%.1f "
+                    "first_token_ms=%.1f chunks=%d completion_reason=%s "
+                    "tokens=%d prompt_ms=%.1f gen_ms=%.1f overhead_ms=%.1f",
+                    transport,
+                    req_elapsed_ms,
+                    getattr(result, "first_token_ms", 0.0),
+                    getattr(result, "stream_chunks", 0),
+                    getattr(result, "completion_reason", "") or "unknown",
+                    result.tokens_generated,
+                    result.prompt_eval_ms,
+                    result.generation_ms,
+                    result.http_overhead_ms,
+                )
 
             # Record success/failure for circuit breaker
             if backend_url and self.health_tracker:
@@ -517,11 +656,21 @@ class InferenceMixin:
             timeout=self.config.call_timeout,
             stream=True,  # Enable streaming for per-token monitoring
         )
+        deadline_s = self.get_request_deadline_s()
+        if deadline_s is not None:
+            remaining_s = max(1.0, deadline_s - time.perf_counter())
+            request.timeout = min(request.timeout, int(remaining_s))
 
         output_tokens = []
         from src.inference_lock import inference_lock
 
-        with inference_lock(role):
+        with inference_lock(
+            role,
+            cancel_check=self.get_request_cancel_check(),
+            deadline_s=self.get_request_deadline_s(),
+            request_tag=self.get_request_task_id(),
+        ):
+            _clamp_request_timeout_to_deadline(request, self.get_request_deadline_s())
             for token_id, logits in self.model_server.infer_stream(role, request):
                 output_tokens.append(token_id)
 

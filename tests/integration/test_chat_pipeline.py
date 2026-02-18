@@ -5,11 +5,13 @@ Tests routing logic, mode selection, and endpoint behavior.
 """
 
 import json
+import contextlib
 import pytest
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
 from src.api import create_app
+from src.delegation_reports import store_report
 from src.api.routes.chat_routing import _classify_and_route, _select_mode
 from src.roles import Role
 
@@ -251,6 +253,103 @@ class TestChatEndpoint:
         assert "mode" in data
         # In mock mode, mode is always "mock"
         assert data.get("mode") == "mock"
+
+    def test_delegation_report_handle_roundtrip(self, client, monkeypatch, tmp_path):
+        """Full API flow: delegated /chat emits handle, then retrieval endpoint hydrates it."""
+        monkeypatch.setenv("ORCHESTRATOR_DELEGATION_REPORT_DIR", str(tmp_path))
+
+        handle = store_report(
+            "Full specialist implementation report with details.\nLine2\nLine3",
+            "worker_coder",
+        )
+        assert handle is not None
+        report_id = handle["id"]
+        compact = (
+            f"[REPORT_HANDLE id={handle['id']} chars={handle['chars']} sha16={handle['sha16']}]\n"
+            f"Use fetch_report('{handle['id']}') for full content.\n\n"
+            "Summary:\n- implemented fix"
+        )
+
+        class _StubPrimitives:
+            def __init__(self):
+                self.total_tokens_generated = 0
+                self._backends = {"stub": True}
+                self.total_prompt_eval_ms = 0.0
+                self.total_generation_ms = 0.0
+                self._last_predicted_tps = 0.0
+                self.total_http_overhead_ms = 0.0
+
+            def request_context(self, **_kwargs):
+                return contextlib.nullcontext()
+
+            def get_cache_stats(self):
+                return None
+
+        stub_primitives = _StubPrimitives()
+
+        def _fake_init_primitives(_request, _state):
+            return stub_primitives
+
+        async def _no_cheap(*_args, **_kwargs):
+            return None
+
+        def _fake_architect_delegated_answer(*_args, **_kwargs):
+            stats = {
+                "loops": 1,
+                "phases": [{"loop": 0, "phase": "B", "delegate_to": "worker_coder", "delegate_mode": "repl"}],
+                "specialist_output": compact,
+                "needs_input": False,
+                "tools_used": 0,
+                "delegation_events": [],
+                "tool_timings": [],
+                "cap_reached": False,
+                "break_reason": "specialist_report",
+                "effective_max_loops": 3,
+                "reentrant_depth": 0,
+                "report_handles": [handle],
+                "tools_called": [],
+            }
+            return compact, stats
+
+        monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+        monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+        monkeypatch.setattr(
+            "src.api.routes.chat_pipeline.delegation_stage._architect_delegated_answer",
+            _fake_architect_delegated_answer,
+        )
+        monkeypatch.setattr(
+            "src.api.routes.chat_pipeline.delegation_stage.score_completed_task",
+            lambda *_args, **_kwargs: None,
+        )
+
+        resp = client.post(
+            "/chat",
+            json={
+                "prompt": "Implement in delegated mode",
+                "real_mode": True,
+                "force_role": "architect_coding",
+                "force_mode": "delegated",
+                "allow_delegation": True,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "[REPORT_HANDLE id=" in data["answer"]
+        assert data["mode"] == "delegated"
+        diag = data.get("delegation_diagnostics", {})
+        assert diag.get("report_handles_count", 0) >= 1
+
+        rid = diag["report_handles"][0]["id"]
+        assert rid == report_id
+        fetch = client.get(
+            f"/chat/delegation-report/{rid}",
+            params={"offset": 0, "max_chars": 180},
+        )
+        assert fetch.status_code == 200
+        payload = fetch.json()
+        assert payload["ok"] is True
+        assert payload["report_id"] == rid
+        assert "Full specialist" in payload["content"]
 
 
 class TestRewardEndpoint:

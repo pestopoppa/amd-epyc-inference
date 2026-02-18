@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from src.llm_primitives import LLMPrimitives
+from src.config import reset_config
 from src.model_server import InferenceRequest, InferenceResult
 
 
@@ -39,6 +40,18 @@ def mock_health_tracker():
     tracker.record_success = Mock()
     tracker.record_failure = Mock()
     return tracker
+
+
+@pytest.fixture(autouse=True)
+def writable_tmp_dir(monkeypatch, tmp_path):
+    """Ensure inference lock uses a writable tmp dir in test sandbox."""
+    monkeypatch.setenv("ORCHESTRATOR_PATHS_TMP_DIR", str(tmp_path))
+    monkeypatch.delenv("INFERENCE_TAP_FILE", raising=False)
+    monkeypatch.setattr("src.inference_tap._read_sentinel", lambda: "")
+    monkeypatch.setattr("src.inference_tap._sentinel_cache", ("", 0.0))
+    reset_config()
+    yield
+    reset_config()
 
 
 class TestInferenceMixinRealCall:
@@ -105,6 +118,34 @@ class TestInferenceMixinRealCall:
         assert isinstance(request, InferenceRequest)
         assert request.n_tokens == 256
 
+    def test_real_call_records_inference_meta_for_non_frontdoor_model_server(self, mock_model_server):
+        """Specialist roles should also publish timing metadata."""
+        prims = LLMPrimitives(
+            mock_mode=False,
+            model_server=mock_model_server,
+        )
+
+        mock_model_server.infer.return_value = InferenceResult(
+            role="coder_escalation",
+            output="ok",
+            tokens_generated=7,
+            generation_speed=20.0,
+            elapsed_time=0.2,
+            success=True,
+            prompt_eval_ms=11.0,
+            generation_ms=22.0,
+            http_overhead_ms=3.0,
+        )
+
+        prims._real_call("Test prompt", "coder_escalation", n_tokens=64)
+
+        meta = getattr(prims, "_last_inference_meta", {})
+        assert meta["role"] == "coder_escalation"
+        assert meta["transport"] == "model_server"
+        assert meta["prompt_ms"] == 11.0
+        assert meta["gen_ms"] == 22.0
+        assert meta["completion_reason"] == "unknown"
+
     def test_real_call_no_backend_raises_error(self):
         """Test _real_call raises error when no backend configured."""
         prims = LLMPrimitives(mock_mode=False)
@@ -141,6 +182,40 @@ class TestCallCachingBackend:
         assert result == "def hello(): pass"
         assert prims.total_tokens_generated == 20
         mock_health_tracker.record_success.assert_called_once_with("http://localhost:8081")
+
+    def test_call_caching_backend_records_inference_meta_for_non_frontdoor(
+        self, mock_backend, mock_health_tracker
+    ):
+        """Caching backend path should publish timing metadata for specialist roles."""
+        prims = LLMPrimitives(
+            mock_mode=False,
+            server_urls={"worker_fast": "http://localhost:8082"},
+            health_tracker=mock_health_tracker,
+        )
+
+        mock_backend.infer.return_value = InferenceResult(
+            role="worker_fast",
+            output="done",
+            tokens_generated=12,
+            generation_speed=30.0,
+            elapsed_time=0.4,
+            success=True,
+            prompt_eval_ms=9.0,
+            generation_ms=31.0,
+            http_overhead_ms=2.0,
+            completion_reason="stop",
+        )
+
+        prims._call_caching_backend(
+            mock_backend, "Do work", "worker_fast", n_tokens=96
+        )
+
+        meta = getattr(prims, "_last_inference_meta", {})
+        assert meta["role"] == "worker_fast"
+        assert meta["transport"] == "batch"
+        assert meta["prompt_ms"] == 9.0
+        assert meta["gen_ms"] == 31.0
+        assert meta["completion_reason"] == "stop"
 
     def test_call_caching_backend_circuit_breaker_open(self, mock_backend, mock_health_tracker):
         """Test circuit breaker prevents call to unhealthy backend."""

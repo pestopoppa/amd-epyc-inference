@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import time
 from collections import OrderedDict
@@ -353,6 +354,17 @@ class CachingBackend:
         self.canonicalize = canonicalize
         self.cache_dir = cache_dir
 
+    def _should_bypass_slot_routing(self, request: "InferenceRequest") -> bool:  # noqa: F821
+        """Return True when slot routing should be skipped for this request."""
+        raw = os.environ.get("ORCHESTRATOR_PREFIX_CACHE_BYPASS_FRONTDOOR_REPL", "1")
+        if str(raw).strip().lower() not in {"1", "true", "yes", "on"}:
+            return False
+        role = (request.role or "").strip().lower()
+        if role not in {"frontdoor", "role.frontdoor"}:
+            return False
+        stop_sequences = request.stop_sequences or []
+        return "\n```\n" in stop_sequences
+
     def infer(
         self,
         role_config: "RoleConfig",  # noqa: F821 - forward reference
@@ -367,12 +379,15 @@ class CachingBackend:
         Returns:
             InferenceResult with output and metrics.
         """
+        from dataclasses import replace
+        if self._should_bypass_slot_routing(request):
+            return self.backend.infer(role_config, replace(request, slot_id=None))
+
         # Get optimal slot from prefix router
         prompt = request.prompt or ""
         slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
 
         # Pass computed slot_id to backend via request (id_slot in llama-server)
-        from dataclasses import replace
         routed_request = replace(request, slot_id=slot_id)
 
         # Forward to backend
@@ -389,9 +404,12 @@ class CachingBackend:
         on_chunk=None,
     ) -> "InferenceResult":  # noqa: F821
         """Stream inference with prefix caching (delegates to backend)."""
+        from dataclasses import replace
+        if self._should_bypass_slot_routing(request):
+            return self.backend.infer_stream_text(role_config, replace(request, slot_id=None), on_chunk=on_chunk)
+
         prompt = request.prompt or ""
         slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
-        from dataclasses import replace
         routed_request = replace(request, slot_id=slot_id)
         return self.backend.infer_stream_text(role_config, routed_request, on_chunk=on_chunk)
 

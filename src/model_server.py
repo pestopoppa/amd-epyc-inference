@@ -132,6 +132,9 @@ class InferenceResult:
     n_tokens_drafted: int = 0
     n_tokens_accepted: int = 0
     acceptance_rate: float = 0.0
+    first_token_ms: float = 0.0
+    stream_chunks: int = 0
+    completion_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -150,6 +153,9 @@ class InferenceResult:
             "n_tokens_drafted": self.n_tokens_drafted,
             "n_tokens_accepted": self.n_tokens_accepted,
             "acceptance_rate": self.acceptance_rate,
+            "first_token_ms": self.first_token_ms,
+            "stream_chunks": self.stream_chunks,
+            "completion_reason": self.completion_reason,
         }
 
 

@@ -57,6 +57,41 @@ _TAP_PATH = "/mnt/raid0/llm/tmp/inference_tap.log"
 _REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
 
 
+def _log_delegation_diag(log_label: str, diag: dict[str, Any]) -> None:
+    if not diag:
+        return
+    loops = diag.get("loops", "")
+    break_reason = diag.get("break_reason", "")
+    cap_reached = diag.get("cap_reached", False)
+    repeated_edges = diag.get("repeated_edges", {}) or {}
+    repeated_roles = diag.get("repeated_roles", {}) or {}
+    infer_hops = diag.get("delegation_inference_hops")
+    avg_prompt_ms = diag.get("avg_prompt_ms")
+    avg_gen_ms = diag.get("avg_gen_ms")
+    report_handles_count = diag.get("report_handles_count")
+    report_handles = diag.get("report_handles", []) or []
+    report_ids = [
+        str(h.get("id", ""))
+        for h in report_handles
+        if isinstance(h, dict) and h.get("id")
+    ]
+    logger.info(
+        "    [%s diag] loops=%s cap=%s break_reason=%s repeated_edges=%d repeated_roles=%d "
+        "infer_hops=%s avg_prompt_ms=%s avg_gen_ms=%s report_handles=%s ids=%s",
+        log_label,
+        loops,
+        cap_reached,
+        break_reason or "none",
+        len(repeated_edges),
+        len(repeated_roles),
+        infer_hops if infer_hops is not None else "n/a",
+        avg_prompt_ms if avg_prompt_ms is not None else "n/a",
+        avg_gen_ms if avg_gen_ms is not None else "n/a",
+        report_handles_count if report_handles_count is not None else "n/a",
+        ",".join(report_ids[:3]) if report_ids else "none",
+    )
+
+
 def _tap_size() -> int:
     """Current byte size of inference tap file (0 if missing)."""
     try:
@@ -133,6 +168,7 @@ def _build_role_result(
         tools_used=resp.get("tools_used", 0),
         tools_called=resp.get("tools_called", []),
         delegation_events=resp.get("delegation_events", []),
+        delegation_diagnostics=resp.get("delegation_diagnostics", {}),
         tools_success=resp.get("tools_success"),
         delegation_success=resp.get("delegation_success"),
         routed_to=resp.get("routed_to", ""),
@@ -232,6 +268,7 @@ def _eval_single_config(
         expected=expected, scoring_method=scoring_method,
         scoring_config=scoring_config,
     )
+    _log_delegation_diag(log_label, rr.delegation_diagnostics)
     tap_after = _tap_size()
     rr.tap_offset_bytes = tap_before
     rr.tap_length_bytes = tap_after - tap_before
@@ -285,6 +322,7 @@ def _eval_single_config(
                     expected=expected, scoring_method=scoring_method,
                     scoring_config=scoring_config,
                 )
+                _log_delegation_diag(f"{log_label}:retry", rr.delegation_diagnostics)
                 tap_after = _tap_size()
                 rr.tap_offset_bytes = tap_before
                 rr.tap_length_bytes = tap_after - tap_before

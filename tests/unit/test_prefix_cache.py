@@ -449,6 +449,11 @@ class TestCachingBackend:
             output="response",
             tokens_generated=10,
         )
+        backend.infer_stream_text.return_value = MagicMock(
+            role="test",
+            output="response",
+            tokens_generated=10,
+        )
         backend.get_cache_stats.return_value = MagicMock(
             hit_rate=50.0,
             token_savings_rate=30.0,
@@ -517,6 +522,40 @@ class TestCachingBackend:
         assert stats["router_total_routes"] == 1
         assert stats["backend_hit_rate"] == 0.75
         assert stats["total_prompt_tokens"] == 1000
+
+    def test_bypass_slot_for_frontdoor_repl_default_on(self, mock_backend, monkeypatch):
+        monkeypatch.delenv("ORCHESTRATOR_PREFIX_CACHE_BYPASS_FRONTDOOR_REPL", raising=False)
+        router = PrefixRouter(num_slots=4)
+        caching = CachingBackend(mock_backend, router)
+
+        request = InferenceRequest(
+            role="frontdoor",
+            prompt="repl prompt",
+            stop_sequences=["\n```\n"],
+        )
+        mock_role_config = MagicMock()
+        caching.infer(mock_role_config, request)
+
+        assert router.total_routes == 0
+        call_args = mock_backend.infer.call_args
+        assert call_args[0][1].slot_id is None
+
+    def test_bypass_slot_can_be_disabled(self, mock_backend, monkeypatch):
+        monkeypatch.setenv("ORCHESTRATOR_PREFIX_CACHE_BYPASS_FRONTDOOR_REPL", "0")
+        router = PrefixRouter(num_slots=4)
+        caching = CachingBackend(mock_backend, router)
+
+        request = InferenceRequest(
+            role="frontdoor",
+            prompt="repl prompt",
+            stop_sequences=["\n```\n"],
+        )
+        mock_role_config = MagicMock()
+        caching.infer(mock_role_config, request)
+
+        assert router.total_routes == 1
+        call_args = mock_backend.infer.call_args
+        assert call_args[0][1].slot_id is not None
 
 
 class TestCachingBackendPersistence:

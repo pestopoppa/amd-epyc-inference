@@ -79,6 +79,7 @@ runtime_defaults:
       worker_vision: 60
       worker_summarize: 120    # 32B summarization, longer outputs
       worker_general: 60
+      worker_coder: 30         # semantic alias for fast coding worker (port 8102)
       worker_code: 60
       worker_fast: 30          # 1.5B — expected <2s, 30s = 15x headroom
       frontdoor: 90            # 30B MoE @ 18 t/s — expected <15s

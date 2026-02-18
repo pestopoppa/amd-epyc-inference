@@ -104,7 +104,8 @@ PORT_MAP = {
     "worker_math": 8082,     # Shares with explore
     "worker_vision": 8086,   # Dedicated VL server
     "vision_escalation": 8087,  # VL escalation (Qwen3-VL-30B MoE)
-    # worker_code REMOVED - route to coder_escalation (32B, faster + better quality)
+    "worker_coder": 8102,    # Fast coding worker semantic role (1.5B backend)
+    "worker_code": 8102,     # Legacy alias -> worker_coder
     "worker_fast": 8102,     # Fast worker (1.5B, WARM, 4 slots)
     # Specialists
     "architect_general": 8083,
@@ -194,7 +195,7 @@ EMBEDDING_MODEL_PATH = str(_PATHS["models_dir"] / "bge-large-en-v1.5-f16.gguf")
 EMBEDDER_PORTS = [8090, 8091, 8092, 8093, 8094, 8095]
 
 # Worker pool models (FIXED paths to existing files)
-# NOTE: worker_code removed - route all code tasks to coder_escalation (32B, faster + better quality)
+# NOTE: worker_coder/worker_code use the fast 1.5B worker backend on port 8102.
 WORKER_POOL_MODELS = {
     "explore": str(_PATHS["models_dir"] / "Qwen2.5-7B-Instruct-f16.gguf"),
     "fast": str(_PATHS["model_base"] / "QuantFactory/Qwen2.5-Coder-1.5B-GGUF/Qwen2.5-Coder-1.5B.Q4_K_M.gguf"),
@@ -220,6 +221,19 @@ WARM_SERVERS = [
 
 DEV_MODEL = "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf"
 DEV_MODEL_PATH = str(_PATHS["models_dir"] / DEV_MODEL)
+
+# Optional orchestrator API launch profiles for repeatable debugging runs.
+ORCHESTRATOR_PROFILES: dict[str, dict[str, str]] = {
+    "contention-debug": {
+        "ORCHESTRATOR_UVICORN_WORKERS": "6",
+        "ORCHESTRATOR_FRONTDOOR_TRACE": "1",
+        "ORCHESTRATOR_DELEGATION_TRACE": "1",
+        "ORCHESTRATOR_DELEGATION_TOTAL_MAX_SECONDS": "55",
+        "ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_SECONDS": "25",
+        "ORCHESTRATOR_INFERENCE_LOCK_TIMEOUT_EXCLUSIVE_S": "45",
+        "ORCHESTRATOR_INFERENCE_LOCK_TIMEOUT_SHARED_S": "45",
+    },
+}
 
 # =============================================================================
 # Docker Services (NextPLAID multi-vector retrieval)
@@ -351,8 +365,19 @@ def load_state() -> dict[str, ProcessInfo]:
 def save_state(state: dict[str, ProcessInfo]) -> None:
     """Save state to file."""
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    serializable: dict[str, dict[str, Any]] = {}
+    for key, value in state.items():
+        if isinstance(value, ProcessInfo):
+            serializable[key] = asdict(value)
+            continue
+        # Backward-compatible fallback: preserve minimally-typed dict records.
+        if isinstance(value, dict):
+            serializable[key] = dict(value)
+            continue
+        # Unknown record type; skip instead of crashing startup.
+        continue
     with open(STATE_FILE, "w") as f:
-        json.dump({k: asdict(v) for k, v in state.items()}, f, indent=2)
+        json.dump(serializable, f, indent=2)
 
 
 # =============================================================================
@@ -375,6 +400,29 @@ def is_port_in_use(port: int) -> bool:
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(("localhost", port)) == 0
+
+
+def _pids_on_port(port: int) -> list[int]:
+    """Best-effort discovery of LISTEN pids on a TCP port."""
+    try:
+        result = subprocess.run(
+            ["lsof", "-t", f"-i:{port}"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        pids: list[int] = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                pids.append(int(line))
+            except ValueError:
+                continue
+        return pids
+    except Exception:
+        return []
 
 
 def kill_process(pid: int, timeout: int = 5) -> bool:
@@ -889,11 +937,30 @@ def start_server(
         return None
 
 
-def start_orchestrator() -> ProcessInfo | None:
+def _apply_orchestrator_profile(env: dict[str, str], profile: str | None) -> None:
+    """Apply optional orchestrator profile env vars without overriding explicit env."""
+    if not profile:
+        return
+    profile_vars = ORCHESTRATOR_PROFILES.get(profile)
+    if not profile_vars:
+        print(f"    [WARN] Unknown orchestrator profile '{profile}' (ignored)")
+        return
+    print(f"    Using orchestrator profile: {profile}")
+    for key, value in profile_vars.items():
+        env.setdefault(key, value)
+
+
+def start_orchestrator(profile: str | None = None) -> ProcessInfo | None:
     """Start the orchestrator API."""
     log_file = LOG_DIR / "orchestrator.log"
 
     print("  Starting orchestrator API on port 8000")
+    stale_pids = _pids_on_port(8000)
+    if stale_pids:
+        print(f"    Clearing stale listeners on :8000 ({', '.join(str(p) for p in stale_pids)})")
+        for stale_pid in stale_pids:
+            kill_process(stale_pid)
+        time.sleep(1)
 
     # Set environment — enable production feature flags
     env = os.environ.copy()
@@ -911,9 +978,14 @@ def start_orchestrator() -> ProcessInfo | None:
     env["ORCHESTRATOR_MOCK_MODE"] = "0"
     env["ORCHESTRATOR_GENERATION_MONITOR"] = "1"
     env["ORCHESTRATOR_REACT_MODE"] = "1"
+    _apply_orchestrator_profile(env, profile)
+    # Bound inference-lock waits by default to avoid multi-minute silent stalls
+    # during iterative debugging / seeding runs.
+    env.setdefault("ORCHESTRATOR_INFERENCE_LOCK_TIMEOUT_EXCLUSIVE_S", "45")
+    env.setdefault("ORCHESTRATOR_INFERENCE_LOCK_TIMEOUT_SHARED_S", "45")
 
     with open(log_file, "w") as log:
-        workers = int(os.environ.get("ORCHESTRATOR_UVICORN_WORKERS", "6"))
+        workers = int(env.get("ORCHESTRATOR_UVICORN_WORKERS", "6"))
         proc = subprocess.Popen(
             [
                 sys.executable, "-m", "uvicorn",
@@ -927,6 +999,9 @@ def start_orchestrator() -> ProcessInfo | None:
             stdout=log,
             stderr=subprocess.STDOUT,
             env=env,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
         )
 
     print(f"    PID: {proc.pid}")
@@ -942,11 +1017,25 @@ def start_orchestrator() -> ProcessInfo | None:
             model_path="uvicorn",
             log_file=str(log_file),
         )
-    else:
-        print(f"    [FAIL] Orchestrator did not start")
+    # Health probe can fail transiently (port permissions / local sandbox),
+    # while the process is actually alive. Avoid killing a healthy API due to
+    # a false-negative probe; only hard-fail when process already exited.
+    if proc.poll() is None:
+        print("    [WARN] Health probe timed out, but API process is still running")
         print(f"    Check log: {log_file}")
-        kill_process(proc.pid)
-        return None
+        return ProcessInfo(
+            role="orchestrator",
+            pid=proc.pid,
+            port=8000,
+            started_at=datetime.now().isoformat(),
+            model_path="uvicorn",
+            log_file=str(log_file),
+        )
+
+    print(f"    [FAIL] Orchestrator did not start")
+    print(f"    Check log: {log_file}")
+    kill_process(proc.pid)
+    return None
 
 
 def start_document_formalizer() -> ProcessInfo | None:
@@ -1143,7 +1232,7 @@ def cmd_start(args: argparse.Namespace) -> int:
         print("  Orchestrator already healthy, skipping")
         state["orchestrator"] = {"port": 8000, "status": "preserved"}
     else:
-        info = start_orchestrator()
+        info = start_orchestrator(getattr(args, "profile", None))
         if info:
             state["orchestrator"] = info
         else:
@@ -1301,9 +1390,13 @@ def cmd_reload(args: argparse.Namespace) -> int:
             if "orchestrator" in state:
                 kill_process(state["orchestrator"].pid)
                 time.sleep(2)
+            # Also kill stale listeners by port (state can be stale after parent PID churn)
+            for pid in _pids_on_port(8000):
+                kill_process(pid)
+            time.sleep(1)
 
             # Start new
-            info = start_orchestrator()
+            info = start_orchestrator(getattr(args, "profile", None))
             if info:
                 state["orchestrator"] = info
             else:
@@ -1411,6 +1504,16 @@ def cmd_status(args: argparse.Namespace) -> int:
             except ProcessLookupError:
                 alive = False
             healthy = wait_for_health(info.port, timeout=3) if alive else False
+            if not alive and is_port_in_use(info.port):
+                # PID drift can happen if the original launcher PID exits while
+                # a listener remains healthy on the same port.
+                replacement_pids = _pids_on_port(info.port)
+                if replacement_pids:
+                    replacement_pid = replacement_pids[0]
+                    info.pid = replacement_pid
+                    state[name] = info
+                    alive = True
+                    healthy = wait_for_health(info.port, timeout=3)
             status = "healthy" if healthy else ("running" if alive else "dead")
             pid_str = str(info.pid)
 
@@ -1420,6 +1523,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
     print()
     print(f"State file: {STATE_FILE}")
+    save_state(state)
     return 0
 
 
@@ -1678,6 +1782,11 @@ def main() -> int:
     start_parser.add_argument("--hot-only", action="store_true", help="Start HOT models only")
     start_parser.add_argument("--include-warm", nargs="+", metavar="ROLE", help="Include WARM models")
     start_parser.add_argument("--dev", action="store_true", help="Dev mode (single 0.5B model)")
+    start_parser.add_argument(
+        "--profile",
+        choices=sorted(ORCHESTRATOR_PROFILES.keys()),
+        help="Optional orchestrator API env profile",
+    )
 
     # Stop command
     stop_parser = subparsers.add_parser("stop", help="Stop components")
@@ -1687,6 +1796,11 @@ def main() -> int:
     # Reload command
     reload_parser = subparsers.add_parser("reload", help="Reload components")
     reload_parser.add_argument("components", nargs="+", help="Components to reload")
+    reload_parser.add_argument(
+        "--profile",
+        choices=sorted(ORCHESTRATOR_PROFILES.keys()),
+        help="Optional orchestrator API env profile (used when reloading orchestrator)",
+    )
 
     # Status command
     subparsers.add_parser("status", help="Show status")

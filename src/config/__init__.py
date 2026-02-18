@@ -521,7 +521,8 @@ class ServerURLsConfig:
     worker_math: str = "http://localhost:8082"
     worker_vision: str = "http://localhost:8086"
     vision_escalation: str = "http://localhost:8087"
-    worker_code: str = "http://localhost:8092"
+    worker_coder: str = "http://localhost:8102"
+    worker_code: str = "http://localhost:8102"
     worker_fast: str = "http://localhost:8102"
     worker_summarize: str = "http://localhost:8081"
 
@@ -571,8 +572,11 @@ class TimeoutsConfig:
     worker_general: int = field(
         default_factory=lambda: int(_registry_timeout("roles", "worker_general", 60))
     )
+    worker_coder: int = field(
+        default_factory=lambda: int(_registry_timeout("roles", "worker_fast", 30))
+    )
     worker_code: int = field(
-        default_factory=lambda: int(_registry_timeout("roles", "worker_code", 60))
+        default_factory=lambda: int(_registry_timeout("roles", "worker_coder", 30))
     )
     worker_fast: int = field(
         default_factory=lambda: int(_registry_timeout("roles", "worker_fast", 30))
@@ -648,6 +652,7 @@ class TimeoutsConfig:
             "worker_vision": self.worker_vision,
             "worker_summarize": self.worker_summarize,
             "worker_general": self.worker_general,
+            "worker_coder": self.worker_coder,
             "worker_code": self.worker_code,
             "worker_fast": self.worker_fast,
             "frontdoor": self.frontdoor,
@@ -667,6 +672,7 @@ class TimeoutsConfig:
             "worker_vision": self.worker_vision,
             "worker_summarize": self.worker_summarize,
             "worker_general": self.worker_general,
+            "worker_coder": self.worker_coder,
             "worker_code": self.worker_code,
             "worker_fast": self.worker_fast,
             "frontdoor": self.frontdoor,
@@ -1239,7 +1245,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         worker_math: str = "http://localhost:8082"
         worker_vision: str = "http://localhost:8086"
         vision_escalation: str = "http://localhost:8087"
-        worker_code: str = "http://localhost:8092"
+        worker_coder: str = "http://localhost:8102"
+        worker_code: str = "http://localhost:8102"
         worker_fast: str = "http://localhost:8102"
         worker_summarize: str = "http://localhost:8081"
         architect_general: str = "http://localhost:8083"
@@ -1260,7 +1267,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         worker_vision: int = 60
         worker_summarize: int = 120
         worker_general: int = 60
-        worker_code: int = 60
+        worker_coder: int = 30
+        worker_code: int = 30
         worker_fast: int = 30
         frontdoor: int = 90
         coder_escalation: int = 120
@@ -1522,7 +1530,8 @@ def _load_from_env() -> OrchestratorConfigData:
             vision_escalation=_env_str(
                 f"{P}SERVER_URLS_VISION_ESCALATION", "http://localhost:8087"
             ),
-            worker_code=_env_str(f"{P}SERVER_URLS_WORKER_CODE", "http://localhost:8092"),
+            worker_coder=_env_str(f"{P}SERVER_URLS_WORKER_CODER", "http://localhost:8102"),
+            worker_code=_env_str(f"{P}SERVER_URLS_WORKER_CODE", "http://localhost:8102"),
             worker_fast=_env_str(f"{P}SERVER_URLS_WORKER_FAST", "http://localhost:8102"),
             worker_summarize=_env_str(f"{P}SERVER_URLS_WORKER_SUMMARIZE", "http://localhost:8081"),
             architect_general=_env_str(
@@ -1560,9 +1569,13 @@ def _load_from_env() -> OrchestratorConfigData:
                 f"{P}TIMEOUTS_WORKER_GENERAL",
                 int(_registry_timeout("roles", "worker_general", 60)),
             ),
+            worker_coder=_env_int(
+                f"{P}TIMEOUTS_WORKER_CODER",
+                int(_registry_timeout("roles", "worker_coder", 30)),
+            ),
             worker_code=_env_int(
                 f"{P}TIMEOUTS_WORKER_CODE",
-                int(_registry_timeout("roles", "worker_code", 60)),
+                int(_registry_timeout("roles", "worker_coder", 30)),
             ),
             worker_fast=_env_int(
                 f"{P}TIMEOUTS_WORKER_FAST",

@@ -154,6 +154,19 @@ class TestClaudeDebuggerPromptBuilding:
         assert "debugging the orchestration pipeline" not in prompt
         assert "Diagnostic Batch #2" in prompt
 
+    def test_prompt_includes_delegation_diagnostics(self, tmp_path: Path):
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=1, dry_run=True)
+        debugger.batch_count = 2
+        diag = _make_diag(
+            "q1",
+            role="architect_coding",
+            mode="delegated",
+            delegation_diagnostics={"break_reason": "max_loops", "effective_max_loops": 2},
+        )
+        prompt = debugger._build_prompt([diag])
+        assert "Delegation diagnostics" in prompt
+        assert "break_reason=max_loops" in prompt
+
     def test_tap_inlined_when_present(self, tmp_path: Path):
         """Diagnostic with tap data + tap file present → inlined in prompt."""
         # Create a fake tap file

@@ -16,7 +16,10 @@ from src.graph.helpers import (
     _detect_role_cycle,
     _extract_final_from_raw,
     _extract_prose_answer,
+    _frontdoor_repl_non_tool_token_cap,
+    _frontdoor_turn_token_cap,
     _is_comment_only,
+    _repl_turn_token_cap,
     _rescue_from_last_output,
     _resolve_answer,
     _update_workspace_from_turn,
@@ -157,6 +160,40 @@ class TestThinkHarderConfig:
         assert cfg["n_tokens"] <= 2600
         assert cfg["temperature"] <= 0.35
         assert cfg["cot_prefix"] == ""
+
+
+class TestReplTokenCap:
+    def test_default_cap(self, monkeypatch):
+        monkeypatch.delenv("ORCHESTRATOR_REPL_TURN_N_TOKENS", raising=False)
+        assert _repl_turn_token_cap() == 768
+
+    def test_invalid_env_falls_back(self, monkeypatch):
+        monkeypatch.setenv("ORCHESTRATOR_REPL_TURN_N_TOKENS", "not-a-number")
+        assert _repl_turn_token_cap() == 768
+
+    def test_floor_applied(self, monkeypatch):
+        monkeypatch.setenv("ORCHESTRATOR_REPL_TURN_N_TOKENS", "8")
+        assert _repl_turn_token_cap() == 64
+
+
+class TestFrontdoorTokenCap:
+    def test_default_cap(self, monkeypatch):
+        monkeypatch.delenv("ORCHESTRATOR_FRONTDOOR_TURN_N_TOKENS", raising=False)
+        assert _frontdoor_turn_token_cap() == 0
+
+    def test_floor_applied(self, monkeypatch):
+        monkeypatch.setenv("ORCHESTRATOR_FRONTDOOR_TURN_N_TOKENS", "12")
+        assert _frontdoor_turn_token_cap() == 128
+
+
+class TestFrontdoorReplNonToolTokenCap:
+    def test_default_cap(self, monkeypatch):
+        monkeypatch.delenv("ORCHESTRATOR_FRONTDOOR_REPL_NON_TOOL_N_TOKENS", raising=False)
+        assert _frontdoor_repl_non_tool_token_cap() == 256
+
+    def test_floor_applied(self, monkeypatch):
+        monkeypatch.setenv("ORCHESTRATOR_FRONTDOOR_REPL_NON_TOOL_N_TOKENS", "12")
+        assert _frontdoor_repl_non_tool_token_cap() == 64
 
 
 class TestWorkspaceBroadcast:

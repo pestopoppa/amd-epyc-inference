@@ -39,13 +39,18 @@ When a handoff task is complete, follow this checklist:
 
 ## Current Active Handoffs
 
-28 handoffs in `active/`. Key active items:
+34 handoffs in `active/`. Key active items:
 
 | Handoff | Purpose | Status |
 |---------|---------|--------|
+| [programmatic-tool-chaining.md](active/programmatic-tool-chaining.md) | Deferred tool results + multi-mutation chaining + persistent REPL sessions (from Anthropic API analysis) | RESEARCH COMPLETE |
+| [inference-lock-starvation-bug.md](active/inference-lock-starvation-bug.md) | Lock contention diagnosis + bounded wait + embedder isolation | Active (mitigated, quality follow-up) |
+| [perf-parallel-tools-concurrent-sweep-prefix-cache.md](active/perf-parallel-tools-concurrent-sweep-prefix-cache.md) | Parallel read-only tools, concurrent sweep, prefix cache | IMPLEMENTED |
+| [orchestration-architecture-optimization-handoff.md](active/orchestration-architecture-optimization-handoff.md) | Risk-controlled posterior routing + telemetry hardening | COMPLETE (100% review coverage) |
 | [hybrid-lookup-spec-decode.md](active/hybrid-lookup-spec-decode.md) | Prompt lookup + spec decode + corpus | Phase 2A SHIPPED, 2B ABANDONED |
 | [seed-routing-decomposition.md](active/seed-routing-decomposition.md) | Seed specialist routing decomposition | IN PROGRESS |
 | [orchestration-roadmap.md](active/orchestration-roadmap.md) | Orchestration phases 6-8 | Active |
+| [simpleqa-debugger-agency.md](active/simpleqa-debugger-agency.md) | SimpleQA 0% fix, debugger action bias | IMPLEMENTED |
 | [vision-pipeline.md](active/vision-pipeline.md) | Vision pipeline chat integration | NEEDS LIVE VALIDATION |
 | [skillbank-distillation.md](active/skillbank-distillation.md) | Skill distillation pipeline | SPEC COMPLETE |
 | [nextplaid-code-retrieval.md](active/nextplaid-code-retrieval.md) | NextPLAID code retrieval | Active |
@@ -60,7 +65,7 @@ When a handoff task is complete, follow this checklist:
 
 > Note: Several COMPLETE handoffs need extraction per lifecycle above. Run `ls handoffs/active/` for full listing.
 
-**Last Updated**: 2026-02-15
+**Last Updated**: 2026-02-18
 
 ## Blocked Tasks
 
