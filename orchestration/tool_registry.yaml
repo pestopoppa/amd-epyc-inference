@@ -28,6 +28,7 @@ tools:
       module: orchestration.tools.web
       function: http_get
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {url: "https://api.github.com/repos/python/cpython"}
         description: "Fetch GitHub repo metadata"
@@ -46,6 +47,7 @@ tools:
       module: orchestration.tools.web
       function: http_post
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
 
   web_search:
     category: web
@@ -60,6 +62,7 @@ tools:
       module: orchestration.tools.web
       function: web_search
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {query: "Python asyncio tutorial", max_results: 5}
         description: "Search for Python tutorials"
@@ -76,6 +79,7 @@ tools:
       module: orchestration.tools.web
       function: fetch_wikipedia
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
 
   # --- Knowledge retrieval tools (free APIs, no keys) ---
 
@@ -91,6 +95,7 @@ tools:
       module: src.tools.knowledge
       function: search_arxiv
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {query: "transformer attention mechanism", max_results: 5}
         description: "Search for papers on transformer attention"
@@ -108,6 +113,7 @@ tools:
       module: src.tools.knowledge
       function: search_papers
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {query: "speculative decoding LLM", year_range: "2023-2026"}
         description: "Search for recent speculative decoding papers"
@@ -125,6 +131,7 @@ tools:
       module: src.tools.knowledge
       function: search_wikipedia
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
 
   get_wikipedia_article:
     category: web
@@ -138,6 +145,7 @@ tools:
       module: src.tools.knowledge
       function: get_wikipedia_article
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
 
   search_books:
     category: web
@@ -152,6 +160,7 @@ tools:
       module: src.tools.knowledge
       function: search_books
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {query: "machine learning optimization", filter: "ebooks"}
         description: "Search for ML optimization ebooks"
@@ -169,6 +178,7 @@ tools:
       module: orchestration.tools.data
       function: json_query
     permissions: []
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {data: {users: [{name: "Alice"}, {name: "Bob"}]}, query: "users[*].name"}
         description: "Extract all user names"
@@ -186,6 +196,7 @@ tools:
       module: orchestration.tools.data
       function: csv_to_json
     permissions: []
+    allowed_callers: ["direct", "chain"]
 
   json_to_csv:
     category: data
@@ -199,6 +210,7 @@ tools:
       module: orchestration.tools.data
       function: json_to_csv
     permissions: []
+    allowed_callers: ["direct", "chain"]
 
   sql_query:
     category: data
@@ -212,6 +224,7 @@ tools:
       module: orchestration.tools.data
       function: sql_query
     permissions: []
+    allowed_callers: ["direct", "chain"]
     examples:
       - input:
           query: "SELECT name, age FROM users WHERE age > 25"
@@ -231,6 +244,7 @@ tools:
       module: orchestration.tools.code
       function: python_eval
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {expression: "sum(range(100))", variables: {}}
         description: "Calculate sum of 0-99"
@@ -248,6 +262,7 @@ tools:
       module: orchestration.tools.code
       function: run_shell
     permissions: [shell]
+    allowed_callers: ["direct"]
 
   git_status:
     category: code
@@ -260,6 +275,7 @@ tools:
       module: orchestration.tools.code
       function: git_status
     permissions: [filesystem]
+    allowed_callers: ["direct", "chain"]
 
   lint_python:
     category: code
@@ -273,6 +289,7 @@ tools:
       module: orchestration.tools.code
       function: lint_python
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   # ============ MATH TOOLS (Python) ============
   calculate:
@@ -286,6 +303,7 @@ tools:
       module: orchestration.tools.math
       function: calculate
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {expression: "np.sin(np.pi/4) * np.sqrt(2)"}
         description: "Calculate sin(π/4) × √2"
@@ -302,6 +320,7 @@ tools:
       module: orchestration.tools.math
       function: statistics
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   monte_carlo:
     category: math
@@ -316,6 +335,7 @@ tools:
       module: orchestration.tools.math
       function: monte_carlo
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {expression: "x**2", samples: 100000, distribution: "uniform"}
         description: "Estimate E[X²] where X ~ Uniform(0,1)"
@@ -332,6 +352,7 @@ tools:
       module: orchestration.tools.math
       function: symbolic_solve
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {equation: "x**2 - 5*x + 6"}
         description: "Solve x² - 5x + 6 = 0"
@@ -352,6 +373,7 @@ tools:
       binary: llama-math-tools
       command: matrix_op
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {A: [[3, 1], [1, 2]], b: [9, 8]}
         output: {x: [2.0, 3.0]}
@@ -369,6 +391,7 @@ tools:
       binary: llama-math-tools
       command: matrix_op
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   matrix_svd:
     category: math
@@ -382,6 +405,7 @@ tools:
       binary: llama-math-tools
       command: matrix_op
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   solve_ode:
     category: math
@@ -399,6 +423,7 @@ tools:
       binary: llama-math-tools
       command: solve_ode
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {y0: [1.0], t_span: [0, 5], system: "-0.5*y"}
         description: "Exponential decay dy/dt = -0.5y, y(0)=1"
@@ -418,6 +443,7 @@ tools:
       binary: llama-math-tools
       command: optimize
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   monte_carlo_native:
     category: math
@@ -433,6 +459,7 @@ tools:
       binary: llama-math-tools
       command: monte_carlo
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {bounds: [[-1, 1], [-1, 1]], function: "sphere", n_samples: 100000}
         description: "Estimate area of unit circle (≈π)"
@@ -453,6 +480,7 @@ tools:
       binary: llama-math-tools
       command: mcmc
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {log_density: "-0.5*(x0**2 + x1**2)", x0: [0, 0], n_samples: 5000}
         description: "Sample from 2D standard normal"
@@ -472,6 +500,7 @@ tools:
       binary: llama-math-tools
       command: bayesopt
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   # ============ VISUALIZATION TOOLS (C++ Native) ============
   plot_braille:
@@ -490,6 +519,7 @@ tools:
       binary: llama-math-tools
       command: plot
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   plot_function:
     category: data
@@ -506,6 +536,7 @@ tools:
       binary: llama-math-tools
       command: plot
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   histogram:
     category: data
@@ -521,6 +552,7 @@ tools:
       binary: llama-math-tools
       command: plot
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   plot_sixel:
     category: data
@@ -539,6 +571,7 @@ tools:
       binary: llama-math-tools
       command: plot_sixel
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   render_math:
     category: data
@@ -552,6 +585,7 @@ tools:
       binary: llama-math-tools
       command: render_math
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {latex: "\\frac{d^2y}{dx^2} + \\omega^2 y = 0"}
         output: {rendered: "d²y/dx² + ω²y = 0"}
@@ -571,6 +605,7 @@ tools:
       module: orchestration.tools.system
       function: read_file
     permissions: [filesystem]
+    allowed_callers: ["direct", "chain"]
 
   write_file:
     category: system
@@ -585,6 +620,7 @@ tools:
       module: orchestration.tools.system
       function: write_file
     permissions: [filesystem]
+    allowed_callers: ["direct"]
 
   list_directory:
     category: system
@@ -599,6 +635,7 @@ tools:
       module: orchestration.tools.system
       function: list_directory
     permissions: [filesystem]
+    allowed_callers: ["direct", "chain"]
 
   get_current_date:
     category: system
@@ -610,6 +647,7 @@ tools:
       module: orchestration.tools.system
       function: get_current_date
     permissions: []
+    allowed_callers: ["direct", "chain"]
 
   get_current_time:
     category: system
@@ -621,6 +659,7 @@ tools:
       module: orchestration.tools.system
       function: get_current_time
     permissions: []
+    allowed_callers: ["direct", "chain"]
 
   # ============ ARCHIVE TOOLS ============
   archive_open:
@@ -634,6 +673,7 @@ tools:
       module: src.services.archive_extractor
       function: archive_open
     permissions: [filesystem]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {path: "/mnt/raid0/llm/uploads/documents.zip"}
         description: "Open archive and view contents"
@@ -652,6 +692,7 @@ tools:
       module: src.services.archive_extractor
       function: archive_extract
     permissions: [filesystem]
+    allowed_callers: ["direct"]
     examples:
       - input: {pattern: "*.pdf", process_documents: true}
         description: "Extract and OCR all PDFs"
@@ -668,6 +709,7 @@ tools:
       module: src.services.archive_extractor
       function: archive_file
     permissions: [filesystem]
+    allowed_callers: ["direct", "chain"]
 
   archive_search:
     category: system
@@ -681,6 +723,7 @@ tools:
       module: src.services.archive_extractor
       function: archive_search
     permissions: [filesystem]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {query: "authentication"}
         description: "Search for authentication across all extracted files"
@@ -697,6 +740,7 @@ tools:
       module: orchestration.tools.llm
       function: embed_text
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   similarity_search:
     category: llm
@@ -711,6 +755,7 @@ tools:
       module: orchestration.tools.llm
       function: similarity_search
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   classify_text:
     category: llm
@@ -724,6 +769,7 @@ tools:
       module: orchestration.tools.llm
       function: classify_text
     permissions: [compute]
+    allowed_callers: ["direct", "chain"]
 
   # ============ VISION TOOLS ============
   ocr_extract:
@@ -737,6 +783,7 @@ tools:
       endpoint: "http://localhost:9001/v1/document/ocr"
       method: POST
     permissions: [network]
+    allowed_callers: ["direct", "chain"]
     examples:
       - input: {image_base64: "<base64 encoded PNG>"}
         description: "Extract text from a document image"

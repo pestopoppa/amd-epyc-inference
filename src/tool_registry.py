@@ -111,6 +111,7 @@ class Tool:
     code_hash: str | None = None  # SHA256 of handler code for integrity
     side_effects: list[str] = field(default_factory=list)  # SideEffect values
     destructive: bool = False  # Whether tool modifies state irreversibly
+    allowed_callers: list[str] = field(default_factory=lambda: ["direct"])
 
     def validate_args(self, args: dict[str, Any]) -> list[str]:
         """Validate arguments against parameter schema.
@@ -164,6 +165,9 @@ class ToolInvocation:
     result: Any
     error: str | None = None
     elapsed_ms: float = 0.0
+    caller_type: str = "direct"
+    chain_id: str | None = None
+    chain_index: int = 0
 
 
 @dataclass
@@ -244,6 +248,9 @@ class ToolRegistry:
         description: str,
         category: ToolCategory,
         parameters: dict[str, dict[str, Any]],
+        side_effects: list[str] | None = None,
+        destructive: bool = False,
+        allowed_callers: list[str] | None = None,
         update: bool = True,
     ) -> Callable[[Callable], Callable]:
         """Decorator to register a function as a tool handler.
@@ -281,6 +288,9 @@ class ToolRegistry:
                 parameters=parameters,
                 handler=func,
                 code_hash=code_hash,
+                side_effects=list(side_effects or []),
+                destructive=destructive,
+                allowed_callers=list(allowed_callers or ["direct"]),
             )
             self.register_tool(tool, update=update)
             return func
@@ -348,6 +358,9 @@ class ToolRegistry:
         self,
         tool_name: str,
         role: str,
+        caller_type: str = "direct",
+        chain_id: str | None = None,
+        chain_index: int = 0,
         **kwargs: Any,
     ) -> Any:
         """Invoke a tool with the given arguments.
@@ -420,6 +433,9 @@ class ToolRegistry:
                     success=True,
                     result=result,
                     elapsed_ms=elapsed,
+                    caller_type=caller_type,
+                    chain_id=chain_id,
+                    chain_index=chain_index,
                 )
             )
 
@@ -445,6 +461,9 @@ class ToolRegistry:
                     result=None,
                     error=str(e),
                     elapsed_ms=elapsed,
+                    caller_type=caller_type,
+                    chain_id=chain_id,
+                    chain_index=chain_index,
                 )
             )
 
@@ -567,6 +586,14 @@ ws ::= " "*
             if SideEffect.READ_ONLY in tool.side_effects
         }
 
+    def get_chainable_tools(self) -> set[str]:
+        """Return set of tool names that opt in to chained execution."""
+        return {
+            tool.name
+            for tool in self._tools.values()
+            if "chain" in tool.allowed_callers
+        }
+
     def get_invocation_log(self) -> list[ToolInvocation]:
         """Get the invocation log."""
         return self._invocation_log.copy()
@@ -677,6 +704,14 @@ def load_from_yaml(
                 except ValueError:
                     logger.warning(f"Unknown side effect '{eff}' for tool '{tool_name}'")
 
+            allowed_callers = tool_spec.get("allowed_callers", ["direct"])
+            if not isinstance(allowed_callers, list):
+                logger.warning(
+                    "Invalid allowed_callers for tool '%s' (expected list), defaulting to ['direct']",
+                    tool_name,
+                )
+                allowed_callers = ["direct"]
+
             # Create Tool object
             tool = Tool(
                 name=tool_name,
@@ -687,6 +722,7 @@ def load_from_yaml(
                 mcp_server=tool_spec.get("mcp_server"),
                 side_effects=side_effects,
                 destructive=tool_spec.get("destructive", False),
+                allowed_callers=allowed_callers,
             )
 
             registry.register_tool(tool)

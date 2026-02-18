@@ -220,6 +220,40 @@ class TestToolRegistry:
 
         result = registry.invoke("double", "test", value=5)
         assert result == 10
+        inv = registry.get_invocation_log()[-1]
+        assert inv.caller_type == "direct"
+        assert inv.chain_id is None
+        assert inv.chain_index == 0
+
+    def test_invoke_records_chain_metadata(self):
+        registry = ToolRegistry()
+
+        tool = Tool(
+            name="double",
+            description="Double",
+            category=ToolCategory.DATA,
+            parameters={"value": {"type": "integer", "required": True}},
+            handler=lambda value: value * 2,
+        )
+        registry.register_tool(tool)
+        registry.set_role_permissions(
+            "test",
+            ToolPermissions(allowed_categories=[ToolCategory.DATA]),
+        )
+
+        result = registry.invoke(
+            "double",
+            "test",
+            caller_type="chain",
+            chain_id="ch_123",
+            chain_index=2,
+            value=5,
+        )
+        assert result == 10
+        inv = registry.get_invocation_log()[-1]
+        assert inv.caller_type == "chain"
+        assert inv.chain_id == "ch_123"
+        assert inv.chain_index == 2
 
     def test_invoke_permission_denied(self):
         """Invoke should raise PermissionError when role can't use tool."""
@@ -239,6 +273,29 @@ class TestToolRegistry:
 
         with pytest.raises(PermissionError):
             registry.invoke("test", "worker")
+
+    def test_get_chainable_tools(self):
+        registry = ToolRegistry()
+        registry.register_tool(
+            Tool(
+                name="chainable",
+                description="Chainable",
+                category=ToolCategory.DATA,
+                parameters={},
+                allowed_callers=["direct", "chain"],
+            )
+        )
+        registry.register_tool(
+            Tool(
+                name="direct_only",
+                description="Direct",
+                category=ToolCategory.DATA,
+                parameters={},
+                allowed_callers=["direct"],
+            )
+        )
+
+        assert registry.get_chainable_tools() == {"chainable"}
 
 
 class TestToolRegistryMCP:

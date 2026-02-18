@@ -13,6 +13,7 @@ from src.repl_environment.parallel_dispatch import (
     _ParallelCall,
     _eval_ast_arg,
     _extract_parallel_calls,
+    extract_tool_calls,
     execute_parallel_calls,
 )
 
@@ -147,6 +148,21 @@ class TestExtractParallelCalls:
         globs = _make_globals(peek=True, grep=True)
         calls = _extract_parallel_calls(code, globs, READ_ONLY_TOOLS)
         assert calls is None  # self.method is not a simple Name
+
+
+class TestExtractToolCalls:
+    def test_ignores_comments_and_strings(self):
+        code = """
+# run_shell("echo no")
+text = "delegate('noop')"
+run_shell("echo yes")
+"""
+        calls = extract_tool_calls(code, {"run_shell", "delegate"})
+        assert [c.func_name for c in calls] == ["run_shell"]
+
+    def test_returns_empty_on_syntax_error(self):
+        calls = extract_tool_calls("run_shell(", {"run_shell"})
+        assert calls == []
 
 
 # ---------------------------------------------------------------------------

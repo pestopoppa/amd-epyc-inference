@@ -103,6 +103,32 @@ def _build_delegation_diagnostics(
     }
 
 
+def _build_tool_chain_summary(invocation_log: list) -> list[dict]:
+    """Group chained tool invocations by chain_id for response diagnostics."""
+    chains: dict[str, dict] = {}
+    for inv in invocation_log:
+        chain_id = getattr(inv, "chain_id", None)
+        if not chain_id:
+            continue
+        entry = chains.setdefault(
+            chain_id,
+            {
+                "chain_id": chain_id,
+                "caller_type": getattr(inv, "caller_type", "chain"),
+                "tools": [],
+                "elapsed_ms": 0.0,
+                "success": True,
+            },
+        )
+        entry["tools"].append(getattr(inv, "tool_name", ""))
+        entry["elapsed_ms"] += float(getattr(inv, "elapsed_ms", 0.0) or 0.0)
+        entry["success"] = bool(entry["success"] and getattr(inv, "success", False))
+
+    summaries = list(chains.values())
+    summaries.sort(key=lambda c: c["chain_id"])
+    return summaries
+
+
 async def _execute_repl(
     request: ChatRequest,
     routing: RoutingResult,
@@ -409,6 +435,7 @@ async def _execute_repl(
         {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
         for inv in invocation_log
     ]
+    tool_chains = _build_tool_chain_summary(invocation_log)
     tools_used = max(repl._tool_invocations, len(tools_called), len(tool_timings))
 
     # Detect parallel tool usage from invocation log
@@ -444,6 +471,7 @@ async def _execute_repl(
         tools_used=tools_used,
         tools_called=tools_called,
         tool_timings=tool_timings,
+        tool_chains=tool_chains,
         delegation_events=delegation_events,
         delegation_diagnostics=delegation_diag,
         tools_success=tools_success,

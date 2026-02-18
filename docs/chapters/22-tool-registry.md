@@ -194,6 +194,23 @@ class ToolOutput:
 
 </details>
 
+## Programmatic Chaining Controls (February 2026, Phase 2a)
+
+The registry now carries per-tool caller policy for structured-mode chaining:
+
+- `Tool.allowed_callers`: additive caller policy (default `["direct"]`).
+- `ToolRegistry.get_chainable_tools()`: returns tools that opt in with `"chain"`.
+- `ToolInvocation` audit enrichment:
+  - `caller_type` (`direct` or `chain`)
+  - `chain_id` (shared across one multi-tool chain)
+  - `chain_index` (step order within that chain)
+
+Runtime behavior:
+
+- Structured-mode multi-tool turns are allowed only when non-read-only calls are chain-eligible.
+- Routing tools (`delegate`, `escalate`) remain blocked from chaining.
+- Chat responses expose grouped chain diagnostics via `tool_chains`.
+
 ### Behavior
 
 - When `structured_tool_output` enabled: `invoke()` wraps raw results in `ToolOutput` with `ok=True`, includes `side_effects_declared` from tool definition.

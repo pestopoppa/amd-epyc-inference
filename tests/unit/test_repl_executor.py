@@ -6,6 +6,7 @@ two-stage summarization integration, long-context exploration.
 """
 
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1090,3 +1091,55 @@ class TestToolOutputsInAnswer:
                 assert response.tools_used == 2
                 # tools_success should be inferred from tool outputs
                 assert response.tools_success is not None or response.tools_success is None
+
+    @pytest.mark.asyncio
+    async def test_tool_chains_grouped_in_response(
+        self, basic_request, basic_routing, mock_primitives, mock_state
+    ):
+        """Chained tool invocations should be grouped into ChatResponse.tool_chains."""
+        with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {"_tool_outputs": []}
+            mock_repl._tool_invocations = 2
+            mock_repl._get_read_only_tools = MagicMock(return_value=set())
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl.tool_registry = MagicMock()
+            mock_repl.tool_registry.get_invocation_log.return_value = [
+                SimpleNamespace(
+                    tool_name="read_file",
+                    elapsed_ms=10.0,
+                    success=True,
+                    chain_id="ch_1",
+                    caller_type="chain",
+                ),
+                SimpleNamespace(
+                    tool_name="list_directory",
+                    elapsed_ms=15.5,
+                    success=True,
+                    chain_id="ch_1",
+                    caller_type="chain",
+                ),
+            ]
+            mock_repl_class.return_value = mock_repl
+
+            success_result = TaskResult(
+                answer="Answer", success=True, turns=1, role_history=["worker_general"]
+            )
+
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                response = await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+                assert len(response.tool_chains) == 1
+                chain = response.tool_chains[0]
+                assert chain["chain_id"] == "ch_1"
+                assert chain["caller_type"] == "chain"
+                assert chain["tools"] == ["read_file", "list_directory"]
+                assert chain["elapsed_ms"] == 25.5
+                assert chain["success"] is True

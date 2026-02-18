@@ -159,7 +159,7 @@ Each <response> must include a <text> and a numeric <probability>.  Please sampl
 
 ### Component Flow
 
-> Last updated: 2026-02-14
+> Last updated: 2026-02-18
 
 ```
 Request:    API(:8000) → AppState → ChatPipeline → REPLExecutor → run_task() → [graph nodes]
@@ -169,7 +169,7 @@ Skills:     SkillBank(skills.db+FAISS) → SkillRetriever → prompt injection |
 Retrieval:  NextPLAID-code(:8088) → LateOn-Code(130M, 128-dim) → code index | NextPLAID-docs(:8089) → answerai-colbert-small-v1(ONNX INT8) → docs index
 Escalation: Graph nodes use EscalationPolicy(rules) + MemRL(advisory) via TaskDeps injection
 Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
-Tools:      REPLExecutor → ToolRegistry → PluginLoader(5 plugins, 10 tools)
+Tools:      REPLExecutor → ToolRegistry(allowed_callers, chain telemetry) → PluginLoader(5 plugins, 10 tools)
 Prompts:    resolve_prompt(name) → orchestration/prompts/{name}.md (hot-swap) → fallback constant
 REPL:       sanitize_code_unicode() → exec(code) — strips non-ASCII before execution
 Distill:    seed_skills.py → DistillationPipeline(teacher) → SkillBank | --evolve → EvolutionMonitor
@@ -305,7 +305,7 @@ Run via `make gates`.
 |-----------|-------|------|-------|
 | Interactive chat | Qwen3-Coder-30B-A3B | 8080 | 47 t/s (MoE6+spec+lookup) |
 | Code gen / escalation | Qwen2.5-Coder-32B | 8081 | 39 t/s (spec+lookup) |
-| Explore / summarize | Qwen2.5-7B-f16 | 8082 | 44 t/s (spec+lookup) |
+| Explore / summarize | Qwen2.5-7B-f16 | 8082 | 50 t/s (spec+lookup) |
 | Long-context ingest | Qwen3-Next-80B-A3B | 8085 | 6.3 t/s (**NO SPEC**) |
 | Architecture (general) | Qwen3-235B-A22B | 8083 | 6.1 t/s (full+spec) |
 | Architecture (coding) | Qwen3-Coder-480B-A35B | 8084 | 9.0 t/s (full+spec) |

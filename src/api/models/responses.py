@@ -62,6 +62,10 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Per-tool invocation timing (name, elapsed_ms, success)",
     )
+    tool_chains: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Grouped chained tool invocations with chain_id/steps/status",
+    )
     delegation_events: list[DelegationEvent] = Field(
         default_factory=list,
         description="Structured delegation events during this request",

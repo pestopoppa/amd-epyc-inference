@@ -133,6 +133,21 @@ class REPLConfig:
 
 </details>
 
+## Structured Mode Chaining (Phase 2a)
+
+Structured mode now uses AST-based tool-call discovery for gate decisions. This removes regex false positives from comments and string literals.
+
+When multiple tools are present in one turn:
+
+- All-read-only calls can still dispatch in parallel.
+- Non-read-only calls are allowed only if chain-eligible:
+  - registry tools opt in via `allowed_callers: ["chain"]`
+  - selected REPL built-ins (`run_shell`, `run_python_code`, `file_write_safe`, `log_append`, `benchmark_run`) are chain-enabled
+  - `TOOL` / `CALL` are allowed only when the wrapped registry tool is chain-enabled
+- Routing primitives (`delegate`, `escalate`) are always rejected in chained turns.
+
+During execution, each chained tool call carries chain metadata into the registry invocation log (`caller_type`, `chain_id`, `chain_index`) for response diagnostics and replay.
+
 **Timeout Enforcement**: UNIX `SIGALRM` signal terminates runaway executions (600s default for document ingestion, 120s for general use).
 
 ### Output Spill-to-File

@@ -32,6 +32,52 @@ class _ParallelCall:
     index: int  # Original order in source code
 
 
+@dataclass
+class _ToolCallSite:
+    """A tool call site discovered via AST scanning."""
+
+    func_name: str
+    lineno: int
+    col_offset: int
+
+
+def extract_tool_calls(code: str, tool_functions: set[str]) -> list[_ToolCallSite]:
+    """Extract tool calls from code using AST (ignores comments/strings).
+
+    Args:
+        code: Source code to analyze.
+        tool_functions: Set of callable names considered "tools".
+
+    Returns:
+        Ordered list of discovered call sites for matching tool functions.
+        Returns an empty list on parse failure.
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+
+    sites: list[_ToolCallSite] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name):
+            continue
+        func_name = node.func.id
+        if func_name not in tool_functions:
+            continue
+        sites.append(
+            _ToolCallSite(
+                func_name=func_name,
+                lineno=getattr(node, "lineno", 0),
+                col_offset=getattr(node, "col_offset", 0),
+            )
+        )
+
+    sites.sort(key=lambda s: (s.lineno, s.col_offset))
+    return sites
+
+
 def _eval_ast_arg(node: ast.expr, globals_dict: dict[str, Any]) -> Any | None:
     """Safely evaluate an AST argument node to a Python value.
 

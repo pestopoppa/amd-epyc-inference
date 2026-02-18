@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import io
+import os
 import signal
 import threading
 import uuid
@@ -25,7 +26,10 @@ from src.repl_environment.types import (
     wrap_tool_output,
 )
 from src.repl_environment.parallel_dispatch import (
+    _ParallelCall,
+    _eval_ast_arg,
     _extract_parallel_calls,
+    extract_tool_calls,
     execute_parallel_calls,
 )
 from src.repl_environment.security import ASTSecurityVisitor
@@ -140,6 +144,9 @@ class REPLEnvironment(
         # Structured mode: React-style one-tool-per-turn execution
         # Can be set via config or constructor parameter (constructor takes precedence)
         self._structured_mode = structured_mode or self.config.structured_mode
+        self._tool_chain_mode = os.environ.get("ORCHESTRATOR_TOOL_CHAIN_MODE", "seq").strip().lower()
+        if self._tool_chain_mode not in {"legacy", "seq", "dep"}:
+            self._tool_chain_mode = "seq"
 
         # Execution state
         self._final_answer: str | None = None
@@ -148,6 +155,8 @@ class REPLEnvironment(
         self._session_id = task_id or uuid.uuid4().hex[:8]
         self._last_spill_summary: str | None = None  # Rolling summary across spills
         self._tool_invocations = 0  # Count of TOOL()/CALL() invocations
+        self._active_tool_chain_id: str | None = None
+        self._active_tool_chain_index: int = 0
 
         # Exploration tracking (for forced exploration validation)
         self._exploration_calls = 0  # Count of peek/grep/llm_call calls
@@ -238,6 +247,22 @@ class REPLEnvironment(
         "pprint", "reprlib",
         # Scientific computing (if installed)
         "numpy", "scipy", "sympy",
+    })
+    # Read-only REPL-callable helpers (safe for parallel dispatch).
+    # This covers non-registry built-ins like peek/grep plus utility calls.
+    _READ_ONLY_REPL_TOOLS: frozenset[str] = frozenset({
+        "peek", "grep", "list_dir", "file_info", "list_tools",
+        "recall", "list_findings", "registry_lookup", "my_role",
+        "route_advice", "list_procedures", "get_procedure_status",
+        "context_len", "find_scripts", "benchmark_compare", "fetch_report",
+        "code_search", "doc_search",
+    })
+    _CHAINABLE_REPL_TOOLS: frozenset[str] = frozenset({
+        "run_shell",
+        "run_python_code",
+        "file_write_safe",
+        "log_append",
+        "benchmark_run",
     })
 
     def _build_globals(self) -> dict[str, Any]:
@@ -660,31 +685,77 @@ class REPLEnvironment(
             "context_len",
         }
 
-        # Count tool function calls in the code
-        tool_calls = []
-        for func in tool_functions:
-            # Match function calls: func_name( with word boundary
-            pattern = rf"\b{func}\s*\("
-            matches = list(re.finditer(pattern, code))
-            tool_calls.extend([(func, m.start()) for m in matches])
-
-        # Sort by position to get order of calls
-        tool_calls.sort(key=lambda x: x[1])
+        # Count tool function calls using AST, so comments/strings do not
+        # trigger false positives.
+        call_sites = extract_tool_calls(code, tool_functions)
+        tool_calls = [site.func_name for site in call_sites]
 
         if len(tool_calls) > 1:
             # Check if ALL tool calls are read-only — if so, allow parallel execution
             # Read-only tools (grep, peek, list_dir, etc.) are safe to run concurrently
             read_only_tools = self._get_read_only_tools()
-            tool_names = [t[0] for t in tool_calls]
+            tool_names = list(tool_calls)
             all_read_only = all(name in read_only_tools for name in tool_names)
+            non_read_only = [name for name in tool_names if name not in read_only_tools]
+            chainable_tools = set()
+            if self.tool_registry and hasattr(self.tool_registry, "get_chainable_tools"):
+                try:
+                    chainable_tools = set(self.tool_registry.get_chainable_tools())
+                except Exception:
+                    chainable_tools = set()
+            chainable_tools.update(self._CHAINABLE_REPL_TOOLS)
+            blocked_routing_tools = {"delegate", "escalate"}
+            non_chainable: set[str] = set()
+            for name in non_read_only:
+                if name in blocked_routing_tools:
+                    non_chainable.add(name)
+                    continue
+                if name in {"TOOL", "CALL"}:
+                    # Check wrapped tool eligibility below.
+                    continue
+                if name not in chainable_tools:
+                    non_chainable.add(name)
 
-            if not all_read_only:
+            # TOOL/CALL wrapping is allowed only if the referenced registry
+            # tool is statically known and chain-enabled.
+            if self.tool_registry:
+                try:
+                    parsed = ast.parse(code)
+                except SyntaxError:
+                    parsed = None
+                if parsed is not None:
+                    for node in ast.walk(parsed):
+                        if not isinstance(node, ast.Call):
+                            continue
+                        if not isinstance(node.func, ast.Name):
+                            continue
+                        if node.func.id not in {"TOOL", "CALL"}:
+                            continue
+                        if not node.args:
+                            non_chainable.add(f"{node.func.id}(dynamic)")
+                            continue
+                        first_arg = node.args[0]
+                        if not (
+                            isinstance(first_arg, ast.Constant)
+                            and isinstance(first_arg.value, str)
+                        ):
+                            non_chainable.add(f"{node.func.id}(dynamic)")
+                            continue
+                        wrapped_tool = first_arg.value
+                        if wrapped_tool not in chainable_tools:
+                            non_chainable.add(f"{node.func.id}({wrapped_tool})")
+
+            non_chainable_sorted = sorted(non_chainable)
+
+            if not all_read_only and non_chainable_sorted:
                 return ExecutionResult(
                     output="",
                     is_final=False,
-                    error=f"Structured mode: Only one tool call per turn (unless all are read-only). "
-                    f"Found {len(tool_calls)} calls: {', '.join(tool_names)}. "
-                    f"Execute one tool, observe the result, then call the next.",
+                    error=(
+                        "Structured mode: multi-tool chaining requires chain opt-in for non-read-only tools. "
+                        f"Blocked tools: {', '.join(non_chainable_sorted)}. "
+                        "Use one tool per turn, or mark tools with allowed_callers=['chain']."
+                    ),
                     elapsed_seconds=time.perf_counter() - start_time,
                 )
             # All read-only: attempt parallel dispatch via AST extraction
@@ -715,6 +786,15 @@ class REPLEnvironment(
                         is_final=False,
                         elapsed_seconds=time.perf_counter() - start_time,
                     )
+            if self._tool_chain_mode == "dep":
+                dep_result = self._execute_dependency_aware_chain(
+                    code=code,
+                    start_time=start_time,
+                    read_only_tools=read_only_tools,
+                    tool_functions=tool_functions,
+                )
+                if dep_result is not None:
+                    return dep_result
             # Fall through to sequential exec()
 
         # Execute the code (single tool or simple expression)
@@ -739,6 +819,9 @@ class REPLEnvironment(
                     pass
 
             try:
+                if len(tool_calls) > 1:
+                    self._active_tool_chain_id = uuid.uuid4().hex[:12]
+                    self._active_tool_chain_index = 0
                 with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
                     exec(code, self._globals)
 
@@ -786,9 +869,163 @@ class REPLEnvironment(
                 )
 
         finally:
+            self._active_tool_chain_id = None
+            self._active_tool_chain_index = 0
             if _alarm_set:
                 signal.alarm(0)
                 signal.signal(signal.SIGALRM, old_handler)
+
+    def _execute_dependency_aware_chain(
+        self,
+        *,
+        code: str,
+        start_time: float,
+        read_only_tools: set[str],
+        tool_functions: set[str],
+    ) -> ExecutionResult | None:
+        """Execute simple top-level tool chains with dependency-aware waves.
+
+        Returns None to signal caller fallback to sequential exec() when code
+        shape is unsupported or ambiguous.
+        """
+        import time
+
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return None
+
+        steps: list[tuple[str, str | None, ast.Call]] = []
+        for stmt in tree.body:
+            if isinstance(stmt, ast.Assign):
+                if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+                    return None
+                if not isinstance(stmt.value, ast.Call) or not isinstance(stmt.value.func, ast.Name):
+                    return None
+                func_name = stmt.value.func.id
+                if func_name not in tool_functions:
+                    return None
+                steps.append((func_name, stmt.targets[0].id, stmt.value))
+            elif isinstance(stmt, ast.Expr):
+                if not isinstance(stmt.value, ast.Call) or not isinstance(stmt.value.func, ast.Name):
+                    return None
+                func_name = stmt.value.func.id
+                if func_name not in tool_functions:
+                    return None
+                steps.append((func_name, None, stmt.value))
+            else:
+                return None
+
+        if len(steps) < 2:
+            return None
+
+        def _arg_depends_on(arg_node: ast.AST, assigned: set[str]) -> bool:
+            return any(isinstance(n, ast.Name) and n.id in assigned for n in ast.walk(arg_node))
+
+        pending_wave: list[_ParallelCall] = []
+        wave_assigned: set[str] = set()
+        obs_parts: list[str] = []
+        wave_index = 0
+
+        def _flush_wave() -> ExecutionResult | None:
+            nonlocal pending_wave, wave_assigned
+            if not pending_wave:
+                return None
+            if len(pending_wave) == 1:
+                call = pending_wave[0]
+                try:
+                    val = self._globals[call.func_name](*call.args, **call.kwargs)
+                except Exception as e:
+                    return ExecutionResult(
+                        output="",
+                        is_final=False,
+                        error=f"{type(e).__name__}: {e}",
+                        elapsed_seconds=time.perf_counter() - start_time,
+                    )
+                key = call.target_var or f"_result_{call.index}"
+                if call.target_var:
+                    self._globals[call.target_var] = val
+                obs_parts.append(f"[{key}]: {val}")
+            else:
+                results = execute_parallel_calls(pending_wave, self._globals, self._state_lock)
+                for c in pending_wave:
+                    key = c.target_var or f"_result_{c.index}"
+                    val = results.get(key, "")
+                    if c.target_var:
+                        self._globals[c.target_var] = val
+                    obs_parts.append(f"[{key}]: {val}")
+
+            pending_wave = []
+            wave_assigned = set()
+            return None
+
+        for func_name, target_var, call_node in steps:
+            is_read = func_name in read_only_tools
+
+            args: list[Any] = []
+            kwargs: dict[str, Any] = {}
+            for arg_node in call_node.args:
+                if is_read and _arg_depends_on(arg_node, wave_assigned):
+                    flush_res = _flush_wave()
+                    if flush_res is not None:
+                        return flush_res
+                val = _eval_ast_arg(arg_node, self._globals)
+                if val is None and not (isinstance(arg_node, ast.Constant) and arg_node.value is None):
+                    return None
+                args.append(val)
+            for kw in call_node.keywords:
+                if kw.arg is None:
+                    return None
+                if is_read and _arg_depends_on(kw.value, wave_assigned):
+                    flush_res = _flush_wave()
+                    if flush_res is not None:
+                        return flush_res
+                val = _eval_ast_arg(kw.value, self._globals)
+                if val is None and not (isinstance(kw.value, ast.Constant) and kw.value.value is None):
+                    return None
+                kwargs[kw.arg] = val
+
+            if is_read:
+                pending_wave.append(
+                    _ParallelCall(
+                        func_name=func_name,
+                        args=args,
+                        kwargs=kwargs,
+                        target_var=target_var,
+                        index=wave_index,
+                    )
+                )
+                if target_var:
+                    wave_assigned.add(target_var)
+                wave_index += 1
+                continue
+
+            flush_res = _flush_wave()
+            if flush_res is not None:
+                return flush_res
+            try:
+                val = self._globals[func_name](*args, **kwargs)
+            except Exception as e:
+                return ExecutionResult(
+                    output="",
+                    is_final=False,
+                    error=f"{type(e).__name__}: {e}",
+                    elapsed_seconds=time.perf_counter() - start_time,
+                )
+            key = target_var or func_name
+            if target_var:
+                self._globals[target_var] = val
+            obs_parts.append(f"[{key}]: {val}")
+
+        flush_res = _flush_wave()
+        if flush_res is not None:
+            return flush_res
+        observation = self._spill_output("Observation:\n" + "\n---\n".join(obs_parts))
+        return ExecutionResult(
+            output=observation,
+            is_final=False,
+            elapsed_seconds=time.perf_counter() - start_time,
+        )
 
     def execute(self, code: str) -> ExecutionResult:
         """Execute Python code in the sandboxed environment.
@@ -1010,12 +1247,3 @@ class _RestrictedREPLEnvironment(REPLEnvironment):
             error=result.error,
             elapsed_seconds=result.elapsed_seconds,
         )
-    # Read-only REPL-callable helpers (safe for parallel dispatch).
-    # This covers non-registry built-ins like peek/grep plus utility calls.
-    _READ_ONLY_REPL_TOOLS: frozenset[str] = frozenset({
-        "peek", "grep", "list_dir", "file_info", "list_tools",
-        "recall", "list_findings", "registry_lookup", "my_role",
-        "route_advice", "list_procedures", "get_procedure_status",
-        "context_len", "find_scripts", "benchmark_compare", "fetch_report",
-        "code_search", "doc_search",
-    })

@@ -345,7 +345,20 @@ class _ContextMixin:
             raise RuntimeError("No tool registry configured")
 
         self._tool_invocations += 1
-        result = self.tool_registry.invoke(tool_name, self.role, **kwargs)
+        chain_id = getattr(self, "_active_tool_chain_id", None)
+        chain_index = int(getattr(self, "_active_tool_chain_index", 0))
+        caller_type = "chain" if chain_id else "direct"
+
+        result = self.tool_registry.invoke(
+            tool_name,
+            self.role,
+            caller_type=caller_type,
+            chain_id=chain_id,
+            chain_index=chain_index,
+            **kwargs,
+        )
+        if chain_id:
+            self._active_tool_chain_index = chain_index + 1
 
         # Track in research context
         if hasattr(self, "_research_context"):

@@ -114,6 +114,7 @@ class TestChatResponse:
         assert resp.tools_used == 0
         assert resp.tools_called == []
         assert resp.tool_timings == []
+        assert resp.tool_chains == []
         assert resp.delegation_events == []
         assert resp.tools_success is None
         assert resp.delegation_success is None
@@ -150,6 +151,21 @@ class TestChatResponse:
             ]
         )
         assert len(resp.delegation_events) == 1
+
+    def test_with_tool_chains(self):
+        resp = self._minimal(
+            tool_chains=[
+                {
+                    "chain_id": "ch_123",
+                    "caller_type": "chain",
+                    "tools": ["read_file", "list_directory"],
+                    "elapsed_ms": 22.5,
+                    "success": True,
+                }
+            ]
+        )
+        assert len(resp.tool_chains) == 1
+        assert resp.tool_chains[0]["chain_id"] == "ch_123"
 
     def test_required_fields_missing(self):
         with pytest.raises(ValidationError):
