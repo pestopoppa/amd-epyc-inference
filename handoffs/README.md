@@ -39,10 +39,11 @@ When a handoff task is complete, follow this checklist:
 
 ## Current Active Handoffs
 
-34 handoffs in `active/`. Key active items:
+35 handoffs in `active/`. Key active items:
 
 | Handoff | Purpose | Status |
 |---------|---------|--------|
+| [middleware-hardening-trio.md](active/middleware-hardening-trio.md) | Credential redaction + script interception + cascading tool policy (from Clawzempic/OpenClaw gap analysis) | READY FOR IMPLEMENTATION |
 | [programmatic-tool-chaining.md](active/programmatic-tool-chaining.md) | Deferred tool results + multi-mutation chaining + persistent REPL sessions (from Anthropic API analysis) | RESEARCH COMPLETE |
 | [inference-lock-starvation-bug.md](active/inference-lock-starvation-bug.md) | Lock contention diagnosis + bounded wait + embedder isolation | Active (mitigated, quality follow-up) |
 | [perf-parallel-tools-concurrent-sweep-prefix-cache.md](active/perf-parallel-tools-concurrent-sweep-prefix-cache.md) | Parallel read-only tools, concurrent sweep, prefix cache | IMPLEMENTED |

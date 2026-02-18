@@ -2,6 +2,11 @@
 
 ## 2026-02-18
 
+- **Middleware Hardening Trio — all 3 gaps shipped** (from Clawzempic/OpenClaw gap analysis):
+  - **Gap A — Credential Redaction**: `src/repl_environment/redaction.py` with 13 credential pattern categories; wired into ToolRegistry invoke(), ToolOutput serialization, and all 3 REPL execute paths. Feature flag `credential_redaction` (default True). 40 new tests.
+  - **Gap B — Script Interception**: `src/api/routes/chat_pipeline/script_interceptor.py` with 4 built-in interceptors (timestamp, date, arithmetic, UUID); wired as Stage 0 in `_handle_chat()` before routing. Feature flag `script_interception` (default False). 29 new tests.
+  - **Gap C — Cascading Tool Policy**: `src/tool_policy.py` with layered policy chain (Global→Role→Task→Delegation), group: prefixes, deny-always-wins invariant, and backward-compat `permissions_to_policy()` adapter; wired into `ToolRegistry.can_use_tool()` with `context` parameter support. Feature flag `cascading_tool_policy` (default False). 27 new tests.
+
 - **Programmatic Tool Chaining Phase 3 (cross-request persistence) started**:
   - Added `session_id` to `ChatRequest` and wired `_execute_repl()` restore path to load latest session checkpoint globals at task start.
   - Extended checkpoint data model and storage with `user_globals`, `variable_lineage`, and `skipped_user_globals`.

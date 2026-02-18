@@ -194,15 +194,25 @@ class ToolOutput:
         if self.status == "pending_approval":
             effects = ", ".join(self.side_effects_declared) or "none"
             return f"[PENDING APPROVAL] Side effects: {effects}"
-        return str(self.output) if self.output is not None else ""
+        text = str(self.output) if self.output is not None else ""
+        if text:
+            from src.repl_environment.redaction import redact_if_enabled
+
+            text = redact_if_enabled(text)
+        return text
 
     def to_machine(self) -> dict[str, Any]:
         """Machine-parseable representation."""
+        output = self.output
+        if isinstance(output, str) and output:
+            from src.repl_environment.redaction import redact_if_enabled
+
+            output = redact_if_enabled(output)
         return {
             "protocol_version": self.protocol_version,
             "ok": self.ok,
             "status": self.status,
-            "output": self.output,
+            "output": output,
             "side_effects_declared": self.side_effects_declared,
             "requires_approval": self.requires_approval,
             "metadata": self.metadata,
@@ -222,6 +232,9 @@ class ToolRegistry:
         self._permissions: dict[str, ToolPermissions] = {}
         self._invocation_log: list[ToolInvocation] = []
         self._mcp_configs: dict[str, Any] | None = None
+        # Cascading tool policy (used when features().cascading_tool_policy is True)
+        self._global_policies: list = []
+        self._role_policies: dict[str, list] = {}
 
     def register_tool(self, tool: Tool, update: bool = False) -> None:
         """Register a tool in the registry.
@@ -335,12 +348,41 @@ class ToolRegistry:
                 )
                 self.set_role_permissions(role_name, permissions)
 
-    def can_use_tool(self, role: str, tool_name: str) -> bool:
+    def add_global_policy(self, layer: Any) -> None:
+        """Add a global policy layer (applies to all roles).
+
+        Args:
+            layer: PolicyLayer to add to the global chain.
+        """
+        self._global_policies.append(layer)
+
+    def add_role_policy(self, role: str, layer: Any) -> None:
+        """Add a role-specific policy layer.
+
+        Args:
+            role: Role name.
+            layer: PolicyLayer to add.
+        """
+        if role not in self._role_policies:
+            self._role_policies[role] = []
+        self._role_policies[role].append(layer)
+
+    def can_use_tool(
+        self,
+        role: str,
+        tool_name: str,
+        context: dict[str, Any] | None = None,
+    ) -> bool:
         """Check if a role can use a specific tool.
+
+        When features().cascading_tool_policy is enabled, resolves access
+        through the policy chain: global → role → context layers.
+        Otherwise falls back to legacy ToolPermissions.can_use_tool().
 
         Args:
             role: Role name.
             tool_name: Tool name.
+            context: Optional task-level constraints (e.g. {"read_only": True}).
 
         Returns:
             True if the role can use the tool.
@@ -348,11 +390,55 @@ class ToolRegistry:
         if tool_name not in self._tools:
             return False
 
+        from src.features import features as _get_features
+
+        if _get_features().cascading_tool_policy:
+            return self._can_use_tool_cascading(role, tool_name, context)
+
+        # Legacy path
         if role not in self._permissions:
             logger.warning(f"Unknown role: {role}, denying access")
             return False
 
         return self._permissions[role].can_use_tool(self._tools[tool_name])
+
+    def _can_use_tool_cascading(
+        self,
+        role: str,
+        tool_name: str,
+        context: dict[str, Any] | None = None,
+    ) -> bool:
+        """Resolve tool access through cascading policy chain."""
+        from src.tool_policy import (
+            PolicyLayer,
+            permissions_to_policy,
+            resolve_policy_chain,
+        )
+
+        chain: list[PolicyLayer] = []
+
+        # Layer 1: Global policies
+        chain.extend(self._global_policies)
+
+        # Layer 2: Role policies (from explicit policy layers OR adapted from ToolPermissions)
+        if role in self._role_policies:
+            chain.extend(self._role_policies[role])
+        elif role in self._permissions:
+            # Adapt legacy ToolPermissions to a PolicyLayer
+            chain.append(
+                permissions_to_policy(f"role:{role}", self._permissions[role], self._tools)
+            )
+
+        # Layer 3: Task-level constraints from context
+        if context:
+            if context.get("read_only"):
+                chain.append(PolicyLayer(name="task:read_only", deny=frozenset({"group:write"})))
+            if context.get("no_web"):
+                chain.append(PolicyLayer(name="task:no_web", deny=frozenset({"group:web"})))
+
+        all_tools = frozenset(self._tools.keys())
+        allowed = resolve_policy_chain(chain, all_tools)
+        return tool_name in allowed
 
     def invoke(
         self,
@@ -421,6 +507,12 @@ class ToolRegistry:
                 result = self._invoke_mcp(tool.mcp_server, tool_name, kwargs)
             else:
                 raise RuntimeError(f"Tool '{tool_name}' has no handler")
+
+            # Redact credentials from string results
+            if isinstance(result, str):
+                from src.repl_environment.redaction import redact_if_enabled
+
+                result = redact_if_enabled(result)
 
             elapsed = (time.perf_counter() - start) * 1000
 

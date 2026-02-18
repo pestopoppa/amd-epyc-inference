@@ -141,7 +141,12 @@ class Features:
     # Escalation prompt compression (LLMLingua-2 BERT for large prompts)
     escalation_compression: bool = False  # Compress prompts on architect escalation
 
+    # Pre-routing optimization
+    script_interception: bool = False  # Resolve trivial queries locally without LLM call
+
     # Security Features
+    credential_redaction: bool = True  # Scan tool/REPL output for leaked credentials
+    cascading_tool_policy: bool = False  # Layered tool permission chain (Global→Role→Task)
     restricted_python: bool = False  # Use RestrictedPython for REPL (requires library)
 
     # Phase 3: Specialist routing (MemRL-driven intelligent orchestration)
@@ -256,6 +261,9 @@ class Features:
             "parallel_tools": self.parallel_tools,
             "deferred_tool_results": self.deferred_tool_results,
             "escalation_compression": self.escalation_compression,
+            "script_interception": self.script_interception,
+            "credential_redaction": self.credential_redaction,
+            "cascading_tool_policy": self.cascading_tool_policy,
             "restricted_python": self.restricted_python,
             "specialist_routing": self.specialist_routing,
             "plan_review": self.plan_review,
@@ -358,6 +366,9 @@ def get_features(
             "parallel_tools": True,  # Parallel read-only tool dispatch enabled
             "deferred_tool_results": False,  # Keep legacy wrapping unless explicitly enabled
             "escalation_compression": False,  # Enable after quality validation
+            "script_interception": False,  # Enable after validation of interception accuracy
+            "credential_redaction": True,  # Safety-first: always redact credentials in production
+            "cascading_tool_policy": False,  # Enable after chain equivalence validation
             "restricted_python": False,  # AST blocklist is sufficient; RestrictedPython blocks all imports including safe ones (scipy, numpy)
             "specialist_routing": False,  # Enable after comparative seeding proves benefit
             "plan_review": False,  # Enable after Phase A validation
@@ -395,6 +406,9 @@ def get_features(
             "parallel_tools": True,  # Parallel read-only tool dispatch enabled
             "deferred_tool_results": False,
             "escalation_compression": False,  # Disabled in tests by default
+            "script_interception": False,  # Disabled in tests by default
+            "credential_redaction": True,  # Safety-first: always redact in tests too
+            "cascading_tool_policy": False,  # Disabled in tests by default
             "restricted_python": False,  # Use custom sandbox in tests
             "specialist_routing": False,  # Disabled in tests by default
             "plan_review": False,  # Disabled in tests by default
@@ -437,6 +451,9 @@ def get_features(
             "DEFERRED_TOOL_RESULTS", defaults["deferred_tool_results"]
         ),
         "escalation_compression": _env_bool("ESCALATION_COMPRESSION", defaults["escalation_compression"]),
+        "script_interception": _env_bool("SCRIPT_INTERCEPTION", defaults["script_interception"]),
+        "credential_redaction": _env_bool("CREDENTIAL_REDACTION", defaults["credential_redaction"]),
+        "cascading_tool_policy": _env_bool("CASCADING_TOOL_POLICY", defaults["cascading_tool_policy"]),
         "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
         "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
         "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),

@@ -224,6 +224,46 @@ Feature flags: `structured_tool_output`, `side_effect_tracking`.
 
 </details>
 
+## Cascading Tool Policy (February 2026)
+
+When the `cascading_tool_policy` feature flag is enabled, the flat `ToolPermissions` model is replaced by a layered policy chain: **Global → Role → Task → Delegation**. Each layer can only narrow (never expand) the allowed tool set, and deny always wins.
+
+<details>
+<summary>PolicyLayer, TOOL_GROUPS, and chain resolution</summary>
+
+### Policy Chain
+
+Implemented in `src/tool_policy.py`:
+
+- `PolicyLayer(name, allow, deny)` — frozen dataclass. Allow intersects, deny removes.
+- `TOOL_GROUPS` — group: prefixes expand to tool sets (`group:read`, `group:write`, `group:code`, `group:data`, `group:web`, `group:math`, `group:all`).
+- `resolve_policy_chain(layers, all_tools)` — iterates layers, narrowing the allowed set.
+- `permissions_to_policy(name, perms, all_tools)` — backward-compat adapter from `ToolPermissions`.
+
+### Context-Aware Access
+
+`ToolRegistry.can_use_tool()` now accepts an optional `context` dict:
+
+```python
+registry.can_use_tool("worker", "write_file", context={"read_only": True})  # False
+registry.can_use_tool("frontdoor", "web_fetch", context={"no_web": True})    # False
+```
+
+Task-level constraints are injected as additional policy layers at the end of the chain.
+
+### Layer Sources
+
+| Layer | Source | Example |
+|-------|--------|---------|
+| Global | `registry.add_global_policy()` | Deny `raw_exec` for all roles |
+| Role | `registry.add_role_policy()` or adapted from `ToolPermissions` | Workers get `group:read` only |
+| Task | `context` parameter | `read_only=True` denies `group:write` |
+| Delegation | Runtime injection | Architect narrows worker access |
+
+Feature flag: `cascading_tool_policy` (default: False).
+
+</details>
+
 ## Permission Model
 
 Permissions control which roles can invoke which tools. There are four permission types (network, filesystem, shell, compute), and enforcement follows a deny-first strategy: if a tool appears on the `forbidden_tools` list, it is blocked regardless of category. Filesystem tools also validate paths against a whitelist and resolve symlinks to prevent escape attempts.

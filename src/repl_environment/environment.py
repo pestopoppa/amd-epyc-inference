@@ -876,6 +876,11 @@ class REPLEnvironment(
                 if stderr_capture.getvalue():
                     output += "\n[STDERR]\n" + stderr_capture.getvalue()
 
+                # Redact credentials before they enter model context
+                from src.repl_environment.redaction import redact_if_enabled
+
+                output = redact_if_enabled(output)
+
                 # Format as observation for React-style loop
                 if output:
                     observation = f"Observation: {output.strip()}"
@@ -1172,6 +1177,11 @@ class REPLEnvironment(
                 if stderr_capture.getvalue():
                     output += "\n[STDERR]\n" + stderr_capture.getvalue()
 
+                # Redact credentials before they enter model context
+                from src.repl_environment.redaction import redact_if_enabled
+
+                output = redact_if_enabled(output)
+
                 # Spill large output to file with summary
                 output = self._spill_output(output)
 
@@ -1321,12 +1331,18 @@ class _RestrictedREPLEnvironment(REPLEnvironment):
             ExecutionResult with output, is_final flag, and optional error.
         """
         # Use the restricted executor
-
         result = self._restricted_executor.execute(code)
+
+        # Redact credentials from output
+        output = result.output
+        if output:
+            from src.repl_environment.redaction import redact_if_enabled
+
+            output = redact_if_enabled(output)
 
         # Convert to our ExecutionResult type
         return ExecutionResult(
-            output=result.output,
+            output=output,
             is_final=result.is_final,
             final_answer=result.final_answer,
             error=result.error,

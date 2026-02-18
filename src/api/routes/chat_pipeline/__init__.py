@@ -5,6 +5,7 @@ Extracted from the 1,091-line _handle_chat() to enable independent testing,
 explicit failure signaling, and role-specific timeouts.
 
 Stage functions:
+    try_intercept()      -- Stage 0: Zero-cost local resolution (timestamps, math, UUIDs)
     _route_request()     -- Routing decision, task_id, MemRL logging
     _preprocess()        -- Input formalization
     _init_primitives()   -- LLMPrimitives setup + backend validation
@@ -17,6 +18,7 @@ Stage functions:
     _annotate_error()    -- Detect error answers -> set error_code/error_detail
 
 Module layout:
+    script_interceptor.py -- Stage 0: script interception (pre-routing)
     routing.py           -- Stages 1-3, 5 (routing, preprocess, init, plan review)
     stages.py            -- Shared helpers, mock mode, react mode, error annotation
     vision_stage.py      -- Stage 6: vision preprocessing
