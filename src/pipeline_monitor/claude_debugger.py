@@ -785,6 +785,27 @@ class ClaudeDebugger:
                     f"report_ids={','.join(handle_ids[:3]) if handle_ids else 'none'}"
                 )
             parts.append(f"- **Tools**: {diag.get('tools_used', 0)} ({', '.join(diag.get('tools_called', []))})")
+            tool_chains = diag.get("tool_chains", []) or []
+            if tool_chains:
+                parts.append(f"- **Tool chains**: {len(tool_chains)}")
+                for ch in tool_chains[:5]:
+                    if not isinstance(ch, dict):
+                        continue
+                    cid = ch.get("chain_id", "?")
+                    tools = ch.get("tools", []) or []
+                    tool_list = ",".join(str(t) for t in tools[:4]) if tools else "none"
+                    if len(tools) > 4:
+                        tool_list += f"+{len(tools)-4}"
+                    mode_req = ch.get("mode_requested", "n/a")
+                    mode_used = ch.get("mode_used", "n/a")
+                    waves = ch.get("waves", "n/a")
+                    fallback = ch.get("fallback_to_seq", "n/a")
+                    par_mut = ch.get("parallel_mutations_enabled", "n/a")
+                    success = ch.get("success", "n/a")
+                    parts.append(
+                        f"  - chain={cid} tools={tool_list} mode={mode_req}->{mode_used} "
+                        f"waves={waves} fallback={fallback} parallel_mutations={par_mut} success={success}"
+                    )
 
             # Orchestrator intelligence tunables (only show when relevant)
             cost_dims = diag.get("cost_dimensions", {})

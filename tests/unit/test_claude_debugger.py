@@ -167,6 +167,33 @@ class TestClaudeDebuggerPromptBuilding:
         assert "Delegation diagnostics" in prompt
         assert "break_reason=max_loops" in prompt
 
+    def test_prompt_includes_tool_chain_wave_diagnostics(self, tmp_path: Path):
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=1, dry_run=True)
+        debugger.batch_count = 2
+        diag = _make_diag(
+            "q1",
+            tools_used=2,
+            tools_called=["run_shell", "run_shell"],
+            tool_chains=[
+                {
+                    "chain_id": "ch_abc",
+                    "tools": ["run_shell", "run_shell"],
+                    "mode_requested": "dep",
+                    "mode_used": "dep",
+                    "waves": 1,
+                    "fallback_to_seq": False,
+                    "parallel_mutations_enabled": True,
+                    "success": True,
+                }
+            ],
+        )
+        prompt = debugger._build_prompt([diag])
+        assert "Tool chains" in prompt
+        assert "chain=ch_abc" in prompt
+        assert "mode=dep->dep" in prompt
+        assert "waves=1" in prompt
+        assert "parallel_mutations=True" in prompt
+
     def test_tap_inlined_when_present(self, tmp_path: Path):
         """Diagnostic with tap data + tap file present → inlined in prompt."""
         # Create a fake tap file

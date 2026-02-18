@@ -90,6 +90,7 @@ Each batch prompt includes per-diagnostic:
 - Expected answer, scoring method, tokens generated, error
 - Triggered anomalies + overall score
 - Full role history and tool calls
+- **Tool chain diagnostics** (when present): chain IDs, requested/used mode, wave count, fallback status, and parallel-mutation flag
 - **Inference log** (inlined, up to 12K chars): raw prompt/response for every LLM call in the delegation chain -- architect TOON decisions, specialist outputs, escalation triggers
 - **REPL execution log** (inlined, up to 4K chars): code executed and stdout/stderr -- NameErrors, SyntaxErrors, import failures, silent execution issues
 - Full answer text (truncated at 2000 chars)

@@ -2,6 +2,8 @@
 
 ## 2026-02-18
 
+- **ClaudeDebugger wave-level chain rendering**: debugger prompts now include `tool_chains` execution metadata (chain ID, mode requested/used, wave count, fallback-to-seq, parallel-mutation flag) so delegation/chaining loops can be debugged at wave granularity. Added unit coverage in `tests/unit/test_claude_debugger.py`.
+
 - **Programmatic Tool Chaining Phase 2 finalized**:
   - **Phase 2a complete**: structured-mode AST call detection, `allowed_callers` gating, invocation chain metadata (`caller_type`, `chain_id`, `chain_index`), and `tool_chains` API response summaries.
   - **Policy wiring complete**: `allowed_callers` explicitly populated across all 47 tools in `orchestration/tool_registry.yaml`.
