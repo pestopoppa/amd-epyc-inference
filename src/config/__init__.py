@@ -1016,6 +1016,8 @@ class SessionPersistenceConfigData:
     checkpoint_turn_interval: int = 5
     checkpoint_idle_minutes: int = 30
     summary_idle_hours: int = 2
+    checkpoint_globals_warn_mb: int = 50
+    checkpoint_globals_hard_mb: int = 100
 
 
 @dataclass
@@ -1379,6 +1381,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         checkpoint_turn_interval: int = 5
         checkpoint_idle_minutes: int = 30
         summary_idle_hours: int = 2
+        checkpoint_globals_warn_mb: int = 50
+        checkpoint_globals_hard_mb: int = 100
 
         model_config = SettingsConfigDict(
             env_prefix="ORCHESTRATOR_SESSION_PERSISTENCE_",
@@ -1696,6 +1700,12 @@ def _load_from_env() -> OrchestratorConfigData:
                 f"{P}SESSION_PERSISTENCE_CHECKPOINT_IDLE_MINUTES", 30
             ),
             summary_idle_hours=_env_int(f"{P}SESSION_PERSISTENCE_SUMMARY_IDLE_HOURS", 2),
+            checkpoint_globals_warn_mb=_env_int(
+                f"{P}SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_WARN_MB", 50
+            ),
+            checkpoint_globals_hard_mb=_env_int(
+                f"{P}SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_HARD_MB", 100
+            ),
         ),
         session_lifecycle=SessionLifecycleConfigData(
             active_to_idle_hours=_env_float(f"{P}SESSION_LIFECYCLE_ACTIVE_TO_IDLE_HOURS", 1.0),
@@ -1891,6 +1901,8 @@ def get_config() -> OrchestratorConfigData:
                 checkpoint_turn_interval=settings.session_persistence.checkpoint_turn_interval,
                 checkpoint_idle_minutes=settings.session_persistence.checkpoint_idle_minutes,
                 summary_idle_hours=settings.session_persistence.summary_idle_hours,
+                checkpoint_globals_warn_mb=settings.session_persistence.checkpoint_globals_warn_mb,
+                checkpoint_globals_hard_mb=settings.session_persistence.checkpoint_globals_hard_mb,
             ),
             session_lifecycle=SessionLifecycleConfigData(
                 active_to_idle_hours=settings.session_lifecycle.active_to_idle_hours,

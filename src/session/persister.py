@@ -32,8 +32,8 @@ _persist_cfg = get_config().session_persistence
 CHECKPOINT_TURN_INTERVAL = _persist_cfg.checkpoint_turn_interval
 CHECKPOINT_IDLE_MINUTES = _persist_cfg.checkpoint_idle_minutes
 SUMMARY_IDLE_HOURS = _persist_cfg.summary_idle_hours
-CHECKPOINT_GLOBALS_WARN_BYTES = 50 * 1024 * 1024
-CHECKPOINT_GLOBALS_HARD_BYTES = 100 * 1024 * 1024
+CHECKPOINT_GLOBALS_WARN_BYTES = int(_persist_cfg.checkpoint_globals_warn_mb) * 1024 * 1024
+CHECKPOINT_GLOBALS_HARD_BYTES = int(_persist_cfg.checkpoint_globals_hard_mb) * 1024 * 1024
 
 
 class SessionPersister:

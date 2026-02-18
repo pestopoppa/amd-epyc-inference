@@ -479,6 +479,9 @@ Phase 3 extends checkpoints to persist user-defined REPL globals across separate
 - `SessionPersister` applies payload limits:
   - warning at ~50MB,
   - hard cap at ~100MB with oldest-variable eviction.
+- Limits are configurable via env:
+  - `ORCHESTRATOR_SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_WARN_MB`
+  - `ORCHESTRATOR_SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_HARD_MB`
 - `ResumeContext.format_for_injection()` now renders a `Variables (from previous request)` section so resumed sessions expose prior derived state without re-derivation.
 
 ## References

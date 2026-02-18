@@ -18,6 +18,12 @@
   - Added REPL-executor cross-request roundtrip unit coverage (`request1` saves globals, `request2` restores).
   - Added integration test scaffold for `/chat` roundtrip, currently skipped due environment-specific `TestClient` real-mode hang behavior.
 
+- **Phase 3 persistence tunables**:
+  - Added centralized config/env knobs for checkpointed globals payload limits:
+    - `ORCHESTRATOR_SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_WARN_MB` (default `50`)
+    - `ORCHESTRATOR_SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_HARD_MB` (default `100`)
+  - `SessionPersister` now reads these limits from `get_config().session_persistence` instead of hardcoded constants.
+
 - **ClaudeDebugger wave-level chain rendering**: debugger prompts now include `tool_chains` execution metadata (chain ID, mode requested/used, wave count, fallback-to-seq, parallel-mutation flag) so delegation/chaining loops can be debugged at wave granularity. Added unit coverage in `tests/unit/test_claude_debugger.py`.
 
 - **Programmatic Tool Chaining Phase 2 finalized**:
