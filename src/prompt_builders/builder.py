@@ -29,6 +29,7 @@ from src.prompt_builders.constants import (
 from src.prompt_builders.resolver import resolve_prompt
 from src.roles import Role, get_tier
 from src.task_ir import canonicalize_task_ir
+from src.features import features as _get_features
 
 _log = logging.getLogger(__name__)
 
@@ -241,6 +242,12 @@ class PromptBuilder:
                     output_preview,
                     "```",
                 ]
+            )
+
+        if _get_features().deferred_tool_results:
+            context_parts.append(
+                "Tool results are deferred to in-turn variables by default. "
+                "Use print() for any result you need in subsequent turns."
             )
 
         if routing_context:

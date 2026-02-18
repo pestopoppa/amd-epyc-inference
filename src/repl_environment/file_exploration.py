@@ -8,8 +8,6 @@ from __future__ import annotations
 import logging
 import re
 
-from src.repl_environment.types import wrap_tool_output
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,9 +31,9 @@ class _FileExplorationMixin:
         lock = getattr(self, "_state_lock", None)
         if lock:
             with lock:
-                self._increment_exploration()
+                self._exploration_calls += 1
         else:
-            self._increment_exploration()
+            self._exploration_calls += 1
 
     def _track_research(self, tool: str, query: str, content: str) -> None:
         """Track a tool invocation in the research context.
@@ -232,8 +230,7 @@ class _FileExplorationMixin:
                 output = encode_list_dir(path, entries[:100], len(entries))
             else:
                 output = json.dumps(result, indent=2)
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         except FileNotFoundError:
             return f"[ERROR: Directory not found: {path}]"

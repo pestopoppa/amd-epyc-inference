@@ -1051,6 +1051,9 @@ def _run_specialist_loop(
                 )
             if result.is_final:
                 report = result.final_answer or ""
+                # Specialist already reached a terminal answer; return directly
+                # instead of spending another architect synthesis turn.
+                report_rescued = True
                 break
             deleg_last_output = result.output or ""
             deleg_last_error = result.error or ""
@@ -1068,6 +1071,11 @@ def _run_specialist_loop(
                 )
     except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
         report = f"[Delegation failed: {e}]"
+        err_text = str(e).lower()
+        timed_out = any(
+            marker in err_text
+            for marker in ("timeout", "timed out", "deadline", "lock timeout", "cancel")
+        )
         return report, 0, tools_called, phase_tool_timings, timed_out, report_rescued, infer_meta_last
     except Exception as e:
         report = f"[Delegation failed (unexpected): {e}]"
@@ -1359,7 +1367,13 @@ def _architect_delegated_answer_inner(
         stats["tool_timings"].extend(phase_tool_timings)
         # Delegation telemetry
         report_text = report or ""
-        failed_prefixes = ("[Investigation failed", "[REPL delegation failed")
+        failed_prefixes = (
+            "[ERROR",
+            "[Delegation failed",
+            "[Delegation timeout",
+            "[Investigation failed",
+            "[REPL delegation failed",
+        )
         success = bool(report_text) and not report_text.startswith(failed_prefixes)
         stats["delegation_events"].append(
             {

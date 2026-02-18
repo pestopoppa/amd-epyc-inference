@@ -542,6 +542,64 @@ class RateLimiter:
         # Single specialist generation turn only.
         assert primitives.llm_call.call_count == 1
 
+    def test_specialist_final_answer_marks_report_rescued(self):
+        from src.api.routes.chat_delegation import _run_specialist_loop
+
+        primitives = MagicMock()
+        primitives.llm_call = MagicMock(return_value="FINAL('10482163')")
+
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            mock_repl = MagicMock()
+            mock_result = MagicMock()
+            mock_result.is_final = True
+            mock_result.final_answer = "10482163"
+            mock_result.output = ""
+            mock_result.error = None
+            mock_repl.execute.return_value = mock_result
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl_cls.return_value = mock_repl
+
+            report, _tools, _called, _timings, timed_out, report_rescued, _infer = _run_specialist_loop(
+                question="q",
+                context="",
+                brief="b",
+                delegate_to="coder_escalation",
+                delegate_mode="repl",
+                primitives=primitives,
+                tool_registry=None,
+            )
+
+        assert timed_out is False
+        assert report == "10482163"
+        assert report_rescued is True
+
+    def test_specialist_timeout_exception_sets_timed_out_flag(self):
+        from src.api.routes.chat_delegation import _run_specialist_loop
+
+        primitives = MagicMock()
+        primitives.llm_call = MagicMock(side_effect=TimeoutError("Request timed out after 82s"))
+
+        with patch("src.api.routes.chat_delegation.REPLEnvironment") as mock_repl_cls:
+            mock_repl = MagicMock()
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl_cls.return_value = mock_repl
+
+            report, _tools, _called, _timings, timed_out, report_rescued, _infer = _run_specialist_loop(
+                question="q",
+                context="",
+                brief="b",
+                delegate_to="coder_escalation",
+                delegate_mode="repl",
+                primitives=primitives,
+                tool_registry=None,
+            )
+
+        assert timed_out is True
+        assert report.startswith("[Delegation failed:")
+        assert report_rescued is False
+
     def test_architect_returns_rescued_specialist_report_directly(self):
         from src.api.routes.chat_delegation import _architect_delegated_answer
 

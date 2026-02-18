@@ -425,24 +425,94 @@ def _pids_on_port(port: int) -> list[int]:
         return []
 
 
-def kill_process(pid: int, timeout: int = 5) -> bool:
-    """Kill a process gracefully, then forcefully."""
+def _pid_alive(pid: int) -> bool:
+    """Return True when a pid currently exists."""
     try:
-        os.kill(pid, signal.SIGTERM)
-        for _ in range(timeout):
-            time.sleep(1)
-            try:
-                os.kill(pid, 0)  # Check if still alive
-            except ProcessLookupError:
-                return True
-        # Force kill
-        os.kill(pid, signal.SIGKILL)
-        time.sleep(1)
+        os.kill(pid, 0)
         return True
     except ProcessLookupError:
-        return True
+        return False
     except PermissionError:
-        print(f"  [!] Permission denied killing PID {pid}")
+        return True
+
+
+def _child_pids(pid: int) -> list[int]:
+    """Return direct child pids for a process."""
+    try:
+        result = subprocess.run(
+            ["ps", "-o", "pid=", "--ppid", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except Exception:
+        return []
+
+    children: list[int] = []
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            children.append(int(line))
+        except ValueError:
+            continue
+    return children
+
+
+def _collect_descendants(root_pid: int) -> list[int]:
+    """Collect all descendants of root_pid (breadth-first)."""
+    descendants: list[int] = []
+    queue = [root_pid]
+    seen = {root_pid}
+    while queue:
+        parent = queue.pop(0)
+        for child in _child_pids(parent):
+            if child in seen:
+                continue
+            seen.add(child)
+            descendants.append(child)
+            queue.append(child)
+    return descendants
+
+
+def kill_process(pid: int, timeout: int = 5) -> bool:
+    """Kill a process tree gracefully, then forcefully."""
+    if pid <= 0:
+        return True
+
+    this_pid = os.getpid()
+    targets = [p for p in (_collect_descendants(pid) + [pid]) if p > 0 and p != this_pid]
+    if not targets:
+        return True
+
+    try:
+        # Terminate children first, then parent.
+        for target in reversed(targets):
+            try:
+                os.kill(target, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                print(f"  [!] Permission denied killing PID {target}")
+        for _ in range(timeout):
+            time.sleep(1)
+            if not any(_pid_alive(target) for target in targets):
+                return True
+        # Force kill survivors.
+        for target in reversed(targets):
+            if not _pid_alive(target):
+                continue
+            try:
+                os.kill(target, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                print(f"  [!] Permission denied force-killing PID {target}")
+        time.sleep(1)
+        return not any(_pid_alive(target) for target in targets)
+    except Exception as exc:
+        print(f"  [!] Failed to kill PID {pid}: {exc}")
         return False
 
 

@@ -1017,12 +1017,23 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     # and no FINAL().  Typical case: model generated a class/function definition
     # that runs silently.  Without feedback the model repeats indefinitely.
     if not result.is_final and not result.error and not result.output:
+        deferred_mode = bool(getattr(deps.repl, "_deferred_tool_results", False))
+        tool_invocations = int(getattr(deps.repl, "_tool_invocations", 0))
+        exploration_calls = int(getattr(deps.repl, "_exploration_calls", 0))
+        tool_calls_observed = max(tool_invocations, exploration_calls)
         log.info("Silent execution detected (turn %d), nudging model", state.turns)
-        nudge = (
-            "Your code ran but produced no output and did not call FINAL(). "
-            "You must call FINAL with the actual computed value — e.g. FINAL(\"B\") or FINAL(42). "
-            "If the task asks for code, call FINAL with the complete program text as a string."
-        )
+        if deferred_mode and tool_calls_observed > 0:
+            nudge = (
+                f"Your code called {tool_calls_observed} tool(s) but produced no output and did not call FINAL(). "
+                "In deferred mode, tool results stay in variables unless you print them. "
+                "Use print() to record key findings, then call FINAL() with the answer."
+            )
+        else:
+            nudge = (
+                "Your code ran but produced no output and did not call FINAL(). "
+                "You must call FINAL with the actual computed value — e.g. FINAL(\"B\") or FINAL(42). "
+                "If the task asks for code, call FINAL with the complete program text as a string."
+            )
         return "", None, False, {"_nudge": nudge}
 
     # Status-message guard: model called FINAL() with a status phrase

@@ -42,17 +42,44 @@ class _StateMixin:
         Returns:
             String describing available variables and artifacts.
         """
+        deferred_mode = bool(getattr(self, "_deferred_tool_results", False))
+        artifact_keys = list(self.artifacts.keys()) if self.artifacts else []
+        if deferred_mode and "_tool_outputs" in artifact_keys:
+            artifact_keys = [k for k in artifact_keys if k != "_tool_outputs"]
+
         state_lines = [
             f"context: str ({len(self.context)} chars)",
-            f"artifacts: {list(self.artifacts.keys()) if self.artifacts else '{}'}",
+            f"artifacts: {artifact_keys if artifact_keys else '{}'}",
         ]
 
         # Show artifact previews
         for key, value in self.artifacts.items():
+            if deferred_mode and key == "_tool_outputs":
+                continue
             preview = str(value)[:100]
             if len(str(value)) > 100:
                 preview += "..."
             state_lines.append(f"  artifacts['{key}']: {preview}")
+
+        # Show user-defined variables that persist across turns.
+        globals_dict = getattr(self, "_globals", {})
+        builtin_keys = getattr(self, "_builtin_global_keys", frozenset())
+        user_vars: list[str] = []
+        for key, value in globals_dict.items():
+            if key in builtin_keys or key.startswith("_"):
+                continue
+            type_name = type(value).__name__
+            preview = repr(value)
+            if len(preview) > 80:
+                preview = preview[:80] + "..."
+            user_vars.append(f"  {key} ({type_name}) = {preview}")
+
+        if user_vars:
+            state_lines.append("")
+            state_lines.append("## Available Variables (from previous turns)")
+            state_lines.extend(user_vars[:20])
+            if len(user_vars) > 20:
+                state_lines.append(f"  ... and {len(user_vars) - 20} more")
 
         # Include research context if sufficient nodes exist
         if hasattr(self, "_research_context") and len(self._research_context.nodes) >= 3:

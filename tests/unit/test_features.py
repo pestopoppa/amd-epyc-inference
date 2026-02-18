@@ -39,6 +39,7 @@ class TestFeaturesDefaults:
         assert f.openai_compat is False
         assert f.react_mode is False
         assert f.output_formalizer is False
+        assert f.deferred_tool_results is False
         assert f.restricted_python is False
         assert f.specialist_routing is False
         assert f.plan_review is False
@@ -165,7 +166,8 @@ class TestFeaturesSummary:
         expected_keys = {
             "memrl", "tools", "scripts", "streaming", "openai_compat",
             "repl", "caching", "structured_delimiters", "react_mode",
-            "output_formalizer", "parallel_tools", "escalation_compression",
+            "output_formalizer", "parallel_tools", "deferred_tool_results",
+            "escalation_compression",
             "restricted_python", "specialist_routing",
             "plan_review", "architect_delegation", "parallel_execution",
             "personas", "staged_rewards", "input_formalizer",

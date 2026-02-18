@@ -20,7 +20,6 @@ import json
 import logging
 from typing import Any
 
-from src.repl_environment.types import wrap_tool_output
 
 logger = logging.getLogger(__name__)
 
@@ -135,16 +134,14 @@ class _CodeSearchMixin:
             output = json.dumps(
                 {"results": [], "error": f"Invalid index '{index}'. Valid: {sorted(VALID_INDICES)}"}
             )
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         client = self._get_nextplaid_client(index)
         if client is None:
             output = json.dumps(
                 {"results": [], "error": "NextPLAID not available"}
             )
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         try:
             from next_plaid_client.models import SearchParams
@@ -191,11 +188,9 @@ class _CodeSearchMixin:
             self._last_research_node = node_id
 
             output = json.dumps(response, indent=2)
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         except Exception as e:
             logger.warning("NextPLAID search failed: %s", e)
             output = json.dumps({"results": [], "error": str(e)})
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)

@@ -49,19 +49,33 @@ log = logging.getLogger(__name__)
 # ── Stage 10: REPL orchestration mode ───────────────────────────────────
 
 
-def _tools_success(answer: str, tool_outputs: list, tool_invocations: int) -> bool | None:
+def _tools_success(
+    answer: str,
+    tool_outputs: list,
+    tool_invocations: int,
+    invocation_log: list | None = None,
+) -> bool | None:
     """Infer whether tool outputs influenced the final answer."""
     if tool_invocations <= 0:
         return None
-    if not tool_outputs or not answer:
+    if not answer:
         return None
-    answer_text = answer.lower()
-    for output in tool_outputs:
-        text = str(output).strip()
-        if not text:
-            continue
-        if text[:TOOL_OUTPUT_MATCH_LEN].lower() in answer_text:
-            return True
+
+    if tool_outputs:
+        answer_text = answer.lower()
+        for output in tool_outputs:
+            text = str(output).strip()
+            if not text:
+                continue
+            if text[:TOOL_OUTPUT_MATCH_LEN].lower() in answer_text:
+                return True
+        return False
+
+    # Deferred mode: _tool_outputs may be intentionally empty.
+    if invocation_log:
+        successes = [bool(getattr(inv, "success", False)) for inv in invocation_log]
+        if successes:
+            return any(successes)
     return False
 
 
@@ -373,18 +387,23 @@ async def _execute_repl(
             real_mode=request.real_mode,
         )
 
-    tool_outputs = repl.artifacts.get("_tool_outputs", [])
-    tools_success = _tools_success(answer, tool_outputs, repl._tool_invocations)
-    delegation_success = None
-    if delegation_events:
-        delegation_success = any(e.get("success") for e in delegation_events)
-    delegation_diag = _build_delegation_diagnostics(role_history, delegation_events)
-
     invocation_log = (
         repl.tool_registry.get_invocation_log()
         if repl.tool_registry
         else []
     )
+    tool_outputs = repl.artifacts.get("_tool_outputs", [])
+    tools_success = _tools_success(
+        answer,
+        tool_outputs,
+        repl._tool_invocations,
+        invocation_log=invocation_log,
+    )
+    delegation_success = None
+    if delegation_events:
+        delegation_success = any(e.get("success") for e in delegation_events)
+    delegation_diag = _build_delegation_diagnostics(role_history, delegation_events)
+
     tools_called = [inv.tool_name for inv in invocation_log]
     tool_timings = [
         {"tool_name": inv.tool_name, "elapsed_ms": inv.elapsed_ms, "success": inv.success}
@@ -395,9 +414,17 @@ async def _execute_repl(
     # Detect parallel tool usage from invocation log
     parallel_tools = False
     if len(tools_called) >= 2:
-        read_only = {"peek", "grep", "list_dir", "file_info", "list_tools",
-                     "recall", "list_findings", "registry_lookup", "my_role",
-                     "route_advice", "context_len", "benchmark_compare"}
+        read_only = set()
+        if hasattr(repl, "_get_read_only_tools"):
+            try:
+                read_only = repl._get_read_only_tools()
+            except Exception:
+                read_only = set()
+        if not read_only and repl.tool_registry and hasattr(repl.tool_registry, "get_read_only_tools"):
+            try:
+                read_only = set(repl.tool_registry.get_read_only_tools())
+            except Exception:
+                read_only = set()
         parallel_tools = all(t in read_only for t in tools_called) and len(tools_called) >= 2
 
     return ChatResponse(

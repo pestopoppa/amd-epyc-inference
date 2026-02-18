@@ -10,7 +10,6 @@ import json
 from src.constants import TASK_IR_OBJECTIVE_LEN
 from src.delegation_reports import load_report
 from src.task_ir import canonicalize_task_ir
-from src.repl_environment.types import wrap_tool_output
 
 
 class _RoutingMixin:
@@ -101,15 +100,13 @@ class _RoutingMixin:
                 output = encode(response)
             else:
                 output = json.dumps(response, indent=2)
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         except Exception as e:
             output = json.dumps(
                 {"results": [], "best_action": None, "confidence": None, "error": str(e)}
             )
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
     def _recall_legacy(self, query: str, limit: int = 5) -> str:
         """Legacy recall using fresh EpisodicStore + TaskEmbedder."""
@@ -166,15 +163,13 @@ class _RoutingMixin:
                 output = encode(response)
             else:
                 output = json.dumps(response, indent=2)
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         except Exception as e:
             output = json.dumps(
                 {"results": [], "best_action": None, "confidence": None, "error": str(e)}
             )
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
     def _escalate(self, reason: str, target_role: str | None = None) -> str:
         """Request escalation to a higher-tier or specific model.
@@ -255,8 +250,7 @@ class _RoutingMixin:
             output = json.dumps(result, indent=2)
 
         # Track tool output so it can be stripped from answer
-        self.artifacts.setdefault("_tool_outputs", []).append(output)
-        return wrap_tool_output(output)
+        return self._maybe_wrap_tool_output(output)
 
     def _route_advice(self, task_description: str) -> str:
         """Get MemRL-informed routing advice for a task.
@@ -280,8 +274,7 @@ class _RoutingMixin:
                     "warnings": ["MemRL routing not initialized"],
                 }
             )
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         try:
             task_ir = {
@@ -348,8 +341,7 @@ class _RoutingMixin:
                 output = encode(response)
             else:
                 output = json.dumps(response, indent=2)
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
         except Exception as e:
             output = json.dumps(
@@ -361,8 +353,7 @@ class _RoutingMixin:
                     "warnings": [str(e)],
                 }
             )
-            self.artifacts.setdefault("_tool_outputs", []).append(output)
-            return wrap_tool_output(output)
+            return self._maybe_wrap_tool_output(output)
 
     # Role alias mapping: model-generated role names -> actual backend roles
     _ROLE_ALIASES: dict[str, str] = {
@@ -415,8 +406,7 @@ class _RoutingMixin:
         self._exploration_calls += 1
         payload = load_report(report_id, offset=offset, max_chars=max_chars)
         output = json.dumps(payload, ensure_ascii=True)
-        self.artifacts.setdefault("_tool_outputs", []).append(output)
-        return wrap_tool_output(output)
+        return self._maybe_wrap_tool_output(output)
 
     def _can_delegate_to(self, role: str) -> bool:
         """Check if a role can be a delegation target.

@@ -22,6 +22,7 @@ from src.repl_environment.types import (
     REPLConfig,
     REPLSecurityError,
     REPLTimeout,
+    wrap_tool_output,
 )
 from src.repl_environment.parallel_dispatch import (
     _extract_parallel_calls,
@@ -169,9 +170,13 @@ class REPLEnvironment(
         # Feature flags (lazy import to avoid circular deps)
         from src.features import features as _get_features
         self._features = _get_features()
+        self._deferred_tool_results = bool(self._features.deferred_tool_results)
 
         # Build restricted globals
         self._globals = self._build_globals()
+        # Snapshot built-in/injected globals so get_state() can highlight
+        # user-defined variables created by model code in later turns.
+        self._builtin_global_keys = frozenset(self._globals.keys())
 
         # Verify mixin contracts are satisfied (runtime validation)
         # This ensures all required attributes exist before mixin methods are called
@@ -392,6 +397,23 @@ class REPLEnvironment(
             if resolved.startswith(allowed):
                 return True, None
         return False, f"Path not in allowed locations: {self.ALLOWED_FILE_PATHS}"
+
+    def _maybe_wrap_tool_output(self, output: str) -> str:
+        """Return wrapped tool output in legacy mode, raw output in deferred mode."""
+        if self._deferred_tool_results:
+            return output
+        self.artifacts.setdefault("_tool_outputs", []).append(output)
+        return wrap_tool_output(output)
+
+    def _get_read_only_tools(self) -> set[str]:
+        """Return the unified read-only tool set for REPL dispatch/telemetry."""
+        tools = set(self._READ_ONLY_REPL_TOOLS)
+        if self.tool_registry and hasattr(self.tool_registry, "get_read_only_tools"):
+            try:
+                tools.update(self.tool_registry.get_read_only_tools())
+            except Exception:
+                pass
+        return tools
 
     def _validate_code(self, code: str) -> None:
         """Validate code for dangerous patterns using AST analysis.
@@ -652,12 +674,7 @@ class REPLEnvironment(
         if len(tool_calls) > 1:
             # Check if ALL tool calls are read-only — if so, allow parallel execution
             # Read-only tools (grep, peek, list_dir, etc.) are safe to run concurrently
-            read_only_tools = {
-                "peek", "grep", "list_dir", "file_info", "list_tools",
-                "recall", "list_findings", "registry_lookup", "my_role",
-                "route_advice", "list_procedures", "get_procedure_status",
-                "context_len", "find_scripts", "benchmark_compare", "fetch_report",
-            }
+            read_only_tools = self._get_read_only_tools()
             tool_names = [t[0] for t in tool_calls]
             all_read_only = all(name in read_only_tools for name in tool_names)
 
@@ -993,3 +1010,12 @@ class _RestrictedREPLEnvironment(REPLEnvironment):
             error=result.error,
             elapsed_seconds=result.elapsed_seconds,
         )
+    # Read-only REPL-callable helpers (safe for parallel dispatch).
+    # This covers non-registry built-ins like peek/grep plus utility calls.
+    _READ_ONLY_REPL_TOOLS: frozenset[str] = frozenset({
+        "peek", "grep", "list_dir", "file_info", "list_tools",
+        "recall", "list_findings", "registry_lookup", "my_role",
+        "route_advice", "list_procedures", "get_procedure_status",
+        "context_len", "find_scripts", "benchmark_compare", "fetch_report",
+        "code_search", "doc_search",
+    })
