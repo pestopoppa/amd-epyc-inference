@@ -19,7 +19,7 @@ import logging
 import time
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.api.models import ChatRequest, ChatResponse
 from src.api.services.memrl import score_completed_task
@@ -540,7 +540,7 @@ async def _execute_repl(
                 checkpoint = Checkpoint(
                     id=str(uuid.uuid4()),
                     session_id=session_id,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                     context_hash="sha256:chat_pipeline",
                     artifacts=repl_checkpoint.get("artifacts", {}),
                     execution_count=repl_checkpoint.get("execution_count", 0),

@@ -171,7 +171,7 @@ import hashlib
 checkpoint = Checkpoint(
     id=str(uuid.uuid4()),
     session_id=session.id,
-    created_at=datetime.utcnow(),
+    created_at=datetime.now(timezone.utc),
     context_hash=hashlib.sha256(context_str.encode()).hexdigest(),
     artifacts={
         "variables": {"x": 42, "results": [1, 2, 3]},
@@ -217,7 +217,7 @@ doc = SessionDocument(
     session_id=session.id,
     file_path=str(file_path),
     file_hash=file_hash,
-    processed_at=datetime.utcnow(),
+    processed_at=datetime.now(timezone.utc),
     total_pages=42,
     cache_path="state/{session_id}/ocr_cache.db"
 )
@@ -295,7 +295,7 @@ finding = Finding(
     session_id=session.id,
     content="Qwen3-235B achieves 6.75 t/s with MoE expert reduction to 4",
     source=FindingSource.USER_MARKED,
-    created_at=datetime.utcnow(),
+    created_at=datetime.now(timezone.utc),
     confidence=1.0,
     confirmed=True,
     tags=["benchmark", "moe", "optimization"],
@@ -317,7 +317,7 @@ llm_finding = Finding(
     session_id=session.id,
     content="Document suggests using temperature=0.7 for VL models",
     source=FindingSource.LLM_EXTRACTED,
-    created_at=datetime.utcnow(),
+    created_at=datetime.now(timezone.utc),
     confidence=0.75,  # LLM confidence
     confirmed=False,   # Needs user confirmation
     source_page=12
@@ -483,6 +483,7 @@ Phase 3 extends checkpoints to persist user-defined REPL globals across separate
   - `ORCHESTRATOR_SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_WARN_MB`
   - `ORCHESTRATOR_SESSION_PERSISTENCE_CHECKPOINT_GLOBALS_HARD_MB`
 - `ResumeContext.format_for_injection()` now renders a `Variables (from previous request)` section so resumed sessions expose prior derived state without re-derivation.
+- HTTP roundtrip validation now includes a passing `/chat` request1→checkpoint-save→request2→restore integration test (`tests/integration/test_chat_pipeline.py::TestChatEndpoint::test_session_restore_roundtrip_repl_globals`).
 
 ## References
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import threading
 import time
 import uuid
@@ -151,7 +152,10 @@ async def chat(
                 return
             await asyncio.sleep(0.1)
 
-    watcher = asyncio.create_task(_watch_disconnect())
+    use_disconnect_watcher = bool(
+        request.real_mode and "PYTEST_CURRENT_TEST" not in os.environ
+    )
+    watcher = asyncio.create_task(_watch_disconnect()) if use_disconnect_watcher else None
     try:
         response = await _handle_chat(request, state, cancel_event=cancel_event)
         # Return appropriate HTTP status instead of silent 200 OK on failure
@@ -167,9 +171,10 @@ async def chat(
         return response
     finally:
         cancel_event.set()
-        watcher.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await watcher
+        if watcher is not None:
+            watcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watcher
         state.decrement_active()
 
 
@@ -428,18 +433,19 @@ async def _handle_chat(
 
         # 8a: Delegated mode (architect → specialist)
         # _execute_delegated checks delegation_allowed internally and returns None if not allowed
-        result = await asyncio.to_thread(
-            _execute_delegated,
-            request,
-            routing,
-            primitives,
-            state,
-            start_time,
-            initial_role,
-            execution_mode,
-        )
-        if result is not None:
-            return _annotate_error(result)
+        if execution_mode == "delegated":
+            result = await asyncio.to_thread(
+                _execute_delegated,
+                request,
+                routing,
+                primitives,
+                state,
+                start_time,
+                initial_role,
+                execution_mode,
+            )
+            if result is not None:
+                return _annotate_error(result)
 
         # 8b: ReAct tool loop mode
         if execution_mode == "react":

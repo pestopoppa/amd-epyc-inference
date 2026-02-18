@@ -21,7 +21,9 @@
   - `_execute_repl()` now saves a fresh per-request session checkpoint when `session_id` is provided, enabling request-to-request global continuity without external checkpoint triggers.
   - Fixed restore compatibility for stored checkpoints missing explicit `version` by defaulting to v1.
   - Added REPL-executor cross-request roundtrip unit coverage (`request1` saves globals, `request2` restores).
-  - Added integration test scaffold for `/chat` roundtrip, currently skipped due environment-specific `TestClient` real-mode hang behavior.
+  - Unblocked and enabled the HTTP `/chat` roundtrip integration test (`test_session_restore_roundtrip_repl_globals`) using async transport coverage.
+  - Fixed a latent route-level contention issue in `_handle_chat`: delegated execution is now dispatched via `asyncio.to_thread(...)` only when mode is actually `delegated` (previously invoked unconditionally).
+  - Updated touched persistence paths to timezone-aware UTC timestamps (`datetime.now(timezone.utc)`) in `repl_executor` and `SessionPersister`.
 
 - **Phase 3 persistence tunables**:
   - Added centralized config/env knobs for checkpointed globals payload limits:

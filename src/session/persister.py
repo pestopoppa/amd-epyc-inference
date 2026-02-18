@@ -13,7 +13,7 @@ import json
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable
 
 from src.session.models import Checkpoint, Finding, FindingSource, Session
@@ -190,7 +190,7 @@ class SessionPersister:
         checkpoint = Checkpoint(
             id=str(uuid.uuid4()),
             session_id=self.session_id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             context_hash=f"sha256:{context_hash}",
             artifacts=repl_checkpoint.get("artifacts", {}),
             execution_count=repl_checkpoint.get("execution_count", 0),
@@ -371,7 +371,7 @@ class SessionPersister:
                 session_id=self.session_id,
                 content=f["content"],
                 source=FindingSource.HEURISTIC,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
                 confidence=f["confidence"],
                 confirmed=False,  # Needs user review
                 tags=[],

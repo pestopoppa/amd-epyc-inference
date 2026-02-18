@@ -7,10 +7,16 @@ Tests routing logic, mode selection, and endpoint behavior.
 import json
 import contextlib
 import pytest
+import httpx
 from unittest.mock import MagicMock
+from types import SimpleNamespace
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import create_app
+from src.api.dependencies import dep_app_state
+from src.api.state import AppState
+from src.api.routes.chat import router as chat_router
 from src.delegation_reports import store_report
 from src.api.routes.chat_routing import _classify_and_route, _select_mode
 from src.graph.state import TaskResult
@@ -352,85 +358,112 @@ class TestChatEndpoint:
         assert payload["report_id"] == rid
         assert "Full specialist" in payload["content"]
 
-    @pytest.mark.skip(reason="Real-mode TestClient path can hang in this environment; covered by unit roundtrip in test_repl_executor.")
-    def test_session_restore_roundtrip_repl_globals(self, client, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_session_restore_roundtrip_repl_globals(self, monkeypatch):
         """Two /chat calls with same session_id should restore persisted globals."""
-        create = client.post(
-            "/sessions",
-            json={"name": "phase3-restore", "project": "phase3", "working_directory": "/tmp"},
-        )
-        assert create.status_code == 200
-        session_id = create.json()["id"]
-
-        class _StubPrimitives:
+        class _InMemorySessionStore:
             def __init__(self):
-                self.total_tokens_generated = 0
-                self._backends = {"stub": True}
-                self.total_prompt_eval_ms = 0.0
-                self.total_generation_ms = 0.0
-                self._last_predicted_tps = 0.0
-                self.total_http_overhead_ms = 0.0
+                self._sessions = {}
+                self._checkpoints = {}
 
-            def request_context(self, **_kwargs):
-                return contextlib.nullcontext()
+            def get_session(self, session_id):
+                return self._sessions.get(session_id)
 
-            def get_cache_stats(self):
+            def get_latest_checkpoint(self, session_id):
+                checkpoints = self._checkpoints.get(session_id, [])
+                return checkpoints[-1] if checkpoints else None
+
+            def save_checkpoint(self, checkpoint):
+                self._checkpoints.setdefault(checkpoint.session_id, []).append(checkpoint)
+
+        state = MagicMock(spec=AppState)
+        state.progress_logger = None
+        state.tool_registry = None
+        state.script_registry = None
+        state.registry = None
+        state.hybrid_router = None
+        state.increment_active = MagicMock()
+        state.decrement_active = MagicMock()
+        state.increment_request = MagicMock()
+        state.session_store = _InMemorySessionStore()
+
+        session_id = "phase3-roundtrip"
+        state.session_store._sessions[session_id] = SimpleNamespace(id=session_id)
+
+        app = FastAPI()
+        app.include_router(chat_router)
+        async def _state_dep():
+            return state
+        app.dependency_overrides[dep_app_state] = _state_dep
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            class _StubPrimitives:
+                def __init__(self):
+                    self.total_tokens_generated = 0
+                    self._backends = {"stub": True}
+                    self.total_prompt_eval_ms = 0.0
+                    self.total_generation_ms = 0.0
+                    self._last_predicted_tps = 0.0
+                    self.total_http_overhead_ms = 0.0
+
+                def request_context(self, **_kwargs):
+                    return contextlib.nullcontext()
+
+                def get_cache_stats(self):
+                    return None
+
+            stub_primitives = _StubPrimitives()
+            run_count = {"n": 0}
+
+            def _fake_init_primitives(_request, _state):
+                return stub_primitives
+
+            async def _no_cheap(*_args, **_kwargs):
                 return None
 
-        stub_primitives = _StubPrimitives()
-        run_count = {"n": 0}
+            async def _fake_run_task(task_state, task_deps, start_role=None):
+                run_count["n"] += 1
+                repl = task_deps.repl
+                if run_count["n"] == 1:
+                    repl._globals["persist_me"] = {"value": 42}
+                    return TaskResult(answer="saved", success=True, turns=1, role_history=["frontdoor"])
+                restored = repl._globals.get("persist_me")
+                return TaskResult(
+                    answer=f"restored={restored}",
+                    success=True,
+                    turns=1,
+                    role_history=["frontdoor"],
+                )
 
-        def _fake_init_primitives(_request, _state):
-            return stub_primitives
-
-        async def _no_cheap(*_args, **_kwargs):
-            return None
-
-        async def _fake_run_task(task_state, task_deps, start_role=None):
-            run_count["n"] += 1
-            repl = task_deps.repl
-            if run_count["n"] == 1:
-                repl._globals["persist_me"] = {"value": 42}
-                return TaskResult(answer="saved", success=True, turns=1, role_history=["frontdoor"])
-            restored = repl._globals.get("persist_me")
-            return TaskResult(
-                answer=f"restored={restored}",
-                success=True,
-                turns=1,
-                role_history=["frontdoor"],
+            monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+            monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+            monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
+            monkeypatch.setattr(
+                "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
+                lambda *_args, **_kwargs: None,
             )
 
-        monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
-        monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
-        monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
-        monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
-        monkeypatch.setattr(
-            "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
-            lambda *_args, **_kwargs: None,
-        )
+            req = {
+                "prompt": "Use REPL",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "repl",
+                "force_role": "frontdoor",
+                "session_id": session_id,
+            }
+            r1 = await client.post("/chat", json=req)
+            assert r1.status_code == 200
+            d1 = r1.json()
+            assert d1["session_persistence"]["checkpoint_saved"] is True
+            assert d1["session_persistence"]["saved_globals"] >= 1
 
-        req = {
-            "prompt": "Use REPL",
-            "mock_mode": False,
-            "real_mode": True,
-            "force_mode": "repl",
-            "force_role": "frontdoor",
-            "session_id": session_id,
-        }
-        r1 = client.post("/chat", json=req)
-        assert r1.status_code == 200
-        d1 = r1.json()
-        assert d1["session_persistence"]["checkpoint_saved"] is True
-        assert d1["session_persistence"]["saved_globals"] >= 1
-
-        r2 = client.post("/chat", json=req)
-        assert r2.status_code == 200
-        d2 = r2.json()
-        assert "restored={'value': 42}" in d2["answer"]
-        assert d2["session_persistence"]["restore_success"] is True
-        assert d2["session_persistence"]["restored_globals"] >= 1
-
-        client.delete(f"/sessions/{session_id}")
+            r2 = await client.post("/chat", json=req)
+            assert r2.status_code == 200
+            d2 = r2.json()
+            assert "restored={'value': 42}" in d2["answer"]
+            assert d2["session_persistence"]["restore_success"] is True
+            assert d2["session_persistence"]["restored_globals"] >= 1
 
 
 class TestRewardEndpoint:
