@@ -7,6 +7,8 @@ import src.session.models as session_models
 
 from src.session.models import (
     Checkpoint,
+    ResumeContext,
+    DocumentChangeInfo,
     Finding,
     FindingSource,
     Session,
@@ -147,6 +149,8 @@ class TestCheckpointSerialization:
         assert cp_dict["context_hash"] == "sha256:abc123"
         assert cp_dict["execution_count"] == 10
         assert cp_dict["trigger"] == "turns"
+        assert cp_dict["user_globals"] == {}
+        assert cp_dict["variable_lineage"] == {}
 
     def test_checkpoint_from_dict(self):
         """Test Checkpoint.from_dict() deserialization."""
@@ -167,6 +171,56 @@ class TestCheckpointSerialization:
         assert checkpoint.id == "cp1"
         assert checkpoint.execution_count == 5
         assert checkpoint.trigger == "explicit"
+
+    def test_checkpoint_roundtrip_with_globals(self):
+        checkpoint = Checkpoint(
+            id="cp2",
+            session_id="s1",
+            created_at=datetime.utcnow(),
+            context_hash="hash",
+            artifacts={},
+            execution_count=1,
+            exploration_calls=0,
+            message_count=2,
+            trigger="explicit",
+            user_globals={"x": 1},
+            variable_lineage={"x": {"role": "frontdoor"}},
+            skipped_user_globals=["fn_obj"],
+        )
+        restored = Checkpoint.from_dict(checkpoint.to_dict())
+        assert restored.user_globals == {"x": 1}
+        assert restored.variable_lineage["x"]["role"] == "frontdoor"
+        assert restored.skipped_user_globals == ["fn_obj"]
+
+
+class TestResumeContext:
+    def test_format_for_injection_includes_checkpoint_vars(self):
+        session = Session.create(name="resume")
+        checkpoint = Checkpoint(
+            id="cp",
+            session_id=session.id,
+            created_at=datetime.utcnow(),
+            context_hash="hash",
+            artifacts={},
+            execution_count=1,
+            exploration_calls=0,
+            message_count=1,
+            trigger="explicit",
+            user_globals={"df": [{"a": 1}]},
+            variable_lineage={"df": {"role": "coder_escalation"}},
+        )
+        ctx = ResumeContext(
+            session=session,
+            documents=[],
+            findings=[],
+            document_changes=[DocumentChangeInfo(file_path="x", old_hash="a", new_hash="b", exists=True)],
+            warnings=[],
+            context_summary="",
+            checkpoint=checkpoint,
+        )
+        rendered = ctx.format_for_injection()
+        assert "Variables (from previous request)" in rendered
+        assert "`df`" in rendered
 
 
 class TestSessionDocument:

@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.repl_environment.state import _StateMixin
+from src.repl_environment.state import _StateMixin, _is_json_serializable
 from src.repl_environment.types import ExplorationEvent, ExplorationLog
 
 
@@ -27,8 +27,10 @@ class MockREPLEnvironment(_StateMixin):
         self._grep_hits_buffer = []
         self._findings_buffer = []
         self._globals = {}
+        self._builtin_global_keys = frozenset({"artifacts"})
         self.progress_logger = None
         self.task_id = "test_task_123"
+        self.role = "worker_general"
 
     def _build_globals(self):
         """Build globals dict."""
@@ -247,6 +249,26 @@ class TestCheckpoint:
         assert checkpoint["artifacts"]["nested"]["level1"]["level2"] == "value"
         assert checkpoint["artifacts"]["nested"]["level1"]["list"] == [1, 2, 3]
 
+    def test_checkpoint_serializes_user_globals(self):
+        env = MockREPLEnvironment()
+        env._globals = {"artifacts": env.artifacts, "x": 7, "name": "alice"}
+
+        checkpoint = env.checkpoint()
+
+        assert checkpoint["user_globals"]["x"] == 7
+        assert checkpoint["user_globals"]["name"] == "alice"
+        assert checkpoint["variable_lineage"]["x"]["role"] == "worker_general"
+
+    def test_checkpoint_skips_non_serializable_user_globals(self):
+        env = MockREPLEnvironment()
+        env._globals = {"artifacts": env.artifacts, "ok": {"a": 1}, "bad": lambda x: x}
+
+        checkpoint = env.checkpoint()
+
+        assert checkpoint["user_globals"]["ok"] == {"a": 1}
+        assert "bad" not in checkpoint["user_globals"]
+        assert "bad" in checkpoint["skipped_user_globals"]
+
 
 class TestRestore:
     """Test restore() method."""
@@ -333,6 +355,31 @@ class TestRestore:
 
         # Globals should be rebuilt with restored artifacts
         assert env._globals["artifacts"]["data"] == "test_data"
+
+    def test_restore_merges_user_globals(self):
+        env = MockREPLEnvironment()
+        checkpoint = {
+            "version": 1,
+            "artifacts": {},
+            "execution_count": 0,
+            "exploration_calls": 0,
+            "exploration_tokens": 0,
+            "exploration_events": [],
+            "grep_hits_buffer": [],
+            "findings_buffer": [],
+            "user_globals": {"memo": [1, 2, 3]},
+        }
+
+        env.restore(checkpoint)
+        assert env._globals["memo"] == [1, 2, 3]
+
+
+class TestSerializationHelper:
+    def test_is_json_serializable_callable_false(self):
+        assert _is_json_serializable(lambda x: x) is False
+
+    def test_is_json_serializable_plain_types_true(self):
+        assert _is_json_serializable({"x": [1, 2, 3]}) is True
 
 
 class TestCheckpointMetadata:

@@ -302,6 +302,9 @@ class Checkpoint:
     # Metadata
     message_count: int
     trigger: str  # "turns", "idle", "explicit", "summary"
+    user_globals: dict[str, Any] = field(default_factory=dict)
+    variable_lineage: dict[str, dict[str, Any]] = field(default_factory=dict)
+    skipped_user_globals: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for storage."""
@@ -315,6 +318,9 @@ class Checkpoint:
             "exploration_calls": self.exploration_calls,
             "message_count": self.message_count,
             "trigger": self.trigger,
+            "user_globals": self.user_globals,
+            "variable_lineage": self.variable_lineage,
+            "skipped_user_globals": self.skipped_user_globals,
         }
 
     @classmethod
@@ -330,6 +336,9 @@ class Checkpoint:
             exploration_calls=data["exploration_calls"],
             message_count=data["message_count"],
             trigger=data["trigger"],
+            user_globals=data.get("user_globals", {}),
+            variable_lineage=data.get("variable_lineage", {}),
+            skipped_user_globals=data.get("skipped_user_globals", []),
         )
 
 
@@ -359,6 +368,7 @@ class ResumeContext:
     warnings: list[str]
     # Context for LLM
     context_summary: str  # Formatted summary for injection
+    checkpoint: Checkpoint | None = None
     last_exchanges: list[dict[str, Any]] | None = None  # Optional conversation history
 
     def to_dict(self) -> dict[str, Any]:
@@ -378,6 +388,7 @@ class ResumeContext:
             ],
             "warnings": self.warnings,
             "context_summary": self.context_summary,
+            "checkpoint": self.checkpoint.to_dict() if self.checkpoint else None,
             "last_exchanges": self.last_exchanges,
         }
 
@@ -426,6 +437,23 @@ class ResumeContext:
             lines.append("## Warnings")
             for warning in self.warnings:
                 lines.append(f"- {warning}")
+            lines.append("")
+
+        # Restored variables summary
+        if self.checkpoint and self.checkpoint.user_globals:
+            lines.append("## Variables (from previous request)")
+            items = list(self.checkpoint.user_globals.items())
+            for key, value in items[:12]:
+                lineage = self.checkpoint.variable_lineage.get(key, {})
+                role = lineage.get("role", "unknown")
+                value_type = type(value).__name__
+                lines.append(f"- `{key}` ({value_type}, role={role})")
+            if len(items) > 12:
+                lines.append(f"... and {len(items) - 12} more variables")
+            if self.checkpoint.skipped_user_globals:
+                lines.append(
+                    f"Skipped non-serializable variables: {', '.join(self.checkpoint.skipped_user_globals[:8])}"
+                )
             lines.append("")
 
         return "\n".join(lines)

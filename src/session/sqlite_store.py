@@ -148,7 +148,10 @@ class SQLiteSessionStore(BaseSessionStore):
                     execution_count INTEGER DEFAULT 0,
                     exploration_calls INTEGER DEFAULT 0,
                     message_count INTEGER DEFAULT 0,
-                    trigger TEXT NOT NULL
+                    trigger TEXT NOT NULL,
+                    user_globals TEXT DEFAULT '{}',
+                    variable_lineage TEXT DEFAULT '{}',
+                    skipped_user_globals TEXT DEFAULT '[]'
                 )
             """)
 
@@ -188,6 +191,21 @@ class SQLiteSessionStore(BaseSessionStore):
             )
 
             conn.commit()
+            self._migrate_schema(conn)
+
+    def _migrate_schema(self, conn: sqlite3.Connection) -> None:
+        """Apply additive schema migrations for existing databases."""
+        columns = {
+            (row["name"] if isinstance(row, sqlite3.Row) else row[1])
+            for row in conn.execute("PRAGMA table_info(checkpoints)").fetchall()
+        }
+        if "user_globals" not in columns:
+            conn.execute("ALTER TABLE checkpoints ADD COLUMN user_globals TEXT DEFAULT '{}'")
+        if "variable_lineage" not in columns:
+            conn.execute("ALTER TABLE checkpoints ADD COLUMN variable_lineage TEXT DEFAULT '{}'")
+        if "skipped_user_globals" not in columns:
+            conn.execute("ALTER TABLE checkpoints ADD COLUMN skipped_user_globals TEXT DEFAULT '[]'")
+        conn.commit()
 
     def _load_embeddings(self) -> None:
         """Load or create embeddings array (memory-mapped)."""
@@ -680,8 +698,9 @@ class SQLiteSessionStore(BaseSessionStore):
                 """
                 INSERT INTO checkpoints (
                     id, session_id, created_at, context_hash, artifacts,
-                    execution_count, exploration_calls, message_count, trigger
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    execution_count, exploration_calls, message_count, trigger,
+                    user_globals, variable_lineage, skipped_user_globals
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     checkpoint.id,
@@ -693,6 +712,9 @@ class SQLiteSessionStore(BaseSessionStore):
                     checkpoint.exploration_calls,
                     checkpoint.message_count,
                     checkpoint.trigger,
+                    json.dumps(checkpoint.user_globals),
+                    json.dumps(checkpoint.variable_lineage),
+                    json.dumps(checkpoint.skipped_user_globals),
                 ),
             )
             conn.commit()
@@ -731,6 +753,13 @@ class SQLiteSessionStore(BaseSessionStore):
             exploration_calls=row["exploration_calls"],
             message_count=row["message_count"],
             trigger=row["trigger"],
+            user_globals=json.loads(row["user_globals"]) if row["user_globals"] else {},
+            variable_lineage=(
+                json.loads(row["variable_lineage"]) if row["variable_lineage"] else {}
+            ),
+            skipped_user_globals=(
+                json.loads(row["skipped_user_globals"]) if row["skipped_user_globals"] else []
+            ),
         )
 
     def get_checkpoints(self, session_id: str, limit: int = 10) -> list[Checkpoint]:
@@ -757,6 +786,13 @@ class SQLiteSessionStore(BaseSessionStore):
                 exploration_calls=row["exploration_calls"],
                 message_count=row["message_count"],
                 trigger=row["trigger"],
+                user_globals=json.loads(row["user_globals"]) if row["user_globals"] else {},
+                variable_lineage=(
+                    json.loads(row["variable_lineage"]) if row["variable_lineage"] else {}
+                ),
+                skipped_user_globals=(
+                    json.loads(row["skipped_user_globals"]) if row["skipped_user_globals"] else []
+                ),
             )
             for row in rows
         ]

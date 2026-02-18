@@ -221,6 +221,28 @@ async def _execute_repl(
             hybrid_router=state.hybrid_router,
         )
 
+    # Phase 3: cross-request globals restore (opt-in via session_id).
+    session_id = getattr(request, "session_id", None)
+    session_store = state.session_store if hasattr(state, "session_store") else None
+    if session_id and session_store:
+        try:
+            checkpoint = session_store.get_latest_checkpoint(session_id)
+            if checkpoint and checkpoint.user_globals:
+                repl.restore(checkpoint.to_dict())
+                log.info(
+                    "Restored %d globals from session %s",
+                    len(checkpoint.user_globals),
+                    session_id[:8],
+                    extra=task_extra(task_id=task_id, stage="execute", mode="repl_restore"),
+                )
+        except Exception as e:
+            log.warning(
+                "Session globals restore failed for %s: %s",
+                session_id[:8],
+                e,
+                extra=task_extra(task_id=task_id, stage="execute", mode="repl_restore"),
+            )
+
     # Check for two-stage summarization opportunity
     if request.real_mode and _should_use_two_stage(
         prompt=request.prompt,

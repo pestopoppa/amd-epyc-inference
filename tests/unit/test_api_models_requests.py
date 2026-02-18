@@ -51,6 +51,7 @@ class TestChatRequest:
         assert req.cache_prompt is None
         assert req.thinking_budget == 0
         assert req.permission_mode == "normal"
+        assert req.session_id is None
 
     def test_prompt_required(self):
         with pytest.raises(ValidationError):
@@ -92,6 +93,10 @@ class TestChatRequest:
         for mode in ("direct", "react", "repl", "delegated"):
             req = ChatRequest(prompt="x", force_mode=mode)
             assert req.force_mode == mode
+
+    def test_session_id_optional(self):
+        req = ChatRequest(prompt="x", session_id="sess_123")
+        assert req.session_id == "sess_123"
 
 
 class TestRewardRequest:

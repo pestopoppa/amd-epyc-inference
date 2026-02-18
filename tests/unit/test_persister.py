@@ -258,6 +258,34 @@ class TestSaveCheckpoint:
 
         progress_logger.log_session_checkpointed.assert_called_once()
 
+    def test_save_checkpoint_persists_user_globals(self):
+        session_store = Mock()
+        mock_session = Session(
+            id="sess_123",
+            task_id="task_456",
+            created_at=datetime.utcnow(),
+            last_active=datetime.utcnow(),
+        )
+        session_store.get_session.return_value = mock_session
+
+        persister = SessionPersister(session_store, "sess_123")
+        repl_env = Mock()
+        repl_env.checkpoint.return_value = {
+            "version": 1,
+            "artifacts": {},
+            "user_globals": {"total": 9},
+            "variable_lineage": {"total": {"role": "frontdoor", "saved_at_ts": 1.0}},
+            "skipped_user_globals": ["tmp_lambda"],
+        }
+        repl_env.context = "test context"
+        repl_env.get_findings.return_value = []
+        repl_env.clear_findings = Mock()
+
+        checkpoint = persister.save_checkpoint(repl_env)
+        assert checkpoint.user_globals == {"total": 9}
+        assert checkpoint.variable_lineage["total"]["role"] == "frontdoor"
+        assert checkpoint.skipped_user_globals == ["tmp_lambda"]
+
 
 class TestSyncFindings:
     """Test findings synchronization."""

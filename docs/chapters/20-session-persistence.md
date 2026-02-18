@@ -465,6 +465,22 @@ The storage footprint is intentionally small. A typical session with a handful o
 
 </details>
 
+## Cross-Request REPL Globals (Phase 3)
+
+Phase 3 extends checkpoints to persist user-defined REPL globals across separate `/chat` requests when the client opts in with `session_id`.
+
+- `ChatRequest.session_id` enables restore-on-chat-start behavior.
+- `REPLEnvironment.checkpoint()` now captures:
+  - `user_globals` (JSON-safe user variables only),
+  - `variable_lineage` (role/type/save metadata),
+  - `skipped_user_globals` (non-serializable values).
+- `REPLEnvironment.restore()` rebuilds builtins, then merges checkpoint user globals.
+- `SQLiteSessionStore` persists these fields in `checkpoints` with additive migration for existing databases.
+- `SessionPersister` applies payload limits:
+  - warning at ~50MB,
+  - hard cap at ~100MB with oldest-variable eviction.
+- `ResumeContext.format_for_injection()` now renders a `Variables (from previous request)` section so resumed sessions expose prior derived state without re-derivation.
+
 ## References
 
 <details>

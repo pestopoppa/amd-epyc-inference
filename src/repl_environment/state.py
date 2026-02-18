@@ -5,12 +5,31 @@ Provides mixin with: get_state, exploration log access, checkpoint, restore, res
 
 from __future__ import annotations
 
+import json
+import logging
+import time
+import types
 from typing import Any, TYPE_CHECKING
 
 from src.repl_environment.types import ExplorationEvent, ExplorationLog
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.retriever import TwoPhaseRetriever
+
+logger = logging.getLogger(__name__)
+
+
+def _is_json_serializable(value: Any) -> bool:
+    """Return True when value is safe to store in JSON checkpoints."""
+    if isinstance(value, (types.ModuleType, types.FunctionType, types.MethodType, type)):
+        return False
+    if callable(value):
+        return False
+    try:
+        json.dumps(value)
+        return True
+    except (TypeError, ValueError, OverflowError):
+        return False
 
 
 class _StateMixin:
@@ -238,19 +257,9 @@ class _StateMixin:
         Returns:
             Dict suitable for JSON serialization and later restore().
         """
-        import json
-
-        def is_json_serializable(value: Any) -> bool:
-            """Check if a value can be JSON serialized."""
-            try:
-                json.dumps(value)
-                return True
-            except (TypeError, ValueError, OverflowError):
-                return False
-
         def sanitize_value(value: Any) -> Any:
             """Sanitize a value for JSON serialization."""
-            if is_json_serializable(value):
+            if _is_json_serializable(value):
                 return value
             # Mark as unserializable with type info
             return {
@@ -291,6 +300,32 @@ class _StateMixin:
         if hasattr(self, "_research_context"):
             research_context_data = self._research_context.to_dict()
 
+        globals_dict = getattr(self, "_globals", {})
+        builtin_keys = getattr(self, "_builtin_global_keys", frozenset())
+        user_globals: dict[str, Any] = {}
+        variable_lineage: dict[str, dict[str, Any]] = {}
+        skipped_user_globals: list[str] = []
+        for key, value in globals_dict.items():
+            if key in builtin_keys or key.startswith("_"):
+                continue
+            if _is_json_serializable(value):
+                user_globals[key] = value
+                variable_lineage[key] = {
+                    "role": getattr(self, "role", "unknown"),
+                    "saved_at_execution_count": self._execution_count,
+                    "saved_at_ts": time.time(),
+                    "value_type": type(value).__name__,
+                }
+            else:
+                skipped_user_globals.append(key)
+
+        if skipped_user_globals:
+            logger.warning(
+                "Checkpoint skipped %d non-serializable globals: %s",
+                len(skipped_user_globals),
+                ", ".join(skipped_user_globals[:10]),
+            )
+
         return {
             "version": 1,  # Schema version for future compatibility
             "artifacts": sanitize_artifacts(self.artifacts),
@@ -303,6 +338,9 @@ class _StateMixin:
             "context_length": len(self.context),  # For verification, not full context
             "task_id": self.task_id,
             "research_context": research_context_data,
+            "user_globals": user_globals,
+            "variable_lineage": variable_lineage,
+            "skipped_user_globals": skipped_user_globals,
         }
 
     def restore(self, checkpoint: dict[str, Any]) -> None:
@@ -366,6 +404,21 @@ class _StateMixin:
 
         # Rebuild globals with restored artifacts
         self._globals = self._build_globals()
+        builtin_keys = set(getattr(self, "_builtin_global_keys", frozenset()))
+        restored = 0
+        skipped = 0
+        for key, value in checkpoint.get("user_globals", {}).items():
+            if key in builtin_keys:
+                skipped += 1
+                continue
+            self._globals[key] = value
+            restored += 1
+        if restored or skipped:
+            logger.info(
+                "Restored %d globals from checkpoint (%d skipped due to builtin key collisions)",
+                restored,
+                skipped,
+            )
 
     def get_checkpoint_metadata(self) -> dict[str, Any]:
         """Get metadata about current state for checkpoint decision.

@@ -80,6 +80,10 @@ class ChatRequest(BaseModel):
         description="Optional client wall-clock deadline in Unix seconds. "
         "When set, server execution budget is additionally clamped to this deadline.",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="Optional session identifier for cross-request REPL globals restore.",
+    )
 
 
 class RewardRequest(BaseModel):

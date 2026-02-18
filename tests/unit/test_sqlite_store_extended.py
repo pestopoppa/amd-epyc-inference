@@ -151,6 +151,9 @@ class TestCheckpoints:
             exploration_calls=2,
             message_count=10,
             trigger="manual",
+            user_globals={"total": 42},
+            variable_lineage={"total": {"role": "frontdoor"}},
+            skipped_user_globals=["tmp_fn"],
         )
 
         # Save it
@@ -164,6 +167,9 @@ class TestCheckpoints:
         assert retrieved.artifacts == {"key": "value", "data": [1, 2, 3]}
         assert retrieved.execution_count == 5
         assert retrieved.trigger == "manual"
+        assert retrieved.user_globals == {"total": 42}
+        assert retrieved.variable_lineage["total"]["role"] == "frontdoor"
+        assert retrieved.skipped_user_globals == ["tmp_fn"]
 
     def test_get_checkpoints_with_limit(self, temp_store, sample_session):
         """Test retrieving multiple checkpoints with limit."""

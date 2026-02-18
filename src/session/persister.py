@@ -9,6 +9,7 @@ Handles:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 import uuid
@@ -31,6 +32,8 @@ _persist_cfg = get_config().session_persistence
 CHECKPOINT_TURN_INTERVAL = _persist_cfg.checkpoint_turn_interval
 CHECKPOINT_IDLE_MINUTES = _persist_cfg.checkpoint_idle_minutes
 SUMMARY_IDLE_HOURS = _persist_cfg.summary_idle_hours
+CHECKPOINT_GLOBALS_WARN_BYTES = 50 * 1024 * 1024
+CHECKPOINT_GLOBALS_HARD_BYTES = 100 * 1024 * 1024
 
 
 class SessionPersister:
@@ -153,6 +156,36 @@ class SessionPersister:
 
         # Compute context hash (for integrity verification)
         context_hash = hashlib.sha256(repl_env.context.encode()).hexdigest()[:16]
+        user_globals = dict(repl_checkpoint.get("user_globals", {}))
+        variable_lineage = dict(repl_checkpoint.get("variable_lineage", {}))
+        skipped_user_globals = list(repl_checkpoint.get("skipped_user_globals", []))
+        evicted_user_globals: list[str] = []
+
+        payload_size = len(json.dumps(user_globals, default=str).encode("utf-8"))
+        if payload_size >= CHECKPOINT_GLOBALS_WARN_BYTES:
+            logger.warning(
+                "Checkpoint globals payload is large: %.1fMB for session=%s",
+                payload_size / (1024 * 1024),
+                self.session_id[:8],
+            )
+        if payload_size > CHECKPOINT_GLOBALS_HARD_BYTES and user_globals:
+            ordered = sorted(
+                user_globals.keys(),
+                key=lambda k: float(variable_lineage.get(k, {}).get("saved_at_ts", 0.0)),
+            )
+            while ordered and payload_size > CHECKPOINT_GLOBALS_HARD_BYTES:
+                victim = ordered.pop(0)
+                user_globals.pop(victim, None)
+                variable_lineage.pop(victim, None)
+                evicted_user_globals.append(victim)
+                payload_size = len(json.dumps(user_globals, default=str).encode("utf-8"))
+            if evicted_user_globals:
+                logger.warning(
+                    "Evicted %d globals to enforce checkpoint size cap for session=%s",
+                    len(evicted_user_globals),
+                    self.session_id[:8],
+                )
+                skipped_user_globals.extend(evicted_user_globals)
 
         checkpoint = Checkpoint(
             id=str(uuid.uuid4()),
@@ -164,6 +197,9 @@ class SessionPersister:
             exploration_calls=repl_checkpoint.get("exploration_calls", 0),
             message_count=self._turn_count,
             trigger=trigger,
+            user_globals=user_globals,
+            variable_lineage=variable_lineage,
+            skipped_user_globals=skipped_user_globals,
         )
 
         # Save to store

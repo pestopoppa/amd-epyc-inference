@@ -2,6 +2,15 @@
 
 ## 2026-02-18
 
+- **Programmatic Tool Chaining Phase 3 (cross-request persistence) started**:
+  - Added `session_id` to `ChatRequest` and wired `_execute_repl()` restore path to load latest session checkpoint globals at task start.
+  - Extended checkpoint data model and storage with `user_globals`, `variable_lineage`, and `skipped_user_globals`.
+  - Updated REPL checkpoint/restore flow to serialize user-defined globals (JSON-safe only), skip non-serializable values with warnings, and merge restored globals after `_build_globals()`.
+  - Added SQLite additive migration for existing `checkpoints` tables (`user_globals`, `variable_lineage`, `skipped_user_globals` columns).
+  - Added checkpoint globals size governance in `SessionPersister` (50MB warn, 100MB hard cap with oldest-variable eviction).
+  - Expanded resume context rendering with "Variables (from previous request)" summaries.
+  - Added/updated unit coverage in `test_api_models_requests.py`, `test_session_models.py`, `test_sqlite_store_extended.py`, `test_repl_state_extended.py`, `test_persister.py`, and `test_repl_executor.py`.
+
 - **ClaudeDebugger wave-level chain rendering**: debugger prompts now include `tool_chains` execution metadata (chain ID, mode requested/used, wave count, fallback-to-seq, parallel-mutation flag) so delegation/chaining loops can be debugged at wave granularity. Added unit coverage in `tests/unit/test_claude_debugger.py`.
 
 - **Programmatic Tool Chaining Phase 2 finalized**:

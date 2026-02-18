@@ -172,6 +172,7 @@ Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence
 Tools:      REPLExecutor → ToolRegistry(allowed_callers, chain telemetry) → PluginLoader(5 plugins, 10 tools)
 Prompts:    resolve_prompt(name) → orchestration/prompts/{name}.md (hot-swap) → fallback constant
 REPL:       sanitize_code_unicode() → exec(code) — strips non-ASCII before execution
+Sessions:   /chat(session_id) → latest Checkpoint(user_globals, lineage) restore → cross-request variable continuity
 Distill:    seed_skills.py → DistillationPipeline(teacher) → SkillBank | --evolve → EvolutionMonitor
 Debugger:   ClaudeDebugger → SkillAwareReplayEngine → skill_mismatch/no_skills_available signals
 ```

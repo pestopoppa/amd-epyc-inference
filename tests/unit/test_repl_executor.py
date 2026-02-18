@@ -220,6 +220,52 @@ class TestBasicREPLExecution:
                 assert response.answer.startswith("[ERROR:")
                 assert "LLM server timeout" in response.answer
 
+    @pytest.mark.asyncio
+    async def test_repl_restores_globals_from_session_checkpoint(
+        self, basic_request, basic_routing, mock_primitives, mock_state
+    ):
+        """Test session_id restore path restores globals before graph execution."""
+        basic_request.session_id = "sess_123"
+        mock_state.session_store = MagicMock()
+        checkpoint = MagicMock()
+        checkpoint.user_globals = {"cached_df": [{"a": 1}]}
+        checkpoint.to_dict.return_value = {
+            "version": 1,
+            "artifacts": {},
+            "execution_count": 0,
+            "exploration_calls": 0,
+            "exploration_tokens": 0,
+            "exploration_events": [],
+            "grep_hits_buffer": [],
+            "findings_buffer": [],
+            "user_globals": {"cached_df": [{"a": 1}]},
+        }
+        mock_state.session_store.get_latest_checkpoint.return_value = checkpoint
+
+        with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
+            mock_repl = MagicMock()
+            mock_repl.artifacts = {}
+            mock_repl._tool_invocations = 0
+            mock_repl.tool_registry = None
+            mock_repl.log_exploration_completed = MagicMock()
+            mock_repl_class.return_value = mock_repl
+
+            success_result = TaskResult(
+                answer="ok", success=True, turns=1, role_history=["worker_general"]
+            )
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
+                await _execute_repl(
+                    request=basic_request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=mock_state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.WORKER_GENERAL,
+                )
+
+        mock_state.session_store.get_latest_checkpoint.assert_called_once_with("sess_123")
+        mock_repl.restore.assert_called_once_with(checkpoint.to_dict.return_value)
+
 
 # ── Generation Monitoring ────────────────────────────────────────────────
 

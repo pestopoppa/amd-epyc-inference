@@ -510,6 +510,8 @@ When a backend is circuit-open or times out, same-tier alternatives are tried be
 
 Summarizes old context entries when conversation exceeds threshold (turns > 5 AND context > 12K chars). Uses `worker_summarize` (44 t/s) to compress, keeps last 3000 chars verbatim. `compaction_count` in `TaskState` tracks how many times compaction fired. Feature flag: `session_compaction`.
 
+Related persistence path (Phase 3): when `/chat` receives `session_id`, REPL checkpoints can restore JSON-safe `user_globals` from the latest session checkpoint before graph execution. This extends session continuity beyond in-request turn sharing.
+
 ### Resume Tokens
 
 Base64url-encoded graph state for crash recovery (`src/graph/resume_token.py`). Contents: task_id, node_class, current_role, turns, escalation/failure counts, role_history, last_error (truncated 200 chars), SHA-256[:8] checksum. Encoding: JSON -> zlib -> base64url (<500 bytes). Generated in `snapshot_node()`, decoded in `run_task()`. Feature flag: `resume_tokens`.

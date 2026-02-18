@@ -569,6 +569,7 @@ class BaseSessionStore(ABC):
                     warnings.append(f"Source file changed: {doc.file_path}")
 
         # Build context
+        checkpoint = self.get_latest_checkpoint(session_id)
         context = ResumeContext(
             session=session,
             documents=documents,
@@ -576,6 +577,7 @@ class BaseSessionStore(ABC):
             document_changes=document_changes,
             warnings=warnings,
             context_summary="",  # Will be formatted below
+            checkpoint=checkpoint,
         )
         context.context_summary = context.format_for_injection()
 
