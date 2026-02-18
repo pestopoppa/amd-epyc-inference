@@ -147,6 +147,10 @@ class REPLEnvironment(
         self._tool_chain_mode = os.environ.get("ORCHESTRATOR_TOOL_CHAIN_MODE", "seq").strip().lower()
         if self._tool_chain_mode not in {"legacy", "seq", "dep"}:
             self._tool_chain_mode = "seq"
+        self._tool_chain_parallel_mutations = (
+            os.environ.get("ORCHESTRATOR_TOOL_CHAIN_PARALLEL_MUTATIONS", "").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
 
         # Execution state
         self._final_answer: str | None = None
@@ -262,6 +266,12 @@ class REPLEnvironment(
     _CHAINABLE_REPL_TOOLS: frozenset[str] = frozenset({
         "run_shell",
         "run_python_code",
+        "file_write_safe",
+        "log_append",
+        "benchmark_run",
+    })
+    _PARALLEL_MUTATION_REPL_TOOLS: frozenset[str] = frozenset({
+        "run_shell",
         "file_write_safe",
         "log_append",
         "benchmark_run",
@@ -713,6 +723,7 @@ class REPLEnvironment(
                 "mode_requested": self._tool_chain_mode,
                 "mode_used": "seq",
                 "fallback_to_seq": False,
+                "parallel_mutations_enabled": self._tool_chain_parallel_mutations,
                 "waves": 0,
                 "steps": len(tool_calls),
             }
@@ -918,94 +929,104 @@ class REPLEnvironment(
         read_only_tools: set[str],
         tool_functions: set[str],
     ) -> ExecutionResult | None:
-        """Execute simple top-level tool chains with dependency-aware waves.
+        """Execute top-level tool chains via dependency-wave scheduling.
 
-        Returns None to signal caller fallback to sequential exec() when code
-        shape is unsupported or ambiguous.
+        Returns None to signal fallback to sequential exec() when analysis
+        cannot safely classify the chain.
         """
         import time
+        from collections import defaultdict, deque
 
         try:
             tree = ast.parse(code)
         except SyntaxError:
             return None
 
-        steps: list[tuple[str, str | None, ast.Call]] = []
-        for stmt in tree.body:
+        steps: list[dict[str, Any]] = []
+        produced_by: dict[str, int] = {}
+        for idx, stmt in enumerate(tree.body):
+            target_var: str | None = None
+            call_node: ast.Call | None = None
             if isinstance(stmt, ast.Assign):
                 if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
                     return None
                 if not isinstance(stmt.value, ast.Call) or not isinstance(stmt.value.func, ast.Name):
                     return None
-                func_name = stmt.value.func.id
-                if func_name not in tool_functions:
-                    return None
-                steps.append((func_name, stmt.targets[0].id, stmt.value))
+                target_var = stmt.targets[0].id
+                call_node = stmt.value
             elif isinstance(stmt, ast.Expr):
                 if not isinstance(stmt.value, ast.Call) or not isinstance(stmt.value.func, ast.Name):
                     return None
-                func_name = stmt.value.func.id
-                if func_name not in tool_functions:
-                    return None
-                steps.append((func_name, None, stmt.value))
+                call_node = stmt.value
             else:
                 return None
+
+            func_name = call_node.func.id
+            if func_name not in tool_functions:
+                return None
+
+            name_refs: set[str] = set()
+            for arg_node in list(call_node.args) + [kw.value for kw in call_node.keywords if kw.arg is not None]:
+                for n in ast.walk(arg_node):
+                    if isinstance(n, ast.Name):
+                        name_refs.add(n.id)
+
+            deps = {produced_by[n] for n in name_refs if n in produced_by}
+            is_read_only = func_name in read_only_tools
+            parallel_mutation_candidate = (
+                self._tool_chain_parallel_mutations
+                and func_name in self._PARALLEL_MUTATION_REPL_TOOLS
+            )
+
+            steps.append(
+                {
+                    "index": idx,
+                    "func_name": func_name,
+                    "target_var": target_var,
+                    "call_node": call_node,
+                    "deps": deps,
+                    "is_read_only": is_read_only,
+                    "parallel_mutation_candidate": parallel_mutation_candidate,
+                }
+            )
+            if target_var:
+                produced_by[target_var] = idx
 
         if len(steps) < 2:
             return None
 
-        def _arg_depends_on(arg_node: ast.AST, assigned: set[str]) -> bool:
-            return any(isinstance(n, ast.Name) and n.id in assigned for n in ast.walk(arg_node))
+        # Build dependency waves (Kahn topological scheduling).
+        indegree: dict[int, int] = {s["index"]: len(s["deps"]) for s in steps}
+        dependents: dict[int, list[int]] = defaultdict(list)
+        for s in steps:
+            for dep in s["deps"]:
+                dependents[dep].append(s["index"])
 
-        pending_wave: list[_ParallelCall] = []
-        wave_assigned: set[str] = set()
-        obs_parts: list[str] = []
-        wave_index = 0
-        wave_count = 0
+        ready = deque(sorted(i for i, d in indegree.items() if d == 0))
+        waves: list[list[int]] = []
+        scheduled = 0
+        while ready:
+            current_wave = list(ready)
+            ready = deque()
+            waves.append(current_wave)
+            scheduled += len(current_wave)
+            for node in current_wave:
+                for dep in dependents.get(node, []):
+                    indegree[dep] -= 1
+                    if indegree[dep] == 0:
+                        ready.append(dep)
+            ready = deque(sorted(ready))
 
-        def _flush_wave() -> ExecutionResult | None:
-            nonlocal pending_wave, wave_assigned, wave_count
-            if not pending_wave:
-                return None
-            wave_count += 1
-            if len(pending_wave) == 1:
-                call = pending_wave[0]
-                try:
-                    val = self._globals[call.func_name](*call.args, **call.kwargs)
-                except Exception as e:
-                    return ExecutionResult(
-                        output="",
-                        is_final=False,
-                        error=f"{type(e).__name__}: {e}",
-                        elapsed_seconds=time.perf_counter() - start_time,
-                    )
-                key = call.target_var or f"_result_{call.index}"
-                if call.target_var:
-                    self._globals[call.target_var] = val
-                obs_parts.append(f"[{key}]: {val}")
-            else:
-                results = execute_parallel_calls(pending_wave, self._globals, self._state_lock)
-                for c in pending_wave:
-                    key = c.target_var or f"_result_{c.index}"
-                    val = results.get(key, "")
-                    if c.target_var:
-                        self._globals[c.target_var] = val
-                    obs_parts.append(f"[{key}]: {val}")
-
-            pending_wave = []
-            wave_assigned = set()
+        if scheduled != len(steps):
             return None
 
-        for func_name, target_var, call_node in steps:
-            is_read = func_name in read_only_tools
+        step_by_idx = {s["index"]: s for s in steps}
+        obs_parts: list[str] = []
 
+        def _eval_call_args(call_node: ast.Call) -> tuple[list[Any], dict[str, Any]] | None:
             args: list[Any] = []
             kwargs: dict[str, Any] = {}
             for arg_node in call_node.args:
-                if is_read and _arg_depends_on(arg_node, wave_assigned):
-                    flush_res = _flush_wave()
-                    if flush_res is not None:
-                        return flush_res
                 val = _eval_ast_arg(arg_node, self._globals)
                 if val is None and not (isinstance(arg_node, ast.Constant) and arg_node.value is None):
                     return None
@@ -1013,54 +1034,77 @@ class REPLEnvironment(
             for kw in call_node.keywords:
                 if kw.arg is None:
                     return None
-                if is_read and _arg_depends_on(kw.value, wave_assigned):
-                    flush_res = _flush_wave()
-                    if flush_res is not None:
-                        return flush_res
                 val = _eval_ast_arg(kw.value, self._globals)
                 if val is None and not (isinstance(kw.value, ast.Constant) and kw.value.value is None):
                     return None
                 kwargs[kw.arg] = val
+            return args, kwargs
 
-            if is_read:
-                pending_wave.append(
-                    _ParallelCall(
-                        func_name=func_name,
-                        args=args,
-                        kwargs=kwargs,
-                        target_var=target_var,
-                        index=wave_index,
-                    )
-                )
-                if target_var:
-                    wave_assigned.add(target_var)
-                wave_index += 1
-                continue
-
-            flush_res = _flush_wave()
-            if flush_res is not None:
-                return flush_res
-            try:
-                val = self._globals[func_name](*args, **kwargs)
-            except Exception as e:
-                return ExecutionResult(
-                    output="",
-                    is_final=False,
-                    error=f"{type(e).__name__}: {e}",
-                    elapsed_seconds=time.perf_counter() - start_time,
-                )
-            key = target_var or func_name
-            if target_var:
-                self._globals[target_var] = val
+        def _record_result(step: dict[str, Any], val: Any) -> None:
+            key = step["target_var"] or step["func_name"]
+            if step["target_var"]:
+                self._globals[step["target_var"]] = val
             obs_parts.append(f"[{key}]: {val}")
 
-        flush_res = _flush_wave()
-        if flush_res is not None:
-            return flush_res
+        for wave in waves:
+            wave_steps = [step_by_idx[i] for i in sorted(wave)]
+            parallel_calls: list[tuple[dict[str, Any], _ParallelCall]] = []
+            serial_steps: list[tuple[dict[str, Any], list[Any], dict[str, Any]]] = []
+
+            for s in wave_steps:
+                evaluated = _eval_call_args(s["call_node"])
+                if evaluated is None:
+                    return None
+                args, kwargs = evaluated
+
+                should_parallel = bool(s["is_read_only"] or s["parallel_mutation_candidate"])
+                if should_parallel:
+                    parallel_calls.append(
+                        (
+                            s,
+                            _ParallelCall(
+                                func_name=s["func_name"],
+                                args=args,
+                                kwargs=kwargs,
+                                target_var=s["target_var"],
+                                index=s["index"],
+                            ),
+                        )
+                    )
+                else:
+                    serial_steps.append((s, args, kwargs))
+
+            if parallel_calls:
+                only_calls = [pc for _, pc in parallel_calls]
+                results = execute_parallel_calls(only_calls, self._globals, self._state_lock)
+                for s, pc in parallel_calls:
+                    key = pc.target_var or f"_result_{pc.index}"
+                    val = results.get(key, "")
+                    if isinstance(val, str) and val.startswith("[ERROR:"):
+                        return ExecutionResult(
+                            output="",
+                            is_final=False,
+                            error=val.removeprefix("[ERROR:").rstrip("]"),
+                            elapsed_seconds=time.perf_counter() - start_time,
+                        )
+                    _record_result(s, val)
+
+            for s, args, kwargs in serial_steps:
+                try:
+                    val = self._globals[s["func_name"]](*args, **kwargs)
+                except Exception as e:
+                    return ExecutionResult(
+                        output="",
+                        is_final=False,
+                        error=f"{type(e).__name__}: {e}",
+                        elapsed_seconds=time.perf_counter() - start_time,
+                    )
+                _record_result(s, val)
+
         if self._active_tool_chain_meta is not None:
             self._active_tool_chain_meta["mode_used"] = "dep"
             self._active_tool_chain_meta["fallback_to_seq"] = False
-            self._active_tool_chain_meta["waves"] = wave_count
+            self._active_tool_chain_meta["waves"] = len(waves)
         observation = self._spill_output("Observation:\n" + "\n---\n".join(obs_parts))
         return ExecutionResult(
             output=observation,

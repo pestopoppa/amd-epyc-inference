@@ -141,7 +141,14 @@ def _build_tool_chain_summary(invocation_log: list, chain_exec_log: list[dict] |
                     "success": True,
                 },
             )
-            for k in ("mode_requested", "mode_used", "fallback_to_seq", "waves", "steps"):
+            for k in (
+                "mode_requested",
+                "mode_used",
+                "fallback_to_seq",
+                "parallel_mutations_enabled",
+                "waves",
+                "steps",
+            ):
                 if k in meta:
                     entry[k] = meta[k]
 

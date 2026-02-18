@@ -209,7 +209,9 @@ Runtime behavior:
 
 - Structured-mode multi-tool turns are allowed only when non-read-only calls are chain-eligible.
 - Routing tools (`delegate`, `escalate`) remain blocked from chaining.
-- Chat responses expose grouped chain diagnostics via `tool_chains`.
+- Chat responses expose grouped chain diagnostics via `tool_chains`, including execution metadata:
+  - `mode_requested`, `mode_used`, `fallback_to_seq`
+  - `parallel_mutations_enabled`, `waves`, `steps`
 
 ### Behavior
 

@@ -148,6 +148,12 @@ When multiple tools are present in one turn:
 
 During execution, each chained tool call carries chain metadata into the registry invocation log (`caller_type`, `chain_id`, `chain_index`) for response diagnostics and replay.
 
+`dep` mode controls:
+
+- `ORCHESTRATOR_TOOL_CHAIN_MODE=dep`: dependency-wave execution in structured mode.
+- `ORCHESTRATOR_TOOL_CHAIN_PARALLEL_MUTATIONS=1`: enables parallel mutation waves for a conservative safe set (`run_shell`, `file_write_safe`, `log_append`, `benchmark_run`).
+- Unsupported/ambiguous code shapes automatically fall back to sequential execution (`mode_used=seq`, `fallback_to_seq=true` in diagnostics).
+
 **Timeout Enforcement**: UNIX `SIGALRM` signal terminates runaway executions (600s default for document ingestion, 120s for general use).
 
 ### Output Spill-to-File

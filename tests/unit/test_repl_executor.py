@@ -1126,6 +1126,7 @@ class TestToolOutputsInAnswer:
                     "mode_requested": "dep",
                     "mode_used": "dep",
                     "fallback_to_seq": False,
+                    "parallel_mutations_enabled": True,
                     "waves": 2,
                     "steps": 2,
                 }
@@ -1156,5 +1157,6 @@ class TestToolOutputsInAnswer:
                 assert chain["mode_requested"] == "dep"
                 assert chain["mode_used"] == "dep"
                 assert chain["fallback_to_seq"] is False
+                assert chain["parallel_mutations_enabled"] is True
                 assert chain["waves"] == 2
                 assert chain["steps"] == 2

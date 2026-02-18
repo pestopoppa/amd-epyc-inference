@@ -2,6 +2,15 @@
 
 ## 2026-02-18
 
+- **Programmatic Tool Chaining Phase 2 finalized**:
+  - **Phase 2a complete**: structured-mode AST call detection, `allowed_callers` gating, invocation chain metadata (`caller_type`, `chain_id`, `chain_index`), and `tool_chains` API response summaries.
+  - **Policy wiring complete**: `allowed_callers` explicitly populated across all 47 tools in `orchestration/tool_registry.yaml`.
+  - **Phase 2b complete**: dependency-wave execution mode (`ORCHESTRATOR_TOOL_CHAIN_MODE=dep`) with safe sequential fallback and optional parallel mutation waves (`ORCHESTRATOR_TOOL_CHAIN_PARALLEL_MUTATIONS=1`) for conservative safe tools.
+  - **Diagnostics complete**: `tool_chains` now includes execution-mode metadata (`mode_requested`, `mode_used`, `fallback_to_seq`, `parallel_mutations_enabled`, `waves`, `steps`).
+  - **Evidence**:
+    - targeted unit suite: 74 passing tests across chaining/dependency/allowed_callers/audit/response paths.
+    - synthetic dep-mode contention check: `run_shell` pair latency improved from ~0.417s (parallel mutations OFF) to ~0.210s (ON), ~1.99x speedup.
+
 - **Inference lock starvation root-cause closure**: eliminated cross-request cancellation/deadline context bleed, added request-scoped lock attribution (`request=<task_id>`), moved timeout clamping to post-lock-acquire paths, and added lock acquire/release trace telemetry (`ORCHESTRATOR_INFERENCE_LOCK_TRACE`). Contention sweeps now clear holders by +30s with no stale-abandoned lock behavior.
 - **Delegation loop hardening + diagnostics**: introduced explicit delegation break reasons (including pre-delegation lock timeout), specialist-timeout/report exits, and richer delegation diagnostics in API + seeding debugger flows to reduce blind reruns.
 - **Artifact-backed delegation report hydration**: added persisted report handles (`src/delegation_reports.py`), REPL/API lazy retrieval (`fetch_report(...)`, `GET /chat/delegation-report/{id}`), and prompt wiring so downstream turns can hydrate full specialist output on demand.
