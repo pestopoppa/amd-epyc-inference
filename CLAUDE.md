@@ -345,6 +345,7 @@ For updating results docs after benchmarks: use `/research-update`
 | Results Summary | `logs/research_report.md` |
 | Model Registry | `orchestration/model_registry.yaml` |
 | TaskIR Schema | `orchestration/task_ir.schema.json` |
+| Orchestration Debug Playbook | `docs/reference/agent-config/ORCHESTRATION_DEBUG_PLAYBOOK.md` |
 | Benchmark Prompts | `benchmarks/prompts/v1/` |
 | Benchmark Results | `benchmarks/results/` |
 | Blocked Tasks | `orchestration/BLOCKED_TASKS.md` |
@@ -355,6 +356,8 @@ For updating results docs after benchmarks: use `/research-update`
 |--------|---------|
 | Run gates | `make gates` |
 | Validate TaskIR | `python3 orchestration/validate_ir.py task FILE.json` |
+| Reload API only | `python3 scripts/server/orchestrator_stack.py reload orchestrator` |
+| Reload with contention profile | `python3 scripts/server/orchestrator_stack.py reload orchestrator --profile contention-debug` |
 | Analyze logs | `scripts/utils/agent_log_analyze.sh --summary` |
 | Discover models | `scripts/session/session_init.sh` |
 

@@ -27,6 +27,9 @@ The agent system is split into layers to keep prompts small and deterministic:
 4. `docs/guides/agent-workflows/*.md`
    - Procedure-heavy operational detail moved out of prompts.
    - Prevents role prompts from becoming brittle megadocs.
+5. `docs/reference/agent-config/*_PLAYBOOK.md`
+   - Incident/runbook knowledge that should be discoverable but not always loaded.
+   - Example: orchestration lock/delegation debugging playbook.
 
 ## Why This Design
 

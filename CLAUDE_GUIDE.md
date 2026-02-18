@@ -130,6 +130,7 @@ If you're a human trying to understand the project (not configure the agent), th
 |-------|-----------|
 | Research journey | [docs/chapters/INDEX.md](docs/chapters/INDEX.md) |
 | Model reference | [docs/reference/models/MODELS.md](docs/reference/models/MODELS.md) |
+| Orchestration incident/debug runbook | [docs/reference/agent-config/ORCHESTRATION_DEBUG_PLAYBOOK.md](docs/reference/agent-config/ORCHESTRATION_DEBUG_PLAYBOOK.md) |
 | Launch commands | [docs/reference/commands/QUICK_REFERENCE.md](docs/reference/commands/QUICK_REFERENCE.md) |
 | Benchmark results | [docs/reference/benchmarks/RESULTS.md](docs/reference/benchmarks/RESULTS.md) |
 | Getting started | [docs/guides/getting-started.md](docs/guides/getting-started.md) |
