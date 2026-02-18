@@ -18,6 +18,7 @@ from src.graph.state import TaskResult
 from src.llm_primitives import LLMPrimitives
 from src.llm_primitives.types import LLMResult
 from src.roles import Role
+from src.session import Session, SQLiteSessionStore
 
 
 # ── Test Fixtures ───────────────────────────────────────────────────────
@@ -229,6 +230,7 @@ class TestBasicREPLExecution:
         mock_state.session_store = MagicMock()
         checkpoint = MagicMock()
         checkpoint.user_globals = {"cached_df": [{"a": 1}]}
+        checkpoint.skipped_user_globals = ["tmp_fn"]
         checkpoint.to_dict.return_value = {
             "version": 1,
             "artifacts": {},
@@ -241,6 +243,7 @@ class TestBasicREPLExecution:
             "user_globals": {"cached_df": [{"a": 1}]},
         }
         mock_state.session_store.get_latest_checkpoint.return_value = checkpoint
+        mock_state.session_store.get_session.return_value = MagicMock(id="sess_123")
 
         with patch("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment") as mock_repl_class:
             mock_repl = MagicMock()
@@ -248,13 +251,21 @@ class TestBasicREPLExecution:
             mock_repl._tool_invocations = 0
             mock_repl.tool_registry = None
             mock_repl.log_exploration_completed = MagicMock()
+            mock_repl.checkpoint.return_value = {
+                "artifacts": {},
+                "execution_count": 1,
+                "exploration_calls": 0,
+                "user_globals": {"cached_df": [{"a": 1}]},
+                "variable_lineage": {"cached_df": {"role": "worker_general"}},
+                "skipped_user_globals": [],
+            }
             mock_repl_class.return_value = mock_repl
 
             success_result = TaskResult(
                 answer="ok", success=True, turns=1, role_history=["worker_general"]
             )
             with patch("src.api.routes.chat_pipeline.repl_executor.run_task", return_value=success_result):
-                await _execute_repl(
+                response = await _execute_repl(
                     request=basic_request,
                     routing=basic_routing,
                     primitives=mock_primitives,
@@ -265,6 +276,82 @@ class TestBasicREPLExecution:
 
         mock_state.session_store.get_latest_checkpoint.assert_called_once_with("sess_123")
         mock_repl.restore.assert_called_once_with(checkpoint.to_dict.return_value)
+        mock_state.session_store.save_checkpoint.assert_called_once()
+        assert response.session_persistence["restore_success"] is True
+        assert response.session_persistence["restored_globals"] == 1
+        assert response.session_persistence["checkpoint_saved"] is True
+
+    @pytest.mark.asyncio
+    async def test_cross_request_roundtrip_restores_globals(
+        self, basic_routing, mock_primitives, tmp_path
+    ):
+        """End-to-end stage roundtrip: request1 saves globals, request2 restores them."""
+        store = SQLiteSessionStore(
+            db_path=tmp_path / "sessions.db",
+            embeddings_path=tmp_path / "embeddings.npy",
+        )
+        session = Session.create(name="phase3", working_directory="/tmp")
+        store.create_session(session)
+
+        state = MagicMock()
+        state.tool_registry = MagicMock()
+        state.script_registry = MagicMock()
+        state.progress_logger = None
+        state.hybrid_router = None
+        state.failure_graph = MagicMock()
+        state.increment_request = MagicMock()
+        state.session_store = store
+
+        request = ChatRequest(
+            prompt="persist var",
+            context="",
+            real_mode=True,
+            mock_mode=False,
+            max_turns=3,
+            force_role="frontdoor",
+            session_id=session.id,
+        )
+        run_count = {"n": 0}
+
+        async def _fake_run_task(task_state, task_deps, start_role=None):
+            run_count["n"] += 1
+            if run_count["n"] == 1:
+                task_deps.repl._globals["persist_me"] = {"x": 42}
+                return TaskResult(answer="saved", success=True, turns=1, role_history=["frontdoor"])
+            restored = task_deps.repl._globals.get("persist_me")
+            return TaskResult(
+                answer=f"restored={restored}",
+                success=True,
+                turns=1,
+                role_history=["frontdoor"],
+            )
+
+        try:
+            with patch("src.api.routes.chat_pipeline.repl_executor.run_task", side_effect=_fake_run_task):
+                r1 = await _execute_repl(
+                    request=request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.FRONTDOOR,
+                )
+                r2 = await _execute_repl(
+                    request=request,
+                    routing=basic_routing,
+                    primitives=mock_primitives,
+                    state=state,
+                    start_time=time.perf_counter(),
+                    initial_role=Role.FRONTDOOR,
+                )
+        finally:
+            store.close()
+
+        assert r1.session_persistence["checkpoint_saved"] is True
+        assert r1.session_persistence["saved_globals"] >= 1
+        assert r2.session_persistence["restore_success"] is True
+        assert r2.session_persistence["restored_globals"] >= 1
+        assert "restored={'x': 42}" in r2.answer
 
 
 # ── Generation Monitoring ────────────────────────────────────────────────

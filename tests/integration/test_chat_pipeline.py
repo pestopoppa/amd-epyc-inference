@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from src.api import create_app
 from src.delegation_reports import store_report
 from src.api.routes.chat_routing import _classify_and_route, _select_mode
+from src.graph.state import TaskResult
 from src.roles import Role
 
 
@@ -350,6 +351,86 @@ class TestChatEndpoint:
         assert payload["ok"] is True
         assert payload["report_id"] == rid
         assert "Full specialist" in payload["content"]
+
+    @pytest.mark.skip(reason="Real-mode TestClient path can hang in this environment; covered by unit roundtrip in test_repl_executor.")
+    def test_session_restore_roundtrip_repl_globals(self, client, monkeypatch):
+        """Two /chat calls with same session_id should restore persisted globals."""
+        create = client.post(
+            "/sessions",
+            json={"name": "phase3-restore", "project": "phase3", "working_directory": "/tmp"},
+        )
+        assert create.status_code == 200
+        session_id = create.json()["id"]
+
+        class _StubPrimitives:
+            def __init__(self):
+                self.total_tokens_generated = 0
+                self._backends = {"stub": True}
+                self.total_prompt_eval_ms = 0.0
+                self.total_generation_ms = 0.0
+                self._last_predicted_tps = 0.0
+                self.total_http_overhead_ms = 0.0
+
+            def request_context(self, **_kwargs):
+                return contextlib.nullcontext()
+
+            def get_cache_stats(self):
+                return None
+
+        stub_primitives = _StubPrimitives()
+        run_count = {"n": 0}
+
+        def _fake_init_primitives(_request, _state):
+            return stub_primitives
+
+        async def _no_cheap(*_args, **_kwargs):
+            return None
+
+        async def _fake_run_task(task_state, task_deps, start_role=None):
+            run_count["n"] += 1
+            repl = task_deps.repl
+            if run_count["n"] == 1:
+                repl._globals["persist_me"] = {"value": 42}
+                return TaskResult(answer="saved", success=True, turns=1, role_history=["frontdoor"])
+            restored = repl._globals.get("persist_me")
+            return TaskResult(
+                answer=f"restored={restored}",
+                success=True,
+                turns=1,
+                role_history=["frontdoor"],
+            )
+
+        monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+        monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+        monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
+        monkeypatch.setattr(
+            "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
+            lambda *_args, **_kwargs: None,
+        )
+
+        req = {
+            "prompt": "Use REPL",
+            "mock_mode": False,
+            "real_mode": True,
+            "force_mode": "repl",
+            "force_role": "frontdoor",
+            "session_id": session_id,
+        }
+        r1 = client.post("/chat", json=req)
+        assert r1.status_code == 200
+        d1 = r1.json()
+        assert d1["session_persistence"]["checkpoint_saved"] is True
+        assert d1["session_persistence"]["saved_globals"] >= 1
+
+        r2 = client.post("/chat", json=req)
+        assert r2.status_code == 200
+        d2 = r2.json()
+        assert "restored={'value': 42}" in d2["answer"]
+        assert d2["session_persistence"]["restore_success"] is True
+        assert d2["session_persistence"]["restored_globals"] >= 1
+
+        client.delete(f"/sessions/{session_id}")
 
 
 class TestRewardEndpoint:

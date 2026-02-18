@@ -114,6 +114,10 @@ class ChatResponse(BaseModel):
     # SkillBank integration
     skills_retrieved: int = Field(default=0, description="Number of skills retrieved from SkillBank")
     skill_ids: list[str] = Field(default_factory=list, description="IDs of skills used for this request")
+    session_persistence: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Session restore/checkpoint diagnostics for cross-request globals persistence",
+    )
 
 
 class HealthResponse(BaseModel):

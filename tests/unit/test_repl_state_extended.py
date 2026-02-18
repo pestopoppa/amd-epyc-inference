@@ -307,6 +307,20 @@ class TestRestore:
         with pytest.raises(ValueError, match="Unsupported checkpoint version"):
             env.restore(checkpoint)
 
+    def test_restore_missing_version_defaults_to_v1(self):
+        env = MockREPLEnvironment()
+        checkpoint = {
+            "artifacts": {"key": "value"},
+            "execution_count": 1,
+            "exploration_calls": 0,
+            "exploration_tokens": 0,
+            "exploration_events": [],
+            "grep_hits_buffer": [],
+            "findings_buffer": [],
+        }
+        env.restore(checkpoint)
+        assert env.artifacts["key"] == "value"
+
     def test_restore_with_exploration_events(self):
         """Test restore rebuilds exploration log."""
         env = MockREPLEnvironment()

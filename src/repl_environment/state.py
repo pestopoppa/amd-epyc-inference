@@ -355,7 +355,7 @@ class _StateMixin:
         Raises:
             ValueError: If checkpoint format is invalid.
         """
-        version = checkpoint.get("version", 0)
+        version = checkpoint.get("version", 1)
         if version != 1:
             raise ValueError(f"Unsupported checkpoint version: {version}")
 

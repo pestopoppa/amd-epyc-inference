@@ -17,7 +17,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from collections import Counter
+from datetime import datetime
 
 from src.api.models import ChatRequest, ChatResponse
 from src.api.services.memrl import score_completed_task
@@ -25,6 +27,7 @@ from src.graph import run_task, GraphConfig, TaskDeps, TaskState
 from src.llm_primitives import LLMPrimitives
 from src.constants import TOOL_OUTPUT_MATCH_LEN
 from src.repl_environment import REPLEnvironment
+from src.session.models import Checkpoint
 
 from src.api.routes.chat_review import (
     _architect_verdict,
@@ -224,11 +227,29 @@ async def _execute_repl(
     # Phase 3: cross-request globals restore (opt-in via session_id).
     session_id = getattr(request, "session_id", None)
     session_store = state.session_store if hasattr(state, "session_store") else None
+    session_persistence: dict[str, object] = {
+        "session_id": session_id,
+        "restore_attempted": bool(session_id and session_store),
+        "restore_found_checkpoint": False,
+        "restore_success": False,
+        "restored_globals": 0,
+        "skipped_globals": [],
+        "restore_error": None,
+        "checkpoint_saved": False,
+        "checkpoint_id": None,
+        "saved_globals": 0,
+        "save_error": None,
+    }
     if session_id and session_store:
         try:
             checkpoint = session_store.get_latest_checkpoint(session_id)
+            if checkpoint:
+                session_persistence["restore_found_checkpoint"] = True
             if checkpoint and checkpoint.user_globals:
                 repl.restore(checkpoint.to_dict())
+                session_persistence["restore_success"] = True
+                session_persistence["restored_globals"] = len(checkpoint.user_globals)
+                session_persistence["skipped_globals"] = list(checkpoint.skipped_user_globals or [])
                 log.info(
                     "Restored %d globals from session %s",
                     len(checkpoint.user_globals),
@@ -236,6 +257,7 @@ async def _execute_repl(
                     extra=task_extra(task_id=task_id, stage="execute", mode="repl_restore"),
                 )
         except Exception as e:
+            session_persistence["restore_error"] = str(e)
             log.warning(
                 "Session globals restore failed for %s: %s",
                 session_id[:8],
@@ -510,6 +532,40 @@ async def _execute_repl(
                 read_only = set()
         parallel_tools = all(t in read_only for t in tools_called) and len(tools_called) >= 2
 
+    if session_id and session_store:
+        try:
+            session = session_store.get_session(session_id)
+            if session:
+                repl_checkpoint = repl.checkpoint()
+                checkpoint = Checkpoint(
+                    id=str(uuid.uuid4()),
+                    session_id=session_id,
+                    created_at=datetime.utcnow(),
+                    context_hash="sha256:chat_pipeline",
+                    artifacts=repl_checkpoint.get("artifacts", {}),
+                    execution_count=repl_checkpoint.get("execution_count", 0),
+                    exploration_calls=repl_checkpoint.get("exploration_calls", 0),
+                    message_count=turns,
+                    trigger="chat_request",
+                    user_globals=repl_checkpoint.get("user_globals", {}),
+                    variable_lineage=repl_checkpoint.get("variable_lineage", {}),
+                    skipped_user_globals=repl_checkpoint.get("skipped_user_globals", []),
+                )
+                session_store.save_checkpoint(checkpoint)
+                session_persistence["checkpoint_saved"] = True
+                session_persistence["checkpoint_id"] = checkpoint.id
+                session_persistence["saved_globals"] = len(checkpoint.user_globals)
+            else:
+                session_persistence["save_error"] = "session_not_found"
+        except Exception as e:
+            session_persistence["save_error"] = str(e)
+            log.warning(
+                "Session checkpoint save failed for %s: %s",
+                session_id[:8],
+                e,
+                extra=task_extra(task_id=task_id, stage="execute", mode="repl_checkpoint"),
+            )
+
     return ChatResponse(
         answer=answer,
         turns=turns,
@@ -546,4 +602,5 @@ async def _execute_repl(
         # SkillBank integration
         skills_retrieved=len(routing.skill_ids),
         skill_ids=routing.skill_ids,
+        session_persistence=session_persistence,
     )

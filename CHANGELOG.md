@@ -11,6 +11,13 @@
   - Expanded resume context rendering with "Variables (from previous request)" summaries.
   - Added/updated unit coverage in `test_api_models_requests.py`, `test_session_models.py`, `test_sqlite_store_extended.py`, `test_repl_state_extended.py`, `test_persister.py`, and `test_repl_executor.py`.
 
+- **Phase 3 persistence diagnostics + roundtrip hardening**:
+  - Added `ChatResponse.session_persistence` diagnostics (restore/save attempted/success, counts, ids, errors).
+  - `_execute_repl()` now saves a fresh per-request session checkpoint when `session_id` is provided, enabling request-to-request global continuity without external checkpoint triggers.
+  - Fixed restore compatibility for stored checkpoints missing explicit `version` by defaulting to v1.
+  - Added REPL-executor cross-request roundtrip unit coverage (`request1` saves globals, `request2` restores).
+  - Added integration test scaffold for `/chat` roundtrip, currently skipped due environment-specific `TestClient` real-mode hang behavior.
+
 - **ClaudeDebugger wave-level chain rendering**: debugger prompts now include `tool_chains` execution metadata (chain ID, mode requested/used, wave count, fallback-to-seq, parallel-mutation flag) so delegation/chaining loops can be debugged at wave granularity. Added unit coverage in `tests/unit/test_claude_debugger.py`.
 
 - **Programmatic Tool Chaining Phase 2 finalized**:

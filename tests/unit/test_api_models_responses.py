@@ -134,6 +134,7 @@ class TestChatResponse:
         assert resp.cost_dimensions == {}
         assert resp.skills_retrieved == 0
         assert resp.skill_ids == []
+        assert resp.session_persistence == {}
 
     def test_with_tool_timings(self):
         resp = self._minimal(
