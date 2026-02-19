@@ -323,7 +323,7 @@ server_mode:
       experts: 6
       override_key: qwen3moe.expert_used_count
       lookup: true
-      corpus_retrieval: false  # A/B negative: +2.1pp acceptance but -12% speed (overhead > gain)
+      corpus_retrieval: true  # v3 full corpus: +16% avg speed, +5.6pp acceptance (was -12% with MVP index)
     throughput: 47.11  # t/s (MoE6 + spec + lookup, verified 2026-02-13)
 
   coder_escalation:

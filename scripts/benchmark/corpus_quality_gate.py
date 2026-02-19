@@ -39,7 +39,9 @@ log = logging.getLogger(__name__)
 # Model configs
 MODELS = {
     "7b": {"port": 8082, "name": "Qwen2.5-7B", "role": "worker"},
+    "30b": {"port": 8080, "name": "Qwen3-Coder-30B-A3B", "role": "hot_orchestrator"},
     "32b": {"port": 8081, "name": "Qwen2.5-Coder-32B", "role": "coder_escalation"},
+    "480b": {"port": 8084, "name": "Qwen3-Coder-480B-A35B", "role": "architect_coding"},
 }
 
 # Code generation prompts — novel tasks where corpus could help or hurt
@@ -139,7 +141,7 @@ def generate(port: int, prompt: str, max_tokens: int = 1024) -> dict:
         "stream": False,
     }
     t0 = time.perf_counter()
-    resp = requests.post(url, json=payload, timeout=300)
+    resp = requests.post(url, json=payload, timeout=600)
     wall = time.perf_counter() - t0
     resp.raise_for_status()
     data = resp.json()
@@ -205,6 +207,16 @@ def build_corpus_prompt(prompt: str, corpus_config: dict, mode: str = "speed") -
         if corpus_ctx:
             return f"{corpus_ctx}\n\n{prompt}"
         return prompt
+
+
+def warmup(port: int) -> None:
+    """Send a short warmup request to prime the KV cache and JIT paths."""
+    log.info("  Warming up port %d...", port)
+    try:
+        generate(port, "Say hello.", max_tokens=5)
+        log.info("  Warmup done.")
+    except Exception as e:
+        log.warning("  Warmup failed (non-fatal): %s", e)
 
 
 def _run_single_pair(
@@ -359,7 +371,7 @@ def judge_pair(
 def main():
     parser = argparse.ArgumentParser(description="Corpus quality gate")
     parser.add_argument("--models", nargs="+", default=["7b", "32b"], choices=list(MODELS.keys()))
-    parser.add_argument("--index-path", default="/mnt/raid0/llm/cache/corpus/mvp_index")
+    parser.add_argument("--index-path", default="/mnt/raid0/llm/cache/corpus/v3_sharded")
     parser.add_argument("--mode", choices=["speed", "rag"], default="speed",
                         help="speed: silent injection (2A), rag: quality RAG instruction (2B)")
     parser.add_argument("--dry-run", action="store_true")
@@ -398,6 +410,9 @@ def main():
             cfg = MODELS[model_key]
             port = cfg["port"]
             model_results: list[dict] = []
+
+            if not args.dry_run:
+                warmup(port)
 
             if args.dry_run:
                 for p in PROMPTS:

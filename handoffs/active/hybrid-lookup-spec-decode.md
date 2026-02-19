@@ -2,7 +2,7 @@
 
 ## Status: ACTIVE — Phases 0+0.5+1 COMPLETE, Phase 2A SHIPPED, Phase 2B-Quality ABANDONED
 **Created**: 2026-01-10
-**Updated**: 2026-02-15 (Phase 2A enabled for 32B/480B. Phase 2B-Quality ABANDONED for ALL local models — 7B delta -0.96, 32B delta -1.38.)
+**Updated**: 2026-02-19 (V3 corpus quality gate PASSED: 30B +16% speed (was -12% with MVP), 32B +72% speed (was +6%). No quality regression (Claude-as-Judge delta: 30B -0.04, 32B -0.17). 30B corpus_retrieval enabled in registry. 480B re-test with MoE3 pending.)
 **Priority**: HIGH — **2.58x speedup on 30B, 2.16x on 480B achieved and shipped**
 **Type**: Phased optimization — test existing capabilities first, then extend with corpus augmentation
 
@@ -17,7 +17,7 @@
 | **Phase 0** | COMPLETE | Prompt lookup works on 480B (18.4% acceptance) but is **net-negative** on speed (-34%) due to MoE verification overhead |
 | **Phase 0.5** | COMPLETE | **jukofyork draft VERIFIED on 480B** — 74-82% acceptance, **2.16x speedup** (5.91 → 12.74 t/s) |
 | **Phase 1** | COMPLETE | **30B: MoE6+spec+lookup = 47.11 t/s (2.58x)**; 235B: full+spec = 6.08 t/s (1.15x); 480B: full+spec = 9.00 t/s (1.38x). Architect roles use full experts (quality over speed). |
-| **Phase 2A** | **SHIPPED** | Corpus speed injection enabled for 32B (+6% speed, +8.7pp accept) and 480B (+17% speed, +15.6pp accept). Disabled for 30B (-12%), 235B (mixed), 7B (saturated). Auto-init from registry wired. MVP index (73K snippets) active; full_index (The Stack) pending gram index. |
+| **Phase 2A** | **SHIPPED** | V3 corpus (76.6M snippets, 5.4B n-grams) quality gate PASSED. 30B: +16% speed, delta -0.04 (enabled). 32B: +72% speed, delta -0.17 (enabled). 480B: +6% (1 prompt, MoE3). 235B/7B remain disabled. |
 | **Phase 2B-Quality** | **ABANDONED (7B & 32B)** | Prompt-level RAG hurts quality on both 7B (delta -0.96) and 32B (delta -1.38). Even relevant The Stack snippets confuse the model. Only graph_shortest benefits (+1.0/+1.8). Requires fine-tuning or GPT-4-class models. |
 
 ### Benchmark Results (480B, llama-server, MoE3)
@@ -341,9 +341,10 @@ Injecting code snippets into prompts risks steering model output toward those sn
 | jukofyork draft model | DONE (on disk) | Phase 0.5 |
 | `run_combination_benchmarks.sh` | DONE (480B entry exists) | Phase 0/1 |
 | SoftMatcha v2 | INSTALLED (v0.1.0, icu-tokenizer optional) | Phase 2 |
-| MVP corpus index | BUILT (73K snippets, 5.5M n-grams, 338MB) | Phase 2A |
-| Full corpus (The Stack v1) | BUILDING — Python 67GB+, 5 more languages queued | Phase 2A scaling |
+| MVP corpus index | SUPERSEDED by v3 sharded index | Phase 2A |
+| V3 sharded index | BUILT (75.9M snippets, 5.4B n-grams, 666GB, 16 shards) — WAL checkpoint pending | Phase 2A |
 | build_index_v2.py | BUILT — SQLite backend, HF streaming, --resume | Phase 2A scaling |
+| populate_shards.py | BUILT — dual-cursor merge, parallel langs, 50% sampling | Phase 2A scaling |
 | prune_index.py | BUILT — optional post-build pruning | Phase 2A scaling |
 | Rust toolchain | READY (rustc 1.90.0) | Phase 2 |
 
@@ -393,11 +394,11 @@ Also update `docs/reference/models/QUIRKS.md` to clarify: BOS mismatch affects d
 
 ## Open Questions
 
-1. **Does `--moe-n-expert` compose with `--lookup` in llama-server?** The llama-lookup binary supports it, but server integration may need verification.
-2. **KV cache interaction**: When lookup drafts are rejected, does the KV cache rollback work correctly with MoE expert masking? (Should be fine — KV cache is post-expert-selection — but verify.)
+1. ~~**Does `--moe-n-expert` compose with `--lookup` in llama-server?**~~ ANSWERED: Yes, 30B MoE6+spec+lookup = 47.11 t/s (Phase 1).
+2. ~~**KV cache interaction**~~ ANSWERED: Works correctly — verified across all tested models in Phase 1.
 3. **Phase 2 query formulation**: How much does first-20-token re-query improve over keyword-only retrieval? Needs ablation study.
-4. **The Stack v2 licensing**: Verify our use case (inference acceleration, not redistribution) is covered.
-5. **SoftMatcha v2 GloVe embeddings**: For code, are GloVe word vectors meaningful? Code tokens are not natural language. May need to use exact-only matching (no soft) for code corpus, soft for documentation corpus.
+4. **The Stack v1 licensing**: Verify our use case (inference acceleration, not redistribution) is covered. (Using v1 not v2.)
+5. **SoftMatcha v2 GloVe embeddings**: For code, are GloVe word vectors meaningful? May need exact-only matching for code corpus.
 
 ---
 
@@ -418,7 +419,7 @@ Phase 1   →  Run lookup tests on all non-SSM models (half day)
               |
               └─ Update registry with measured performance for each
 
-Phase 2A  →  A/B TESTED (2026-02-15)
+Phase 2A  →  A/B TESTED (2026-02-15), CORPUS SCALED (2026-02-17)
               |
               ├─ MVP index (73K snippets) tested on all 5 models
               ├─ 480B: +15.6pp acceptance, +17% speed (BEST)
@@ -428,8 +429,22 @@ Phase 2A  →  A/B TESTED (2026-02-15)
               ├─ 7B: saturated (94-100% baseline — disabled)
               ├─ Telemetry fix: draft_n/draft_n_accepted (was wrong key names)
               ├─ Token normalization fix: index and query n-grams now consistent
-              ├─ SCALING: build_index_v2.py running The Stack v1 (67GB+ Python, 5 more langs queued)
-              └─ NEXT: Re-test with full corpus, then Claude-as-Judge quality gate
+              ├─ SCALING (2026-02-17): V3 sharded index built from The Stack v1
+              │   - Dropped JS/TS/Go (not needed). Kept Python, C++, Rust only.
+              │   - 50% deterministic sampling during population to control size.
+              │   - Rewrote populate_shards.py: dual-cursor merge (fixed O(N²) bug),
+              │     parallel language processing, threaded shard writes.
+              │   - Rust: 7.1M snippets (100%), C++: ~34.3M (96%), Python: 34.5M (75%)
+              │   - Total: 76.6M snippets, 5.4B n-grams, 651GB on disk (16 shards)
+              │   - WAL checkpoint completed 2026-02-19: 285G reclaimed, all shards clean.
+              │
+              ├─ V3 QUALITY GATE (2026-02-19): PASSED — Claude-as-Judge, 6 code gen prompts
+              │   30B: avg +16.3% speed, +5.6pp acceptance, quality delta -0.04 (PASS)
+              │   32B: avg +72.3% speed, +7.7pp acceptance, quality delta -0.17 (PASS)
+              │   30B corpus_retrieval flipped to true in registry (was false with MVP)
+              │   graph_shortest: 100% acceptance on 32B (50.3 t/s, perfect n-gram match)
+              │
+              └─ PENDING: 480B re-test with MoE3 + spec decode (full experts was 2.3 t/s)
 
 Phase 2B-Quality → RAG-augmented generation for worker models
               |
@@ -512,15 +527,18 @@ python scripts/benchmark/run_benchmark.py --suite coder --tag no-corpus
 python scripts/benchmark/run_benchmark.py --suite coder --tag with-corpus
 python scripts/benchmark/score_outputs.py --compare no-corpus with-corpus
 
-# Phase 2A scaling: Check corpus build progress
-ls -lh /mnt/raid0/llm/cache/corpus/full_index/corpus.db
-pgrep -f build_index_v2
+# Phase 2A: WAL checkpoint (recover partial writes, reclaim ~287G)
+for i in $(seq -w 0 15); do
+  echo "Checkpointing shard_${i}.db..."
+  sqlite3 /mnt/raid0/llm/cache/corpus/v3_sharded/shard_${i}.db "PRAGMA wal_checkpoint(TRUNCATE);"
+done
+sqlite3 /mnt/raid0/llm/cache/corpus/v3_sharded/snippets.db "PRAGMA wal_checkpoint(TRUNCATE);"
 
-# Phase 2A scaling: Build remaining languages (if not already queued)
-python3 scripts/corpus/build_index_v2.py \
-    --output /mnt/raid0/llm/cache/corpus/full_index \
-    --languages javascript --resume --skip-finalize
+# Phase 2A: Check corpus status
+du -sh /mnt/raid0/llm/cache/corpus/v3_sharded/
+sqlite3 /mnt/raid0/llm/cache/corpus/v3_sharded/shard_00.db "SELECT COUNT(*) FROM ngrams;"
 
-# Phase 2A scaling: Optional pruning after build
-python3 scripts/corpus/prune_index.py --target-gb 50 --dry-run
+# Phase 2A: Re-test with full corpus (after WAL checkpoint)
+python scripts/benchmark/run_benchmark.py --suite coder --tag full-corpus
+python scripts/benchmark/score_outputs.py --compare no-corpus full-corpus
 ```
