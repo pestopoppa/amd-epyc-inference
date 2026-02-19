@@ -11,7 +11,6 @@ import io
 import os
 import signal
 import threading
-import time
 import uuid
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path

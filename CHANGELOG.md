@@ -2,6 +2,13 @@
 
 ## 2026-02-19
 
+- **Q3 CLOSED: First-20-token re-query vs keyword-only retrieval**:
+  - Ablation across 6 quality gate prompts (32B outputs) measuring V3 4-gram hits: keyword NL = 21 hits, first-20-token re-query = 53 hits (+152%), full output = 981 hits (+4571%).
+  - V3 index confirmed working for code n-grams (`"for i in range"` → 24,987 matches). NL keywords hit sparsely via code comments.
+  - Re-query latency: 185ms (cached retriever). At 12.6 t/s, costs 2.3 tokens of generation time.
+  - Decision: Keyword-only sufficient. Model's own output provides 47x more n-gram material via prompt lookup self-matching than any re-query. All open questions on hybrid-lookup-spec-decode handoff now closed.
+  - Files: `scripts/benchmark/q3_requery_ablation.py`, `benchmarks/results/runs/q3_requery/results.json`.
+
 - **Context-window handoff closure + archival**:
   - Finalized and archived handoff to `handoffs/archived/context-window-management.md`.
   - Added deterministic live-trigger support for C1 validation:

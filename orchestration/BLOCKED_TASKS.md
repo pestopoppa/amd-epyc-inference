@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-19 (context-window-management finalized and archived)
+**Last Updated**: 2026-02-19 (hybrid-lookup-spec-decode all questions closed)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -19,7 +19,7 @@
 | **SkillBank Experience Distillation** | — | **HIGH** | `handoffs/active/skillbank-distillation.md` | 🔥 ACTIVE Phase 1: SkillBank core (schema, CRUD, FAISS, retriever). 8 phases total. Paper: SkillRL (arXiv:2602.08234). |
 | **Delegation/Escalation Factual-Risk Routing Track** | — | **HIGH** | `handoffs/active/delegation-escalation-factual-risk-routing-track.md` | 🔥 ACTIVE Research handoff complete. Next: Phase 0 telemetry integrity (logger contract fixes), then shadow-mode factual-risk routing with seeding+ClaudeDebugger tuning loop. |
 | **Orchestration Architecture Optimization (Review Follow-up)** | — | **HIGH** | `handoffs/active/orchestration-architecture-optimization-handoff.md` | 📋 READY. Full phased implementation handoff with code-level guidance, telemetry contract, calibration/CRC plan, workspace architecture, diagrams, and chapter update recommendations. |
-| **Hybrid Lookup + Corpus-Augmented Spec Decode** | — | **HIGH** | `handoffs/active/hybrid-lookup-spec-decode.md` | 🔥 ACTIVE Phases 0+0.5+1 COMPLETE. 480B: MoE3+spec=12.74 t/s (2.16x). 30B: MoE6+spec+lookup=47.11 t/s (2.58x). Phase 2: SoftMatcha v2 corpus augmentation pending. |
+| **Hybrid Lookup + Corpus-Augmented Spec Decode** | — | **HIGH** | `handoffs/active/hybrid-lookup-spec-decode.md` | ✅ COMPLETE. All phases done, all questions closed. Phase 2A V3 corpus: 30B +16%, 32B +72%. Phase 2B-Sidecar: closed (55-66% acceptance, below Phase 2A). Q3 re-query: closed (keyword sufficient). Q5 SoftMatcha: closed (unsuitable for code). Ready for archival. |
 | **PersonaPlex Voice Interface** | Moshi arch in llama.cpp | **MEDIUM** | `handoffs/active/personaplex_voice_interface.md` | 🔄 BLOCKED |
 | **LEANN Vector DB** | — | **MEDIUM** | `handoffs/active/leann_vector_db.md` | 📋 READY (proactive for MemRL scaling, trigger: retrieval >50ms) |
 | **MemRL Fading Memory** | — | **MEDIUM** | `handoffs/active/memrl_fading_memory.md` | 📋 NEW (Q-value decay for memory management) |
@@ -33,7 +33,7 @@
 | **JSON Canvas + Plugin Architecture** | — | **MEDIUM** | `handoffs/active/json-canvas-plugin-architecture.md` | 📋 NEW (visual reasoning + MCP tool plugins) |
 | **Replay Evaluation Harness** | — | **HIGH** | `handoffs/active/replay-evaluation-harness.md` | ✅ IMPLEMENTATION COMPLETE (8/8 phases done, 75 unit tests passing, 3386 full suite. Live smoke tests + baseline replay run pending.) |
 | **Orchestrator Intelligence Improvements** | — | **HIGH** | `handoffs/active/orchestrator-intelligence-improvements.md` | ✅ COMPLETE (7/7 improvements implemented, 3746 tests pass). Live validation pending (seeding with new tunables). |
-| **Perf: Parallel Tools + Concurrent Sweep + Prefix Cache** | Live servers for sweep | **HIGH** | `handoffs/active/perf-parallel-tools-concurrent-sweep-prefix-cache.md` | 🔥 ACTIVE. WS1+WS3A/B/C implemented (commit 882aaa0). Remaining: run concurrent sweep (WS2), validate escalation compression quality, verify pre-warmer hit rate. |
+| **Perf: Parallel Tools + Concurrent Sweep + Prefix Cache** | — | **HIGH** | `handoffs/active/perf-parallel-tools-concurrent-sweep-prefix-cache.md` | ✅ COMPLETE. All workstreams validated. WS3A id_slot confirmed. WS3B compression not viable (keep OFF). WS3C pre-warmer bugfix + validated. Ready for archival. |
 | **Context Window Management & Compaction** | — | **HIGH** | `handoffs/archived/context-window-management.md` | ✅ COMPLETE + ARCHIVED. Live C1 trigger validated (`results_20260219_135956.json`); production defaults enabled for `session_compaction` + `tool_result_clearing`; follow-up: collect tool-heavy C3 efficacy evidence. |
 | **Nightshift Automated Maintenance** | Permission model fix | **HIGH** | `nightshift.yaml` + `scripts/nightshift/` | ⚠️ FIRST RUN FAILED. All 7 tasks hit 3-iteration limit with "permission denied" (analysis-only mode). Feb 16 instant exits (status 2) — likely hook failures from dirty git state. Needs: permission config for write-capable staging branch, or task redefinition to stdout/log output. |
 

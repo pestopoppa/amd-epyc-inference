@@ -35,7 +35,8 @@ The speedups range from transformative (12.7x for summarization) to negligible (
 | Code editing | Qwen2.5-Coder-32B | 3.0 t/s | 25.82 t/s | **8.6x** |
 | Document QA | Qwen2.5-72B | ~4 t/s | ~8 t/s | **2x** |
 | Code generation | Any | - | - | 1.0-1.2x |
-| Code generation (w/ corpus) | Coder-family | - | - | 1.06-1.17x |
+| Code generation (w/ V3 corpus) | Coder-32B | 7.3 t/s | 12.6 t/s | **1.72x** |
+| Code generation (w/ V3 corpus) | Coder-30B | - | - | 1.16x |
 
 </details>
 
@@ -182,12 +183,12 @@ Output (higher acceptance rate on novel generation)
 <details>
 <summary>Implementation and configuration</summary>
 
-- **Index**: SQLite with word-level 4-gram index. `scripts/corpus/build_index_v2.py` builds from The Stack v1 (HuggingFace streaming). Optional pruning via `scripts/corpus/prune_index.py`.
-- **Retriever**: `src/services/corpus_retrieval.py` — singleton `CorpusRetriever`, auto-detects JSON (v1) vs SQLite (v2) index. Uses mmap (~200KB RAM per query regardless of DB size).
+- **Index**: V3 sharded SQLite — 16 shards, 76.6M snippets, 5.4B word-level 4-grams, 651GB. Built from The Stack v1 via `scripts/corpus/build_index_v3.py`. MD5-based shard routing for deterministic query distribution.
+- **Retriever**: `src/services/corpus_retrieval.py` — singleton `CorpusRetriever`, auto-detects JSON (v1) / SQLite (v2) / sharded SQLite (v3) index. Per-shard mmap for O(1) startup.
 - **Prompt injection**: `build_corpus_context()` in `src/prompt_builders/builder.py`. Runs on turn 0 for lookup-enabled roles. Injects as `## Reference Code` section.
 - **Telemetry**: `src/backends/llama_server.py` extracts `draft_n` / `draft_n_accepted` from llama-server timings.
 - **Token Normalization**: Both index builder and retriever strip non-alphanumeric characters (except underscore) before n-gram extraction. `class Foo(Bar):` and `class foo bar` produce the same n-grams.
-- **Keyword Fallback**: When 4-gram matching returns 0 results, falls back to word-level overlap scoring (665K words, builds in ~3.8s).
+- **Keyword Fallback**: JSON format only. V3 sharded index uses n-gram matching exclusively — NL keyword queries hit sparsely via code comments (e.g. `"binary search tree in"` → 57 matches).
 
 <details>
 <summary>Config: model registry YAML</summary>
@@ -196,7 +197,7 @@ Output (higher acceptance rate on novel generation)
 runtime_defaults:
   corpus_retrieval:
     enabled: true            # Per-role: only Coder-family
-    index_path: /mnt/raid0/llm/cache/corpus/mvp_index  # JSON v1, 73K snippets. Switch to full_index when ready.
+    index_path: /mnt/raid0/llm/cache/corpus/v3_sharded  # V3 sharded, 76.6M snippets
     max_snippets: 3
     max_chars: 3000          # ~750 tokens budget
 ```
@@ -222,9 +223,62 @@ runtime_defaults:
 </details>
 
 <details>
+<summary>V3 Full Corpus results (76.6M snippets, 651GB, 16 shards)</summary>
+
+V3 sharded index dramatically improved on MVP results. Quality gate with 6 code-gen prompts (Claude-as-Judge):
+
+| Model | Avg Speed Δ | Avg Acceptance Δ | Quality Δ |
+|-------|------------|-------------------|-----------|
+| Qwen3-Coder-30B | **+16.3%** | +5.6pp | +0.38 (neutral) |
+| Qwen2.5-Coder-32B | **+72.3%** | +22.3pp | +0.04 (neutral) |
+| Qwen3-Coder-480B | +1.4% | +0.8pp | +1.25 (positive) |
+
+Per-prompt variance is high: `graph_shortest` on 32B sees +277% (Dijkstra/A* in The Stack perfectly matches model output), while `bst_iterator` sees 0% (model's BST differs from corpus patterns).
+
+**Key finding**: V3 reversed the MVP index's -12% regression on 30B → +16% gain. The 32B model benefits most due to high base acceptance rates amplified by longer matching sequences. 480B gains are marginal since the model's own knowledge already produces high acceptance.
+
+**Production**: 30B corpus enabled. 480B not enabled (marginal, risk/reward too low).
+
+</details>
+
+<details>
+<summary>Phase 2B-Sidecar: CLOSED (2026-02-19)</summary>
+
+Implemented corpus sidecar as pluggable speculative decoding source in `llama.cpp-experimental` (branch `feature/corpus-sidecar`). Instead of prompt-level injection (Phase 2A), feeds token-level n-grams directly into the speculation loop's `nc_static` cache. Acceptance rates (55-66% on 30B) capped well below Phase 2A — externally-tokenized n-grams don't align well with what the draft model proposes. Phase 2A prompt injection remains the production approach.
+
+</details>
+
+<details>
 <summary>Phase 2B-Quality RAG: ABANDONED (2026-02-15)</summary>
 
 Attempted to improve code quality (not just speed) by instructing the model to "study and adapt" retrieved patterns. Tested on 7B (delta -0.96) and 32B (delta -1.38) — prompt-level RAG actively hurts quality. Models either ignore the instruction or get confused by reference code. Only works with models fine-tuned for RAG (e.g., SWE-Dev-7B/32B). Phase 2A (speed-only, silent injection) remains the production approach.
+
+</details>
+
+## Closed Investigations
+
+<details>
+<summary>Q3: First-20-token re-query — CLOSED (2026-02-19)</summary>
+
+**Question**: Does re-querying the corpus with the model's first ~20 generated tokens improve over keyword-only NL retrieval?
+
+**Ablation** (6 quality gate prompts, 32B outputs, V3 index):
+- Keyword NL extraction (production): 21 gram hits
+- First-20-token re-query: 53 gram hits (+152%)
+- Full output n-grams (ceiling): 981 gram hits (+4571%)
+
+**Decision**: Not worth implementing. The model's own generated code provides 47x more n-gram material than any re-query (981 vs 53 hits), and this is free via prompt lookup's self-matching against prior output. Re-query latency (185ms, 2.3 tokens at 12.6 t/s) costs more than the marginal benefit.
+
+</details>
+
+<details>
+<summary>Q5: SoftMatcha v2 soft matching — CLOSED (2026-02-19)</summary>
+
+**Question**: Can GloVe/FastText word embeddings enable fuzzy corpus matching ("calculate" ≈ "compute") via SoftMatcha v2?
+
+**Findings**: Coverage was higher than expected (GloVe 79%, FastText 86%), but dominated by trivially matchable tokens (operators, English keywords). Code-specific compound identifiers (`self.assertEqual`, `camelCase`) had <3% FastText coverage. SoftMatcha requires consecutive token matching — NL query phrases never appear consecutively in code, returning 0 matches at all thresholds (1.0 to 0.5). Soft matches on code tokens are noise (`for` ≈ `return` at 0.53 in GloVe — meaningless).
+
+**Decision**: SoftMatcha architecturally unsuitable for code retrieval. Exact n-gram matching via V3 SQLite remains the correct approach.
 
 </details>
 

@@ -392,13 +392,21 @@ Also update `docs/reference/models/QUIRKS.md` to clarify: BOS mismatch affects d
 
 ---
 
-## Open Questions
+## Closed Questions (All Resolved)
 
 1. ~~**Does `--moe-n-expert` compose with `--lookup` in llama-server?**~~ ANSWERED: Yes, 30B MoE6+spec+lookup = 47.11 t/s (Phase 1).
 2. ~~**KV cache interaction**~~ ANSWERED: Works correctly — verified across all tested models in Phase 1.
-3. **Phase 2 query formulation**: How much does first-20-token re-query improve over keyword-only retrieval? Needs ablation study. (Low priority — current keyword-only retrieval already delivers +16%/+72% speed gains.)
+3. **Phase 2 query formulation** — Q3 CLOSED (2026-02-19)
+   - **Ablation**: `scripts/benchmark/q3_requery_ablation.py` + `/mnt/raid0/llm/tmp/q3_ablation_v2.py`
+   - **Method**: Compared V3 4-gram hits for three strategies across 6 quality gate prompts (32B outputs):
+     - A) Keyword extraction from NL prompt (production): **21 gram hits**
+     - B) First-20-token re-query (model output): **53 gram hits** (+152%)
+     - C) Full output n-grams (theoretical ceiling): **981 gram hits** (+4571%)
+   - **Key insight**: Prompt lookup already matches against the model's own output during generation. After ~20 tokens, the model's generated code IS the best n-gram source — far exceeding any corpus re-query (981 vs 53 hits). Re-querying adds 185ms latency (~2.3 tokens at 12.6 t/s) for diminishing returns.
+   - **Decision**: Keyword-only retrieval is sufficient. The model's own output provides 47x more n-gram material than first-20-token re-query, and it's free via prompt lookup's self-matching.
+   - **Results**: `benchmarks/results/runs/q3_requery/results.json`
 4. ~~**The Stack v1 licensing**~~ N/A: Inference acceleration (n-gram matching), not redistribution. No concern.
-5. **SoftMatcha v2 GloVe embeddings for code** — Q5 EVALUATION IN PROGRESS
+5. **SoftMatcha v2 GloVe embeddings for code** — Q5 CLOSED (2026-02-19)
    - **Hypothesis**: GloVe (Wikipedia/Gigaword) has poor coverage of code tokens. Most identifiers, operators, and language-specific keywords will be OOV. SoftMatcha assigns 0.0 similarity to OOV tokens — they can never soft-match. FastText (subword-aware, character n-grams) may fare better.
    - **SoftMatcha v2** installed at `/mnt/raid0/llm/tmp/softmatcha2/` (v0.1.0, ICLR 2025, Apache 2.0)
      - OOV handling: assigns 0.0 similarity — hard constraint, not soft fallback
@@ -422,8 +430,13 @@ Also update `docs/reference/models/QUIRKS.md` to clarify: BOS mismatch affects d
      - "other" (code-specific misc): GloVe 57.5%, FastText known 65.7%, FastText subword 93.9%
    - **Key insight**: High overall coverage is dominated by tokens that would match exactly anyway (operators, English keywords). The actual code-specific compound identifiers (`self.assertEqual`, `camelCase`, `getData`) have <3% coverage in FastText known vocab. GloVe's 66.8% compound coverage is inflated by `_` alone (19,960 of 30,109 compound tokens).
    - **Moses tokenizer artifact**: Top OOV tokens are XML entities (`&quot;`, `&apos;`, `&gt;`, `&#91;`) from sacremoses XML-escaping — not actual code vocabulary gaps.
-   - **Decision tree outcome**: Coverage >30% → proceed to Step 2 (build test SoftMatcha index, compare exact vs soft matching). However, the coverage analysis suggests soft matching may not add much beyond what exact n-gram matching already captures, since the well-covered tokens are trivially matchable.
-   - **Full results**: `benchmarks/results/runs/q5_coverage/results.json`
+   - **Step 2 results (2026-02-19)**: Built SoftMatcha HDF5 index from 10K V3 snippets (2.5M tokens, 19K vocab, 55.9MB index, 23.6s build).
+     - **NL queries return 0 matches at ALL thresholds** (1.0 down to 0.5): "calculate loss predictions", "async retry exponential backoff", etc. SoftMatcha is a sequential pattern matcher — all query tokens must appear consecutively. NL phrases never appear as consecutive sequences in code.
+     - **Code-pattern queries work but soft matching adds noise**: `return` finds 9,955 exact but 57,691 soft matches (because `for` ≈ `return` at 0.53 — meaningless for code). `for i in` → 354 exact, 3,210 soft (sample soft match: `to it .` — garbage).
+     - **Moses tokenizer wrong for code**: `BinarySearchTree` → `binarysearchtree`, `self.search(query)` stays joined, `_` splits from identifiers.
+     - **Root cause**: SoftMatcha designed for NL text matching (paraphrased sentences). Code has fundamentally different token structure — no NL phrases. GloVe similarity between code tokens is meaningless.
+   - **Q5 CLOSED**: SoftMatcha v2 soft matching architecturally unsuitable for code retrieval. Exact n-gram matching via V3 SQLite corpus remains correct approach (+16%/+72% on 30B/32B).
+   - **Full results**: `benchmarks/results/runs/q5_coverage/results.json`, `benchmarks/results/runs/q5_softmatcha/results.json`
 
 ---
 

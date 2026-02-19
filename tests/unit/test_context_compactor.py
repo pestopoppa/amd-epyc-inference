@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from dataclasses import field
+from unittest.mock import MagicMock, patch
 
 from src.graph.state import TaskState, TaskDeps, GraphConfig
 from src.graph.helpers import (
@@ -156,7 +154,7 @@ class TestClearStaleToolOutputs:
                 ),
                 context="x" * 20000,
             )
-            freed = _clear_stale_tool_outputs(state, keep_recent=1)
+            _clear_stale_tool_outputs(state, keep_recent=1)
             assert "before" in state.last_output
             assert "middle" in state.last_output
             assert "after" in state.last_output
