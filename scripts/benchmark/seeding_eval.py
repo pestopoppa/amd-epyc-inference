@@ -20,6 +20,7 @@ from seeding_types import (
     HEAVY_PORTS,
     ROLE_PORT,
     RoleResult,
+    state,
 )
 from seeding_scoring import (
     _adaptive_timeout_s,
@@ -190,6 +191,17 @@ def _build_role_result(
         # SkillBank integration
         skills_retrieved=resp.get("skills_retrieved", 0),
         skill_ids=resp.get("skill_ids", []),
+        # Timing fields
+        cache_stats=resp.get("cache_stats"),
+        prompt_eval_ms=resp.get("prompt_eval_ms", 0.0),
+        http_overhead_ms=resp.get("http_overhead_ms", 0.0),
+        # Context window management (C1/C3) and budget tracking (R1)
+        budget_diagnostics=resp.get("budget_diagnostics", {}),
+        session_persistence=resp.get("session_persistence", {}),
+        tool_results_cleared=resp.get("tool_results_cleared", 0),
+        compaction_triggered=resp.get("compaction_triggered", False),
+        compaction_tokens_saved=resp.get("compaction_tokens_saved", 0),
+        think_harder_expected_roi=resp.get("think_harder_expected_roi", 0.0),
     )
     return rr, error_type
 
@@ -254,6 +266,7 @@ def _eval_single_config(
         allow_delegation=allow_delegation,
         log_label=log_label,
         poll_port=port,
+        session_id=state.session_id,
     )
 
     # Merge slot progress into response
@@ -303,6 +316,7 @@ def _eval_single_config(
                     allow_delegation=allow_delegation,
                     log_label=log_label,
                     poll_port=port,
+                    session_id=state.session_id,
                 )
                 max_decoded2 = int(slot_progress2.get("max_decoded", 0) or 0)
                 max_decoded = max(max_decoded, max_decoded2)

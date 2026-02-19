@@ -46,6 +46,39 @@ Category: leak (weight 0.5-1.0)
 - function_repr_leak: <function foo at 0x...> in answer
 - vision_blindness: vision role but answer <10 tokens
 
+## Orchestrator Intelligence Features
+
+These features appear in diagnostic records. Understand them to diagnose correctly:
+
+**Think-harder**: Before escalating to architect, the system retries with CoT prefix + 2x tokens.
+  Fields: `think_harder_attempted`, `think_harder_succeeded`, `think_harder_expected_roi`
+  → If ROI is low (<0.1), think-harder is gated off. Don't blame escalation for skipping it.
+
+**Cheap-first (try-cheap-first)**: Attempts task with 7B worker before routing to specialist.
+  Fields: `cheap_first_attempted`, `cheap_first_passed`
+  → If quality gate fails, normal pipeline runs. Don't count cheap-first time in latency analysis.
+
+**Session compaction (C1)**: Virtual memory pattern — dumps context to file, keeps recent 20%.
+  Fields: `compaction_triggered`, `compaction_tokens_saved`
+  → If compaction fires mid-task, answer quality may degrade. Check if key context was evicted.
+
+**Tool output clearing (C3)**: Strips stale <<<TOOL_OUTPUT>>> blocks when context >40% capacity.
+  Field: `tool_results_cleared`
+  → High clearing count suggests context pressure. Model may lose earlier tool results.
+
+**Budget/deadline tracking (R1)**: Per-request deadline enforcement with timeout clamping.
+  Field: `budget_diagnostics` (deadline_remaining_ms, timeout_clamped, budget_exhausted)
+  → BUDGET_EXHAUSTED means the request hit its wall-clock limit. Not an infra error.
+
+**Depth model overrides (R3)**: Nested llm_call() at depth>=2 routes to cheaper worker model.
+  → If a delegated sub-task produces poor quality, check if depth override routed it to 7B.
+
+**Nudge system**: Detects comment-only or high-comment-ratio code and nudges model to commit.
+  → If answer is all comments with no FINAL(), the nudge may not have fired. Check nodes.py guards.
+
+**Answer rescue**: Extracts FINAL() from raw output, or parses "The answer is X" patterns.
+  → If answer is correct but marked FAIL, check if rescue extracted the wrong substring.
+
 ## Diagnosis Workflow
 
 1. Read anomaly_signals — which categories are firing?

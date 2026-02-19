@@ -867,6 +867,27 @@ class ClaudeDebugger:
             affinity = diag.get("cache_affinity_bonus", 0.0)
             if affinity > 0:
                 parts.append(f"- **Cache affinity**: +{affinity:.0%} bonus applied")
+            th_roi = diag.get("think_harder_expected_roi", 0.0)
+            if th_roi > 0:
+                parts.append(f"- **Think-harder ROI**: {th_roi:.3f} (EMA marginal utility)")
+            # Context window management signals
+            if diag.get("compaction_triggered"):
+                saved = diag.get("compaction_tokens_saved", 0)
+                parts.append(f"- **Compaction**: triggered, saved {saved} tokens")
+            cleared = diag.get("tool_results_cleared", 0)
+            if cleared > 0:
+                parts.append(f"- **Tool output clearing**: {cleared} stale blocks removed")
+            budget = diag.get("budget_diagnostics", {})
+            if budget:
+                deadline_ms = budget.get("deadline_remaining_ms", "n/a")
+                clamped = budget.get("timeout_clamped", False)
+                exhausted = budget.get("budget_exhausted", False)
+                budget_parts = [f"deadline_remaining_ms={deadline_ms}"]
+                if clamped:
+                    budget_parts.append("timeout_clamped=true")
+                if exhausted:
+                    budget_parts.append("BUDGET_EXHAUSTED")
+                parts.append(f"- **Budget**: {', '.join(budget_parts)}")
 
             skill_data = diag.get("skill_retrieval", {})
             if skill_data:

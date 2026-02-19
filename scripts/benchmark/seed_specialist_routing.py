@@ -521,6 +521,12 @@ def run_batch_3way(
                             skills_retrieved=rr.skills_retrieved,
                             skill_types=[sid.split("_")[0] for sid in rr.skill_ids] if rr.skill_ids else [],
                             skill_context_tokens=0,
+                            # Context window management and budget tracking
+                            budget_diagnostics=rr.budget_diagnostics,
+                            tool_results_cleared=rr.tool_results_cleared,
+                            compaction_triggered=rr.compaction_triggered,
+                            compaction_tokens_saved=rr.compaction_tokens_saved,
+                            think_harder_expected_roi=rr.think_harder_expected_roi,
                         )
                         append_diagnostic(diag)
                         debugger.add_diagnostic(diag)
@@ -644,6 +650,22 @@ def run_batch_3way(
                                     tap_length_bytes=rr_diag.tap_length_bytes,
                                     repl_tap_offset_bytes=rr_diag.repl_tap_offset_bytes,
                                     repl_tap_length_bytes=rr_diag.repl_tap_length_bytes,
+                                    cost_dimensions=rr_diag.cost_dimensions,
+                                    think_harder_attempted=rr_diag.think_harder_attempted,
+                                    think_harder_succeeded=rr_diag.think_harder_succeeded,
+                                    cheap_first_attempted=rr_diag.cheap_first_attempted,
+                                    cheap_first_passed=rr_diag.cheap_first_passed,
+                                    grammar_enforced=rr_diag.grammar_enforced,
+                                    parallel_tools_used=rr_diag.parallel_tools_used,
+                                    cache_affinity_bonus=rr_diag.cache_affinity_bonus,
+                                    skills_retrieved=rr_diag.skills_retrieved,
+                                    skill_types=[sid.split("_")[0] for sid in rr_diag.skill_ids] if rr_diag.skill_ids else [],
+                                    skill_context_tokens=0,
+                                    budget_diagnostics=rr_diag.budget_diagnostics,
+                                    tool_results_cleared=rr_diag.tool_results_cleared,
+                                    compaction_triggered=rr_diag.compaction_triggered,
+                                    compaction_tokens_saved=rr_diag.compaction_tokens_saved,
+                                    think_harder_expected_roi=rr_diag.think_harder_expected_roi,
                                 )
                                 retry_diag["is_retry"] = True
                                 retry_diag["retry_tag"] = tag
@@ -994,6 +1016,9 @@ Examples (legacy mode - DEPRECATED):
     else:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_id = f"seeding_{ts}" if not args.three_way else f"3way_{ts}"
+
+    # Publish session_id for cross-request persistence (Phase 3 checkpoints)
+    state.session_id = session_id
 
     # Default seed
     base_seed = args.seed if args.seed is not None else int(time.time())

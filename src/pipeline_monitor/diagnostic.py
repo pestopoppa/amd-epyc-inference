@@ -54,6 +54,12 @@ def build_diagnostic(
     skills_retrieved: int | None = None,
     skill_types: list[str] | None = None,
     skill_context_tokens: int = 0,
+    # Context window management (C1/C3) and budget tracking (R1)
+    budget_diagnostics: dict[str, Any] | None = None,
+    tool_results_cleared: int = 0,
+    compaction_triggered: bool = False,
+    compaction_tokens_saved: int = 0,
+    think_harder_expected_roi: float = 0.0,
 ) -> dict[str, Any]:
     """Build a diagnostic record from evaluation results.
 
@@ -116,6 +122,12 @@ def build_diagnostic(
             "skill_types": skill_types or [],
             "skill_context_tokens": skill_context_tokens,
         } if skills_retrieved else {},
+        # Context window management (C1/C3) and budget tracking (R1)
+        "budget_diagnostics": budget_diagnostics or {},
+        "tool_results_cleared": tool_results_cleared,
+        "compaction_triggered": compaction_triggered,
+        "compaction_tokens_saved": compaction_tokens_saved,
+        "think_harder_expected_roi": think_harder_expected_roi,
     }
 
 

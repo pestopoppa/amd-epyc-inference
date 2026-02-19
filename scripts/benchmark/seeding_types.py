@@ -212,6 +212,13 @@ class RoleResult:
     # SkillBank integration
     skills_retrieved: int = 0
     skill_ids: list[str] = field(default_factory=list)
+    # Context window management (C1/C3) and budget tracking (R1)
+    budget_diagnostics: dict[str, Any] = field(default_factory=dict)
+    session_persistence: dict[str, Any] = field(default_factory=dict)
+    tool_results_cleared: int = 0
+    compaction_triggered: bool = False
+    compaction_tokens_saved: int = 0
+    think_harder_expected_roi: float = 0.0
 
 
 @dataclass
@@ -242,6 +249,7 @@ class _State:
 
     def __init__(self) -> None:
         self.shutdown: bool = False
+        self.session_id: str = ""  # Set by main() for cross-request persistence
         self._poll_client: "Any" = None  # httpx.Client, lazily created
 
     def get_poll_client(self) -> "Any":

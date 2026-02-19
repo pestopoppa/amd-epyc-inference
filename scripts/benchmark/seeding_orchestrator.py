@@ -261,6 +261,7 @@ def _call_orchestrator_with_slot_poll(
     allow_delegation: bool | None,
     log_label: str,
     poll_port: int,
+    session_id: str = "",
 ) -> tuple[dict[str, Any], float, dict[str, Any]]:
     """Call orchestrator while polling slot progress for live visibility."""
 
@@ -290,6 +291,7 @@ def _call_orchestrator_with_slot_poll(
             cache_prompt=cache_prompt,
             client=client,
             allow_delegation=allow_delegation,
+            session_id=session_id,
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
@@ -502,6 +504,7 @@ def call_orchestrator_forced(
     cache_prompt: bool | None = None,
     client: "httpx.Client | None" = None,
     allow_delegation: bool | None = None,
+    session_id: str = "",
 ) -> dict[str, Any]:
     """Call orchestrator with forced role and mode routing.
 
@@ -515,6 +518,7 @@ def call_orchestrator_forced(
         cache_prompt: Override prompt caching (None=default).
         client: Reusable httpx.Client for connection pooling.
         allow_delegation: Override delegation (None=feature flag, True=allow, False=disable).
+        session_id: Optional session ID for cross-request persistence (Phase 3 checkpoints).
 
     Returns:
         Response dict with answer, tokens, timing, etc.
@@ -535,6 +539,8 @@ def call_orchestrator_forced(
         payload["cache_prompt"] = cache_prompt
     if allow_delegation is not None:
         payload["allow_delegation"] = allow_delegation
+    if session_id:
+        payload["session_id"] = session_id
 
     try:
         if client is not None:
