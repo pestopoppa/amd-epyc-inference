@@ -17,7 +17,9 @@ import asyncio
 import logging
 import os
 import re
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from pydantic_graph import End, GraphRunContext
 
@@ -626,6 +628,43 @@ def _get_model_max_context(ctx: Ctx) -> int:
     return 32768  # Safe default
 
 
+def _context_externalization_path(state: TaskState) -> Path:
+    """Return a writable path for context externalization artifacts."""
+    candidates: list[Path] = []
+
+    env_tmp = os.environ.get("ORCHESTRATOR_PATHS_TMP_DIR")
+    if env_tmp:
+        candidates.append(Path(env_tmp))
+
+    candidates.extend(
+        [
+            Path("/mnt/raid0/llm/claude/tmp"),
+            Path(tempfile.gettempdir()),
+        ]
+    )
+    try:
+        from src.config import get_config
+
+        candidates.append(Path(get_config().paths.tmp_dir))
+    except Exception:
+        pass
+
+    for base in candidates:
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            probe = base / ".orchestrator_write_probe"
+            with open(probe, "w") as f:
+                f.write("ok")
+            probe.unlink(missing_ok=True)
+            task_id = re.sub(r"[^A-Za-z0-9_.-]", "_", state.task_id or "unknown")
+            return base / f"session_{task_id}_ctx_{state.compaction_count}.md"
+        except Exception:
+            continue
+
+    task_id = re.sub(r"[^A-Za-z0-9_.-]", "_", state.task_id or "unknown")
+    return Path(tempfile.gettempdir()) / f"session_{task_id}_ctx_{state.compaction_count}.md"
+
+
 async def _maybe_compact_context(ctx: Ctx) -> None:
     """Compact old context via context externalization (C1 enhanced).
 
@@ -644,8 +683,6 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
         return
 
     state = ctx.state
-    if state.turns <= 5:
-        return
     if ctx.deps.primitives is None:
         return
 
@@ -655,9 +692,14 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
         _chat_cfg = get_config().chat
         keep_recent_ratio = _chat_cfg.session_compaction_keep_recent_ratio
         recompaction_interval = _chat_cfg.session_compaction_recompaction_interval
+        min_turns_before_compaction = _chat_cfg.session_compaction_min_turns
     except Exception:
         keep_recent_ratio = 0.20
         recompaction_interval = 0
+        min_turns_before_compaction = 5
+
+    if state.turns < max(1, int(min_turns_before_compaction)):
+        return
 
     # Token-aware trigger: 60% of model max context
     model_max_ctx = _get_model_max_context(ctx)
@@ -691,8 +733,7 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
             return
 
         # Step 1: Dump full context to file (zero information loss)
-        task_id = state.task_id or "unknown"
-        ctx_file_path = f"/mnt/raid0/llm/tmp/session_{task_id}_ctx_{state.compaction_count}.md"
+        ctx_file_path = _context_externalization_path(state)
         try:
             with open(ctx_file_path, "w") as f:
                 f.write(old_context)
@@ -700,22 +741,31 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
             log.warning("Context externalization file write failed: %s", exc)
             return
 
-        state.context_file_paths.append(ctx_file_path)
+        state.context_file_paths.append(str(ctx_file_path))
 
-        # Step 2: Generate structured index via worker_explore
+        # Step 2: Generate structured index via worker_explore.
+        # If index generation fails (timeouts/contention), keep compaction by using
+        # a deterministic fallback index so context pressure is still relieved.
         index_prompt = _resolve_compaction_prompt()
         full_index_prompt = f"{index_prompt}\n\n---\n\n{to_externalize}"
-
-        if _use_inline_calls_in_tests():
-            index = ctx.deps.primitives.llm_call(
-                full_index_prompt,
-                role="worker_explore",
-            )
-        else:
-            index = await asyncio.to_thread(
-                ctx.deps.primitives.llm_call,
-                full_index_prompt,
-                role="worker_explore",
+        try:
+            if _use_inline_calls_in_tests():
+                index = ctx.deps.primitives.llm_call(
+                    full_index_prompt,
+                    role="worker_explore",
+                )
+            else:
+                index = await asyncio.to_thread(
+                    ctx.deps.primitives.llm_call,
+                    full_index_prompt,
+                    role="worker_explore",
+                )
+        except Exception as exc:
+            log.warning("Compaction index generation failed, using fallback index: %s", exc)
+            index = (
+                "- [Fallback Index]\n"
+                "- Context externalized due pressure; use read_file() for full details.\n"
+                f"- Externalized chars: {len(to_externalize)}\n"
             )
 
         # Step 3: Replace context with index + recent verbatim + read_file pointer

@@ -399,7 +399,7 @@ def get_features(
             "approval_gates": False,  # Enable after approval UX validation
             "binding_routing": False,  # Enable after routing regression testing
             "accurate_token_counting": False,  # Enable after /tokenize validation
-            "tool_result_clearing": False,  # Enable after clearing quality validation
+            "tool_result_clearing": True,  # Enabled for production context pressure relief
             "mock_mode": False,  # Real mode in production
         }
     else:

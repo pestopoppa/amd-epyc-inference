@@ -740,6 +740,81 @@ class TestChatEndpoint:
             assert data["budget_diagnostics"]["budget_applied"] is True
 
     @pytest.mark.asyncio
+    async def test_chat_response_includes_cache_stats_from_primitives(self, monkeypatch):
+        """Integration proof for C4: /chat response includes cache_stats payload."""
+        state = MagicMock(spec=AppState)
+        state.progress_logger = None
+        state.tool_registry = None
+        state.script_registry = None
+        state.registry = None
+        state.hybrid_router = None
+        state.increment_active = MagicMock()
+        state.decrement_active = MagicMock()
+        state.increment_request = MagicMock()
+        state.session_store = None
+
+        app = FastAPI()
+        app.include_router(chat_router)
+
+        async def _state_dep():
+            return state
+
+        app.dependency_overrides[dep_app_state] = _state_dep
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            class _StubPrimitives:
+                def __init__(self):
+                    self.total_tokens_generated = 0
+                    self._backends = {"stub": True}
+                    self.total_prompt_eval_ms = 0.0
+                    self.total_generation_ms = 0.0
+                    self._last_predicted_tps = 0.0
+                    self.total_http_overhead_ms = 0.0
+
+                def request_context(self, **_kwargs):
+                    return contextlib.nullcontext()
+
+                def get_cache_stats(self):
+                    return {"worker": {"cache_hit_rate": 0.75, "cache_hits": 3, "cache_misses": 1}}
+
+                def get_budget_diagnostics(self):
+                    return {}
+
+            stub_primitives = _StubPrimitives()
+
+            def _fake_init_primitives(_request, _state):
+                return stub_primitives
+
+            async def _no_cheap(*_args, **_kwargs):
+                return None
+
+            async def _fake_run_task(task_state, task_deps, start_role=None):
+                return TaskResult(answer="ok", success=True, turns=1, role_history=["frontdoor"])
+
+            monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+            monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+            monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
+            monkeypatch.setattr(
+                "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
+                lambda *_args, **_kwargs: None,
+            )
+
+            req = {
+                "prompt": "Use REPL",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "repl",
+                "force_role": "frontdoor",
+            }
+            r = await client.post("/chat", json=req)
+            assert r.status_code == 200
+            data = r.json()
+            assert data["answer"] == "ok"
+            assert data["cache_stats"]["worker"]["cache_hit_rate"] == 0.75
+            assert data["cache_stats"]["worker"]["cache_hits"] == 3
+
+    @pytest.mark.asyncio
     async def test_chat_repl_response_surfaces_tool_chain_wave_diagnostics(self, monkeypatch):
         """Integration proof: /chat response includes normalized tool_chains wave_timeline."""
         state = MagicMock(spec=AppState)

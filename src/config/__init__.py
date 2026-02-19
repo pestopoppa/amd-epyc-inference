@@ -835,6 +835,8 @@ class ChatPipelineConfig:
     """Fraction of context to keep verbatim after compaction (default 20%, min 3000 chars)."""
     session_compaction_recompaction_interval: int = 0
     """Re-trigger compaction every N turns after first compaction. 0 = disabled."""
+    session_compaction_min_turns: int = 5
+    """Minimum turns before compaction can run (default 5 to avoid very-early churn)."""
 
     # Try-cheap-first: speculative pre-filter using 7B worker before specialist.
     # Phase A = try all, Phase B = MemRL-guided, Phase C = fully learned.
@@ -1372,6 +1374,7 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         plan_review_phase_c_skip_rate: float = 0.90
         session_compaction_keep_recent_ratio: float = 0.20
         session_compaction_recompaction_interval: int = 0
+        session_compaction_min_turns: int = 5
 
         model_config = SettingsConfigDict(
             env_prefix="ORCHESTRATOR_CHAT_",
@@ -1702,6 +1705,9 @@ def _load_from_env() -> OrchestratorConfigData:
             session_compaction_recompaction_interval=_env_int(
                 f"{P}CHAT_SESSION_COMPACTION_RECOMPACTION_INTERVAL", 0
             ),
+            session_compaction_min_turns=_env_int(
+                f"{P}CHAT_SESSION_COMPACTION_MIN_TURNS", 5
+            ),
         ),
         memrl_retrieval=MemRLRetrievalConfigData(
             semantic_k=_env_int(f"{P}MEMRL_RETRIEVAL_SEMANTIC_K", 20),
@@ -1925,6 +1931,7 @@ def get_config() -> OrchestratorConfigData:
                 plan_review_phase_c_skip_rate=settings.chat.plan_review_phase_c_skip_rate,
                 session_compaction_keep_recent_ratio=settings.chat.session_compaction_keep_recent_ratio,
                 session_compaction_recompaction_interval=settings.chat.session_compaction_recompaction_interval,
+                session_compaction_min_turns=settings.chat.session_compaction_min_turns,
             ),
             memrl_retrieval=MemRLRetrievalConfigData(
                 semantic_k=settings.memrl_retrieval.semantic_k,

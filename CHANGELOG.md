@@ -2,6 +2,35 @@
 
 ## 2026-02-19
 
+- **Context-window handoff closure + archival**:
+  - Finalized and archived handoff to `handoffs/archived/context-window-management.md`.
+  - Added deterministic live-trigger support for C1 validation:
+    - `session_compaction_min_turns` config/env (`ORCHESTRATOR_CHAT_SESSION_COMPACTION_MIN_TURNS`, default `5`).
+    - Compaction fallback index when `worker_explore` index generation fails/timeouts (compaction no longer aborts).
+  - Production defaults now enable both:
+    - `session_compaction=True` (already enabled)
+    - `tool_result_clearing=True` (newly enabled)
+  - Live validation evidence captured at `benchmarks/results/runs/compaction_validation/results_20260219_135956.json` (`c1_medium_context` triggered with `compaction_tokens_saved=2968`).
+  - Updated docs/knowledgebase trackers:
+    - `docs/chapters/10-orchestration-architecture.md`
+    - `docs/reference/agent-config/ORCHESTRATION_DEBUG_PLAYBOOK.md`
+    - `orchestration/BLOCKED_TASKS.md`
+
+- **Q5: SoftMatcha v2 GloVe/FastText code vocabulary coverage evaluation**:
+  - Evaluated whether GloVe (400K vocab) and FastText (2M known + subword) have meaningful coverage of code tokens for soft/fuzzy matching via SoftMatcha v2.
+  - **Hypothesis disproved**: Expected <15% coverage, measured 79.2% (GloVe), 74.0% (FastText known), 86.1% (FastText subword) across 999 snippets (226K tokens) from V3 corpus.
+  - **Nuance**: High coverage dominated by trivially matchable tokens — operators/punctuation (100%), English keywords (97-100%). Actual code-specific compound identifiers (`self.assertEqual`, `camelCase`) have <3% FastText known coverage.
+  - Moses tokenizer artifact: Top OOV tokens are XML entities (`&quot;`, `&apos;`) from sacremoses, not real code vocabulary gaps.
+  - Models: GloVe at `/mnt/raid0/llm/cache/gensim-data/`, FastText at `/mnt/raid0/llm/cache/fasttext/cc.en.300.bin`.
+  - New: `scripts/benchmark/glove_code_coverage.py`, results at `benchmarks/results/runs/q5_coverage/results.json`.
+  - **Step 2: SoftMatcha test index built + queried — Q5 CLOSED**:
+    - Built HDF5 inverted file index from 10K V3 snippets (2.5M tokens, 19K vocab, 55.9MB, 23.6s build).
+    - All 6 NL test queries return 0 matches at ALL thresholds (1.0 to 0.5). SoftMatcha requires consecutive token matches — NL phrases never appear consecutively in code.
+    - Code-pattern diagnostics: `return` finds 9,955 exact but 57,691 soft matches (because `for` ≈ `return` at 0.53 in GloVe — meaningless). Soft matches are noise, not useful code retrieval.
+    - Moses tokenizer destroys code structure: `BinarySearchTree` → `binarysearchtree`, `self.search` stays joined.
+    - **Decision: Q5 CLOSED** — SoftMatcha v2 architecturally unsuitable for code retrieval. Exact n-gram matching via V3 SQLite remains the correct approach.
+    - New: `scripts/benchmark/softmatcha_test_index.py`, results at `benchmarks/results/runs/q5_softmatcha/results.json`.
+
 - **RLM roadmap R3 rollout-tuning closure**:
   - Captured live ON/OFF delegated probes for `depth_model_overrides` using explicit env toggles.
   - Verified telemetry toggle behavior in `budget_diagnostics.depth_override_enabled` and bounded delegated outcomes with explicit diagnostics in both modes.
@@ -20,7 +49,7 @@
   - Optional turn-based recompaction: `session_compaction_recompaction_interval` in `ChatPipelineConfig` (default 0, env: `ORCHESTRATOR_CHAT_SESSION_COMPACTION_RECOMPACTION_INTERVAL`). When > 0 and after first compaction, re-triggers every N turns to prevent context regrowth.
   - New `TaskState.last_compaction_turn` field tracks when compaction last fired for recompaction interval logic.
   - Design rationale documented in `docs/chapters/10-orchestration-architecture.md` (why virtual memory over lossy summarization, why execution state leads the index, why 20% default ratio).
-  - Research references added to `handoffs/active/context-window-management.md` (section 10).
+  - Research references added to `handoffs/archived/context-window-management.md` (section 10).
   - 6 new unit tests for configurable ratio, recompaction interval, and turn tracking.
 
 - **Context Window Management (C2→C3→C1→C4) — full implementation**:

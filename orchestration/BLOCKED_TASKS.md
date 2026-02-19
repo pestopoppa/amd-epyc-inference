@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-19 (Delethink research integration into context-window-management)
+**Last Updated**: 2026-02-19 (context-window-management finalized and archived)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -34,7 +34,7 @@
 | **Replay Evaluation Harness** | — | **HIGH** | `handoffs/active/replay-evaluation-harness.md` | ✅ IMPLEMENTATION COMPLETE (8/8 phases done, 75 unit tests passing, 3386 full suite. Live smoke tests + baseline replay run pending.) |
 | **Orchestrator Intelligence Improvements** | — | **HIGH** | `handoffs/active/orchestrator-intelligence-improvements.md` | ✅ COMPLETE (7/7 improvements implemented, 3746 tests pass). Live validation pending (seeding with new tunables). |
 | **Perf: Parallel Tools + Concurrent Sweep + Prefix Cache** | Live servers for sweep | **HIGH** | `handoffs/active/perf-parallel-tools-concurrent-sweep-prefix-cache.md` | 🔥 ACTIVE. WS1+WS3A/B/C implemented (commit 882aaa0). Remaining: run concurrent sweep (WS2), validate escalation compression quality, verify pre-warmer hit rate. |
-| **Context Window Management & Compaction** | — | **HIGH** | `handoffs/active/context-window-management.md` | ✅ IMPLEMENTED (C2→C3→C1→C4 all done + Delethink research integration: P1 state carryover, P2 configurable ratio, P3 recompaction interval). 1568 tests pass. Live validation pending. |
+| **Context Window Management & Compaction** | — | **HIGH** | `handoffs/archived/context-window-management.md` | ✅ COMPLETE + ARCHIVED. Live C1 trigger validated (`results_20260219_135956.json`); production defaults enabled for `session_compaction` + `tool_result_clearing`; follow-up: collect tool-heavy C3 efficacy evidence. |
 | **Nightshift Automated Maintenance** | Permission model fix | **HIGH** | `nightshift.yaml` + `scripts/nightshift/` | ⚠️ FIRST RUN FAILED. All 7 tasks hit 3-iteration limit with "permission denied" (analysis-only mode). Feb 16 instant exits (status 2) — likely hook failures from dirty git state. Needs: permission config for write-capable staging branch, or task redefinition to stdout/log output. |
 
 ---

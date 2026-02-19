@@ -479,7 +479,7 @@ Feature flag: `streaming_tool_use`.
 
 ## Cross-Cutting Concerns (February 2026)
 
-Eight concepts from OpenClaw and Lobster were integrated behind feature flags. Most remain default-off in production pending targeted validation; `session_compaction` and `depth_model_overrides` are now default-on with explicit guardrails and rollback toggles.
+Eight concepts from OpenClaw and Lobster were integrated behind feature flags. Most remain default-off in production pending targeted validation; `session_compaction`, `tool_result_clearing`, and `depth_model_overrides` are now default-on with explicit guardrails and rollback toggles.
 
 <details>
 <summary>Concept-integration feature flags</summary>
@@ -513,12 +513,14 @@ Two-stage context pressure management in `src/graph/helpers.py`:
 1. **C3: Tool Result Clearing** (40% of max_context) — regex-based clearing of stale `<<<TOOL_OUTPUT>>>...<<<END_TOOL_OUTPUT>>>` blocks from `state.last_output`. Keeps last N blocks (default 2), replaces older with `[Tool result cleared]`. Feature flag: `tool_result_clearing`.
 
 2. **C1: Context Externalization** (60% of max_context) — "virtual memory" pattern instead of lossy summarization:
-   - Dumps full verbatim `state.context` to `/mnt/raid0/llm/tmp/session_{task_id}_ctx_{n}.md` (zero information loss)
+   - Dumps full verbatim `state.context` to a writable tmp path (`ORCHESTRATOR_PATHS_TMP_DIR` / configured tmp / `/mnt/raid0/llm/claude/tmp` / system tmp fallback) (zero information loss)
    - Generates a structured index via `worker_explore` (7B, not SERIAL_ROLES gated) using hot-swappable prompt (`orchestration/prompts/compaction_index.md`) with line coordinates for one-shot `read_file(path, offset=N, limit=M)` retrieval
+   - If index generation fails (timeout/contention), compaction still proceeds using a deterministic fallback index
    - Index prompt now generates a **"Current Execution State"** block as the first section (what the system is working on, key values, next action) — inspired by the Markovian property from Delethink (arXiv:2510.06557)
    - Keeps recent context verbatim (configurable ratio, default 20%, min 3000 chars)
    - Replaces context with: `[Context Index]\n{index}\n\n[Recent Context]\n{verbatim}\n\nFull context: read_file("{path}")`
    - `compaction_count`, `compaction_tokens_saved`, `context_file_paths`, `last_compaction_turn` tracked in `TaskState`
+   - Minimum-turn guard is configurable via `ORCHESTRATOR_CHAT_SESSION_COMPACTION_MIN_TURNS` (default 5)
    - Optional turn-based recompaction: when `session_compaction_recompaction_interval > 0`, re-triggers compaction every N turns after first compaction (prevents context regrowth)
 
 **Design Rationale**:
@@ -551,6 +553,10 @@ Priority-ordered routing overrides (`src/routing_bindings.py`). Five priority le
     - Benefit: bounds prompt growth in long-running sessions and reduces downstream latency/timeout pressure.
     - Rollback: `ORCHESTRATOR_SESSION_COMPACTION=0`.
     - Smoke checks: long-context `/chat` run keeps answer quality stable and reports compaction activity without restore regressions.
+  - `tool_result_clearing`
+    - Benefit: clears stale tool output blocks early to reduce context pressure before compaction.
+    - Rollback: `ORCHESTRATOR_TOOL_RESULT_CLEARING=0`.
+    - Smoke checks: tool-heavy REPL turns show non-zero `tool_results_cleared` without answer regressions.
   - `depth_model_overrides`
     - Benefit: routes nested `llm_call` recursion to cheaper worker-tier roles to reduce delegated latency/cost during deep tool/delegation loops.
     - Guardrails: worker-only targets + max-depth cap (`LLMConfig.depth_override_max_depth`, default `3`) + backend-availability fallback.

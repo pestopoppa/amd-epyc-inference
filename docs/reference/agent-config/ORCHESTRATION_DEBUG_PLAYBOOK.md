@@ -90,10 +90,14 @@ Only touch these when the task explicitly targets learning-policy behavior.
 
 - Production default-on:
   - `session_compaction=1` (via `get_features(production=True)` default)
+  - `tool_result_clearing=1` (via `get_features(production=True)` default)
   - `depth_model_overrides=1` (via `get_features(production=True)` default)
 - Fast rollback toggle:
   - `ORCHESTRATOR_SESSION_COMPACTION=0`
+  - `ORCHESTRATOR_TOOL_RESULT_CLEARING=0`
   - `ORCHESTRATOR_DEPTH_MODEL_OVERRIDES=0`
+- Validation-only tuning knob:
+  - `ORCHESTRATOR_CHAT_SESSION_COMPACTION_MIN_TURNS=1` can be used to force earlier C1 trigger during live benchmarking (default is `5`).
 - Keep default-off unless the task explicitly validates them:
   - `content_cache`
   - `model_fallback`

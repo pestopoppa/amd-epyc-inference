@@ -265,6 +265,36 @@ class TestMaybeCompactContext:
         finally:
             reset_features()
 
+    def test_compaction_turn_guard_is_configurable(self):
+        """Compaction can run earlier when session_compaction_min_turns is lowered."""
+        from src.features import Features, set_features, reset_features
+        from src.config import ChatPipelineConfig
+
+        set_features(Features(session_compaction=True))
+        try:
+            state = _make_state(
+                turns=3,  # below default guard (5)
+                context="x" * 50000,
+                task_id="test_min_turns_override",
+            )
+            primitives = MagicMock()
+            primitives.llm_call.return_value = "- Index entry"
+            primitives._count_tokens = MagicMock(side_effect=lambda t: len(t) // 4)
+            ctx = _make_ctx(state, primitives)
+
+            mock_cfg = ChatPipelineConfig(session_compaction_min_turns=1)
+            with patch("src.config.get_config") as mock_get_config:
+                mock_get_config.return_value.chat = mock_cfg
+                asyncio.new_event_loop().run_until_complete(_maybe_compact_context(ctx))
+
+            assert state.compaction_count == 1
+
+            for p in state.context_file_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
+        finally:
+            reset_features()
+
     def test_no_compaction_when_context_small(self):
         """Does not trigger when context is small."""
         from src.features import Features, set_features, reset_features
@@ -361,7 +391,7 @@ class TestMaybeCompactContext:
             reset_features()
 
     def test_compaction_survives_llm_failure(self):
-        """Compaction is non-fatal if LLM call fails."""
+        """Compaction still proceeds with fallback index if LLM index call fails."""
         from src.features import Features, set_features, reset_features
 
         set_features(Features(session_compaction=True))
@@ -378,8 +408,13 @@ class TestMaybeCompactContext:
             ctx = _make_ctx(state, primitives)
             # Should not raise
             asyncio.new_event_loop().run_until_complete(_maybe_compact_context(ctx))
-            # Context should be unchanged (compaction failed gracefully)
-            assert state.compaction_count == 0
+            assert state.compaction_count == 1
+            assert "[Fallback Index]" in state.context
+            assert "read_file(" in state.context
+
+            for p in state.context_file_paths:
+                if os.path.exists(p):
+                    os.unlink(p)
         finally:
             reset_features()
 
