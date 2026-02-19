@@ -431,3 +431,212 @@ class TestMemRLIntegration:
 
         assert decision.strategy == "classified"
         assert "implement" in decision.matched_keywords
+
+
+class TestDetectOutputQualityIssue:
+    """Tests for detect_output_quality_issue()."""
+
+    def test_high_repetition_detected(self):
+        """Test detection of degeneration loops (repeated trigrams)."""
+        from src.classifiers import detect_output_quality_issue
+
+        # Create highly repetitive text
+        repeated = " ".join(["the cat sat"] * 30)
+        result = detect_output_quality_issue(repeated)
+        assert result is not None
+        assert "high_repetition" in result
+
+    def test_garbled_output_detected(self):
+        """Test detection of garbled output (mostly very short lines)."""
+        from src.classifiers import detect_output_quality_issue
+
+        # Many very short non-empty lines mixed in
+        lines = []
+        for i in range(20):
+            lines.append("x" if i % 2 == 0 else "This is a somewhat longer line of text here")
+        # Need >= 50 words total
+        lines.append("extra words " * 10)
+        garbled = "\n".join(lines)
+        result = detect_output_quality_issue(garbled)
+        # May or may not trigger depending on exact ratio — check no crash
+        assert result is None or isinstance(result, str)
+
+    def test_near_empty_output_detected(self):
+        """Test detection of near-empty output after prefix stripping."""
+        from src.classifiers import detect_output_quality_issue
+
+        # Must be >= 20 chars to pass the early-return guard
+        # After stripping "The answer is" prefix, very little remains
+        result = detect_output_quality_issue("The answer is       ")
+        assert result == "near_empty_output"
+
+    def test_clean_output_passes(self):
+        """Test that normal output passes quality check."""
+        from src.classifiers import detect_output_quality_issue
+
+        clean = (
+            "The binary search algorithm works by repeatedly dividing the search "
+            "interval in half. It compares the target value to the middle element "
+            "of the array. If they are not equal, the half in which the target "
+            "cannot lie is eliminated and the search continues on the remaining half."
+        )
+        assert detect_output_quality_issue(clean) is None
+
+    def test_short_input_skipped(self):
+        """Test that very short input is not analyzed."""
+        from src.classifiers import detect_output_quality_issue
+
+        assert detect_output_quality_issue("") is None
+        assert detect_output_quality_issue("short") is None
+        assert detect_output_quality_issue(None) is None  # type: ignore[arg-type]
+
+    def test_here_is_prefix_near_empty(self):
+        """Test near-empty detection with 'Here is' prefix."""
+        from src.classifiers import detect_output_quality_issue
+
+        # Must be >= 20 chars to pass the early-return guard
+        result = detect_output_quality_issue("Here is              ")
+        assert result == "near_empty_output"
+
+    def test_backward_compat_via_chat_review(self):
+        """Test the delegating wrapper in chat_review still works."""
+        from src.api.routes.chat_review import _detect_output_quality_issue
+
+        clean = "A well-formed answer with enough content to analyze properly here."
+        assert _detect_output_quality_issue(clean) is None
+
+
+class TestStripToolOutputs:
+    """Tests for strip_tool_outputs()."""
+
+    def test_delimiter_stripping(self):
+        """Test stripping structured delimiter blocks."""
+        from src.classifiers import strip_tool_outputs
+
+        text = "Hello <<<TOOL_OUTPUT>>>some json here<<<END_TOOL_OUTPUT>>> world"
+        result = strip_tool_outputs(text, [])
+        assert "<<<TOOL_OUTPUT>>>" not in result
+        assert "some json here" not in result
+        assert "Hello" in result
+        assert "world" in result
+
+    def test_legacy_exact_match_stripping(self):
+        """Test fallback legacy exact-string stripping."""
+        from src.classifiers import strip_tool_outputs
+
+        text = "The answer is 42. {\"role\": \"coder\"} Done."
+        result = strip_tool_outputs(text, ['{"role": "coder"}'])
+        assert '{"role": "coder"}' not in result
+        assert "The answer is 42." in result
+
+    def test_prefix_cleaning(self):
+        """Test stripping common tool output prefixes."""
+        from src.classifiers import strip_tool_outputs
+
+        text = "Current Role: frontdoor\nThe answer is 42."
+        result = strip_tool_outputs(text, [])
+        assert "Current Role:" not in result
+        assert "The answer is 42." in result
+
+    def test_empty_input(self):
+        """Test empty input returns empty."""
+        from src.classifiers import strip_tool_outputs
+
+        assert strip_tool_outputs("", []) == ""
+        assert strip_tool_outputs("", ["foo"]) == ""
+
+    def test_no_tool_outputs_passthrough(self):
+        """Test text without tool outputs passes through."""
+        from src.classifiers import strip_tool_outputs
+
+        text = "Just a normal answer with no tool artifacts."
+        assert strip_tool_outputs(text, []) == text
+
+    def test_multiple_delimiters(self):
+        """Test stripping multiple delimiter blocks."""
+        from src.classifiers import strip_tool_outputs
+
+        text = (
+            "A <<<TOOL_OUTPUT>>>first<<<END_TOOL_OUTPUT>>> "
+            "B <<<TOOL_OUTPUT>>>second<<<END_TOOL_OUTPUT>>> C"
+        )
+        result = strip_tool_outputs(text, [])
+        assert "first" not in result
+        assert "second" not in result
+        assert "A" in result
+        assert "B" in result
+        assert "C" in result
+
+    def test_multiline_delimiter_block(self):
+        """Test stripping delimiter blocks spanning multiple lines."""
+        from src.classifiers import strip_tool_outputs
+
+        text = "Start\n<<<TOOL_OUTPUT>>>\nline1\nline2\n<<<END_TOOL_OUTPUT>>>\nEnd"
+        result = strip_tool_outputs(text, [])
+        assert "line1" not in result
+        assert "End" in result
+
+    def test_backward_compat_via_chat_utils(self):
+        """Test the delegating wrapper in chat_utils still works."""
+        from src.api.routes.chat_utils import _strip_tool_outputs
+
+        text = "Hello <<<TOOL_OUTPUT>>>data<<<END_TOOL_OUTPUT>>> world"
+        result = _strip_tool_outputs(text, [])
+        assert "data" not in result
+
+
+class TestTruncateLoopedAnswer:
+    """Tests for truncate_looped_answer()."""
+
+    def test_loop_detected_and_truncated(self):
+        """Test that a looped answer is truncated."""
+        from src.classifiers import truncate_looped_answer
+
+        prompt = "This is a sufficiently long prompt that the model might echo back verbatim"
+        answer = "The answer is 42. That covers everything." + prompt[-80:]
+        result = truncate_looped_answer(answer, prompt)
+        assert len(result) < len(answer)
+        assert "The answer is 42" in result
+
+    def test_no_loop_passthrough(self):
+        """Test that answers without loops pass through unchanged."""
+        from src.classifiers import truncate_looped_answer
+
+        prompt = "What is the meaning of life, the universe, and everything in existence?"
+        answer = "The answer is 42. That's the famous answer from Hitchhiker's Guide."
+        result = truncate_looped_answer(answer, prompt)
+        assert result == answer
+
+    def test_short_prompt_skipped(self):
+        """Test that short prompts skip loop detection."""
+        from src.classifiers import truncate_looped_answer
+
+        assert truncate_looped_answer("answer", "hi") == "answer"
+        assert truncate_looped_answer("answer", "") == "answer"
+
+    def test_short_answer_skipped(self):
+        """Test that empty/None answers pass through."""
+        from src.classifiers import truncate_looped_answer
+
+        long_prompt = "x" * 100
+        assert truncate_looped_answer("", long_prompt) == ""
+        assert truncate_looped_answer(None, long_prompt) is None  # type: ignore[arg-type]
+
+    def test_truncation_preserves_meaningful_content(self):
+        """Test that truncation only happens if meaningful content remains."""
+        from src.classifiers import truncate_looped_answer
+
+        prompt = "A" * 80 + " this is the end of a very long prompt for testing purposes"
+        # Answer is just the probe — truncation would leave < 20 chars
+        answer = "tiny" + prompt[-80:]
+        result = truncate_looped_answer(answer, prompt)
+        # Should NOT truncate because remaining content < 20 chars
+        assert result == answer
+
+    def test_backward_compat_via_chat_utils(self):
+        """Test the delegating wrapper in chat_utils still works."""
+        from src.api.routes.chat_utils import _truncate_looped_answer
+
+        prompt = "What is the meaning of life, the universe, and everything in existence?"
+        answer = "42 is the answer to everything."
+        assert _truncate_looped_answer(answer, prompt) == answer

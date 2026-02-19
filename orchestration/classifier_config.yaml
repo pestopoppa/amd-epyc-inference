@@ -165,6 +165,18 @@ quality_detection:
     - "Here is"
     - "The answer is"
 
+# Tier 4: Output parsing patterns (externalized from chat_utils.py)
+output_parsing:
+  tool_output_delimiter: "<<<TOOL_OUTPUT>>>...<<<END_TOOL_OUTPUT>>>"
+  tool_prefix_patterns:
+    - "Current [Rr]ole:\\s*"
+    - "Available files:\\s*"
+    - "Routing advice:\\s*"
+    - "Could not get routing advice:\\s*"
+    - "Creating a ticket for further investigation\\s*"
+  loop_detection_probe_chars: 80
+  loop_min_answer_keep: 20
+
 # Classification exemplars for MemRL seeding (Phase 5)
 # These become EpisodicStore entries with Q-values for similarity-based routing
 classification_exemplars:

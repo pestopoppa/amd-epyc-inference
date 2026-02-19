@@ -2,6 +2,14 @@
 
 ## 2026-02-19
 
+- **Phase 1 classifier refactoring COMPLETE**:
+  - Extracted final 3 inline heuristics into `src/classifiers/`: `detect_output_quality_issue` → `quality_detector.py`, `strip_tool_outputs` + `truncate_looped_answer` → `output_parser.py`.
+  - All 9 heuristics from the routing-intelligence handoff now delegate to the classifiers module. Original functions in `chat_review.py` and `chat_utils.py` are thin wrappers (zero import breakage).
+  - Added `output_parsing` section to `orchestration/classifier_config.yaml` documenting tool-stripping patterns and loop detection constants.
+  - 61 classifier tests passing; 1592 full suite tests pass (no regressions).
+  - Phases 2-6 (factual-risk routing, MemRL input classification) deferred as separate future work.
+  - Files: `src/classifiers/output_parser.py` (NEW), `src/classifiers/quality_detector.py` (NEW), `src/classifiers/__init__.py`, `src/api/routes/chat_utils.py`, `src/api/routes/chat_review.py`, `orchestration/classifier_config.yaml`, `tests/unit/test_classifiers.py`.
+
 - **Q3 CLOSED: First-20-token re-query vs keyword-only retrieval**:
   - Ablation across 6 quality gate prompts (32B outputs) measuring V3 4-gram hits: keyword NL = 21 hits, first-20-token re-query = 53 hits (+152%), full output = 981 hits (+4571%).
   - V3 index confirmed working for code n-grams (`"for i in range"` → 24,987 matches). NL keywords hit sparsely via code comments.

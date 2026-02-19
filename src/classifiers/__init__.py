@@ -33,6 +33,9 @@ Public API:
     - needs_structured_analysis: Check if vision prompt needs structured analysis
     - should_use_direct_mode: Check if prompt should bypass REPL
     - classify_and_route: Classify prompt and return routing decision
+    - strip_tool_outputs: Strip tool output delimiters from REPL output
+    - truncate_looped_answer: Truncate if model loops back to echoing prompt
+    - detect_output_quality_issue: Detect repetition, garbled output, near-empty
 """
 
 from src.classifiers.types import ClassificationResult, RoutingDecision
@@ -46,6 +49,8 @@ from src.classifiers.keyword_matcher import (
     should_use_direct_mode,
     classify_and_route,
 )
+from src.classifiers.output_parser import strip_tool_outputs, truncate_looped_answer
+from src.classifiers.quality_detector import detect_output_quality_issue
 
 # Lazy import for MemRL components (may not be available)
 def get_classification_retriever():
@@ -74,4 +79,7 @@ __all__ = [
     "needs_structured_analysis",
     "should_use_direct_mode",
     "classify_and_route",
+    "strip_tool_outputs",
+    "truncate_looped_answer",
+    "detect_output_quality_issue",
 ]
