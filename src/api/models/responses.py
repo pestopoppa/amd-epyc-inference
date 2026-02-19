@@ -118,6 +118,20 @@ class ChatResponse(BaseModel):
         default_factory=dict,
         description="Session restore/checkpoint diagnostics for cross-request globals persistence",
     )
+    budget_diagnostics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Per-request deadline/budget clamp diagnostics (timeout clipping telemetry)",
+    )
+    # Context window management (C1/C3)
+    tool_results_cleared: int = Field(
+        default=0, description="Number of stale tool output blocks cleared from context"
+    )
+    compaction_triggered: bool = Field(
+        default=False, description="Whether context compaction was triggered"
+    )
+    compaction_tokens_saved: int = Field(
+        default=0, description="Tokens saved by context compaction"
+    )
 
 
 class HealthResponse(BaseModel):

@@ -96,6 +96,9 @@ class TaskState:
 
     # Session compaction tracking
     compaction_count: int = 0
+    compaction_tokens_saved: int = 0
+    context_file_paths: list[str] = field(default_factory=list)
+    last_compaction_turn: int = 0
 
     # Resume token for crash recovery (Phase 3B)
     resume_token: str = ""

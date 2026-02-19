@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -32,7 +32,7 @@ def _candidate(cid: str, notes: str = "") -> DesignCandidate:
     c = DesignCandidate.default()
     c.candidate_id = cid
     c.notes = notes
-    c.created_at = datetime.utcnow()
+    c.created_at = datetime.now(timezone.utc)
     return c
 
 

@@ -6,7 +6,7 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Iterator
@@ -36,7 +36,7 @@ class BatchJob:
     processed_items: int = 0
     failed_items: int = 0
     errors: list[str] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = None
     completed_at: datetime | None = None
     _lock: Lock = field(default_factory=Lock)
@@ -55,7 +55,7 @@ class BatchJob:
     def elapsed_seconds(self) -> float:
         if self.started_at is None:
             return 0.0
-        end = self.completed_at or datetime.utcnow()
+        end = self.completed_at or datetime.now(timezone.utc)
         return (end - self.started_at).total_seconds()
 
     @property
@@ -213,7 +213,7 @@ class BatchProcessor:
 
         def run():
             job.status = JobStatus.RUNNING
-            job.started_at = datetime.utcnow()
+            job.started_at = datetime.now(timezone.utc)
 
             pipeline = get_pipeline()
             if not pipeline._initialized:
@@ -250,7 +250,7 @@ class BatchProcessor:
                         except Exception as e:
                             job.increment_failed(f"{file_path}: {e}")
 
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc)
                 if job.status != JobStatus.CANCELLED:
                     job.status = JobStatus.COMPLETED if job.failed_items == 0 else JobStatus.FAILED
 
@@ -258,7 +258,7 @@ class BatchProcessor:
                 logger.error(f"Batch job {job.job_id} failed: {e}")
                 job.status = JobStatus.FAILED
                 job.errors.append(str(e))
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc)
 
         thread = threading.Thread(target=run, daemon=True)
         thread.start()

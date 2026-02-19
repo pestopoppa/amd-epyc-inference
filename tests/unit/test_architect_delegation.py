@@ -151,6 +151,52 @@ class TestArchitectDelegatedAnswer:
         assert stats["loops"] == 0
         assert primitives.llm_call.call_count == 1
 
+    def test_pre_delegation_architect_lock_timeout_sets_break_reason(self):
+        """Architect Phase-A lock timeout should set explicit pre-delegation break reason."""
+        from src.api.routes.chat_delegation import _architect_delegated_answer
+        from src.exceptions import InferenceError
+
+        primitives = MagicMock()
+        primitives.llm_call.side_effect = InferenceError(
+            "Inference lock timeout (request deadline exceeded)"
+        )
+        primitives.total_tokens_generated = 0
+        state = self._mock_state()
+
+        answer, stats = _architect_delegated_answer(
+            question="Investigate this issue",
+            context="",
+            primitives=primitives,
+            state=state,
+        )
+
+        assert answer.startswith("[ERROR: Architect delegation failed]")
+        assert stats.get("break_reason") == "pre_delegation_lock_timeout"
+        assert stats.get("loops") == 0
+
+    def test_pre_delegation_error_string_sets_break_reason(self):
+        """Phase-A [ERROR: ...] string from llm_call should not be treated as D| direct answer."""
+        from src.api.routes.chat_delegation import _architect_delegated_answer
+
+        primitives = MagicMock()
+        primitives.llm_call.return_value = (
+            "[ERROR: Inference lock timeout (request deadline exceeded) "
+            "(role=architect_general, mode=exclusive)]"
+        )
+        primitives.total_tokens_generated = 0
+        state = self._mock_state()
+
+        answer, stats = _architect_delegated_answer(
+            question="Investigate this issue",
+            context="",
+            primitives=primitives,
+            state=state,
+        )
+
+        assert answer.startswith("[ERROR: Architect delegation failed]")
+        assert stats.get("break_reason") == "pre_delegation_lock_timeout"
+        assert stats.get("loops") == 0
+
     def test_one_investigation_loop(self):
         """Architect investigates once, then synthesizes."""
         from src.api.routes.chat_delegation import _architect_delegated_answer

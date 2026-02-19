@@ -188,9 +188,14 @@ class Features:
     model_fallback: bool = False  # Try same-tier alternatives on circuit-open
     content_cache: bool = False  # SHA-256 keyed response cache for LLM calls
     session_compaction: bool = False  # Summarize old context on long conversations
+    depth_model_overrides: bool = False  # Map nested llm_call depth to cheaper roles
     resume_tokens: bool = False  # Base64url continuation tokens for crash recovery
     approval_gates: bool = False  # Human approval at escalation boundaries
     binding_routing: bool = False  # Priority-ordered routing overrides
+
+    # Context window management (C2/C3/C1)
+    accurate_token_counting: bool = False  # Use llama-server /tokenize for exact token counts
+    tool_result_clearing: bool = False  # Clear stale <<<TOOL_OUTPUT>>> blocks from last_output
 
     # Debug/Development
     mock_mode: bool = True  # Default to mock mode for safety
@@ -280,10 +285,13 @@ class Features:
             "model_fallback": self.model_fallback,
             "content_cache": self.content_cache,
             "session_compaction": self.session_compaction,
+            "depth_model_overrides": self.depth_model_overrides,
             "resume_tokens": self.resume_tokens,
             "approval_gates": self.approval_gates,
             "binding_routing": self.binding_routing,
             "skillbank": self.skillbank,
+            "accurate_token_counting": self.accurate_token_counting,
+            "tool_result_clearing": self.tool_result_clearing,
             "mock_mode": self.mock_mode,
         }
 
@@ -385,10 +393,13 @@ def get_features(
             "structured_tool_output": False,  # Enable after tool output validation
             "model_fallback": False,  # Enable after fallback quality validation
             "content_cache": False,  # Enable after cache correctness validation
-            "session_compaction": False,  # Enable after compaction quality validation
+            "session_compaction": True,  # Low-risk default: compacts long contexts with clear rollback toggle
+            "depth_model_overrides": True,  # Enabled with worker-only + max-depth guardrails
             "resume_tokens": False,  # Enable after resume reliability testing
             "approval_gates": False,  # Enable after approval UX validation
             "binding_routing": False,  # Enable after routing regression testing
+            "accurate_token_counting": False,  # Enable after /tokenize validation
+            "tool_result_clearing": False,  # Enable after clearing quality validation
             "mock_mode": False,  # Real mode in production
         }
     else:
@@ -426,9 +437,12 @@ def get_features(
             "model_fallback": False,  # Disabled in tests by default
             "content_cache": False,  # Disabled in tests by default
             "session_compaction": False,  # Disabled in tests by default
+            "depth_model_overrides": False,  # Disabled in tests by default
             "resume_tokens": False,  # Disabled in tests by default
             "approval_gates": False,  # Disabled in tests by default
             "binding_routing": False,  # Disabled in tests by default
+            "accurate_token_counting": False,  # Disabled in tests by default
+            "tool_result_clearing": False,  # Disabled in tests by default
             "mock_mode": True,  # Mock mode in tests
         }
 
@@ -473,9 +487,14 @@ def get_features(
         "model_fallback": _env_bool("MODEL_FALLBACK", defaults["model_fallback"]),
         "content_cache": _env_bool("CONTENT_CACHE", defaults["content_cache"]),
         "session_compaction": _env_bool("SESSION_COMPACTION", defaults["session_compaction"]),
+        "depth_model_overrides": _env_bool(
+            "DEPTH_MODEL_OVERRIDES", defaults["depth_model_overrides"]
+        ),
         "resume_tokens": _env_bool("RESUME_TOKENS", defaults["resume_tokens"]),
         "approval_gates": _env_bool("APPROVAL_GATES", defaults["approval_gates"]),
         "binding_routing": _env_bool("BINDING_ROUTING", defaults["binding_routing"]),
+        "accurate_token_counting": _env_bool("ACCURATE_TOKEN_COUNTING", defaults["accurate_token_counting"]),
+        "tool_result_clearing": _env_bool("TOOL_RESULT_CLEARING", defaults["tool_result_clearing"]),
         "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),
     }
 

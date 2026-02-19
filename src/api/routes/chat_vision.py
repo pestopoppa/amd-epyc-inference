@@ -364,9 +364,9 @@ async def _execute_vision_tool(
             return f"[Calculate error: {e}]"
 
     elif tool_name in ("get_current_date", "get_current_time"):
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if tool_name == "get_current_date":
             return now.strftime("%Y-%m-%d (%A)")
         return now.isoformat()

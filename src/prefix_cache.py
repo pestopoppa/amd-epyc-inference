@@ -422,11 +422,12 @@ class CachingBackend:
         stats = self.router.get_stats()
         return stats["hit_rate"]
 
-    def get_stats(self) -> dict[str, float | int]:
-        """Get combined statistics.
+    def get_stats(self) -> dict[str, float | int | list]:
+        """Get combined statistics including per-slot details.
 
         Returns:
-            Dictionary with router and backend stats.
+            Dictionary with router stats, backend stats, per-slot stats,
+            and token savings percentage.
         """
         router_stats = self.router.get_stats()
         backend_stats = self.backend.get_cache_stats()
@@ -440,6 +441,10 @@ class CachingBackend:
             "backend_token_savings": backend_stats.token_savings_rate / 100,
             "total_prompt_tokens": backend_stats.total_prompt_tokens,
             "cached_prompt_tokens": backend_stats.cached_prompt_tokens,
+            # Per-slot stats (C4)
+            "slot_stats": self.router.get_slot_stats(),
+            # Convenience: token savings as a percentage (0-100)
+            "token_savings_pct": backend_stats.token_savings_rate,
         }
 
     # =========================================================================

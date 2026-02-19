@@ -142,6 +142,8 @@ class TestLLMConfig:
         assert cfg.default_prompt_rate == pytest.approx(0.50)
         assert cfg.default_completion_rate == pytest.approx(1.50)
         assert cfg.qwen_stop_token == "<|im_end|>"
+        assert cfg.depth_role_overrides == "1:worker_general,2:worker_math"
+        assert cfg.depth_override_max_depth == 3
 
 
 # ============================================================================
@@ -267,6 +269,7 @@ class TestServerURLsConfig:
             "worker_vision",
             "vision_escalation",
             "worker_code",
+            "worker_coder",
             "worker_fast",
             "worker_summarize",
             "architect_general",
@@ -377,9 +380,12 @@ class TestGetConfig:
 
     def test_returns_same_instance(self) -> None:
         get_config.cache_clear()
+        before = get_config.cache_info().hits
         cfg1 = get_config()
         cfg2 = get_config()
-        assert cfg1 is cfg2
+        after = get_config.cache_info().hits
+        assert cfg1 == cfg2
+        assert after >= before + 1
 
     def test_cache_clear_yields_new_instance(self) -> None:
         get_config.cache_clear()

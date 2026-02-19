@@ -102,6 +102,7 @@ from src.api.routes.chat_pipeline import (
     _execute_direct,
     _execute_repl,
     _annotate_error,
+    _attach_budget_diagnostics,
 )
 
 
@@ -368,13 +369,16 @@ async def _handle_chat(
         deadline_s=request_deadline_s,
         task_id=routing.task_id,
     ):
+        def _finalize(resp: ChatResponse) -> ChatResponse:
+            return _annotate_error(_attach_budget_diagnostics(resp, primitives))
+
         # Stage 5: Architect plan review gate
         _plan_review_gate(request, routing, primitives, state)
 
         # Stage 6: Vision pipeline (early return if image/file present)
         vision_result = await _execute_vision(request, routing, primitives, state, start_time)
         if vision_result is not None:
-            return _annotate_error(vision_result)
+            return _finalize(vision_result)
 
         # Stage 6.5: Proactive delegation for COMPLEX tasks
         proactive_result = await _execute_proactive(
@@ -385,7 +389,7 @@ async def _handle_chat(
             start_time,
         )
         if proactive_result is not None:
-            return _annotate_error(proactive_result)
+            return _finalize(proactive_result)
 
         # Stage 7: Mode selection
         initial_role = routing.routing_decision[0] if routing.routing_decision else Role.FRONTDOOR
@@ -445,7 +449,7 @@ async def _handle_chat(
                 execution_mode,
             )
             if result is not None:
-                return _annotate_error(result)
+                return _finalize(result)
 
         # 8b: ReAct tool loop mode
         if execution_mode == "react":
@@ -459,11 +463,11 @@ async def _handle_chat(
                 initial_role,
             )
             if result is not None:
-                return _annotate_error(result)
+                return _finalize(result)
 
         # 8c: Direct LLM call mode
         if execution_mode == "direct" and request.real_mode:
-            return _annotate_error(
+            return _finalize(
                 await asyncio.to_thread(
                     _execute_direct,
                     request,
@@ -476,7 +480,7 @@ async def _handle_chat(
             )
 
         # 8d: REPL orchestration mode (default fallback)
-        return _annotate_error(
+        return _finalize(
             await _execute_repl(request, routing, primitives, state, start_time, initial_role)
         )
 

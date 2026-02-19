@@ -535,6 +535,20 @@ def _architect_compute_token_budget(role: str) -> int:
     return max(128, _env_int("ORCHESTRATOR_DELEGATION_ARCHITECT_COMPUTE_N_TOKENS", default))
 
 
+def _classify_failure_reason(exc: Exception) -> str:
+    """Map inference failure text to a stable delegated break_reason."""
+    text = str(exc).lower()
+    if "lock timeout" in text:
+        return "pre_delegation_lock_timeout"
+    if "deadline exceeded" in text:
+        return "deadline_exceeded"
+    if "cancelled" in text or "canceled" in text:
+        return "request_cancelled"
+    if "timed out" in text or "timeout" in text:
+        return "request_timeout"
+    return "pre_delegation_architect_error"
+
+
 def _run_architect_decision(
     prompt_text: str,
     question: str,
@@ -545,7 +559,7 @@ def _run_architect_decision(
     """Run architect's mini-REPL decision loop (Phase A).
 
     Returns:
-        (arch_response, computation_turns, tool_invocations)
+        (arch_response, computation_turns, tool_invocations, failure_reason)
     """
     from src.graph.helpers import _extract_prose_answer
     from src.prompt_builders import extract_code_from_response
@@ -601,16 +615,25 @@ def _run_architect_decision(
             )
         except (InferenceError, ConnectionError, TimeoutError, OSError) as e:
             log.warning(f"Architect call failed (turn {_aturn}): {e}")
-            return None, _aturn + 1, arch_repl._tool_invocations
+            return None, _aturn + 1, arch_repl._tool_invocations, _classify_failure_reason(e)
         except Exception as e:
             log.warning(f"Architect call failed unexpectedly (turn {_aturn}): {e}")
-            return None, _aturn + 1, arch_repl._tool_invocations
+            return None, _aturn + 1, arch_repl._tool_invocations, _classify_failure_reason(e)
         finally:
             primitives._early_stop_check = None
 
         # Strip <think>...</think> tags (reasoning models), including
         # incomplete trailing blocks so mid-thought I|/D| aren't parsed.
         stripped = _strip_think(raw).strip()
+        # llm_call may return "[ERROR: ...]" strings instead of raising.
+        # Treat these as Phase-A failures so break_reason is populated.
+        if stripped.startswith("[ERROR:"):
+            return (
+                None,
+                _aturn + 1,
+                arch_repl._tool_invocations,
+                _classify_failure_reason(RuntimeError(stripped)),
+            )
         # Extract TOON decision from anywhere in the response.
         arch_response = _extract_toon_decision(stripped)
         if arch_response:
@@ -670,7 +693,7 @@ def _run_architect_decision(
         # Exhausted computation turns, use last raw response
         arch_response = raw if raw else f"D|{arch_last_output}"
 
-    return arch_response, _aturn + 1, arch_repl._tool_invocations
+    return arch_response, _aturn + 1, arch_repl._tool_invocations, None
 
 
 def _apply_decision_guards(
@@ -1230,19 +1253,50 @@ def _architect_delegated_answer_inner(
                 max_loops,
             )
 
-        arch_response, computation_turns, arch_tools = _run_architect_decision(
+        decision_result = _run_architect_decision(
             prompt_text, question, primitives, architect_role, tool_registry,
         )
+        if len(decision_result) == 3:
+            # Backward-compatible path for tests/patches that still mock the legacy tuple.
+            arch_response, computation_turns, arch_tools = decision_result
+            phase_a_failure_reason = None
+        else:
+            arch_response, computation_turns, arch_tools, phase_a_failure_reason = decision_result
         total_tools += arch_tools
 
         if arch_response is None:
             # Early error return
+            stats["break_reason"] = phase_a_failure_reason or "pre_delegation_architect_error"
+            stats["phases"].append(
+                {
+                    "loop": loop,
+                    "phase": "A",
+                    "ms": round((time.perf_counter() - phase_start) * 1000),
+                    "decision": "error",
+                    "computation_turns": computation_turns,
+                }
+            )
             if reports:
                 return reports[-1], stats
             return "[ERROR: Architect delegation failed]", stats
 
         phase_a_ms = (time.perf_counter() - phase_start) * 1000
         decision = _parse_architect_decision(arch_response)
+        decision_answer = str(decision.get("answer", "") or "").strip()
+        if decision["mode"] == "direct" and decision_answer.startswith("[ERROR:"):
+            stats["break_reason"] = _classify_failure_reason(RuntimeError(decision_answer))
+            stats["phases"].append(
+                {
+                    "loop": loop,
+                    "phase": "A",
+                    "ms": round(phase_a_ms),
+                    "decision": "error",
+                    "computation_turns": computation_turns,
+                }
+            )
+            if reports:
+                return reports[-1], stats
+            return "[ERROR: Architect delegation failed]", stats
         stats["phases"].append(
             {
                 "loop": loop,

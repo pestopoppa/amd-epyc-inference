@@ -1,6 +1,7 @@
 """Real inference methods using backends."""
 
 import asyncio
+import contextvars
 import logging
 import os
 import time
@@ -48,14 +49,6 @@ def _detect_streaming_repetition(text: str, min_block: int = 60, min_repeats: in
         if tail.count(block) >= min_repeats:
             return True
     return False
-
-
-def _clamp_request_timeout_to_deadline(request: Any, deadline_s: float | None) -> None:
-    """Clamp request.timeout in-place using remaining request deadline."""
-    if deadline_s is None:
-        return
-    remaining_s = max(1.0, deadline_s - time.perf_counter())
-    request.timeout = min(int(request.timeout), int(remaining_s))
 
 
 class InferenceMixin:
@@ -201,10 +194,7 @@ class InferenceMixin:
         role_timeout = get_config().timeouts.role_timeouts_dict().get(
             role, self.config.call_timeout
         )
-        deadline_s = self.get_request_deadline_s()
-        if deadline_s is not None:
-            remaining_s = max(1.0, deadline_s - time.perf_counter())
-            role_timeout = min(role_timeout, int(remaining_s))
+        role_timeout = self._clamp_timeout_to_request_budget(role_timeout)
 
         request = InferenceRequest(
             role=role,
@@ -226,7 +216,7 @@ class InferenceMixin:
                 deadline_s=self.get_request_deadline_s(),
                 request_tag=self.get_request_task_id(),
             ):
-                _clamp_request_timeout_to_deadline(request, self.get_request_deadline_s())
+                request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
                 result = self.model_server.infer(role, request)
         except Exception as exc:
             req_elapsed_ms = (time.perf_counter() - req_started) * 1000
@@ -335,10 +325,7 @@ class InferenceMixin:
         role_timeout = get_config().timeouts.role_timeouts_dict().get(
             role, self.config.call_timeout
         )
-        deadline_s = self.get_request_deadline_s()
-        if deadline_s is not None:
-            remaining_s = max(1.0, deadline_s - time.perf_counter())
-            role_timeout = min(role_timeout, int(remaining_s))
+        role_timeout = self._clamp_timeout_to_request_budget(role_timeout)
 
         request = InferenceRequest(
             role=role,
@@ -379,7 +366,7 @@ class InferenceMixin:
                     deadline_s=self.get_request_deadline_s(),
                     request_tag=self.get_request_task_id(),
                 ):
-                    _clamp_request_timeout_to_deadline(request, self.get_request_deadline_s())
+                    request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
                     from src.inference_tap import (
                         is_active as _tap_active,
                         should_stream_role as _tap_should_stream_role,
@@ -547,7 +534,8 @@ class InferenceMixin:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_idx = {}
             for i, prompt in enumerate(prompts):
-                future = executor.submit(self._real_call, prompt, role)
+                ctx = contextvars.copy_context()
+                future = executor.submit(ctx.run, self._real_call, prompt, role)
                 future_to_idx[future] = i
 
             # Collect results in order
@@ -582,16 +570,21 @@ class InferenceMixin:
         try:
             # Run async batch in sync context
             loop = asyncio.get_event_loop()
+            timeout_s = self._remaining_deadline_s()
+            batch_coro = self.worker_pool.batch(prompts, task_type=task_type)
+            if timeout_s is not None:
+                timeout_s = max(1.0, timeout_s)
+                batch_coro = asyncio.wait_for(batch_coro, timeout=timeout_s)
+                self._budget_diagnostics["budget_applied"] = True
+                self._budget_diagnostics["timeout_clamp_events"] += 1
             if loop.is_running():
                 # If we're already in an async context, create a new task
                 import nest_asyncio
 
                 nest_asyncio.apply()
-                results = loop.run_until_complete(
-                    self.worker_pool.batch(prompts, task_type=task_type)
-                )
+                results = loop.run_until_complete(batch_coro)
             else:
-                results = asyncio.run(self.worker_pool.batch(prompts, task_type=task_type))
+                results = asyncio.run(batch_coro)
             return results
         except Exception as e:
             # Fall back to standard batch if worker pool fails
@@ -609,7 +602,7 @@ class InferenceMixin:
 
         with ThreadPoolExecutor(max_workers=self.config.batch_parallelism) as executor:
             future_to_idx = {
-                executor.submit(self._real_call, prompt, role): i
+                executor.submit(contextvars.copy_context().run, self._real_call, prompt, role): i
                 for i, prompt in enumerate(prompts)
             }
 
@@ -656,10 +649,7 @@ class InferenceMixin:
             timeout=self.config.call_timeout,
             stream=True,  # Enable streaming for per-token monitoring
         )
-        deadline_s = self.get_request_deadline_s()
-        if deadline_s is not None:
-            remaining_s = max(1.0, deadline_s - time.perf_counter())
-            request.timeout = min(request.timeout, int(remaining_s))
+        request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
 
         output_tokens = []
         from src.inference_lock import inference_lock
@@ -670,7 +660,7 @@ class InferenceMixin:
             deadline_s=self.get_request_deadline_s(),
             request_tag=self.get_request_task_id(),
         ):
-            _clamp_request_timeout_to_deadline(request, self.get_request_deadline_s())
+            request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
             for token_id, logits in self.model_server.infer_stream(role, request):
                 output_tokens.append(token_id)
 

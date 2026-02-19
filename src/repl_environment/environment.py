@@ -11,6 +11,7 @@ import io
 import os
 import signal
 import threading
+import time
 import uuid
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
@@ -726,6 +727,7 @@ class REPLEnvironment(
                 "parallel_mutations_enabled": self._tool_chain_parallel_mutations,
                 "waves": 0,
                 "steps": len(tool_calls),
+                "wave_timeline": [],
             }
             # Check if ALL tool calls are read-only — if so, allow parallel execution
             # Read-only tools (grep, peek, list_dir, etc.) are safe to run concurrently
@@ -808,6 +810,16 @@ class REPLEnvironment(
                         "fallback_to_seq": False,
                         "waves": 1,
                         "steps": len(parallel_calls),
+                        "wave_timeline": [
+                            {
+                                "wave_index": 0,
+                                "tools": [c.func_name for c in parallel_calls],
+                                "mode_used": "parallel_read_only",
+                                "elapsed_ms": None,
+                                "fallback_to_seq": False,
+                                "parallel_mutations_enabled": False,
+                            }
+                        ],
                     }
                     results = execute_parallel_calls(
                         parallel_calls, self._globals, self._state_lock
@@ -1052,6 +1064,7 @@ class REPLEnvironment(
             obs_parts.append(f"[{key}]: {val}")
 
         for wave in waves:
+            wave_started = time.perf_counter()
             wave_steps = [step_by_idx[i] for i in sorted(wave)]
             parallel_calls: list[tuple[dict[str, Any], _ParallelCall]] = []
             serial_steps: list[tuple[dict[str, Any], list[Any], dict[str, Any]]] = []
@@ -1105,6 +1118,22 @@ class REPLEnvironment(
                         elapsed_seconds=time.perf_counter() - start_time,
                     )
                 _record_result(s, val)
+
+            wave_elapsed_ms = (time.perf_counter() - wave_started) * 1000.0
+            if self._active_tool_chain_meta is not None:
+                self._active_tool_chain_meta.setdefault("wave_timeline", []).append(
+                    {
+                        "wave_index": len(self._active_tool_chain_meta.get("wave_timeline", [])),
+                        "tools": [str(s["func_name"]) for s in wave_steps],
+                        "mode_used": "dep",
+                        "elapsed_ms": round(wave_elapsed_ms, 1),
+                        "fallback_to_seq": False,
+                        "parallel_mutations_enabled": bool(
+                            self._tool_chain_parallel_mutations
+                            and any(s["parallel_mutation_candidate"] for s in wave_steps)
+                        ),
+                    }
+                )
 
         if self._active_tool_chain_meta is not None:
             self._active_tool_chain_meta["mode_used"] = "dep"

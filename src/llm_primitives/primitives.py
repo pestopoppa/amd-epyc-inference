@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import json
+import os
 import threading
 import time
 from typing import Any
@@ -51,6 +53,9 @@ class LLMPrimitives(
         "boilerplate": "worker_coder",
         "transform": "worker_coder",
     }
+
+    _DEFAULT_DEPTH_ROLE_OVERRIDES = {1: "worker_general"}
+    _DEFAULT_DEPTH_OVERRIDE_MAX_DEPTH = 3
 
     def __init__(
         self,
@@ -101,6 +106,21 @@ class LLMPrimitives(
         if not mock_mode and server_urls:
             self._init_caching_backends(server_urls, num_slots)
 
+        # Accurate token counting via llama-server /tokenize (C2)
+        self._tokenizer = None
+        try:
+            from src.features import features as _get_features
+
+            if _get_features().accurate_token_counting and not mock_mode and server_urls:
+                from .tokenizer import LlamaTokenizer
+
+                # Use first available server URL for tokenization
+                first_url = next(iter(server_urls.values()), None)
+                if first_url:
+                    self._tokenizer = LlamaTokenizer(base_url=first_url)
+        except Exception:
+            self._tokenizer = None
+
         # Call log for debugging and testing
         self.call_log: list[CallLogEntry] = []
 
@@ -139,6 +159,30 @@ class LLMPrimitives(
             "llm_primitives_request_task_id",
             default=None,
         )
+        self._budget_diagnostics: dict[str, Any] = {
+            "deadline_present": False,
+            "budget_applied": False,
+            "deadline_remaining_ms_start": None,
+            "deadline_remaining_ms_end": None,
+            "timeout_clamp_events": 0,
+            "depth_override_enabled": False,
+            "depth_override_events": 0,
+            "depth_override_roles": [],
+            "depth_override_skip_events": 0,
+            "depth_override_skip_reasons": [],
+        }
+        self._depth_model_overrides_enabled = False
+        self._depth_role_overrides: dict[int, str] = {}
+        self._depth_override_max_depth = self._DEFAULT_DEPTH_OVERRIDE_MAX_DEPTH
+        try:
+            from src.features import features as _get_features
+
+            self._depth_model_overrides_enabled = bool(_get_features().depth_model_overrides)
+        except Exception:
+            self._depth_model_overrides_enabled = False
+        if self._depth_model_overrides_enabled:
+            self._depth_role_overrides = self._load_depth_role_overrides()
+            self._depth_override_max_depth = self._load_depth_override_max_depth()
 
         # Per-query cost tracking
         self._current_query = None
@@ -188,15 +232,173 @@ class LLMPrimitives(
         task_id: str | None = None,
     ):
         """Bind cancellation/deadline metadata to the current request context."""
+        start_remaining_ms = None
+        if deadline_s is not None:
+            start_remaining_ms = max(0.0, (deadline_s - time.perf_counter()) * 1000.0)
+        self._budget_diagnostics = {
+            "deadline_present": deadline_s is not None,
+            "budget_applied": False,
+            "deadline_remaining_ms_start": round(start_remaining_ms, 1)
+            if start_remaining_ms is not None
+            else None,
+            "deadline_remaining_ms_end": None,
+            "timeout_clamp_events": 0,
+            "depth_override_enabled": self._depth_model_overrides_enabled,
+            "depth_override_events": 0,
+            "depth_override_roles": [],
+            "depth_override_skip_events": 0,
+            "depth_override_skip_reasons": [],
+        }
         token_cancel = self._request_cancel_check_ctx.set(cancel_check)
         token_deadline = self._request_deadline_s_ctx.set(deadline_s)
         token_task = self._request_task_id_ctx.set(task_id)
         try:
             yield
         finally:
+            end_remaining_ms = None
+            if deadline_s is not None:
+                end_remaining_ms = max(0.0, (deadline_s - time.perf_counter()) * 1000.0)
+            self._budget_diagnostics["deadline_remaining_ms_end"] = (
+                round(end_remaining_ms, 1) if end_remaining_ms is not None else None
+            )
             self._request_cancel_check_ctx.reset(token_cancel)
             self._request_deadline_s_ctx.reset(token_deadline)
             self._request_task_id_ctx.reset(token_task)
+
+    def _remaining_deadline_s(self) -> float | None:
+        """Return remaining request deadline in seconds, if any."""
+        deadline_s = self.get_request_deadline_s()
+        if deadline_s is None:
+            return None
+        return max(0.0, deadline_s - time.perf_counter())
+
+    def _bind_current_context(self, fn, *args, **kwargs):
+        """Bind current contextvars to a callable for thread/executor execution."""
+        ctx = contextvars.copy_context()
+
+        def _runner():
+            return ctx.run(fn, *args, **kwargs)
+
+        return _runner
+
+    def _load_depth_role_overrides(self) -> dict[int, str]:
+        """Load depth->role overrides from config (env fallback) with sane defaults."""
+        raw = ""
+        try:
+            from src.config import get_config
+
+            raw = str(get_config().llm.depth_role_overrides or "").strip()
+        except Exception:
+            raw = ""
+        if not raw:
+            raw = os.environ.get("ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES", "").strip()
+        if not raw:
+            return dict(self._DEFAULT_DEPTH_ROLE_OVERRIDES)
+
+        parsed: dict[int, str] = {}
+        # JSON object format: {"1":"worker_general","2":"worker_math"}
+        if raw.startswith("{"):
+            try:
+                obj = json.loads(raw)
+                if isinstance(obj, dict):
+                    for key, value in obj.items():
+                        depth = int(key)
+                        role = str(value).strip()
+                        if depth >= 1 and role:
+                            parsed[depth] = role
+            except Exception:
+                parsed = {}
+        else:
+            # CSV format: "1:worker_general,2:worker_math"
+            for item in raw.split(","):
+                item = item.strip()
+                if not item or ":" not in item:
+                    continue
+                d_raw, r_raw = item.split(":", 1)
+                try:
+                    depth = int(d_raw.strip())
+                except ValueError:
+                    continue
+                role = r_raw.strip()
+                if depth >= 1 and role:
+                    parsed[depth] = role
+
+        if not parsed:
+            return dict(self._DEFAULT_DEPTH_ROLE_OVERRIDES)
+        return parsed
+
+    def _load_depth_override_max_depth(self) -> int:
+        """Load max depth eligible for override routing."""
+        raw: Any = None
+        try:
+            from src.config import get_config
+
+            raw = get_config().llm.depth_override_max_depth
+        except Exception:
+            raw = None
+        if raw is None:
+            raw = os.environ.get("ORCHESTRATOR_LLM_DEPTH_OVERRIDE_MAX_DEPTH", "").strip()
+        try:
+            max_depth = int(raw)
+        except Exception:
+            max_depth = self._DEFAULT_DEPTH_OVERRIDE_MAX_DEPTH
+        return max(1, max_depth)
+
+    def _record_depth_override_skip(self, reason: str) -> None:
+        self._budget_diagnostics["depth_override_skip_events"] += 1
+        reasons = self._budget_diagnostics.get("depth_override_skip_reasons")
+        if isinstance(reasons, list) and reason not in reasons:
+            reasons.append(reason)
+
+    def _resolve_depth_override_role(self, role: str) -> str:
+        """Resolve role override for nested llm_call depth when feature is enabled."""
+        if not self._depth_model_overrides_enabled:
+            return role
+        # llm_call increments _recursion_depth before dispatch.
+        # depth=0 means the caller level (no override).
+        depth = max(0, self._recursion_depth - 1)
+        if depth <= 0:
+            return role
+        if depth > self._depth_override_max_depth:
+            self._record_depth_override_skip("over_max_depth")
+            return role
+
+        # Exact depth override wins. Otherwise use depth-1 baseline if configured.
+        override_role = self._depth_role_overrides.get(depth) or self._depth_role_overrides.get(1)
+        if not override_role:
+            self._record_depth_override_skip("no_override_for_depth")
+            return role
+        # Depth overrides should remain on the worker tier for predictable cost/latency.
+        if not override_role.startswith("worker_"):
+            self._record_depth_override_skip("non_worker_target")
+            return role
+        # Keep behavior safe: if override role backend is unavailable, preserve requested role.
+        if self.server_urls and override_role not in self.server_urls:
+            self._record_depth_override_skip("target_backend_unavailable")
+            return role
+        self._budget_diagnostics["depth_override_events"] += 1
+        roles = self._budget_diagnostics.get("depth_override_roles")
+        if isinstance(roles, list):
+            role_edge = f"{role}->{override_role}"
+            if role_edge not in roles:
+                roles.append(role_edge)
+        return override_role
+
+    def _clamp_timeout_to_request_budget(self, timeout_s: int | float) -> int:
+        """Clamp timeout using request deadline and record diagnostics."""
+        timeout_f = max(1.0, float(timeout_s))
+        remaining_s = self._remaining_deadline_s()
+        if remaining_s is None:
+            return int(timeout_f)
+        clamped_f = max(1.0, min(timeout_f, remaining_s))
+        if clamped_f < timeout_f:
+            self._budget_diagnostics["budget_applied"] = True
+            self._budget_diagnostics["timeout_clamp_events"] += 1
+        return int(clamped_f)
+
+    def get_budget_diagnostics(self) -> dict[str, Any]:
+        """Return request-budget telemetry for current response diagnostics."""
+        return dict(self._budget_diagnostics)
 
     @contextlib.contextmanager
     def _acquire_role(self, role: str):
@@ -327,8 +529,9 @@ class LLMPrimitives(
             if self.mock_mode:
                 result = self._mock_call(full_prompt, role)
             else:
+                role_for_call = self._resolve_depth_override_role(role)
                 result = self._real_call(
-                    full_prompt, role, n_tokens, stop_sequences,
+                    full_prompt, role_for_call, n_tokens, stop_sequences,
                     json_schema=json_schema, grammar=grammar,
                 )
 
@@ -429,10 +632,7 @@ class LLMPrimitives(
             role_timeout = get_config().timeouts.role_timeouts_dict().get(
                 role, self.config.call_timeout
             )
-            deadline_s = self.get_request_deadline_s()
-            if deadline_s is not None:
-                remaining_s = max(1.0, deadline_s - time.perf_counter())
-                role_timeout = min(role_timeout, int(remaining_s))
+            role_timeout = self._clamp_timeout_to_request_budget(role_timeout)
             request = InferenceRequest(
                 role=role,
                 prompt=prompt,
@@ -452,8 +652,7 @@ class LLMPrimitives(
             ):
                 deadline_s = self.get_request_deadline_s()
                 if deadline_s is not None:
-                    remaining_s = max(1.0, deadline_s - time.perf_counter())
-                    request.timeout = min(int(request.timeout), int(remaining_s))
+                    request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
                 for chunk in backend.infer_stream_text(None, request):
                     yield chunk.text if hasattr(chunk, "text") else str(chunk)
         else:
@@ -584,7 +783,10 @@ class LLMPrimitives(
                     # Real mode: run calls in parallel using asyncio
                     loop = asyncio.get_event_loop()
                     tasks = [
-                        loop.run_in_executor(None, self._real_call, prompt, role)
+                        loop.run_in_executor(
+                            None,
+                            self._bind_current_context(self._real_call, prompt, role),
+                        )
                         for prompt in prompts
                     ]
                     results = await asyncio.gather(*tasks, return_exceptions=True)

@@ -14,7 +14,7 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -134,7 +134,7 @@ class DocumentCache:
 
         # Compute hash
         file_hash = SessionDocument.compute_file_hash(file_path)
-        cached_at = datetime.utcnow().isoformat()
+        cached_at = datetime.now(timezone.utc).isoformat()
 
         # Serialize result (excludes image_base64)
         result_json = json.dumps(result.to_cache_dict())
@@ -162,7 +162,7 @@ class DocumentCache:
                 session_id=self.session_id,
                 file_path=str(file_path),
                 file_hash=file_hash,
-                processed_at=datetime.utcnow(),
+                processed_at=datetime.now(timezone.utc),
                 total_pages=result.total_pages,
                 cache_path=str(self.cache_db_path.relative_to(SESSION_STATE_DIR.parent)),
             )

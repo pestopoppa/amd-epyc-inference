@@ -396,9 +396,34 @@ Also update `docs/reference/models/QUIRKS.md` to clarify: BOS mismatch affects d
 
 1. ~~**Does `--moe-n-expert` compose with `--lookup` in llama-server?**~~ ANSWERED: Yes, 30B MoE6+spec+lookup = 47.11 t/s (Phase 1).
 2. ~~**KV cache interaction**~~ ANSWERED: Works correctly — verified across all tested models in Phase 1.
-3. **Phase 2 query formulation**: How much does first-20-token re-query improve over keyword-only retrieval? Needs ablation study.
-4. **The Stack v1 licensing**: Verify our use case (inference acceleration, not redistribution) is covered. (Using v1 not v2.)
-5. **SoftMatcha v2 GloVe embeddings**: For code, are GloVe word vectors meaningful? May need exact-only matching for code corpus.
+3. **Phase 2 query formulation**: How much does first-20-token re-query improve over keyword-only retrieval? Needs ablation study. (Low priority — current keyword-only retrieval already delivers +16%/+72% speed gains.)
+4. ~~**The Stack v1 licensing**~~ N/A: Inference acceleration (n-gram matching), not redistribution. No concern.
+5. **SoftMatcha v2 GloVe embeddings for code** — Q5 EVALUATION IN PROGRESS
+   - **Hypothesis**: GloVe (Wikipedia/Gigaword) has poor coverage of code tokens. Most identifiers, operators, and language-specific keywords will be OOV. SoftMatcha assigns 0.0 similarity to OOV tokens — they can never soft-match. FastText (subword-aware, character n-grams) may fare better.
+   - **SoftMatcha v2** installed at `/mnt/raid0/llm/tmp/softmatcha2/` (v0.1.0, ICLR 2025, Apache 2.0)
+     - OOV handling: assigns 0.0 similarity — hard constraint, not soft fallback
+     - Supported backends: GloVe (gensim), FastText (subword n-grams), HuggingFace transformers
+     - Index format: HDF5 (inverted file + embeddings). ~30x text size. Separate from V3 SQLite corpus.
+     - Tokenizer: Moses word-level (default, via sacremoses). No built-in code tokenizer.
+     - AVX-512 optimized matrix multiplication (Turin CPU advantage)
+   - **Key architectural difference from V3 corpus**: V3 does exact 4-gram text lookup in SQLite; SoftMatcha does fuzzy token-level matching via cosine similarity against pre-computed embeddings
+   - **Evaluation script**: `scripts/benchmark/glove_code_coverage.py` — samples ~1000 snippets from V3 corpus, measures GloVe + FastText vocabulary coverage with per-language and per-category breakdown
+   - **Decision tree**: Both <10% → CLOSED. GloVe <10%, FastText 10-30% → evaluate if useful identifiers covered. Either >30% → build test index, evaluate retrieval quality.
+   - **Embedding models**: `glove-wiki-gigaword-300` (400K vocab, `/mnt/raid0/llm/cache/gensim-data/`), `cc.en.300` (2M known vocab + subword, `/mnt/raid0/llm/cache/fasttext/cc.en.300.bin`)
+   - **Coverage results (2026-02-19)**: Hypothesis WRONG — coverage much higher than expected:
+     - GloVe: **79.2%** overall (C++: 79.3%, Python: 78.0%, Rust: 84.4%)
+     - FastText known: **74.0%** (C++: 76.7%, Python: 69.8%, Rust: 80.6%)
+     - FastText subword: **86.1%** (C++: 87.1%, Python: 84.6%, Rust: 88.4%)
+   - **Per-category analysis** (the nuanced picture):
+     - operators/punctuation: ~100% all models (trivial — `(`, `)`, `,`, `:` are in any vocab)
+     - keywords: GloVe 97.9%, FastText 100% (`def`, `class`, `return` are English words)
+     - common identifiers: ~99-100% (`data`, `model`, `result` — again, English words)
+     - compound identifiers: GloVe 66.8% (inflated by `_`), FastText known **2.9%**, FastText subword 13.2%
+     - "other" (code-specific misc): GloVe 57.5%, FastText known 65.7%, FastText subword 93.9%
+   - **Key insight**: High overall coverage is dominated by tokens that would match exactly anyway (operators, English keywords). The actual code-specific compound identifiers (`self.assertEqual`, `camelCase`, `getData`) have <3% coverage in FastText known vocab. GloVe's 66.8% compound coverage is inflated by `_` alone (19,960 of 30,109 compound tokens).
+   - **Moses tokenizer artifact**: Top OOV tokens are XML entities (`&quot;`, `&apos;`, `&gt;`, `&#91;`) from sacremoses XML-escaping — not actual code vocabulary gaps.
+   - **Decision tree outcome**: Coverage >30% → proceed to Step 2 (build test SoftMatcha index, compare exact vs soft matching). However, the coverage analysis suggests soft matching may not add much beyond what exact n-gram matching already captures, since the well-covered tokens are trivially matchable.
+   - **Full results**: `benchmarks/results/runs/q5_coverage/results.json`
 
 ---
 
@@ -445,7 +470,7 @@ Phase 2A  →  A/B TESTED (2026-02-15), CORPUS SCALED (2026-02-17)
               │   graph_shortest: 100% acceptance on 32B (50.3 t/s, perfect n-gram match)
               │
               └─ 480B COMPLETE (2026-02-19): +1.4% speed, quality +1.25 (PASS but marginal)
-                  NOT enabled in production — 480B's own knowledge already yields high acceptance
+                  Already enabled in registry (line 400) from prior A/B (+15.6pp). V3 confirms no regression.
 
 Phase 2B-Quality → RAG-augmented generation for worker models
               |
@@ -486,9 +511,48 @@ Phase 2B-Quality → RAG-augmented generation for worker models
                   NOT drop-in replacements (require OpenHands tool-use format).
                   Potential future: worker_swe_agent role if tool-use issues persist.
 
-Phase 2B-Sidecar → Sidecar draft injection in llama.cpp (1-2 weeks)
+Phase 2B-Sidecar → Sidecar draft injection in llama.cpp
               |
-              └─ Only if Phase 2A shows >10% acceptance improvement
+              ├─ APPROVED (2026-02-19): Develop on llama.cpp-experimental branch
+              │   Latency budget: corpus query <1ms vs ~50-80ms draft cycle = no bottleneck
+              │   If sidecar works, Q#3 (first-20-token re-query) becomes moot —
+              │   sidecar inherently re-queries using latest generated tokens each cycle.
+              │
+              ├─ IMPLEMENTED (2026-02-19): Branch feature/corpus-sidecar
+              │   Architecture: new COMMON_SPECULATIVE_TYPE_CORPUS_SIDECAR plugin
+              │   (NOT server-context.cpp hack — uses pluggable speculative framework)
+              │   Files created:
+              │     common/corpus-sidecar.h + .cpp — SQLite sidecar query layer
+              │     common/md5.h — minimal MD5 for shard routing (matches Python indexer)
+              │     tests/test-corpus-sidecar.cpp — MD5, DB init, shard routing tests (all pass)
+              │   Files modified:
+              │     common/common.h — enum + corpus params in common_params_speculative
+              │     common/speculative.cpp — new state impl + init wiring (blocking/pre-query/async modes)
+              │     common/arg.cpp — --corpus-path, --corpus-refresh, --corpus-snippets, --spec-type corpus-sidecar
+              │     common/CMakeLists.txt — LLAMA_CORPUS_SIDECAR option + SQLite3 dep
+              │     tests/CMakeLists.txt — conditional test target
+              │   Build: cmake -DLLAMA_CORPUS_SIDECAR=ON (off by default, zero impact on normal builds)
+              │   Tests: all pass (MD5 cross-validated against Python hashlib)
+              │
+              ├─ BENCHMARKED (2026-02-19): 30B on v3_sharded corpus — ALL MODES NEGATIVE
+              │   | Mode                        | Avg t/s | vs Baseline | vs Phase 2A |
+              │   |-----------------------------|---------|-------------|-------------|
+              │   | Phase 2A (prompt injection)  | 29.9    | +16%        | —           |
+              │   | Pre-query (--corpus-refresh 0)| 26.0   | +1%         | -13%        |
+              │   | Async (--corpus-refresh -1)  | 25.8    | 0%          | -14%        |
+              │   | Blocking (--corpus-refresh 64)| 24.9   | -3%         | -17%        |
+              │   | Blocking + ngram_cache       | 23.6    | -8%         | -21%        |
+              │
+              │   Root cause: corpus n-grams injected into nc_static via
+              │   common_ngram_cache_update don't match draft model proposals.
+              │   Phase 2A works because injected prompt tokens ARE the context
+              │   the model naturally matches against — sidecar tokenizes externally.
+              │   Blocking mode also adds 24s of SQLite I/O per request.
+              │
+              └─ CLOSED (2026-02-19): Sidecar inferior to Phase 2A prompt injection.
+                  Phase 2A remains the production approach (+16%/+72% on 30B/32B).
+                  Branch feature/corpus-sidecar preserved for future reference.
+                  No cherry-pick to production.
 ```
 
 ---

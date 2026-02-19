@@ -1,6 +1,6 @@
 # Research Chapters Index
 
-28 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
+29 chapters documenting AMD EPYC 9655 inference optimization, orchestration architecture, and intelligence systems.
 
 ## Reading Paths
 
@@ -89,6 +89,7 @@ Novel contributions (recommended reading order):
 | 26 | [Claude-in-the-Loop Debugger](26-claude-debugger.md) | 12 anomaly signals, hot-swap fixes, 3-phase regression |
 | 27 | [SkillBank & Experience Distillation](27-skillbank-experience-distillation.md) | Structured skill library, teacher distillation, recursive evolution |
 | 28 | [Calibration and Risk Control](28-calibration-and-risk-control.md) | ECE/Brier/coverage/risk metrics + conformal thresholding |
+| 29 | [Programmatic Tool Chaining](29-programmatic-tool-chaining.md) | Deferred tool results, safe chaining, cross-request REPL persistence |
 
 ---
 

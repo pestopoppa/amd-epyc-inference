@@ -184,6 +184,16 @@ class TestClaudeDebuggerPromptBuilding:
                     "fallback_to_seq": False,
                     "parallel_mutations_enabled": True,
                     "success": True,
+                    "wave_timeline": [
+                        {
+                            "wave_index": 0,
+                            "tools": ["run_shell", "run_shell"],
+                            "mode_used": "dep",
+                            "elapsed_ms": 210.4,
+                            "fallback_to_seq": False,
+                            "parallel_mutations_enabled": True,
+                        }
+                    ],
                 }
             ],
         )
@@ -193,6 +203,78 @@ class TestClaudeDebuggerPromptBuilding:
         assert "mode=dep->dep" in prompt
         assert "waves=1" in prompt
         assert "parallel_mutations=True" in prompt
+        assert "wave#0" in prompt
+        assert "elapsed_ms=210.4" in prompt
+
+    def test_prompt_includes_delegation_phase_timeline(self, tmp_path: Path):
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=1, dry_run=True)
+        debugger.batch_count = 2
+        diag = _make_diag(
+            "q1",
+            role="architect_coding",
+            mode="delegated",
+            delegation_diagnostics={
+                "break_reason": "specialist_report",
+                "effective_max_loops": 2,
+                "phases": [
+                    {"loop": 1, "phase": "A", "ms": 420, "decision": "delegate", "computation_turns": 1},
+                    {
+                        "loop": 1,
+                        "phase": "B",
+                        "ms": 18300,
+                        "delegate_to": "coder_escalation",
+                        "delegate_mode": "tool",
+                    },
+                ],
+            },
+        )
+        prompt = debugger._build_prompt([diag])
+        assert "delegation_timeline" in prompt
+        assert "loop=1 phase=A elapsed_ms=420 decision=delegate turns=1" in prompt
+        assert "loop=1 phase=B elapsed_ms=18300 target=coder_escalation delegate_mode=tool" in prompt
+
+    def test_prompt_includes_wave_timeline_header_for_multi_wave(self, tmp_path: Path):
+        debugger = ClaudeDebugger(project_root=tmp_path, batch_size=1, dry_run=True)
+        debugger.batch_count = 2
+        diag = _make_diag(
+            "q1",
+            tools_used=3,
+            tools_called=["peek", "grep", "file_write_safe"],
+            tool_chains=[
+                {
+                    "chain_id": "ch_multi",
+                    "tools": ["peek", "grep", "file_write_safe"],
+                    "mode_requested": "dep",
+                    "mode_used": "dep",
+                    "waves": 2,
+                    "fallback_to_seq": False,
+                    "parallel_mutations_enabled": False,
+                    "success": True,
+                    "wave_timeline": [
+                        {
+                            "wave_index": 0,
+                            "tools": ["peek", "grep"],
+                            "mode_used": "dep",
+                            "elapsed_ms": 98.1,
+                            "fallback_to_seq": False,
+                            "parallel_mutations_enabled": False,
+                        },
+                        {
+                            "wave_index": 1,
+                            "tools": ["file_write_safe"],
+                            "mode_used": "dep",
+                            "elapsed_ms": 201.7,
+                            "fallback_to_seq": False,
+                            "parallel_mutations_enabled": False,
+                        },
+                    ],
+                }
+            ],
+        )
+        prompt = debugger._build_prompt([diag])
+        assert "wave_timeline" in prompt
+        assert "wave#0 tools=peek,grep" in prompt
+        assert "wave#1 tools=file_write_safe" in prompt
 
     def test_tap_inlined_when_present(self, tmp_path: Path):
         """Diagnostic with tap data + tap file present → inlined in prompt."""

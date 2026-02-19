@@ -11,7 +11,12 @@ from src.session.models import (
     Session,
     SessionDocument,
 )
-from src.session.protocol import BaseSessionStore, WhereFilter
+from src.session.protocol import (
+    BaseSessionStore,
+    CHECKPOINT_PROTOCOL_CURRENT_VERSION,
+    WhereFilter,
+    normalize_checkpoint_for_repl_restore,
+)
 
 
 class TestWhereFilter:
@@ -232,14 +237,14 @@ class TestBaseSessionStore:
         test_file = tmp_path / "test.txt"
         test_file.write_text("test content")
 
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         doc = SessionDocument(
             id="doc1",
             session_id=session.id,
             file_path=str(test_file),
             file_hash=SessionDocument.compute_file_hash(test_file),
-            processed_at=datetime.utcnow(),
+            processed_at=datetime.now(timezone.utc),
         )
         store.add_document(doc)
 
@@ -248,7 +253,7 @@ class TestBaseSessionStore:
             session_id=session.id,
             content="Test finding",
             source=FindingSource.USER_MARKED,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         store.add_finding(finding)
 
@@ -265,6 +270,36 @@ class TestBaseSessionStore:
         """Test build_resume_context returns None for missing session."""
         context = store.build_resume_context("nonexistent")
         assert context is None
+
+
+class TestCheckpointProtocolNormalization:
+    def test_normalize_legacy_payload_missing_version(self):
+        payload = {
+            "artifacts": {"a": 1},
+            "execution_count": 3,
+            "exploration_calls": 1,
+            "user_globals": {"x": 1},
+        }
+        normalized, diag = normalize_checkpoint_for_repl_restore(payload)
+        assert normalized["version"] == 1
+        assert normalized["user_globals"]["x"] == 1
+        assert diag["source_version"] == 0
+        assert diag["compat_mode"] == "legacy_upgrade"
+        assert diag["version_present"] is False
+
+    def test_normalize_forward_payload_drops_unknown_fields(self):
+        payload = {
+            "protocol_version": CHECKPOINT_PROTOCOL_CURRENT_VERSION + 1,
+            "artifacts": {},
+            "execution_count": 0,
+            "exploration_calls": 0,
+            "future_field": {"x": "y"},
+        }
+        normalized, diag = normalize_checkpoint_for_repl_restore(payload)
+        assert normalized["version"] == 1
+        assert "future_field" not in normalized
+        assert diag["compat_mode"] == "forward_downgrade"
+        assert "future_field" in diag["dropped_fields"]
 
 
 class TestSessionStoreProtocol:

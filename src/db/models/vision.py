@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Generator
 
 from sqlalchemy import (
@@ -72,7 +72,7 @@ class Photo(Base):
     location_lon = Column(Float)
     camera = Column(String(128))
     description = Column(Text)
-    indexed_at = Column(DateTime, default=datetime.utcnow)
+    indexed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     faces = relationship("Face", back_populates="photo", cascade="all, delete-orphan")
@@ -131,7 +131,7 @@ class Person(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(256))
     photo_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     faces = relationship("Face", back_populates="person")
@@ -162,7 +162,7 @@ class Video(Base):
     width = Column(Integer)
     height = Column(Integer)
     fps = Column(Float)
-    indexed_at = Column(DateTime, default=datetime.utcnow)
+    indexed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     frames = relationship("VideoFrame", back_populates="video", cascade="all, delete-orphan")

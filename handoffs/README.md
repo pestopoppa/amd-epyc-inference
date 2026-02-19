@@ -39,30 +39,17 @@ When a handoff task is complete, follow this checklist:
 
 ## Current Active Handoffs
 
-35 handoffs in `active/`. Key active items:
+7 handoffs in `active/`. Key active items:
 
 | Handoff | Purpose | Status |
 |---------|---------|--------|
-| [middleware-hardening-trio.md](active/middleware-hardening-trio.md) | Credential redaction + script interception + cascading tool policy (from Clawzempic/OpenClaw gap analysis) | READY FOR IMPLEMENTATION |
-| [programmatic-tool-chaining.md](active/programmatic-tool-chaining.md) | Deferred tool results + multi-mutation chaining + persistent REPL sessions (from Anthropic API analysis) | RESEARCH COMPLETE |
-| [inference-lock-starvation-bug.md](active/inference-lock-starvation-bug.md) | Lock contention diagnosis + bounded wait + embedder isolation | Active (mitigated, quality follow-up) |
-| [perf-parallel-tools-concurrent-sweep-prefix-cache.md](active/perf-parallel-tools-concurrent-sweep-prefix-cache.md) | Parallel read-only tools, concurrent sweep, prefix cache | IMPLEMENTED |
-| [orchestration-architecture-optimization-handoff.md](active/orchestration-architecture-optimization-handoff.md) | Risk-controlled posterior routing + telemetry hardening | COMPLETE (100% review coverage) |
-| [hybrid-lookup-spec-decode.md](active/hybrid-lookup-spec-decode.md) | Prompt lookup + spec decode + corpus | Phase 2A SHIPPED, 2B ABANDONED |
-| [seed-routing-decomposition.md](active/seed-routing-decomposition.md) | Seed specialist routing decomposition | IN PROGRESS |
-| [orchestration-roadmap.md](active/orchestration-roadmap.md) | Orchestration phases 6-8 | Active |
-| [simpleqa-debugger-agency.md](active/simpleqa-debugger-agency.md) | SimpleQA 0% fix, debugger action bias | IMPLEMENTED |
-| [vision-pipeline.md](active/vision-pipeline.md) | Vision pipeline chat integration | NEEDS LIVE VALIDATION |
-| [skillbank-distillation.md](active/skillbank-distillation.md) | Skill distillation pipeline | SPEC COMPLETE |
-| [nextplaid-code-retrieval.md](active/nextplaid-code-retrieval.md) | NextPLAID code retrieval | Active |
-| [nextplaid-phase5-upgrade.md](active/nextplaid-phase5-upgrade.md) | NextPLAID phase 5 upgrade | Active |
-| [minicpm-o-4_5-integration.md](active/minicpm-o-4_5-integration.md) | MiniCPM-o multimodal integration | Active |
-| [classifier-refactoring.md](active/classifier-refactoring.md) | Classifier refactoring | READY TO IMPLEMENT |
-| [qwen3-tts-voice-synthesis.md](active/qwen3-tts-voice-synthesis.md) | TTS voice synthesis | BLOCKED (audio quality) |
-| [agent-files-refactor-complete.md](active/agent-files-refactor-complete.md) | Agent prompt architecture & governance | COMPLETE |
-| [ui-consolidated.md](active/ui-consolidated.md) | UI index & evaluation reference | Active |
-| [infra-seeding-regression.md](active/infra-seeding-regression.md) | Seeding infrastructure regression | Active |
-| [open_source_orchestrator.md](active/open_source_orchestrator.md) | Open source orchestrator | STUB (future) |
+| [rlm-orchestrator-roadmap.md](active/rlm-orchestrator-roadmap.md) | Consolidated orchestrator roadmap and integration sequencing | Active |
+| [hybrid-lookup-spec-decode.md](active/hybrid-lookup-spec-decode.md) | Prompt lookup + speculative decode + corpus strategy | Active |
+| [routing-intelligence.md](active/routing-intelligence.md) | Routing quality and decision-policy improvements | Active |
+| [skillbank-distillation.md](active/skillbank-distillation.md) | Skill distillation/evolution planning | Active |
+| [multimodal-pipeline.md](active/multimodal-pipeline.md) | Multimodal and vision pipeline enhancements | Active |
+| [claude-code-local-constellation-routing.md](active/claude-code-local-constellation-routing.md) | Claude Code local constellation routing behavior | Active |
+| [open_source_orchestrator.md](active/open_source_orchestrator.md) | Open-source packaging and public orchestrator path | Active |
 
 > Note: Several COMPLETE handoffs need extraction per lifecycle above. Run `ls handoffs/active/` for full listing.
 

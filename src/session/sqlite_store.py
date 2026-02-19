@@ -13,7 +13,7 @@ import json
 import logging
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -909,7 +909,7 @@ class SQLiteSessionStore(BaseSessionStore):
                 INSERT INTO embeddings (id, session_id, content_type, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (idx, session_id, content_type, datetime.utcnow().isoformat()),
+                (idx, session_id, content_type, datetime.now(timezone.utc).isoformat()),
             )
             conn.commit()
 

@@ -92,6 +92,7 @@ def _env_str(name: str, default: str) -> str:
 
 # Registry timeout cache (avoids repeated YAML parsing)
 _REGISTRY_TIMEOUTS_CACHE: dict[str, int | float] | None = None
+_REGISTRY_RUNTIME_DEFAULTS_CACHE: dict[str, Any] | None = None
 
 
 def _load_registry_timeouts() -> dict[str, int | float]:
@@ -152,6 +153,33 @@ def _registry_timeout(category: str, key: str, fallback: int | float) -> int | f
     return fallback
 
 
+def _load_registry_runtime_defaults() -> dict[str, Any]:
+    """Load runtime_defaults block from registry (cached)."""
+    global _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    if _REGISTRY_RUNTIME_DEFAULTS_CACHE is not None:
+        return _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    try:
+        from src.registry_loader import RegistryLoader
+
+        registry = RegistryLoader(validate_paths=False, allow_missing=True)
+        _REGISTRY_RUNTIME_DEFAULTS_CACHE = dict(registry._runtime_defaults or {})
+        return _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    except Exception as e:
+        logger.debug("Registry runtime defaults unavailable, using hardcoded fallbacks: %s", e)
+        _REGISTRY_RUNTIME_DEFAULTS_CACHE = {}
+        return {}
+
+
+def _registry_runtime_value(path: tuple[str, ...], fallback: Any) -> Any:
+    """Get nested runtime_defaults value by path, with fallback."""
+    cur: Any = _load_registry_runtime_defaults()
+    for key in path:
+        if not isinstance(cur, dict) or key not in cur:
+            return fallback
+        cur = cur[key]
+    return cur
+
+
 # ============================================================================
 # Configuration Dataclasses
 # ============================================================================
@@ -184,6 +212,18 @@ class LLMConfig:
 
     qwen_stop_token: str = "<|im_end|>"
     """Qwen chat-template stop token to prevent runaway generation."""
+
+    depth_role_overrides: str = field(
+        default_factory=lambda: str(
+            _registry_runtime_value(("llm", "depth_role_overrides"), "1:worker_general")
+        )
+    )
+    """Optional depth->role override map (CSV or JSON), e.g. "1:worker_general,2:worker_math"."""
+
+    depth_override_max_depth: int = field(
+        default_factory=lambda: int(_registry_runtime_value(("llm", "depth_override_max_depth"), 3))
+    )
+    """Maximum nested depth eligible for override routing."""
 
 
 @dataclass
@@ -790,6 +830,12 @@ class ChatPipelineConfig:
     plan_review_phase_c_skip_rate: float = 0.90
     """Fraction of reviews skipped in Phase C (spot-check)."""
 
+    # Session compaction tuning (C1 virtual memory pattern)
+    session_compaction_keep_recent_ratio: float = 0.20
+    """Fraction of context to keep verbatim after compaction (default 20%, min 3000 chars)."""
+    session_compaction_recompaction_interval: int = 0
+    """Re-trigger compaction every N turns after first compaction. 0 = disabled."""
+
     # Try-cheap-first: speculative pre-filter using 7B worker before specialist.
     # Phase A = try all, Phase B = MemRL-guided, Phase C = fully learned.
     try_cheap_first_enabled: bool = True
@@ -1200,6 +1246,12 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         default_prompt_rate: float = 0.50
         default_completion_rate: float = 1.50
         qwen_stop_token: str = "<|im_end|>"
+        depth_role_overrides: str = str(
+            _registry_runtime_value(("llm", "depth_role_overrides"), "1:worker_general")
+        )
+        depth_override_max_depth: int = int(
+            _registry_runtime_value(("llm", "depth_override_max_depth"), 3)
+        )
 
         model_config = SettingsConfigDict(
             env_prefix="ORCHESTRATOR_LLM_",
@@ -1318,6 +1370,8 @@ if PYDANTIC_SETTINGS_AVAILABLE:
         plan_review_phase_c_min_q: float = 0.7
         plan_review_phase_c_min_total: int = 100
         plan_review_phase_c_skip_rate: float = 0.90
+        session_compaction_keep_recent_ratio: float = 0.20
+        session_compaction_recompaction_interval: int = 0
 
         model_config = SettingsConfigDict(
             env_prefix="ORCHESTRATOR_CHAT_",
@@ -1492,6 +1546,14 @@ def _load_from_env() -> OrchestratorConfigData:
             default_prompt_rate=_env_float(f"{P}LLM_DEFAULT_PROMPT_RATE", 0.50),
             default_completion_rate=_env_float(f"{P}LLM_DEFAULT_COMPLETION_RATE", 1.50),
             qwen_stop_token=_env_str(f"{P}LLM_QWEN_STOP_TOKEN", "<|im_end|>"),
+            depth_role_overrides=_env_str(
+                f"{P}LLM_DEPTH_ROLE_OVERRIDES",
+                str(_registry_runtime_value(("llm", "depth_role_overrides"), "1:worker_general")),
+            ),
+            depth_override_max_depth=_env_int(
+                f"{P}LLM_DEPTH_OVERRIDE_MAX_DEPTH",
+                int(_registry_runtime_value(("llm", "depth_override_max_depth"), 3)),
+            ),
         ),
         escalation=EscalationConfigData(
             max_retries=_env_int(f"{P}ESCALATION_MAX_RETRIES", 2),
@@ -1634,6 +1696,12 @@ def _load_from_env() -> OrchestratorConfigData:
             long_context_enabled=_env_bool(f"{P}CHAT_LONG_CONTEXT_ENABLED", True),
             long_context_threshold_chars=_env_int(f"{P}CHAT_LONG_CONTEXT_THRESHOLD_CHARS", 20000),
             long_context_max_turns=_env_int(f"{P}CHAT_LONG_CONTEXT_MAX_TURNS", 8),
+            session_compaction_keep_recent_ratio=_env_float(
+                f"{P}CHAT_SESSION_COMPACTION_KEEP_RECENT_RATIO", 0.20
+            ),
+            session_compaction_recompaction_interval=_env_int(
+                f"{P}CHAT_SESSION_COMPACTION_RECOMPACTION_INTERVAL", 0
+            ),
         ),
         memrl_retrieval=MemRLRetrievalConfigData(
             semantic_k=_env_int(f"{P}MEMRL_RETRIEVAL_SEMANTIC_K", 20),
@@ -1747,6 +1815,8 @@ def get_config() -> OrchestratorConfigData:
                 default_prompt_rate=settings.llm.default_prompt_rate,
                 default_completion_rate=settings.llm.default_completion_rate,
                 qwen_stop_token=settings.llm.qwen_stop_token,
+                depth_role_overrides=settings.llm.depth_role_overrides,
+                depth_override_max_depth=settings.llm.depth_override_max_depth,
             ),
             escalation=EscalationConfigData(
                 max_retries=settings.escalation.max_retries,
@@ -1853,6 +1923,8 @@ def get_config() -> OrchestratorConfigData:
                 plan_review_phase_c_min_q=settings.chat.plan_review_phase_c_min_q,
                 plan_review_phase_c_min_total=settings.chat.plan_review_phase_c_min_total,
                 plan_review_phase_c_skip_rate=settings.chat.plan_review_phase_c_skip_rate,
+                session_compaction_keep_recent_ratio=settings.chat.session_compaction_keep_recent_ratio,
+                session_compaction_recompaction_interval=settings.chat.session_compaction_recompaction_interval,
             ),
             memrl_retrieval=MemRLRetrievalConfigData(
                 semantic_k=settings.memrl_retrieval.semantic_k,
@@ -1929,6 +2001,8 @@ def reset_config() -> None:
 
     Call this if environment variables change during runtime.
     """
+    global _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    _REGISTRY_RUNTIME_DEFAULTS_CACHE = None
     get_config.cache_clear()
 
 

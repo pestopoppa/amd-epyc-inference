@@ -10,7 +10,7 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -165,8 +165,8 @@ class Session:
     tags: list[str] = field(default_factory=list)
     status: SessionStatus = SessionStatus.ACTIVE
     # Timestamps
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    last_active: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_active: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_checkpoint_at: datetime | None = None
     # Conversation tracking
     message_count: int = 0
@@ -213,7 +213,7 @@ class Session:
 
     def update_activity(self) -> None:
         """Update last_active timestamp and recalculate status."""
-        self.last_active = datetime.utcnow()
+        self.last_active = datetime.now(timezone.utc)
         self._update_status()
 
     def _update_status(self) -> None:
@@ -221,8 +221,12 @@ class Session:
         if self.status == SessionStatus.ARCHIVED:
             return  # Don't auto-change archived sessions
 
-        now = datetime.utcnow()
-        idle_hours = (now - self.last_active).total_seconds() / 3600
+        now = datetime.now(timezone.utc)
+        last_active = self.last_active
+        if last_active.tzinfo is None:
+            # Backward compatibility for legacy naive timestamps persisted as UTC.
+            last_active = last_active.replace(tzinfo=timezone.utc)
+        idle_hours = (now - last_active).total_seconds() / 3600
 
         if idle_hours < _ACTIVE_TO_IDLE_HOURS:
             self.status = SessionStatus.ACTIVE
@@ -305,6 +309,9 @@ class Checkpoint:
     user_globals: dict[str, Any] = field(default_factory=dict)
     variable_lineage: dict[str, dict[str, Any]] = field(default_factory=dict)
     skipped_user_globals: list[str] = field(default_factory=list)
+    # Session checkpoint payload protocol version for restore compatibility.
+    # 0 indicates legacy payloads that did not persist explicit version metadata.
+    protocol_version: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize for storage."""
@@ -321,6 +328,7 @@ class Checkpoint:
             "user_globals": self.user_globals,
             "variable_lineage": self.variable_lineage,
             "skipped_user_globals": self.skipped_user_globals,
+            "protocol_version": self.protocol_version,
         }
 
     @classmethod
@@ -339,6 +347,7 @@ class Checkpoint:
             user_globals=data.get("user_globals", {}),
             variable_lineage=data.get("variable_lineage", {}),
             skipped_user_globals=data.get("skipped_user_globals", []),
+            protocol_version=int(data.get("protocol_version", 0) or 0),
         )
 
 

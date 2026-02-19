@@ -5,7 +5,7 @@ Focus on checkpoint triggers, finding sync, and lifecycle events.
 """
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 
@@ -31,8 +31,8 @@ class TestSessionPersisterInit:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -49,8 +49,8 @@ class TestSessionPersisterInit:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -77,8 +77,8 @@ class TestOnTurn:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -95,8 +95,8 @@ class TestOnTurn:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -114,8 +114,8 @@ class TestOnTurn:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -143,8 +143,8 @@ class TestShouldCheckpoint:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -164,8 +164,8 @@ class TestShouldCheckpoint:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -186,8 +186,8 @@ class TestSaveCheckpoint:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -217,8 +217,8 @@ class TestSaveCheckpoint:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -240,8 +240,8 @@ class TestSaveCheckpoint:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -263,8 +263,8 @@ class TestSaveCheckpoint:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -296,8 +296,8 @@ class TestSyncFindings:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -317,8 +317,8 @@ class TestSyncFindings:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -351,8 +351,8 @@ class TestHeuristicFindings:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -370,8 +370,8 @@ class TestHeuristicFindings:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -393,8 +393,8 @@ class TestHeuristicFindings:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -416,8 +416,8 @@ class TestCheckIdle:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -433,8 +433,8 @@ class TestCheckIdle:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -454,8 +454,8 @@ class TestCheckIdle:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow() - timedelta(hours=SUMMARY_IDLE_HOURS + 1),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc) - timedelta(hours=SUMMARY_IDLE_HOURS + 1),
         )
         session_store.get_session.return_value = mock_session
         session_store.get_findings.return_value = []
@@ -482,8 +482,8 @@ class TestGenerateSummary:
             task_id="task_456",
             name="Test Session",
             message_count=10,
-            created_at=datetime.utcnow() - timedelta(hours=2),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
         session_store.get_findings.return_value = []
@@ -503,8 +503,8 @@ class TestGenerateSummary:
             id="sess_123",
             task_id="task_456",
             message_count=5,
-            created_at=datetime.utcnow() - timedelta(hours=1),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
         session_store.get_findings.return_value = []
@@ -528,8 +528,8 @@ class TestLifecycleEvents:
             id="sess_123",
             task_id="task_456",
             name="New Session",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -546,8 +546,8 @@ class TestLifecycleEvents:
         mock_session = Session(
             id="sess_123",
             task_id="task_789",  # New task ID after fork
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -565,8 +565,8 @@ class TestLifecycleEvents:
             id="sess_123",
             task_id="task_456",
             message_count=20,
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
         session_store.get_findings.return_value = []
@@ -596,8 +596,8 @@ class TestIdleMonitor:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -614,8 +614,8 @@ class TestIdleMonitor:
         mock_session = Session(
             id="sess_123",
             task_id="task_456",
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
 
@@ -633,8 +633,8 @@ class TestIdleMonitor:
             id="sess_123",
             task_id="task_456",
             status=SessionStatus.ACTIVE,
-            created_at=datetime.utcnow(),
-            last_active=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            last_active=datetime.now(timezone.utc),
         )
         session_store.get_session.return_value = mock_session
         session_store.list_sessions.return_value = [mock_session]

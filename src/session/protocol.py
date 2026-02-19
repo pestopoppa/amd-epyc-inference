@@ -36,6 +36,98 @@ logger = logging.getLogger(__name__)
 WhereFilter = dict[str, Any]
 
 
+# Checkpoint payload protocol consumed by REPL restore().
+# Version 0: legacy payloads without explicit protocol_version.
+# Version 1: explicit protocol_version field + current normalized shape.
+CHECKPOINT_PROTOCOL_CURRENT_VERSION = 1
+CHECKPOINT_PROTOCOL_LEGACY_VERSION = 0
+
+# Fields expected by REPL restore() payload normalization.
+CHECKPOINT_RESTORE_REQUIRED_FIELDS = (
+    "artifacts",
+    "execution_count",
+    "exploration_calls",
+)
+CHECKPOINT_RESTORE_OPTIONAL_FIELDS = (
+    "exploration_tokens",
+    "exploration_events",
+    "grep_hits_buffer",
+    "findings_buffer",
+    "context_length",
+    "task_id",
+    "research_context",
+    "user_globals",
+    "variable_lineage",
+    "skipped_user_globals",
+)
+
+
+def normalize_checkpoint_for_repl_restore(
+    payload: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Normalize persisted checkpoint payload to REPL restore schema v1.
+
+    Compatibility behavior:
+    - Missing protocol_version is treated as legacy v0 and upgraded.
+    - Older versions are best-effort upgraded to v1.
+    - Newer versions are best-effort downgraded to v1 by dropping unknown fields.
+    """
+    raw = dict(payload or {})
+    protocol_raw = raw.get("protocol_version")
+    parse_error = False
+    if protocol_raw is None:
+        source_version = CHECKPOINT_PROTOCOL_LEGACY_VERSION
+    else:
+        try:
+            source_version = int(protocol_raw)
+        except Exception:
+            source_version = CHECKPOINT_PROTOCOL_LEGACY_VERSION
+            parse_error = True
+
+    known_fields = set(CHECKPOINT_RESTORE_REQUIRED_FIELDS) | set(CHECKPOINT_RESTORE_OPTIONAL_FIELDS)
+    known_fields.update({"version", "protocol_version", "id", "session_id", "created_at", "context_hash", "message_count", "trigger"})
+    dropped_fields: list[str] = []
+
+    normalized = dict(raw)
+    if source_version > CHECKPOINT_PROTOCOL_CURRENT_VERSION:
+        for key in list(normalized.keys()):
+            if key not in known_fields:
+                dropped_fields.append(key)
+                normalized.pop(key, None)
+
+    # REPL restore() currently expects version=1.
+    normalized["version"] = 1
+    normalized.setdefault("artifacts", {})
+    normalized.setdefault("execution_count", 0)
+    normalized.setdefault("exploration_calls", 0)
+    normalized.setdefault("user_globals", {})
+    normalized.setdefault("variable_lineage", {})
+    normalized.setdefault("skipped_user_globals", [])
+
+    missing_required = [
+        key for key in CHECKPOINT_RESTORE_REQUIRED_FIELDS
+        if key not in raw
+    ]
+
+    if source_version == CHECKPOINT_PROTOCOL_CURRENT_VERSION and not parse_error:
+        compat_mode = "exact"
+    elif source_version > CHECKPOINT_PROTOCOL_CURRENT_VERSION:
+        compat_mode = "forward_downgrade"
+    else:
+        compat_mode = "legacy_upgrade"
+
+    diagnostics = {
+        "source_version": source_version,
+        "target_version": CHECKPOINT_PROTOCOL_CURRENT_VERSION,
+        "version_present": protocol_raw is not None,
+        "parse_error": parse_error,
+        "compat_mode": compat_mode,
+        "dropped_fields": dropped_fields,
+        "missing_required_fields": missing_required,
+    }
+    return normalized, diagnostics
+
+
 @runtime_checkable
 class SessionStore(Protocol):
     """Abstract interface for session persistence.

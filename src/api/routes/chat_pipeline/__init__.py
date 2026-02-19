@@ -39,6 +39,7 @@ from src.api.routes.chat_pipeline.stages import (
     _execute_mock,
     _execute_react,
     _annotate_error,
+    _attach_budget_diagnostics,
 )
 from src.api.routes.chat_pipeline.vision_stage import _execute_vision, _execute_vision_multimodal
 from src.api.routes.chat_pipeline.delegation_stage import _execute_delegated
@@ -71,4 +72,5 @@ __all__ = [
     "_execute_direct",
     "_execute_repl",
     "_annotate_error",
+    "_attach_budget_diagnostics",
 ]

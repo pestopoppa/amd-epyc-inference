@@ -33,7 +33,7 @@ import argparse
 import json
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def format_datetime(dt_str: str) -> str:
     """Format ISO datetime for display."""
     try:
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         delta = now - dt.replace(tzinfo=None)
 
         if delta.days == 0:

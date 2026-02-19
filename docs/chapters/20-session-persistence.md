@@ -12,6 +12,8 @@ The session persistence system enables long-running conversations that survive c
 
 The system was implemented in 7 phases (2026-01-21 to 2026-01-26) and uses SQLite + numpy for efficient storage.
 
+**Cross-reference: Context compaction** — When session compaction fires (C1 in `src/graph/helpers.py`), full context is externalized to `/mnt/raid0/llm/tmp/session_{id}_ctx_{n}.md` and tracked via `TaskState.context_file_paths`. These files are not managed by the session persistence layer directly but are referenced by the compaction index so the model can `read_file()` them on demand. See Chapter 10 "Session Compaction" for details.
+
 ## Architecture Overview
 
 The persistence layer is split into five components, each owning a single responsibility. `SessionPersister` decides *when* to checkpoint, `SQLiteSessionStore` handles *where* the data lands, and `DocumentCache` avoids expensive OCR re-runs. Data classes live in `models.py`, and a CLI wraps everything for interactive use.
@@ -476,6 +478,14 @@ Phase 3 extends checkpoints to persist user-defined REPL globals across separate
   - `skipped_user_globals` (non-serializable values).
 - `REPLEnvironment.restore()` rebuilds builtins, then merges checkpoint user globals.
 - `SQLiteSessionStore` persists these fields in `checkpoints` with additive migration for existing databases.
+- Checkpoint restore now uses an explicit protocol compatibility boundary:
+  - `protocol_version` persisted on checkpoint payloads (`v1` current),
+  - missing version is treated as legacy `v0` and upgraded,
+  - newer versions are downgraded best-effort to REPL restore schema (`version=1`) with unknown fields dropped.
+- `/chat` response diagnostics now include `session_persistence.restore_protocol`:
+  - `source_version`, `target_version`,
+  - `compat_mode` (`exact`, `legacy_upgrade`, `forward_downgrade`),
+  - `missing_required_fields`, `dropped_fields`.
 - `SessionPersister` applies payload limits:
   - warning at ~50MB,
   - hard cap at ~100MB with oldest-variable eviction.

@@ -48,6 +48,23 @@ numactl --interleave=all \
   -t 96 -f prompt_with_source_material.txt
 ```
 
+### Corpus Sidecar (Phase 2B, llama.cpp-experimental)
+
+```bash
+# Build with corpus sidecar support
+cd /mnt/raid0/llm/llama.cpp-experimental
+cmake -B build -DLLAMA_CORPUS_SIDECAR=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j 96
+
+# Server with corpus sidecar speculation
+numactl --interleave=all ./build/bin/llama-server \
+  -m /path/to/model.gguf \
+  --spec-type corpus-sidecar \
+  --corpus-path /mnt/raid0/llm/cache/corpus/v3_sharded \
+  --corpus-refresh 64 --corpus-snippets 8 \
+  -t 96 -c 16384 --port 9081
+```
+
 ### SSM Model (Expert Reduction ONLY)
 
 ```bash

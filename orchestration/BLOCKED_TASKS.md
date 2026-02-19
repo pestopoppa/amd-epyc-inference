@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-17 (SimpleQA 0% fix: web_search, F1 scoring, architect delegation, debugger agency)
+**Last Updated**: 2026-02-19 (Delethink research integration into context-window-management)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -11,7 +11,7 @@
 |------|------------|----------|---------|--------|
 | **Security Audit: GGUF Vulns** | CVE verification on prod | **CRITICAL** | `handoffs/active/security_audit_orchestration_stack.md` | ✅ PARTIAL (P0 fixed: localhost binding) |
 | **MTP Refactoring** | PR #15225 merge | **HIGH** | `research/mtp_investigation.md` | ✅ PLAN READY |
-| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 📋 Phases 1-5 done, 6-8 pending |
+| **RLM Orchestrator Roadmap** | — | **HIGH** | `handoffs/active/rlm-orchestrator-roadmap.md` | 🔥 ACTIVE refresh complete. Closed: R1, R2, R3, R5, R6, Phase 6 load-validation. Open: Phase 7 hyperparameter tuning (D5/D6 deferred). |
 | **Cmprsr Prompt Compression** | Cmprsr weights release | **HIGH** | `handoffs/active/cmprsr_prompt_compression.md` | 📋 NEW (weights unavailable) |
 | **Draft model benchmarks** | — | **HIGH** | `handoffs/active/draft-benchmark.md` | 📋 PARTIAL (Gemma-3 + Qwen3-1.7B→32B done, 5 combos remaining) |
 | **Formalizer eval** | — | **HIGH** | `handoffs/active/formalizer-evaluation.md` | 📋 READY (not yet executed) |
@@ -33,7 +33,8 @@
 | **JSON Canvas + Plugin Architecture** | — | **MEDIUM** | `handoffs/active/json-canvas-plugin-architecture.md` | 📋 NEW (visual reasoning + MCP tool plugins) |
 | **Replay Evaluation Harness** | — | **HIGH** | `handoffs/active/replay-evaluation-harness.md` | ✅ IMPLEMENTATION COMPLETE (8/8 phases done, 75 unit tests passing, 3386 full suite. Live smoke tests + baseline replay run pending.) |
 | **Orchestrator Intelligence Improvements** | — | **HIGH** | `handoffs/active/orchestrator-intelligence-improvements.md` | ✅ COMPLETE (7/7 improvements implemented, 3746 tests pass). Live validation pending (seeding with new tunables). |
-| **Perf: Parallel Tools + Concurrent Sweep + Prefix Cache** | — | **HIGH** | `handoffs/active/perf-parallel-tools-concurrent-sweep-prefix-cache.md` | 🔥 ACTIVE. 3 workstreams: parallel read-only tool dispatch (WS1), concurrent inference sweep (WS2), prefix cache optimization (WS3A/B/C). |
+| **Perf: Parallel Tools + Concurrent Sweep + Prefix Cache** | Live servers for sweep | **HIGH** | `handoffs/active/perf-parallel-tools-concurrent-sweep-prefix-cache.md` | 🔥 ACTIVE. WS1+WS3A/B/C implemented (commit 882aaa0). Remaining: run concurrent sweep (WS2), validate escalation compression quality, verify pre-warmer hit rate. |
+| **Context Window Management & Compaction** | — | **HIGH** | `handoffs/active/context-window-management.md` | ✅ IMPLEMENTED (C2→C3→C1→C4 all done + Delethink research integration: P1 state carryover, P2 configurable ratio, P3 recompaction interval). 1568 tests pass. Live validation pending. |
 | **Nightshift Automated Maintenance** | Permission model fix | **HIGH** | `nightshift.yaml` + `scripts/nightshift/` | ⚠️ FIRST RUN FAILED. All 7 tasks hit 3-iteration limit with "permission denied" (analysis-only mode). Feb 16 instant exits (status 2) — likely hook failures from dirty git state. Needs: permission config for write-capable staging branch, or task redefinition to stdout/log output. |
 
 ---
@@ -247,9 +248,9 @@ print(scorer.score_pending_tasks())
 | 3 | Escalation Integration | ✅ COMPLETE | Phase 1 |
 | 4 | Formalizer Integration | ✅ COMPLETE | Phase 3 |
 | 5 | Tool/Script Completion | ✅ COMPLETE (44 tools wired, MCP server + client done, invoke() + find_scripts() done) | None |
-| 6 | Early Failure Detection | READY | Phase 3 |
-| 7 | Hyperparameter Tuning | BLOCKED | Benchmarks |
-| 8 | Trajectory Visualization | LOW | Phase 2 |
+| 6 | Early Failure Detection | ✅ IMPLEMENTED (needs fresh contention evidence) | Phase 3 |
+| 7 | Hyperparameter Tuning | 🟡 PARTIAL (framework exists, closure evidence pending) | Benchmarks |
+| 8 | Trajectory Visualization | 🟡 PARTIAL (debugger diagnostics upgraded; full wave-level UX pending) | Phase 2 |
 
 ### Phase 1: Backend Completion (COMPLETE - 2026-01-14)
 - [x] Complete LlamaServerBackend HTTP (`src/backends/llama_server.py`)
@@ -303,19 +304,19 @@ To test: `llama-server -m MODEL.gguf --host 0.0.0.0 --port 8080` then call API w
 - [x] Script `find_scripts()` method (`src/script_registry.py:225-300` — fuzzy search with category/tag filters)
 
 ### Phase 6: Early Failure Detection
-- [ ] Wire GenerationMonitor (`src/llm_primitives.py`)
-- [ ] Add entropy thresholds to registry (`model_registry.yaml`)
-- [ ] Early abort trigger (`src/llm_primitives.py`)
+- [x] Generation monitor path exists (`src/generation_monitor.py`, `llm_call_monitored`)
+- [x] Feature gating and pipeline wiring (`src/features.py`, `src/api/routes/chat_pipeline/stages.py`)
+- [ ] Closure evidence under live contention/delegation load
 
 ### Phase 7: Hyperparameter Tuning
-- [ ] Sweep framework (`scripts/benchmark/sweep_hyperparams.py`)
-- [ ] Temperature sweep per task type
-- [ ] Expert count optimization
+- [x] Benchmark infrastructure and dataset adapters exist
+- [ ] Consolidated roadmap-owned sweep output artifact (temperature/top_p/expert-count by role)
+- [ ] Promote selected tunables into documented runtime defaults with before/after evidence
 
 ### Phase 8: Trajectory Visualization
-- [ ] Enhanced SSE events (`src/api.py`)
-- [ ] Trajectory logging (`src/llm_primitives.py`)
-- [ ] Gradio visualization tab (`src/gradio_ui.py`)
+- [x] Debugger includes chain diagnostics (`tool_chains`) and execution metadata
+- [ ] Standardize wave-level schema + timeline rendering in debugger
+- [ ] Optional UI surfacing (Gradio/API visualization) after schema is stable
 
 ---
 

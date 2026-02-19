@@ -13,11 +13,10 @@ keeping Q-value computation off the critical inference path.
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -152,7 +151,7 @@ class QScorer:
             Summary of scoring results
         """
         # Check minimum interval
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if self._last_score_time:
             elapsed = (now - self._last_score_time).total_seconds()
             if elapsed < self.config.min_score_interval_seconds:

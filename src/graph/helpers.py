@@ -522,11 +522,121 @@ def _maybe_compress_for_escalation(prompt: str, state: "TaskState") -> str:
         return prompt
 
 
-async def _maybe_compact_context(ctx: Ctx) -> None:
-    """Compact old context entries if conversation is long (OpenClaw pattern).
+def _clear_stale_tool_outputs(
+    state: TaskState,
+    keep_recent: int = 2,
+    context_ratio_trigger: float = 0.4,
+    max_context_tokens: int = 0,
+) -> int:
+    """Strip old <<<TOOL_OUTPUT>>>...<<<END_TOOL_OUTPUT>>> blocks from last_output.
 
-    Trigger: turns > 5 AND context > 12000 chars AND primitives available.
-    Uses worker_summarize role (44 t/s) for cheap, fast compression.
+    Keeps the last ``keep_recent`` blocks verbatim, replaces older ones
+    with ``[Tool result cleared]`` placeholders.
+
+    Args:
+        state: Current task state (modifies ``state.last_output`` in place).
+        keep_recent: Number of most-recent tool output blocks to preserve.
+        context_ratio_trigger: Only clear when context exceeds this fraction
+            of ``max_context_tokens``.  Set to 0 to always clear.
+        max_context_tokens: Model's max context size in tokens.  When 0,
+            uses a char-count heuristic (12000 chars ≈ 3000 tokens).
+
+    Returns:
+        Estimated tokens freed by clearing.
+    """
+    from src.features import features as _get_features
+
+    if not _get_features().tool_result_clearing:
+        return 0
+
+    text = state.last_output
+    if not text:
+        return 0
+
+    # Gate: only fire when context is large enough to matter
+    if max_context_tokens > 0:
+        ctx_tokens = len(state.context) // 4  # rough estimate
+        if ctx_tokens < max_context_tokens * context_ratio_trigger:
+            return 0
+    else:
+        if len(state.context) < 12000:
+            return 0
+
+    # Find all <<<TOOL_OUTPUT>>>...<<<END_TOOL_OUTPUT>>> blocks
+    pattern = re.compile(
+        r"<<<TOOL_OUTPUT>>>(.*?)<<<END_TOOL_OUTPUT>>>",
+        re.DOTALL,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) <= keep_recent:
+        return 0
+
+    # Replace older blocks (all except last keep_recent)
+    blocks_to_clear = matches[: -keep_recent] if keep_recent > 0 else matches
+    tokens_freed = 0
+
+    # Build replacement from end to start to preserve offsets
+    new_text = text
+    for match in reversed(blocks_to_clear):
+        old_block = match.group(0)
+        tokens_freed += len(old_block) // 4
+        new_text = new_text[: match.start()] + "[Tool result cleared]" + new_text[match.end() :]
+
+    state.last_output = new_text
+    return tokens_freed
+
+
+def _resolve_compaction_prompt() -> str:
+    """Load the compaction index prompt from hot-swappable file or use default."""
+    prompt_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "orchestration", "prompts", "compaction_index.md"
+    )
+    try:
+        with open(prompt_path) as f:
+            return f.read().strip()
+    except Exception:
+        return (
+            "Generate a structured index of the following conversation context. "
+            "List: topics discussed, decisions made, errors encountered and resolutions, "
+            "key file paths and variable names, and current work state. "
+            "Format as a bulleted outline. Be concise — this is a table of contents, "
+            "not a summary. Preserve all identifiers exactly."
+        )
+
+
+def _estimate_context_tokens(ctx: Ctx, text: str) -> int:
+    """Estimate token count using accurate tokenizer if available, else heuristic."""
+    primitives = ctx.deps.primitives
+    if primitives is not None and hasattr(primitives, "_count_tokens"):
+        return primitives._count_tokens(text)
+    return len(text) // 4
+
+
+def _get_model_max_context(ctx: Ctx) -> int:
+    """Get model max context from registry or use a safe default."""
+    try:
+        primitives = ctx.deps.primitives
+        if primitives is not None and hasattr(primitives, "registry") and primitives.registry:
+            role = str(ctx.state.current_role)
+            role_cfg = primitives.registry.get_role_config(role)
+            if role_cfg and hasattr(role_cfg, "n_ctx"):
+                return int(role_cfg.n_ctx)
+    except Exception:
+        pass
+    return 32768  # Safe default
+
+
+async def _maybe_compact_context(ctx: Ctx) -> None:
+    """Compact old context via context externalization (C1 enhanced).
+
+    Strategy: "virtual memory" pattern —
+    1. Dump full verbatim context to file (zero information loss)
+    2. Generate structured index/TOC via 7B worker (with line coordinates)
+    3. Keep recent ~20% of context verbatim in-context
+    4. Model can read_file() the dumped context to page in details
+
+    Trigger: token_count(context) > 60% of model max_context
+    Fallback: char heuristic (context > 12000 chars) when tokenizer unavailable.
     """
     from src.features import features as _get_features
 
@@ -534,46 +644,102 @@ async def _maybe_compact_context(ctx: Ctx) -> None:
         return
 
     state = ctx.state
-    if state.turns <= 5 or len(state.context) <= 12000:
+    if state.turns <= 5:
         return
     if ctx.deps.primitives is None:
         return
 
+    # Load compaction config
     try:
-        # Summarize old context, keep recent material
-        old_context = state.context
-        # Keep last 3000 chars verbatim
-        keep_verbatim = old_context[-3000:] if len(old_context) > 3000 else old_context
-        to_summarize = old_context[: -3000] if len(old_context) > 3000 else ""
+        from src.config import get_config
+        _chat_cfg = get_config().chat
+        keep_recent_ratio = _chat_cfg.session_compaction_keep_recent_ratio
+        recompaction_interval = _chat_cfg.session_compaction_recompaction_interval
+    except Exception:
+        keep_recent_ratio = 0.20
+        recompaction_interval = 0
 
-        if not to_summarize.strip():
+    # Token-aware trigger: 60% of model max context
+    model_max_ctx = _get_model_max_context(ctx)
+    context_tokens = _estimate_context_tokens(ctx, state.context)
+    trigger_threshold = int(model_max_ctx * 0.60)
+
+    should_compact = context_tokens >= trigger_threshold or len(state.context) > 12000
+
+    # Recompaction interval: also trigger if enough turns since last compaction
+    if (
+        not should_compact
+        and recompaction_interval > 0
+        and state.compaction_count > 0
+        and (state.turns - state.last_compaction_turn) >= recompaction_interval
+    ):
+        should_compact = True
+
+    if not should_compact:
+        return
+
+    try:
+        old_context = state.context
+        old_tokens = context_tokens
+
+        # Keep recent context verbatim (configurable ratio, min 3000 chars)
+        keep_chars = max(3000, int(len(old_context) * keep_recent_ratio))
+        keep_verbatim = old_context[-keep_chars:] if len(old_context) > keep_chars else old_context
+        to_externalize = old_context[:-keep_chars] if len(old_context) > keep_chars else ""
+
+        if not to_externalize.strip():
             return
 
-        summary_prompt = (
-            "Summarize the following conversation context into a concise paragraph "
-            "preserving all key facts, decisions, and error messages:\n\n"
-            f"{to_summarize[:8000]}"
-        )
+        # Step 1: Dump full context to file (zero information loss)
+        task_id = state.task_id or "unknown"
+        ctx_file_path = f"/mnt/raid0/llm/tmp/session_{task_id}_ctx_{state.compaction_count}.md"
+        try:
+            with open(ctx_file_path, "w") as f:
+                f.write(old_context)
+        except Exception as exc:
+            log.warning("Context externalization file write failed: %s", exc)
+            return
+
+        state.context_file_paths.append(ctx_file_path)
+
+        # Step 2: Generate structured index via worker_explore
+        index_prompt = _resolve_compaction_prompt()
+        full_index_prompt = f"{index_prompt}\n\n---\n\n{to_externalize}"
 
         if _use_inline_calls_in_tests():
-            summary = ctx.deps.primitives.llm_call(
-                summary_prompt,
-                role="worker_summarize",
+            index = ctx.deps.primitives.llm_call(
+                full_index_prompt,
+                role="worker_explore",
             )
         else:
-            summary = await asyncio.to_thread(
+            index = await asyncio.to_thread(
                 ctx.deps.primitives.llm_call,
-                summary_prompt,
-                role="worker_summarize",
+                full_index_prompt,
+                role="worker_explore",
             )
 
-        state.context = f"[Compacted context]\n{summary}\n\n[Recent]\n{keep_verbatim}"
+        # Step 3: Replace context with index + recent verbatim + read_file pointer
+        state.context = (
+            f"[Context Index (compaction #{state.compaction_count + 1})]\n"
+            f"{index}\n\n"
+            f"[Recent Context]\n"
+            f"{keep_verbatim}\n\n"
+            f'Full context available: read_file("{ctx_file_path}")'
+        )
+
         state.compaction_count += 1
+        state.last_compaction_turn = state.turns
+        new_tokens = _estimate_context_tokens(ctx, state.context)
+        tokens_saved = max(0, old_tokens - new_tokens)
+        state.compaction_tokens_saved += tokens_saved
+
         log.info(
-            "Session compaction #%d: %d → %d chars",
+            "Session compaction #%d: %d → %d tokens (%d saved), externalized to %s",
             state.compaction_count,
-            len(old_context),
-            len(state.context),
+            old_tokens,
+            new_tokens,
+            tokens_saved,
+            ctx_file_path,
         )
     except Exception as exc:
         log.debug("Session compaction failed (non-fatal): %s", exc)
@@ -687,6 +853,11 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     deps = ctx.deps
     state.turns += 1
     log.debug("_execute_turn: turn=%d, role=%s", state.turns, role)
+
+    # Clear stale tool outputs before compaction (C3)
+    tool_tokens_freed = _clear_stale_tool_outputs(state)
+    if tool_tokens_freed > 0:
+        log.info("Cleared stale tool outputs: ~%d tokens freed", tool_tokens_freed)
 
     # Session compaction before execution
     await _maybe_compact_context(ctx)

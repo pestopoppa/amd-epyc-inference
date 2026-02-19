@@ -784,6 +784,29 @@ class ClaudeDebugger:
                     f"avg_gen_ms={avg_gen_ms}, report_handles={report_handles}, "
                     f"report_ids={','.join(handle_ids[:3]) if handle_ids else 'none'}"
                 )
+                phases = deleg_diag.get("phases", []) or []
+                if phases:
+                    parts.append("  - delegation_timeline:")
+                    for phase in phases[:12]:
+                        if not isinstance(phase, dict):
+                            continue
+                        p_loop = phase.get("loop", "?")
+                        p_name = phase.get("phase", "?")
+                        p_decision = phase.get("decision", "")
+                        p_target = phase.get("delegate_to", "")
+                        p_mode = phase.get("delegate_mode", "")
+                        p_ms = phase.get("ms", "n/a")
+                        p_turns = phase.get("computation_turns", "")
+                        p_parts = [f"loop={p_loop}", f"phase={p_name}", f"elapsed_ms={p_ms}"]
+                        if p_decision:
+                            p_parts.append(f"decision={p_decision}")
+                        if p_target:
+                            p_parts.append(f"target={p_target}")
+                        if p_mode:
+                            p_parts.append(f"delegate_mode={p_mode}")
+                        if p_turns != "":
+                            p_parts.append(f"turns={p_turns}")
+                        parts.append(f"    - {' '.join(p_parts)}")
             parts.append(f"- **Tools**: {diag.get('tools_used', 0)} ({', '.join(diag.get('tools_called', []))})")
             tool_chains = diag.get("tool_chains", []) or []
             if tool_chains:
@@ -806,6 +829,25 @@ class ClaudeDebugger:
                         f"  - chain={cid} tools={tool_list} mode={mode_req}->{mode_used} "
                         f"waves={waves} fallback={fallback} parallel_mutations={par_mut} success={success}"
                     )
+                    wave_timeline = ch.get("wave_timeline", []) or []
+                    if wave_timeline:
+                        parts.append("    - wave_timeline:")
+                        for w in wave_timeline[:8]:
+                            if not isinstance(w, dict):
+                                continue
+                            w_idx = w.get("wave_index", "?")
+                            w_tools = w.get("tools", []) or []
+                            w_tool_list = ",".join(str(t) for t in w_tools[:4]) if w_tools else "none"
+                            if len(w_tools) > 4:
+                                w_tool_list += f"+{len(w_tools)-4}"
+                            w_mode = w.get("mode_used", mode_used)
+                            w_ms = w.get("elapsed_ms", "n/a")
+                            w_fallback = w.get("fallback_to_seq", fallback)
+                            w_par = w.get("parallel_mutations_enabled", par_mut)
+                            parts.append(
+                                f"    - wave#{w_idx} tools={w_tool_list} mode={w_mode} "
+                                f"elapsed_ms={w_ms} fallback={w_fallback} parallel_mutations={w_par}"
+                            )
 
             # Orchestrator intelligence tunables (only show when relevant)
             cost_dims = diag.get("cost_dimensions", {})

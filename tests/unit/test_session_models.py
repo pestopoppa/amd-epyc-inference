@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for src/session/models.py."""
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import src.session.models as session_models
 
@@ -68,7 +68,7 @@ class TestFindingModel:
             session_id="s1",
             content="Important insight",
             source=FindingSource.USER_MARKED,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             confidence=1.0,
             confirmed=True,
             tags=["important"],
@@ -91,7 +91,7 @@ class TestFindingModel:
             session_id="s1",
             content="Test",
             source=FindingSource.LLM_EXTRACTED,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             confidence=0.8,
         )
         finding_dict = finding.to_dict()
@@ -108,7 +108,7 @@ class TestFindingModel:
             "session_id": "s1",
             "content": "Test",
             "source": "user_marked",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "confidence": 0.9,
             "confirmed": False,
             "tags": ["tag1"],
@@ -134,7 +134,7 @@ class TestCheckpointSerialization:
         checkpoint = Checkpoint(
             id="cp1",
             session_id="s1",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             context_hash="sha256:abc123",
             artifacts={"key": "value"},
             execution_count=10,
@@ -151,13 +151,14 @@ class TestCheckpointSerialization:
         assert cp_dict["trigger"] == "turns"
         assert cp_dict["user_globals"] == {}
         assert cp_dict["variable_lineage"] == {}
+        assert cp_dict["protocol_version"] == 1
 
     def test_checkpoint_from_dict(self):
         """Test Checkpoint.from_dict() deserialization."""
         data = {
             "id": "cp1",
             "session_id": "s1",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "context_hash": "hash",
             "artifacts": {},
             "execution_count": 5,
@@ -171,12 +172,13 @@ class TestCheckpointSerialization:
         assert checkpoint.id == "cp1"
         assert checkpoint.execution_count == 5
         assert checkpoint.trigger == "explicit"
+        assert checkpoint.protocol_version == 0
 
     def test_checkpoint_roundtrip_with_globals(self):
         checkpoint = Checkpoint(
             id="cp2",
             session_id="s1",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             context_hash="hash",
             artifacts={},
             execution_count=1,
@@ -191,6 +193,23 @@ class TestCheckpointSerialization:
         assert restored.user_globals == {"x": 1}
         assert restored.variable_lineage["x"]["role"] == "frontdoor"
         assert restored.skipped_user_globals == ["fn_obj"]
+        assert restored.protocol_version == 1
+
+    def test_checkpoint_from_dict_legacy_missing_protocol_version(self):
+        data = {
+            "id": "cp_legacy",
+            "session_id": "s1",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "context_hash": "hash",
+            "artifacts": {},
+            "execution_count": 1,
+            "exploration_calls": 0,
+            "message_count": 1,
+            "trigger": "turns",
+        }
+
+        checkpoint = Checkpoint.from_dict(data)
+        assert checkpoint.protocol_version == 0
 
 
 class TestResumeContext:
@@ -199,7 +218,7 @@ class TestResumeContext:
         checkpoint = Checkpoint(
             id="cp",
             session_id=session.id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             context_hash="hash",
             artifacts={},
             execution_count=1,
@@ -276,14 +295,14 @@ class TestSessionStatus:
         monkeypatch.setattr(session_models, "_IDLE_TO_STALE_HOURS", 2.0)
         session = Session.create()
 
-        session.last_active = datetime.utcnow()
+        session.last_active = datetime.now(timezone.utc)
         session._update_status()
         assert session.status == SessionStatus.ACTIVE
 
-        session.last_active = datetime.fromtimestamp(datetime.utcnow().timestamp() - 3600)
+        session.last_active = datetime.now(timezone.utc) - timedelta(hours=1)
         session._update_status()
         assert session.status == SessionStatus.IDLE
 
-        session.last_active = datetime.fromtimestamp(datetime.utcnow().timestamp() - 3 * 3600)
+        session.last_active = datetime.now(timezone.utc) - timedelta(hours=3)
         session._update_status()
         assert session.status == SessionStatus.STALE

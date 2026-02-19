@@ -320,6 +320,7 @@ class TestFeatureValidation:
         assert "model_fallback" in summary
         assert "content_cache" in summary
         assert "session_compaction" in summary
+        assert "depth_model_overrides" in summary
         assert "resume_tokens" in summary
         assert "approval_gates" in summary
         assert "binding_routing" in summary

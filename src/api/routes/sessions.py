@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -258,7 +258,7 @@ async def add_finding(
         session_id=session_id,
         content=request.content,
         source=FindingSource.USER_MARKED,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         confidence=1.0,
         confirmed=True,
         tags=request.tags,

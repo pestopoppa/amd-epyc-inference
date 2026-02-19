@@ -12,7 +12,7 @@ import logging
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -42,7 +42,7 @@ class DesignCandidate:
     skill_config: Optional[SkillBankConfig] = None
     role_overrides: Optional[Dict[str, Dict[str, Any]]] = None
     notes: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @classmethod
     def default(cls) -> DesignCandidate:
@@ -56,7 +56,7 @@ class DesignCandidate:
             skill_config=SkillBankConfig(),
             role_overrides=None,
             notes="production baseline",
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
     def to_json(self) -> str:
@@ -104,7 +104,7 @@ class DesignCandidate:
             skill_config=skill_cfg,
             role_overrides=d.get("role_overrides"),
             notes=d.get("notes", ""),
-            created_at=datetime.fromisoformat(d["created_at"]) if d.get("created_at") else datetime.utcnow(),
+            created_at=datetime.fromisoformat(d["created_at"]) if d.get("created_at") else datetime.now(timezone.utc),
         )
 
 

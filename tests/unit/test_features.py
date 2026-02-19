@@ -55,6 +55,7 @@ class TestFeaturesDefaults:
         assert f.model_fallback is False
         assert f.content_cache is False
         assert f.session_compaction is False
+        assert f.depth_model_overrides is False
         assert f.resume_tokens is False
         assert f.approval_gates is False
         assert f.binding_routing is False
@@ -174,8 +175,9 @@ class TestFeaturesSummary:
             "personas", "staged_rewards", "input_formalizer",
             "generation_monitor", "semantic_classifiers", "unified_streaming",
             "side_effect_tracking", "structured_tool_output", "model_fallback",
-            "content_cache", "session_compaction", "resume_tokens",
-            "approval_gates", "binding_routing", "skillbank", "mock_mode",
+            "content_cache", "session_compaction", "depth_model_overrides", "resume_tokens",
+            "approval_gates", "binding_routing", "skillbank",
+            "accurate_token_counting", "tool_result_clearing", "mock_mode",
         }
         assert set(s.keys()) == expected_keys
 
@@ -237,6 +239,8 @@ class TestGetFeatures:
         assert f.scripts is True
         assert f.openai_compat is True
         assert f.repl is True
+        assert f.session_compaction is True
+        assert f.depth_model_overrides is True
 
     def test_override_applies(self):
         """Explicit override dict takes precedence over defaults."""

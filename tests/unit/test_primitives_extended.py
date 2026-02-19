@@ -364,3 +364,193 @@ class TestQueryCostTracking:
         # Should not raise
         prims.llm_call("Test", role="worker")
         prims.llm_batch(["P1"], role="worker")
+
+
+class TestDepthRoleOverrides:
+    """Tests for feature-gated depth-aware role overrides."""
+
+    def test_depth_override_applies_when_enabled(self):
+        with patch("src.features.features") as mock_features:
+            mock_features.return_value.depth_model_overrides = True
+            with patch.dict(
+                "os.environ",
+                {"ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES": "1:worker_math"},
+                clear=False,
+            ):
+                prims = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls={"worker_general": "http://localhost:8082", "worker_math": "http://localhost:8082"},
+                )
+
+                calls: list[str] = []
+
+                def _fake_real_call(prompt, role, n_tokens=-1, stop_sequences=None, json_schema=None, grammar=None):
+                    calls.append(role)
+                    if prims._recursion_depth == 1:
+                        return prims.llm_call("nested", role="worker_general")
+                    return "ok"
+
+                prims._real_call = _fake_real_call  # type: ignore[assignment]
+                _ = prims.llm_call("root", role="worker_general")
+
+                # First call (depth 0) keeps requested role; nested call uses override.
+                assert calls[0] == "worker_general"
+                assert calls[1] == "worker_math"
+
+    def test_depth_override_disabled_preserves_role(self):
+        with patch("src.features.features") as mock_features:
+            mock_features.return_value.depth_model_overrides = False
+            prims = LLMPrimitives(
+                mock_mode=False,
+                server_urls={"worker_general": "http://localhost:8082"},
+            )
+
+            calls: list[str] = []
+
+            def _fake_real_call(prompt, role, n_tokens=-1, stop_sequences=None, json_schema=None, grammar=None):
+                calls.append(role)
+                if prims._recursion_depth == 1:
+                    return prims.llm_call("nested", role="worker_general")
+                return "ok"
+
+            prims._real_call = _fake_real_call  # type: ignore[assignment]
+            _ = prims.llm_call("root", role="worker_general")
+            assert calls == ["worker_general", "worker_general"]
+
+    def test_depth_override_diagnostics_recorded(self):
+        with patch("src.features.features") as mock_features:
+            mock_features.return_value.depth_model_overrides = True
+            with patch.dict(
+                "os.environ",
+                {"ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES": "1:worker_math"},
+                clear=False,
+            ):
+                prims = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls={
+                        "worker_general": "http://localhost:8082",
+                        "worker_math": "http://localhost:8082",
+                    },
+                )
+
+                def _fake_real_call(prompt, role, n_tokens=-1, stop_sequences=None, json_schema=None, grammar=None):
+                    if prims._recursion_depth == 1:
+                        return prims.llm_call("nested", role="worker_general")
+                    return "ok"
+
+                prims._real_call = _fake_real_call  # type: ignore[assignment]
+                with prims.request_context(task_id="depth-diag"):
+                    _ = prims.llm_call("root", role="worker_general")
+                    diag = prims.get_budget_diagnostics()
+                assert diag["depth_override_enabled"] is True
+                assert diag["depth_override_events"] >= 1
+                assert "worker_general->worker_math" in diag["depth_override_roles"]
+
+    def test_depth_override_uses_config_value_when_present(self):
+        with patch("src.features.features") as mock_features:
+            mock_features.return_value.depth_model_overrides = True
+            with patch.dict(
+                "os.environ",
+                {"ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES": "1:worker_math"},
+                clear=False,
+            ):
+                from src.config import reset_config
+
+                reset_config()
+                prims = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls={
+                        "worker_general": "http://localhost:8082",
+                        "worker_math": "http://localhost:8082",
+                    },
+                )
+                calls: list[str] = []
+
+                def _fake_real_call(prompt, role, n_tokens=-1, stop_sequences=None, json_schema=None, grammar=None):
+                    calls.append(role)
+                    if prims._recursion_depth == 1:
+                        return prims.llm_call("nested", role="worker_general")
+                    return "ok"
+
+                prims._real_call = _fake_real_call  # type: ignore[assignment]
+                _ = prims.llm_call("root", role="worker_general")
+                assert calls == ["worker_general", "worker_math"]
+                reset_config()
+
+    def test_depth_override_respects_max_depth_guardrail(self):
+        with patch("src.features.features") as mock_features:
+            mock_features.return_value.depth_model_overrides = True
+            with patch.dict(
+                "os.environ",
+                {
+                    "ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES": "1:worker_math,2:worker_math",
+                    "ORCHESTRATOR_LLM_DEPTH_OVERRIDE_MAX_DEPTH": "1",
+                },
+                clear=False,
+            ):
+                from src.config import reset_config
+
+                reset_config()
+                prims = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls={
+                        "worker_general": "http://localhost:8082",
+                        "worker_math": "http://localhost:8082",
+                    },
+                )
+                calls: list[str] = []
+
+                def _fake_real_call(prompt, role, n_tokens=-1, stop_sequences=None, json_schema=None, grammar=None):
+                    calls.append(role)
+                    if prims._recursion_depth == 1:
+                        return prims.llm_call("nested-l1", role="worker_general")
+                    if prims._recursion_depth == 2:
+                        return prims.llm_call("nested-l2", role="worker_general")
+                    return "ok"
+
+                prims._real_call = _fake_real_call  # type: ignore[assignment]
+                with prims.request_context(task_id="depth-max-guard"):
+                    _ = prims.llm_call("root", role="worker_general")
+                    diag = prims.get_budget_diagnostics()
+
+                # Depth 1 override applies, deeper nested call remains original role.
+                assert calls == ["worker_general", "worker_math", "worker_general"]
+                assert diag["depth_override_skip_events"] >= 1
+                assert "over_max_depth" in diag["depth_override_skip_reasons"]
+                reset_config()
+
+    def test_depth_override_rejects_non_worker_target(self):
+        with patch("src.features.features") as mock_features:
+            mock_features.return_value.depth_model_overrides = True
+            with patch.dict(
+                "os.environ",
+                {"ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES": "1:frontdoor"},
+                clear=False,
+            ):
+                from src.config import reset_config
+
+                reset_config()
+                prims = LLMPrimitives(
+                    mock_mode=False,
+                    server_urls={
+                        "worker_general": "http://localhost:8082",
+                        "frontdoor": "http://localhost:8080",
+                    },
+                )
+                calls: list[str] = []
+
+                def _fake_real_call(prompt, role, n_tokens=-1, stop_sequences=None, json_schema=None, grammar=None):
+                    calls.append(role)
+                    if prims._recursion_depth == 1:
+                        return prims.llm_call("nested", role="worker_general")
+                    return "ok"
+
+                prims._real_call = _fake_real_call  # type: ignore[assignment]
+                with prims.request_context(task_id="depth-worker-guard"):
+                    _ = prims.llm_call("root", role="worker_general")
+                    diag = prims.get_budget_diagnostics()
+
+                assert calls == ["worker_general", "worker_general"]
+                assert diag["depth_override_skip_events"] >= 1
+                assert "non_worker_target" in diag["depth_override_skip_reasons"]
+                reset_config()

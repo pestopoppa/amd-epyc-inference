@@ -2,6 +2,8 @@
 """Unit tests for LLM primitives."""
 
 import asyncio
+import time
+from unittest.mock import patch
 
 from src.llm_primitives import (
     LLMPrimitives,
@@ -266,6 +268,82 @@ class TestRequestContext:
         a, b = asyncio.run(_main())
         assert a == ("chat-a", 10.0)
         assert b == ("chat-b", 20.0)
+
+    def test_budget_diagnostics_and_timeout_clamp_under_deadline(self):
+        primitives = LLMPrimitives(mock_mode=True)
+        deadline = time.perf_counter() + 0.6
+        with primitives.request_context(deadline_s=deadline, task_id="budget-test"):
+            clamped = primitives._clamp_timeout_to_request_budget(10)
+            diag = primitives.get_budget_diagnostics()
+            assert clamped == 1
+            assert diag["deadline_present"] is True
+            assert diag["budget_applied"] is True
+            assert diag["timeout_clamp_events"] >= 1
+            assert diag["deadline_remaining_ms_start"] is not None
+            assert diag["depth_override_enabled"] is False
+            assert diag["depth_override_events"] == 0
+        diag_end = primitives.get_budget_diagnostics()
+        assert diag_end["deadline_remaining_ms_end"] is not None
+
+    def test_timeout_clamp_no_deadline_no_budget_application(self):
+        primitives = LLMPrimitives(mock_mode=True)
+        with primitives.request_context(task_id="no-deadline"):
+            clamped = primitives._clamp_timeout_to_request_budget(17)
+            diag = primitives.get_budget_diagnostics()
+            assert clamped == 17
+            assert diag["deadline_present"] is False
+            assert diag["budget_applied"] is False
+            assert diag["timeout_clamp_events"] == 0
+
+    def test_llm_batch_async_propagates_request_context_to_executor_threads(self):
+        primitives = LLMPrimitives(mock_mode=False, model_server=object())
+        seen: list[tuple[str | None, float | None]] = []
+
+        def _fake_real_call(prompt: str, role: str) -> str:
+            seen.append((primitives.get_request_task_id(), primitives.get_request_deadline_s()))
+            return f"ok:{prompt}:{role}"
+
+        class _InlineLoop:
+            def run_in_executor(self, _executor, fn):
+                fut = asyncio.get_running_loop().create_future()
+                try:
+                    fut.set_result(fn())
+                except Exception as exc:  # pragma: no cover - defensive
+                    fut.set_exception(exc)
+                return fut
+
+        primitives._real_call = _fake_real_call  # type: ignore[method-assign]
+        primitives._get_role_limit = lambda _role: 4  # type: ignore[method-assign]
+
+        deadline = time.perf_counter() + 5.0
+        with primitives.request_context(task_id="ctx-async-batch", deadline_s=deadline):
+            with patch("asyncio.get_event_loop", return_value=_InlineLoop()):
+                results = asyncio.run(primitives.llm_batch_async(["p1", "p2"], role="worker"))
+
+        assert results == ["ok:p1:worker", "ok:p2:worker"]
+        assert len(seen) == 2
+        assert all(task_id == "ctx-async-batch" for task_id, _ in seen)
+        assert all(deadline_s is not None for _, deadline_s in seen)
+
+    def test_llm_batch_propagates_request_context_to_threadpool_calls(self):
+        primitives = LLMPrimitives(mock_mode=False, model_server=object())
+        seen: list[tuple[str | None, float | None]] = []
+
+        def _fake_real_call(prompt: str, role: str) -> str:
+            seen.append((primitives.get_request_task_id(), primitives.get_request_deadline_s()))
+            return f"ok:{prompt}:{role}"
+
+        primitives._real_call = _fake_real_call  # type: ignore[method-assign]
+        primitives._get_role_limit = lambda _role: 4  # type: ignore[method-assign]
+
+        deadline = time.perf_counter() + 5.0
+        with primitives.request_context(task_id="ctx-sync-batch", deadline_s=deadline):
+            results = primitives.llm_batch(["p1", "p2", "p3"], role="worker")
+
+        assert results == ["ok:p1:worker", "ok:p2:worker", "ok:p3:worker"]
+        assert len(seen) == 3
+        assert all(task_id == "ctx-sync-batch" for task_id, _ in seen)
+        assert all(deadline_s is not None for _, deadline_s in seen)
 
 
 class TestConfig:

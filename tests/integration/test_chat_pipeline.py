@@ -6,6 +6,7 @@ Tests routing logic, mode selection, and endpoint behavior.
 
 import json
 import contextlib
+import time
 import pytest
 import httpx
 from unittest.mock import MagicMock
@@ -15,10 +16,14 @@ from fastapi.testclient import TestClient
 
 from src.api import create_app
 from src.api.dependencies import dep_app_state
+from src.api.models import ChatRequest
 from src.api.state import AppState
 from src.api.routes.chat import router as chat_router
+from src.api.routes.chat_pipeline.delegation_stage import _execute_delegated
 from src.delegation_reports import store_report
 from src.api.routes.chat_routing import _classify_and_route, _select_mode
+from src.api.routes.chat_utils import RoutingResult
+from src.exceptions import InferenceError
 from src.graph.state import TaskResult
 from src.roles import Role
 
@@ -359,6 +364,77 @@ class TestChatEndpoint:
         assert "Full specialist" in payload["content"]
 
     @pytest.mark.asyncio
+    async def test_delegated_pre_start_lock_timeout_sets_break_reason(self, monkeypatch):
+        """Delegated stage should surface pre-delegation lock timeout as explicit break_reason."""
+
+        class _StubPrimitives:
+            def __init__(self):
+                self.total_tokens_generated = 0
+                self._backends = {"stub": True}
+                self.total_prompt_eval_ms = 0.0
+                self.total_generation_ms = 0.0
+                self._last_predicted_tps = 0.0
+                self.total_http_overhead_ms = 0.0
+
+            def request_context(self, **_kwargs):
+                return contextlib.nullcontext()
+
+            def get_cache_stats(self):
+                return None
+
+            def llm_call(self, *_args, **_kwargs):
+                raise InferenceError("Inference lock timeout (request deadline exceeded)")
+
+        stub_primitives = _StubPrimitives()
+
+        monkeypatch.setattr(
+            "src.api.routes.chat_pipeline.delegation_stage.score_completed_task",
+            lambda *_args, **_kwargs: None,
+        )
+        state = MagicMock(spec=AppState)
+        state.progress_logger = None
+        state.tool_registry = None
+        state.script_registry = None
+        state.registry = None
+        state.hybrid_router = None
+        state.increment_active = MagicMock()
+        state.decrement_active = MagicMock()
+        state.increment_request = MagicMock()
+
+        request_model = ChatRequest(
+            prompt="Please investigate deeply",
+            real_mode=True,
+            force_role="architect_general",
+            force_mode="delegated",
+            allow_delegation=True,
+        )
+        routing = RoutingResult(
+            task_id="test-delegation-timeout",
+            task_ir={},
+            use_mock=False,
+            routing_strategy="forced",
+            formalization_applied=False,
+            routing_decision=[Role.ARCHITECT_GENERAL],
+            document_result=None,
+        )
+        response = _execute_delegated(
+            request=request_model,
+            routing=routing,
+            primitives=stub_primitives,
+            state=state,
+            start_time=time.perf_counter(),
+            initial_role=Role.ARCHITECT_GENERAL,
+            execution_mode="delegated",
+        )
+        assert response is not None
+        data = response.model_dump()
+        assert data["mode"] == "delegated"
+        assert data["answer"].startswith("[ERROR: Architect delegation failed]")
+        diag = data.get("delegation_diagnostics", {})
+        assert diag.get("break_reason") == "pre_delegation_lock_timeout"
+        assert diag.get("loops") == 0
+
+    @pytest.mark.asyncio
     async def test_session_restore_roundtrip_repl_globals(self, monkeypatch):
         """Two /chat calls with same session_id should restore persisted globals."""
         class _InMemorySessionStore:
@@ -464,6 +540,335 @@ class TestChatEndpoint:
             assert "restored={'value': 42}" in d2["answer"]
             assert d2["session_persistence"]["restore_success"] is True
             assert d2["session_persistence"]["restored_globals"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_session_restore_protocol_compat_diagnostics(self, monkeypatch):
+        """Restore should gracefully handle legacy/newer protocol payloads with diagnostics."""
+        class _CheckpointPayload:
+            def __init__(self, payload):
+                self._payload = payload
+
+            def to_dict(self):
+                return dict(self._payload)
+
+        class _InMemorySessionStore:
+            def __init__(self):
+                self._sessions = {}
+                self._checkpoints = {}
+
+            def get_session(self, session_id):
+                return self._sessions.get(session_id)
+
+            def get_latest_checkpoint(self, session_id):
+                checkpoints = self._checkpoints.get(session_id, [])
+                return checkpoints[-1] if checkpoints else None
+
+            def save_checkpoint(self, checkpoint):
+                self._checkpoints.setdefault(checkpoint.session_id, []).append(checkpoint)
+
+        state = MagicMock(spec=AppState)
+        state.progress_logger = None
+        state.tool_registry = None
+        state.script_registry = None
+        state.registry = None
+        state.hybrid_router = None
+        state.increment_active = MagicMock()
+        state.decrement_active = MagicMock()
+        state.increment_request = MagicMock()
+        state.session_store = _InMemorySessionStore()
+
+        session_id = "phase3-protocol-compat"
+        state.session_store._sessions[session_id] = SimpleNamespace(id=session_id)
+        state.session_store._checkpoints[session_id] = [
+            _CheckpointPayload(
+                {
+                    "protocol_version": 99,
+                    "artifacts": {},
+                    "execution_count": 1,
+                    "exploration_calls": 0,
+                    "user_globals": {"persist_me": {"value": 7}},
+                    "future_field": {"drop_me": True},
+                }
+            )
+        ]
+
+        app = FastAPI()
+        app.include_router(chat_router)
+
+        async def _state_dep():
+            return state
+
+        app.dependency_overrides[dep_app_state] = _state_dep
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            class _StubPrimitives:
+                def __init__(self):
+                    self.total_tokens_generated = 0
+                    self._backends = {"stub": True}
+                    self.total_prompt_eval_ms = 0.0
+                    self.total_generation_ms = 0.0
+                    self._last_predicted_tps = 0.0
+                    self.total_http_overhead_ms = 0.0
+
+                def request_context(self, **_kwargs):
+                    return contextlib.nullcontext()
+
+                def get_cache_stats(self):
+                    return None
+
+            stub_primitives = _StubPrimitives()
+
+            def _fake_init_primitives(_request, _state):
+                return stub_primitives
+
+            async def _no_cheap(*_args, **_kwargs):
+                return None
+
+            async def _fake_run_task(task_state, task_deps, start_role=None):
+                repl = task_deps.repl
+                restored = repl._globals.get("persist_me")
+                return TaskResult(
+                    answer=f"restored={restored}",
+                    success=True,
+                    turns=1,
+                    role_history=["frontdoor"],
+                )
+
+            monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+            monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+            monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
+            monkeypatch.setattr(
+                "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
+                lambda *_args, **_kwargs: None,
+            )
+
+            req = {
+                "prompt": "Use REPL",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "repl",
+                "force_role": "frontdoor",
+                "session_id": session_id,
+            }
+            r = await client.post("/chat", json=req)
+            assert r.status_code == 200
+            data = r.json()
+            assert "restored={'value': 7}" in data["answer"]
+            assert data["session_persistence"]["restore_success"] is True
+            proto = data["session_persistence"]["restore_protocol"]
+            assert proto["compat_mode"] == "forward_downgrade"
+            assert "future_field" in proto["dropped_fields"]
+
+    @pytest.mark.asyncio
+    async def test_chat_response_includes_budget_diagnostics_from_primitives(self, monkeypatch):
+        """Every finalized /chat response should include budget diagnostics payload."""
+        state = MagicMock(spec=AppState)
+        state.progress_logger = None
+        state.tool_registry = None
+        state.script_registry = None
+        state.registry = None
+        state.hybrid_router = None
+        state.increment_active = MagicMock()
+        state.decrement_active = MagicMock()
+        state.increment_request = MagicMock()
+        state.session_store = None
+
+        app = FastAPI()
+        app.include_router(chat_router)
+
+        async def _state_dep():
+            return state
+
+        app.dependency_overrides[dep_app_state] = _state_dep
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            class _StubPrimitives:
+                def __init__(self):
+                    self.total_tokens_generated = 0
+                    self._backends = {"stub": True}
+                    self.total_prompt_eval_ms = 0.0
+                    self.total_generation_ms = 0.0
+                    self._last_predicted_tps = 0.0
+                    self.total_http_overhead_ms = 0.0
+
+                def request_context(self, **_kwargs):
+                    return contextlib.nullcontext()
+
+                def get_cache_stats(self):
+                    return None
+
+                def get_budget_diagnostics(self):
+                    return {
+                        "deadline_present": True,
+                        "budget_applied": True,
+                        "timeout_clamp_events": 1,
+                    }
+
+            stub_primitives = _StubPrimitives()
+
+            def _fake_init_primitives(_request, _state):
+                return stub_primitives
+
+            async def _no_cheap(*_args, **_kwargs):
+                return None
+
+            async def _fake_run_task(task_state, task_deps, start_role=None):
+                return TaskResult(answer="ok", success=True, turns=1, role_history=["frontdoor"])
+
+            monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+            monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+            monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
+            monkeypatch.setattr(
+                "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
+                lambda *_args, **_kwargs: None,
+            )
+
+            req = {
+                "prompt": "Use REPL",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "repl",
+                "force_role": "frontdoor",
+            }
+            r = await client.post("/chat", json=req)
+            assert r.status_code == 200
+            data = r.json()
+            assert data["answer"] == "ok"
+            assert data["budget_diagnostics"]["deadline_present"] is True
+            assert data["budget_diagnostics"]["budget_applied"] is True
+
+    @pytest.mark.asyncio
+    async def test_chat_repl_response_surfaces_tool_chain_wave_diagnostics(self, monkeypatch):
+        """Integration proof: /chat response includes normalized tool_chains wave_timeline."""
+        state = MagicMock(spec=AppState)
+        state.progress_logger = None
+        state.tool_registry = None
+        state.script_registry = None
+        state.registry = None
+        state.hybrid_router = None
+        state.increment_active = MagicMock()
+        state.decrement_active = MagicMock()
+        state.increment_request = MagicMock()
+        state.session_store = None
+
+        app = FastAPI()
+        app.include_router(chat_router)
+
+        async def _state_dep():
+            return state
+
+        app.dependency_overrides[dep_app_state] = _state_dep
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            class _StubPrimitives:
+                def __init__(self):
+                    self.total_tokens_generated = 0
+                    self._backends = {"stub": True}
+                    self.total_prompt_eval_ms = 0.0
+                    self.total_generation_ms = 0.0
+                    self._last_predicted_tps = 0.0
+                    self.total_http_overhead_ms = 0.0
+
+                def request_context(self, **_kwargs):
+                    return contextlib.nullcontext()
+
+                def get_cache_stats(self):
+                    return None
+
+                def get_budget_diagnostics(self):
+                    return {}
+
+            class _FakeRegistry:
+                def get_invocation_log(self):
+                    return [
+                        SimpleNamespace(
+                            tool_name="peek",
+                            elapsed_ms=11.0,
+                            success=True,
+                            chain_id="chain-1",
+                            caller_type="chain",
+                        ),
+                        SimpleNamespace(
+                            tool_name="grep",
+                            elapsed_ms=14.0,
+                            success=True,
+                            chain_id="chain-1",
+                            caller_type="chain",
+                        ),
+                    ]
+
+            class _FakeRepl:
+                def __init__(self, *args, **kwargs):
+                    self.tool_registry = _FakeRegistry()
+                    self.artifacts = {"_tool_outputs": []}
+                    self._tool_invocations = 2
+
+                def _get_read_only_tools(self):
+                    return {"peek", "grep"}
+
+                def get_chain_execution_log(self):
+                    return [
+                        {
+                            "chain_id": "chain-1",
+                            "mode_used": "dep",
+                            "fallback_to_seq": False,
+                            "parallel_mutations_enabled": False,
+                            "wave_timeline": [
+                                {
+                                    "wave_index": 0,
+                                    "tools": ["peek", "grep"],
+                                    "mode_used": "dep",
+                                    "elapsed_ms": 25.0,
+                                    "fallback_to_seq": False,
+                                    "parallel_mutations_enabled": False,
+                                }
+                            ],
+                        }
+                    ]
+
+                def log_exploration_completed(self, success, result):
+                    return None
+
+            stub_primitives = _StubPrimitives()
+
+            def _fake_init_primitives(_request, _state):
+                return stub_primitives
+
+            async def _no_cheap(*_args, **_kwargs):
+                return None
+
+            async def _fake_run_task(task_state, task_deps, start_role=None):
+                return TaskResult(answer="chain-ok", success=True, turns=1, role_history=["frontdoor"])
+
+            monkeypatch.setattr("src.api.routes.chat._init_primitives", _fake_init_primitives)
+            monkeypatch.setattr("src.api.routes.chat._try_cheap_first", _no_cheap)
+            monkeypatch.setattr("src.api.routes.chat.ensure_memrl_initialized", lambda *_args, **_kwargs: None)
+            monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.REPLEnvironment", _FakeRepl)
+            monkeypatch.setattr("src.api.routes.chat_pipeline.repl_executor.run_task", _fake_run_task)
+            monkeypatch.setattr(
+                "src.api.routes.chat_pipeline.repl_executor.score_completed_task",
+                lambda *_args, **_kwargs: None,
+            )
+
+            req = {
+                "prompt": "Use REPL tools",
+                "mock_mode": False,
+                "real_mode": True,
+                "force_mode": "repl",
+                "force_role": "frontdoor",
+            }
+            r = await client.post("/chat", json=req)
+            assert r.status_code == 200
+            data = r.json()
+            assert data["answer"] == "chain-ok"
+            assert data["tool_chains"]
+            chain = data["tool_chains"][0]
+            assert chain["chain_id"] == "chain-1"
+            assert chain["mode_used"] == "dep"
+            assert chain["wave_timeline"][0]["wave_index"] == 0
+            assert chain["wave_timeline"][0]["tools"] == ["peek", "grep"]
 
 
 class TestRewardEndpoint:

@@ -5,7 +5,7 @@ and other uncovered functionality in src/session/sqlite_store.py.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 import pytest
@@ -144,7 +144,7 @@ class TestCheckpoints:
         checkpoint = Checkpoint(
             id=str(uuid.uuid4()),
             session_id=sample_session.id,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             context_hash="abc123",
             artifacts={"key": "value", "data": [1, 2, 3]},
             execution_count=5,
@@ -180,7 +180,7 @@ class TestCheckpoints:
             checkpoint = Checkpoint(
                 id=str(uuid.uuid4()),
                 session_id=sample_session.id,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
                 context_hash=f"hash-{i}",
                 artifacts={},
                 execution_count=i,
@@ -208,7 +208,7 @@ class TestFindingCRUD:
             session_id=sample_session.id,
             content="Important discovery",
             source=FindingSource.USER_MARKED,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
             confidence=1.0,
             confirmed=True,
             tags=["critical", "verified"],
@@ -309,7 +309,7 @@ class TestSearchSessions:
             session_id=sample_session.id,
             content="The cache miss ratio is 42%",
             source=FindingSource.USER_MARKED,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         temp_store.add_finding(finding)
 

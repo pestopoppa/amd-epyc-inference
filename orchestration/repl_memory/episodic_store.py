@@ -22,9 +22,9 @@ import re
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import numpy as np
 
@@ -51,8 +51,8 @@ class MemoryEntry:
     context: Dict[str, Any]  # Original task context (task_type, objective, etc.)
     outcome: Optional[str] = None  # "success", "failure", or None if pending
     q_value: float = 0.5  # Initial Q-value (neutral)
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     update_count: int = 0  # Number of Q-value updates
     similarity_score: float = 0.0  # Similarity score from retrieval (set by retrieve methods)
     model_id: Optional[str] = None  # Model that produced this memory (for warm-start)
@@ -243,7 +243,7 @@ class EpisodicStore:
             Memory ID
         """
         memory_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Store embedding in FAISS/NumPy
         embedding_idx = self._embedding_store.add(memory_id, embedding)
@@ -465,7 +465,7 @@ class EpisodicStore:
         Returns:
             New Q-value
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
 
         with sqlite3.connect(self.sqlite_path) as conn:

@@ -479,7 +479,7 @@ Feature flag: `streaming_tool_use`.
 
 ## Cross-Cutting Concerns (February 2026)
 
-Eight concepts from OpenClaw and Lobster were integrated behind feature flags (all default off). These cover caching, fallback routing, session compaction, crash recovery, human approval gates, and priority-based routing overrides.
+Eight concepts from OpenClaw and Lobster were integrated behind feature flags. Most remain default-off in production pending targeted validation; `session_compaction` and `depth_model_overrides` are now default-on with explicit guardrails and rollback toggles.
 
 <details>
 <summary>Concept-integration feature flags</summary>
@@ -506,9 +506,27 @@ When a backend is circuit-open or times out, same-tier alternatives are tried be
 
 `BackendHealthTracker.classify_failure()` maps error messages to `FailoverReason` (circuit_open, timeout, connection_error, oom). Feature flag: `model_fallback`.
 
-### Session Compaction
+### Session Compaction (Virtual Memory Pattern)
 
-Summarizes old context entries when conversation exceeds threshold (turns > 5 AND context > 12K chars). Uses `worker_summarize` (44 t/s) to compress, keeps last 3000 chars verbatim. `compaction_count` in `TaskState` tracks how many times compaction fired. Feature flag: `session_compaction`.
+Two-stage context pressure management in `src/graph/helpers.py`:
+
+1. **C3: Tool Result Clearing** (40% of max_context) — regex-based clearing of stale `<<<TOOL_OUTPUT>>>...<<<END_TOOL_OUTPUT>>>` blocks from `state.last_output`. Keeps last N blocks (default 2), replaces older with `[Tool result cleared]`. Feature flag: `tool_result_clearing`.
+
+2. **C1: Context Externalization** (60% of max_context) — "virtual memory" pattern instead of lossy summarization:
+   - Dumps full verbatim `state.context` to `/mnt/raid0/llm/tmp/session_{task_id}_ctx_{n}.md` (zero information loss)
+   - Generates a structured index via `worker_explore` (7B, not SERIAL_ROLES gated) using hot-swappable prompt (`orchestration/prompts/compaction_index.md`) with line coordinates for one-shot `read_file(path, offset=N, limit=M)` retrieval
+   - Index prompt now generates a **"Current Execution State"** block as the first section (what the system is working on, key values, next action) — inspired by the Markovian property from Delethink (arXiv:2510.06557)
+   - Keeps recent context verbatim (configurable ratio, default 20%, min 3000 chars)
+   - Replaces context with: `[Context Index]\n{index}\n\n[Recent Context]\n{verbatim}\n\nFull context: read_file("{path}")`
+   - `compaction_count`, `compaction_tokens_saved`, `context_file_paths`, `last_compaction_turn` tracked in `TaskState`
+   - Optional turn-based recompaction: when `session_compaction_recompaction_interval > 0`, re-triggers compaction every N turns after first compaction (prevents context regrowth)
+
+**Design Rationale**:
+- **Virtual memory over lossy summarization**: Delethink (arXiv:2510.06557) demonstrates that aggressive compression (100-token carryover) works when models are RL-trained for Markovian behavior. Our models aren't RL-trained, so we use lossless externalization with `read_file()` fallback to compensate — any information lost from the active window can be paged back in on demand.
+- **"Current Execution State" leads the index**: The Markovian property (future steps depend primarily on recent state) means the most valuable information after compaction is *what the model was doing*, not *what happened historically*. The execution state block captures active task, key values, and next action.
+- **20% default retention with configurable ratio**: Delethink uses <2% with RL training. We default to 20% as a conservative choice for untrained models. Configurable via `ORCHESTRATOR_CHAT_SESSION_COMPACTION_KEEP_RECENT_RATIO` for future tuning as index quality improves.
+
+Token counting: `LlamaTokenizer` (`src/llm_primitives/tokenizer.py`) calls llama-server `/tokenize` with MD5-keyed LRU cache and 500ms timeout, falling back to `len//4`. Feature flag: `accurate_token_counting`.
 
 Related persistence path (Phase 3): when `/chat` receives `session_id`, REPL checkpoints can restore JSON-safe `user_globals` from the latest session checkpoint before graph execution. This extends session continuity beyond in-request turn sharing.
 
@@ -525,6 +543,33 @@ Human approval at escalation boundaries and destructive tool invocations (`src/g
 Priority-ordered routing overrides (`src/routing_bindings.py`). Five priority levels: DEFAULT (0) < CLASSIFIER (10) < Q_VALUE (20) < USER_PREF (30) < SESSION (40). `BindingRouter.resolve()` returns highest-priority active binding for a task type. Session bindings cleared at conversation end. Integrated in `_classify_and_route()`. Feature flag: `binding_routing`.
 
 </details>
+
+### Safe-Default Review (R6, 2026-02)
+
+- Enabled by default now:
+  - `session_compaction`
+    - Benefit: bounds prompt growth in long-running sessions and reduces downstream latency/timeout pressure.
+    - Rollback: `ORCHESTRATOR_SESSION_COMPACTION=0`.
+    - Smoke checks: long-context `/chat` run keeps answer quality stable and reports compaction activity without restore regressions.
+  - `depth_model_overrides`
+    - Benefit: routes nested `llm_call` recursion to cheaper worker-tier roles to reduce delegated latency/cost during deep tool/delegation loops.
+    - Guardrails: worker-only targets + max-depth cap (`LLMConfig.depth_override_max_depth`, default `3`) + backend-availability fallback.
+    - Rollback: `ORCHESTRATOR_DEPTH_MODEL_OVERRIDES=0` (or role-map override via `ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES`).
+    - Smoke checks: confirm `budget_diagnostics.depth_override_events` increments on nested calls, with no increase in timeout or stale-lock symptoms.
+- Kept off by default (higher-risk or not yet fully validated):
+  - `content_cache` (`ORCHESTRATOR_CONTENT_CACHE=1`).
+  - `model_fallback` (`ORCHESTRATOR_MODEL_FALLBACK=1`).
+  - `structured_tool_output` (`ORCHESTRATOR_STRUCTURED_TOOL_OUTPUT=1`).
+  - `side_effect_tracking` + `approval_gates` (`ORCHESTRATOR_SIDE_EFFECT_TRACKING=1`, `ORCHESTRATOR_APPROVAL_GATES=1`).
+
+### R3 + Phase 6 Validation Closure (2026-02-19)
+
+- R3 depth-override rollout tuning is closed for this cycle:
+  - live ON/OFF delegated probes confirmed telemetry toggle behavior (`budget_diagnostics.depth_override_enabled`),
+  - delegated execution stayed bounded with explicit diagnostics in both modes.
+- Phase 6 (early failure detection) is now load-validated:
+  - targeted unit/integration monitor suite passed (`47 passed`),
+  - concurrent live probe with monitor enabled produced bounded explicit outcomes (successes and explicit `504` timeouts), with no silent hangs.
 
 ## Implementation Status
 

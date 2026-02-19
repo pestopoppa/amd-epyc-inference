@@ -66,6 +66,11 @@ runtime_defaults:
     qwen3: 131072
     deepseek_r1: 65536
     gemma3: 131072
+  llm:
+    # Conservative nested-call rollout map (feature-gated by depth_model_overrides).
+    # depth 0 never overrides; depth 1+ may route to cheaper worker roles only.
+    depth_role_overrides: "1:worker_general,2:worker_math"
+    depth_override_max_depth: 3
   timeouts:
     # Single source of truth for ALL timeouts in the system
     default: 600  # Fallback for any unspecified timeout

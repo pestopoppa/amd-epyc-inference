@@ -11,10 +11,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -90,7 +88,7 @@ class ProgressEntry:
 
     event_type: EventType
     task_id: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     agent_tier: Optional[str] = None  # "A", "B1", "B2", "B3", "C", "D"
     agent_role: Optional[str] = None  # "frontdoor", "coder", etc.
 
@@ -599,7 +597,7 @@ class ProgressReader:
     def read_recent(self, days: int = 7) -> List[ProgressEntry]:
         """Read entries from the last N days."""
         entries = []
-        today = datetime.utcnow()
+        today = datetime.now(timezone.utc)
 
         for i in range(days):
             date = today - __import__("datetime").timedelta(days=i)

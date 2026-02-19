@@ -339,3 +339,17 @@ def _annotate_error(response: ChatResponse) -> ChatResponse:
         response.error_detail = answer
 
     return response
+
+
+def _attach_budget_diagnostics(
+    response: ChatResponse,
+    primitives: LLMPrimitives | None,
+) -> ChatResponse:
+    """Attach request budget/deadline telemetry to API response diagnostics."""
+    if primitives is None:
+        return response
+    try:
+        response.budget_diagnostics = primitives.get_budget_diagnostics()
+    except Exception:
+        response.budget_diagnostics = {}
+    return response

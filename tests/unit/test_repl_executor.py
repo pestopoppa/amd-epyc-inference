@@ -1068,6 +1068,7 @@ class TestExecutionTimeout:
                 # Should have handled timeout gracefully
                 assert response is not None
                 assert "[ERROR" in response.answer
+                assert response.delegation_diagnostics.get("break_reason") == "request_timeout"
 
 
 # ── Two-Stage Exception Handling ─────────────────────────────────────────
@@ -1262,6 +1263,24 @@ class TestToolOutputsInAnswer:
                     "parallel_mutations_enabled": True,
                     "waves": 2,
                     "steps": 2,
+                    "wave_timeline": [
+                        {
+                            "wave_index": 0,
+                            "tools": ["read_file"],
+                            "mode_used": "dep",
+                            "elapsed_ms": 10.1,
+                            "fallback_to_seq": False,
+                            "parallel_mutations_enabled": False,
+                        },
+                        {
+                            "wave_index": 1,
+                            "tools": ["list_directory"],
+                            "mode_used": "dep",
+                            "elapsed_ms": 15.3,
+                            "fallback_to_seq": False,
+                            "parallel_mutations_enabled": False,
+                        },
+                    ],
                 }
             ]
             mock_repl_class.return_value = mock_repl
@@ -1293,3 +1312,8 @@ class TestToolOutputsInAnswer:
                 assert chain["parallel_mutations_enabled"] is True
                 assert chain["waves"] == 2
                 assert chain["steps"] == 2
+                assert len(chain["wave_timeline"]) == 2
+                assert chain["wave_timeline"][0]["wave_index"] == 0
+                assert chain["wave_timeline"][0]["tools"] == ["read_file"]
+                assert chain["wave_timeline"][1]["wave_index"] == 1
+                assert chain["wave_timeline"][1]["tools"] == ["list_directory"]

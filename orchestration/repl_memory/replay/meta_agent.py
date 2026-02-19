@@ -17,8 +17,7 @@ import logging
 import re
 import sys
 import uuid
-from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -228,7 +227,7 @@ class MetaAgentWorkflow:
         lines = [
             "# Replay Evaluation Report",
             "",
-            f"**Date**: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+            f"**Date**: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
             f"**Candidates evaluated**: {len(results)}",
             "",
             "## Results",
@@ -366,7 +365,7 @@ class MetaAgentWorkflow:
                 retrieval_config=ret_config,
                 scoring_config=scr_config,
                 notes=data.get("notes", ""),
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
         except (TypeError, ValueError) as e:
             logger.warning("Invalid candidate data: %s", e)

@@ -115,9 +115,12 @@ class TestGetConfig:
         assert isinstance(cfg, OrchestratorConfigData)
 
     def test_get_config_is_cached(self):
+        before = get_config.cache_info().hits
         cfg1 = get_config()
         cfg2 = get_config()
-        assert cfg1 is cfg2
+        after = get_config.cache_info().hits
+        assert cfg1 == cfg2
+        assert after >= before + 1
 
     def test_reset_config_clears_cache(self):
         cfg1 = get_config()
@@ -529,6 +532,18 @@ class TestEnvVarOverrides:
             reset_config()
             cfg = get_config()
             assert cfg.llm.call_timeout == 600
+
+    def test_llm_depth_role_overrides_override(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_LLM_DEPTH_ROLE_OVERRIDES": "1:worker_math"}):
+            reset_config()
+            cfg = get_config()
+            assert cfg.llm.depth_role_overrides == "1:worker_math"
+
+    def test_llm_depth_override_max_depth_override(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_LLM_DEPTH_OVERRIDE_MAX_DEPTH": "5"}):
+            reset_config()
+            cfg = get_config()
+            assert cfg.llm.depth_override_max_depth == 5
 
     def test_timeout_role_override(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_TIMEOUTS_ARCHITECT_GENERAL": "600"}):

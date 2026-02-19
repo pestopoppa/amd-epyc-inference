@@ -157,11 +157,11 @@ class TestCountByCombo:
     def _insert_memory(self, store, action: str, task_type: str):
         """Insert a memory row directly via SQL for test isolation."""
         import uuid
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         import numpy as np
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         memory_id = str(uuid.uuid4())
         context = json.dumps({"task_type": task_type})
 

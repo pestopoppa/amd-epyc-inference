@@ -53,6 +53,19 @@ Large specialist outputs should return compact answer + handle:
 
 If retrieval fails with HTTP 422, verify request bounds (`max_chars >= 64`).
 
+## Tool-Chaining Closure Nuance
+
+Programmatic tool chaining is complete through persistence integration. During debugging:
+- Inspect `tool_chains` first to verify wave execution mode (`dep` vs `sequential`) and fallback behavior.
+- Inspect `session_persistence` to confirm restore/save lifecycle (`restore_success`, `checkpoint_saved`, `checkpoint_id`).
+- For checkpoint-restore compatibility issues, inspect `session_persistence.restore_protocol` (`source_version`, `compat_mode`, `missing_required_fields`, `dropped_fields`).
+- For depth-override rollout tuning, inspect `budget_diagnostics` fields:
+  - `depth_override_enabled`
+  - `depth_override_events`
+  - `depth_override_roles` (e.g. `worker_general->worker_math`)
+- For long delegated outputs, expect summary + handle, not full report text in every loop turn.
+- Do not infer regressions from missing full text when `[REPORT_HANDLE ...]` and `fetch_report()` are available.
+
 ## Worker Role Semantics
 
 - Primary coding worker semantic role: `worker_coder`
@@ -72,6 +85,32 @@ During orchestration lock/delegation debugging, do not casually mutate:
 - SkillRL / `--evolve` pathways
 
 Only touch these when the task explicitly targets learning-policy behavior.
+
+## Safe Defaults (R6)
+
+- Production default-on:
+  - `session_compaction=1` (via `get_features(production=True)` default)
+  - `depth_model_overrides=1` (via `get_features(production=True)` default)
+- Fast rollback toggle:
+  - `ORCHESTRATOR_SESSION_COMPACTION=0`
+  - `ORCHESTRATOR_DEPTH_MODEL_OVERRIDES=0`
+- Keep default-off unless the task explicitly validates them:
+  - `content_cache`
+  - `model_fallback`
+  - `structured_tool_output`
+  - `side_effect_tracking` / `approval_gates`
+
+## R3/Phase6 Closure Evidence (2026-02-19)
+
+- R3 depth-override rollout closure checklist:
+  - run one delegated probe with overrides OFF (`DEPTH_MODEL_OVERRIDES=0`) and one with ON (`DEPTH_MODEL_OVERRIDES=1`),
+  - confirm `budget_diagnostics.depth_override_enabled` toggles accordingly,
+  - confirm delegated path remains bounded and diagnostics populated (`break_reason`, `loops`, `delegation_inference_hops`).
+- Phase 6 early-failure/load validation checklist:
+  - run targeted monitor tests:
+    - `python3 -m pytest -n 0 tests/unit/test_chat_pipeline_stages.py tests/unit/test_stages.py tests/unit/test_generation_monitor.py -k "generation_monitor or early_abort" -q`
+  - run a small concurrent live probe with `GENERATION_MONITOR=1`,
+  - acceptance: no silent hangs; failures must surface as explicit bounded responses (`error_code` set).
 
 ## Evidence Logging
 

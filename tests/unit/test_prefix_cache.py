@@ -503,7 +503,7 @@ class TestCachingBackend:
         assert caching.get_hit_rate() == 0.5
 
     def test_get_stats(self):
-        """Should combine router and backend stats."""
+        """Should combine router and backend stats including slot_stats and token_savings_pct."""
         # Create a specialized mock backend with specific stats for this test
         backend = MagicMock()
         backend.get_cache_stats.return_value = MagicMock(
@@ -522,6 +522,12 @@ class TestCachingBackend:
         assert stats["router_total_routes"] == 1
         assert stats["backend_hit_rate"] == 0.75
         assert stats["total_prompt_tokens"] == 1000
+        # C4: slot_stats and token_savings_pct
+        assert "slot_stats" in stats
+        assert isinstance(stats["slot_stats"], list)
+        assert len(stats["slot_stats"]) == 4  # num_slots
+        assert "token_savings_pct" in stats
+        assert stats["token_savings_pct"] == 50.0
 
     def test_bypass_slot_for_frontdoor_repl_default_on(self, mock_backend, monkeypatch):
         monkeypatch.delenv("ORCHESTRATOR_PREFIX_CACHE_BYPASS_FRONTDOOR_REPL", raising=False)

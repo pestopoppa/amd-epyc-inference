@@ -28,6 +28,7 @@ from src.llm_primitives import LLMPrimitives
 from src.constants import TOOL_OUTPUT_MATCH_LEN
 from src.repl_environment import REPLEnvironment
 from src.session.models import Checkpoint
+from src.session.protocol import normalize_checkpoint_for_repl_restore
 
 from src.api.routes.chat_review import (
     _architect_verdict,
@@ -85,7 +86,31 @@ def _tools_success(
 def _build_delegation_diagnostics(
     role_history: list[str],
     delegation_events: list[dict],
+    answer: str = "",
 ) -> dict:
+    def _infer_break_reason() -> str:
+        if delegation_events:
+            for event in reversed(delegation_events):
+                if not isinstance(event, dict):
+                    continue
+                reason = str(event.get("break_reason", "") or "").strip()
+                if reason:
+                    return reason
+        text = (answer or "").lower()
+        if not text:
+            return ""
+        if "before execution" in text or "pre-delegation" in text:
+            return "pre_delegation_abort"
+        if "lock timeout" in text:
+            return "pre_delegation_lock_timeout"
+        if "cancelled" in text or "canceled" in text:
+            return "request_cancelled"
+        if "deadline exceeded" in text:
+            return "deadline_exceeded"
+        if "timed out" in text or "timeout" in text:
+            return "request_timeout"
+        return ""
+
     edge_counts = Counter(
         (e.get("from_role", ""), e.get("to_role", ""))
         for e in delegation_events
@@ -98,7 +123,41 @@ def _build_delegation_diagnostics(
     }
     role_counts = Counter(role_history)
     repeated_roles = {r: n for r, n in role_counts.items() if n > 1}
+    infer = [
+        (e.get("inference_meta") or {})
+        for e in delegation_events
+        if isinstance(e, dict)
+    ]
+    infer = [m for m in infer if m]
+    avg_prompt_ms = None
+    avg_gen_ms = None
+    if infer:
+        p = [float(m.get("prompt_ms", 0) or 0) for m in infer]
+        g = [float(m.get("gen_ms", 0) or 0) for m in infer]
+        avg_prompt_ms = round(sum(p) / max(len(p), 1), 1)
+        avg_gen_ms = round(sum(g) / max(len(g), 1), 1)
+    loops = 0
+    if delegation_events:
+        try:
+            loops = max(
+                int(e.get("loop", 0) or 0)
+                for e in delegation_events
+                if isinstance(e, dict)
+            )
+        except Exception:
+            loops = len(delegation_events)
     return {
+        "loops": int(loops),
+        "phases_count": len(delegation_events),
+        "break_reason": _infer_break_reason(),
+        "cap_reached": False,
+        "effective_max_loops": 0,
+        "reentrant_depth": 0,
+        "report_handles_count": 0,
+        "report_handles": [],
+        "delegation_inference_hops": len(infer),
+        "avg_prompt_ms": avg_prompt_ms,
+        "avg_gen_ms": avg_gen_ms,
         "role_chain_len": len(role_history),
         "delegation_events_count": len(delegation_events),
         "repeated_edges": repeated_edges,
@@ -108,6 +167,54 @@ def _build_delegation_diagnostics(
 
 def _build_tool_chain_summary(invocation_log: list, chain_exec_log: list[dict] | None = None) -> list[dict]:
     """Group chained tool invocations by chain_id for response diagnostics."""
+    def _normalize_wave_timeline(entry: dict) -> list[dict]:
+        """Return canonical wave-level chain telemetry for API responses."""
+        raw = entry.get("wave_timeline", [])
+        waves_list: list[dict] = []
+        if isinstance(raw, list):
+            for idx, item in enumerate(raw):
+                if not isinstance(item, dict):
+                    continue
+                tools = item.get("tools", [])
+                if not isinstance(tools, list):
+                    tools = []
+                waves_list.append(
+                    {
+                        "wave_index": int(item.get("wave_index", idx) or idx),
+                        "tools": [str(t) for t in tools],
+                        "mode_used": str(item.get("mode_used", entry.get("mode_used", "seq"))),
+                        "elapsed_ms": item.get("elapsed_ms"),
+                        "fallback_to_seq": bool(
+                            item.get("fallback_to_seq", entry.get("fallback_to_seq", False))
+                        ),
+                        "parallel_mutations_enabled": bool(
+                            item.get(
+                                "parallel_mutations_enabled",
+                                entry.get("parallel_mutations_enabled", False),
+                            )
+                        ),
+                    }
+                )
+
+        if waves_list:
+            return waves_list
+
+        # Backward-compatible fallback when only wave count is available.
+        if entry.get("waves", 0):
+            return [
+                {
+                    "wave_index": 0,
+                    "tools": [str(t) for t in (entry.get("tools", []) or [])],
+                    "mode_used": str(entry.get("mode_used", "seq")),
+                    "elapsed_ms": None,
+                    "fallback_to_seq": bool(entry.get("fallback_to_seq", False)),
+                    "parallel_mutations_enabled": bool(
+                        entry.get("parallel_mutations_enabled", False)
+                    ),
+                }
+            ]
+        return []
+
     chains: dict[str, dict] = {}
     for inv in invocation_log:
         chain_id = getattr(inv, "chain_id", None)
@@ -151,11 +258,14 @@ def _build_tool_chain_summary(invocation_log: list, chain_exec_log: list[dict] |
                 "parallel_mutations_enabled",
                 "waves",
                 "steps",
+                "wave_timeline",
             ):
                 if k in meta:
                     entry[k] = meta[k]
 
     summaries = list(chains.values())
+    for entry in summaries:
+        entry["wave_timeline"] = _normalize_wave_timeline(entry)
     summaries.sort(key=lambda c: c["chain_id"])
     return summaries
 
@@ -239,20 +349,30 @@ async def _execute_repl(
         "checkpoint_id": None,
         "saved_globals": 0,
         "save_error": None,
+        "restore_protocol": {},
+        "save_protocol_version": None,
     }
     if session_id and session_store:
         try:
             checkpoint = session_store.get_latest_checkpoint(session_id)
             if checkpoint:
                 session_persistence["restore_found_checkpoint"] = True
-            if checkpoint and checkpoint.user_globals:
-                repl.restore(checkpoint.to_dict())
+            if checkpoint:
+                restore_payload, protocol_diag = normalize_checkpoint_for_repl_restore(
+                    checkpoint.to_dict()
+                )
+                session_persistence["restore_protocol"] = protocol_diag
+                repl.restore(restore_payload)
                 session_persistence["restore_success"] = True
-                session_persistence["restored_globals"] = len(checkpoint.user_globals)
-                session_persistence["skipped_globals"] = list(checkpoint.skipped_user_globals or [])
+                session_persistence["restored_globals"] = len(
+                    restore_payload.get("user_globals", {})
+                )
+                session_persistence["skipped_globals"] = list(
+                    restore_payload.get("skipped_user_globals", []) or []
+                )
                 log.info(
                     "Restored %d globals from session %s",
-                    len(checkpoint.user_globals),
+                    session_persistence.get("restored_globals", 0),
                     session_id[:8],
                     extra=task_extra(task_id=task_id, stage="execute", mode="repl_restore"),
                 )
@@ -500,7 +620,11 @@ async def _execute_repl(
     delegation_success = None
     if delegation_events:
         delegation_success = any(e.get("success") for e in delegation_events)
-    delegation_diag = _build_delegation_diagnostics(role_history, delegation_events)
+    delegation_diag = _build_delegation_diagnostics(
+        role_history,
+        delegation_events,
+        answer=answer,
+    )
 
     tools_called = [inv.tool_name for inv in invocation_log]
     tool_timings = [
@@ -550,11 +674,13 @@ async def _execute_repl(
                     user_globals=repl_checkpoint.get("user_globals", {}),
                     variable_lineage=repl_checkpoint.get("variable_lineage", {}),
                     skipped_user_globals=repl_checkpoint.get("skipped_user_globals", []),
+                    protocol_version=1,
                 )
                 session_store.save_checkpoint(checkpoint)
                 session_persistence["checkpoint_saved"] = True
                 session_persistence["checkpoint_id"] = checkpoint.id
                 session_persistence["saved_globals"] = len(checkpoint.user_globals)
+                session_persistence["save_protocol_version"] = checkpoint.protocol_version
             else:
                 session_persistence["save_error"] = "session_not_found"
         except Exception as e:
@@ -603,4 +729,7 @@ async def _execute_repl(
         skills_retrieved=len(routing.skill_ids),
         skill_ids=routing.skill_ids,
         session_persistence=session_persistence,
+        # Context window management (C1/C3)
+        compaction_triggered=task_state.compaction_count > 0,
+        compaction_tokens_saved=task_state.compaction_tokens_saved,
     )
