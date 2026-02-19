@@ -2,7 +2,7 @@
 
 ## Status: ACTIVE — Phases 0+0.5+1 COMPLETE, Phase 2A SHIPPED, Phase 2B-Quality ABANDONED
 **Created**: 2026-01-10
-**Updated**: 2026-02-19 (V3 corpus quality gate PASSED: 30B +16% speed (was -12% with MVP), 32B +72% speed (was +6%). No quality regression (Claude-as-Judge delta: 30B -0.04, 32B -0.17). 30B corpus_retrieval enabled in registry. 480B re-test with MoE3 pending.)
+**Updated**: 2026-02-19 (V3 corpus quality gate PASSED all models. 30B: +16% speed, enabled. 32B: +72% speed, enabled. 480B: +1.4% speed, quality +1.25 — marginal, NOT enabled. Phase 2A complete.)
 **Priority**: HIGH — **2.58x speedup on 30B, 2.16x on 480B achieved and shipped**
 **Type**: Phased optimization — test existing capabilities first, then extend with corpus augmentation
 
@@ -17,7 +17,7 @@
 | **Phase 0** | COMPLETE | Prompt lookup works on 480B (18.4% acceptance) but is **net-negative** on speed (-34%) due to MoE verification overhead |
 | **Phase 0.5** | COMPLETE | **jukofyork draft VERIFIED on 480B** — 74-82% acceptance, **2.16x speedup** (5.91 → 12.74 t/s) |
 | **Phase 1** | COMPLETE | **30B: MoE6+spec+lookup = 47.11 t/s (2.58x)**; 235B: full+spec = 6.08 t/s (1.15x); 480B: full+spec = 9.00 t/s (1.38x). Architect roles use full experts (quality over speed). |
-| **Phase 2A** | **SHIPPED** | V3 corpus (76.6M snippets, 5.4B n-grams) quality gate PASSED. 30B: +16% speed, delta -0.04 (enabled). 32B: +72% speed, delta -0.17 (enabled). 480B: +6% (1 prompt, MoE3). 235B/7B remain disabled. |
+| **Phase 2A** | **SHIPPED** | V3 corpus (76.6M snippets, 5.4B n-grams) quality gate PASSED all 3 models. 30B: +16% speed (enabled). 32B: +72% speed (enabled). 480B: +1.4% speed, +1.25 quality (marginal, NOT enabled). 235B/7B remain disabled. |
 | **Phase 2B-Quality** | **ABANDONED (7B & 32B)** | Prompt-level RAG hurts quality on both 7B (delta -0.96) and 32B (delta -1.38). Even relevant The Stack snippets confuse the model. Only graph_shortest benefits (+1.0/+1.8). Requires fine-tuning or GPT-4-class models. |
 
 ### Benchmark Results (480B, llama-server, MoE3)
@@ -342,7 +342,7 @@ Injecting code snippets into prompts risks steering model output toward those sn
 | `run_combination_benchmarks.sh` | DONE (480B entry exists) | Phase 0/1 |
 | SoftMatcha v2 | INSTALLED (v0.1.0, icu-tokenizer optional) | Phase 2 |
 | MVP corpus index | SUPERSEDED by v3 sharded index | Phase 2A |
-| V3 sharded index | BUILT (75.9M snippets, 5.4B n-grams, 666GB, 16 shards) — WAL checkpoint pending | Phase 2A |
+| V3 sharded index | BUILT (76.6M snippets, 5.4B n-grams, 651GB, 16 shards) — WAL checkpointed, quality gate PASSED | Phase 2A |
 | build_index_v2.py | BUILT — SQLite backend, HF streaming, --resume | Phase 2A scaling |
 | populate_shards.py | BUILT — dual-cursor merge, parallel langs, 50% sampling | Phase 2A scaling |
 | prune_index.py | BUILT — optional post-build pruning | Phase 2A scaling |
@@ -444,7 +444,8 @@ Phase 2A  →  A/B TESTED (2026-02-15), CORPUS SCALED (2026-02-17)
               │   30B corpus_retrieval flipped to true in registry (was false with MVP)
               │   graph_shortest: 100% acceptance on 32B (50.3 t/s, perfect n-gram match)
               │
-              └─ PENDING: 480B re-test with MoE3 + spec decode (full experts was 2.3 t/s)
+              └─ 480B COMPLETE (2026-02-19): +1.4% speed, quality +1.25 (PASS but marginal)
+                  NOT enabled in production — 480B's own knowledge already yields high acceptance
 
 Phase 2B-Quality → RAG-augmented generation for worker models
               |
