@@ -44,7 +44,7 @@ When a handoff task is complete, follow this checklist:
 | Handoff | Purpose | Status |
 |---------|---------|--------|
 | [rlm-orchestrator-roadmap.md](active/rlm-orchestrator-roadmap.md) | Consolidated orchestrator roadmap and integration sequencing | Active |
-| [hybrid-lookup-spec-decode.md](active/hybrid-lookup-spec-decode.md) | Prompt lookup + speculative decode + corpus strategy | **Complete** (all questions closed, ready for archival) |
+| ~~hybrid-lookup-spec-decode.md~~ | Prompt lookup + speculative decode + corpus strategy | **Archived** (2026-02-19) |
 | [routing-intelligence.md](active/routing-intelligence.md) | Routing quality and decision-policy improvements | Active |
 | [skillbank-distillation.md](active/skillbank-distillation.md) | Skill distillation/evolution planning | Active |
 | [multimodal-pipeline.md](active/multimodal-pipeline.md) | Multimodal and vision pipeline enhancements | Active |

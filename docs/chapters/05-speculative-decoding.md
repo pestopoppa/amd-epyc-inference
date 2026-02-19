@@ -177,6 +177,21 @@ Hybrid SSM models (Qwen3-Next series) are fundamentally incompatible with specul
 
 </details>
 
+## Architect Model Spec Decode Results (2026-02-13)
+
+Large architect models use full experts + spec decode (quality over speed). Key findings:
+
+**Qwen3-Coder-480B-A35B** (BOS = comma, token 11):
+- Standard Qwen3 drafts: 0% acceptance (BOS mismatch)
+- jukofyork vocab-transplant draft (`Qwen3-Coder-Instruct-DRAFT-0.75B-32k-Q4_0.gguf`): 74-82% acceptance on code refactoring, 57% on novel generation
+- Production config: Full experts + spec (K=16) = 9.00 t/s (1.38x). MoE3+spec was 12.74 t/s but sacrifices quality.
+
+**Qwen3-235B-A22B**:
+- 0.6B Q8_0 draft dramatically outperforms 1.7B: 55% vs 21% acceptance. Smaller draft wins on CPU due to faster proposal generation.
+- Production config: Full experts + 0.6B spec (K=16) = 6.08 t/s (1.15x). MoE4+spec was 8.21 t/s but sacrifices quality.
+
+**Policy**: Architect roles prioritize quality. Full experts + spec decode is the production config. Frontdoor/coder roles use MoE + spec + lookup (speed matters more).
+
 ---
 
 *Previous: [Chapter 04: Storage & Safety](04-storage-and-safety.md)* | *Next: [Chapter 06: MoE Optimization](06-moe-optimization.md)*
