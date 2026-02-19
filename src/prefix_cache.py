@@ -353,11 +353,15 @@ class CachingBackend:
         self.router = router if router is not None else PrefixRouter()
         self.canonicalize = canonicalize
         self.cache_dir = cache_dir
+        self.frontdoor_repl_bypass_count = 0
+
+    def _frontdoor_repl_bypass_enabled(self) -> bool:
+        raw = os.environ.get("ORCHESTRATOR_PREFIX_CACHE_BYPASS_FRONTDOOR_REPL", "1")
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
     def _should_bypass_slot_routing(self, request: "InferenceRequest") -> bool:  # noqa: F821
         """Return True when slot routing should be skipped for this request."""
-        raw = os.environ.get("ORCHESTRATOR_PREFIX_CACHE_BYPASS_FRONTDOOR_REPL", "1")
-        if str(raw).strip().lower() not in {"1", "true", "yes", "on"}:
+        if not self._frontdoor_repl_bypass_enabled():
             return False
         role = (request.role or "").strip().lower()
         if role not in {"frontdoor", "role.frontdoor"}:
@@ -381,6 +385,7 @@ class CachingBackend:
         """
         from dataclasses import replace
         if self._should_bypass_slot_routing(request):
+            self.frontdoor_repl_bypass_count += 1
             return self.backend.infer(role_config, replace(request, slot_id=None))
 
         # Get optimal slot from prefix router
@@ -406,6 +411,7 @@ class CachingBackend:
         """Stream inference with prefix caching (delegates to backend)."""
         from dataclasses import replace
         if self._should_bypass_slot_routing(request):
+            self.frontdoor_repl_bypass_count += 1
             return self.backend.infer_stream_text(role_config, replace(request, slot_id=None), on_chunk=on_chunk)
 
         prompt = request.prompt or ""
@@ -445,6 +451,9 @@ class CachingBackend:
             "slot_stats": self.router.get_slot_stats(),
             # Convenience: token savings as a percentage (0-100)
             "token_savings_pct": backend_stats.token_savings_rate,
+            # Bypass diagnostics for WS3A validation
+            "frontdoor_repl_bypass_enabled": self._frontdoor_repl_bypass_enabled(),
+            "frontdoor_repl_bypass_count": self.frontdoor_repl_bypass_count,
         }
 
     # =========================================================================

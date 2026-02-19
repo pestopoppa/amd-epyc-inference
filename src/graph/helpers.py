@@ -460,9 +460,9 @@ def _maybe_prewarm_architect(state: "TaskState") -> None:
         if complexity != TaskComplexity.COMPLEX:
             return
 
-        from src.services.escalation_prewarmer import EscalationPrewarmer
+        from src.services.escalation_prewarmer import get_shared_prewarmer
 
-        prewarmer = EscalationPrewarmer()
+        prewarmer = get_shared_prewarmer()
 
         # Fire and forget — don't block the main execution
         loop = asyncio.get_event_loop()

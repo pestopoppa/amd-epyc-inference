@@ -129,6 +129,9 @@ class SweepResult:
     ttft_baseline_ms: float
     prompt_tokens: int
     n_predict: int
+    success_count: int
+    total_count: int
+    error_rate: float
 
 
 @dataclass
@@ -301,15 +304,19 @@ async def sweep_role(
             # Measured batches
             all_per_tps = []
             all_latencies = []
+            success_count = 0
+            total_count = 0
             print(f"    Measured: {n_measured} batches...", end="", flush=True)
             for _ in range(n_measured):
                 batch = await _run_concurrent_batch(
                     client, port, concurrency, SWEEP_PROMPT, n_predict
                 )
+                total_count += len(batch)
                 for r in batch:
                     if r.success:
                         all_per_tps.append(r.per_tps)
                         all_latencies.append(r.latency_ms)
+                        success_count += 1
                 print(".", end="", flush=True)
             print(" done")
 
@@ -325,6 +332,9 @@ async def sweep_role(
             p95_idx = min(int(len(latencies_sorted) * 0.95), len(latencies_sorted) - 1)
             p95 = latencies_sorted[p95_idx]
             prompt_tokens = batch[0].prompt_tokens if batch[0].success else 0
+            error_rate = (
+                (total_count - success_count) / total_count if total_count > 0 else 1.0
+            )
 
             result = SweepResult(
                 timestamp=datetime.now().isoformat(),
@@ -341,6 +351,9 @@ async def sweep_role(
                 ttft_baseline_ms=ttft_baseline,
                 prompt_tokens=prompt_tokens,
                 n_predict=n_predict,
+                success_count=success_count,
+                total_count=total_count,
+                error_rate=error_rate,
             )
             results.append(result)
 
@@ -351,13 +364,18 @@ async def sweep_role(
                 f"{result.per_tps_mean:.2f}", f"{result.per_tps_stdev:.2f}",
                 f"{result.agg_tps:.2f}", f"{result.p50_latency_ms:.1f}",
                 f"{result.p95_latency_ms:.1f}", f"{result.ttft_baseline_ms:.1f}",
-                result.prompt_tokens, result.n_predict,
+                result.prompt_tokens, result.n_predict, result.success_count, result.total_count,
+                f"{result.error_rate:.4f}",
             ])
             csv_file.flush()
 
             print(f"    per_tps: {per_tps_mean:.2f} ± {per_tps_stdev:.2f} t/s")
             print(f"    agg_tps: {agg_tps:.2f} t/s")
             print(f"    latency: p50={p50:.0f}ms p95={p95:.0f}ms")
+            print(
+                f"    success: {success_count}/{total_count} "
+                f"(error_rate={error_rate * 100:.1f}%)"
+            )
 
     return results
 
@@ -415,6 +433,7 @@ async def main(args: argparse.Namespace) -> None:
         "timestamp", "port", "role", "current_np", "concurrency", "np_warning",
         "per_tps_mean", "per_tps_stdev", "agg_tps", "p50_latency_ms",
         "p95_latency_ms", "ttft_baseline_ms", "prompt_tokens", "n_predict",
+        "success_count", "total_count", "error_rate",
     ]
 
     all_results = []
@@ -449,6 +468,32 @@ async def main(args: argparse.Namespace) -> None:
             print(f"{r.role:<20} {r.concurrency:>3}{warn} {r.per_tps_mean:>8.2f} "
                   f"{r.agg_tps:>8.2f} {r.p50_latency_ms:>7.0f} {r.p95_latency_ms:>7.0f}")
 
+    summary = build_recommendations(
+        all_results,
+        min_agg_gain_pct=args.min_agg_gain_pct,
+        max_p95_multiplier=args.max_p95_multiplier,
+        max_error_rate=args.max_error_rate,
+    )
+    summary_path = csv_path.with_suffix(".summary.json")
+    summary_payload = {
+        "created_at": datetime.now().isoformat(),
+        "csv_path": str(csv_path),
+        "args": {
+            "roles": args.roles,
+            "concurrency": args.concurrency,
+            "n_warmup": args.n_warmup,
+            "n_measured": args.n_measured,
+            "n_predict": args.n_predict,
+            "skip_architects": args.skip_architects,
+            "min_agg_gain_pct": args.min_agg_gain_pct,
+            "max_p95_multiplier": args.max_p95_multiplier,
+            "max_error_rate": args.max_error_rate,
+        },
+        "recommendations": summary,
+    }
+    summary_path.write_text(json.dumps(summary_payload, indent=2))
+    print(f"Summary JSON written to: {summary_path}")
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -470,7 +515,101 @@ def parse_args() -> argparse.Namespace:
                        help="Print test plan without running")
     parser.add_argument("--yes", "-y", action="store_true",
                        help="Skip confirmation prompts")
+    parser.add_argument(
+        "--min-agg-gain-pct",
+        type=float,
+        default=10.0,
+        help="Minimum aggregate TPS gain vs c=1 to recommend higher concurrency (default: 10.0)",
+    )
+    parser.add_argument(
+        "--max-p95-multiplier",
+        type=float,
+        default=1.5,
+        help="Maximum allowed p95 multiplier vs c=1 (default: 1.5)",
+    )
+    parser.add_argument(
+        "--max-error-rate",
+        type=float,
+        default=0.02,
+        help="Maximum allowed error rate for recommended concurrency (default: 0.02)",
+    )
     return parser.parse_args()
+
+
+def build_recommendations(
+    results: list[SweepResult],
+    *,
+    min_agg_gain_pct: float,
+    max_p95_multiplier: float,
+    max_error_rate: float,
+) -> list[dict]:
+    """Derive per-role concurrency recommendations from sweep output."""
+    by_role: dict[str, list[SweepResult]] = {}
+    for r in results:
+        by_role.setdefault(r.role, []).append(r)
+
+    recommendations: list[dict] = []
+    for role, role_results in sorted(by_role.items()):
+        ordered = sorted(role_results, key=lambda r: r.concurrency)
+        baseline = next((r for r in ordered if r.concurrency == 1), None)
+        if baseline is None:
+            recommendations.append(
+                {
+                    "role": role,
+                    "status": "insufficient_baseline",
+                    "reason": "missing concurrency=1 baseline",
+                    "recommended_concurrency": None,
+                }
+            )
+            continue
+
+        accepted: list[SweepResult] = []
+        rejected: list[dict[str, object]] = []
+        for r in ordered:
+            if r.concurrency == 1:
+                accepted.append(r)
+                continue
+
+            gain_pct = ((r.agg_tps - baseline.agg_tps) / baseline.agg_tps * 100) if baseline.agg_tps > 0 else 0.0
+            p95_mult = (r.p95_latency_ms / baseline.p95_latency_ms) if baseline.p95_latency_ms > 0 else 999.0
+            checks = {
+                "agg_gain_ok": gain_pct >= min_agg_gain_pct,
+                "p95_ok": p95_mult <= max_p95_multiplier,
+                "error_ok": r.error_rate <= max_error_rate,
+            }
+            if all(checks.values()):
+                accepted.append(r)
+            else:
+                rejected.append(
+                    {
+                        "concurrency": r.concurrency,
+                        "agg_gain_pct": round(gain_pct, 2),
+                        "p95_multiplier": round(p95_mult, 3),
+                        "error_rate": round(r.error_rate, 4),
+                        "checks": checks,
+                    }
+                )
+
+        best = max(accepted, key=lambda r: r.agg_tps)
+        recommendations.append(
+            {
+                "role": role,
+                "status": "ok",
+                "recommended_concurrency": best.concurrency,
+                "baseline_concurrency": 1,
+                "baseline_agg_tps": round(baseline.agg_tps, 2),
+                "recommended_agg_tps": round(best.agg_tps, 2),
+                "agg_gain_pct": round(
+                    ((best.agg_tps - baseline.agg_tps) / baseline.agg_tps * 100) if baseline.agg_tps > 0 else 0.0,
+                    2,
+                ),
+                "recommended_p95_ms": round(best.p95_latency_ms, 1),
+                "baseline_p95_ms": round(baseline.p95_latency_ms, 1),
+                "recommended_error_rate": round(best.error_rate, 4),
+                "rejected_candidates": rejected,
+            }
+        )
+    return recommendations
 
 
 if __name__ == "__main__":

@@ -390,6 +390,16 @@ When discovering a new quirk:
            discovered: YYYY-MM-DD
    ```
 
+### llama-server /slots API
+
+**Issue**: Field names differ between llama-server versions
+
+**Symptoms**: Slot availability checks fail silently when code checks `state == 0` (legacy) but server returns `is_processing` (boolean, modern). Also, single-slot servers (`-np 1`) return a dict from `/slots`, not a list.
+
+**Workaround**: Check both fields: `not s.get("is_processing", True) or s.get("state") == 0`. Wrap response with `isinstance(data, list)` guard.
+
+**Discovered**: 2026-02-19 (in `EscalationPrewarmer._check_slot_available()`)
+
 ---
 
 *See [MODELS.md](MODELS.md) for model configurations.*

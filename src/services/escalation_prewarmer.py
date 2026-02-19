@@ -15,6 +15,7 @@ to avoid evicting hot slots.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,9 @@ class EscalationPrewarmer:
         self._timeout = timeout
         self._prewarm_count = 0
         self._prewarm_hits = 0  # Incremented externally when prewarm slot is used
+        self._prewarm_by_port: dict[int, int] = {}
+        self._prewarm_hits_by_role: dict[str, int] = {}
+        self._lock = threading.Lock()
 
     async def prewarm_if_complex(
         self,
@@ -89,9 +93,14 @@ class EscalationPrewarmer:
                 )
                 if resp.status_code != 200:
                     return False
-                slots = resp.json()
-                # Only pre-warm if there's an idle slot
-                idle_slots = [s for s in slots if s.get("state") == 0]  # 0 = idle
+                data = resp.json()
+                # llama-server returns a list for -np>1, a single dict for -np=1
+                slots = data if isinstance(data, list) else [data]
+                # Check is_processing (modern llama-server) or state==0 (legacy)
+                idle_slots = [
+                    s for s in slots
+                    if not s.get("is_processing", True) or s.get("state") == 0
+                ]
                 return len(idle_slots) > 0
         except Exception as e:
             logger.debug("Slot check failed for port %d: %s", port, e)
@@ -118,7 +127,9 @@ class EscalationPrewarmer:
                     timeout=self._timeout,
                 )
                 if resp.status_code == 200:
-                    self._prewarm_count += 1
+                    with self._lock:
+                        self._prewarm_count += 1
+                        self._prewarm_by_port[port] = self._prewarm_by_port.get(port, 0) + 1
                     logger.info(
                         "Pre-warmed architect slot on port %d (prompt: %d chars)",
                         port,
@@ -131,14 +142,44 @@ class EscalationPrewarmer:
             logger.debug("Pre-warm request failed for port %d: %s", port, e)
             return False
 
+    def record_prewarm_hit(self, role: str) -> None:
+        """Record that execution actually escalated to an architect role."""
+        role_key = str(role or "").strip() or "unknown"
+        with self._lock:
+            self._prewarm_hits += 1
+            self._prewarm_hits_by_role[role_key] = (
+                self._prewarm_hits_by_role.get(role_key, 0) + 1
+            )
+
     def get_stats(self) -> dict[str, Any]:
         """Get pre-warming statistics."""
+        with self._lock:
+            prewarm_count = self._prewarm_count
+            prewarm_hits = self._prewarm_hits
+            prewarm_by_port = dict(self._prewarm_by_port)
+            prewarm_hits_by_role = dict(self._prewarm_hits_by_role)
         return {
-            "prewarm_count": self._prewarm_count,
-            "prewarm_hits": self._prewarm_hits,
+            "prewarm_count": prewarm_count,
+            "prewarm_hits": prewarm_hits,
+            "prewarm_by_port": prewarm_by_port,
+            "prewarm_hits_by_role": prewarm_hits_by_role,
             "hit_rate": (
-                self._prewarm_hits / self._prewarm_count
-                if self._prewarm_count > 0
+                prewarm_hits / prewarm_count
+                if prewarm_count > 0
                 else 0.0
             ),
         }
+
+
+_shared_prewarmer: EscalationPrewarmer | None = None
+_shared_lock = threading.Lock()
+
+
+def get_shared_prewarmer() -> EscalationPrewarmer:
+    """Return the process-wide prewarmer used by orchestration helpers."""
+    global _shared_prewarmer
+    if _shared_prewarmer is None:
+        with _shared_lock:
+            if _shared_prewarmer is None:
+                _shared_prewarmer = EscalationPrewarmer()
+    return _shared_prewarmer

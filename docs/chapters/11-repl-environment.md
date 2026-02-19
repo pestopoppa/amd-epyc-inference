@@ -377,6 +377,19 @@ Fast path: `code.isascii()` returns immediately (zero overhead for clean code).
 
 </details>
 
+## Parallel Read-Only Tool Dispatch (2026-02-17)
+
+AST-based two-pass dispatch enables parallel execution of independent read-only REPL calls via `ThreadPoolExecutor`. Parse code → extract independent read-only calls → if all safe, dispatch in parallel; otherwise fall through to sequential `exec()`.
+
+**Core files**: `src/repl_environment/parallel_dispatch.py` (`_ParallelCall`, `_extract_parallel_calls()`, `execute_parallel_calls()`), `environment.py` (`_state_lock`, `_READ_ONLY_REPL_TOOLS` frozenset).
+
+**Design decisions**:
+- Conservative fallback: `_extract_parallel_calls()` returns `None` on any ambiguity → sequential `exec()`
+- Coarse locking: single `_state_lock` on `REPLEnvironment`, held only for counter increments (nanoseconds); I/O stays outside lock
+- Thread-safe helpers: `_increment_exploration()` in `file_exploration.py`, lock guards in `routing.py` and `code_search.py`
+
+**Impact**: 2-4x speedup on multi-tool turns. Feature flag: `parallel_tools=True` (on by default). 22+ unit tests in `tests/unit/test_repl_parallel_dispatch.py`.
+
 ---
 
 *Previous: [Chapter 10: Orchestration Architecture](10-orchestration-architecture.md)* | *Next: [Chapter 12: Production Server Stack](12-production-server-stack.md)*

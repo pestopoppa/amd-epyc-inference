@@ -150,9 +150,10 @@ def _numa_prefix(role: str) -> list[str]:
     return ["numactl", "--interleave=all"]
 
 
-# Roles that must never run concurrently (large models).
+# Roles that must never run concurrently (large/latency-sensitive paths).
+# Note: frontdoor intentionally runs with 2 slots by default for better
+# interactive responsiveness under concurrent traffic.
 SERIAL_ROLES = {
-    "frontdoor",
     "coder_escalation",
     "worker_summarize",
     "architect_general",

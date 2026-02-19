@@ -57,6 +57,19 @@ from src.graph.helpers import (  # noqa: F401 — re-exported for backward compa
 log = logging.getLogger(__name__)
 
 
+def _record_escalation_role(state: TaskState, role: Role) -> None:
+    """Record role transition and attribute architect prewarm hits."""
+    state.record_role(role)
+    if role not in {Role.ARCHITECT_GENERAL, Role.ARCHITECT_CODING}:
+        return
+    try:
+        from src.services.escalation_prewarmer import get_shared_prewarmer
+
+        get_shared_prewarmer().record_prewarm_hit(str(role))
+    except Exception as exc:
+        log.debug("Prewarm hit attribution failed for role=%s: %s", role, exc)
+
+
 
 # ── Node classes ───────────────────────────────────────────────────────
 
@@ -274,7 +287,7 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
             state.escalation_count += 1
             state.consecutive_failures = 0
             from_role = str(state.current_role)
-            state.record_role(Role.ARCHITECT_GENERAL)
+            _record_escalation_role(state, Role.ARCHITECT_GENERAL)
             _log_escalation(ctx, from_role, str(Role.ARCHITECT_GENERAL), f"Model-initiated: {reason}")
             return ArchitectNode()
 
@@ -297,7 +310,7 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.ARCHITECT_GENERAL)
+                _record_escalation_role(state, Role.ARCHITECT_GENERAL)
                 _log_escalation(ctx, from_role, str(Role.ARCHITECT_GENERAL), f"Early abort: {error[:100]}")
                 return ArchitectNode()
 
@@ -314,7 +327,7 @@ class CoderNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.consecutive_failures = 0
                 state.think_harder_attempted = False
                 from_role = str(state.current_role)
-                state.record_role(Role.ARCHITECT_GENERAL)
+                _record_escalation_role(state, Role.ARCHITECT_GENERAL)
                 _log_escalation(
                     ctx, from_role, str(Role.ARCHITECT_GENERAL),
                     f"Escalating after {state.consecutive_failures} failures",
@@ -388,7 +401,7 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.ARCHITECT_CODING)
+                _record_escalation_role(state, Role.ARCHITECT_CODING)
                 _log_escalation(ctx, from_role, str(Role.ARCHITECT_CODING), f"Early abort: {error[:100]}")
                 return ArchitectCodingNode()
 
@@ -405,7 +418,7 @@ class CoderEscalationNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.consecutive_failures = 0
                 state.think_harder_attempted = False
                 from_role = str(state.current_role)
-                state.record_role(Role.ARCHITECT_CODING)
+                _record_escalation_role(state, Role.ARCHITECT_CODING)
                 _log_escalation(
                     ctx, from_role, str(Role.ARCHITECT_CODING),
                     f"Escalating after {state.consecutive_failures} failures",
@@ -479,7 +492,7 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.escalation_count += 1
                 state.consecutive_failures = 0
                 from_role = str(state.current_role)
-                state.record_role(Role.ARCHITECT_GENERAL)
+                _record_escalation_role(state, Role.ARCHITECT_GENERAL)
                 _log_escalation(ctx, from_role, str(Role.ARCHITECT_GENERAL), f"Early abort: {error[:100]}")
                 return ArchitectNode()
 
@@ -496,7 +509,7 @@ class IngestNode(BaseNode[TaskState, TaskDeps, TaskResult]):
                 state.consecutive_failures = 0
                 state.think_harder_attempted = False
                 from_role = str(state.current_role)
-                state.record_role(Role.ARCHITECT_GENERAL)
+                _record_escalation_role(state, Role.ARCHITECT_GENERAL)
                 _log_escalation(
                     ctx, from_role, str(Role.ARCHITECT_GENERAL),
                     f"Escalating after {state.consecutive_failures} failures",

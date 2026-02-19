@@ -368,6 +368,11 @@ async def _handle_chat(
         cancel_check=cancel_event.is_set if cancel_event is not None else None,
         deadline_s=request_deadline_s,
         task_id=routing.task_id,
+        priority=(
+            "background"
+            if str(request.request_priority).strip().lower() == "background"
+            else "interactive"
+        ),
     ):
         def _finalize(resp: ChatResponse) -> ChatResponse:
             return _annotate_error(_attach_budget_diagnostics(resp, primitives))

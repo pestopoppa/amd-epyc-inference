@@ -146,6 +146,7 @@ class LLMPrimitives(
         self._request_cancel_check = None
         self._request_deadline_s = None
         self._request_task_id = None
+        self._request_priority = "interactive"
         # Request-local context to avoid cross-request overwrite on shared primitives.
         self._request_cancel_check_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
             "llm_primitives_request_cancel_check",
@@ -157,6 +158,10 @@ class LLMPrimitives(
         )
         self._request_task_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
             "llm_primitives_request_task_id",
+            default=None,
+        )
+        self._request_priority_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+            "llm_primitives_request_priority",
             default=None,
         )
         self._budget_diagnostics: dict[str, Any] = {
@@ -223,6 +228,13 @@ class LLMPrimitives(
             return value
         return self._request_task_id
 
+    def get_request_priority(self) -> str:
+        """Get request-local priority used by admission control."""
+        value = self._request_priority_ctx.get()
+        if value:
+            return str(value)
+        return str(self._request_priority or "interactive")
+
     @contextlib.contextmanager
     def request_context(
         self,
@@ -230,8 +242,14 @@ class LLMPrimitives(
         cancel_check=None,
         deadline_s: float | None = None,
         task_id: str | None = None,
+        priority: str = "interactive",
     ):
         """Bind cancellation/deadline metadata to the current request context."""
+        normalized_priority = (
+            "background"
+            if str(priority or "interactive").strip().lower() == "background"
+            else "interactive"
+        )
         start_remaining_ms = None
         if deadline_s is not None:
             start_remaining_ms = max(0.0, (deadline_s - time.perf_counter()) * 1000.0)
@@ -248,10 +266,12 @@ class LLMPrimitives(
             "depth_override_roles": [],
             "depth_override_skip_events": 0,
             "depth_override_skip_reasons": [],
+            "request_priority": normalized_priority,
         }
         token_cancel = self._request_cancel_check_ctx.set(cancel_check)
         token_deadline = self._request_deadline_s_ctx.set(deadline_s)
         token_task = self._request_task_id_ctx.set(task_id)
+        token_priority = self._request_priority_ctx.set(normalized_priority)
         try:
             yield
         finally:
@@ -264,6 +284,7 @@ class LLMPrimitives(
             self._request_cancel_check_ctx.reset(token_cancel)
             self._request_deadline_s_ctx.reset(token_deadline)
             self._request_task_id_ctx.reset(token_task)
+            self._request_priority_ctx.reset(token_priority)
 
     def _remaining_deadline_s(self) -> float | None:
         """Return remaining request deadline in seconds, if any."""

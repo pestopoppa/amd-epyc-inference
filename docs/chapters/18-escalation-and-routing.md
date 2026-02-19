@@ -988,6 +988,28 @@ This chapter's routing and escalation mechanics are grounded in several research
 
 </details>
 
+## Architect KV Cache Pre-warming (2026-02-19)
+
+`EscalationPrewarmer` (`src/services/escalation_prewarmer.py`) speculatively prefills architect KV cache when `classify_task_complexity()` returns COMPLEX at turn 1. Sends `n_predict=0, cache_prompt=true` to warm the system prompt prefix (~500 tokens) before escalation actually happens.
+
+**Validation**: Both architect servers (8083 general, 8084 coding) confirmed receiving pre-warm requests. Process-wide singleton via `get_shared_prewarmer()` with thread-safe hit/port telemetry.
+
+**Bug found and fixed**: `_check_slot_available()` checked `s.get("state") == 0` but modern llama-server uses `is_processing` (boolean). Also assumed `/slots` returns a list, but single-slot servers (`-np 1`) return a dict. Fixed to `not s.get("is_processing", True)` with `isinstance(data, list)` guard.
+
+**Risk**: Architect `-np 1` means pre-warming fills the only slot. Beneficial when escalation follows (shared prefix), wastes slot if no escalation. The `_check_slot_available()` guard prevents pre-warming a busy slot.
+
+## LLMLingua-2 Escalation Compression — Not Viable (2026-02-19)
+
+Evaluated LLMLingua-2 extractive compression for reducing architect escalation prompt size. **Result: not viable for code-heavy prompts**.
+
+| Target Ratio | Actual Ratio | Latency | Code Preserved |
+|-------------|-------------|---------|----------------|
+| 0.3 | 0.14 | 12.9s | class/def/error: all destroyed |
+| 0.5 | 0.23 | 2.7s | class/def/error: all destroyed |
+| 0.7 | 0.30 | 2.5s | def preserved, class/error destroyed |
+
+**Why it fails**: Over-compresses (0.5 target → 0.23 actual), `force_tokens` ineffective for code identifiers, compression latency (2.5-13s) exceeds ~1.67s architect prefill savings. Feature flag `escalation_compression` kept `False` permanently. Revisiting would require AST-preserving structural compression.
+
 ---
 
 *Previous: [Chapter 17: Memory Seeding](17-memory-seeding.md)* | *Next: [Chapter 19: Procedure Registry](19-procedure-registry.md)*

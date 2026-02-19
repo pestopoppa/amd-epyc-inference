@@ -333,6 +333,24 @@ Stored in `/mnt/raid0/llm/claude/orchestration/checkpoints/`.
 
 </details>
 
+## Concurrent Inference Sweep (2026-02-19)
+
+Benchmarked optimal `-np`/concurrency per model tier using `scripts/benchmark/concurrent_inference_sweep.py` (asyncio + httpx.AsyncClient, 2 warmup + 5 measured batches, incremental CSV output).
+
+**Results**:
+| Role | Port | Recommended `-np` | Rationale |
+|------|------|--------------------|-----------|
+| frontdoor (30B MoE) | 8080 | **2** (was 1) | +121% aggregate TPS, p95 multiplier 1.33 |
+| coder (32B dense) | 8081 | 1 (keep) | c=2 rejected: p95 multiplier 1.98 |
+| worker (7B) | 8082 | 1 (keep) | c=2+ rejected: p95 multiplier ≥1.505 |
+| fast_worker (1.5B) | 8102 | — | Port unavailable during sweep |
+
+**Action taken**: Removed `frontdoor` from `SERIAL_ROLES` in `orchestrator_stack.py` so it starts with `-np 2`.
+
+### SERIAL_ROLES
+
+`SERIAL_ROLES` in `orchestrator_stack.py` forces `-np 1` for roles where concurrent slot contention degrades latency: `coder_escalation`, `worker_summarize`, `architect_general`, `architect_coding`, `ingest_long_context`.
+
 ---
 
 *Previous: [Chapter 11: REPL Environment](11-repl-environment.md)* | *Next: [Chapter 13: Data Processing Pipelines](13-data-processing-pipelines.md)*

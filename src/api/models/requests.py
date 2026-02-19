@@ -84,6 +84,11 @@ class ChatRequest(BaseModel):
         default=None,
         description="Optional session identifier for cross-request REPL globals restore.",
     )
+    request_priority: str = Field(
+        default="interactive",
+        description="Admission priority: 'interactive' (default) or 'background'. "
+        "Interactive requests are prioritized at backend admission gates.",
+    )
 
 
 class RewardRequest(BaseModel):

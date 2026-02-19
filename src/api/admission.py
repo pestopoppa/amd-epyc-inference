@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +53,90 @@ class AdmissionController:
             url: threading.Semaphore(n) for url, n in self._limits.items()
         }
         self._lock = threading.Lock()
+        self._waiting: dict[str, dict[str, int]] = {
+            url: {"interactive": 0, "background": 0}
+            for url in self._limits
+        }
 
     @classmethod
     def from_defaults(cls) -> AdmissionController:
         return cls(DEFAULT_LIMITS)
 
-    def try_acquire(self, backend_url: str) -> bool:
-        """Non-blocking acquire. Returns True if admitted, False if queue full."""
+    def _norm_priority(self, priority: str | None) -> str:
+        p = str(priority or "interactive").strip().lower()
+        return "background" if p == "background" else "interactive"
+
+    def acquire(
+        self,
+        backend_url: str,
+        *,
+        priority: str = "interactive",
+        wait: bool = False,
+        timeout_s: float | None = None,
+        deadline_s: float | None = None,
+        cancel_check=None,
+        poll_s: float = 0.02,
+    ) -> bool:
+        """Acquire admission slot with optional bounded wait.
+
+        Interactive requests are prioritized over background requests when
+        waiters exist on the same backend.
+        """
         sem = self._semaphores.get(backend_url)
         if sem is None:
-            # Unknown backend — no limit applied
             return True
-        acquired = sem.acquire(blocking=False)
+
+        prio = self._norm_priority(priority)
+        start = time.perf_counter()
+        waited = False
+        with self._lock:
+            q = self._waiting.setdefault(
+                backend_url, {"interactive": 0, "background": 0}
+            )
+            q[prio] = q.get(prio, 0) + 1
+            waited = True
+        try:
+            while True:
+                if cancel_check is not None:
+                    try:
+                        if cancel_check():
+                            return False
+                    except Exception:
+                        pass
+                now = time.perf_counter()
+                if deadline_s is not None and now >= deadline_s:
+                    return False
+                if timeout_s is not None and (now - start) >= max(0.0, timeout_s):
+                    return False
+
+                with self._lock:
+                    waiting_interactive = self._waiting.get(backend_url, {}).get(
+                        "interactive", 0
+                    )
+                # Keep one slot path open for interactive arrivals while background waits.
+                if prio == "background" and waiting_interactive > 0:
+                    if not wait:
+                        return False
+                    time.sleep(poll_s)
+                    continue
+
+                if sem.acquire(blocking=False):
+                    return True
+
+                if not wait:
+                    return False
+                time.sleep(poll_s)
+        finally:
+            if waited:
+                with self._lock:
+                    q = self._waiting.setdefault(
+                        backend_url, {"interactive": 0, "background": 0}
+                    )
+                    q[prio] = max(0, q.get(prio, 0) - 1)
+
+    def try_acquire(self, backend_url: str) -> bool:
+        """Non-blocking acquire. Returns True if admitted, False if queue full."""
+        acquired = self.acquire(backend_url, wait=False)
         if not acquired:
             logger.warning(
                 "Admission rejected for %s (limit=%d)",
@@ -85,9 +158,13 @@ class AdmissionController:
             limit = self._limits.get(url, 0)
             # Semaphore._value is the current counter (available slots)
             available = sem._value  # type: ignore[attr-defined]
+            with self._lock:
+                waiting = self._waiting.get(url, {})
             status[url] = {
                 "limit": limit,
                 "available": available,
                 "in_flight": limit - available,
+                "waiting_interactive": int(waiting.get("interactive", 0)),
+                "waiting_background": int(waiting.get("background", 0)),
             }
         return status

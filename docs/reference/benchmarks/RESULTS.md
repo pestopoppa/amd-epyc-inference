@@ -49,6 +49,20 @@ See [Chapter 24](../../chapters/24-benchmark-suite-construction.md) for suite co
 
 ---
 
+## 🆕 Concurrent Inference Sweep (2026-02-19)
+
+Benchmarked per-role optimal `-np` (parallel slots) using `scripts/benchmark/concurrent_inference_sweep.py`.
+
+| Role | Port | Recommended `-np` | Aggregate TPS Change | p95 Multiplier |
+|------|------|--------------------|----------------------|----------------|
+| frontdoor (30B MoE) | 8080 | **2** (was 1) | **+121.74%** | 1.33 |
+| coder (32B dense) | 8081 | 1 (keep) | — | 1.98 (rejected) |
+| worker (7B) | 8082 | 1 (keep) | — | ≥1.505 (rejected) |
+
+**Action**: Frontdoor removed from `SERIAL_ROLES`, now starts with `-np 2`.
+
+---
+
 ## 🆕 Parallel Tensor Repacking (2025-12-21)
 
 **Problem:** Model loading on 96-core EPYC was bottlenecked by single-threaded tensor repacking for AVX-512 optimization.

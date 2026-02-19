@@ -343,8 +343,21 @@ class InferenceMixin:
         backend_url = self.server_urls.get(role, "") if self.server_urls else ""
         admission = getattr(self, "admission_controller", None)
         admitted = False
+        cancel_check = self.get_request_cancel_check()
+        deadline_s = self.get_request_deadline_s()
+        request_priority = self.get_request_priority()
         if backend_url and admission:
-            if not admission.try_acquire(backend_url):
+            # Bounded wait at admission gate to smooth burst contention while
+            # honoring request cancellation/deadlines.
+            wait_budget_s = 2.0 if deadline_s is None else None
+            if not admission.acquire(
+                backend_url,
+                priority=request_priority,
+                wait=True,
+                timeout_s=wait_budget_s,
+                deadline_s=deadline_s,
+                cancel_check=cancel_check,
+            ):
                 raise RuntimeError(
                     f"[ERROR: admission] Backend queue full for {backend_url}"
                 )

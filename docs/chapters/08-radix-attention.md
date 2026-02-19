@@ -227,6 +227,19 @@ python -m pytest tests/unit/test_prefix_cache.py -v
 
 </details>
 
+## id_slot Wiring Validation (2026-02-19)
+
+The PrefixRouter→id_slot pipeline was validated end-to-end. Prior to this, the `slot_id` computed by `PrefixRouter` was never forwarded to llama-server — the `id_slot` field in `_build_payload()` was dead code.
+
+**Fix**: `CachingBackend.infer()` and `infer_stream_text()` now pass computed slots via `dataclasses.replace(request, slot_id=slot_id)`, and `LlamaServerBackend._build_payload()` emits `"id_slot": request.slot_id`.
+
+**Validation results** (port 8080, frontdoor with 2 slots):
+- Direct llama-server: `id_slot=0` and `id_slot=1` both accepted; repeated requests show `tokens_cached=40` (server-level cache hit)
+- CachingBackend integration: `router_total_routes=1`, `backend_hit_rate=1.0`, `cached_prompt_tokens=185`
+- Bypass diagnostics for REPL requests: `frontdoor_repl_bypass_enabled=true`
+
+**Caveat**: With 6 uvicorn workers, each has an independent `CachingBackend` singleton. Per-worker router hit rates appear 0% even when llama-server reuses KV cache via `cache_prompt=true`. Future benchmarks should measure `tokens_cached` in llama-server `/completion` responses, not Python-side `router_hit_rate`.
+
 ---
 
 *Previous: [Chapter 07: Prompt Lookup](07-prompt-lookup.md)* | *Next: [Chapter 09: Deprecated Approaches](09-deprecated-approaches.md)*

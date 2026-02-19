@@ -353,7 +353,7 @@ server_mode:
     port: 8082
     slots: 8
     model_role: worker_general
-    shared_with: [worker_math, worker_summarize, toolrunner]
+    shared_with: [worker_math, toolrunner]
     description: Parallel workers for file-level tasks
     model: Qwen2.5-7B-Instruct-f16.gguf
     draft_model: Qwen2.5-Coder-0.5B-Q8_0.gguf
