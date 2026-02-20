@@ -202,6 +202,8 @@ class REPLEnvironment(
         self._active_tool_chain_index: int = 0
         self._active_tool_chain_meta: dict[str, Any] | None = None
         self._chain_execution_log: list[dict[str, Any]] = []
+        self._task_manager: Any = None
+        self._task_type: str = "chat"
 
         # Exploration tracking (for forced exploration validation)
         self._exploration_calls = 0  # Count of peek/grep/llm_call calls

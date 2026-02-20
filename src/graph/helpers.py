@@ -105,6 +105,15 @@ def _workspace_prompt_block(state: TaskState) -> str:
         lines.append(f"- decisions: {decisions}")
     if open_questions:
         lines.append(f"- open_questions: {open_questions}")
+    task_manager = getattr(state, "task_manager", None)
+    if task_manager and task_manager.has_tasks():
+        task_lines = task_manager.summary_block(limit=8)
+        if task_lines:
+            lines.append("- task_progress:")
+            for line in task_lines:
+                lines.append(f"  {line}")
+    if state.anti_pattern_warning:
+        lines.append(f"- warning: {state.anti_pattern_warning[:240]}")
     return "\n".join(lines)
 
 
@@ -297,26 +306,31 @@ def _classify_error(error_message: str) -> ErrorCategory:
     return _classify_error_impl(error_message)
 
 
-def _record_failure(ctx: Ctx, error_category: ErrorCategory, error_msg: str) -> None:
+def _record_failure(ctx: Ctx, error_category: ErrorCategory, error_msg: str) -> str | None:
     """Record failure in the FailureGraph (anti-memory).
 
     FIX: This was never called in the old repl_executor.py.
     """
     fg = ctx.deps.failure_graph
     if fg is None:
-        return
+        return None
     try:
-        fg.record_failure(
+        failure_id = fg.record_failure(
             memory_id=ctx.state.task_id,
             symptoms=[error_category.value, error_msg[:100]],
             description=f"{ctx.state.current_role} failed: {error_msg[:200]}",
             severity=min(ctx.state.consecutive_failures + 2, 5),
         )
+        ctx.state.last_failure_id = failure_id
+        return failure_id
     except Exception as exc:
         log.debug("failure_graph.record_failure failed: %s", exc)
+    return None
 
 
-def _record_mitigation(ctx: Ctx, from_role: str, to_role: str) -> None:
+def _record_mitigation(
+    ctx: Ctx, from_role: str, to_role: str, failure_id: str | None = None
+) -> None:
     """Record a successful mitigation in the FailureGraph.
 
     FIX: This was never called in the old code.
@@ -325,15 +339,19 @@ def _record_mitigation(ctx: Ctx, from_role: str, to_role: str) -> None:
     if fg is None:
         return
     try:
+        resolved_failure_id = failure_id or ctx.state.last_failure_id
+        if not resolved_failure_id:
+            return
         fg.record_mitigation(
-            memory_id=ctx.state.task_id,
-            description=f"Escalation from {from_role} to {to_role} succeeded",
+            failure_id=resolved_failure_id,
+            action=f"escalate:{from_role}->{to_role}",
+            worked=True,
         )
     except Exception as exc:
         log.debug("failure_graph.record_mitigation failed: %s", exc)
 
 
-def _add_evidence(ctx: Ctx, outcome: str, delta: float) -> None:
+def _add_evidence(ctx: Ctx, outcome: str, delta: float | None = None) -> None:
     """Record evidence in the HypothesisGraph.
 
     FIX: This was never called in the old code.
@@ -342,10 +360,11 @@ def _add_evidence(ctx: Ctx, outcome: str, delta: float) -> None:
     if hg is None:
         return
     try:
+        normalized_outcome = "success" if outcome == "success" else "failure"
         hg.add_evidence(
             hypothesis_id=ctx.state.task_id,
-            evidence=f"{ctx.state.current_role}:{outcome}",
-            delta=delta,
+            outcome=normalized_outcome,
+            source=f"{ctx.state.current_role}:turn_{ctx.state.turns}",
         )
     except Exception as exc:
         log.debug("hypothesis_graph.add_evidence failed: %s", exc)
@@ -836,6 +855,16 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
     if deps.primitives is None or deps.repl is None:
         return "", "No LLM primitives or REPL configured", False, {}
 
+    # Attach per-request task tracking context for tool invocations.
+    deps.repl._task_manager = state.task_manager  # noqa: SLF001
+    deps.repl._task_type = state.task_type  # noqa: SLF001
+
+    # Seed task manager from TaskIR and gather context before prompt build.
+    if state.turns == 1:
+        _auto_seed_tasks_from_task_ir(state)
+    gathered_context = _auto_gather_context(ctx, _extract_candidate_files_from_task_ir(state))
+    state.anti_pattern_warning = _check_anti_pattern(ctx) or ""
+
     # Build prompt
     if state.escalation_prompt:
         prompt = state.escalation_prompt
@@ -866,6 +895,8 @@ async def _execute_turn(ctx: Ctx, role: Role | str) -> tuple[str, str | None, bo
             turn=state.turns - 1,
             corpus_context=corpus_ctx,
         )
+        if gathered_context:
+            prompt += "\n\n[Auto Gathered Context]\n" + gathered_context
         prompt += "\n\n" + _workspace_prompt_block(state)
 
     # Graduated FINAL() nudge: midpoint soft reminder, then hard deadline.
@@ -1478,6 +1509,103 @@ def _make_end_result(ctx: Ctx, answer: str, success: bool) -> End[TaskResult]:
             delegation_events=list(ctx.state.delegation_events),
         )
     )
+
+
+def _extract_candidate_files_from_task_ir(state: TaskState) -> list[str]:
+    """Extract candidate file paths from task_ir plan steps."""
+    task_ir = state.task_ir if isinstance(state.task_ir, dict) else {}
+    plan = task_ir.get("plan", {}) if isinstance(task_ir, dict) else {}
+    steps = plan.get("steps", []) if isinstance(plan, dict) else []
+    file_paths: list[str] = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        for raw_path in step.get("files", []):
+            text = str(raw_path).strip()
+            if text and text not in file_paths:
+                file_paths.append(text)
+    return file_paths[:10]
+
+
+def _auto_seed_tasks_from_task_ir(state: TaskState) -> None:
+    """Auto-populate task manager from TaskIR plan on first turn."""
+    manager = getattr(state, "task_manager", None)
+    if manager is None or manager.has_tasks():
+        return
+    task_ir = state.task_ir if isinstance(state.task_ir, dict) else {}
+    plan = task_ir.get("plan", {}) if isinstance(task_ir, dict) else {}
+    steps = plan.get("steps", []) if isinstance(plan, dict) else []
+    if not isinstance(steps, list):
+        return
+    for idx, step in enumerate(steps):
+        if not isinstance(step, dict):
+            continue
+        action = str(step.get("action", "")).strip()
+        if not action:
+            continue
+        manager.create(
+            subject=action,
+            description=action,
+            active_form=f"Working on step {idx + 1}",
+            metadata={"source": "task_ir", "step_id": step.get("id", "")},
+            task_type=state.task_type,
+        )
+
+
+def _auto_gather_context(ctx: Ctx, files: list[str]) -> str:
+    """Gather file snippets into prompt context using REPL peek."""
+    repl = ctx.deps.repl
+    if repl is None or not files:
+        return ""
+    seen = set(ctx.state.gathered_files or [])
+    gathered: list[str] = []
+    for path in files[:10]:
+        if path in seen:
+            continue
+        try:
+            content = repl._peek(200, file_path=path)  # noqa: SLF001
+            gathered.append(f"### {path}\n```\n{content}\n```")
+            seen.add(path)
+        except Exception:
+            gathered.append(f"### {path}\n[Could not read]")
+    ctx.state.gathered_files = list(seen)
+    return "\n\n".join(gathered[:10])
+
+
+def _check_anti_pattern(ctx: Ctx) -> str | None:
+    """Return anti-pattern warning from FailureGraph when recurring failures are detected."""
+    fg = ctx.deps.failure_graph
+    if fg is None:
+        return None
+    if ctx.state.consecutive_failures < 2 and not ctx.state.last_error:
+        return None
+    symptoms: list[str] = []
+    if ctx.state.last_error:
+        symptoms.append(ctx.state.last_error[:100])
+    if ctx.state.consecutive_failures >= 2:
+        symptoms.append(f"{ctx.state.current_role}:consecutive_fail_{ctx.state.consecutive_failures}")
+    if not symptoms:
+        return None
+    try:
+        matches = fg.find_matching_failures(symptoms)
+        if not matches:
+            return None
+        best = matches[0]
+        if int(best.severity) < 3:
+            return None
+        mitigations = fg.get_effective_mitigations(symptoms)
+        if mitigations:
+            top = mitigations[0]
+            action = str(top.get("action", "unknown"))
+            success_rate = float(top.get("success_rate", 0.0))
+            return (
+                f"Recurring pattern seen before. Prior mitigation: {action} "
+                f"(success={success_rate:.0%})."
+            )
+        return f"Recurring pattern: {str(best.description)[:140]}"
+    except Exception as exc:
+        log.debug("anti-pattern check failed: %s", exc)
+        return None
 
 
 def _resolve_answer(output: str, tool_outputs: list) -> str:

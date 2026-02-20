@@ -92,6 +92,7 @@ def canonicalize_task_ir(task_ir: dict[str, Any] | None) -> dict[str, Any]:
                 "actor": _clean_text(raw.get("actor", ""), 24),
                 "action": _clean_text(raw.get("action", ""), MAX_PLAN_ACTION_LEN),
                 "depends_on": _as_string_list(raw.get("depends_on"), item_limit=24, max_items=4),
+                "files": _as_string_list(raw.get("files"), item_limit=160, max_items=8),
             }
             if step["action"]:
                 normalized_steps.append(step)
@@ -104,4 +105,3 @@ def canonicalize_task_ir(task_ir: dict[str, Any] | None) -> dict[str, Any]:
 def canonicalize_task_ir_json(task_ir: dict[str, Any] | None) -> str:
     """Return deterministic JSON for TaskIR cache/prompt stability."""
     return json.dumps(canonicalize_task_ir(task_ir), sort_keys=True, separators=(",", ":"))
-

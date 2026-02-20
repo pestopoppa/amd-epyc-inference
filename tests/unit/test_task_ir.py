@@ -34,6 +34,27 @@ def test_canonicalize_task_ir_applies_budgets():
     assert all(len(step["action"]) <= 180 for step in out["plan"]["steps"])
 
 
+def test_canonicalize_task_ir_keeps_step_files_with_limits():
+    task_ir = {
+        "task_type": "chat",
+        "objective": "Do thing",
+        "plan": {
+            "steps": [
+                {
+                    "id": "S1",
+                    "actor": "worker",
+                    "action": "edit files",
+                    "files": [f"src/file_{i}.py" for i in range(20)],
+                }
+            ]
+        },
+    }
+    out = canonicalize_task_ir(task_ir)
+    files = out["plan"]["steps"][0]["files"]
+    assert len(files) == 8
+    assert files[0] == "src/file_0.py"
+
+
 def test_canonicalize_task_ir_json_is_deterministic():
     a = {
         "objective": "Do thing",

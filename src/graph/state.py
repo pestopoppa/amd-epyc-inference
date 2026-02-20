@@ -26,6 +26,12 @@ def _think_cfg():
     return get_config().think_harder
 
 
+def _make_task_manager():
+    from orchestration.tools.task_management import TaskManager
+
+    return TaskManager()
+
+
 # ---------------------------------------------------------------------------
 # GraphConfig — controls retry/escalation limits
 # ---------------------------------------------------------------------------
@@ -88,8 +94,14 @@ class TaskState:
     last_error: str = ""
     last_output: str = ""
     artifacts: dict[str, Any] = field(default_factory=dict)
+    task_ir: dict[str, Any] = field(default_factory=dict)
+    task_type: str = "chat"
     turns: int = 0
     max_turns: int = 10
+    gathered_files: list[str] = field(default_factory=list)
+    last_failure_id: str | None = None
+    anti_pattern_warning: str = ""
+    task_manager: Any = field(default_factory=_make_task_manager)
 
     # Delegation tracking
     delegation_events: list[dict] = field(default_factory=list)
@@ -213,8 +225,8 @@ class MemRLSuggestion:
 class HypothesisGraphProtocol(Protocol):
     """Interface for hypothesis confidence tracking."""
 
-    def add_evidence(self, hypothesis_id: str, evidence: str, delta: float) -> None: ...
-    def get_confidence(self, hypothesis_id: str) -> float: ...
+    def add_evidence(self, hypothesis_id: str, outcome: str, source: str) -> float: ...
+    def get_confidence(self, action: str, task_type: str) -> float: ...
 
 
 # ---------------------------------------------------------------------------

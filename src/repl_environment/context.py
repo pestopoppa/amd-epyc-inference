@@ -345,6 +345,44 @@ class _ContextMixin:
             raise RuntimeError("No tool registry configured")
 
         self._tool_invocations += 1
+
+        # Task-manager-specialized tools (stateful, request-local).
+        if tool_name in {"task_create", "task_update", "task_list", "budget_override"}:
+            from orchestration.tools.task_management import set_active_task_manager
+            from orchestration.tools.task_management import (
+                tool_budget_override,
+                tool_task_create,
+                tool_task_list,
+                tool_task_update,
+            )
+
+            manager = getattr(self, "_task_manager", None)
+            if manager is None:
+                raise RuntimeError("Task manager not attached")
+            set_active_task_manager(manager)
+            if tool_name == "task_create":
+                return tool_task_create(**kwargs)
+            if tool_name == "task_update":
+                return tool_task_update(**kwargs)
+            if tool_name == "task_list":
+                return tool_task_list()
+            return tool_budget_override(**kwargs)
+
+        # Optional tool-call budget enforcement when task manager is attached.
+        manager = getattr(self, "_task_manager", None)
+        if manager is not None and hasattr(self.tool_registry, "_tools"):
+            tool = self.tool_registry._tools.get(tool_name)  # noqa: SLF001
+            if tool is not None:
+                budget = manager.current_task_budget()
+                if budget is not None:
+                    bucket = self._tool_budget_bucket(tool)
+                    if bucket and not budget.can_use(bucket):
+                        raise RuntimeError(
+                            f"Budget exhausted for {bucket}. Remaining: {budget.remaining_summary()}"
+                        )
+                    if bucket:
+                        budget.consume(bucket)
+
         chain_id = getattr(self, "_active_tool_chain_id", None)
         chain_index = int(getattr(self, "_active_tool_chain_index", 0))
         caller_type = "chain" if chain_id else "direct"
@@ -374,6 +412,25 @@ class _ContextMixin:
                 pass  # Silently ignore research tracking failures
 
         return result
+
+    def _tool_budget_bucket(self, tool: Any) -> str | None:
+        """Map tool metadata to a coarse budget bucket."""
+        side_effects = set(getattr(tool, "side_effects", []) or [])
+        if "calls_llm" in side_effects:
+            return "llm"
+        if "local_exec" in side_effects:
+            return "exec"
+        if "modifies_files" in side_effects or "system_state" in side_effects:
+            return "write"
+        if "read_only" in side_effects:
+            return "read"
+
+        category = str(getattr(getattr(tool, "category", None), "value", ""))
+        if category in {"code", "system"}:
+            return "exec"
+        if category in {"file", "web", "data", "math", "llm", "specialized"}:
+            return "read"
+        return None
 
     def _call_tool(self, tool_name: str, **kwargs) -> str:
         """Invoke a registered tool and return JSON-serialized result.

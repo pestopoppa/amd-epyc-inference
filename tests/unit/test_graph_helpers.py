@@ -1,10 +1,15 @@
 """Unit tests for graph helper utilities."""
 
+from types import SimpleNamespace
+
 from src.escalation import ErrorCategory
 from src.graph.helpers import (
+    _add_evidence,
     _classify_error,
     _detect_role_cycle,
+    _record_mitigation,
     _select_and_broadcast_workspace_delta,
+    _workspace_prompt_block,
     _update_workspace_from_turn,
 )
 from src.graph.state import TaskState
@@ -81,3 +86,57 @@ class TestWorkspaceSelection:
         assert len(ws["proposals"]) == 12
         assert ws["proposals"][-1]["text"] == "new proposal"
         assert ws["updated_at"] != ""
+
+    def test_workspace_prompt_includes_task_progress_and_warning(self):
+        state = TaskState(task_id="t1", prompt="Do work")
+        state.task_manager.create(subject="Step one", description="desc")
+        state.anti_pattern_warning = "Avoid repeated timeout retries."
+
+        prompt_block = _workspace_prompt_block(state)
+
+        assert "task_progress" in prompt_block
+        assert "Step one" in prompt_block
+        assert "Avoid repeated timeout retries." in prompt_block
+
+
+class TestFailureAndHypothesisHooks:
+    def test_record_mitigation_uses_failure_id_and_action(self):
+        captured = {}
+
+        class _FakeFailureGraph:
+            def record_mitigation(self, failure_id, action, worked):
+                captured["failure_id"] = failure_id
+                captured["action"] = action
+                captured["worked"] = worked
+
+        ctx = SimpleNamespace(
+            state=SimpleNamespace(last_failure_id="f-123"),
+            deps=SimpleNamespace(failure_graph=_FakeFailureGraph()),
+        )
+
+        _record_mitigation(ctx, "frontdoor", "coder_escalation")
+
+        assert captured["failure_id"] == "f-123"
+        assert captured["action"] == "escalate:frontdoor->coder_escalation"
+        assert captured["worked"] is True
+
+    def test_add_evidence_uses_outcome_and_source(self):
+        captured = {}
+
+        class _FakeHypothesisGraph:
+            def add_evidence(self, hypothesis_id, outcome, source):
+                captured["hypothesis_id"] = hypothesis_id
+                captured["outcome"] = outcome
+                captured["source"] = source
+                return 0.75
+
+        ctx = SimpleNamespace(
+            state=SimpleNamespace(task_id="task-1", current_role="frontdoor", turns=3),
+            deps=SimpleNamespace(hypothesis_graph=_FakeHypothesisGraph()),
+        )
+
+        _add_evidence(ctx, "success", 0.5)
+
+        assert captured["hypothesis_id"] == "task-1"
+        assert captured["outcome"] == "success"
+        assert captured["source"] == "frontdoor:turn_3"

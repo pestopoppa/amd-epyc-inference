@@ -481,6 +481,8 @@ async def _execute_repl(
         task_id=task_id,
         prompt=request.prompt,
         context=combined_context,
+        task_ir=routing.task_ir,
+        task_type=str(routing.task_ir.get("task_type", "chat")),
         current_role=initial_role,
         role_history=[str(initial_role)],
         max_turns=max_turns,
