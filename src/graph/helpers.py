@@ -25,6 +25,9 @@ from pydantic_graph import End, GraphRunContext
 
 from src.escalation import ErrorCategory
 from src.exceptions import InferenceError
+from src.graph.error_classifier import classify_error as _classify_error_impl
+from src.graph.repl_tap import tap_write_repl_exec as _tap_write_repl_exec_impl
+from src.graph.repl_tap import tap_write_repl_result as _tap_write_repl_result_impl
 from src.roles import Role
 from src.env_parsing import env_int as _env_int
 
@@ -38,12 +41,6 @@ log = logging.getLogger(__name__)
 
 # Type aliases
 Ctx = GraphRunContext[TaskState, TaskDeps]
-
-
-# ── REPL tap — separate file for REPL execution visibility ────────────
-
-_REPL_TAP_PATH = "/mnt/raid0/llm/tmp/repl_tap.log"
-_repl_tap_lock = __import__("threading").Lock()
 
 
 def _use_inline_calls_in_tests() -> bool:
@@ -280,90 +277,23 @@ def _update_think_harder_stats(ctx: Ctx) -> None:
 
 
 def _tap_write_repl_exec(code: str, turn: int) -> None:
-    """Write REPL execution input to the REPL tap file (separate from inference tap)."""
-    try:
-        preview = code[:4000]
-        if len(code) > 4000:
-            preview += f"\n... [{len(code) - 4000} chars truncated]"
-        text = (
-            f"[turn {turn}] $ python3 <<'CODE'\n"
-            f"{preview}\n"
-            f"CODE\n"
-        )
-        with _repl_tap_lock:
-            with open(_REPL_TAP_PATH, "a") as f:
-                f.write(text)
-                f.flush()
-    except Exception:
-        pass
+    """Compatibility wrapper for REPL tap execution logging."""
+    _tap_write_repl_exec_impl(code, turn)
 
 
 def _tap_write_repl_result(
     output: str, error: str | None, is_final: bool, turn: int,
 ) -> None:
-    """Write REPL execution result to the REPL tap file."""
-    try:
-        parts: list[str] = []
-        if is_final:
-            parts.append(f"[turn {turn}] FINAL")
-        if output:
-            out_preview = output[:4000]
-            if len(output) > 4000:
-                out_preview += f"\n... [{len(output) - 4000} chars truncated]"
-            parts.append(out_preview)
-        elif not error:
-            parts.append(f"[turn {turn}] (no output)")
-        if error:
-            err_preview = error[:2000]
-            if len(error) > 2000:
-                err_preview += f"\n... [{len(error) - 2000} chars truncated]"
-            parts.append(f"[turn {turn}] ERROR:\n{err_preview}")
-        parts.append("")  # trailing newline
-        text = "\n".join(parts)
-        with _repl_tap_lock:
-            with open(_REPL_TAP_PATH, "a") as f:
-                f.write(text)
-                f.flush()
-    except Exception:
-        pass
+    """Compatibility wrapper for REPL tap result logging."""
+    _tap_write_repl_result_impl(output, error, is_final, turn)
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────
 
 
 def _classify_error(error_message: str) -> ErrorCategory:
-    """Classify an error message into an ErrorCategory.
-
-    Extracted from prompt_builders.code_utils.classify_error for
-    dependency isolation — nodes should not import prompt_builders.
-    """
-    lower = error_message.lower()
-
-    if any(kw in lower for kw in ("timeout", "timed out", "deadline")):
-        return ErrorCategory.TIMEOUT
-    if any(kw in lower for kw in ("json", "schema", "validation", "jsonschema")):
-        return ErrorCategory.SCHEMA
-    if any(kw in lower for kw in ("format", "style", "lint", "ruff", "markdown")):
-        return ErrorCategory.FORMAT
-    if any(
-        kw in lower
-        for kw in ("abort", "generation aborted", "early_abort", "early abort")
-    ):
-        return ErrorCategory.EARLY_ABORT
-    if any(
-        kw in lower
-        for kw in ("backend", "connection", "unreachable", "infrastructure", "502", "503")
-    ):
-        return ErrorCategory.INFRASTRUCTURE
-    if any(
-        kw in lower
-        for kw in ("syntax", "type error", "typeerror", "nameerror", "import error", "test fail")
-    ):
-        return ErrorCategory.CODE
-    if any(kw in lower for kw in ("wrong", "incorrect", "assertion", "logic")):
-        return ErrorCategory.LOGIC
-
-    return ErrorCategory.UNKNOWN
+    """Compatibility wrapper for extracted error classifier."""
+    return _classify_error_impl(error_message)
 
 
 def _record_failure(ctx: Ctx, error_category: ErrorCategory, error_msg: str) -> None:
