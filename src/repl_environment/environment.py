@@ -641,6 +641,48 @@ class REPLEnvironment(
         parts.append(footer)
         return "\n".join(parts)
 
+    # ------------------------------------------------------------------
+    # Tool-hint injection for failed code that looks like a tool call
+    # ------------------------------------------------------------------
+    def _tool_hint_if_relevant(self, code: str, exc: Exception | None = None) -> str:
+        """Return a tool-usage hint string if *code* looks like a failed tool call.
+
+        Returns empty string when no hint is appropriate.
+        """
+        import re as _re
+
+        # Quick patterns that suggest the model tried to call a tool
+        _TOOL_PATTERNS = (
+            _re.compile(r'"(?:function|name)"\s*:\s*"(\w+)"'),       # JSON tool_call
+            _re.compile(r'\b(web_search|calculator|python|bash)\s*\('),  # direct name()
+            _re.compile(r'tool_call', _re.IGNORECASE),
+            _re.compile(r'"type"\s*:\s*"function"'),
+        )
+
+        if not any(p.search(code) for p in _TOOL_PATTERNS):
+            return ""
+
+        # Build hint
+        parts: list[str] = [
+            "\n--- Tool Usage Hint ---",
+            "It looks like you tried to call a tool but the syntax was incorrect.",
+            "Use the CALL() function to invoke tools:",
+            "  result = CALL('tool_name', arg1=value1, arg2=value2)",
+        ]
+
+        # List available tools if registry exists
+        try:
+            tools = self._list_tools()
+            if tools:
+                names = [t if isinstance(t, str) else getattr(t, "name", str(t)) for t in tools]
+                parts.append(f"Available tools: {', '.join(names)}")
+        except Exception:
+            pass
+
+        parts.append("Run list_tools() for full details.")
+        parts.append("--- End Hint ---")
+        return "\n".join(parts)
+
     def _execute_structured(self, code: str, start_time: float) -> ExecutionResult:
         """Execute in structured (React-style) mode: one tool call per turn.
 
@@ -957,18 +999,20 @@ class REPLEnvironment(
                 )
 
             except SyntaxError as e:
+                hint = self._tool_hint_if_relevant(code, e)
                 return ExecutionResult(
                     output="",
                     is_final=False,
-                    error=f"SyntaxError: {e}",
+                    error=f"SyntaxError: {e}{hint}",
                     elapsed_seconds=time.perf_counter() - start_time,
                 )
 
             except Exception as e:
+                hint = self._tool_hint_if_relevant(code, e)
                 return ExecutionResult(
                     output=stdout_capture.getvalue(),
                     is_final=False,
-                    error=f"{type(e).__name__}: {e}",
+                    error=f"{type(e).__name__}: {e}{hint}",
                     elapsed_seconds=time.perf_counter() - start_time,
                 )
 
@@ -1270,18 +1314,20 @@ class REPLEnvironment(
                 )
 
             except SyntaxError as e:
+                hint = self._tool_hint_if_relevant(code, e)
                 return ExecutionResult(
                     output="",
                     is_final=False,
-                    error=f"SyntaxError: {e}",
+                    error=f"SyntaxError: {e}{hint}",
                     elapsed_seconds=time.perf_counter() - start_time,
                 )
 
             except Exception as e:
+                hint = self._tool_hint_if_relevant(code, e)
                 return ExecutionResult(
                     output=stdout_capture.getvalue(),
                     is_final=False,
-                    error=f"{type(e).__name__}: {e}",
+                    error=f"{type(e).__name__}: {e}{hint}",
                     elapsed_seconds=time.perf_counter() - start_time,
                 )
 

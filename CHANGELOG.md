@@ -20,6 +20,13 @@
   - 129 existing tests pass, no false positives on normal JSON content.
   - Files: `src/prompt_builders/code_utils.py` (MODIFIED), `src/prompt_builders/__init__.py` (MODIFIED).
 
+- **REPL tool syntax hints on error**:
+  - When REPL code execution fails and the code looks like a failed tool call attempt (OpenAI JSON tool_call format, direct tool name mentions), the error message now includes a hint showing correct `CALL('tool_name', arg=value)` syntax and lists available tools.
+  - Detects 4 patterns: JSON `"function"/"name"` keys, direct tool names like `web_search(...)`, `tool_call` mentions, `"type": "function"`.
+  - Injected in both structured mode (`_execute_structured`) and normal mode (`execute`) error handlers.
+  - Addresses Qwen3-Coder degenerate behavior: after a SyntaxError from malformed tool calls, the model previously abandoned tool use entirely due to no guidance on correct syntax.
+  - Files: `src/repl_environment/environment.py` (MODIFIED).
+
 - **Slot-erase-on-timeout + delegation timeout fix**:
   - Backend resource leak: when inference lock times out, the holder's llama-server keeps generating tokens nobody reads. Next request can't proceed until the stale generation finishes.
   - Added `_erase_port_slots(port)` and `_lock_holder_ports()` to `inference_lock.py`. On lock timeout, erases holder's processing slots. On error inside lock, erases own slots. Caches working erase strategy per port.
@@ -27,6 +34,7 @@
   - Delegation timeout fix: specialists now get their full role timeout via nested `request_context(deadline_s=...)` instead of being squeezed by parent's remaining deadline. Specialist loop already enforces wall-clock limits via elapsed checks.
   - 202 tests pass (62 lock + 140 delegation).
   - Files: `src/inference_lock.py`, `src/llm_primitives/inference.py`, `src/api/routes/chat_delegation.py` (MODIFIED).
+  - **llama.cpp server fix** (production-consolidated): `POST /slots/:id?action=erase` was gated behind `--slot-save-path` (erase doesn't need disk). Also changed erase to force-release processing slots instead of deferring — critical for cancelling in-flight inference. File: `tools/server/server-context.cpp`.
 
 - **Slot/admission alignment: eliminate 50% KV cache waste**:
   - Every backend had 2x more llama-server slots than admission controller allowed. KV cache partitioned across all slots — 50% wasted on idle slots.
