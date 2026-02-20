@@ -7,31 +7,28 @@ Tests the main /chat and /chat/stream endpoints including:
 - SSE streaming
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from fastapi.responses import StreamingResponse
 
-from src.api.models import ChatRequest, ChatResponse
-from src.api.routes.chat import router, _handle_chat
-from src.api.dependencies import dep_app_state
+from src.api.models import ChatRequest, ChatResponse, RewardRequest
+from src.api.routes.chat import _handle_chat, chat, chat_stream, inject_reward
 
 
-@pytest.fixture
-def test_app(mock_app_state):
-    """Create a FastAPI test app with mocked dependencies."""
-    app = FastAPI()
-    app.include_router(router)
-    app.dependency_overrides[dep_app_state] = lambda: mock_app_state
-    return app
+class _FakeRequest:
+    async def is_disconnected(self) -> bool:
+        return False
 
 
-@pytest.fixture
-def client(test_app):
-    """Create a test client."""
-    with TestClient(test_app) as test_client:
-        yield test_client
+@pytest.fixture(autouse=True)
+def _inline_chat_to_thread():
+    """Avoid threadpool teardown hangs in chat endpoint tests."""
+    async def fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    with patch("src.api.routes.chat.asyncio.to_thread", new=fake_to_thread):
+        yield
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -42,9 +39,10 @@ def client(test_app):
 class TestChatEndpoint:
     """Tests for POST /chat endpoint."""
 
-    def test_mock_mode_returns_response(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_mock_mode_returns_response(self, mock_app_state):
         """Mock mode request returns ChatResponse."""
-        with patch("src.api.routes.chat._handle_chat") as mock_handle:
+        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
             mock_response = ChatResponse(
                 answer="[MOCK] Test response",
                 turns=1,
@@ -55,19 +53,15 @@ class TestChatEndpoint:
             )
             mock_handle.return_value = mock_response
 
-            response = client.post(
-                "/chat",
-                json={"prompt": "Hello", "mock_mode": True},
-            )
-
-            assert response.status_code == 200
-            data = response.json()
+            response = await chat(ChatRequest(prompt="Hello", mock_mode=True), _FakeRequest(), mock_app_state)
+            data = response.model_dump()
             assert "[MOCK]" in data["answer"]
             mock_handle.assert_called_once()
 
-    def test_increments_and_decrements_active(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_increments_and_decrements_active(self, mock_app_state):
         """Chat endpoint tracks active requests."""
-        with patch("src.api.routes.chat._handle_chat") as mock_handle:
+        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
             mock_response = ChatResponse(
                 answer="Test",
                 turns=1,
@@ -78,18 +72,19 @@ class TestChatEndpoint:
             )
             mock_handle.return_value = mock_response
 
-            client.post("/chat", json={"prompt": "Hello", "mock_mode": True})
+            await chat(ChatRequest(prompt="Hello", mock_mode=True), _FakeRequest(), mock_app_state)
 
             mock_app_state.increment_active.assert_called_once()
             mock_app_state.decrement_active.assert_called_once()
 
-    def test_decrements_even_on_exception(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_decrements_even_on_exception(self, mock_app_state):
         """Active counter is decremented even if handler raises."""
-        with patch("src.api.routes.chat._handle_chat") as mock_handle:
+        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
             mock_handle.side_effect = RuntimeError("Handler error")
 
             with pytest.raises(Exception):
-                client.post("/chat", json={"prompt": "Hello", "mock_mode": True})
+                await chat(ChatRequest(prompt="Hello", mock_mode=True), _FakeRequest(), mock_app_state)
 
             mock_app_state.increment_active.assert_called_once()
             mock_app_state.decrement_active.assert_called_once()
@@ -103,43 +98,49 @@ class TestChatEndpoint:
 class TestRewardEndpoint:
     """Tests for POST /chat/reward endpoint."""
 
-    def test_reward_injection_success(self, client):
+    @pytest.mark.asyncio
+    async def test_reward_injection_success(self, mock_app_state):
         """Successful reward injection returns success=True."""
-        with patch("src.api.routes.chat.store_external_reward") as mock_store:
+        async def fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch("src.api.routes.chat.store_external_reward") as mock_store, \
+             patch("src.api.routes.chat.asyncio.to_thread", new=fake_to_thread):
             mock_store.return_value = True
 
-            response = client.post(
-                "/chat/reward",
-                json={
-                    "task_description": "Test task",
-                    "action": "route_to_coder",
-                    "reward": 1.0,
-                    "context": {"suite": "thinking", "tier": 1},
-                },
+            response = await inject_reward(
+                RewardRequest(
+                    task_description="Test task",
+                    action="route_to_coder",
+                    reward=1.0,
+                    context={"suite": "thinking", "tier": 1},
+                ),
+                mock_app_state,
             )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is True
+            assert response["success"] is True
             mock_store.assert_called_once()
 
-    def test_reward_injection_failure(self, client):
+    @pytest.mark.asyncio
+    async def test_reward_injection_failure(self, mock_app_state):
         """Failed reward injection returns success=False."""
-        with patch("src.api.routes.chat.store_external_reward") as mock_store:
+        async def fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch("src.api.routes.chat.store_external_reward") as mock_store, \
+             patch("src.api.routes.chat.asyncio.to_thread", new=fake_to_thread):
             mock_store.return_value = False
 
-            response = client.post(
-                "/chat/reward",
-                json={
-                    "task_description": "Test task",
-                    "action": "route_to_coder",
-                    "reward": -1.0,
-                },
+            response = await inject_reward(
+                RewardRequest(
+                    task_description="Test task",
+                    action="route_to_coder",
+                    reward=-1.0,
+                ),
+                mock_app_state,
             )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is False
+            assert response["success"] is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -389,55 +390,62 @@ class TestHandleChat:
 class TestChatStreamEndpoint:
     """Tests for POST /chat/stream SSE endpoint."""
 
-    def test_stream_mock_mode(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_stream_mock_mode(self, mock_app_state):
         """Mock mode streams simulated tokens."""
         with patch("src.api.routes.chat.score_completed_task"):
-            response = client.post(
-                "/chat/stream",
-                json={"prompt": "Hello", "mock_mode": True},
+            response = await chat_stream(
+                ChatRequest(prompt="Hello", mock_mode=True, real_mode=False),
+                mock_app_state,
             )
 
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
+            assert isinstance(response, StreamingResponse)
+            assert (response.media_type or "").startswith("text/event-stream")
 
-            # Parse SSE events
-            content = response.text
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else str(chunk))
+            content = "".join(chunks)
             assert "[MOCK]" in content or "turn_start" in content
 
-    def test_stream_mock_mode_with_thinking(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_stream_mock_mode_with_thinking(self, mock_app_state):
         """Mock mode with thinking_budget emits thinking events."""
         with patch("src.api.routes.chat.score_completed_task"):
-            response = client.post(
-                "/chat/stream",
-                json={
-                    "prompt": "Hello",
-                    "mock_mode": True,
-                    "thinking_budget": 100,
-                },
+            response = await chat_stream(
+                ChatRequest(prompt="Hello", mock_mode=True, real_mode=False, thinking_budget=100),
+                mock_app_state,
             )
 
-            assert response.status_code == 200
-            content = response.text
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else str(chunk))
+            content = "".join(chunks)
             # Should contain thinking events
             assert "thinking" in content or "Analyzing" in content
 
-    def test_stream_plan_mode(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_stream_plan_mode(self, mock_app_state):
         """Plan mode emits analysis without full execution."""
         with patch("src.api.routes.chat.score_completed_task"):
-            response = client.post(
-                "/chat/stream",
-                json={
-                    "prompt": "Hello",
-                    "mock_mode": True,
-                    "permission_mode": "plan",
-                },
+            response = await chat_stream(
+                ChatRequest(
+                    prompt="Hello",
+                    mock_mode=True,
+                    real_mode=False,
+                    permission_mode="plan",
+                ),
+                mock_app_state,
             )
 
-            assert response.status_code == 200
-            content = response.text
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else str(chunk))
+            content = "".join(chunks)
             assert "PLAN MODE" in content or "Would process" in content
 
-    def test_stream_real_mode_initialization_error(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_stream_real_mode_initialization_error(self, mock_app_state):
         """Real mode handles LLMPrimitives initialization errors."""
         with patch("src.api.routes.chat.ensure_memrl_initialized"):
             with patch("src.api.routes.chat.get_config") as mock_config:
@@ -445,33 +453,41 @@ class TestChatStreamEndpoint:
                 with patch("src.api.routes.chat.LLMPrimitives") as mock_prims:
                     mock_prims.side_effect = RuntimeError("Backend unavailable")
                     with patch("src.api.routes.chat.score_completed_task"):
-                        response = client.post(
-                            "/chat/stream",
-                            json={"prompt": "Hello", "real_mode": True},
+                        response = await chat_stream(
+                            ChatRequest(prompt="Hello", mock_mode=False, real_mode=True),
+                            mock_app_state,
                         )
 
-                        assert response.status_code == 200
-                        content = response.text
+                        chunks = []
+                        async for chunk in response.body_iterator:
+                            chunks.append(chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else str(chunk))
+                        content = "".join(chunks)
                         # Should contain error event
                         assert "error" in content.lower() or "unavailable" in content.lower()
 
-    def test_stream_logs_task_start(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_stream_logs_task_start(self, mock_app_state):
         """Stream endpoint logs task start via progress logger."""
         with patch("src.api.routes.chat.score_completed_task"):
-            client.post(
-                "/chat/stream",
-                json={"prompt": "Hello", "mock_mode": True},
+            response = await chat_stream(
+                ChatRequest(prompt="Hello", mock_mode=True, real_mode=False),
+                mock_app_state,
             )
+            async for _ in response.body_iterator:
+                pass
 
             mock_app_state.progress_logger.log_task_started.assert_called_once()
 
-    def test_stream_logs_task_completed(self, client, mock_app_state):
+    @pytest.mark.asyncio
+    async def test_stream_logs_task_completed(self, mock_app_state):
         """Stream endpoint logs task completion."""
         with patch("src.api.routes.chat.score_completed_task"):
-            client.post(
-                "/chat/stream",
-                json={"prompt": "Hello", "mock_mode": True},
+            response = await chat_stream(
+                ChatRequest(prompt="Hello", mock_mode=True, real_mode=False),
+                mock_app_state,
             )
+            async for _ in response.body_iterator:
+                pass
 
             mock_app_state.progress_logger.log_task_completed.assert_called_once()
 

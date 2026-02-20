@@ -14,7 +14,7 @@ import threading
 import uuid
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import Any, Protocol, TYPE_CHECKING
 
 from src.repl_environment.types import (
     ExplorationLog,
@@ -45,6 +45,45 @@ from src.research_context import ResearchContext
 
 if TYPE_CHECKING:
     from orchestration.repl_memory.progress_logger import ProgressLogger
+
+
+class FileToolsContract(Protocol):
+    """Contract for filesystem-oriented mixin methods used by REPLEnvironment."""
+
+    def _list_dir(self, path: str = ".") -> str: ...
+    def _file_info(self, path: str) -> str: ...
+    def _peek(self, n: int = 500) -> str: ...
+    def _grep(self, pattern: str) -> str: ...
+
+
+class DocumentToolsContract(Protocol):
+    """Contract for document processing mixin methods."""
+
+    def _ocr_document(self, path: str) -> str: ...
+    def _extract_figure(self, path: str, page: int, index: int) -> str: ...
+
+
+class RoutingContract(Protocol):
+    """Contract for routing/delegation-related mixin methods."""
+
+    def _my_role(self) -> str: ...
+    def _route_advice(self, query: str) -> str: ...
+    def _delegate(self, prompt: str, to_role: str) -> str: ...
+    def _escalate(self, reason: str) -> str: ...
+
+
+class ProcedureToolsContract(Protocol):
+    """Contract for script/procedure mixin methods."""
+
+    def _script(self, script_id: str, **kwargs: Any) -> Any: ...
+    def _find_scripts(self, query: str) -> list[dict[str, Any]]: ...
+
+
+class StateContract(Protocol):
+    """Contract for state-tracking mixin methods."""
+
+    def get_state(self) -> dict[str, Any]: ...
+    def clear_state(self) -> None: ...
 
 
 def _get_allowed_file_paths() -> list[str]:

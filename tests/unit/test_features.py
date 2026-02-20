@@ -10,7 +10,7 @@ import pytest
 
 from src.features import (
     Features,
-    _env_bool,
+    _feature_flag_bool,
     features,
     get_features,
     reset_features,
@@ -260,7 +260,7 @@ class TestGetFeatures:
 
 
 # ---------------------------------------------------------------------------
-# 12. _env_bool reads from ORCHESTRATOR_ prefix
+# 12. _feature_flag_bool reads from ORCHESTRATOR_ prefix
 # ---------------------------------------------------------------------------
 class TestEnvBool:
     @pytest.mark.parametrize("val,expected", [
@@ -275,26 +275,26 @@ class TestEnvBool:
         ("off", False),
     ])
     def test_truthy_falsy_values(self, monkeypatch, val, expected):
-        """_env_bool should parse various truthy/falsy strings."""
+        """_feature_flag_bool should parse various truthy/falsy strings."""
         monkeypatch.setenv("ORCHESTRATOR_TEST_FLAG", val)
-        assert _env_bool("TEST_FLAG", default=not expected) is expected
+        assert _feature_flag_bool("TEST_FLAG", default=not expected) is expected
 
     def test_missing_env_uses_default(self, monkeypatch):
         """Missing env var returns the default."""
         monkeypatch.delenv("ORCHESTRATOR_MISSING", raising=False)
-        assert _env_bool("MISSING", default=True) is True
-        assert _env_bool("MISSING", default=False) is False
+        assert _feature_flag_bool("MISSING", default=True) is True
+        assert _feature_flag_bool("MISSING", default=False) is False
 
     def test_unrecognized_value_uses_default(self, monkeypatch):
         """Unrecognized string falls back to default."""
         monkeypatch.setenv("ORCHESTRATOR_WEIRD", "maybe")
-        assert _env_bool("WEIRD", default=True) is True
-        assert _env_bool("WEIRD", default=False) is False
+        assert _feature_flag_bool("WEIRD", default=True) is True
+        assert _feature_flag_bool("WEIRD", default=False) is False
 
     def test_prefix_is_applied(self, monkeypatch):
-        """_env_bool('MEMRL') reads ORCHESTRATOR_MEMRL."""
+        """_feature_flag_bool('MEMRL') reads ORCHESTRATOR_MEMRL."""
         monkeypatch.setenv("ORCHESTRATOR_MEMRL", "1")
-        assert _env_bool("MEMRL") is True
+        assert _feature_flag_bool("MEMRL") is True
 
 
 # ---------------------------------------------------------------------------

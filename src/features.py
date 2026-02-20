@@ -311,7 +311,7 @@ class Features:
         return [name for name, enabled in self.summary().items() if enabled]
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
+def _feature_flag_bool(name: str, default: bool = False) -> bool:
     """Read a boolean from environment variable.
 
     Truthy values: 1, true, yes, on (case-insensitive)
@@ -447,55 +447,55 @@ def get_features(
 
     # Read from environment (overrides defaults)
     flags = {
-        "memrl": _env_bool("MEMRL", defaults["memrl"]),
-        "tools": _env_bool("TOOLS", defaults["tools"]),
-        "scripts": _env_bool("SCRIPTS", defaults["scripts"]),
-        "streaming": _env_bool("STREAMING", defaults["streaming"]),
-        "openai_compat": _env_bool("OPENAI_COMPAT", defaults["openai_compat"]),
-        "repl": _env_bool("REPL", defaults["repl"]),
-        "caching": _env_bool("CACHING", defaults["caching"]),
-        "structured_delimiters": _env_bool(
+        "memrl": _feature_flag_bool("MEMRL", defaults["memrl"]),
+        "tools": _feature_flag_bool("TOOLS", defaults["tools"]),
+        "scripts": _feature_flag_bool("SCRIPTS", defaults["scripts"]),
+        "streaming": _feature_flag_bool("STREAMING", defaults["streaming"]),
+        "openai_compat": _feature_flag_bool("OPENAI_COMPAT", defaults["openai_compat"]),
+        "repl": _feature_flag_bool("REPL", defaults["repl"]),
+        "caching": _feature_flag_bool("CACHING", defaults["caching"]),
+        "structured_delimiters": _feature_flag_bool(
             "STRUCTURED_DELIMITERS", defaults["structured_delimiters"]
         ),
-        "react_mode": _env_bool("REACT_MODE", defaults["react_mode"]),
-        "output_formalizer": _env_bool("OUTPUT_FORMALIZER", defaults["output_formalizer"]),
-        "parallel_tools": _env_bool("PARALLEL_TOOLS", defaults["parallel_tools"]),
-        "deferred_tool_results": _env_bool(
+        "react_mode": _feature_flag_bool("REACT_MODE", defaults["react_mode"]),
+        "output_formalizer": _feature_flag_bool("OUTPUT_FORMALIZER", defaults["output_formalizer"]),
+        "parallel_tools": _feature_flag_bool("PARALLEL_TOOLS", defaults["parallel_tools"]),
+        "deferred_tool_results": _feature_flag_bool(
             "DEFERRED_TOOL_RESULTS", defaults["deferred_tool_results"]
         ),
-        "escalation_compression": _env_bool("ESCALATION_COMPRESSION", defaults["escalation_compression"]),
-        "script_interception": _env_bool("SCRIPT_INTERCEPTION", defaults["script_interception"]),
-        "credential_redaction": _env_bool("CREDENTIAL_REDACTION", defaults["credential_redaction"]),
-        "cascading_tool_policy": _env_bool("CASCADING_TOOL_POLICY", defaults["cascading_tool_policy"]),
-        "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
-        "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
-        "graph_router": _env_bool("GRAPH_ROUTER", defaults["graph_router"]),
-        "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),
-        "architect_delegation": _env_bool("ARCHITECT_DELEGATION", defaults["architect_delegation"]),
-        "parallel_execution": _env_bool("PARALLEL_EXECUTION", defaults["parallel_execution"]),
-        "personas": _env_bool("PERSONAS", defaults["personas"]),
-        "staged_rewards": _env_bool("STAGED_REWARDS", defaults["staged_rewards"]),
-        "skillbank": _env_bool("SKILLBANK", defaults["skillbank"]),
-        "input_formalizer": _env_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
-        "generation_monitor": _env_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
-        "semantic_classifiers": _env_bool("SEMANTIC_CLASSIFIERS", defaults["semantic_classifiers"]),
-        "unified_streaming": _env_bool("UNIFIED_STREAMING", defaults["unified_streaming"]),
-        "side_effect_tracking": _env_bool("SIDE_EFFECT_TRACKING", defaults["side_effect_tracking"]),
-        "structured_tool_output": _env_bool(
+        "escalation_compression": _feature_flag_bool("ESCALATION_COMPRESSION", defaults["escalation_compression"]),
+        "script_interception": _feature_flag_bool("SCRIPT_INTERCEPTION", defaults["script_interception"]),
+        "credential_redaction": _feature_flag_bool("CREDENTIAL_REDACTION", defaults["credential_redaction"]),
+        "cascading_tool_policy": _feature_flag_bool("CASCADING_TOOL_POLICY", defaults["cascading_tool_policy"]),
+        "restricted_python": _feature_flag_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
+        "specialist_routing": _feature_flag_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
+        "graph_router": _feature_flag_bool("GRAPH_ROUTER", defaults["graph_router"]),
+        "plan_review": _feature_flag_bool("PLAN_REVIEW", defaults["plan_review"]),
+        "architect_delegation": _feature_flag_bool("ARCHITECT_DELEGATION", defaults["architect_delegation"]),
+        "parallel_execution": _feature_flag_bool("PARALLEL_EXECUTION", defaults["parallel_execution"]),
+        "personas": _feature_flag_bool("PERSONAS", defaults["personas"]),
+        "staged_rewards": _feature_flag_bool("STAGED_REWARDS", defaults["staged_rewards"]),
+        "skillbank": _feature_flag_bool("SKILLBANK", defaults["skillbank"]),
+        "input_formalizer": _feature_flag_bool("INPUT_FORMALIZER", defaults["input_formalizer"]),
+        "generation_monitor": _feature_flag_bool("GENERATION_MONITOR", defaults["generation_monitor"]),
+        "semantic_classifiers": _feature_flag_bool("SEMANTIC_CLASSIFIERS", defaults["semantic_classifiers"]),
+        "unified_streaming": _feature_flag_bool("UNIFIED_STREAMING", defaults["unified_streaming"]),
+        "side_effect_tracking": _feature_flag_bool("SIDE_EFFECT_TRACKING", defaults["side_effect_tracking"]),
+        "structured_tool_output": _feature_flag_bool(
             "STRUCTURED_TOOL_OUTPUT", defaults["structured_tool_output"]
         ),
-        "model_fallback": _env_bool("MODEL_FALLBACK", defaults["model_fallback"]),
-        "content_cache": _env_bool("CONTENT_CACHE", defaults["content_cache"]),
-        "session_compaction": _env_bool("SESSION_COMPACTION", defaults["session_compaction"]),
-        "depth_model_overrides": _env_bool(
+        "model_fallback": _feature_flag_bool("MODEL_FALLBACK", defaults["model_fallback"]),
+        "content_cache": _feature_flag_bool("CONTENT_CACHE", defaults["content_cache"]),
+        "session_compaction": _feature_flag_bool("SESSION_COMPACTION", defaults["session_compaction"]),
+        "depth_model_overrides": _feature_flag_bool(
             "DEPTH_MODEL_OVERRIDES", defaults["depth_model_overrides"]
         ),
-        "resume_tokens": _env_bool("RESUME_TOKENS", defaults["resume_tokens"]),
-        "approval_gates": _env_bool("APPROVAL_GATES", defaults["approval_gates"]),
-        "binding_routing": _env_bool("BINDING_ROUTING", defaults["binding_routing"]),
-        "accurate_token_counting": _env_bool("ACCURATE_TOKEN_COUNTING", defaults["accurate_token_counting"]),
-        "tool_result_clearing": _env_bool("TOOL_RESULT_CLEARING", defaults["tool_result_clearing"]),
-        "mock_mode": _env_bool("MOCK_MODE", defaults["mock_mode"]),
+        "resume_tokens": _feature_flag_bool("RESUME_TOKENS", defaults["resume_tokens"]),
+        "approval_gates": _feature_flag_bool("APPROVAL_GATES", defaults["approval_gates"]),
+        "binding_routing": _feature_flag_bool("BINDING_ROUTING", defaults["binding_routing"]),
+        "accurate_token_counting": _feature_flag_bool("ACCURATE_TOKEN_COUNTING", defaults["accurate_token_counting"]),
+        "tool_result_clearing": _feature_flag_bool("TOOL_RESULT_CLEARING", defaults["tool_result_clearing"]),
+        "mock_mode": _feature_flag_bool("MOCK_MODE", defaults["mock_mode"]),
     }
 
     # Apply explicit overrides
