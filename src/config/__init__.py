@@ -35,6 +35,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from ..env_parsing import env_bool as _env_bool
+from ..env_parsing import env_float as _env_float
+from ..env_parsing import env_int as _env_int
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,33 +50,6 @@ try:
     PYDANTIC_SETTINGS_AVAILABLE = True
 except ImportError:
     PYDANTIC_SETTINGS_AVAILABLE = False
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    """Parse boolean from environment variable."""
-    val = os.environ.get(name, "").lower()
-    if val in ("1", "true", "yes", "on"):
-        return True
-    if val in ("0", "false", "no", "off"):
-        return False
-    return default
-
-
-def _env_int(name: str, default: int) -> int:
-    """Parse integer from environment variable."""
-    val = os.environ.get(name, "")
-    if val.isdigit():
-        return int(val)
-    return default
-
-
-def _env_float(name: str, default: float) -> float:
-    """Parse float from environment variable."""
-    val = os.environ.get(name, "")
-    try:
-        return float(val) if val else default
-    except ValueError:
-        return default
 
 
 def _env_optional_float(name: str, default: float | None) -> float | None:

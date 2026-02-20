@@ -46,9 +46,10 @@ Adding New Features:
 
 from __future__ import annotations
 
-import os
 import threading
 from dataclasses import dataclass
+
+from src.env_parsing import env_bool
 
 # Environment variable prefix for all feature flags
 ENV_PREFIX = "ORCHESTRATOR_"
@@ -324,17 +325,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
         Boolean value.
     """
     key = f"{ENV_PREFIX}{name.upper()}"
-    value = os.environ.get(key, "").lower()
-
-    if not value:
-        return default
-
-    if value in ("1", "true", "yes", "on"):
-        return True
-    if value in ("0", "false", "no", "off"):
-        return False
-
-    return default
+    return env_bool(key, default)
 
 
 def get_features(

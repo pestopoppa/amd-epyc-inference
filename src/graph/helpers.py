@@ -26,6 +26,7 @@ from pydantic_graph import End, GraphRunContext
 from src.escalation import ErrorCategory
 from src.exceptions import InferenceError
 from src.roles import Role
+from src.env_parsing import env_int as _env_int
 
 from src.graph.state import (
     TaskDeps,
@@ -48,17 +49,6 @@ _repl_tap_lock = __import__("threading").Lock()
 def _use_inline_calls_in_tests() -> bool:
     """Return True when running under pytest to avoid threadpool teardown hangs."""
     return bool(os.getenv("PYTEST_CURRENT_TEST"))
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        log.warning("Invalid %s=%r, using default %d", name, raw, default)
-        return default
 
 
 def _repl_turn_token_cap() -> int:

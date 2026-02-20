@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from src.config import get_config
+from src.env_parsing import env_float as _env_float
 
 log = logging.getLogger(__name__)
 
@@ -39,17 +40,6 @@ LIGHT_ROLES = {
 }
 
 # Embedders use shared lock; identify by role or context where possible.
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        log.warning("Invalid %s=%r, using default %.3f", name, raw, default)
-        return default
 
 
 def _lock_timeout_s(shared: bool) -> float:

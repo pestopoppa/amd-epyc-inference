@@ -24,6 +24,7 @@ from src.constants import (
     DELEGATION_MAX_TOTAL_TOKENS,
 )
 from src.delegation_reports import store_report
+from src.env_parsing import env_int as _env_int
 from src.exceptions import InferenceError
 from src.repl_environment import REPLEnvironment
 
@@ -54,17 +55,6 @@ _delegation_local = threading.local()
 
 def _get_delegation_depth() -> int:
     return getattr(_delegation_local, "depth", 0)
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        log.warning("Invalid %s=%r, using default %d", name, raw, default)
-        return default
 
 
 def _delegation_specialist_turn_token_cap(
