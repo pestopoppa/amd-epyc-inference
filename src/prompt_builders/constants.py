@@ -122,7 +122,9 @@ DEFAULT_ROOT_LM_RULES = """## WHEN TO USE TOOLS vs DIRECT ANSWER
 2. **USE list_dir()** for files - NOT os.listdir or pathlib
 3. **ALWAYS call FINAL(answer)** to complete the task. Do NOT keep calling tools after
    you have enough information.
-4. **"Write a function" tasks**: submit CODE as a string, NOT the function's return value.
+4. **FIX ERRORS** - If your code returns an error, read the message carefully and retry
+   with corrected code. Do NOT abandon tool use or rewrite reasoning as comments.
+5. **"Write a function" tasks**: submit CODE as a string, NOT the function's return value.
    `solution = '''def foo(): ...'''; FINAL(solution)` ← CORRECT
    `FINAL(foo(x))` ← WRONG (submits return value, not code)
 
