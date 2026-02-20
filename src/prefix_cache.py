@@ -26,6 +26,7 @@ See research/radix_attention_handoff.md for implementation plan.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import os
 import re
@@ -369,6 +370,18 @@ class CachingBackend:
         stop_sequences = request.stop_sequences or []
         return "\n```\n" in stop_sequences
 
+    def _backend_supports_streaming(self) -> bool:
+        """Return True when wrapped backend provides a real stream API."""
+        try:
+            attr = inspect.getattr_static(self.backend, "infer_stream_text")
+        except AttributeError:
+            return False
+        except Exception:
+            attr = None
+        if attr is None:
+            return False
+        return callable(getattr(self.backend, "infer_stream_text", None))
+
     def infer(
         self,
         role_config: "RoleConfig",  # noqa: F821 - forward reference
@@ -410,6 +423,9 @@ class CachingBackend:
     ) -> "InferenceResult":  # noqa: F821
         """Stream inference with prefix caching (delegates to backend)."""
         from dataclasses import replace
+        if not self._backend_supports_streaming():
+            # Test doubles may expose dynamic attributes but no real streaming API.
+            return self.infer(role_config, request)
         if self._should_bypass_slot_routing(request):
             self.frontdoor_repl_bypass_count += 1
             return self.backend.infer_stream_text(role_config, replace(request, slot_id=None), on_chunk=on_chunk)

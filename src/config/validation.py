@@ -28,6 +28,8 @@ def _env_str(name: str, default: str) -> str:
 # Registry timeout cache (avoids repeated YAML parsing)
 _REGISTRY_TIMEOUTS_CACHE: dict[str, int | float] | None = None
 _REGISTRY_RUNTIME_DEFAULTS_CACHE: dict[str, Any] | None = None
+_LOADING_REGISTRY_TIMEOUTS = False
+_LOADING_RUNTIME_DEFAULTS = False
 
 
 def _load_registry_timeouts() -> dict[str, int | float]:
@@ -37,10 +39,15 @@ def _load_registry_timeouts() -> dict[str, int | float]:
         "roles.architect_general", "server.request", "services.ocr_pdf"
     """
     global _REGISTRY_TIMEOUTS_CACHE
+    global _LOADING_REGISTRY_TIMEOUTS
     if _REGISTRY_TIMEOUTS_CACHE is not None:
         return _REGISTRY_TIMEOUTS_CACHE
+    if _LOADING_REGISTRY_TIMEOUTS:
+        # Avoid recursive config->registry->config loops during bootstrap.
+        return {}
 
     try:
+        _LOADING_REGISTRY_TIMEOUTS = True
         from src.registry_loader import RegistryLoader
 
         registry = RegistryLoader(validate_paths=False, allow_missing=True)
@@ -64,6 +71,8 @@ def _load_registry_timeouts() -> dict[str, int | float]:
         logger.debug("Registry timeouts unavailable, using hardcoded fallbacks: %s", e)
         _REGISTRY_TIMEOUTS_CACHE = {}
         return {}
+    finally:
+        _LOADING_REGISTRY_TIMEOUTS = False
 
 
 def _registry_timeout(category: str, key: str, fallback: int | float) -> int | float:
@@ -91,9 +100,13 @@ def _registry_timeout(category: str, key: str, fallback: int | float) -> int | f
 def _load_registry_runtime_defaults() -> dict[str, Any]:
     """Load runtime_defaults block from registry (cached)."""
     global _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    global _LOADING_RUNTIME_DEFAULTS
     if _REGISTRY_RUNTIME_DEFAULTS_CACHE is not None:
         return _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    if _LOADING_RUNTIME_DEFAULTS:
+        return {}
     try:
+        _LOADING_RUNTIME_DEFAULTS = True
         from src.registry_loader import RegistryLoader
 
         registry = RegistryLoader(validate_paths=False, allow_missing=True)
@@ -103,6 +116,8 @@ def _load_registry_runtime_defaults() -> dict[str, Any]:
         logger.debug("Registry runtime defaults unavailable, using hardcoded fallbacks: %s", e)
         _REGISTRY_RUNTIME_DEFAULTS_CACHE = {}
         return {}
+    finally:
+        _LOADING_RUNTIME_DEFAULTS = False
 
 
 def _registry_runtime_value(path: tuple[str, ...], fallback: Any) -> Any:
@@ -119,8 +134,12 @@ def reset_validation_caches() -> None:
     """Reset internal helper caches used by config loading."""
     global _REGISTRY_TIMEOUTS_CACHE
     global _REGISTRY_RUNTIME_DEFAULTS_CACHE
+    global _LOADING_REGISTRY_TIMEOUTS
+    global _LOADING_RUNTIME_DEFAULTS
     _REGISTRY_TIMEOUTS_CACHE = None
     _REGISTRY_RUNTIME_DEFAULTS_CACHE = None
+    _LOADING_REGISTRY_TIMEOUTS = False
+    _LOADING_RUNTIME_DEFAULTS = False
 
 
 def reset_runtime_defaults_cache() -> None:

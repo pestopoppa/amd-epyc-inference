@@ -161,7 +161,8 @@ def _score_multiple_choice(
         return False
 
     # Strategy 1: Explicit "Answer: X" — take LAST match (verbose models repeat)
-    explicit_pat = r"(?:answer|choice|option)\s*(?:is|:)\s*\(?([A-H])\)?"
+    # Negative lookahead prevents "option is correct" matching as letter "C"
+    explicit_pat = r"(?:answer|choice|option)\s*(?:is|:)\s*\(?([A-H])\)?(?![a-zA-Z])"
     explicit_matches = re.findall(explicit_pat, answer, re.IGNORECASE)
     if explicit_matches:
         return explicit_matches[-1].upper() == expected_letter

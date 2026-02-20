@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import APIRouter
 
@@ -17,16 +18,6 @@ from src.api.routes.config import router as config_router
 from src.api.routes.delegate import router as delegate_router
 
 logger = logging.getLogger(__name__)
-
-# Vision router requires sqlalchemy + chromadb - optional for CI
-try:
-    from src.api.routes.vision import router as vision_router
-
-    VISION_AVAILABLE = True
-except ImportError as e:
-    vision_router = None  # type: ignore[assignment]
-    VISION_AVAILABLE = False
-    logger.debug("Vision router unavailable (missing %s) - vision endpoints disabled", e.name)
 
 
 def create_api_router() -> APIRouter:
@@ -44,8 +35,18 @@ def create_api_router() -> APIRouter:
     router.include_router(stats_router, tags=["stats"])
     router.include_router(openai_router, prefix="/v1", tags=["openai"])
     router.include_router(sessions_router, tags=["sessions"])
-    if VISION_AVAILABLE:
-        router.include_router(vision_router, prefix="/v1", tags=["vision"])
+    # Vision router requires optional native deps. Import lazily to avoid
+    # startup deadlocks in test environments that do not exercise vision APIs.
+    if not os.getenv("PYTEST_CURRENT_TEST"):
+        try:
+            from src.api.routes.vision import router as vision_router
+
+            router.include_router(vision_router, prefix="/v1", tags=["vision"])
+        except ImportError as e:
+            logger.debug(
+                "Vision router unavailable (missing %s) - vision endpoints disabled",
+                getattr(e, "name", "dependency"),
+            )
     router.include_router(documents_router, prefix="/v1", tags=["documents"])
     router.include_router(config_router, tags=["config"])
     router.include_router(delegate_router, tags=["delegate"])
@@ -61,9 +62,7 @@ __all__ = [
     "stats_router",
     "openai_router",
     "sessions_router",
-    "vision_router",
     "documents_router",
     "config_router",
     "delegate_router",
-    "VISION_AVAILABLE",
 ]

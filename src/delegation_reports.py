@@ -15,7 +15,13 @@ _HANDLE_RE = re.compile(r"\[REPORT_HANDLE\s+id=([A-Za-z0-9_.:-]+)")
 
 def report_dir() -> Path:
     """Return report artifact directory."""
-    default = "/mnt/raid0/llm/claude/tmp/delegation_reports"
+    default = ""
+    try:
+        from src.config import get_config
+
+        default = str(get_config().paths.project_root / "tmp" / "delegation_reports")
+    except Exception:
+        default = str(Path.cwd() / "tmp" / "delegation_reports")
     return Path(os.environ.get("ORCHESTRATOR_DELEGATION_REPORT_DIR", default))
 
 

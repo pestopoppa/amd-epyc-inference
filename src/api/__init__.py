@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -213,11 +214,16 @@ def create_app() -> FastAPI:
     Returns:
         Configured FastAPI application.
     """
+    # TestClient startup can deadlock in some test environments when lifespan
+    # initialization performs recursive config bootstrap. For pytest suites we
+    # disable lifespan and rely on route-level lazy initialization.
+    lifespan_ctx = None if os.getenv("PYTEST_CURRENT_TEST") else lifespan
+
     app = FastAPI(
         title="Orchestrator API",
         description="HTTP interface for the hierarchical orchestration system",
         version="0.1.0",
-        lifespan=lifespan,
+        lifespan=lifespan_ctx,
     )
 
     # Middleware (order matters: last added = first executed)

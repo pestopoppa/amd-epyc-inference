@@ -394,9 +394,16 @@ class LLMPrimitives(
             self._record_depth_override_skip("non_worker_target")
             return role
         # Keep behavior safe: if override role backend is unavailable, preserve requested role.
-        if self.server_urls and override_role not in self.server_urls:
-            self._record_depth_override_skip("target_backend_unavailable")
-            return role
+        if self.server_urls:
+            if override_role not in self.server_urls:
+                self._record_depth_override_skip("target_backend_unavailable")
+                return role
+        elif self._backends:
+            # Tests and lightweight setups may inject _backends directly without server_urls.
+            # Avoid remapping to a role that has no backend binding.
+            if override_role not in self._backends:
+                self._record_depth_override_skip("target_backend_unavailable")
+                return role
         self._budget_diagnostics["depth_override_events"] += 1
         roles = self._budget_diagnostics.get("depth_override_roles")
         if isinstance(roles, list):

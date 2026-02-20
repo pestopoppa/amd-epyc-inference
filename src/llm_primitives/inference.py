@@ -1,6 +1,7 @@
 """Real inference methods using backends."""
 
 import asyncio
+import contextlib
 import contextvars
 import logging
 import os
@@ -388,15 +389,20 @@ class InferenceMixin:
             from src.inference_lock import inference_lock
             can_stream = False
             _cb_port = _extract_port(backend_url)
-
-            try:
-                with inference_lock(
+            lock_ctx = (
+                inference_lock(
                     role,
                     cancel_check=self.get_request_cancel_check(),
                     deadline_s=self.get_request_deadline_s(),
                     request_tag=self.get_request_task_id(),
                     port=_cb_port,
-                ):
+                )
+                if backend_url
+                else contextlib.nullcontext()
+            )
+
+            try:
+                with lock_ctx:
                     request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
                     from src.inference_tap import (
                         is_active as _tap_active,
@@ -404,7 +410,7 @@ class InferenceMixin:
                         tap_section,
                     )
 
-                    tap_enabled = _tap_active()
+                    tap_enabled = _tap_active() and bool(backend_url)
                     can_stream = (
                         tap_enabled
                         and hasattr(backend, "infer_stream_text")

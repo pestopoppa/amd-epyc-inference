@@ -1415,7 +1415,7 @@ def _build_think_harder_config(state: TaskState) -> dict[str, Any]:
     temp_max = float(th_cfg.temperature_max)
     temperature = round(temp_min + ((temp_max - temp_min) * roi_norm), 2)
     cot_prefix = (
-        "Think step by step before answering.\n\n"
+        "# Step-by-step solution:\n"
         if roi_norm >= float(th_cfg.cot_roi_threshold)
         else ""
     )

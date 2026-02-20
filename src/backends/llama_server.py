@@ -445,15 +445,27 @@ class LlamaServerBackend(ModelBackend):
         try:
             http_start = time.perf_counter()
 
+            _overall_timeout = request.timeout or self.config.timeout
+            # Per-read timeout: covers prompt eval for large models (up to 120s)
+            # but catches stuck streams much faster than the overall request
+            # timeout (which can be 600s for architect roles).
+            _read_timeout = min(_overall_timeout, 120)
+            _stream_timeout = httpx.Timeout(
+                connect=self.config.connect_timeout,
+                read=_read_timeout,
+                write=_overall_timeout,
+                pool=_overall_timeout,
+            )
+            chunks: list[str] = []  # outside with-block so ReadTimeout handler can access
+
             with self.client.stream(
                 "POST",
                 "/completion",
                 json=payload,
-                timeout=request.timeout or self.config.timeout,
+                timeout=_stream_timeout,
             ) as response:
                 response.raise_for_status()
 
-                chunks: list[str] = []
                 timings: dict[str, Any] = {}
                 tokens_generated = 0
                 prompt_tokens = 0
@@ -565,6 +577,38 @@ class LlamaServerBackend(ModelBackend):
                 first_token_ms=first_token_ms,
                 stream_chunks=stream_chunks,
                 completion_reason=completion_reason,
+            )
+
+        except httpx.ReadTimeout:
+            # Read timeout during streaming — server stopped sending SSE
+            # events (slot finished without [DONE], or prompt eval exceeded
+            # the per-read timeout).  Return partial content if available.
+            _elapsed = time.time() - start_time
+            _partial = "".join(chunks) if chunks else ""
+            if _partial:
+                logger.warning(
+                    "Stream read timeout after %.1fs with %d chunks for %s; "
+                    "returning partial content",
+                    _elapsed, len(chunks), role_config.name,
+                )
+                return InferenceResult(
+                    role=role_config.name,
+                    output=_partial,
+                    tokens_generated=len(chunks),
+                    generation_speed=len(chunks) / _elapsed if _elapsed > 0 else 0.0,
+                    elapsed_time=_elapsed,
+                    success=True,
+                    completion_reason="read_timeout_partial",
+                )
+            return InferenceResult(
+                role=role_config.name,
+                output="",
+                tokens_generated=0,
+                generation_speed=0.0,
+                elapsed_time=_elapsed,
+                success=False,
+                error_message=f"Stream read timed out after {_read_timeout}s with no content",
+                completion_reason="timeout",
             )
 
         except httpx.TimeoutException:
