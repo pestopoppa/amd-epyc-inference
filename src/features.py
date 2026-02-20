@@ -376,7 +376,7 @@ def get_features(
             "escalation_compression": True,  # BORDERLINE +4.8s but enabled per operator decision (2026-02-20)
             "script_interception": False,  # Enable after validation of interception accuracy
             "credential_redaction": True,  # Safety-first: always redact credentials in production
-            "cascading_tool_policy": False,  # Enable after chain equivalence validation
+            "cascading_tool_policy": True,  # Validated: PASS -15.3s latency (2026-02-20)
             "restricted_python": False,  # AST blocklist is sufficient; RestrictedPython blocks all imports including safe ones (scipy, numpy)
             "specialist_routing": True,  # Validated: PASS -25.0s latency (2026-02-20)
             "plan_review": True,  # Validated: PASS -24.8s latency (2026-02-20)
@@ -389,14 +389,14 @@ def get_features(
             "generation_monitor": True,  # Early failure detection in production
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
             "unified_streaming": True,  # Validated: PASS -7.9s latency (2026-02-20)
-            "side_effect_tracking": False,  # Enable after tool annotation
-            "structured_tool_output": False,  # Enable after tool output validation
+            "side_effect_tracking": True,  # Validated: PASS -28.3s latency (2026-02-20)
+            "structured_tool_output": True,  # Validated: PASS -8.1s latency (2026-02-20)
             "model_fallback": True,  # Validated: PASS -1.5s latency (2026-02-20)
             "content_cache": False,  # Enable after cache correctness validation
             "session_compaction": True,  # Low-risk default: compacts long contexts with clear rollback toggle
             "depth_model_overrides": True,  # Enabled with worker-only + max-depth guardrails
-            "resume_tokens": False,  # Enable after resume reliability testing
-            "approval_gates": False,  # Enable after approval UX validation
+            "resume_tokens": True,  # Validated: PASS -1.1s latency (2026-02-20)
+            "approval_gates": True,  # Validated: PASS -20.6s latency (2026-02-20)
             "binding_routing": False,  # Enable after routing regression testing
             "accurate_token_counting": False,  # Enable after /tokenize validation
             "tool_result_clearing": True,  # Enabled for production context pressure relief
