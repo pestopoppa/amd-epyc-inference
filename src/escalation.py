@@ -350,7 +350,7 @@ class EscalationPolicy:
                     retries_remaining=0,
                     config_override={
                         "n_tokens": 4096,  # 2x default
-                        "cot_prefix": "Think step by step before answering.\n\n",
+                        "cot_prefix": "# Step-by-step solution:\n",
                         "temperature": 0.5,  # Slightly higher for diversity
                     },
                 )
