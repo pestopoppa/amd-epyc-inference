@@ -250,7 +250,7 @@ class TestTimeoutsDefaults:
         assert cfg.worker_summarize == 120
         assert cfg.worker_fast == 30
         # Frontdoor/coder: medium
-        assert cfg.frontdoor == 90
+        assert cfg.frontdoor == 180
         assert cfg.coder_escalation == 120
         # Architects: long (complex reasoning)
         assert cfg.architect_general == 600
@@ -492,9 +492,24 @@ class TestPathsDefaults:
     @_on_raid
     def test_specific_paths(self):
         cfg = PathsConfig()
-        assert cfg.project_root == Path("/mnt/raid0/llm/claude")
-        assert cfg.models_dir == Path("/mnt/raid0/llm/models")
-        assert cfg.sessions_dir == Path("/mnt/raid0/llm/claude/orchestration/repl_memory/sessions")
+        expected_project_root = Path(
+            os.environ.get("ORCHESTRATOR_PATHS_PROJECT_ROOT", "/mnt/raid0/llm/claude")
+        )
+        expected_llm_root = Path(
+            os.environ.get("ORCHESTRATOR_PATHS_LLM_ROOT", "/mnt/raid0/llm")
+        )
+        expected_models_dir = Path(
+            os.environ.get("ORCHESTRATOR_PATHS_MODEL_BASE", str(expected_llm_root / "models"))
+        )
+        expected_sessions_dir = Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_SESSIONS_DIR",
+                str(expected_project_root / "orchestration" / "repl_memory" / "sessions"),
+            )
+        )
+        assert cfg.project_root == expected_project_root
+        assert cfg.models_dir == expected_models_dir
+        assert cfg.sessions_dir == expected_sessions_dir
 
 
 # ── WorkerPoolPathsConfig defaults ───────────────────────────────────────
@@ -662,7 +677,16 @@ class TestWiringRegistryLoader:
         cfg = get_config()
         # The default should match — we can't instantiate RegistryLoader without
         # a valid YAML file, so we check the config value directly
-        assert cfg.paths.model_base == Path("/mnt/raid0/llm/lmstudio/models")
+        expected_llm_root = Path(
+            os.environ.get("ORCHESTRATOR_PATHS_LLM_ROOT", "/mnt/raid0/llm")
+        )
+        expected_model_base = Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_MODEL_BASE",
+                str(expected_llm_root / "lmstudio" / "models"),
+            )
+        )
+        assert cfg.paths.model_base == expected_model_base
 
     @_on_raid
     def test_default_registry_path_from_config(self):

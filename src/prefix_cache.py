@@ -32,7 +32,7 @@ import os
 import re
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass, replace
 from typing import Callable
 
 logger = logging.getLogger(__name__)
@@ -382,6 +382,16 @@ class CachingBackend:
             return False
         return callable(getattr(self.backend, "infer_stream_text", None))
 
+    def _request_with_slot(self, request: "InferenceRequest", slot_id: int | None):  # noqa: F821
+        """Attach slot_id to dataclass or test-double request objects."""
+        if is_dataclass(request):
+            return replace(request, slot_id=slot_id)
+        try:
+            setattr(request, "slot_id", slot_id)
+        except Exception:
+            pass
+        return request
+
     def infer(
         self,
         role_config: "RoleConfig",  # noqa: F821 - forward reference
@@ -396,17 +406,16 @@ class CachingBackend:
         Returns:
             InferenceResult with output and metrics.
         """
-        from dataclasses import replace
         if self._should_bypass_slot_routing(request):
             self.frontdoor_repl_bypass_count += 1
-            return self.backend.infer(role_config, replace(request, slot_id=None))
+            return self.backend.infer(role_config, self._request_with_slot(request, None))
 
         # Get optimal slot from prefix router
         prompt = request.prompt or ""
         slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
 
         # Pass computed slot_id to backend via request (id_slot in llama-server)
-        routed_request = replace(request, slot_id=slot_id)
+        routed_request = self._request_with_slot(request, slot_id)
 
         # Forward to backend
         # NOTE: Canonicalization is intentionally NOT applied to the actual prompt.
@@ -422,17 +431,20 @@ class CachingBackend:
         on_chunk=None,
     ) -> "InferenceResult":  # noqa: F821
         """Stream inference with prefix caching (delegates to backend)."""
-        from dataclasses import replace
         if not self._backend_supports_streaming():
             # Test doubles may expose dynamic attributes but no real streaming API.
             return self.infer(role_config, request)
         if self._should_bypass_slot_routing(request):
             self.frontdoor_repl_bypass_count += 1
-            return self.backend.infer_stream_text(role_config, replace(request, slot_id=None), on_chunk=on_chunk)
+            return self.backend.infer_stream_text(
+                role_config,
+                self._request_with_slot(request, None),
+                on_chunk=on_chunk,
+            )
 
         prompt = request.prompt or ""
         slot_id = self.router.get_slot_for_prompt(prompt, canonicalize=self.canonicalize)
-        routed_request = replace(request, slot_id=slot_id)
+        routed_request = self._request_with_slot(request, slot_id)
         return self.backend.infer_stream_text(role_config, routed_request, on_chunk=on_chunk)
 
     def get_hit_rate(self) -> float:

@@ -84,10 +84,9 @@ class TestEnvInt:
             os.environ.pop("TEST_INT_MISSING", None)
             assert _env_int("TEST_INT_MISSING", 7) == 7
 
-    def test_negative_returns_default(self) -> None:
-        # isdigit() returns False for negative numbers
+    def test_negative_parses(self) -> None:
         with patch.dict(os.environ, {"TEST_INT": "-5"}):
-            assert _env_int("TEST_INT", 10) == 10
+            assert _env_int("TEST_INT", 10) == -5
 
     def test_zero(self) -> None:
         with patch.dict(os.environ, {"TEST_INT": "0"}):

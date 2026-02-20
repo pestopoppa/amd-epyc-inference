@@ -282,7 +282,7 @@ class TestGraphEnhancedRetriever:
             assert results[0].hypothesis_confidence < 0.5
 
     def test_combined_scoring(self, episodic_store, failure_graph, hypothesis_graph, mock_embedder):
-        """Combined score = similarity × Q × (1 - failure_penalty) × hypothesis_confidence."""
+        """Adjusted score uses selection_score with graph penalties/confidence."""
         # Store a memory with known Q-value
         embedding = np.random.randn(896).astype(np.float32)
         episodic_store.store(
@@ -306,7 +306,9 @@ class TestGraphEnhancedRetriever:
         if results:
             r = results[0]
             # Verify scoring formula
-            expected_adjusted = r.combined_score * (1 - r.failure_penalty) * r.hypothesis_confidence
+            expected_adjusted = (
+                r.selection_score * (1 - r.failure_penalty) * r.hypothesis_confidence
+            )
             assert r.adjusted_score == pytest.approx(expected_adjusted, abs=0.01)
 
     def test_get_best_action_with_warnings(

@@ -1204,8 +1204,12 @@ class TestAllowedFilePaths:
             assert isinstance(path, str)
 
     def test_allowed_file_paths_includes_raid(self):
-        """ALLOWED_FILE_PATHS includes /mnt/raid0/llm/ prefix."""
-        assert any("/mnt/raid0/llm/" in p for p in REPLEnvironment.ALLOWED_FILE_PATHS)
+        """ALLOWED_FILE_PATHS includes configured LLM root prefix."""
+        from src.config import get_config
+
+        llm_root = str(get_config().paths.llm_root)
+        llm_prefix = llm_root if llm_root.endswith("/") else f"{llm_root}/"
+        assert any(p.startswith(llm_prefix) for p in REPLEnvironment.ALLOWED_FILE_PATHS)
 
     def test_allowed_file_paths_includes_tmp(self):
         """ALLOWED_FILE_PATHS includes /tmp/ prefix."""
@@ -1213,8 +1217,12 @@ class TestAllowedFilePaths:
 
     def test_validate_file_path_allowed(self):
         """_validate_file_path accepts paths under allowed prefixes."""
+        from src.config import get_config
+
         repl = REPLEnvironment(context="test")
-        is_valid, error = repl._validate_file_path("/mnt/raid0/llm/test.txt")
+        llm_root = str(get_config().paths.llm_root)
+        probe_path = f"{llm_root.rstrip('/')}/test.txt"
+        is_valid, error = repl._validate_file_path(probe_path)
         assert is_valid is True
         assert error is None
 

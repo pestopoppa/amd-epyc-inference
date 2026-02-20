@@ -44,8 +44,8 @@ class TestAdmissionController:
         status = ctrl.get_status()
         assert status["http://localhost:8083"]["limit"] == 1
         assert status["http://localhost:8084"]["limit"] == 1
-        # Worker backends should have higher limits
-        assert status["http://localhost:8082"]["limit"] == 4
+        # Worker backend limit follows concurrent sweep defaults (serialized).
+        assert status["http://localhost:8082"]["limit"] == 1
 
     def test_thread_safety(self):
         """Concurrent acquire/release should not corrupt state."""

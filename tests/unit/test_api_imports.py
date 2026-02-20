@@ -249,7 +249,7 @@ class TestRoutingResult:
         # Differentiated timeouts by role size/speed
         assert r.timeout_for_role("worker_explore") == 60
         assert r.timeout_for_role("architect_general") == 600
-        assert r.timeout_for_role("frontdoor") == 90
+        assert r.timeout_for_role("frontdoor") == 180
 
 
 class TestRoleTimeouts:

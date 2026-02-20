@@ -235,8 +235,9 @@ class TestGetFeatures:
         assert f.memrl is False
         assert f.streaming is False
 
-    def test_production_defaults(self):
+    def test_production_defaults(self, monkeypatch):
         """get_features(production=True): mock_mode=False, tools=True, memrl=True."""
+        monkeypatch.setenv("ORCHESTRATOR_MOCK_MODE", "0")
         f = get_features(production=True)
         assert f.mock_mode is False
         assert f.tools is True

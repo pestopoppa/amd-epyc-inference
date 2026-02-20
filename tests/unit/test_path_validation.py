@@ -15,10 +15,18 @@ _on_raid = pytest.mark.skipif(
 
 @_on_raid
 def test_allowed_raid_path():
-    """Paths under /mnt/raid0/llm/ are accepted."""
-    # Use a path that resolves to itself (no symlinks needed)
-    result = validate_api_path("/mnt/raid0/llm/claude/CLAUDE.md")
-    assert str(result).startswith("/mnt/raid0/llm/")
+    """Paths under configured LLM root are accepted."""
+    from src.config import get_config
+
+    llm_root = Path(get_config().paths.llm_root)
+    llm_root.mkdir(parents=True, exist_ok=True)
+    probe = llm_root / "path_validation_probe.txt"
+    probe.write_text("ok")
+    result = validate_api_path(str(probe))
+    llm_prefix = str(llm_root)
+    if not llm_prefix.endswith("/"):
+        llm_prefix = f"{llm_prefix}/"
+    assert str(result).startswith(llm_prefix)
 
 
 def test_allowed_tmp_path(tmp_path):

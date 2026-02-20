@@ -36,6 +36,14 @@
   - Files: `src/inference_lock.py`, `src/llm_primitives/inference.py`, `src/api/routes/chat_delegation.py` (MODIFIED).
   - **llama.cpp server fix** (production-consolidated): `POST /slots/:id?action=erase` was gated behind `--slot-save-path` (erase doesn't need disk). Also changed erase to force-release processing slots instead of deferring — critical for cancelling in-flight inference. File: `tools/server/server-context.cpp`.
 
+- **Fix: Architect inference hang — SSE stream stall root cause**:
+  - **Server-side root cause**: `SLOT_ERASE` handler force-released processing slots via `slot->release()` without sending any result to the HTTP streaming handler's queue. The handler blocked forever in `rd.next()` waiting for results that never arrived. Python client hung for full read timeout (600s).
+  - **Trigger chain**: Lock timeout → `_erase_port_slots()` → server erase → `slot->release()` (no result sent) → HTTP handler orphaned → client blocks.
+  - **Server fix** (llama.cpp `production-consolidated`): Erase handler now captures original task ID before release and sends error via `send_error()` to unblock the HTTP handler. Also added debug logging for silently dropped results in `queue_results.send()`.
+  - **Client fix**: `infer_stream_text()` read timeout capped at `min(overall_timeout, 120)` as safety net. Graceful `ReadTimeout` recovery returns partial content if available.
+  - **Investigation**: Traced full SSE path from `send_partial_response()` → `queue_results.send()` → `recv_with_timeout()` → HTTP chunked_content_provider → httplib socket write. Confirmed task IDs are monotonic (no reuse), `add_waiting_tasks` called before `post` (no registration race). Eliminated speculative decoding and stop condition hypotheses.
+  - Files: `llama.cpp/tools/server/server-context.cpp`, `llama.cpp/tools/server/server-queue.cpp` (server), `src/backends/llama_server.py` (client), `handoffs/active/architect-inference-hang-bug-report.md` (investigation report).
+
 - **Slot/admission alignment: eliminate 50% KV cache waste**:
   - Every backend had 2x more llama-server slots than admission controller allowed. KV cache partitioned across all slots — 50% wasted on idle slots.
   - Aligned based on `concurrent_sweep_20260219` results: frontdoor 4→2 slots, coder_escalation 4→1 (p95 1.98x at concurrency=2), worker 8→1 (all concurrent levels rejected), architects 2→1.

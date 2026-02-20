@@ -152,18 +152,14 @@ class TestMockTeacher:
         from orchestration.repl_memory.distillation.teachers import MockTeacher
 
         teacher = MockTeacher(responses=["response_1", "response_2"])
-        assert asyncio.get_event_loop().run_until_complete(
-            teacher.distill("prompt 1")
-        ) == "response_1"
-        assert asyncio.get_event_loop().run_until_complete(
-            teacher.distill("prompt 2")
-        ) == "response_2"
+        assert asyncio.run(teacher.distill("prompt 1")) == "response_1"
+        assert asyncio.run(teacher.distill("prompt 2")) == "response_2"
 
     def test_mock_records_prompts(self):
         from orchestration.repl_memory.distillation.teachers import MockTeacher
 
         teacher = MockTeacher(responses=["ok"])
-        asyncio.get_event_loop().run_until_complete(teacher.distill("my prompt"))
+        asyncio.run(teacher.distill("my prompt"))
         assert len(teacher.prompts) == 1
         assert "my prompt" in teacher.prompts[0]
 
@@ -227,9 +223,7 @@ class TestDistillationPipeline:
             for i in range(5)
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.total_trajectories == 5
         assert report.success_trajectories == 5
@@ -267,9 +261,7 @@ class TestDistillationPipeline:
             },
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.failure_trajectories == 1
         assert report.skills_stored == 1
@@ -302,9 +294,7 @@ class TestDistillationPipeline:
             },
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.escalation_trajectories == 1
         assert report.skills_stored == 1
@@ -335,9 +325,7 @@ class TestDistillationPipeline:
             {"task_id": "t3", "outcome": "success", "escalations": ["a->b"], "task_type": "arch"},
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.skills_stored == 3
         assert bank.count() == 3
@@ -355,9 +343,7 @@ class TestDistillationPipeline:
             {"task_id": "t1", "outcome": "success", "task_type": "code"},
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert len(report.errors) >= 1
         assert "API down" in report.errors[0]
@@ -374,9 +360,7 @@ class TestDistillationPipeline:
             {"task_id": "t1", "outcome": "success", "task_type": "misc"},
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.skills_proposed == 0
         assert report.skills_stored == 0
@@ -396,9 +380,7 @@ class TestDistillationPipeline:
             {"task_id": "t1", "outcome": "success", "task_type": "code"},
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.skills_rejected == 1
         assert report.skills_stored == 0
@@ -422,9 +404,7 @@ class TestDistillationPipeline:
             for i in range(12)
         ]
 
-        report = asyncio.get_event_loop().run_until_complete(
-            pipeline.run(trajectories)
-        )
+        report = asyncio.run(pipeline.run(trajectories))
 
         assert report.batches_processed == 3
         assert len(teacher.prompts) == 3

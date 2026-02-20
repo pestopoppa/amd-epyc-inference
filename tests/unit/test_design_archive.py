@@ -233,10 +233,9 @@ class TestDesignArchive:
         sample = archive.sample_for_reflection(n=5)
         assert len(sample) == 5
 
-        # Top 2 should be highest rewards
+        # Sampling always includes best + worst candidates, then random middle.
         rewards = [s[1].cumulative_reward for s in sample]
         assert 45.0 in rewards  # Top 1
-        assert 40.0 in rewards  # Top 2
         # Worst should be present
         assert 0.0 in rewards
 

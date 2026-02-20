@@ -275,7 +275,12 @@ class TestBasicREPLExecution:
                 )
 
         mock_state.session_store.get_latest_checkpoint.assert_called_once_with("sess_123")
-        mock_repl.restore.assert_called_once_with(checkpoint.to_dict.return_value)
+        mock_repl.restore.assert_called_once()
+        restored_payload = mock_repl.restore.call_args.args[0]
+        assert restored_payload["user_globals"] == checkpoint.to_dict.return_value["user_globals"]
+        assert restored_payload["execution_count"] == checkpoint.to_dict.return_value["execution_count"]
+        assert "variable_lineage" in restored_payload
+        assert "skipped_user_globals" in restored_payload
         mock_state.session_store.save_checkpoint.assert_called_once()
         assert response.session_persistence["restore_success"] is True
         assert response.session_persistence["restored_globals"] == 1

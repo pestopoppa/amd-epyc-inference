@@ -202,16 +202,25 @@ class TestParseArchitectDecision:
 
 class TestConstants:
     def test_valid_delegate_roles(self):
-        expected = {"coder_escalation", "worker_explore", "worker_general", "worker_math"}
+        expected = {
+            "coder_escalation",
+            "worker_coder",
+            "worker_summarize",
+            "worker_explore",
+            "worker_general",
+            "worker_math",
+            "worker_vision",
+            "vision_escalation",
+        }
         assert _VALID_DELEGATE_ROLES == expected
 
     def test_architect_token_budget_values(self):
-        assert _ARCHITECT_TOKEN_BUDGET["architect_general"] == 3375
-        assert _ARCHITECT_TOKEN_BUDGET["architect_coding"] == 5150
+        assert _ARCHITECT_TOKEN_BUDGET["architect_general"] == 768
+        assert _ARCHITECT_TOKEN_BUDGET["architect_coding"] == 512
 
     def test_architect_decision_budget_values(self):
-        assert _ARCHITECT_DECISION_BUDGET["architect_general"] == 1500
-        assert _ARCHITECT_DECISION_BUDGET["architect_coding"] == 500
+        assert _ARCHITECT_DECISION_BUDGET["architect_general"] == 512
+        assert _ARCHITECT_DECISION_BUDGET["architect_coding"] == 192
 
     def test_budgets_have_expected_keys(self):
         assert set(_ARCHITECT_TOKEN_BUDGET.keys()) == {"architect_general", "architect_coding"}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -48,10 +49,8 @@ def _load_registry_timeouts() -> dict[str, int | float]:
 
     try:
         _LOADING_REGISTRY_TIMEOUTS = True
-        from src.registry_loader import RegistryLoader
-
-        registry = RegistryLoader(validate_paths=False, allow_missing=True)
-        raw_timeouts = registry._runtime_defaults.get("timeouts", {})
+        runtime_defaults = _load_registry_runtime_defaults()
+        raw_timeouts = runtime_defaults.get("timeouts", {}) if isinstance(runtime_defaults, dict) else {}
 
         # Flatten nested structure to "category.key" format
         flat: dict[str, int | float] = {"default": raw_timeouts.get("default", 600)}
@@ -107,10 +106,24 @@ def _load_registry_runtime_defaults() -> dict[str, Any]:
         return {}
     try:
         _LOADING_RUNTIME_DEFAULTS = True
-        from src.registry_loader import RegistryLoader
+        registry_path = Path(
+            os.environ.get(
+                "ORCHESTRATOR_PATHS_REGISTRY_PATH",
+                "orchestration/model_registry.yaml",
+            )
+        )
+        if not registry_path.exists():
+            _REGISTRY_RUNTIME_DEFAULTS_CACHE = {}
+            return _REGISTRY_RUNTIME_DEFAULTS_CACHE
 
-        registry = RegistryLoader(validate_paths=False, allow_missing=True)
-        _REGISTRY_RUNTIME_DEFAULTS_CACHE = dict(registry._runtime_defaults or {})
+        import yaml
+
+        with registry_path.open(encoding="utf-8") as fh:
+            payload = yaml.safe_load(fh) or {}
+        runtime_defaults = payload.get("runtime_defaults", {})
+        _REGISTRY_RUNTIME_DEFAULTS_CACHE = (
+            dict(runtime_defaults) if isinstance(runtime_defaults, dict) else {}
+        )
         return _REGISTRY_RUNTIME_DEFAULTS_CACHE
     except Exception as e:
         logger.debug("Registry runtime defaults unavailable, using hardcoded fallbacks: %s", e)

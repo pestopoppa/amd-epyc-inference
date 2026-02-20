@@ -167,7 +167,14 @@ class SkillAwareReplayEngine(ReplayEngine):
         elapsed = time.monotonic() - start_time
 
         # Compute base metrics
-        base_metrics = self._compute_metrics(cid, trajectories, base_results, elapsed)
+        base_metrics = self._compute_metrics(
+            cid,
+            trajectories,
+            base_results,
+            elapsed,
+            retrieval_config,
+            scoring_config,
+        )
 
         # Evaluate skill retrieval for each step
         skill_results = self._evaluate_skills(
