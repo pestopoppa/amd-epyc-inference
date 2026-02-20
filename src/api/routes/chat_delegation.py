@@ -238,8 +238,18 @@ def _build_compact_specialist_prompt(
     last_error: str,
 ) -> str:
     """Compact specialist prompt for delegated mode to reduce prefill cost."""
+    # Load role-specific instructions if available (hot-swap)
+    role_instructions = ""
+    try:
+        from src.prompt_builders.resolver import resolve_prompt
+        role_text = resolve_prompt(delegate_to, "", subdir="roles")
+        if role_text:
+            role_instructions = role_text.strip() + "\n\n"
+    except Exception:
+        pass
     prompt = (
         f"You are {delegate_to}. Execute the delegated coding task quickly.\n\n"
+        f"{role_instructions}"
         f"User question:\n{question}\n\n"
         f"Architect guidance:\n{brief}\n\n"
         "Output Python code only when computation is required. "

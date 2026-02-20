@@ -586,7 +586,7 @@ def _extract_code_block(text: str, language: str = "python") -> str | None:
     # Try markdown code block first
     patterns = [
         rf"```{language}\s*\n(.*?)```",
-        r"```\s*\n(.*?)```",
+        r"```\w*\s*\n(.*?)```",
     ]
     for pat in patterns:
         match = re.search(pat, text, re.DOTALL)
