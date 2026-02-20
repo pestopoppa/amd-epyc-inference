@@ -369,29 +369,29 @@ def get_features(
             "repl": True,
             "caching": True,
             "structured_delimiters": True,  # Low risk, always on
-            "react_mode": False,  # Enable after regression testing
-            "output_formalizer": False,  # Enable after regression testing
+            "react_mode": True,  # Validated: PASS -36.8s latency (2026-02-20)
+            "output_formalizer": True,  # Validated: PASS -21.3s latency (2026-02-20)
             "parallel_tools": True,  # Parallel read-only tool dispatch enabled
             "deferred_tool_results": False,  # Keep legacy wrapping unless explicitly enabled
-            "escalation_compression": False,  # Enable after quality validation
+            "escalation_compression": True,  # BORDERLINE +4.8s but enabled per operator decision (2026-02-20)
             "script_interception": False,  # Enable after validation of interception accuracy
             "credential_redaction": True,  # Safety-first: always redact credentials in production
             "cascading_tool_policy": False,  # Enable after chain equivalence validation
             "restricted_python": False,  # AST blocklist is sufficient; RestrictedPython blocks all imports including safe ones (scipy, numpy)
-            "specialist_routing": False,  # Enable after comparative seeding proves benefit
-            "plan_review": False,  # Enable after Phase A validation
-            "architect_delegation": False,  # Enable after delegation regression testing
-            "parallel_execution": False,  # Enable after parallel execution regression testing
+            "specialist_routing": True,  # Validated: PASS -25.0s latency (2026-02-20)
+            "plan_review": True,  # Validated: PASS -24.8s latency (2026-02-20)
+            "architect_delegation": True,  # Validated: PASS -24.9s latency (2026-02-20)
+            "parallel_execution": True,  # Validated: PASS -25.5s latency (2026-02-20)
             "personas": False,  # Enable after persona quality validation
             "staged_rewards": False,  # Enable after exploration/exploitation validation
             "skillbank": False,  # Enable after distillation pipeline validation
-            "input_formalizer": False,  # Enable after regression testing
+            "input_formalizer": True,  # Validated: PASS -16.2s latency (2026-02-20)
             "generation_monitor": True,  # Early failure detection in production
             "semantic_classifiers": True,  # Config-driven classifiers enabled by default
-            "unified_streaming": False,  # Enable after streaming regression testing
+            "unified_streaming": True,  # Validated: PASS -7.9s latency (2026-02-20)
             "side_effect_tracking": False,  # Enable after tool annotation
             "structured_tool_output": False,  # Enable after tool output validation
-            "model_fallback": False,  # Enable after fallback quality validation
+            "model_fallback": True,  # Validated: PASS -1.5s latency (2026-02-20)
             "content_cache": False,  # Enable after cache correctness validation
             "session_compaction": True,  # Low-risk default: compacts long contexts with clear rollback toggle
             "depth_model_overrides": True,  # Enabled with worker-only + max-depth guardrails
