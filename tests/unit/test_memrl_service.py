@@ -101,6 +101,7 @@ class StubHybridRouter:
 
     retriever: Any = None
     rule_based_router: Any = None
+    graph_router: Any = None
 
 
 @dataclass
@@ -140,12 +141,14 @@ class StubFeatures:
         scripts: bool = False,
         specialist_routing: bool = False,
         skillbank: bool = False,
+        graph_router: bool = False,
     ):
         self.memrl = memrl
         self.tools = tools
         self.scripts = scripts
         self.specialist_routing = specialist_routing
         self.skillbank = skillbank
+        self.graph_router = graph_router
 
 
 class TestLoadOptionalImports:

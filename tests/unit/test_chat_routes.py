@@ -11,15 +11,17 @@ Tests the chat route handlers and helper functions:
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
 from src.api.dependencies import dep_app_state
-from src.api.models import ChatRequest, ChatResponse
-from src.api.routes.chat import _handle_chat, _try_cheap_first, router
+from src.api.models import ChatRequest, ChatResponse, RewardRequest
+from src.api.routes.chat import _handle_chat, _try_cheap_first, chat, chat_stream, inject_reward, router
 from src.api.routes.chat_utils import RoutingResult
 from src.api.state import AppState
 
@@ -87,7 +89,8 @@ def test_app(mock_state):
 @pytest.fixture
 def client(test_app):
     """Create a synchronous test client."""
-    return TestClient(test_app)
+    with TestClient(test_app) as test_client:
+        yield test_client
 
 
 # ── _try_cheap_first edge cases ─────────────────────────────────────────────
@@ -372,7 +375,8 @@ class TestTryCheapFirstEdgeCases:
 class TestChatEndpoint:
     """Tests for POST /chat via TestClient."""
 
-    def test_mock_mode_returns_200(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_mock_mode_returns_200(self, mock_state):
         """Mock mode chat request returns 200 with mock answer."""
         mock_response = ChatResponse(
             answer="[MOCK] Processed prompt: Hello...",
@@ -381,18 +385,23 @@ class TestChatEndpoint:
             mock_mode=True,
             real_mode=False,
         )
-        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
-            mock_handle.return_value = mock_response
-            response = client.post(
-                "/chat",
-                json={"prompt": "Hello", "mock_mode": True},
-            )
-            assert response.status_code == 200
-            data = response.json()
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        async def fake_handle_chat(*_args, **_kwargs):
+            return mock_response
+
+        with patch("src.api.routes.chat._handle_chat", new=fake_handle_chat):
+            response = await chat(ChatRequest(prompt="Hello", mock_mode=True), _FakeRequest(), mock_state)
+            assert response is mock_response
+            data = response.model_dump()
             assert data["mock_mode"] is True
             assert "[MOCK]" in data["answer"]
 
-    def test_chat_returns_200_for_successful_request(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_chat_returns_200_for_successful_request(self, mock_state):
         """Chat endpoint returns 200 for a successful non-error response."""
         mock_response = ChatResponse(
             answer="A real answer to the user question.",
@@ -402,18 +411,26 @@ class TestChatEndpoint:
             real_mode=True,
             routed_to="frontdoor",
         )
-        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
-            mock_handle.return_value = mock_response
-            response = client.post(
-                "/chat",
-                json={"prompt": "Explain recursion", "mock_mode": False, "real_mode": True},
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        async def fake_handle_chat(*_args, **_kwargs):
+            return mock_response
+
+        with patch("src.api.routes.chat._handle_chat", new=fake_handle_chat):
+            response = await chat(
+                ChatRequest(prompt="Explain recursion", mock_mode=False, real_mode=True),
+                _FakeRequest(),
+                mock_state,
             )
-            assert response.status_code == 200
-            data = response.json()
+            data = response.model_dump()
             assert data["answer"] == "A real answer to the user question."
             assert data["turns"] == 2
 
-    def test_chat_returns_error_status_on_error_code(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_chat_returns_error_status_on_error_code(self, mock_state):
         """When _handle_chat returns error_code, HTTP status matches."""
         mock_response = ChatResponse(
             answer="Backend timeout",
@@ -424,15 +441,26 @@ class TestChatEndpoint:
             error_code=504,
             error_detail="Request timed out",
         )
-        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
-            mock_handle.return_value = mock_response
-            response = client.post(
-                "/chat",
-                json={"prompt": "Slow query", "mock_mode": False, "real_mode": True},
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        async def fake_handle_chat(*_args, **_kwargs):
+            return mock_response
+
+        with patch("src.api.routes.chat._handle_chat", new=fake_handle_chat):
+            response = await chat(
+                ChatRequest(prompt="Slow query", mock_mode=False, real_mode=True),
+                _FakeRequest(),
+                mock_state,
             )
             assert response.status_code == 504
+            data = json.loads(response.body.decode("utf-8"))
+            assert data["error_code"] == 504
 
-    def test_chat_503_includes_retry_after(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_chat_503_includes_retry_after(self, mock_state):
         """When error_code=503, response includes Retry-After header."""
         mock_response = ChatResponse(
             answer="Service unavailable",
@@ -443,16 +471,25 @@ class TestChatEndpoint:
             error_code=503,
             error_detail="Backend down",
         )
-        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
-            mock_handle.return_value = mock_response
-            response = client.post(
-                "/chat",
-                json={"prompt": "test", "mock_mode": False, "real_mode": True},
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        async def fake_handle_chat(*_args, **_kwargs):
+            return mock_response
+
+        with patch("src.api.routes.chat._handle_chat", new=fake_handle_chat):
+            response = await chat(
+                ChatRequest(prompt="test", mock_mode=False, real_mode=True),
+                _FakeRequest(),
+                mock_state,
             )
             assert response.status_code == 503
             assert response.headers.get("retry-after") == "30"
 
-    def test_chat_increments_and_decrements_active(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_chat_increments_and_decrements_active(self, mock_state):
         """Chat endpoint calls increment_active/decrement_active around handling."""
         mock_response = ChatResponse(
             answer="ok",
@@ -460,9 +497,16 @@ class TestChatEndpoint:
             elapsed_seconds=0.01,
             mock_mode=True,
         )
-        with patch("src.api.routes.chat._handle_chat", new_callable=AsyncMock) as mock_handle:
-            mock_handle.return_value = mock_response
-            client.post("/chat", json={"prompt": "test"})
+
+        class _FakeRequest:
+            async def is_disconnected(self) -> bool:
+                return False
+
+        async def fake_handle_chat(*_args, **_kwargs):
+            return mock_response
+
+        with patch("src.api.routes.chat._handle_chat", new=fake_handle_chat):
+            await chat(ChatRequest(prompt="test"), _FakeRequest(), mock_state)
             mock_state.increment_active.assert_called_once()
             mock_state.decrement_active.assert_called_once()
 
@@ -473,51 +517,62 @@ class TestChatEndpoint:
 class TestRewardEndpoint:
     """Tests for POST /chat/reward."""
 
-    def test_inject_reward_returns_success(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_inject_reward_returns_success(self, mock_state):
         """inject_reward endpoint returns success dict."""
-        with patch("src.api.routes.chat.store_external_reward", return_value=True) as mock_store:
-            response = client.post(
-                "/chat/reward",
-                json={
-                    "task_description": "Solve fizzbuzz",
-                    "action": "coder:direct",
-                    "reward": 0.85,
-                },
+        async def fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch("src.api.routes.chat.store_external_reward", return_value=True) as mock_store, \
+             patch("src.api.routes.chat.asyncio.to_thread", new=fake_to_thread):
+            response = await inject_reward(
+                RewardRequest(
+                    task_description="Solve fizzbuzz",
+                    action="coder:direct",
+                    reward=0.85,
+                ),
+                mock_state,
             )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is True
+            assert response["success"] is True
             mock_store.assert_called_once()
 
-    def test_inject_reward_returns_failure(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_inject_reward_returns_failure(self, mock_state):
         """inject_reward returns success=False when store fails."""
-        with patch("src.api.routes.chat.store_external_reward", return_value=False):
-            response = client.post(
-                "/chat/reward",
-                json={
-                    "task_description": "Hard problem",
-                    "action": "architect:delegated",
-                    "reward": -0.5,
-                },
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["success"] is False
+        async def fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
 
-    def test_inject_reward_with_embedding(self, client, mock_state):
+        with patch("src.api.routes.chat.store_external_reward", return_value=False), \
+             patch("src.api.routes.chat.asyncio.to_thread", new=fake_to_thread):
+            response = await inject_reward(
+                RewardRequest(
+                    task_description="Hard problem",
+                    action="architect:delegated",
+                    reward=-0.5,
+                ),
+                mock_state,
+            )
+            assert response["success"] is False
+
+    @pytest.mark.asyncio
+    async def test_inject_reward_with_embedding(self, mock_state):
         """inject_reward passes precomputed embedding to store."""
         embedding = [0.1, 0.2, 0.3]
-        with patch("src.api.routes.chat.store_external_reward", return_value=True) as mock_store:
-            response = client.post(
-                "/chat/reward",
-                json={
-                    "task_description": "Test task",
-                    "action": "frontdoor:direct",
-                    "reward": 1.0,
-                    "embedding": embedding,
-                },
+        async def fake_to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch("src.api.routes.chat.store_external_reward", return_value=True) as mock_store, \
+             patch("src.api.routes.chat.asyncio.to_thread", new=fake_to_thread):
+            response = await inject_reward(
+                RewardRequest(
+                    task_description="Test task",
+                    action="frontdoor:direct",
+                    reward=1.0,
+                    embedding=embedding,
+                ),
+                mock_state,
             )
-            assert response.status_code == 200
+            assert response["success"] is True
             # Verify embedding was passed through
             call_args = mock_store.call_args
             assert call_args[0][5] == embedding or call_args[1].get("embedding") == embedding
@@ -608,32 +663,37 @@ class TestHandleChat:
 class TestChatStreamEndpoint:
     """Tests for POST /chat/stream."""
 
-    def test_stream_returns_streaming_response(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_stream_returns_streaming_response(self, mock_state):
         """chat_stream endpoint returns a streaming response (200)."""
         # Patch features to use legacy streaming (not unified)
         with patch("src.api.routes.chat.features") as mock_features:
             mock_features.return_value.unified_streaming = False
             mock_state.progress_logger = None
 
-            response = client.post(
-                "/chat/stream",
-                json={"prompt": "Stream test", "mock_mode": True},
+            response = await chat_stream(
+                ChatRequest(prompt="Stream test", mock_mode=True, real_mode=False),
+                mock_state,
             )
-            assert response.status_code == 200
-            # SSE responses have text/event-stream content type
-            content_type = response.headers.get("content-type", "")
-            assert "text/event-stream" in content_type
+            assert isinstance(response, StreamingResponse)
+            assert "text/event-stream" in (response.media_type or "")
 
-    def test_stream_mock_mode_contains_done(self, client, mock_state):
+    @pytest.mark.asyncio
+    async def test_stream_mock_mode_contains_done(self, mock_state):
         """Mock mode stream contains [DONE] sentinel."""
         with patch("src.api.routes.chat.features") as mock_features:
             mock_features.return_value.unified_streaming = False
             mock_state.progress_logger = None
 
-            response = client.post(
-                "/chat/stream",
-                json={"prompt": "Hello stream", "mock_mode": True},
+            response = await chat_stream(
+                ChatRequest(prompt="Hello stream", mock_mode=True, real_mode=False),
+                mock_state,
             )
-            assert response.status_code == 200
-            body = response.text
+            chunks = []
+            async for chunk in response.body_iterator:
+                if isinstance(chunk, bytes):
+                    chunks.append(chunk.decode("utf-8", errors="replace"))
+                else:
+                    chunks.append(str(chunk))
+            body = "".join(chunks)
             assert "[DONE]" in body

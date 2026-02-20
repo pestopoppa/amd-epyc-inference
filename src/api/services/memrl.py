@@ -439,8 +439,9 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
         rule_router = RuleBasedRouter(routing_hints=state.registry.routing_hints)
 
         # Phase 3+: Initialize GraphRouter (GNN-based parallel routing signal)
+        feature_flags = features()
         graph_router_predictor = None
-        if features().graph_router:
+        if getattr(feature_flags, "graph_router", False):
             try:
                 from pathlib import Path as _Path
 
@@ -471,7 +472,7 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
         )
 
         # SkillBank: wrap HybridRouter with skill retrieval if enabled
-        if features().skillbank and SkillBank is not None and SkillRetriever is not None:
+        if getattr(feature_flags, "skillbank", False) and SkillBank is not None and SkillRetriever is not None:
             try:
                 from pathlib import Path
 
