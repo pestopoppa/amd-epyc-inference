@@ -44,6 +44,27 @@ LLM inference optimization research and production orchestration system on AMD E
 
 **Memory Tiers**: HOT ~535GB always resident (47% of RAM) | WARM on-demand | COLD disk-only
 
+## Active Production Features
+
+10 features validated and enabled via live A/B testing (2026-02-20). Each tested with hot-reload (`POST /config`) against production baseline — 5 prompts per feature measuring latency, throughput, and quality.
+
+| Feature | Latency Delta | Chapter | Description |
+|---------|--------------|---------|-------------|
+| specialist_routing | **-25.0s** | [Ch15](docs/chapters/15-memrl-system.md), [Ch18](docs/chapters/18-escalation-and-routing.md) | MemRL Q-value learned routing to specialist models |
+| plan_review | **-24.8s** | [Ch18](docs/chapters/18-escalation-and-routing.md) | Architect-tier plan review catches bad routes early |
+| architect_delegation | **-24.9s** | [Ch10](docs/chapters/10-orchestration-architecture.md) | Escalation to architect tier for complex tasks |
+| parallel_execution | **-25.5s** | [Ch10](docs/chapters/10-orchestration-architecture.md) | Wave-based parallel worker dispatch |
+| react_mode | **-36.8s** | [Ch18](docs/chapters/18-escalation-and-routing.md) | ReAct tool loop for direct-mode prompts |
+| output_formalizer | **-21.3s** | [Research](research/FORMALIZER_INVESTIGATION.md) | Post-process answers to satisfy format constraints |
+| input_formalizer | **-16.2s** | [Research](research/FORMALIZER_INVESTIGATION.md) | Preprocess complex prompts (MathSmith-8B parse) |
+| unified_streaming | **-7.9s** | [Ch10](docs/chapters/10-orchestration-architecture.md) | Unified SSE streaming adapter |
+| model_fallback | **-1.5s** | [Ch10](docs/chapters/10-orchestration-architecture.md), [Ch18](docs/chapters/18-escalation-and-routing.md) | Circuit-breaker fallback on backend failure |
+| escalation_compression | +4.8s | [Ch18](docs/chapters/18-escalation-and-routing.md) | LLMLingua-2 prompt compression on escalation |
+
+**Validation results**: `benchmarks/results/runs/feature_validation/live/` | **Runner**: `scripts/benchmark/feature_validation.py`
+
+**Still disabled** (failed validation): `binding_routing` (+6.5s), `personas` (+20.6s). **Deferred**: `skillbank`, `staged_rewards`, `script_interception`, `restricted_python`.
+
 ## Feature Highlights
 
 ### Inference Optimization (Part II)

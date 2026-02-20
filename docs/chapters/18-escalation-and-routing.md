@@ -928,6 +928,14 @@ THINK_HARDER regulation now uses an adaptive envelope in graph helpers:
 
 </details>
 
+## GraphRouter Cold-Start Routing (2026-02-20)
+
+HybridRouter now supports an optional GNN-based parallel routing signal (`GraphRouterPredictor`) for cold-start optimization. When a new model joins the fleet with zero episodic memories, the GAT generalizes routing predictions from the model's capability embedding through shared query neighborhoods.
+
+The blend is conservative: `posterior = (1-w) × retriever + w × graph_router`, where w anneals from 0.1 to 0.3 as the episodic store grows (500→2000 memories). TwoPhaseRetriever always dominates. Feature-gated: `ORCHESTRATOR_GRAPH_ROUTER=1` (requires `specialist_routing`).
+
+See [Chapter 16: Graph-Based Reasoning](16-graph-reasoning.md) for schema, training, and onboarding details.
+
 ## Literature Mapping (Architecture Review Alignment)
 
 This chapter's routing and escalation mechanics are grounded in several research-backed ideas, from hierarchical delegation to risk-aware abstention. The table below maps review themes to their practical implementation in this codebase.

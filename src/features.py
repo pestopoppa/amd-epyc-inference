@@ -152,6 +152,9 @@ class Features:
     # Phase 3: Specialist routing (MemRL-driven intelligent orchestration)
     specialist_routing: bool = False  # Enable specialist routing (coder, architect) via Q-values
 
+    # Phase 3+: GraphRouter (GNN-based parallel routing signal for cold-start optimization)
+    graph_router: bool = False  # Enable bipartite GAT routing predictor
+
     # Phase 3: Architect plan review (pre-execution plan vetting)
     plan_review: bool = False  # Enable architect review of frontdoor plans before execution
 
@@ -215,6 +218,8 @@ class Features:
         # MemRL-dependent features
         if self.specialist_routing and not self.memrl:
             errors.append("specialist_routing feature requires memrl feature")
+        if self.graph_router and not self.specialist_routing:
+            errors.append("graph_router feature requires specialist_routing feature")
         if self.plan_review and not self.memrl:
             errors.append("plan_review feature requires memrl feature")
         if self.architect_delegation and not self.memrl:
@@ -271,6 +276,7 @@ class Features:
             "cascading_tool_policy": self.cascading_tool_policy,
             "restricted_python": self.restricted_python,
             "specialist_routing": self.specialist_routing,
+            "graph_router": self.graph_router,
             "plan_review": self.plan_review,
             "architect_delegation": self.architect_delegation,
             "parallel_execution": self.parallel_execution,
@@ -379,6 +385,7 @@ def get_features(
             "cascading_tool_policy": True,  # Validated: PASS -15.3s latency (2026-02-20)
             "restricted_python": False,  # AST blocklist is sufficient; RestrictedPython blocks all imports including safe ones (scipy, numpy)
             "specialist_routing": True,  # Validated: PASS -25.0s latency (2026-02-20)
+            "graph_router": False,  # Enable after GAT training and cold-start validation
             "plan_review": True,  # Validated: PASS -24.8s latency (2026-02-20)
             "architect_delegation": True,  # Validated: PASS -24.9s latency (2026-02-20)
             "parallel_execution": True,  # Validated: PASS -25.5s latency (2026-02-20)
@@ -422,6 +429,7 @@ def get_features(
             "cascading_tool_policy": False,  # Disabled in tests by default
             "restricted_python": False,  # Use custom sandbox in tests
             "specialist_routing": False,  # Disabled in tests by default
+            "graph_router": False,  # Disabled in tests by default
             "plan_review": False,  # Disabled in tests by default
             "architect_delegation": False,  # Disabled in tests by default
             "parallel_execution": False,  # Disabled in tests by default
@@ -470,6 +478,7 @@ def get_features(
         "cascading_tool_policy": _env_bool("CASCADING_TOOL_POLICY", defaults["cascading_tool_policy"]),
         "restricted_python": _env_bool("RESTRICTED_PYTHON", defaults["restricted_python"]),
         "specialist_routing": _env_bool("SPECIALIST_ROUTING", defaults["specialist_routing"]),
+        "graph_router": _env_bool("GRAPH_ROUTER", defaults["graph_router"]),
         "plan_review": _env_bool("PLAN_REVIEW", defaults["plan_review"]),
         "architect_delegation": _env_bool("ARCHITECT_DELEGATION", defaults["architect_delegation"]),
         "parallel_execution": _env_bool("PARALLEL_EXECUTION", defaults["parallel_execution"]),

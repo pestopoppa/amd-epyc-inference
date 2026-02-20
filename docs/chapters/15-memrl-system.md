@@ -617,6 +617,18 @@ Replay metrics now include a teacher-match utility objective that combines chose
 
 </details>
 
+## GraphRouter Augmentation (February 2026)
+
+The HybridRouter now supports an optional parallel GNN-based routing signal via `GraphRouterPredictor`. This addresses the **cold-start problem**: when a new model joins the fleet, it has zero episodic memories and routing degrades to rule-based fallback.
+
+**How it works**: A bipartite graph (query clusters ↔ LLM roles) is built from episodic memory via MiniBatchKMeans clustering. A 2-layer GAT learns routing patterns from graph structure. For new models, the GAT generalizes from capability embeddings through shared query neighborhoods — no organic data needed.
+
+**Integration**: Blend weight anneals 0.1→0.3 by store size. TwoPhaseRetriever always dominates (70%+ influence). Feature-gated: `ORCHESTRATOR_GRAPH_ROUTER=1`.
+
+See [Chapter 16: Graph-Based Reasoning](16-graph-reasoning.md) for full architecture details.
+
+**Key files**: `routing_graph.py`, `lightweight_gat.py`, `graph_router_predictor.py`, `scripts/graph_router/train_graph_router.py`
+
 ## Literature Mapping (Architecture Review Alignment)
 
 This chapter's design choices map directly to the architecture review's research threads. Each theme has a practical interpretation and concrete code anchor.
@@ -650,8 +662,11 @@ This chapter's design choices map directly to the architecture review's research
 3. `orchestration/repl_memory/episodic_store.py`: Memory storage (861 lines)
 4. `orchestration/repl_memory/faiss_store.py`: FAISS backend (343 lines)
 5. `orchestration/repl_memory/embedder.py`: Task embedding (393 lines)
-6. `orchestration/repl_memory/retriever.py`: Two-phase retrieval (608 lines)
+6. `orchestration/repl_memory/retriever.py`: Two-phase retrieval + HybridRouter + GraphRouter blending
 7. `orchestration/repl_memory/q_scorer.py`: Async Q-learning (502 lines)
+8. `orchestration/repl_memory/routing_graph.py`: Bipartite routing graph (Kuzu)
+9. `orchestration/repl_memory/lightweight_gat.py`: Pure numpy 2-layer GAT
+10. `orchestration/repl_memory/graph_router_predictor.py`: Cached GNN inference
 
 ### Replay Harness
 

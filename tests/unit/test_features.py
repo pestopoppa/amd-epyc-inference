@@ -86,6 +86,12 @@ class TestFeaturesValidate:
         errors = f.validate()
         assert any("specialist_routing" in e and "memrl" in e for e in errors)
 
+    def test_graph_router_without_specialist_routing_error(self):
+        """graph_router requires specialist_routing."""
+        f = Features(graph_router=True, specialist_routing=False, memrl=True)
+        errors = f.validate()
+        assert any("graph_router" in e and "specialist_routing" in e for e in errors)
+
     def test_plan_review_without_memrl_error(self):
         """plan_review requires memrl."""
         f = Features(plan_review=True, memrl=False)
@@ -170,7 +176,7 @@ class TestFeaturesSummary:
             "output_formalizer", "parallel_tools", "deferred_tool_results",
             "escalation_compression", "script_interception",
             "credential_redaction", "cascading_tool_policy",
-            "restricted_python", "specialist_routing",
+            "restricted_python", "specialist_routing", "graph_router",
             "plan_review", "architect_delegation", "parallel_execution",
             "personas", "staged_rewards", "input_formalizer",
             "generation_monitor", "semantic_classifiers", "unified_streaming",

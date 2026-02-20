@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import warnings
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -21,6 +21,16 @@ import numpy as np
 from ..progress_logger import EventType, ProgressEntry, ProgressReader
 
 logger = logging.getLogger(__name__)
+
+
+def _sort_key_tz(t: "Trajectory") -> datetime:
+    """Sort key that normalizes tz-naive datetimes to UTC for safe comparison."""
+    dt = t.started_at
+    if dt is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 @dataclass
@@ -140,8 +150,8 @@ class TrajectoryExtractor:
                 incomplete_count,
             )
 
-        # Sort by started_at
-        trajectories.sort(key=lambda t: t.started_at or datetime.min)
+        # Sort by started_at (normalize tz-naive to UTC to avoid comparison errors)
+        trajectories.sort(key=_sort_key_tz)
 
         # Stratified sampling if needed
         if max_trajectories > 0 and len(trajectories) > max_trajectories:
@@ -344,7 +354,7 @@ class TrajectoryExtractor:
                     sampled.append(remaining[idx])
 
         # Re-sort by started_at
-        sampled.sort(key=lambda t: t.started_at or datetime.min)
+        sampled.sort(key=_sort_key_tz)
         return sampled
 
     def _load_embedding_cache(

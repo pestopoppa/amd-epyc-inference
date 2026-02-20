@@ -437,7 +437,38 @@ def ensure_memrl_initialized(state: "AppState") -> bool:
 
             state.registry = RegistryLoader(validate_paths=False)
         rule_router = RuleBasedRouter(routing_hints=state.registry.routing_hints)
-        hybrid_router = HybridRouter(retriever=retriever, rule_based_router=rule_router)
+
+        # Phase 3+: Initialize GraphRouter (GNN-based parallel routing signal)
+        graph_router_predictor = None
+        if features().graph_router:
+            try:
+                from pathlib import Path as _Path
+
+                from orchestration.repl_memory.routing_graph import BipartiteRoutingGraph
+                from orchestration.repl_memory.lightweight_gat import LightweightGAT
+                from orchestration.repl_memory.graph_router_predictor import GraphRouterPredictor
+
+                routing_graph = BipartiteRoutingGraph()
+                gat = LightweightGAT()
+                weights_path = _Path(
+                    "/mnt/raid0/llm/claude/orchestration/repl_memory/graph_router_weights.npz"
+                )
+                if weights_path.exists():
+                    gat.load(weights_path)
+                graph_router_predictor = GraphRouterPredictor(
+                    routing_graph, gat, embedder,
+                )
+                state.routing_graph = routing_graph
+                logger.info("GraphRouter initialized (GNN cold-start routing signal)")
+            except Exception as e:
+                logger.warning("GraphRouter init failed: %s", e)
+                graph_router_predictor = None
+
+        hybrid_router = HybridRouter(
+            retriever=retriever,
+            rule_based_router=rule_router,
+            graph_router=graph_router_predictor,
+        )
 
         # SkillBank: wrap HybridRouter with skill retrieval if enabled
         if features().skillbank and SkillBank is not None and SkillRetriever is not None:

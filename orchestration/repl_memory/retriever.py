@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .failure_graph import FailureGraph
+    from .graph_router_predictor import GraphRouterPredictor
     from .hypothesis_graph import HypothesisGraph
 
 
@@ -553,9 +554,13 @@ class HybridRouter:
         self,
         retriever: TwoPhaseRetriever,
         rule_based_router: "RuleBasedRouter",  # Forward reference
+        graph_router: Optional["GraphRouterPredictor"] = None,
+        graph_router_weight: float = 0.3,
     ):
         self.retriever = retriever
         self.rule_based = rule_based_router
+        self.graph_router = graph_router
+        self.graph_router_weight = graph_router_weight
         self.last_decision_meta: Dict[str, Any] = {}
 
     def _record_decision_meta(
@@ -609,7 +614,72 @@ class HybridRouter:
             "risk_budget_id": str(
                 (risk_gate or {}).get("budget_id", self.retriever.config.risk_budget_id)
             ),
+            "graph_router_ready": bool(
+                self.graph_router and self.graph_router.is_ready
+            ) if self.graph_router else False,
+            "graph_router_weight": round(
+                self._get_adaptive_graph_weight(), 4
+            ) if self.graph_router else 0.0,
         }
+
+    def _get_adaptive_graph_weight(self) -> float:
+        """Compute adaptive blend weight based on episodic store size.
+
+        Annealing schedule:
+        - Below 500 memories: w=0.1 (minimal GNN trust, cold-start)
+        - 500-2000 memories: linear ramp 0.1->0.3
+        - Above 2000: w=0.3 (max GNN influence)
+
+        Returns:
+            Blend weight in [0.1, graph_router_weight]
+        """
+        try:
+            store_size = self.retriever.store.count()
+        except Exception:
+            return 0.1
+
+        min_w = 0.1
+        max_w = self.graph_router_weight
+        if store_size < 500:
+            return min_w
+        if store_size >= 2000:
+            return max_w
+        # Linear interpolation
+        t = (store_size - 500) / 1500.0
+        return min_w + t * (max_w - min_w)
+
+    def _blend_graph_router_scores(
+        self,
+        results: List[RetrievalResult],
+        task_ir: Dict[str, Any],
+    ) -> None:
+        """Blend GraphRouter signal into posterior scores.
+
+        Formula: posterior = (1-w) * retriever_score + w * graph_score
+        """
+        if not results:
+            return
+
+        # Get query embedding (reuse from retriever)
+        try:
+            embedding = self.retriever.embedder.embed_task_ir(task_ir)
+        except Exception:
+            return
+
+        task_type = task_ir.get("task_type", "general")
+        gr_scores = self.graph_router.predict(embedding, task_type)
+
+        if not gr_scores:
+            return
+
+        w = self._get_adaptive_graph_weight()
+
+        for r in results:
+            role = self.retriever._extract_role_from_memory(r.memory)
+            if role in gr_scores:
+                r.posterior_score = (1 - w) * r.posterior_score + w * gr_scores[role]
+
+        results.sort(key=lambda r: r.posterior_score, reverse=True)
 
     def _action_prior_prob(self, action: str, priors: Dict[str, float]) -> float:
         """Map action string to prior probability mass."""
@@ -657,6 +727,11 @@ class HybridRouter:
         # Try learned routing first
         results = self.retriever.retrieve_for_routing(task_ir)
         results = self._apply_priors(results, priors)
+
+        # Blend GraphRouter signal if available
+        if self.graph_router and self.graph_router.is_ready:
+            self._blend_graph_router_scores(results, task_ir)
+
         route_key = str(task_ir.get("task_id", task_ir.get("objective", "")))
         risk_gate = self.retriever.evaluate_risk_gate(results, route_key=route_key)
 
@@ -723,6 +798,11 @@ class HybridRouter:
         # Try learned routing first
         results = self.retriever.retrieve_for_routing(task_ir)
         results = self._apply_priors(results, priors)
+
+        # Blend GraphRouter signal if available
+        if self.graph_router and self.graph_router.is_ready:
+            self._blend_graph_router_scores(results, task_ir)
+
         route_key = str(task_ir.get("task_id", task_ir.get("objective", "")))
         risk_gate = self.retriever.evaluate_risk_gate(results, route_key=route_key)
 

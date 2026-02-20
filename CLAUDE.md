@@ -168,7 +168,7 @@ Memory:     EpisodicStore(SQLite) → FAISSStore(4042 vectors) → ParallelEmbed
 Skills:     SkillBank(skills.db+FAISS) → SkillRetriever → prompt injection | OutcomeTracker → EvolutionMonitor
 Retrieval:  NextPLAID-code(:8088) → LateOn-Code(130M, 128-dim) → code index | NextPLAID-docs(:8089) → answerai-colbert-small-v1(ONNX INT8) → docs index
 Escalation: Graph nodes use EscalationPolicy(rules) + MemRL(advisory) via TaskDeps injection
-Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence)
+Graphs:     QScorer reads FailureGraph(anti-memory) + HypothesisGraph(confidence) + RoutingGraph(cold-start GAT)
 Tools:      REPLExecutor → ToolRegistry(allowed_callers, chain telemetry) → PluginLoader(5 plugins, 10 tools)
 Prompts:    resolve_prompt(name) → orchestration/prompts/{name}.md (hot-swap) → fallback constant
 REPL:       sanitize_code_unicode() → exec(code) — strips non-ASCII before execution

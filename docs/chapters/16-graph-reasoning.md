@@ -2,15 +2,14 @@
 
 ## Introduction
 
-The orchestration system uses two Kuzu graph databases to track failure patterns and hypothesis confidence. This provides "anti-memory" (learning what NOT to do) and confidence-based warnings for action-task combinations.
-
-**Key insight:** Current Q-learning optimizes for repeating success. But in debugging and optimization, avoiding known failure modes is often more valuable than finding the optimal success path.
-
-The graph-based reasoning layer consists of:
-- **Failure Graph** (~14MB): Tracks failure modes, symptoms, and mitigations
+The orchestration system uses three Kuzu graph databases for graph-based reasoning:
+- **Failure Graph** (~14MB): Tracks failure modes, symptoms, and mitigations ("anti-memory")
 - **Hypothesis Graph** (~4.6MB): Tracks action->task confidence with asymptotic learning
+- **Routing Graph** (NEW, Feb 2026): Bipartite (query ↔ LLM) graph for GNN-based cold-start routing
 
-Both graphs use Kuzu 0.11+ for native graph queries and integrate with the episodic memory store via memory link nodes.
+**Key insight:** Current Q-learning optimizes for repeating success. But in debugging and optimization, avoiding known failure modes is often more valuable. And for new model onboarding, graph structure enables inductive generalization without waiting for organic traffic.
+
+All graphs use Kuzu 0.11+ for native graph queries and integrate with the episodic memory store.
 
 ## Failure Graph Architecture
 
@@ -400,14 +399,86 @@ This extends the Failure Graph from a read-only anti-memory into a source of pos
 
 </details>
 
+## Routing Graph (GraphRouter)
+
+The Routing Graph is a bipartite heterogeneous graph that powers GNN-based cold-start routing. When a new model joins the fleet, it has zero episodic memories. The GAT propagates routing predictions through shared query neighborhoods — no cold-start wait required.
+
+Based on GraphRouter (ICLR 2025, arXiv:2410.03834).
+
+<details>
+<summary>Routing Graph schema and architecture</summary>
+
+### Schema
+
+| Node Type | Primary Key | Properties |
+|-----------|-------------|------------|
+| `TaskType` | id (STRING) | description, embedding (1024-dim BGE-large) |
+| `QueryCluster` | id (STRING) | representative_text, embedding, task_type_id, sample_count |
+| `LLMRole` | id (STRING) | description, embedding, port, tokens_per_second, memory_tier, memory_gb |
+
+| Relationship | From -> To | Properties |
+|--------------|-----------|------------|
+| `BELONGS_TO` | QueryCluster -> TaskType | (none) |
+| `PERFORMANCE_ON` | LLMRole -> QueryCluster | success_rate, avg_q_value, avg_latency_s, sample_count, last_updated |
+
+### Architecture
+
+```
+BipartiteRoutingGraph (Kuzu)
+  ├── sync_from_episodic_store() → MiniBatchKMeans → QueryCluster centroids
+  └── get_node_features() + get_edge_index() → GAT input
+
+LightweightGAT (pure numpy, 2-layer)
+  ├── Layer 1: MultiHeadGAT(1024→32, heads=4) + ELU → 128-dim
+  ├── Layer 2: MultiHeadGAT(128→32, heads=1) + ELU → 32-dim
+  └── Edge prediction: sigmoid(dot(query_emb, llm_emb))
+
+GraphRouterPredictor (cached inference)
+  ├── Find nearest QueryCluster by cosine sim
+  ├── GAT forward on precomputed graph (cached 60s)
+  └── Softmax over LLM role scores
+
+HybridRouter (blending)
+  └── posterior = (1-w) × retriever_score + w × graph_score
+      where w anneals 0.1→0.3 by episodic store size
+```
+
+### Cold-Start Onboarding
+
+New models get routing predictions inductively:
+
+```bash
+python3 scripts/graph_router/onboard_model.py \
+    --role new_coder_v2 \
+    --description "Qwen4-Coder-32B, 55 t/s" \
+    --port 8086 --tps 55.0 --memory-tier HOT --memory-gb 20
+```
+
+The GAT generalizes from the capability embedding through shared query neighborhoods. Hours of organic accumulation → minutes.
+
+### Training
+
+```bash
+python3 scripts/graph_router/train_graph_router.py --epochs 100 --lr 0.001
+```
+
+Edge masking (20% held out) → BCE loss → SGD with cosine LR decay. Runtime: ~10-30s on CPU.
+
+</details>
+
 <details>
 <summary>References</summary>
 
-- **Source**: `orchestration/repl_memory/failure_graph.py`, `hypothesis_graph.py`
+- **Source**: `orchestration/repl_memory/failure_graph.py`, `hypothesis_graph.py`, `routing_graph.py`
+- **GAT**: `orchestration/repl_memory/lightweight_gat.py`
+- **Predictor**: `orchestration/repl_memory/graph_router_predictor.py`
 - **Failure Bridge**: `orchestration/repl_memory/distillation/failure_bridge.py`
 - **Seeds**: `orchestration/repl_memory/graph_seeds.yaml`
+- **Training**: `scripts/graph_router/train_graph_router.py`, `onboard_model.py`
 - **Model quirks**: Extracted from `docs/reference/models/QUIRKS.md`
 - **Benchmark evidence**: Extracted from `benchmarks/results/reviews/summary.csv`
+- **Paper**: GraphRouter (ICLR 2025, arXiv:2410.03834)
+- **Benchmark**: LLMRouterBench (arXiv:2601.07206) — routing gains are coarse-grained
 
 </details>
 

@@ -120,7 +120,7 @@ while [[ $# -gt 0 ]]; do
       WS3B_NO_PREFLIGHT=1
       shift
       ;;
-    -h|--help)
+    -h | --help)
       usage
       exit 0
       ;;
@@ -171,7 +171,7 @@ require_cmd grep
 wait_for_health() {
   local max_wait="${1:-60}"
   local waited=0
-  while (( waited < max_wait )); do
+  while ((waited < max_wait)); do
     if curl -sS --max-time 2 "$API_URL/health" >/dev/null; then
       return 0
     fi
@@ -304,7 +304,7 @@ run_ws3b_mode() {
 
   local preflight_done=0
   for seed in "${AB_SEEDS[@]}"; do
-    if [[ -n "$WS3B_START_SEED" ]] && (( seed < WS3B_START_SEED )); then
+    if [[ -n "$WS3B_START_SEED" ]] && ((seed < WS3B_START_SEED)); then
       continue
     fi
 
@@ -344,11 +344,11 @@ if should_run_stage "ws2"; then
 
   run_step "ws2_sweep_live" \
     python3 scripts/benchmark/concurrent_inference_sweep.py \
-      --roles "$SWEEP_ROLES" \
-      --n-warmup "$SWEEP_N_WARMUP" \
-      --n-measured "$SWEEP_N_MEASURED" \
-      --n-predict "$SWEEP_N_PREDICT" \
-      --yes
+    --roles "$SWEEP_ROLES" \
+    --n-warmup "$SWEEP_N_WARMUP" \
+    --n-measured "$SWEEP_N_MEASURED" \
+    --n-predict "$SWEEP_N_PREDICT" \
+    --yes
 fi
 
 # -----------------------------------------------------------------------------
@@ -423,7 +423,7 @@ if should_run_stage "ws3c"; then
   PREWARM_AFTER="$(count_prewarm_lines)"
   log "WS3C prewarm log count after probes: $PREWARM_AFTER"
   PREWARM_DELTA=$((PREWARM_AFTER - PREWARM_BEFORE))
-  if (( PREWARM_DELTA < 0 )); then
+  if ((PREWARM_DELTA < 0)); then
     PREWARM_DELTA=0
   fi
 fi

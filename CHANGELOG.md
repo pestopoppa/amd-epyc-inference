@@ -2,6 +2,26 @@
 
 ## 2026-02-20
 
+- **GraphRouter MemRL augmentation (ICLR 2025, arXiv:2410.03834)**:
+  - GNN-based parallel routing signal for cold-start optimization. New models get routing predictions in minutes instead of hours of organic data accumulation.
+  - **BipartiteRoutingGraph** (`routing_graph.py`): Kuzu bipartite graph with TaskType/QueryCluster/LLMRole nodes and PERFORMANCE_ON edges. MiniBatchKMeans clustering from EpisodicStore.
+  - **LightweightGAT** (`lightweight_gat.py`): Pure numpy 2-layer heterogeneous GAT (1024→32×4→32). Multi-head attention with scatter aggregation, save/load `.npz`.
+  - **GraphRouterPredictor** (`graph_router_predictor.py`): TTL-cached inference wrapper, <0.5ms warm cache. Predicts per-role routing scores.
+  - **HybridRouter integration** (`retriever.py`): Blend `posterior = (1-w)×retriever + w×graph`. Weight anneals 0.1→0.3 by store size (500→2000 memories). Injected in `route()` and `route_with_mode()`. Telemetry: `graph_router_ready`, `graph_router_weight` in decision metadata.
+  - **Feature flag**: `graph_router` (requires `specialist_routing`). Env: `ORCHESTRATOR_GRAPH_ROUTER=1`. Defaults to False in prod (needs GAT training first).
+  - **Scripts**: `scripts/graph_router/train_graph_router.py` (offline GAT training with edge masking, BCE loss, cosine LR, early stopping), `scripts/graph_router/onboard_model.py` (inductive new model onboarding).
+  - 49 tests across 5 test files. No changes needed to `seed_specialist_routing.py` — data flows are decoupled.
+  - Files: `routing_graph.py`, `lightweight_gat.py`, `graph_router_predictor.py` (NEW), `retriever.py`, `src/features.py`, `src/api/services/memrl.py` (MODIFIED), `train_graph_router.py`, `onboard_model.py` (NEW scripts).
+
+- **Feature Validation Battery: 10 features enabled in production**:
+  - Live A/B testing (hot-reload via `POST /config`) across tiers 1-3 with raw response persistence.
+  - **Tier 1 (MemRL chain)**: All 4 PASS — specialist_routing (-25.0s), plan_review (-24.8s), architect_delegation (-24.9s), parallel_execution (-25.5s).
+  - **Tier 2 (independent)**: 5 PASS — react_mode (-36.8s), output_formalizer (-21.3s), input_formalizer (-16.2s), unified_streaming (-7.9s), model_fallback (-1.5s). 1 BORDERLINE enabled: escalation_compression (+4.8s). 2 FAIL: binding_routing (+6.5s), personas (+20.6s).
+  - **Tier 3 (safety)**: 5/6 PASS — approval_gates (-20.6s), cascading_tool_policy (-15.3s), side_effect_tracking (-28.3s), structured_tool_output (-8.1s), resume_tokens (-1.1s). 1 FAIL: credential_redaction (+15.1s, already enabled as safety feature).
+  - `src/features.py` production defaults updated (commit `9b7f345`). README updated with active feature table and chapter links.
+  - Borderline features rerun with raw response persistence (per-prompt status, tokens, routing, answers).
+  - Files: `src/features.py` (MODIFIED), `README.md` (MODIFIED), `feature-validation-battery.md` (UPDATED), results in `benchmarks/results/runs/feature_validation/live/`.
+
 - **ColBERT-Zero research integration (arXiv:2602.16609)**:
   - Query/document prompt prefixes confirmed **unnecessary** for current models (LateOn-Code requires no prefixes per model card). No code changes.
   - PLAID PQ compression confirmed **already active** (`nbits=4`, IVF+PQ hybrid) in `index_codebase.py:79`. Code index 336MB, docs index 31MB.
