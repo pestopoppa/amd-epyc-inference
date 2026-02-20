@@ -167,8 +167,24 @@ async def lifespan(app: FastAPI):
     if f.memrl:
         ensure_memrl_initialized(state)
 
-    # Background Q-scoring task (only if MemRL feature enabled)
+    # Background Q-scoring task (only if MemRL feature enabled).
+    # Only run in ONE worker to avoid 6× parallel log scans that burn
+    # 100% CPU on all workers.  Use a file lock to elect one worker.
+    import os as _os
+    _bg_lock_path = "/mnt/raid0/llm/claude/logs/.bg_cleanup.lock"
+    _is_primary_worker = False
     if f.memrl:
+        try:
+            import fcntl as _fcntl
+            _bg_lock_fh = open(_bg_lock_path, "w")
+            _fcntl.flock(_bg_lock_fh.fileno(), _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+            _bg_lock_fh.write(str(_os.getpid()))
+            _bg_lock_fh.flush()
+            _is_primary_worker = True
+            logger.info("Background cleanup: this worker (pid=%d) elected as primary", _os.getpid())
+        except (OSError, BlockingIOError):
+            logger.info("Background cleanup: skipping (another worker is primary)")
+    if f.memrl and _is_primary_worker:
         state._q_scorer_task = asyncio.create_task(background_cleanup(state))
     else:
         state._q_scorer_task = None

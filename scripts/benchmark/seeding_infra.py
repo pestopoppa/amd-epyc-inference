@@ -83,6 +83,89 @@ def _wait_for_heavy_models_idle(max_wait: int = 600) -> None:
         time.sleep(2)
 
 
+def _wait_for_workers_ready(
+    url: str,
+    *,
+    max_wait: int = 180,
+    cpu_threshold: float = 10.0,
+    settle_checks: int = 2,
+) -> None:
+    """Block until all uvicorn workers have finished lifespan init.
+
+    During startup, workers loading FAISS / Kuzu burn 80%+ CPU for ~70s.
+    HTTP health pings can't detect this because the kernel routes to
+    already-ready workers.  Instead we find the uvicorn parent on port 8000
+    and poll its children's CPU usage via /proc.  Workers are "ready" when
+    all children are below ``cpu_threshold`` for ``settle_checks`` consecutive
+    polls.
+    """
+    import subprocess
+
+    # Find uvicorn parent PID on port 8000
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", "tcp:8000", "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        )
+        pids = [p.strip() for p in result.stdout.splitlines() if p.strip()]
+        if not pids:
+            logger.debug("  No process found on port 8000 — skipping worker wait")
+            return
+        parent_pid = pids[0]
+    except Exception:
+        logger.debug("  Could not determine uvicorn parent PID — skipping worker wait")
+        return
+
+    def _children_cpu(ppid: str) -> list[tuple[str, float]]:
+        """Return [(pid, cpu%)] for children of ppid."""
+        try:
+            result = subprocess.run(
+                ["ps", "--ppid", ppid, "-o", "pid=,%cpu="],
+                capture_output=True, text=True, timeout=5,
+            )
+            pairs = []
+            for line in result.stdout.splitlines():
+                parts = line.split()
+                if len(parts) == 2:
+                    pairs.append((parts[0], float(parts[1])))
+            return pairs
+        except Exception:
+            return []
+
+    start = time.perf_counter()
+    settled = 0
+    while time.perf_counter() - start < max_wait:
+        children = _children_cpu(parent_pid)
+        if not children:
+            time.sleep(2)
+            continue
+        max_cpu = max(cpu for _, cpu in children)
+        if max_cpu < cpu_threshold:
+            settled += 1
+            if settled >= settle_checks:
+                elapsed = time.perf_counter() - start
+                if elapsed > 5.0:
+                    logger.info(
+                        "  Workers stabilized after %.1fs (max CPU=%.1f%%)",
+                        elapsed, max_cpu,
+                    )
+                return
+        else:
+            settled = 0
+            hot = [(pid, cpu) for pid, cpu in children if cpu >= cpu_threshold]
+            logger.info(
+                "  Waiting for workers: %d/%d still hot (max=%.0f%%)",
+                len(hot), len(children), max_cpu,
+            )
+        if state.shutdown:
+            return
+        time.sleep(3)
+    logger.warning(
+        "  Workers may still be initializing after %ds — proceeding anyway",
+        max_wait,
+    )
+
+
 # ── Port / process management ────────────────────────────────────────
 
 
@@ -224,6 +307,8 @@ def _attempt_recovery(url: str) -> bool:
     Checks what's still running and takes the minimal action:
     - Model ports up -> restart API only (kills stale process on :8000)
     - Nothing up -> full stack launch
+
+    After relaunch, waits for all workers to stabilize before returning.
     """
     model_ports_up = sum(1 for p in MODEL_PORTS if _check_port(p))
 
@@ -231,10 +316,13 @@ def _attempt_recovery(url: str) -> bool:
         logger.info(
             f"  Recovery: {model_ports_up} model port(s) still up — restarting API only"
         )
-        return _launch_api_only()
+        ok = _launch_api_only()
     else:
         logger.info("  Recovery: no model ports up — launching full stack")
-        return _auto_launch_stack()
+        ok = _auto_launch_stack()
+    if ok:
+        _wait_for_workers_ready(url)
+    return ok
 
 
 # ── Preflight ────────────────────────────────────────────────────────
@@ -318,6 +406,10 @@ def run_preflight(url: str, restart_api: bool = True) -> bool:
         else:
             logger.error(f"  Smoke test FAIL: {e}")
         return False
+
+    # 4. Wait for all workers to finish initializing (FAISS / Kuzu loading)
+    logger.info("  Waiting for all workers to stabilize...")
+    _wait_for_workers_ready(url)
 
     logger.info("PREFLIGHT PASSED")
     logger.info("=" * 60)

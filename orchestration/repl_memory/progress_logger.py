@@ -614,39 +614,88 @@ class ProgressReader:
         """
         return self.read_recent(days=days)
 
-    def get_unscored_tasks(self, days: int = 7) -> List[str]:
+    # Cache for read_recent to avoid re-parsing 100s of MBs of logs.
+    # Shared across get_unscored_tasks and get_task_trajectory so that
+    # scoring a batch of 10 tasks doesn't re-parse logs 10× (~4.7 GB).
+    _recent_cache: "List[ProgressEntry] | None" = None
+    _recent_cache_days: int = 0
+    _recent_cache_ts: float = 0.0
+    _RECENT_CACHE_TTL: float = 120.0  # seconds
+
+    def _read_recent_cached(self, days: int = 1) -> "List[ProgressEntry]":
+        """Cached wrapper around read_recent."""
+        import time as _time
+        now = _time.monotonic()
+        if (
+            self._recent_cache is not None
+            and days <= self._recent_cache_days
+            and (now - self._recent_cache_ts) < self._RECENT_CACHE_TTL
+        ):
+            return self._recent_cache
+        result = self.read_recent(days)
+        self._recent_cache = result
+        self._recent_cache_days = days
+        self._recent_cache_ts = now
+        return result
+
+    # Cache for get_unscored_tasks to avoid re-parsing 100s of MBs of logs
+    _unscored_cache: "List[str] | None" = None
+    _unscored_cache_ts: float = 0.0
+    _UNSCORED_CACHE_TTL: float = 120.0  # seconds
+
+    def get_unscored_tasks(self, days: int = 1) -> List[str]:
         """
         Find task IDs that have completed but not been Q-scored.
 
         Looks for TASK_COMPLETED without corresponding Q_VALUE_UPDATED.
-        """
-        entries = self.read_recent(days)
+        Results are cached for 120s to avoid repeated parsing of large logs.
 
-        # Track completed and scored tasks
-        completed_tasks = set()
-        scored_memory_ids = set()
+        Note: Default reduced from 7 to 1 day — progress logs can be
+        100s of MBs; scanning 7 days in background caused 100% CPU on
+        all uvicorn workers.
+        """
+        import time as _time
+        now = _time.monotonic()
+        if (
+            self._unscored_cache is not None
+            and (now - self._unscored_cache_ts) < self._UNSCORED_CACHE_TTL
+        ):
+            return self._unscored_cache
+
+        entries = self._read_recent_cached(days)
+
+        # Single-pass scan for completed, scored, and routing entries
+        completed_tasks: set[str] = set()
+        scored_memory_ids: set[str] = set()
+        routing_entries: list[tuple[str, str | None]] = []
 
         for entry in entries:
             if entry.event_type in (EventType.TASK_COMPLETED, EventType.TASK_FAILED):
                 completed_tasks.add(entry.task_id)
             elif entry.event_type == EventType.Q_VALUE_UPDATED:
                 scored_memory_ids.add(entry.memory_id)
+            elif entry.event_type == EventType.ROUTING_DECISION:
+                routing_entries.append((entry.task_id, entry.memory_id))
 
         # Find tasks whose routing memories haven't been scored
-        unscored = []
-        for entry in entries:
-            if entry.event_type == EventType.ROUTING_DECISION:
-                if entry.task_id in completed_tasks:
-                    if entry.memory_id and entry.memory_id not in scored_memory_ids:
-                        unscored.append(entry.task_id)
-                    elif not entry.memory_id:
-                        # No memory_id means it was rule-based - still need to score
-                        unscored.append(entry.task_id)
+        unscored: set[str] = set()
+        for task_id, memory_id in routing_entries:
+            if task_id in completed_tasks:
+                if memory_id and memory_id not in scored_memory_ids:
+                    unscored.add(task_id)
+                elif not memory_id:
+                    unscored.add(task_id)
 
-        return list(set(unscored))
+        result = list(unscored)
+        self._unscored_cache = result
+        self._unscored_cache_ts = now
+        return result
 
-    def get_task_trajectory(self, task_id: str) -> List[ProgressEntry]:
-        """Get all entries for a specific task."""
-        # Search recent logs for this task
-        entries = self.read_recent(days=30)
+    def get_task_trajectory(self, task_id: str, days: int = 1) -> List[ProgressEntry]:
+        """Get all entries for a specific task.
+
+        Uses the shared read_recent cache so that scoring a batch of
+        tasks doesn't re-parse the full log for each one.
+        """
+        entries = self._read_recent_cached(days)
         return [e for e in entries if e.task_id == task_id]

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from fastapi import APIRouter
 
@@ -35,18 +34,16 @@ def create_api_router() -> APIRouter:
     router.include_router(stats_router, tags=["stats"])
     router.include_router(openai_router, prefix="/v1", tags=["openai"])
     router.include_router(sessions_router, tags=["sessions"])
-    # Vision router requires optional native deps. Import lazily to avoid
-    # startup deadlocks in test environments that do not exercise vision APIs.
-    if not os.getenv("PYTEST_CURRENT_TEST"):
-        try:
-            from src.api.routes.vision import router as vision_router
+    # Vision router requires optional native deps. Import lazily.
+    try:
+        from src.api.routes.vision import router as vision_router
 
-            router.include_router(vision_router, prefix="/v1", tags=["vision"])
-        except ImportError as e:
-            logger.debug(
-                "Vision router unavailable (missing %s) - vision endpoints disabled",
-                getattr(e, "name", "dependency"),
-            )
+        router.include_router(vision_router, prefix="/v1", tags=["vision"])
+    except ImportError as e:
+        logger.debug(
+            "Vision router unavailable (missing %s) - vision endpoints disabled",
+            getattr(e, "name", "dependency"),
+        )
     router.include_router(documents_router, prefix="/v1", tags=["documents"])
     router.include_router(config_router, tags=["config"])
     router.include_router(delegate_router, tags=["delegate"])

@@ -36,6 +36,15 @@
   - Files: `src/inference_lock.py`, `src/llm_primitives/inference.py`, `src/api/routes/chat_delegation.py` (MODIFIED).
   - **llama.cpp server fix** (production-consolidated): `POST /slots/:id?action=erase` was gated behind `--slot-save-path` (erase doesn't need disk). Also changed erase to force-release processing slots instead of deferring — critical for cancelling in-flight inference. File: `tools/server/server-context.cpp`.
 
+- **Fix: Orchestrator worker CPU spin + startup stabilization**:
+  - **Root cause**: All 6 uvicorn workers ran `background_cleanup()` every 30s, each parsing ~180MB of progress logs. Primary worker also burned 79% CPU from `_score_task()` calling `read_recent(days=30)` per task (10 tasks × 30-day scans = ~4.7GB JSONL parsing per cycle).
+  - **Worker election**: File lock (`fcntl.LOCK_EX | LOCK_NB`) elects one primary worker for background tasks. 5 idle workers: 0.0% CPU.
+  - **Shared read cache**: `_read_recent_cached(days=1)` with 120s TTL shared across `get_unscored_tasks` and `get_task_trajectory`. Eliminates redundant parsing.
+  - **Startup stabilization**: Seeding script now waits for all uvicorn workers to finish FAISS/Kuzu initialization before sending inference. Polls worker CPU via `/proc` until all below 10% for 2 consecutive checks.
+  - **Crash logging**: Seeding script captures fatal tracebacks to `logs/seeding_crash.log`.
+  - **Result**: All 6 workers at 0.0-1.0% CPU idle (down from 75-80% each).
+  - Files: `src/api/__init__.py`, `orchestration/repl_memory/progress_logger.py`, `scripts/benchmark/seeding_infra.py`, `scripts/benchmark/seed_specialist_routing.py` (MODIFIED).
+
 - **Fix: Architect inference hang — SSE stream stall root cause**:
   - **Server-side root cause**: `SLOT_ERASE` handler force-released processing slots via `slot->release()` without sending any result to the HTTP streaming handler's queue. The handler blocked forever in `rd.next()` waiting for results that never arrived. Python client hung for full read timeout (600s).
   - **Trigger chain**: Lock timeout → `_erase_port_slots()` → server erase → `slot->release()` (no result sent) → HTTP handler orphaned → client blocks.

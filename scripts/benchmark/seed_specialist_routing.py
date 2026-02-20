@@ -1477,7 +1477,22 @@ Examples (legacy mode - DEPRECATED):
 
 
 if __name__ == "__main__":
+    _crash_log = Path("/mnt/raid0/llm/claude/logs/seeding_crash.log")
     try:
         main()
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user")
+    except Exception:
+        import traceback as _tb
+        _crash_msg = _tb.format_exc()
+        logger.error("Fatal crash:\n%s", _crash_msg)
+        try:
+            with open(_crash_log, "a") as _f:
+                from datetime import datetime as _dt
+                _f.write(f"\n{'='*60}\n{_dt.now().isoformat()} CRASH\n{'='*60}\n")
+                _f.write(_crash_msg)
+        except Exception:
+            pass
+        raise
     finally:
         state.close_poll_client()
