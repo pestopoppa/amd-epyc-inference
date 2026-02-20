@@ -1187,6 +1187,31 @@ All models from registry (~70 unique models). Empty cells = not yet benchmarked.
 
 ---
 
+## Retrieval Stack (NextPLAID ColBERT)
+
+### Current Models
+
+| Index | Model | Params | Dim | Port | Quantization | Index Size | Benchmark |
+|-------|-------|--------|-----|------|-------------|------------|-----------|
+| Code | LateOn-Code | 130M | 128 | :8088 | ONNX INT8 | 336MB | MTEB-Code 74.12 |
+| Docs | answerai-colbert-small-v1 | 33M | 96 | :8089 | ONNX INT8 | 31MB | unscored |
+
+### Index Configuration
+
+- PQ compression: `nbits=4` (IVF+PQ hybrid)
+- AST chunking for Python (tree-sitter), fallback for other languages
+- IVF files: `ivf.npy`, `centroids.npy`, `cluster_threshold.npy`, `bucket_cutoffs.npy`
+
+### Candidate Upgrade
+
+| Model | Params | Dim | BEIR avg | LongEmbed | Notes |
+|-------|--------|-----|----------|-----------|-------|
+| GTE-ModernColBERT-v1 | 149M | 128 | **54.67** | **88.39** | Needs ONNX conversion |
+
+**Rationale**: Docs model upgrade — 128-dim (matches code index), ModernBERT backbone (same family as LateOn-Code), SOTA on long-context retrieval. See `handoffs/active/colbert-zero-research-integration.md`.
+
+---
+
 ## Full Data
 
 - Detailed results: `logs/research_report.md`

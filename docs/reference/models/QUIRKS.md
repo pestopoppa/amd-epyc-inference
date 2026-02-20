@@ -244,6 +244,43 @@ llama-speculative -m Qwen2.5-VL-7B.gguf -md draft.gguf  # Times out
 
 **Agentic Warning**: All Qwen3-VL models score 0% on agentic tasks (empty tool calls). Use Qwen2.5-VL-7B for vision tasks requiring tool coordination.
 
+### ColBERT Retrieval Models (NextPLAID Stack)
+
+**LateOn-Code (130M, 128-dim) — Code Index (:8088)**
+
+- **No query/document prefixes**: Model card explicitly states raw text input only. Do NOT add `search_query:` or `search_document:` prefixes — these are specific to models trained with them (e.g., GTE-ModernColBERT). Adding prefixes to LateOn-Code would degrade retrieval quality.
+- MTEB-Code: 74.12
+- ModernBERT backbone, ONNX INT8
+
+**answerai-colbert-small-v1 (33M, 96-dim) — Docs Index (:8089)**
+
+- **Dimension mismatch**: 96-dim output vs 128-dim code index. Not functionally broken (separate containers), but inconsistent.
+- Unscored on BEIR. Small model with limited long-context generalization.
+- ONNX INT8 available (official export).
+
+**GTE-ModernColBERT-v1 (149M, 128-dim) — Candidate Docs Replacement**
+
+- **Official ONNX INT8 available** (143MB on HuggingFace). No custom conversion needed.
+- Uses `[Q] ` / `[D] ` prefixes (handled by NextPLAID container via `onnx_config.json`).
+- BEIR avg 54.67, LongEmbed 88.39 (SOTA).
+- 128-dim output (matches LateOn-Code). Hidden 768→128 via Dense projection (bundled in ONNX).
+- ModernBERT backbone.
+- Query latency: ~21ms (INT8, CPU).
+- Local path: `/mnt/raid0/llm/models/gte-moderncolbert-v1-onnx/`
+- **Discovered**: 2026-02-20
+
+### PLAID Search Parameter Tuning (NextPLAID)
+
+**Issue**: `n_ivf_probe` (default 8) and `n_full_scores` (default 4096) are never configured — both run at defaults.
+
+**Opportunity**: Increasing `n_ivf_probe` from 8 to 16-32 could improve recall for code search. `n_full_scores` can be lowered to reduce reranking overhead.
+
+**Status**: Noted for future tuning. No action taken yet.
+
+**Discovered**: 2026-02-20
+
+---
+
 ## Benchmarking Quirks
 
 ### Interactive Mode Hangs

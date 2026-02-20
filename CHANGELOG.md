@@ -1,6 +1,23 @@
 # Changelog
 
+## 2026-02-20
+
+- **ColBERT-Zero research integration (arXiv:2602.16609)**:
+  - Query/document prompt prefixes confirmed **unnecessary** for current models (LateOn-Code requires no prefixes per model card). No code changes.
+  - PLAID PQ compression confirmed **already active** (`nbits=4`, IVF+PQ hybrid) in `index_codebase.py:79`. Code index 336MB, docs index 31MB.
+  - **GTE-ModernColBERT-v1** identified as docs model upgrade candidate: BEIR avg 54.67, LongEmbed 88.39, 128-dim (matches code index), ModernBERT backbone. Replaces answerai-colbert-small-v1 (33M, 96-dim, mismatched). Needs ONNX conversion (no official export).
+  - **MemRL distillation architecture** designed: 3-stage pipeline mirroring ColBERT-Zero (unsupervised task embeddings → supervised Q-weighted training → HybridRouter distillation). Key insight: supervised stage before distillation bridges performance gap.
+  - Literature review: `research/colbert_zero_review.md`. Handoff: `handoffs/active/colbert-zero-research-integration.md`.
+  - Files: `research/colbert_zero_review.md` (NEW), `handoffs/active/colbert-zero-research-integration.md` (NEW), `docs/reference/agent-config/MEMRL_DISTILLATION_DESIGN.md` (NEW), `CHANGELOG.md`, `orchestration/BLOCKED_TASKS.md`, `docs/reference/models/QUIRKS.md`, `docs/reference/benchmarks/RESULTS.md`.
+
 ## 2026-02-19
+
+- **Feature Validation Battery created**:
+  - `scripts/benchmark/feature_validation.py`: Automated validation runner with FeatureProfile registry, OfflineValidator (unit + replay), LiveValidator (hot-reload A/B testing via POST /config), and ReportGenerator (markdown + CSV).
+  - 23 features organized into 5 tiers (T0 trivial → T4 deferred). MemRL chain (T1) tested incrementally B0→B4 for clean attribution.
+  - 9 prompt manifests in `benchmarks/prompts/v1/feature_validation/` (45 prompts total).
+  - Handoff: `handoffs/active/feature-validation-battery.md`.
+  - Files: `feature_validation.py` (NEW), `feature-validation-battery.md` (NEW), `benchmarks/prompts/v1/feature_validation/*.json` (9 NEW), `BLOCKED_TASKS.md` (UPDATED).
 
 - **Phase 1 classifier refactoring COMPLETE**:
   - Extracted final 3 inline heuristics into `src/classifiers/`: `detect_output_quality_issue` → `quality_detector.py`, `strip_tool_outputs` + `truncate_looped_answer` → `output_parser.py`.

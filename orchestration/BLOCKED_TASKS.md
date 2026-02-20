@@ -1,6 +1,6 @@
 # Blocked Tasks
 
-**Last Updated**: 2026-02-19 (hybrid-lookup-spec-decode all questions closed)
+**Last Updated**: 2026-02-20 (ColBERT-Zero research integration added)
 **Active blockers**: PR #15225 (MTP), PR #18747 (Paged Attention review), Cmprsr weights, Moshi arch in llama.cpp
 
 ---
@@ -36,6 +36,8 @@
 | **Orchestrator Intelligence Improvements** | — | **HIGH** | `handoffs/active/orchestrator-intelligence-improvements.md` | ✅ COMPLETE (7/7 improvements implemented, 3746 tests pass). Live validation pending (seeding with new tunables). |
 | **Perf: Parallel Tools + Concurrent Sweep + Prefix Cache** | — | **HIGH** | ✅ ARCHIVED (2026-02-19) | ✅ COMPLETE. Findings extracted to chapters 08, 11, 12, 18. Quirk: llama-server /slots API. worker_summarize SERIAL_ROLES drift fixed in model_registry.yaml. |
 | **Context Window Management & Compaction** | — | **HIGH** | `handoffs/archived/context-window-management.md` | ✅ COMPLETE + ARCHIVED. Live C1 trigger validated (`results_20260219_135956.json`); production defaults enabled for `session_compaction` + `tool_result_clearing`; follow-up: collect tool-heavy C3 efficacy evidence. |
+| **ColBERT-Zero Research Integration** | ONNX conversion (Track 1) | **MEDIUM** | `handoffs/active/colbert-zero-research-integration.md` | 🔥 ACTIVE. Track 1: GTE-ModernColBERT-v1 docs model eval (ONNX conversion pending). Track 2: MemRL distillation architecture (design doc pending). Literature review done. |
+| **Feature Validation Battery** | — | **HIGH** | `handoffs/active/feature-validation-battery.md` | 🔥 ACTIVE. Systematic A/B validation of 23 disabled features across 5 tiers. Runner: `scripts/benchmark/feature_validation.py`. Prompts: `benchmarks/prompts/v1/feature_validation/`. Phase 1 (offline Tier 0-1) ready to run. |
 | **Nightshift Automated Maintenance** | Permission model fix | **HIGH** | `nightshift.yaml` + `scripts/nightshift/` | ⚠️ FIRST RUN FAILED. All 7 tasks hit 3-iteration limit with "permission denied" (analysis-only mode). Feb 16 instant exits (status 2) — likely hook failures from dirty git state. Needs: permission config for write-capable staging branch, or task redefinition to stdout/log output. |
 
 ---

@@ -516,10 +516,10 @@ server_mode:
     port: 8089
     model_role: doc_retrieval
     description: Multi-vector doc search using ColBERT late interaction (text-optimized)
-    model: lightonai/answerai-colbert-small-v1-onnx
+    model: lightonai/GTE-ModernColBERT-v1
     model_type: onnx_int8
     docker_image: ghcr.io/lightonai/next-plaid:cpu-1.0.4
-    memory_gb: 0.2  # <200MB (Docker + ONNX + mmap'd indices)
+    memory_gb: 0.5  # ~500MB (Docker + 149M ONNX INT8 model + mmap'd indices)
     tier: always
     indices: [docs]
     health_endpoint: /health
@@ -530,9 +530,11 @@ server_mode:
       -v /mnt/raid0/llm/cache/huggingface:/root/.cache/huggingface
       ghcr.io/lightonai/next-plaid:cpu-1.0.4
       --host 0.0.0.0 --port 8080 --index-dir /data/indices
-      --model lightonai/answerai-colbert-small-v1-onnx --int8
+      --model lightonai/GTE-ModernColBERT-v1 --int8
     reindex_command: python3 scripts/nextplaid/index_codebase.py --docs-only
-    notes: "Text-optimized ColBERT retrieval (answerai-colbert-small-v1, 33M params). Specialized for natural language docs. Complementary to FAISS/BGE episodic memory."
+    notes: "GTE-ModernColBERT-v1 (149M, 128-dim, BEIR 54.67, LongEmbed 88.39). Upgraded from answerai-colbert-small-v1 (33M, 96-dim) on 2026-02-20. Uses [Q]/[D] prefixes (handled by container). A/B: 5/10 queries better, 0 worse. Latency 28→50ms."
+    # Previous model: lightonai/answerai-colbert-small-v1-onnx (33M, 96-dim)
+    # Rollback: swap --model flag and reindex. Index is dimension-specific (128 vs 96).
 
   # Development mode - single small model for all roles
   dev:
