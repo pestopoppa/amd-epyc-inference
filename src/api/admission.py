@@ -24,17 +24,18 @@ import time
 logger = logging.getLogger(__name__)
 
 # Default concurrency limits per backend URL.
-# Architects (serial, huge models) = 1; workers = 4; vision = 2; embedders = 4.
+# Aligned with llama-server slot counts per concurrent_sweep_20260219 results.
+# Rule: admission limit = server slots (no wasted KV cache on idle slots).
 DEFAULT_LIMITS: dict[str, int] = {
-    "http://localhost:8080": 2,   # frontdoor (30B MoE)
-    "http://localhost:8081": 2,   # coder_escalation / worker_summarize (32B)
-    "http://localhost:8082": 4,   # worker_explore (7B, 2 slots)
+    "http://localhost:8080": 2,   # frontdoor (30B MoE) — sweep: optimal at 2
+    "http://localhost:8081": 1,   # coder_escalation (32B) — sweep: p95 1.98x at 2, serial only
+    "http://localhost:8082": 1,   # worker_explore (7B) — sweep: all concurrent levels rejected on p95
     "http://localhost:8083": 1,   # architect_general (235B) — SERIAL
     "http://localhost:8084": 1,   # architect_coding (480B) — SERIAL
     "http://localhost:8085": 1,   # ingest_long_context (80B SSM) — SERIAL
-    "http://localhost:8086": 2,   # worker_vision (7B VL)
-    "http://localhost:8087": 1,   # vision_escalation (30B VL MoE)
-    "http://localhost:8102": 4,   # worker_fast (1.5B, 4 slots)
+    "http://localhost:8086": 2,   # worker_vision (7B VL) — not swept, keep as-is
+    "http://localhost:8087": 1,   # vision_escalation (30B VL MoE) — SERIAL
+    "http://localhost:8102": 4,   # worker_fast (1.5B, 4 slots) — not swept, keep as-is
 }
 
 # Embedding servers (8090-8095) are not gated — they're lightweight.

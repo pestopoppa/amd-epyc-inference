@@ -36,7 +36,7 @@ for manifest in ["general_5.json", "tool_compliance.json"]:
         PROMPTS.extend(json.load(f))
 
 
-CLIENT = httpx.Client(timeout=httpx.Timeout(connect=10, read=120, write=10, pool=10))
+CLIENT = httpx.Client(timeout=httpx.Timeout(connect=10, read=180, write=10, pool=10))
 
 
 def set_features(enabled: bool) -> None:
@@ -109,6 +109,10 @@ def run_prompts(label: str) -> dict:
             status_str += f" ({result.get('error', 'timeout')})"
         print(f"  [{label}] {pid}: {result['elapsed_s']:.1f}s {status_str} → {result['routed_to']}")
 
+        # Cooldown between prompts to avoid saturating backends
+        if i < len(PROMPTS) - 1:
+            time.sleep(5)
+
     # Compute summary stats
     elapsed_vals = [r["elapsed_s"] for r in results if r["status"] == 200]
     tps_vals = [r["client_tps"] for r in results if r["client_tps"] > 0]
@@ -139,10 +143,14 @@ def main():
     time.sleep(2)  # Let config propagate
     baseline = run_prompts("baseline")
 
+    # Cooldown between phases — let backends recover from baseline load
+    print("\n--- Cooldown (60s) ---")
+    time.sleep(60)
+
     # Phase 2: Candidate (all validated features ON)
     print("\n=== CANDIDATE (15 features ON) ===")
     set_features(True)
-    time.sleep(2)
+    time.sleep(5)
     candidate = run_prompts("candidate")
 
     # Restore features to ON (current production default)

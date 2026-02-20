@@ -13,12 +13,20 @@
   - 49 tests across 5 test files. No changes needed to `seed_specialist_routing.py` — data flows are decoupled.
   - Files: `routing_graph.py`, `lightweight_gat.py`, `graph_router_predictor.py` (NEW), `retriever.py`, `src/features.py`, `src/api/services/memrl.py` (MODIFIED), `train_graph_router.py`, `onboard_model.py` (NEW scripts).
 
-- **Feature Validation Battery: 10 features enabled in production**:
+- **Slot/admission alignment: eliminate 50% KV cache waste**:
+  - Every backend had 2x more llama-server slots than admission controller allowed. KV cache partitioned across all slots — 50% wasted on idle slots.
+  - Aligned based on `concurrent_sweep_20260219` results: frontdoor 4→2 slots, coder_escalation 4→1 (p95 1.98x at concurrency=2), worker 8→1 (all concurrent levels rejected), architects 2→1.
+  - Admission limits aligned: coder_escalation 2→1, worker 4→1.
+  - Frontdoor timeout: 90→180s (was never applied to running process).
+  - Created investigation handoff: `handoffs/active/backend-saturation-504-429.md` — 6 hypotheses, 6-step playbook, timeline of Feb 11-20 hardening work.
+  - Files: `orchestration/model_registry.yaml`, `src/api/admission.py` (MODIFIED), `scripts/benchmark/feature_comparison.py` (NEW).
+
+- **Feature Validation Battery: 15 features enabled in production**:
   - Live A/B testing (hot-reload via `POST /config`) across tiers 1-3 with raw response persistence.
   - **Tier 1 (MemRL chain)**: All 4 PASS — specialist_routing (-25.0s), plan_review (-24.8s), architect_delegation (-24.9s), parallel_execution (-25.5s).
   - **Tier 2 (independent)**: 5 PASS — react_mode (-36.8s), output_formalizer (-21.3s), input_formalizer (-16.2s), unified_streaming (-7.9s), model_fallback (-1.5s). 1 BORDERLINE enabled: escalation_compression (+4.8s). 2 FAIL: binding_routing (+6.5s), personas (+20.6s).
   - **Tier 3 (safety)**: 5/6 PASS — approval_gates (-20.6s), cascading_tool_policy (-15.3s), side_effect_tracking (-28.3s), structured_tool_output (-8.1s), resume_tokens (-1.1s). 1 FAIL: credential_redaction (+15.1s, already enabled as safety feature).
-  - `src/features.py` production defaults updated (commit `9b7f345`). README updated with active feature table and chapter links.
+  - `src/features.py` production defaults updated (commits `9b7f345` + `123c272`). README updated with active feature table and chapter links.
   - Borderline features rerun with raw response persistence (per-prompt status, tokens, routing, answers).
   - Files: `src/features.py` (MODIFIED), `README.md` (MODIFIED), `feature-validation-battery.md` (UPDATED), results in `benchmarks/results/runs/feature_validation/live/`.
 

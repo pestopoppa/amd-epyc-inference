@@ -87,7 +87,7 @@ runtime_defaults:
       worker_coder: 30         # semantic alias for fast coding worker (port 8102)
       worker_code: 60
       worker_fast: 30          # 1.5B — expected <2s, 30s = 15x headroom
-      frontdoor: 90            # 30B MoE @ 18 t/s — expected <15s
+      frontdoor: 180           # 30B MoE @ 18 t/s — raised from 90 to accommodate pipeline stages
       coder_escalation: 120    # 32B @ 39 t/s — 500 tok ~45s. 120s = 2.5x headroom
       vision_escalation: 120   # 30B MoE VL, multimodal processing
       ingest_long_context: 300 # 80B SSM, long document ingestion
@@ -315,7 +315,7 @@ server_mode:
   frontdoor:
     url: http://localhost:8080
     port: 8080
-    slots: 4
+    slots: 2  # Aligned with admission limit=2 (sweep 2026-02-19: optimal at 2, p95 ok)
     model_role: frontdoor
     shared_with: []
     description: Root LM - generates Python code each turn
@@ -334,7 +334,7 @@ server_mode:
   coder_escalation:
     url: http://localhost:8081
     port: 8081
-    slots: 4
+    slots: 1  # Sweep 2026-02-19: p95 1.98x at concurrency=2, serial only
     model_role: coder_escalation
     description: Escalation code generation with spec decode + prompt lookup fallback
     model: Qwen2.5-Coder-32B-Q4_K_M.gguf
@@ -351,7 +351,7 @@ server_mode:
   worker:
     url: http://localhost:8082
     port: 8082
-    slots: 8
+    slots: 1  # Sweep 2026-02-19: all concurrent levels (2-4) rejected on p95; serial optimal
     model_role: worker_general
     shared_with: [worker_math, toolrunner]
     description: Parallel workers for file-level tasks
@@ -376,7 +376,7 @@ server_mode:
   architect_general:
     url: http://localhost:8083
     port: 8083
-    slots: 2
+    slots: 1  # Serial — admission=1, no wasted KV
     model_role: architect_general
     description: System architecture decisions - large MoE (full experts for quality)
     model: Qwen3-235B-A22B-Q4_K_M.gguf
@@ -391,7 +391,7 @@ server_mode:
   architect_coding:
     url: http://localhost:8084
     port: 8084
-    slots: 2
+    slots: 1  # Serial — admission=1, no wasted KV
     model_role: architect_coding
     description: Hardest coding escalation - largest MoE (full experts for quality)
     model: Qwen3-Coder-480B-A35B-Instruct-Q4_K_M.gguf
@@ -408,7 +408,7 @@ server_mode:
   ingest_long_context:
     url: http://localhost:8085
     port: 8085
-    slots: 2
+    slots: 1  # Serial — admission=1, no wasted KV
     model_role: ingest_long_context
     description: Long document synthesis & summarization - SSM+MoE hybrid (NO speculation!)
     model: Qwen3-Next-80B-A3B-Q4_K_M.gguf
