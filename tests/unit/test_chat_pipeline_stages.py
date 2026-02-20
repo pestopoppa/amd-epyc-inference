@@ -34,30 +34,15 @@ from src.api.routes.chat_utils import RoutingResult
 
 
 @pytest.fixture
-def mock_state():
-    """Create a mock state object with common attributes."""
-    state = MagicMock()
-    state.progress_logger = MagicMock()
-    state.tool_registry = MagicMock()
-    state.registry = MagicMock()
-    state.hybrid_router = MagicMock()
-    state.increment_request = MagicMock()
-    return state
+def mock_state(mock_app_state):
+    """Reuse shared app-state fixture under the local name expected by tests."""
+    return mock_app_state
 
 
 @pytest.fixture
-def mock_primitives():
-    """Create a mock LLMPrimitives object."""
-    primitives = MagicMock()
-    primitives._backends = True
-    primitives.total_tokens_generated = 100
-    primitives.total_prompt_eval_ms = 50
-    primitives.total_generation_ms = 200
-    primitives._last_predicted_tps = 25.0
-    primitives.total_http_overhead_ms = 10
-    primitives.get_cache_stats.return_value = {"hits": 5, "misses": 2}
-    primitives.llm_call.return_value = "Test response"
-    return primitives
+def mock_primitives(mock_llm_primitives):
+    """Reuse shared primitives fixture under the local name expected by tests."""
+    return mock_llm_primitives
 
 
 @pytest.fixture

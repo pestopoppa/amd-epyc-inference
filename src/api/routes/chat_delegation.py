@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import time
+from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 import hashlib as _hashlib
@@ -57,14 +58,127 @@ def _get_delegation_depth() -> int:
     return getattr(_delegation_local, "depth", 0)
 
 
+@dataclass(frozen=True)
+class DelegationConfig:
+    specialist_turn_n_tokens: int
+    specialist_turn_n_tokens_summary: int
+    specialist_turn_n_tokens_code: int
+    specialist_turn_n_tokens_default: int
+    forced_synthesis_n_tokens: int
+    specialist_max_turns_react: int
+    specialist_max_turns_repl: int
+    specialist_max_seconds: float
+    total_max_seconds: float
+    skip_synthesis_on_timeout: bool
+    trace_enabled: bool
+    summarize_long_reports: bool
+    summarize_report_chars: int
+    summarize_n_tokens: int
+    specialist_question_chars: int
+    specialist_brief_chars: int
+    specialist_context_chars: int
+    specialist_corpus_context: bool
+    compact_specialist_prompt: bool
+    report_handles: bool
+    report_handle_chars: int
+    architect_decision_n_tokens_override: int
+    architect_compute_n_tokens_override: int
+
+    @classmethod
+    def from_env(cls) -> "DelegationConfig":
+        return cls(
+            specialist_turn_n_tokens=_env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS", 256),
+            specialist_turn_n_tokens_summary=_env_int(
+                "ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_SUMMARY", 192
+            ),
+            specialist_turn_n_tokens_code=_env_int(
+                "ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_CODE", 320
+            ),
+            specialist_turn_n_tokens_default=_env_int(
+                "ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_DEFAULT", 224
+            ),
+            forced_synthesis_n_tokens=max(
+                64,
+                _env_int("ORCHESTRATOR_DELEGATION_FORCED_SYNTHESIS_N_TOKENS", 128),
+            ),
+            specialist_max_turns_react=max(
+                1,
+                _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_TURNS_REACT", 3),
+            ),
+            specialist_max_turns_repl=max(
+                1,
+                _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_TURNS_REPL", 4),
+            ),
+            specialist_max_seconds=float(
+                max(10, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_SECONDS", 45))
+            ),
+            total_max_seconds=float(
+                max(20, _env_int("ORCHESTRATOR_DELEGATION_TOTAL_MAX_SECONDS", 110))
+            ),
+            skip_synthesis_on_timeout=os.environ.get(
+                "ORCHESTRATOR_DELEGATION_SKIP_SYNTHESIS_ON_TIMEOUT", "1"
+            ).strip().lower() in {"1", "true", "yes", "on"},
+            trace_enabled=os.environ.get("ORCHESTRATOR_DELEGATION_TRACE", "0").strip().lower()
+            in {"1", "true", "yes", "on"},
+            summarize_long_reports=os.environ.get(
+                "ORCHESTRATOR_DELEGATION_SUMMARIZE_LONG_REPORTS", "1"
+            ).strip().lower() in {"1", "true", "yes", "on"},
+            summarize_report_chars=max(
+                800,
+                _env_int("ORCHESTRATOR_DELEGATION_SUMMARIZE_REPORT_CHARS", 2800),
+            ),
+            summarize_n_tokens=max(
+                96,
+                _env_int("ORCHESTRATOR_DELEGATION_SUMMARIZE_N_TOKENS", 220),
+            ),
+            specialist_question_chars=max(
+                600,
+                _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_QUESTION_CHARS", 2200),
+            ),
+            specialist_brief_chars=max(
+                240,
+                _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_BRIEF_CHARS", 700),
+            ),
+            specialist_context_chars=max(
+                0,
+                _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_CONTEXT_CHARS", 800),
+            ),
+            specialist_corpus_context=os.environ.get(
+                "ORCHESTRATOR_DELEGATION_SPECIALIST_CORPUS_CONTEXT", "0"
+            ).strip().lower() in {"1", "true", "yes", "on"},
+            compact_specialist_prompt=os.environ.get(
+                "ORCHESTRATOR_DELEGATION_COMPACT_SPECIALIST_PROMPT", "1"
+            ).strip().lower() in {"1", "true", "yes", "on"},
+            report_handles=os.environ.get(
+                "ORCHESTRATOR_DELEGATION_REPORT_HANDLES", "1"
+            ).strip().lower() in {"1", "true", "yes", "on"},
+            report_handle_chars=max(
+                1200,
+                _env_int("ORCHESTRATOR_DELEGATION_REPORT_HANDLE_CHARS", 2600),
+            ),
+            architect_decision_n_tokens_override=_env_int(
+                "ORCHESTRATOR_DELEGATION_ARCHITECT_DECISION_N_TOKENS", -1
+            ),
+            architect_compute_n_tokens_override=_env_int(
+                "ORCHESTRATOR_DELEGATION_ARCHITECT_COMPUTE_N_TOKENS", -1
+            ),
+        )
+
+
+def _delegation_config() -> DelegationConfig:
+    return DelegationConfig.from_env()
+
+
 def _delegation_specialist_turn_token_cap(
     delegate_mode: str,
     question: str,
     brief: str,
     delegate_to: str,
+    cfg: DelegationConfig | None = None,
 ) -> int:
     """Task-aware specialist turn cap to reduce over-generation latency."""
-    base = _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS", 256)
+    cfg = cfg or _delegation_config()
+    base = cfg.specialist_turn_n_tokens
     q = f"{question}\n{brief}".lower()
     summary_signals = ("summarize", "summary", "extract key", "bullet")
     coding_signals = (
@@ -72,81 +186,12 @@ def _delegation_specialist_turn_token_cap(
         "multi-file", "api", "middleware", "algorithm",
     )
     if delegate_to == "worker_summarize" or any(s in q for s in summary_signals):
-        base = min(base, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_SUMMARY", 192))
+        base = min(base, cfg.specialist_turn_n_tokens_summary)
     elif any(s in q for s in coding_signals):
-        base = max(base, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_CODE", 320))
+        base = max(base, cfg.specialist_turn_n_tokens_code)
     else:
-        base = min(base, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_TURN_N_TOKENS_DEFAULT", 224))
+        base = min(base, cfg.specialist_turn_n_tokens_default)
     return max(96, base)
-
-
-def _delegation_forced_synthesis_token_cap() -> int:
-    """Bound cap-synthesis generation so loop recovery cannot stall."""
-    cap = _env_int("ORCHESTRATOR_DELEGATION_FORCED_SYNTHESIS_N_TOKENS", 128)
-    return max(64, cap)
-
-
-def _delegation_specialist_max_turns(delegate_mode: str) -> int:
-    """Max specialist REPL turns per delegation round."""
-    if delegate_mode == "react":
-        return max(1, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_TURNS_REACT", 3))
-    return max(1, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_TURNS_REPL", 4))
-
-
-def _delegation_specialist_max_seconds() -> float:
-    """Wall-clock budget for one specialist delegation round."""
-    return float(max(10, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_MAX_SECONDS", 45)))
-
-
-def _delegation_total_max_seconds() -> float:
-    """End-to-end wall-clock budget for architect delegated flow."""
-    return float(max(20, _env_int("ORCHESTRATOR_DELEGATION_TOTAL_MAX_SECONDS", 110)))
-
-
-def _skip_synthesis_on_timeout() -> bool:
-    """Return latest specialist report directly when timeout guards fire."""
-    raw = os.environ.get("ORCHESTRATOR_DELEGATION_SKIP_SYNTHESIS_ON_TIMEOUT", "1")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _delegation_trace_enabled() -> bool:
-    raw = os.environ.get("ORCHESTRATOR_DELEGATION_TRACE", "0")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _delegation_summarize_enabled() -> bool:
-    raw = os.environ.get("ORCHESTRATOR_DELEGATION_SUMMARIZE_LONG_REPORTS", "1")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _delegation_summarize_threshold_chars() -> int:
-    return max(800, _env_int("ORCHESTRATOR_DELEGATION_SUMMARIZE_REPORT_CHARS", 2800))
-
-
-def _delegation_summarize_n_tokens() -> int:
-    return max(96, _env_int("ORCHESTRATOR_DELEGATION_SUMMARIZE_N_TOKENS", 220))
-
-
-def _delegation_specialist_question_chars() -> int:
-    return max(600, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_QUESTION_CHARS", 2200))
-
-
-def _delegation_specialist_brief_chars() -> int:
-    return max(240, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_BRIEF_CHARS", 700))
-
-
-def _delegation_specialist_context_chars() -> int:
-    return max(0, _env_int("ORCHESTRATOR_DELEGATION_SPECIALIST_CONTEXT_CHARS", 800))
-
-
-def _delegation_specialist_use_corpus_context() -> bool:
-    raw = os.environ.get("ORCHESTRATOR_DELEGATION_SPECIALIST_CORPUS_CONTEXT", "0")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _delegation_compact_specialist_prompt_enabled() -> bool:
-    raw = os.environ.get("ORCHESTRATOR_DELEGATION_COMPACT_SPECIALIST_PROMPT", "1")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _trim_block(text: str, max_chars: int) -> str:
@@ -158,23 +203,19 @@ def _trim_block(text: str, max_chars: int) -> str:
     return body[:max_chars].rstrip() + "..."
 
 
-def _delegation_report_handle_enabled() -> bool:
-    raw = os.environ.get("ORCHESTRATOR_DELEGATION_REPORT_HANDLES", "1")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _delegation_report_handle_threshold_chars() -> int:
-    return max(1200, _env_int("ORCHESTRATOR_DELEGATION_REPORT_HANDLE_CHARS", 2600))
-
-
-def _store_report_handle(report: str, delegate_to: str) -> dict[str, str] | None:
+def _store_report_handle(
+    report: str,
+    delegate_to: str,
+    cfg: DelegationConfig | None = None,
+) -> dict[str, str] | None:
+    cfg = cfg or _delegation_config()
     text = (report or "").strip()
     if not text:
         return None
     try:
         return store_report(text, delegate_to)
     except Exception as exc:
-        if _delegation_trace_enabled():
+        if cfg.trace_enabled:
             log.warning("Failed to persist delegation report handle: %s", exc)
         return None
 
@@ -222,12 +263,13 @@ def _maybe_summarize_specialist_report(
     force: bool = False,
 ) -> str:
     """Summarize oversized specialist reports via worker_summarize."""
+    cfg = _delegation_config()
     text = (report or "").strip()
     if not text:
         return report
-    if not _delegation_summarize_enabled():
+    if not cfg.summarize_long_reports:
         return report
-    if not force and len(text) < _delegation_summarize_threshold_chars():
+    if not force and len(text) < cfg.summarize_report_chars:
         return report
     prompt = (
         "Summarize the specialist report for the architect. Keep only actionable "
@@ -240,11 +282,11 @@ def _maybe_summarize_specialist_report(
             prompt,
             role="worker_summarize",
             skip_suffix=True,
-            n_tokens=_delegation_summarize_n_tokens(),
+            n_tokens=cfg.summarize_n_tokens,
         )
         summarized = (summarized or "").strip()
         if summarized:
-            if _delegation_trace_enabled():
+            if cfg.trace_enabled:
                 log.warning(
                     "Delegation summarize: report_chars=%d -> summary_chars=%d",
                     len(text),
@@ -252,7 +294,7 @@ def _maybe_summarize_specialist_report(
                 )
             return summarized
     except Exception as exc:
-        if _delegation_trace_enabled():
+        if cfg.trace_enabled:
             log.warning("Delegation summarize failed, keeping original report: %s", exc)
     return report
 
@@ -264,14 +306,15 @@ def _compress_report_for_loop(
     delegate_to: str,
 ) -> tuple[str, dict[str, str] | None]:
     """Persist long reports and return compact handle+summary text."""
+    cfg = _delegation_config()
     text = (report or "").strip()
     if not text:
         return report, None
-    if not _delegation_report_handle_enabled():
+    if not cfg.report_handles:
         return _maybe_summarize_specialist_report(text, question, primitives), None
-    if len(text) < _delegation_report_handle_threshold_chars():
+    if len(text) < cfg.report_handle_chars:
         return _maybe_summarize_specialist_report(text, question, primitives), None
-    handle = _store_report_handle(text, delegate_to)
+    handle = _store_report_handle(text, delegate_to, cfg=cfg)
     if handle is None:
         return _maybe_summarize_specialist_report(text, question, primitives), None
     summary = _maybe_summarize_specialist_report(text, question, primitives, force=True)
@@ -515,14 +558,20 @@ _ARCHITECT_DECISION_BUDGET: dict[str, int] = {
 
 def _architect_decision_token_budget(role: str) -> int:
     """Token budget for architect routing decision (turn 0)."""
+    cfg = _delegation_config()
     default = _ARCHITECT_DECISION_BUDGET.get(role, 256)
-    return max(64, _env_int("ORCHESTRATOR_DELEGATION_ARCHITECT_DECISION_N_TOKENS", default))
+    if cfg.architect_decision_n_tokens_override > 0:
+        return max(64, cfg.architect_decision_n_tokens_override)
+    return max(64, default)
 
 
 def _architect_compute_token_budget(role: str) -> int:
     """Token budget for architect computation follow-up turns."""
+    cfg = _delegation_config()
     default = _ARCHITECT_TOKEN_BUDGET.get(role, 512)
-    return max(128, _env_int("ORCHESTRATOR_DELEGATION_ARCHITECT_COMPUTE_N_TOKENS", default))
+    if cfg.architect_compute_n_tokens_override > 0:
+        return max(128, cfg.architect_compute_n_tokens_override)
+    return max(128, default)
 
 
 def _classify_failure_reason(exc: Exception) -> str:
@@ -861,25 +910,31 @@ def _run_specialist_loop(
     timed_out = False
     report_rescued = False
     infer_meta_last: dict[str, Any] = {}
+    cfg = _delegation_config()
 
     # Both react and repl modes use the same REPL loop
     # (react = structured_mode=True, repl = structured_mode=False)
     structured = delegate_mode == "react"
-    max_delegate_turns = _delegation_specialist_max_turns(delegate_mode)
+    max_delegate_turns = (
+        cfg.specialist_max_turns_react
+        if delegate_mode == "react"
+        else cfg.specialist_max_turns_repl
+    )
     specialist_turn_cap = _delegation_specialist_turn_token_cap(
         delegate_mode=delegate_mode,
         question=question,
         brief=brief,
         delegate_to=delegate_to,
+        cfg=cfg,
     )
     specialist_time_budget_s = (
-        min(_delegation_specialist_max_seconds(), float(time_budget_s))
+        min(cfg.specialist_max_seconds, float(time_budget_s))
         if time_budget_s is not None
-        else _delegation_specialist_max_seconds()
+        else cfg.specialist_max_seconds
     )
-    q_for_specialist = _trim_block(question, _delegation_specialist_question_chars())
-    brief_for_specialist = _trim_block(brief, _delegation_specialist_brief_chars())
-    ctx_for_specialist = _trim_block(context, _delegation_specialist_context_chars())
+    q_for_specialist = _trim_block(question, cfg.specialist_question_chars)
+    brief_for_specialist = _trim_block(brief, cfg.specialist_brief_chars)
+    ctx_for_specialist = _trim_block(context, cfg.specialist_context_chars)
     specialist_started = time.perf_counter()
     try:
         deleg_repl = REPLEnvironment(
@@ -907,7 +962,7 @@ def _run_specialist_loop(
         # Retrieve corpus context once for the delegation (turn 0 only)
         corpus_ctx = (
             build_corpus_context(role=delegate_to, task_description=q_for_specialist)
-            if _delegation_specialist_use_corpus_context()
+            if cfg.specialist_corpus_context
             else ""
         )
 
@@ -927,7 +982,7 @@ def _run_specialist_loop(
                         f"Brief={brief[:160]}]"
                     )
                 break
-            if _delegation_compact_specialist_prompt_enabled():
+            if cfg.compact_specialist_prompt:
                 deleg_prompt = _build_compact_specialist_prompt(
                     delegate_to=delegate_to,
                     question=q_for_specialist,
@@ -966,7 +1021,7 @@ def _run_specialist_loop(
             if infer_meta_last:
                 infer_meta_last["llm_elapsed_ms"] = round(llm_elapsed_ms, 1)
             raw_deleg_output = code
-            if _delegation_trace_enabled():
+            if cfg.trace_enabled:
                 log.warning(
                     "Delegation trace turn=%d role=%s mode=%s prompt_chars=%d raw_chars=%d llm_ms=%.1f infer=%s",
                     _turn,
@@ -979,7 +1034,7 @@ def _run_specialist_loop(
                 )
             code = extract_code_from_response(code)
             code = auto_wrap_final(code)
-            if _delegation_trace_enabled():
+            if cfg.trace_enabled:
                 log.warning(
                     "Delegation trace turn=%d extracted_code_chars=%d has_final=%s",
                     _turn,
@@ -1053,7 +1108,7 @@ def _run_specialist_loop(
             exec_started = time.perf_counter()
             result = deleg_repl.execute(code)
             exec_elapsed_ms = (time.perf_counter() - exec_started) * 1000
-            if _delegation_trace_enabled():
+            if cfg.trace_enabled:
                 log.warning(
                     "Delegation trace turn=%d exec_ms=%.1f is_final=%s output_chars=%d error_chars=%d",
                     _turn,
@@ -1215,9 +1270,10 @@ def _architect_delegated_answer_inner(
         build_architect_investigate_prompt,
         build_architect_synthesis_prompt,
     )
+    cfg = _delegation_config()
     cumulative_delegate_tokens = 0
     orchestration_started = time.perf_counter()
-    total_budget_s = _delegation_total_max_seconds()
+    total_budget_s = cfg.total_max_seconds
     stats.setdefault("report_handles", [])
 
     for loop in range(max_loops + 1):  # +1 for initial decision
@@ -1474,7 +1530,7 @@ def _architect_delegated_answer_inner(
         if not stats.get("break_reason"):
             stats["break_reason"] = "forced_synthesis"
         if (
-            _skip_synthesis_on_timeout()
+            cfg.skip_synthesis_on_timeout
             and stats.get("break_reason") in {"specialist_timeout", "wall_clock_budget"}
             and reports
         ):
@@ -1497,7 +1553,7 @@ def _architect_delegated_answer_inner(
                 forced_prompt,
                 role=architect_role,
                 skip_suffix=True,
-                n_tokens=_delegation_forced_synthesis_token_cap(),
+                n_tokens=cfg.forced_synthesis_n_tokens,
             )
             return answer.strip(), stats
         except Exception as exc:

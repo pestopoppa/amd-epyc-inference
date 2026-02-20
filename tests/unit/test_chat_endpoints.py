@@ -16,22 +16,6 @@ from fastapi.testclient import TestClient
 from src.api.models import ChatRequest, ChatResponse
 from src.api.routes.chat import router, _handle_chat
 from src.api.dependencies import dep_app_state
-from src.api.state import AppState
-
-
-@pytest.fixture
-def mock_app_state():
-    """Create a mock AppState for testing."""
-    state = MagicMock(spec=AppState)
-    state.progress_logger = MagicMock()
-    state.tool_registry = MagicMock()
-    state.script_registry = MagicMock()
-    state.registry = MagicMock()
-    state.hybrid_router = None
-    state.increment_active = MagicMock()
-    state.decrement_active = MagicMock()
-    state.increment_request = MagicMock()
-    return state
 
 
 @pytest.fixture
@@ -46,7 +30,8 @@ def test_app(mock_app_state):
 @pytest.fixture
 def client(test_app):
     """Create a test client."""
-    return TestClient(test_app)
+    with TestClient(test_app) as test_client:
+        yield test_client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
