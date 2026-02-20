@@ -2,11 +2,134 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.escalation import ErrorCategory
+
+_log = logging.getLogger(__name__)
+
+# Regex matching OpenAI-format tool_call JSON objects.  The model sometimes
+# emits these instead of the REPL ``CALL()`` syntax because Qwen3-Coder's
+# instruct training activates the chat-completion tool-calling format even
+# in raw-completion mode.
+_TOOL_CALL_RE = re.compile(
+    r'"function"\s*:\s*\{\s*"(?:arguments|name)"\s*:'
+    r'|'
+    r'"id"\s*:\s*"call_[^"]+"\s*,\s*"function"\s*:',
+)
+
+
+def _extract_json_arrays(text: str) -> list[list[dict]]:
+    """Extract JSON arrays from text by scanning for balanced brackets."""
+    arrays: list[list[dict]] = []
+    i = 0
+    while i < len(text):
+        if text[i] == '[':
+            # Scan forward tracking depth and string literals
+            depth = 0
+            in_str = False
+            escape = False
+            j = i
+            while j < len(text):
+                c = text[j]
+                if escape:
+                    escape = False
+                elif c == '\\' and in_str:
+                    escape = True
+                elif c == '"' and not escape:
+                    in_str = not in_str
+                elif not in_str:
+                    if c == '[':
+                        depth += 1
+                    elif c == ']':
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                arr = json.loads(text[i:j + 1])
+                                if isinstance(arr, list):
+                                    arrays.append(arr)
+                            except (json.JSONDecodeError, ValueError):
+                                pass
+                            i = j + 1
+                            break
+                j += 1
+            else:
+                i += 1
+        else:
+            i += 1
+    return arrays
+
+
+def translate_openai_tool_calls(text: str) -> str | None:
+    """Detect OpenAI-format tool_call JSON in raw LLM output and translate to CALL() code.
+
+    When a model emits ``[{"id":"call_...","function":{"name":"web_search",
+    "arguments":"{\"query\":\"...\"}"},"type":"function"}]`` instead of
+    ``CALL("web_search", query="...")``, the REPL cannot execute it.
+
+    This function extracts the *unique* tool calls, deduplicates them, and
+    returns equivalent Python code using ``CALL()`` syntax.  Returns ``None``
+    if no tool_call JSON is detected.
+    """
+    if not _TOOL_CALL_RE.search(text):
+        return None
+
+    # Extract all JSON arrays that look like tool_call lists.
+    calls_seen: list[tuple[str, dict]] = []  # (name, kwargs) deduped
+    seen_keys: set[str] = set()
+
+    # Find JSON array boundaries robustly.  The model emits space-separated
+    # ``[{...}] [{...}]`` blocks; simple regex can't handle nested braces
+    # in the "arguments" field, so we scan for ``[`` and find the matching
+    # ``]`` by tracking brace/bracket depth.
+    for arr in _extract_json_arrays(text):
+        for item in arr:
+            if not isinstance(item, dict):
+                continue
+            func = item.get("function") or {}
+            name = func.get("name")
+            if not name:
+                continue
+            try:
+                args = json.loads(func.get("arguments", "{}"))
+            except (json.JSONDecodeError, ValueError):
+                args = {}
+            # Dedup key: (name, sorted args)
+            dedup_key = (name, tuple(sorted(args.items())))
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+            calls_seen.append((name, args))
+
+    if not calls_seen:
+        return None
+
+    _log.info(
+        "Translated %d OpenAI-format tool_call(s) to CALL() syntax: %s",
+        len(calls_seen),
+        [c[0] for c in calls_seen],
+    )
+
+    # Build CALL() code lines.  Do NOT auto-wrap with FINAL() — the model
+    # wants to inspect tool results and continue reasoning in the next turn.
+    lines: list[str] = []
+    for i, (name, kwargs) in enumerate(calls_seen):
+        kw_parts = ", ".join(f'{k}={json.dumps(v)}' for k, v in kwargs.items())
+        var = f"result_{i}" if len(calls_seen) > 1 else "result"
+        lines.append(f'{var} = CALL("{name}", {kw_parts})')
+
+    # Print results so the REPL captures output for the next turn
+    if len(calls_seen) == 1:
+        lines.append("print(result)")
+    else:
+        for i in range(len(calls_seen)):
+            lines.append(f"print(result_{i})")
+
+    return "\n".join(lines)
 
 
 def _strip_import_lines(code: str) -> str:
@@ -58,6 +181,12 @@ def extract_code_from_response(response: str) -> str:
     all needed modules are pre-loaded in the REPL globals.
     """
     response = response.strip()
+
+    # Intercept OpenAI-format tool_call JSON (Qwen3-Coder instruct artifact)
+    # and translate to CALL() syntax before normal code extraction.
+    translated = translate_openai_tool_calls(response)
+    if translated is not None:
+        return translated
 
     # Remove trailing backticks that aren't properly paired
     # (model sometimes outputs code followed by ``` without opening)
@@ -111,6 +240,7 @@ def extract_code_from_response(response: str) -> str:
         "escalate(",
         "llm_call(",
         "llm_batch(",
+        "CALL(",
     ]
 
     for line in lines:

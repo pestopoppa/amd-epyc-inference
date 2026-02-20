@@ -65,6 +65,7 @@ from src.prompt_builders.code_utils import (
     auto_wrap_final,
     classify_error,
     extract_code_from_response,
+    translate_openai_tool_calls,
 )
 
 # Format detection and formalizer
@@ -110,6 +111,7 @@ __all__ = [
     "extract_code_from_response",
     "auto_wrap_final",
     "classify_error",
+    "translate_openai_tool_calls",
     # Formatting
     "detect_format_constraints",
     "build_formalizer_prompt",

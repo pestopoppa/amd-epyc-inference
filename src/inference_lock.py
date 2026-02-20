@@ -22,6 +22,9 @@ from src.env_parsing import env_float as _env_float
 
 log = logging.getLogger(__name__)
 
+# Cache per-port slot erase strategy to avoid re-probing on every call.
+_SLOT_ERASE_CAPABILITY: dict[int, str | None | bool] = {}
+
 
 HEAVY_ROLES = {
     "frontdoor",
@@ -93,6 +96,92 @@ def _current_lock_owner_pids(lock_file: Path) -> list[str]:
     except Exception:
         return []
     return sorted(owners)
+
+
+def _erase_port_slots(port: int) -> None:
+    """Fire-and-forget slot erase on a llama-server port.
+
+    Lightweight version of the benchmark ``_erase_slots``: queries /slots,
+    erases any processing slot, caches the working strategy per port.
+    """
+    try:
+        import httpx
+    except ImportError:
+        log.debug("httpx not available; skipping slot erase on port %d", port)
+        return
+
+    cap = _SLOT_ERASE_CAPABILITY.get(port)
+    if cap is False:
+        return
+
+    try:
+        resp = httpx.get(f"http://localhost:{port}/slots", timeout=5)
+        if resp.status_code != 200:
+            return
+        for slot in resp.json():
+            if not slot.get("is_processing"):
+                continue
+            slot_id = slot.get("id", 0)
+            strategies: list[str]
+            if isinstance(cap, str):
+                strategies = [cap]
+            else:
+                strategies = ["POST_QUERY", "GET_QUERY", "POST_JSON"]
+
+            for strategy in strategies:
+                try:
+                    if strategy == "POST_QUERY":
+                        r = httpx.post(
+                            f"http://localhost:{port}/slots/{slot_id}?action=erase",
+                            timeout=5,
+                        )
+                    elif strategy == "GET_QUERY":
+                        r = httpx.get(
+                            f"http://localhost:{port}/slots/{slot_id}?action=erase",
+                            timeout=5,
+                        )
+                    elif strategy == "POST_JSON":
+                        r = httpx.post(
+                            f"http://localhost:{port}/slots/{slot_id}",
+                            json={"action": "erase"},
+                            timeout=5,
+                        )
+                    else:
+                        continue
+                    if r.status_code == 200:
+                        _SLOT_ERASE_CAPABILITY[port] = strategy
+                        log.info("Erased slot %d on port %d (strategy=%s)", slot_id, port, strategy)
+                        break
+                    if r.status_code in {404, 405, 501}:
+                        continue
+                except Exception:
+                    continue
+            else:
+                # No strategy worked — if we had a cached one, reset it.
+                if isinstance(cap, str):
+                    _SLOT_ERASE_CAPABILITY[port] = None
+    except Exception as e:
+        log.debug("Slot erase failed on port %d: %s", port, e)
+
+
+def _lock_holder_ports(lock_file: Path) -> list[int]:
+    """Map current lock holder PIDs to llama-server ports via /proc/cmdline."""
+    pids = _current_lock_owner_pids(lock_file)
+    ports: list[int] = []
+    for pid in pids:
+        try:
+            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", errors="replace")
+            # cmdline is NUL-separated
+            args = cmdline.split("\x00")
+            for i, arg in enumerate(args):
+                if arg == "--port" and i + 1 < len(args):
+                    port_str = args[i + 1].strip()
+                    if port_str.isdigit():
+                        ports.append(int(port_str))
+                    break
+        except Exception:
+            continue
+    return ports
 
 
 def _acquire_lock_with_timeout(
@@ -239,10 +328,16 @@ def inference_lock(
     cancel_check: Callable[[], bool] | None = None,
     deadline_s: float | None = None,
     request_tag: str | None = None,
+    port: int | None = None,
 ):
     """Acquire inference lock for the given role.
 
     Heavy roles take an exclusive lock; light roles take a shared lock.
+
+    Args:
+        port: llama-server port for this role. When provided, enables
+            slot cleanup: on lock timeout (erase holder's slots) and on
+            error inside the lock (erase our own slots).
     """
     lock_file = _lock_path(role)
 
@@ -256,19 +351,35 @@ def inference_lock(
     log_every_s = _lock_log_every_s()
 
     with open(lock_file, "a") as fh:
-        wait_s = _acquire_lock_with_timeout(
-            fh.fileno(),
-            lock_type,
-            role=role,
-            mode=mode,
-            lock_file=lock_file,
-            timeout_s=timeout_s,
-            poll_s=poll_s,
-            log_every_s=log_every_s,
-            cancel_check=cancel_check,
-            deadline_s=deadline_s,
-            request_tag=request_tag,
-        )
+        try:
+            wait_s = _acquire_lock_with_timeout(
+                fh.fileno(),
+                lock_type,
+                role=role,
+                mode=mode,
+                lock_file=lock_file,
+                timeout_s=timeout_s,
+                poll_s=poll_s,
+                log_every_s=log_every_s,
+                cancel_check=cancel_check,
+                deadline_s=deadline_s,
+                request_tag=request_tag,
+            )
+        except TimeoutError:
+            # Lock acquisition failed — the holder is still generating tokens.
+            # Erase slots on the holder's port(s) to free resources.
+            try:
+                holder_ports = _lock_holder_ports(lock_file)
+                for hp in holder_ports:
+                    log.warning(
+                        "Lock timeout: erasing slots on holder port %d (role=%s, request=%s)",
+                        hp, role, request_tag or "n/a",
+                    )
+                    _erase_port_slots(hp)
+            except Exception as erase_exc:
+                log.debug("Slot erase on lock timeout failed: %s", erase_exc)
+            raise
+
         if wait_s > 1.0:
             log.info("Inference lock acquired (%s, role=%s) after %.2fs", mode, role, wait_s)
         if _lock_trace_enabled():
@@ -282,8 +393,12 @@ def inference_lock(
                 lock_file,
             )
         acquired_at = time.perf_counter()
+        _inner_error = False
         try:
             yield
+        except BaseException:
+            _inner_error = True
+            raise
         finally:
             held_s = time.perf_counter() - acquired_at
             if held_s > 30.0:
@@ -304,3 +419,14 @@ def inference_lock(
                     lock_file,
                 )
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            # If inference inside the lock failed (timeout/cancel/error),
+            # erase our own slot so the backend stops generating tokens.
+            if _inner_error and port is not None:
+                try:
+                    log.info(
+                        "Post-lock cleanup: erasing slots on port %d (role=%s, request=%s)",
+                        port, role, request_tag or "n/a",
+                    )
+                    _erase_port_slots(port)
+                except Exception as erase_exc:
+                    log.debug("Post-lock slot erase failed: %s", erase_exc)

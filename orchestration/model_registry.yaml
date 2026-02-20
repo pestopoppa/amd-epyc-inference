@@ -3564,3 +3564,55 @@ optimized_params:
   _meta:
     optimized: '2026-01-07T23:14:00.047514'
     schema_version: 1
+
+# =============================================================================
+# OBSERVATIONS & FINDINGS
+# =============================================================================
+# System-level hardening observations, KV cache optimizations, and alignment rules
+
+observations:
+  slot_admission_alignment_2026_02_20:
+    title: "Slot/admission alignment: eliminated 50% KV cache waste across all backends"
+    type: bugfix
+    date: 2026-02-20
+    status: implemented
+    summary: |
+      Every backend had 2x more llama-server slots than admission controller allowed.
+      KV cache partitioned across all slots meant 50% was wasted on idle slots.
+
+      Alignment based on concurrent_sweep_20260219 results:
+      - frontdoor: 4→2 slots (sweep optimal at 2, p95 1.33x)
+      - coder_escalation: 4→1 slots + admission 2→1 (p95 1.98x at concurrency=2 — serial only)
+      - worker: 8→1 slots + admission 4→1 (all concurrent levels rejected on p95)
+      - architect_general: 2→1 slots
+      - architect_coding: 2→1 slots
+      - ingest: 2→1 slots
+      - frontdoor timeout: 90→180s
+
+    rule: "admission limit = server slots — no wasted KV cache on idle slots"
+    impact: "50% reduction in idle KV cache pressure across all backends"
+    sweep_date: 2026-02-19
+    sweep_data: concurrent_sweep_20260219_144159.summary.json
+
+  backend_saturation_504_429_investigation:
+    title: "Backend saturation handoff: 504/429 under sequential load with 6 hypotheses"
+    type: discovery
+    date: 2026-02-20
+    status: active
+    location: handoffs/active/backend-saturation-504-429.md
+    summary: |
+      10 prompts back-to-back causes 504 Gateway Timeout and 429 Too Many Requests after prompt 5-7.
+
+      6 hypotheses identified:
+      - H1: cumulative KV cache pressure (LIKELY)
+      - H2: feature pipeline latency amplification (CONTRIBUTING)
+      - H3: admission/circuit breaker cascade (CONTRIBUTING)
+      - H4: uvicorn worker starvation (POSSIBLE)
+      - H5: config reload not applied (CONFIRMED for timeout)
+      - H6: spec decode contention under concurrent load (POSSIBLE)
+
+    investigation: 6-step playbook with shell commands and timeline of all prior hardening work Feb 11-20
+    related_files:
+      - src/api/admission.py
+      - scripts/server/orchestrator_stack.py
+      - docs/reference/agent-config/ORCHESTRATION_DEBUG_PLAYBOOK.md

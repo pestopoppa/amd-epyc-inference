@@ -51,6 +51,18 @@ def _detect_streaming_repetition(text: str, min_block: int = 60, min_repeats: in
     return False
 
 
+def _extract_port(url: str) -> int | None:
+    """Extract port number from a backend URL like 'http://localhost:8080'."""
+    if not url:
+        return None
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        return parsed.port
+    except Exception:
+        return None
+
+
 class InferenceMixin:
     """Mixin for real inference methods."""
 
@@ -209,12 +221,16 @@ class InferenceMixin:
         req_started = time.perf_counter()
         from src.inference_lock import inference_lock
 
+        _ms_port = _extract_port(
+            (self.server_urls or {}).get(role, "") if hasattr(self, "server_urls") else ""
+        )
         try:
             with inference_lock(
                 role,
                 cancel_check=self.get_request_cancel_check(),
                 deadline_s=self.get_request_deadline_s(),
                 request_tag=self.get_request_task_id(),
+                port=_ms_port,
             ):
                 request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
                 result = self.model_server.infer(role, request)
@@ -371,6 +387,7 @@ class InferenceMixin:
 
             from src.inference_lock import inference_lock
             can_stream = False
+            _cb_port = _extract_port(backend_url)
 
             try:
                 with inference_lock(
@@ -378,6 +395,7 @@ class InferenceMixin:
                     cancel_check=self.get_request_cancel_check(),
                     deadline_s=self.get_request_deadline_s(),
                     request_tag=self.get_request_task_id(),
+                    port=_cb_port,
                 ):
                     request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
                     from src.inference_tap import (
@@ -667,11 +685,15 @@ class InferenceMixin:
         output_tokens = []
         from src.inference_lock import inference_lock
 
+        _mon_port = _extract_port(
+            (self.server_urls or {}).get(role, "") if hasattr(self, "server_urls") else ""
+        )
         with inference_lock(
             role,
             cancel_check=self.get_request_cancel_check(),
             deadline_s=self.get_request_deadline_s(),
             request_tag=self.get_request_task_id(),
+            port=_mon_port,
         ):
             request.timeout = self._clamp_timeout_to_request_budget(request.timeout)
             for token_id, logits in self.model_server.infer_stream(role, request):

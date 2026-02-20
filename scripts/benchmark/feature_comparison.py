@@ -9,12 +9,21 @@ Requires orchestrator stack running on localhost:8000.
 from __future__ import annotations
 
 import json
+import signal
 import statistics
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+
+
+class PromptTimeout(Exception):
+    pass
+
+
+def _timeout_handler(signum, frame):
+    raise PromptTimeout("hard timeout")
 
 ORCHESTRATOR = "http://localhost:8000"
 RESULTS_DIR = Path("benchmarks/results/runs/feature_validation/comparison")
@@ -62,20 +71,24 @@ def run_prompts(label: str) -> dict:
         }
         t0 = time.monotonic()
         try:
+            signal.signal(signal.SIGALRM, _timeout_handler)
+            signal.alarm(180)  # Hard 180s deadline
             resp = CLIENT.post(f"{ORCHESTRATOR}/chat", json=payload)
+            signal.alarm(0)  # Cancel alarm on success
             elapsed = time.monotonic() - t0
             if resp.status_code == 200:
                 data = resp.json()
-                raw = data.get("raw", {})
-                tokens = raw.get("tokens_generated", 0)
+                tokens = data.get("tokens_generated", 0)
+                server_tps = data.get("predicted_tps", 0)
                 result = {
                     "prompt_id": pid,
                     "status": 200,
                     "elapsed_s": round(elapsed, 2),
                     "tokens_generated": tokens,
                     "client_tps": round(tokens / elapsed, 1) if elapsed > 0 and tokens > 0 else 0,
-                    "routed_to": raw.get("routed_to", data.get("routed_to", "")),
-                    "turns": raw.get("turns", 0),
+                    "server_tps": round(server_tps, 1) if server_tps else 0,
+                    "routed_to": data.get("routed_to", ""),
+                    "turns": data.get("turns", 0),
                     "answer": data.get("answer", "")[:500],
                 }
             else:
@@ -89,7 +102,8 @@ def run_prompts(label: str) -> dict:
                     "turns": 0,
                     "answer": "",
                 }
-        except Exception as e:
+        except (Exception, PromptTimeout) as e:
+            signal.alarm(0)
             elapsed = time.monotonic() - t0
             result = {
                 "prompt_id": pid,
@@ -107,7 +121,10 @@ def run_prompts(label: str) -> dict:
         status_str = f"{result['status']}"
         if result["status"] != 200:
             status_str += f" ({result.get('error', 'timeout')})"
-        print(f"  [{label}] {pid}: {result['elapsed_s']:.1f}s {status_str} → {result['routed_to']}")
+        tps_str = ""
+        if result.get("server_tps", 0) > 0:
+            tps_str = f" ({result['tokens_generated']} tok, {result['server_tps']} t/s)"
+        print(f"  [{label}] {pid}: {result['elapsed_s']:.1f}s {status_str}{tps_str} → {result['routed_to']}")
 
         # Cooldown between prompts to avoid saturating backends
         if i < len(PROMPTS) - 1:
@@ -116,6 +133,7 @@ def run_prompts(label: str) -> dict:
     # Compute summary stats
     elapsed_vals = [r["elapsed_s"] for r in results if r["status"] == 200]
     tps_vals = [r["client_tps"] for r in results if r["client_tps"] > 0]
+    server_tps_vals = [r["server_tps"] for r in results if r.get("server_tps", 0) > 0]
 
     return {
         "label": label,
@@ -125,6 +143,7 @@ def run_prompts(label: str) -> dict:
         "mean_s": round(statistics.mean(elapsed_vals), 2) if elapsed_vals else 0,
         "total_s": round(sum(r["elapsed_s"] for r in results), 2),
         "avg_tps": round(statistics.mean(tps_vals), 1) if tps_vals else 0,
+        "avg_server_tps": round(statistics.mean(server_tps_vals), 1) if server_tps_vals else 0,
         "responses": results,
     }
 
@@ -161,18 +180,44 @@ def main():
     mean_delta = candidate["mean_s"] - baseline["mean_s"]
     total_delta = candidate["total_s"] - baseline["total_s"]
 
+    # Compute success rates
+    n = len(PROMPTS)
+    b_rate = baseline["success_count"] / n if n else 0
+    c_rate = candidate["success_count"] / n if n else 0
+    rate_delta = c_rate - b_rate
+
+    # Determine verdict: success rate trumps latency
+    if c_rate > b_rate:
+        verdict = "candidate"
+        reason = f"higher success rate ({c_rate:.0%} vs {b_rate:.0%})"
+    elif b_rate > c_rate:
+        verdict = "baseline"
+        reason = f"higher success rate ({b_rate:.0%} vs {c_rate:.0%})"
+    elif total_delta < 0:
+        verdict = "candidate"
+        reason = f"same success rate, {abs(total_delta):.1f}s faster wall-clock"
+    elif total_delta > 0:
+        verdict = "baseline"
+        reason = f"same success rate, {abs(total_delta):.1f}s faster wall-clock"
+    else:
+        verdict = "tie"
+        reason = "no difference"
+
     # Write results
     result = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "features_tested": VALIDATED_FEATURES,
-        "prompts_count": len(PROMPTS),
+        "prompts_count": n,
         "baseline": baseline,
         "candidate": candidate,
         "delta": {
+            "success_rate": round(rate_delta, 2),
             "p50_s": round(lat_delta, 2),
             "mean_s": round(mean_delta, 2),
             "total_s": round(total_delta, 2),
         },
+        "verdict": verdict,
+        "verdict_reason": reason,
     }
 
     out_path = RESULTS_DIR / "comparison_result.json"
@@ -183,22 +228,19 @@ def main():
     print("\n" + "=" * 60)
     print("COMPARISON SUMMARY")
     print("=" * 60)
-    print(f"Prompts: {len(PROMPTS)} ({baseline['success_count']}/{candidate['success_count']} succeeded)")
+    print(f"Prompts: {n}")
     print(f"")
     print(f"{'Metric':<20} {'Baseline':>12} {'Candidate':>12} {'Delta':>12}")
     print(f"{'-'*20} {'-'*12} {'-'*12} {'-'*12}")
+    print(f"{'success rate':<20} {b_rate:>11.0%} {c_rate:>11.0%} {rate_delta:>+11.0%}")
     print(f"{'p50 latency (s)':<20} {baseline['p50_s']:>12.2f} {candidate['p50_s']:>12.2f} {lat_delta:>+12.2f}")
     print(f"{'mean latency (s)':<20} {baseline['mean_s']:>12.2f} {candidate['mean_s']:>12.2f} {mean_delta:>+12.2f}")
     print(f"{'total wall-clock':<20} {baseline['total_s']:>12.2f} {candidate['total_s']:>12.2f} {total_delta:>+12.2f}")
-    print(f"{'avg TPS':<20} {baseline['avg_tps']:>12.1f} {candidate['avg_tps']:>12.1f} {candidate['avg_tps'] - baseline['avg_tps']:>+12.1f}")
+    print(f"{'avg client TPS':<20} {baseline['avg_tps']:>12.1f} {candidate['avg_tps']:>12.1f} {candidate['avg_tps'] - baseline['avg_tps']:>+12.1f}")
+    print(f"{'avg server TPS':<20} {baseline['avg_server_tps']:>12.1f} {candidate['avg_server_tps']:>12.1f} {candidate['avg_server_tps'] - baseline['avg_server_tps']:>+12.1f}")
     print(f"")
 
-    if lat_delta < 0:
-        print(f"Result: CANDIDATE FASTER by {abs(lat_delta):.1f}s (p50)")
-    elif lat_delta > 0:
-        print(f"Result: BASELINE FASTER by {lat_delta:.1f}s (p50)")
-    else:
-        print("Result: NO DIFFERENCE")
+    print(f"Result: {verdict.upper()} WINS — {reason}" if verdict != "tie" else f"Result: {reason.upper()}")
 
     print(f"\nFull results: {out_path}")
 

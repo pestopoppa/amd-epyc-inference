@@ -1431,16 +1431,29 @@ def _architect_delegated_answer_inner(
         remaining_budget_s = total_budget_s - (time.perf_counter() - orchestration_started)
         specialist_budget_s = max(10.0, remaining_budget_s - 5.0)
 
-        report, deleg_tools, deleg_tools_called, phase_tool_timings, specialist_timed_out, report_rescued, specialist_infer_meta = _run_specialist_loop(
-            question,
-            context,
-            brief,
-            delegate_to,
-            delegate_mode,
-            primitives,
-            tool_registry,
-            time_budget_s=specialist_budget_s,
-        )
+        # Give specialist its full role timeout instead of squeezing it
+        # by the parent's remaining deadline.  The specialist loop already
+        # enforces wall-clock limits via elapsed checks and specialist_budget_s.
+        from src.config import get_config as _get_config
+        _role_timeout_s = float(_get_config().timeouts.for_role(delegate_to))
+        _specialist_deadline_s = time.perf_counter() + max(_role_timeout_s, specialist_budget_s)
+
+        with primitives.request_context(
+            cancel_check=primitives.get_request_cancel_check(),
+            deadline_s=_specialist_deadline_s,
+            task_id=primitives.get_request_task_id(),
+            priority=primitives.get_request_priority(),
+        ):
+            report, deleg_tools, deleg_tools_called, phase_tool_timings, specialist_timed_out, report_rescued, specialist_infer_meta = _run_specialist_loop(
+                question,
+                context,
+                brief,
+                delegate_to,
+                delegate_mode,
+                primitives,
+                tool_registry,
+                time_budget_s=specialist_budget_s,
+            )
         total_tools += deleg_tools
         all_tools_called.extend(deleg_tools_called)
         compressed_report, report_handle = _compress_report_for_loop(

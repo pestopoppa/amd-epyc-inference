@@ -5,6 +5,28 @@ concurrent in-flight requests per backend URL. When a backend's queue is full,
 requests are rejected immediately with a clear error rather than blocking
 until timeout.
 
+OBSERVATION (2026-02-20): Slot/Admission Alignment
+===================================================
+Key finding from backend saturation investigation (handoffs/active/backend-saturation-504-429.md):
+Every backend had 2x more llama-server slots than admission controller allowed. llama-server
+partitions KV cache evenly across all slots, so 50% of KV cache was wasted on idle slots.
+
+Concurrency sweep results (concurrent_sweep_20260219_144159.summary.json) showed:
+- frontdoor: optimal at concurrency=2, p95 latency 1.33x (acceptable)
+- coder_escalation: p95 latency 1.98x at concurrency=2 (degradation) — reduced to serial
+- worker: ALL concurrent levels (2,3,4) rejected on p95 threshold — reduced to serial
+- architects: already serial
+
+Changes applied:
+  - Aligned admission limits with llama-server slot counts (no idle slots)
+  - Reduced coder_escalation from 2→1 and worker from 4→1 based on sweep data
+  - Also updated orchestration/model_registry.yaml server_mode slot counts
+  - Increased frontdoor timeout from 90→180s in model_registry.yaml
+
+Expected impact: 50% reduction in idle KV cache pressure across all backends.
+
+See DEFAULT_LIMITS comments for per-backend rationale.
+
 Usage:
     controller = AdmissionController.from_defaults()
     if not controller.try_acquire(backend_url):

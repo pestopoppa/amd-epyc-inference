@@ -13,6 +13,21 @@
   - 49 tests across 5 test files. No changes needed to `seed_specialist_routing.py` — data flows are decoupled.
   - Files: `routing_graph.py`, `lightweight_gat.py`, `graph_router_predictor.py` (NEW), `retriever.py`, `src/features.py`, `src/api/services/memrl.py` (MODIFIED), `train_graph_router.py`, `onboard_model.py` (NEW scripts).
 
+- **Fix: OpenAI-format tool_call translation for REPL executor**:
+  - Qwen3-Coder-30B emits OpenAI JSON tool_calls (`[{"function":{"name":"web_search",...}}]`) instead of REPL `CALL()` syntax due to instruct training artifact. REPL couldn't execute them, causing degenerate 20+ identical tool_call repetition loops.
+  - Added `translate_openai_tool_calls()`: balanced-bracket JSON extraction, deduplication (collapses identical calls), translation to `CALL()` + `print()` syntax. Integrated as preprocessing step in `extract_code_from_response()`.
+  - Added `CALL(` to `code_starters` list for direct detection of properly-formatted CALL invocations.
+  - 129 existing tests pass, no false positives on normal JSON content.
+  - Files: `src/prompt_builders/code_utils.py` (MODIFIED), `src/prompt_builders/__init__.py` (MODIFIED).
+
+- **Slot-erase-on-timeout + delegation timeout fix**:
+  - Backend resource leak: when inference lock times out, the holder's llama-server keeps generating tokens nobody reads. Next request can't proceed until the stale generation finishes.
+  - Added `_erase_port_slots(port)` and `_lock_holder_ports()` to `inference_lock.py`. On lock timeout, erases holder's processing slots. On error inside lock, erases own slots. Caches working erase strategy per port.
+  - Propagated `port` parameter through `inference_lock()` → `_real_call_single()` / `_call_caching_backend()` / `_real_call_monitored()` via `_extract_port(url)` helper.
+  - Delegation timeout fix: specialists now get their full role timeout via nested `request_context(deadline_s=...)` instead of being squeezed by parent's remaining deadline. Specialist loop already enforces wall-clock limits via elapsed checks.
+  - 202 tests pass (62 lock + 140 delegation).
+  - Files: `src/inference_lock.py`, `src/llm_primitives/inference.py`, `src/api/routes/chat_delegation.py` (MODIFIED).
+
 - **Slot/admission alignment: eliminate 50% KV cache waste**:
   - Every backend had 2x more llama-server slots than admission controller allowed. KV cache partitioned across all slots — 50% wasted on idle slots.
   - Aligned based on `concurrent_sweep_20260219` results: frontdoor 4→2 slots, coder_escalation 4→1 (p95 1.98x at concurrency=2), worker 8→1 (all concurrent levels rejected), architects 2→1.
@@ -528,3 +543,16 @@
 - **Embedder switch**: TaskEmbedder now uses **BGE-large** (1024-dim) instead of Qwen 0.5B.
 - **FAISS rebuild required** after the switch; existing 896-d FAISS indexes are incompatible.
 - **Reset/backfill flow** now recreates FAISS at 1024-d and updates SQLite `embedding_idx`.
+
+## 2026-02-20
+
+- **Refactor handoff completion (Waves 1-2) + final integration**:
+  - Completed Wave 1 stabilization/extraction chain and Wave 2 config package split.
+  - Added `src/config/models.py` and `src/config/validation.py`; `src/config/__init__.py` now serves as a compatibility facade preserving public imports.
+  - Stabilized async chat endpoint tests by moving to direct async route invocation and threadpool shim where needed.
+  - Added REPL environment protocol contract types for mixin/documentation clarity.
+  - Final gate run (`make gates`) completed successfully at handoff end.
+
+- **Integrated parallel debugging stream (seed_specialist_routing / orchestrator-adjacent wiring)**:
+  - Included admission/timeout/lock-path hardening and prompt/tool-call translation updates from the concurrent debugging work.
+  - Updated benchmark/config surfaces and progress notes to reflect backend saturation and delegation timeout diagnostics.
