@@ -6,8 +6,8 @@ Question: "Who won the 2023 Nobel Prize in Physics?"
 FINAL("Pierre Agostini, Ferenc Krausz, and Anne L'Huillier")
 ```
 
-## Example 2: Multiple choice
-Question: "What is the capital of France? A) London B) Paris C) Berlin D) Madrid"
+## Example 2: Multiple choice (even complex science questions)
+Question: "In quantum mechanics, the uncertainty principle states that certain pairs of physical properties cannot both be known to arbitrary precision. Given a particle confined to a 1D box of length L, which of the following correctly describes the ground state energy? A) E=0 B) E=h²/(8mL²) C) E=h²/(2mL²) D) E=h/(4πmL²)"
 ```python
 FINAL("B")
 ```
