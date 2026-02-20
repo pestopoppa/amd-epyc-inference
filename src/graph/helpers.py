@@ -26,6 +26,7 @@ from pydantic_graph import End, GraphRunContext
 from src.escalation import ErrorCategory
 from src.exceptions import InferenceError
 from src.graph.error_classifier import classify_error as _classify_error_impl
+from src.graph.escalation_helpers import detect_role_cycle as _detect_role_cycle_impl
 from src.graph.repl_tap import tap_write_repl_exec as _tap_write_repl_exec_impl
 from src.graph.repl_tap import tap_write_repl_result as _tap_write_repl_result_impl
 from src.roles import Role
@@ -1234,25 +1235,8 @@ MAX_CONSECUTIVE_NUDGES = 3
 
 
 def _detect_role_cycle(role_history: list[str]) -> bool:
-    """Detect A→B→A→B bouncing patterns in role history.
-
-    Catches period-2 cycles (ABAB) and period-3 cycles (ABCABC)
-    that indicate cross-chain delegation loops.
-    """
-    if len(role_history) < 4:
-        return False
-    # Period-2: ...A, B, A, B
-    if role_history[-1] == role_history[-3] and role_history[-2] == role_history[-4]:
-        return True
-    # Period-3: ...A, B, C, A, B, C
-    if len(role_history) >= 6:
-        if (
-            role_history[-1] == role_history[-4]
-            and role_history[-2] == role_history[-5]
-            and role_history[-3] == role_history[-6]
-        ):
-            return True
-    return False
+    """Compatibility wrapper for extracted role-cycle detection."""
+    return _detect_role_cycle_impl(role_history)
 
 
 def _should_escalate(
